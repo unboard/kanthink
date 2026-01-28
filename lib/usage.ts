@@ -35,17 +35,16 @@ export async function getUsageStatus(userId: string): Promise<UsageStatus> {
 
   const tier = user?.tier || 'free'
   const hasByok = !!user?.byokApiKey
-  const isAdmin = !!user?.isAdmin
 
-  // If user is admin or has BYOK, they have unlimited usage
-  if (isAdmin || hasByok) {
+  // If user has BYOK, they have unlimited usage
+  if (hasByok) {
     return {
       used: 0,
       limit: Infinity,
       remaining: Infinity,
       allowed: true,
       tier,
-      hasByok: hasByok,
+      hasByok: true,
       resetAt: getNextMonthStart(),
     }
   }
@@ -97,13 +96,13 @@ export async function checkUsageLimit(userId: string): Promise<{
 }
 
 export async function recordUsage(userId: string, requestType: string): Promise<void> {
-  // Check if user has BYOK or is admin - don't record usage if they do
+  // Check if user has BYOK - don't record usage if they do
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
   })
 
-  if (user?.byokApiKey || user?.isAdmin) {
-    // User is using their own key or is admin, don't count against their quota
+  if (user?.byokApiKey) {
+    // User is using their own key, don't count against their quota
     return
   }
 
