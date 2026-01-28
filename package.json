@@ -20,7 +20,7 @@
     "@tiptap/pm": "^3.15.3",
     "@tiptap/react": "^3.15.3",
     "@tiptap/starter-kit": "^3.15.3",
-    "better-sqlite3": "^12.6.2",
+    "@libsql/client": "^0.14.0",
     "canvas-confetti": "^1.9.4",
     "cloudinary": "^2.9.0",
     "drizzle-orm": "^0.45.1",
@@ -37,7 +37,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",
     "@types/react": "^19",
