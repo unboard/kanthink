@@ -36,6 +36,8 @@ export function SharePanel({ channelId }: SharePanelProps) {
 
   // Link creation state
   const [isCreatingLink, setIsCreatingLink] = useState(false)
+  const [showLinkCreator, setShowLinkCreator] = useState(false)
+  const [linkRole, setLinkRole] = useState<'editor' | 'viewer'>('editor')
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null)
 
   const canManageShares = sharesData?.canManage ?? false
@@ -112,12 +114,14 @@ export function SharePanel({ channelId }: SharePanelProps) {
   const handleCreateLink = async () => {
     try {
       setIsCreatingLink(true)
-      const { link, url } = await createInviteLink(channelId, { defaultRole: 'editor' })
+      const { link, url } = await createInviteLink(channelId, { defaultRole: linkRole })
       setInviteLinks((prev) => [...prev, link])
       // Copy to clipboard
       await navigator.clipboard.writeText(url)
       setCopiedLinkId(link.id)
       setTimeout(() => setCopiedLinkId(null), 2000)
+      setShowLinkCreator(false)
+      setLinkRole('editor') // Reset for next time
     } catch (err) {
       setError('Failed to create invite link')
     } finally {
@@ -164,7 +168,7 @@ export function SharePanel({ channelId }: SharePanelProps) {
 
       {/* Invite by email */}
       {canManageShares && (
-        <form onSubmit={handleInvite} className="space-y-2">
+        <form onSubmit={handleInvite} className="space-y-3">
           <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
             Invite by email
           </label>
@@ -179,7 +183,7 @@ export function SharePanel({ channelId }: SharePanelProps) {
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as ChannelRole)}
-              className="rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
+              className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
             >
               <option value="editor">Editor</option>
               <option value="viewer">Viewer</option>
@@ -192,7 +196,10 @@ export function SharePanel({ channelId }: SharePanelProps) {
             <p className="text-xs text-red-600 dark:text-red-400">{inviteError}</p>
           )}
           <p className="text-xs text-neutral-500">
-            They&apos;ll get access when they sign in with this email.
+            {inviteRole === 'editor'
+              ? 'Editors can create, edit, and delete cards.'
+              : 'Viewers can only view cards (read-only).'}
+            {' '}They&apos;ll get access when they sign in.
           </p>
         </form>
       )}
@@ -204,21 +211,99 @@ export function SharePanel({ channelId }: SharePanelProps) {
             <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               Invite link
             </label>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCreateLink}
-              disabled={isCreatingLink}
-            >
-              {isCreatingLink ? 'Creating...' : '+ New link'}
-            </Button>
+            {!showLinkCreator && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowLinkCreator(true)}
+              >
+                + New link
+              </Button>
+            )}
           </div>
 
-          {inviteLinks.length === 0 ? (
+          {/* Link creator */}
+          {showLinkCreator && (
+            <div className="mb-3 p-3 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-700">
+              <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">
+                Choose a role for anyone who uses this link
+              </p>
+
+              <div className="space-y-2 mb-4">
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    linkRole === 'editor'
+                      ? 'border-violet-500 bg-violet-500/10'
+                      : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="linkRole"
+                    value="editor"
+                    checked={linkRole === 'editor'}
+                    onChange={() => setLinkRole('editor')}
+                    className="mt-0.5 text-violet-600 focus:ring-violet-500"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-neutral-900 dark:text-white">Editor</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">
+                      Can create, edit, and delete cards. Can run AI instructions. Full collaboration access.
+                    </p>
+                  </div>
+                </label>
+
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    linkRole === 'viewer'
+                      ? 'border-violet-500 bg-violet-500/10'
+                      : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="linkRole"
+                    value="viewer"
+                    checked={linkRole === 'viewer'}
+                    onChange={() => setLinkRole('viewer')}
+                    className="mt-0.5 text-violet-600 focus:ring-violet-500"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-neutral-900 dark:text-white">Viewer</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">
+                      Can view cards and columns. Cannot make changes or run AI instructions. Read-only access.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleCreateLink}
+                  disabled={isCreatingLink}
+                >
+                  {isCreatingLink ? 'Creating...' : 'Create & Copy Link'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowLinkCreator(false)
+                    setLinkRole('editor')
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {inviteLinks.length === 0 && !showLinkCreator ? (
             <p className="text-xs text-neutral-500">
               No active invite links. Create one to share with anyone.
             </p>
-          ) : (
+          ) : inviteLinks.length > 0 && (
             <div className="space-y-2">
               {inviteLinks.map((link) => (
                 <div
@@ -230,7 +315,10 @@ export function SharePanel({ channelId }: SharePanelProps) {
                       /invite/{link.token.slice(0, 8)}...
                     </p>
                     <p className="text-xs text-neutral-500">
-                      {link.useCount} use{link.useCount !== 1 ? 's' : ''} · {link.defaultRole}
+                      {link.useCount} use{link.useCount !== 1 ? 's' : ''} ·
+                      <span className={link.defaultRole === 'editor' ? 'text-violet-500' : 'text-neutral-400'}>
+                        {' '}{link.defaultRole}
+                      </span>
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
