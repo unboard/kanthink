@@ -2,6 +2,7 @@
 
 import { signIn } from '@/lib/auth'
 
-export async function signInWithGoogle(redirectTo?: string) {
-  await signIn('google', { redirectTo: redirectTo || '/' })
+export async function signInWithGoogle(formData: FormData) {
+  const redirectTo = formData.get('redirectTo') as string || '/'
+  await signIn('google', { redirectTo })
 }
