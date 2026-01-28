@@ -35,6 +35,8 @@ import { AIDebugModal } from './AIDebugModal';
 import { InstructionRow } from './InstructionRow';
 import { TaskListView } from './TaskListView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
+import { ShareDrawer } from '@/components/sharing/ShareDrawer';
+import { useServerSync } from '@/components/providers/ServerSyncProvider';
 // Commented out - question system disabled
 // import { QuestionToast } from '@/components/ui/QuestionToast';
 // import { useQuestionTrigger } from '@/lib/hooks/useQuestionTrigger';
@@ -64,6 +66,8 @@ export function Board({ channel }: BoardProps) {
   const [isDebugModalOpen, setIsDebugModalOpen] = useState(false);
   const [isQuestionsOpen, setIsQuestionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const { isServerMode } = useServerSync();
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
 
   const cards = useStore((s) => s.cards);
@@ -96,8 +100,10 @@ export function Board({ channel }: BoardProps) {
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 200,
-        tolerance: 8,
+        // Long press to initiate drag - allows vertical scrolling without triggering drag
+        // This is the standard mobile Kanban pattern (Trello, Jira, etc.)
+        delay: 300,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -720,9 +726,21 @@ export function Board({ channel }: BoardProps) {
               </svg>
             </button>
           )}
+          {isServerMode && (
+            <button
+              onClick={() => setIsShareOpen(true)}
+              className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              title="Share channel"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+            </button>
+          )}
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            title="Channel settings"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -886,6 +904,13 @@ export function Board({ channel }: BoardProps) {
         channel={channel}
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      <ShareDrawer
+        channelId={channel.id}
+        channelName={channel.name}
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
       />
     </div>
   );
