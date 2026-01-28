@@ -241,41 +241,53 @@ export function GuidedQuestionnaireOverlay({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Backdrop */}
+      {/* Gradient backdrop */}
       <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        className="absolute inset-0 bg-gradient-to-br from-violet-950/90 via-neutral-950/95 to-neutral-950/95"
         onClick={onClose}
       />
 
+      {/* Decorative blur elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
+      </div>
+
       {/* Modal - full height on mobile, centered on desktop */}
-      <div className="relative z-10 w-full sm:max-w-xl max-h-[100dvh] sm:max-h-[90vh] sm:m-4 bg-neutral-950 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col border border-neutral-800 safe-area-inset-bottom">
-        {/* Progress bar */}
-        <div className="h-0.5 bg-neutral-800 flex-shrink-0">
-          <div
-            className="h-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-700 ease-out"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-
-        {/* Title bar */}
-        <div
-          className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800 flex-shrink-0"
-          style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+      <div className="relative z-10 w-full sm:max-w-xl max-h-[100dvh] sm:max-h-[90vh] sm:m-4 flex flex-col safe-area-inset-bottom">
+        {/* Skip button - desktop only */}
+        <button
+          onClick={onClose}
+          className="absolute -top-12 right-4 text-sm text-neutral-400 hover:text-white transition-colors hidden sm:block"
         >
-          <div className="flex gap-1.5">
-            <button
-              onClick={onClose}
-              className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 transition-colors"
+          Cancel
+        </button>
+
+        {/* Progress dots */}
+        <div
+          className="flex justify-center gap-2 mb-6 flex-shrink-0"
+          style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
+        >
+          {stepOrder.map((stepId, i) => (
+            <div
+              key={stepId}
+              className={`h-1 rounded-full transition-all duration-300 ${
+                viewState === 'result'
+                  ? 'w-8 bg-violet-500'
+                  : i < completedSteps
+                    ? 'w-8 bg-violet-500'
+                    : i === completedSteps
+                      ? 'w-8 bg-violet-500/50'
+                      : 'w-2 bg-neutral-700'
+              }`}
             />
-            <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-            <div className="w-3 h-3 rounded-full bg-green-500/80" />
-          </div>
-          <KanthinkIcon size={14} className="ml-2 text-violet-400" />
-          <span className="text-xs text-neutral-500 font-mono">kan://new-channel</span>
+          ))}
         </div>
 
-        {/* Content - scrollable on mobile */}
-        <div className="p-6 sm:p-8 flex-1 overflow-y-auto overscroll-contain">
+        {/* Card */}
+        <div className="bg-neutral-900/80 backdrop-blur-xl sm:rounded-2xl rounded-t-2xl border border-neutral-800 overflow-hidden shadow-2xl flex flex-col flex-1 min-h-0">
+          {/* Content - scrollable on mobile */}
+          <div className="p-6 sm:p-8 flex-1 overflow-y-auto overscroll-contain">
           {/* Error state */}
           {viewState === 'error' && (
             <div className="text-center py-8">
@@ -314,7 +326,7 @@ export function GuidedQuestionnaireOverlay({
                 <div className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: '150ms' }} />
                 <div className="w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
-              <p className="text-sm text-neutral-400 font-mono">
+              <p className="text-sm text-neutral-400">
                 {completedSteps === 0 ? 'Getting started...' : completedSteps >= 4 ? 'Creating your channel...' : 'Thinking...'}
               </p>
             </div>
@@ -324,7 +336,7 @@ export function GuidedQuestionnaireOverlay({
           {viewState === 'options' && currentStep && (
             <div className="space-y-6">
               {/* Step indicator */}
-              <div className="flex items-center gap-2 text-xs text-neutral-500 font-mono">
+              <div className="flex items-center gap-2 text-xs text-neutral-500">
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-violet-900/30 text-violet-400 font-medium">
                   {currentStepIndex + 1}
                 </span>
@@ -363,7 +375,7 @@ export function GuidedQuestionnaireOverlay({
                       }}
                       placeholder={currentStep.customPlaceholder || 'Type your answer...'}
                       autoFocus
-                      className="w-full px-4 py-3 rounded-xl border border-neutral-700 bg-neutral-900 text-white placeholder:text-neutral-500 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition-all font-mono"
+                      className="w-full px-4 py-3 rounded-xl border border-neutral-700 bg-neutral-800 text-white placeholder:text-neutral-500 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition-all"
                     />
                     <button
                       onClick={submitCustom}
@@ -459,7 +471,7 @@ export function GuidedQuestionnaireOverlay({
                           }}
                           placeholder={currentStep.customPlaceholder || 'Type your answer...'}
                           autoFocus
-                          className="flex-1 px-4 py-3 rounded-xl border border-neutral-700 bg-neutral-900 text-white placeholder:text-neutral-500 focus:outline-none focus:border-violet-500 transition-colors font-mono"
+                          className="flex-1 px-4 py-3 rounded-xl border border-neutral-700 bg-neutral-800 text-white placeholder:text-neutral-500 focus:outline-none focus:border-violet-500 transition-colors"
                         />
                         <button
                           onClick={submitCustom}
@@ -500,7 +512,7 @@ export function GuidedQuestionnaireOverlay({
                   {/* Columns */}
                   {result.structure.columns.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-2 font-mono">
+                      <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-2">
                         Columns
                       </p>
                       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
@@ -523,7 +535,7 @@ export function GuidedQuestionnaireOverlay({
                   {/* Actions */}
                   {result.structure.instructionCards && result.structure.instructionCards.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-2 font-mono">
+                      <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide mb-2">
                         AI Actions
                       </p>
                       <div className="space-y-1.5">
@@ -557,27 +569,26 @@ export function GuidedQuestionnaireOverlay({
           )}
         </div>
 
-        {/* Footer */}
-        {viewState === 'options' && (
-          <div
-            className="px-6 sm:px-8 py-4 border-t border-neutral-800 flex justify-between items-center flex-shrink-0"
-            style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
-          >
-            <button
-              onClick={onClose}
-              className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+          {/* Footer */}
+          {viewState === 'options' && (
+            <div
+              className="px-6 sm:px-8 py-5 border-t border-neutral-800 flex justify-between items-center flex-shrink-0"
+              style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
             >
-              [esc] cancel
-            </button>
-            <div className="text-xs text-neutral-500 font-mono hidden sm:block">
-              Press <kbd className="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">1</kbd>-<kbd className="px-1.5 py-0.5 bg-neutral-800 rounded text-neutral-400">{currentStep?.options.length || 4}</kbd> to select
+              <button
+                onClick={onClose}
+                className="text-sm text-neutral-400 hover:text-white transition-colors sm:hidden"
+              >
+                Cancel
+              </button>
+              <div className="flex-1" />
             </div>
-          </div>
-        )}
-        {/* Safe area spacer when no footer */}
-        {viewState !== 'options' && (
-          <div className="flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} />
-        )}
+          )}
+          {/* Safe area spacer when no footer */}
+          {viewState !== 'options' && (
+            <div className="flex-shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} />
+          )}
+        </div>
       </div>
     </div>
   );
