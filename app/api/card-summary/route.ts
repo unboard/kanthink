@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { CardMessage } from '@/lib/types';
-import { createLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { createLLMClient, getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { auth } from '@/lib/auth';
+import { recordUsage } from '@/lib/usage';
 
 interface CardSummaryRequest {
   cardTitle: string;
@@ -64,25 +66,44 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!aiConfig.apiKey) {
+    // Get LLM client
+    const session = await auth();
+    const userId = session?.user?.id;
+    let llm;
+    let usingOwnerKey = false;
+
+    if (userId) {
+      const result = await getLLMClientForUser(userId);
+      if (!result.client) {
+        return NextResponse.json(
+          { error: result.error || 'No AI access available' },
+          { status: 403 }
+        );
+      }
+      llm = result.client;
+      usingOwnerKey = result.source === 'owner';
+    } else if (aiConfig?.apiKey) {
+      llm = createLLMClient({
+        provider: aiConfig.provider,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+      });
+    } else {
       return NextResponse.json(
-        { error: 'No API key configured' },
-        { status: 400 }
+        { error: 'Please sign in or configure an API key in Settings.' },
+        { status: 403 }
       );
     }
-
-    // Create LLM client
-    const llm = createLLMClient({
-      provider: aiConfig.provider,
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
-    });
 
     // Build prompt
     const llmMessages = buildPrompt(cardTitle, messages || [], tasks || []);
 
     try {
       const response = await llm.complete(llmMessages);
+
+      if (userId && usingOwnerKey) {
+        await recordUsage(userId, 'card-summary');
+      }
 
       // Clean up the response (remove quotes if present, trim)
       let summary = response.content.trim();

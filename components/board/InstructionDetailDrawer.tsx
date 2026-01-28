@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Channel, InstructionCard, InstructionAction, InstructionTarget, InstructionRunMode, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionRun } from '@/lib/types';
 import { useStore } from '@/lib/store';
-import { useSettingsStore, isAIConfigured } from '@/lib/settingsStore';
+import { useSettingsStore } from '@/lib/settingsStore';
 import { Drawer } from '@/components/ui/Drawer';
 import { Button, Input, Textarea, HighlightedTextarea } from '@/components/ui';
 import { ContextViewer } from './ContextViewer';
@@ -63,7 +63,6 @@ export function InstructionDetailDrawer({
   const [isRunning, setIsRunning] = useState(false);
 
   const ai = useSettingsStore((s) => s.ai);
-  const aiConfigured = isAIConfigured();
 
   // Get the latest run for this instruction that can be undone
   const latestRun = instructionCard
@@ -409,7 +408,7 @@ export function InstructionDetailDrawer({
           )}
 
           {/* Suggest button */}
-          {aiConfigured && !instructions && suggestions.length === 0 && title && (
+          {!instructions && suggestions.length === 0 && title && (
             <button
               onClick={async () => {
                 setIsLoadingSuggestions(true);

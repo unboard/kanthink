@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { createLLMClient, getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { auth } from '@/lib/auth';
+import { recordUsage } from '@/lib/usage';
 import type { InstructionAction, InstructionRunMode } from '@/lib/types';
 
 interface PromoteCardRequest {
@@ -162,22 +164,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // If no API key, return null to signal fallback to defaults
-    if (!aiConfig?.apiKey) {
+    // Get LLM client
+    const session = await auth();
+    const userId = session?.user?.id;
+    let llm;
+    let usingOwnerKey = false;
+
+    if (userId) {
+      const llmResult = await getLLMClientForUser(userId);
+      if (!llmResult.client) {
+        return NextResponse.json({ result: null });
+      }
+      llm = llmResult.client;
+      usingOwnerKey = llmResult.source === 'owner';
+    } else if (aiConfig?.apiKey) {
+      llm = createLLMClient({
+        provider: aiConfig.provider,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+      });
+    } else {
       return NextResponse.json({ result: null });
     }
-
-    const llm = createLLMClient({
-      provider: aiConfig.provider,
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
-    });
 
     const messages = buildPrompt(cardTitle, cardContent);
 
     try {
       const response = await llm.complete(messages);
       const result = parseResponse(response.content);
+
+      if (userId && usingOwnerKey) {
+        await recordUsage(userId, 'promote-card');
+      }
 
       return NextResponse.json({ result });
     } catch (llmError) {

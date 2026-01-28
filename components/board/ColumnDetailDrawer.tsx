@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Column } from '@/lib/types';
 import { useStore } from '@/lib/store';
-import { useSettingsStore, isAIConfigured } from '@/lib/settingsStore';
+import { useSettingsStore } from '@/lib/settingsStore';
 import { Drawer } from '@/components/ui';
 
 interface ColumnDetailDrawerProps {
@@ -32,7 +32,6 @@ export function ColumnDetailDrawer({
   const channels = useStore((s) => s.channels);
 
   const ai = useSettingsStore((s) => s.ai);
-  const aiConfigured = isAIConfigured();
 
   const channel = channels[channelId];
 
@@ -85,7 +84,7 @@ export function ColumnDetailDrawer({
   };
 
   const handleSuggestDescriptions = async () => {
-    if (!column || !channel || !aiConfigured) return;
+    if (!column || !channel) return;
 
     setIsLoadingSuggestions(true);
     setSuggestions([]);
@@ -185,7 +184,7 @@ export function ColumnDetailDrawer({
           )}
 
           {/* Suggest button */}
-          {aiConfigured && !description && suggestions.length === 0 && (
+          {!description && suggestions.length === 0 && (
             <button
               onClick={handleSuggestDescriptions}
               disabled={isLoadingSuggestions}

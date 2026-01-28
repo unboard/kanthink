@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { createLLMClient, getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { auth } from '@/lib/auth';
+import { recordUsage } from '@/lib/usage';
 
 interface InstructionChatRequest {
   userMessage: string;
@@ -105,19 +107,34 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!aiConfig.apiKey) {
+    // Get LLM client
+    const session = await auth();
+    const userId = session?.user?.id;
+    let llm;
+    let usingOwnerKey = false;
+
+    if (userId) {
+      const result = await getLLMClientForUser(userId);
+      if (!result.client) {
+        return NextResponse.json(
+          { error: result.error || 'No AI access available' },
+          { status: 403 }
+        );
+      }
+      llm = result.client;
+      usingOwnerKey = result.source === 'owner';
+    } else if (aiConfig?.apiKey) {
+      llm = createLLMClient({
+        provider: aiConfig.provider,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+      });
+    } else {
       return NextResponse.json(
-        { error: 'No API key configured' },
-        { status: 400 }
+        { error: 'Please sign in or configure an API key in Settings.' },
+        { status: 403 }
       );
     }
-
-    // Create LLM client
-    const llm = createLLMClient({
-      provider: aiConfig.provider,
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
-    });
 
     // Build prompt
     const messages = buildPrompt(userMessage || '', isInitialGreeting ?? false, context);
@@ -125,6 +142,10 @@ export async function POST(request: Request) {
     try {
       const response = await llm.complete(messages);
       const responseText = response.content;
+
+      if (userId && usingOwnerKey) {
+        await recordUsage(userId, 'instruction-chat');
+      }
 
       // Check if response contains instructions
       const draftInstructions = extractInstructions(responseText);

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { Channel, Card } from '@/lib/types';
-import { createLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { createLLMClient, getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { auth } from '@/lib/auth';
+import { recordUsage } from '@/lib/usage';
 import { detectDrift, buildFeedbackContext, type DriftInsight } from '@/lib/ai/feedbackAnalyzer';
 
 interface InsightResult {
@@ -208,19 +210,28 @@ export async function POST(request: Request) {
     // Detect drift (works regardless of API key)
     const driftInsights = detectDrift(channel, cards || {});
 
-    // If no API key, return empty - can't generate insights without AI
-    if (!aiConfig.apiKey) {
-      return NextResponse.json({
-        questions: [],
-        driftInsights,
-      });
-    }
+    // Get LLM client
+    const session = await auth();
+    const userId = session?.user?.id;
+    let llm;
+    let usingOwnerKey = false;
 
-    const llm = createLLMClient({
-      provider: aiConfig.provider,
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
-    });
+    if (userId) {
+      const result = await getLLMClientForUser(userId);
+      if (!result.client) {
+        return NextResponse.json({ questions: [], driftInsights });
+      }
+      llm = result.client;
+      usingOwnerKey = result.source === 'owner';
+    } else if (aiConfig?.apiKey) {
+      llm = createLLMClient({
+        provider: aiConfig.provider,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+      });
+    } else {
+      return NextResponse.json({ questions: [], driftInsights });
+    }
 
     const messages = buildAnalysisPrompt(channel, cards || {});
 
@@ -235,6 +246,10 @@ export async function POST(request: Request) {
       debug.rawResponse = response.content;
 
       const result = parseAnalysisResponse(response.content);
+
+      if (userId && usingOwnerKey) {
+        await recordUsage(userId, 'analyze-channel');
+      }
 
       return NextResponse.json({
         ...result,

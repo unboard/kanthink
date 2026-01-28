@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState } from 'react';
 import type { Card, CardMessageType } from '@/lib/types';
 import { useStore } from '@/lib/store';
-import { useSettingsStore, isAIConfigured } from '@/lib/settingsStore';
+import { useSettingsStore } from '@/lib/settingsStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 
@@ -27,7 +27,6 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
   const tasks = useStore((s) => s.tasks);
 
   const ai = useSettingsStore((s) => s.ai);
-  const aiConfigured = isAIConfigured();
 
   // Get tasks for this card
   const cardTasks = (card.taskIds ?? [])
@@ -63,11 +62,6 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
 
     // If it's a question, send to AI
     if (type === 'question') {
-      if (!aiConfigured) {
-        setAIError('AI is not configured. Please add your API key in settings.');
-        return;
-      }
-
       setIsAILoading(true);
       setAIError(null);
 
@@ -115,7 +109,6 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
   };
 
   const generateSummary = async () => {
-    if (!aiConfigured) return;
 
     try {
       const response = await fetch('/api/card-summary', {
