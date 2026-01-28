@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { createLLMClient, getLLMClientForUser, type LLMMessage, type LLMProvider } from '@/lib/ai/llm';
+import { auth } from '@/lib/auth';
+import { recordUsage } from '@/lib/usage';
 
 interface GuideStep {
   id: string;
@@ -56,13 +58,8 @@ interface GuideRequest {
 async function generateContextualWorkflowStep(
   choices: Record<string, string>,
   choiceLabels: Record<string, string>,
-  aiConfig: GuideRequest['aiConfig']
+  llm: LLMProvider
 ): Promise<GuideStep> {
-  const llm = createLLMClient({
-    provider: aiConfig.provider,
-    apiKey: aiConfig.apiKey,
-    model: aiConfig.model,
-  });
 
   const purposeLabel = choiceLabels.purpose || choices.purpose;
   const topicLabel = choiceLabels.topic || choices.topic;
@@ -325,13 +322,8 @@ async function generateChannelStructure(
   choices: Record<string, string>,
   choiceLabels: Record<string, string>,
   channelName: string | undefined,
-  aiConfig: GuideRequest['aiConfig']
+  llm: LLMProvider
 ): Promise<GuideResult> {
-  const llm = createLLMClient({
-    provider: aiConfig.provider,
-    apiKey: aiConfig.apiKey,
-    model: aiConfig.model,
-  });
 
   const systemPrompt = `You are helping create an AI-powered Kanban channel. Based on the user's choices, generate a complete channel configuration.
 
@@ -506,9 +498,32 @@ export async function POST(request: Request) {
     const body: GuideRequest = await request.json();
     const { action, channelName, choices, choiceLabels = {}, aiConfig } = body;
 
-    if (!aiConfig?.apiKey) {
+    // Resolve LLM client: authenticated user first, then legacy client key
+    const session = await auth();
+    const userId = session?.user?.id;
+
+    let llm: LLMProvider | null = null;
+    let usingOwnerKey = false;
+
+    if (userId) {
+      const result = await getLLMClientForUser(userId);
+      if (!result.client) {
+        return NextResponse.json(
+          { error: result.error || 'No AI access available' },
+          { status: 403 }
+        );
+      }
+      llm = result.client;
+      usingOwnerKey = result.source === 'owner';
+    } else if (aiConfig?.apiKey) {
+      llm = createLLMClient({
+        provider: aiConfig.provider,
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+      });
+    } else {
       return NextResponse.json(
-        { error: 'AI API key not configured' },
+        { error: 'Please sign in or configure an API key in Settings.' },
         { status: 400 }
       );
     }
@@ -527,7 +542,10 @@ export async function POST(request: Request) {
         // Check if this step needs dynamic AI generation
         if (next.needsDynamicGeneration && next.stepId === 'workflow') {
           try {
-            const dynamicStep = await generateContextualWorkflowStep(choices, choiceLabels, aiConfig);
+            const dynamicStep = await generateContextualWorkflowStep(choices, choiceLabels, llm);
+            if (userId && usingOwnerKey) {
+              await recordUsage(userId, 'instruction-guide');
+            }
             return NextResponse.json({ step: dynamicStep });
           } catch (err) {
             console.error('Failed to generate dynamic step:', err);
@@ -539,7 +557,10 @@ export async function POST(request: Request) {
       } else {
         // All steps complete - generate full channel structure
         try {
-          const result = await generateChannelStructure(choices, choiceLabels, channelName, aiConfig);
+          const result = await generateChannelStructure(choices, choiceLabels, channelName, llm);
+          if (userId && usingOwnerKey) {
+            await recordUsage(userId, 'instruction-guide');
+          }
 
           // Build a summary message explaining what was created
           const structure = result.structure;

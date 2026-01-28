@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession, signIn } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
 import { StoryWelcomeOverlayV3 } from '@/app/prototypes/overlays/StoryWelcomeOverlayV3';
@@ -11,6 +12,7 @@ const WELCOME_SEEN_KEY = 'kanthink-welcome-seen';
 
 export default function Home() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [hasCheckedWelcome, setHasCheckedWelcome] = useState(false);
@@ -93,6 +95,8 @@ export default function Home() {
         isOpen={showWelcome}
         onClose={handleWelcomeClose}
         onCreate={handleWelcomeCreate}
+        isSignedIn={!!session}
+        onSignIn={() => signIn('google')}
       />
     </div>
   );

@@ -13,7 +13,7 @@ interface StoryScene {
   prompt?: string;
 }
 
-const story: StoryScene[] = [
+const allScenes: StoryScene[] = [
   {
     id: 'intro',
     lines: [
@@ -36,6 +36,25 @@ const story: StoryScene[] = [
       { text: '', delay: 1400 },
       { text: "Let's get started.", style: 'accent', delay: 1600 },
     ],
+    prompt: 'continue',
+  },
+  {
+    id: 'signin',
+    lines: [
+      { text: 'One more thing.', style: 'heading', delay: 0 },
+      { text: '', delay: 600 },
+      { text: 'Sign in to save your spaces and unlock AI features.', style: 'normal', delay: 800 },
+      { text: 'Free tier includes 10 AI requests per month.', style: 'dim', delay: 1800 },
+    ],
+    prompt: 'sign in with Google',
+  },
+  {
+    id: 'create',
+    lines: [
+      { text: "You're all set.", style: 'heading', delay: 0 },
+      { text: '', delay: 600 },
+      { text: "Let's create your first space.", style: 'accent', delay: 800 },
+    ],
     prompt: 'create my first space',
   },
 ];
@@ -44,12 +63,16 @@ interface StoryWelcomeOverlayV3Props {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (name: string) => void;
+  onSignIn?: () => void;
+  isSignedIn?: boolean;
 }
 
 export function StoryWelcomeOverlayV3({
   isOpen,
   onClose,
   onCreate,
+  onSignIn,
+  isSignedIn = false,
 }: StoryWelcomeOverlayV3Props) {
   const [sceneIndex, setSceneIndex] = useState(0);
   const [visibleLines, setVisibleLines] = useState<number>(0);
@@ -57,6 +80,9 @@ export function StoryWelcomeOverlayV3({
   const [isTyping, setIsTyping] = useState(true);
   const [showCursor, setShowCursor] = useState(true);
 
+  const story = isSignedIn
+    ? allScenes.filter((s) => s.id !== 'signin')
+    : allScenes;
   const currentScene = story[sceneIndex];
   const progress = ((sceneIndex + 1) / story.length) * 100;
 
@@ -141,6 +167,13 @@ export function StoryWelcomeOverlayV3({
     }
   }, [isOpen, isTyping, sceneIndex, visibleLines, typedChars]);
 
+  const advanceScene = useCallback(() => {
+    setSceneIndex((prev) => prev + 1);
+    setVisibleLines(0);
+    setTypedChars(0);
+    setIsTyping(true);
+  }, []);
+
   const handleContinue = useCallback(() => {
     if (isTyping) {
       let totalChars = 0;
@@ -150,15 +183,14 @@ export function StoryWelcomeOverlayV3({
       setVisibleLines(currentScene.lines.length - 1);
       setTypedChars(totalChars);
       setIsTyping(false);
+    } else if (currentScene.id === 'signin') {
+      onSignIn?.();
     } else if (sceneIndex < story.length - 1) {
-      setSceneIndex((prev) => prev + 1);
-      setVisibleLines(0);
-      setTypedChars(0);
-      setIsTyping(true);
+      advanceScene();
     } else {
       onCreate('New Space');
     }
-  }, [isTyping, sceneIndex, currentScene, onCreate]);
+  }, [isTyping, sceneIndex, currentScene, onCreate, onSignIn, story.length, advanceScene]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -273,12 +305,22 @@ export function StoryWelcomeOverlayV3({
         </div>
 
         <div className="px-8 py-4 border-t border-neutral-800 flex justify-between items-center">
-          <button
-            onClick={onClose}
-            className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
-          >
-            [esc] skip
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={onClose}
+              className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+            >
+              [esc] skip
+            </button>
+            {currentScene.id === 'signin' && !isTyping && (
+              <button
+                onClick={advanceScene}
+                className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+              >
+                skip sign-in
+              </button>
+            )}
+          </div>
 
           <button
             onClick={handleContinue}
@@ -293,7 +335,7 @@ export function StoryWelcomeOverlayV3({
           >
             {isTyping ? (
               '[space] skip'
-            ) : sceneIndex === story.length - 1 ? (
+            ) : sceneIndex === story.length - 1 || currentScene.id === 'signin' ? (
               <>
                 {currentScene.prompt}
                 <svg
