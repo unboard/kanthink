@@ -201,7 +201,7 @@ function DraggableFolder({
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-1 mr-1 opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-opacity"
+            className="p-1 mr-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-opacity"
           >
             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />

@@ -155,7 +155,7 @@ function TaskGroup({ group, groupByCard, onTaskClick, onReorder, onAddTask }: Ta
                 </span>
               )}
               <svg
-                className="w-4 h-4 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="w-4 h-4 text-neutral-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"

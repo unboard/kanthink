@@ -9,6 +9,41 @@ type InputMode = 'note' | 'question';
 
 const MAX_HEIGHT = 140;
 
+// Hook to handle mobile keyboard visibility
+function useKeyboardOffset() {
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+
+    const viewport = window.visualViewport;
+
+    const handleResize = () => {
+      if (!isFocused) return;
+      // Calculate how much the viewport has shrunk (keyboard height)
+      const offsetFromBottom = window.innerHeight - viewport.height - viewport.offsetTop;
+      setKeyboardOffset(Math.max(0, offsetFromBottom));
+    };
+
+    viewport.addEventListener('resize', handleResize);
+    viewport.addEventListener('scroll', handleResize);
+
+    return () => {
+      viewport.removeEventListener('resize', handleResize);
+      viewport.removeEventListener('scroll', handleResize);
+    };
+  }, [isFocused]);
+
+  const onFocus = useCallback(() => setIsFocused(true), []);
+  const onBlur = useCallback(() => {
+    setIsFocused(false);
+    setKeyboardOffset(0);
+  }, []);
+
+  return { keyboardOffset, isFocused, onFocus, onBlur };
+}
+
 interface StagedImage {
   url: string;
   isLoading?: boolean;
@@ -29,8 +64,10 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const { uploadFile, isUploading, error: uploadError, clearError } = useImageUpload({ cardId });
+  const { keyboardOffset, isFocused, onFocus, onBlur } = useKeyboardOffset();
 
   // Auto-resize textarea and track if scrolling is needed
   useEffect(() => {
@@ -133,8 +170,18 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
     ? 'Add a note...'
     : 'Ask Kan a question...';
 
+  // On mobile, when keyboard is visible, apply offset to keep input above it
+  const mobileKeyboardStyle = keyboardOffset > 0 ? {
+    transform: `translateY(-${keyboardOffset}px)`,
+    transition: 'transform 0.1s ease-out',
+  } : undefined;
+
   return (
-    <div className="px-3 pb-3 pt-2">
+    <div
+      ref={containerRef}
+      className={`px-3 pb-3 pt-2 ${isFocused ? 'relative z-50' : ''}`}
+      style={mobileKeyboardStyle}
+    >
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800/80 px-3 py-2.5">
         {/* Staged images preview */}
         {stagedImages.length > 0 && (
@@ -159,7 +206,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
                 {!img.isLoading && (
                   <button
                     onClick={() => removeStagedImage(img.url)}
-                    className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 rounded-full flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                   >
                     <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -207,6 +254,8 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onFocus={onFocus}
+            onBlur={onBlur}
             placeholder={placeholder ?? defaultPlaceholder}
             disabled={isLoading}
             rows={1}

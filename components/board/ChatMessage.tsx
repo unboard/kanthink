@@ -111,8 +111,8 @@ export function ChatMessage({ message, onDelete, onEdit }: ChatMessageProps) {
             {formatDate(message.createdAt)} at {formatTime(message.createdAt)}
           </span>
 
-          {/* Action buttons */}
-          <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Action buttons - always visible on mobile, hover on desktop */}
+          <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
             {canEdit && !isEditing && (
               <button
                 onClick={() => { setEditContent(message.content); setIsEditing(true); }}

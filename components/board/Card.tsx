@@ -100,8 +100,8 @@ export function Card({ card }: CardProps) {
           />
         )}
 
-        {/* Quick action buttons */}
-        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Quick action buttons - always visible on mobile, hover on desktop */}
+        <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
           <button
             onClick={handleQuickComplete}
             className="p-1 rounded text-neutral-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"

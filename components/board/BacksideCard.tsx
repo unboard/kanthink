@@ -26,8 +26,8 @@ export function BacksideCard({ card }: BacksideCardProps) {
 
   return (
     <div className="group relative rounded-md bg-neutral-200/50 dark:bg-neutral-700/30 p-2.5 border border-dashed border-neutral-300 dark:border-neutral-600">
-      {/* Quick action buttons */}
-      <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Quick action buttons - always visible on mobile, hover on desktop */}
+      <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
         <button
           onClick={handleRestore}
           className="p-1 rounded text-neutral-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
