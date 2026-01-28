@@ -391,6 +391,9 @@ export const useStore = create<KanthinkState>()(
       },
 
       reorderChannelInFolder: (folderId, fromIndex, toIndex) => {
+        const folder = get().folders[folderId];
+        const channelId = folder?.channelIds[fromIndex];
+
         set((state) => {
           const folder = state.folders[folderId];
           if (!folder) return state;
@@ -406,6 +409,11 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        if (channelId) {
+          sync.syncReorderChannelInFolder(channelId, folderId, fromIndex, toIndex);
+        }
       },
 
       createChannel: (input) => {
@@ -585,6 +593,9 @@ export const useStore = create<KanthinkState>()(
           };
         });
 
+        // Sync to server
+        sync.syncColumnCreate(channelId, id, name);
+
         return result;
       },
 
@@ -607,6 +618,9 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncColumnUpdate(channelId, columnId, updates);
       },
 
       deleteColumn: (channelId, columnId) => {
@@ -650,6 +664,9 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncColumnDelete(channelId, columnId);
       },
 
       reorderColumns: (channelId, fromIndex, toIndex) => {
@@ -915,6 +932,11 @@ export const useStore = create<KanthinkState>()(
       },
 
       archiveCard: (cardId) => {
+        const preState = get();
+        const preCard = preState.cards[cardId];
+        const channel = preCard ? preState.channels[preCard.channelId] : null;
+        const column = channel?.columns.find((col) => col.cardIds.includes(cardId));
+
         set((state) => {
           const card = state.cards[cardId];
           if (!card) return state;
@@ -945,9 +967,20 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        if (preCard && column) {
+          const backsidePosition = (column.backsideCardIds?.length ?? 0);
+          sync.syncCardMove(preCard.channelId, cardId, column.id, backsidePosition, true);
+        }
       },
 
       unarchiveCard: (cardId) => {
+        const preState = get();
+        const preCard = preState.cards[cardId];
+        const channel = preCard ? preState.channels[preCard.channelId] : null;
+        const column = channel?.columns.find((col) => col.backsideCardIds?.includes(cardId));
+
         set((state) => {
           const card = state.cards[cardId];
           if (!card) return state;
@@ -978,6 +1011,12 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server (restore to front of column)
+        if (preCard && column) {
+          const frontPosition = column.cardIds.length;
+          sync.syncCardMove(preCard.channelId, cardId, column.id, frontPosition, false);
+        }
       },
 
       setCardTasksHidden: (cardId, hidden) => {
