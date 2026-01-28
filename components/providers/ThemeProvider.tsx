@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useSettingsStore, type Theme } from '@/lib/settingsStore';
+import { useSettingsStore, type Theme, fetchAIStatus } from '@/lib/settingsStore';
 
 function applyTheme(theme: Theme) {
   if (typeof window === 'undefined') return;
@@ -43,6 +43,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       applyTheme(theme);
     }
   }, [hasHydrated, theme]);
+
+  // Check if server has an owner API key configured
+  useEffect(() => {
+    fetchAIStatus();
+  }, []);
 
   return <>{children}</>;
 }

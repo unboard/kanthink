@@ -17,15 +17,17 @@ interface SettingsState {
   theme: Theme;
   questionFrequency: QuestionFrequency;
   _hasHydrated: boolean;
+  _serverHasOwnerKey: boolean;
 
   updateAISettings: (updates: Partial<AISettings>) => void;
   setTheme: (theme: Theme) => void;
   setQuestionFrequency: (frequency: QuestionFrequency) => void;
   setHasHydrated: (state: boolean) => void;
+  setServerHasOwnerKey: (has: boolean) => void;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
-  provider: 'anthropic',
+  provider: 'openai',
   apiKey: '',
   model: '',
   systemInstructions: '',
@@ -38,6 +40,7 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'default',
       questionFrequency: 'light',
       _hasHydrated: false,
+      _serverHasOwnerKey: false,
 
       updateAISettings: (updates) => {
         set((state) => ({
@@ -50,6 +53,8 @@ export const useSettingsStore = create<SettingsState>()(
       setQuestionFrequency: (frequency) => set({ questionFrequency: frequency }),
 
       setHasHydrated: (state) => set({ _hasHydrated: state }),
+
+      setServerHasOwnerKey: (has) => set({ _serverHasOwnerKey: has }),
     }),
     {
       name: 'kanthink-settings',
@@ -66,10 +71,23 @@ export const useSettingsStore = create<SettingsState>()(
   )
 );
 
-// Helper to check if AI is configured
+// Helper to check if AI is configured (user BYOK or server owner key)
 export function isAIConfigured(): boolean {
-  const { ai } = useSettingsStore.getState();
-  return !!ai.apiKey;
+  const { ai, _serverHasOwnerKey } = useSettingsStore.getState();
+  return !!ai.apiKey || _serverHasOwnerKey;
+}
+
+// Fetch server AI status on app load
+export async function fetchAIStatus() {
+  try {
+    const res = await fetch('/api/ai-status');
+    if (res.ok) {
+      const data = await res.json();
+      useSettingsStore.getState().setServerHasOwnerKey(data.hasOwnerKey);
+    }
+  } catch {
+    // Silently fail - client key check still works
+  }
 }
 
 // Helper to get current AI config for LLM client
