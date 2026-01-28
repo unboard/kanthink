@@ -294,6 +294,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
         <div className="flex items-center mt-1.5 ml-8">
           <div className="inline-flex items-center gap-1 rounded-md p-0.5">
             <button
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => setMode('note')}
               disabled={isLoading}
               className={`px-2 py-0.5 text-xs rounded transition-colors ${
@@ -305,6 +306,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
               Note
             </button>
             <button
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => setMode('question')}
               disabled={isLoading}
               className={`px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1 ${
