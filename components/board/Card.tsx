@@ -79,7 +79,7 @@ export function Card({ card }: CardProps) {
         onClick={() => setIsCardDrawerOpen(true)}
         className={`
           card-container
-          group relative cursor-grab rounded-md p-3 transition-shadow touch-none
+          group relative cursor-grab rounded-md p-3 transition-shadow touch-none select-none
           ${isTerminal
             ? 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700'
             : 'bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md'
