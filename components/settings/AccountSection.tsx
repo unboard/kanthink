@@ -1,9 +1,10 @@
 'use client'
 
-import { useSession, signIn, signOut } from 'next-auth/react'
+import { useSession, signOut } from 'next-auth/react'
 import { Button } from '@/components/ui'
 import { UsageMeter } from './UsageMeter'
 import { UpgradeButton, ManageBillingButton } from './UpgradeButton'
+import { signInWithGoogle } from '@/lib/actions/auth'
 
 export function AccountSection() {
   const { data: session, status } = useSession()
@@ -40,7 +41,7 @@ export function AccountSection() {
                 Free tier includes 10 AI requests per month
               </p>
             </div>
-            <Button onClick={() => signIn('google', { callbackUrl: '/settings' })} className="w-full max-w-xs">
+            <Button onClick={() => signInWithGoogle('/settings')} className="w-full max-w-xs">
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                 <path
                   fill="currentColor"

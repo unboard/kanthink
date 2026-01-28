@@ -22,11 +22,12 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useSession, signIn } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
 import { useSidebar } from '@/components/providers/SidebarProvider';
 import { GuidedQuestionnaireOverlay, type GuideResultData } from '@/app/prototypes/overlays/GuidedQuestionnaireOverlay';
+import { signInWithGoogle } from '@/lib/actions/auth';
 import type { Channel, Folder } from '@/lib/types';
 
 // Prefixes to distinguish item types in dnd-kit
@@ -584,7 +585,7 @@ export function Sidebar() {
       <div className={`p-2 ${isCollapsed && !isMobile ? 'hidden' : ''}`}>
         {!session && (
           <button
-            onClick={() => signIn('google', { callbackUrl: window.location.href })}
+            onClick={() => signInWithGoogle(window.location.href)}
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300 mb-1"
           >
             <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -635,7 +636,7 @@ export function Sidebar() {
         <div className="p-2 flex flex-col items-center gap-2">
           {!session && (
             <button
-              onClick={() => signIn('google', { callbackUrl: window.location.href })}
+              onClick={() => signInWithGoogle(window.location.href)}
               className="p-2 rounded-md transition-colors text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300"
               title="Sign in"
             >

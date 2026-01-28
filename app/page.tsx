@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSession, signIn } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
 import { StoryWelcomeOverlayV3 } from '@/app/prototypes/overlays/StoryWelcomeOverlayV3';
 import { GuidedQuestionnaireOverlay, type GuideResultData } from '@/app/prototypes/overlays/GuidedQuestionnaireOverlay';
+import { signInWithGoogle } from '@/lib/actions/auth';
 
 const WELCOME_SEEN_KEY = 'kanthink-welcome-seen';
 
@@ -96,7 +97,7 @@ export default function Home() {
         onClose={handleWelcomeClose}
         onCreate={handleWelcomeCreate}
         isSignedIn={!!session}
-        onSignIn={() => signIn('google', { callbackUrl: '/' })}
+        onSignIn={() => signInWithGoogle('/')}
       />
     </div>
   );
