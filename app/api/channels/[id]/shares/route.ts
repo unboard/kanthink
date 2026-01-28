@@ -25,8 +25,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
-    // Only owner can view shares
-    await requirePermission(channelId, userId, 'manage_shares')
+    // Anyone with view access can see shares, but only owner can manage
+    const permission = await requirePermission(channelId, userId, 'view')
+    const canManage = permission.role === 'owner'
 
     // Get all shares for this channel
     const shares = await db.query.channelShares.findMany({
@@ -69,6 +70,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       : null
 
     return NextResponse.json({
+      currentUserRole: permission.role,
+      canManage,
       owner: owner ? { ...owner, role: 'owner' as ChannelRole } : null,
       shares: shares.map(share => ({
         id: share.id,

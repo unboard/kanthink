@@ -270,6 +270,134 @@ export async function reorderFolders(folderId: string, fromIndex: number, toInde
   }
 }
 
+// ===== SHARING =====
+
+export type ChannelRole = 'owner' | 'editor' | 'viewer'
+
+export interface ChannelShare {
+  id: string
+  channelId: string
+  userId: string | null
+  email: string
+  role: ChannelRole
+  invitedBy: string
+  invitedAt: string
+  acceptedAt: string | null
+  user?: {
+    id: string
+    name: string | null
+    email: string
+    image: string | null
+  }
+}
+
+export interface InviteLink {
+  id: string
+  channelId: string
+  token: string
+  defaultRole: 'editor' | 'viewer'
+  requiresApproval: boolean
+  expiresAt: string | null
+  maxUses: number | null
+  useCount: number
+  createdAt: string
+}
+
+export interface SharesResponse {
+  currentUserRole: ChannelRole
+  canManage: boolean
+  owner: {
+    id: string
+    name: string | null
+    email: string
+    image: string | null
+    role: 'owner'
+  } | null
+  shares: ChannelShare[]
+}
+
+export async function fetchShares(channelId: string): Promise<SharesResponse> {
+  const res = await fetch(`/api/channels/${channelId}/shares`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch shares')
+  }
+  return res.json()
+}
+
+export async function createShare(
+  channelId: string,
+  email: string,
+  role: ChannelRole
+): Promise<{ share: ChannelShare }> {
+  const res = await fetch(`/api/channels/${channelId}/shares`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, role }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to create share')
+  }
+  return res.json()
+}
+
+export async function updateShare(
+  channelId: string,
+  shareId: string,
+  role: ChannelRole
+): Promise<{ share: ChannelShare }> {
+  const res = await fetch(`/api/channels/${channelId}/shares/${shareId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to update share')
+  }
+  return res.json()
+}
+
+export async function deleteShare(channelId: string, shareId: string): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/shares/${shareId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete share')
+  }
+}
+
+export async function fetchInviteLinks(channelId: string): Promise<{ links: InviteLink[] }> {
+  const res = await fetch(`/api/channels/${channelId}/invite-links`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch invite links')
+  }
+  return res.json()
+}
+
+export async function createInviteLink(
+  channelId: string,
+  options?: { defaultRole?: 'editor' | 'viewer'; expiresInDays?: number; maxUses?: number }
+): Promise<{ link: InviteLink; url: string }> {
+  const res = await fetch(`/api/channels/${channelId}/invite-links`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options || {}),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to create invite link')
+  }
+  return res.json()
+}
+
+export async function deleteInviteLink(channelId: string, linkId: string): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/invite-links/${linkId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete invite link')
+  }
+}
+
 // ===== MIGRATION =====
 
 export async function migrateData(data: unknown): Promise<{ migrated: Record<string, number> }> {
