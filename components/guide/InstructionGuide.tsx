@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useSettingsStore, isAIConfigured } from '@/lib/settingsStore';
+import { useSettingsStore } from '@/lib/settingsStore';
 
 export interface GuideStep {
   id: string;
@@ -68,7 +68,6 @@ export function InstructionGuide({
   const [error, setError] = useState<string | null>(null);
 
   const ai = useSettingsStore((s) => s.ai);
-  const aiConfigured = isAIConfigured();
 
   // Start the guide on mount (only once)
   useEffect(() => {
@@ -79,12 +78,6 @@ export function InstructionGuide({
   }, []);
 
   const startGuide = async () => {
-    if (!aiConfigured) {
-      setError('Please configure your AI API key in settings first.');
-      setViewState('error');
-      return;
-    }
-
     setViewState('loading');
 
     try {

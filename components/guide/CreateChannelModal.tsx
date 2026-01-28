@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { Modal } from '@/components/ui';
 import { InstructionGuide, type GuideResult, type ChannelStructure } from './InstructionGuide';
-import { isAIConfigured } from '@/lib/settingsStore';
 
 // Exported card data format
 interface ImportedCard {
@@ -75,8 +74,6 @@ export function CreateChannelModal({
   const [importError, setImportError] = useState<string | null>(null);
   const [parsedImport, setParsedImport] = useState<ChannelImport | null>(null);
   const [includeCards, setIncludeCards] = useState(true);
-  const aiConfigured = isAIConfigured();
-
   const handleGuideComplete = (result: GuideResult) => {
     onCreateChannel({
       name: result.channelName,
@@ -155,8 +152,7 @@ export function CreateChannelModal({
     onClose();
   };
 
-  // If AI not configured, allow manual or import mode only
-  const effectiveMode = aiConfigured ? mode : (mode === 'import' || mode === 'import-confirm' ? mode : 'manual');
+  const effectiveMode = mode;
 
   return (
     <Modal
@@ -349,14 +345,6 @@ export function CreateChannelModal({
                 Create channel
               </h2>
 
-              {!aiConfigured && (
-                <div className="mb-4 p-3 rounded-md bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700">
-                  <p className="text-sm text-amber-700 dark:text-amber-300">
-                    Configure your AI API key in settings to use the guided setup.
-                  </p>
-                </div>
-              )}
-
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -377,15 +365,13 @@ export function CreateChannelModal({
 
                 <div className="mt-6 flex justify-between items-center">
                   <div className="flex gap-3">
-                    {aiConfigured && (
-                      <button
-                        type="button"
-                        onClick={() => setMode('guide')}
-                        className="text-sm text-neutral-600 dark:text-neutral-300 hover:underline"
-                      >
-                        Guided setup
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setMode('guide')}
+                      className="text-sm text-neutral-600 dark:text-neutral-300 hover:underline"
+                    >
+                      Guided setup
+                    </button>
                     <button
                       type="button"
                       onClick={() => setMode('import')}

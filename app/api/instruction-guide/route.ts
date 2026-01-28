@@ -498,34 +498,36 @@ export async function POST(request: Request) {
     const body: GuideRequest = await request.json();
     const { action, channelName, choices, choiceLabels = {}, aiConfig } = body;
 
-    // Resolve LLM client: authenticated user first, then legacy client key
-    const session = await auth();
-    const userId = session?.user?.id;
+    // Lazily resolve the LLM client only when AI is actually needed.
+    // Early steps (start, static continue) are purely static and don't require auth or keys.
+    let _llmCache: { llm: LLMProvider; userId?: string; usingOwnerKey: boolean } | null = null;
 
-    let llm: LLMProvider | null = null;
-    let usingOwnerKey = false;
+    async function requireLLM() {
+      if (_llmCache) return _llmCache;
 
-    if (userId) {
-      const result = await getLLMClientForUser(userId);
-      if (!result.client) {
-        return NextResponse.json(
-          { error: result.error || 'No AI access available' },
-          { status: 403 }
-        );
+      const session = await auth();
+      const userId = session?.user?.id;
+
+      if (userId) {
+        const result = await getLLMClientForUser(userId);
+        if (!result.client) {
+          throw new Error(result.error || 'No AI access available');
+        }
+        _llmCache = { llm: result.client, userId, usingOwnerKey: result.source === 'owner' };
+        return _llmCache;
       }
-      llm = result.client;
-      usingOwnerKey = result.source === 'owner';
-    } else if (aiConfig?.apiKey) {
-      llm = createLLMClient({
-        provider: aiConfig.provider,
-        apiKey: aiConfig.apiKey,
-        model: aiConfig.model,
-      });
-    } else {
-      return NextResponse.json(
-        { error: 'Please sign in or configure an API key in Settings.' },
-        { status: 400 }
-      );
+
+      if (aiConfig?.apiKey) {
+        const client = createLLMClient({
+          provider: aiConfig.provider,
+          apiKey: aiConfig.apiKey,
+          model: aiConfig.model,
+        });
+        _llmCache = { llm: client, usingOwnerKey: false };
+        return _llmCache;
+      }
+
+      throw new Error('Please sign in or configure an API key in Settings.');
     }
 
     if (action === 'start') {
@@ -542,6 +544,7 @@ export async function POST(request: Request) {
         // Check if this step needs dynamic AI generation
         if (next.needsDynamicGeneration && next.stepId === 'workflow') {
           try {
+            const { llm, userId, usingOwnerKey } = await requireLLM();
             const dynamicStep = await generateContextualWorkflowStep(choices, choiceLabels, llm);
             if (userId && usingOwnerKey) {
               await recordUsage(userId, 'instruction-guide');
@@ -557,6 +560,7 @@ export async function POST(request: Request) {
       } else {
         // All steps complete - generate full channel structure
         try {
+          const { llm, userId, usingOwnerKey } = await requireLLM();
           const result = await generateChannelStructure(choices, choiceLabels, channelName, llm);
           if (userId && usingOwnerKey) {
             await recordUsage(userId, 'instruction-guide');
@@ -574,8 +578,9 @@ export async function POST(request: Request) {
           });
         } catch (err) {
           console.error('Failed to generate channel structure:', err);
+          const message = err instanceof Error ? err.message : 'Failed to generate channel configuration';
           return NextResponse.json(
-            { error: 'Failed to generate channel configuration' },
+            { error: message },
             { status: 500 }
           );
         }

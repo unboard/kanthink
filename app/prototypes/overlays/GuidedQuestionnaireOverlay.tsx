@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSettingsStore, isAIConfigured } from '@/lib/settingsStore';
+import { useSettingsStore } from '@/lib/settingsStore';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
 interface GuideStep {
@@ -75,7 +75,6 @@ export function GuidedQuestionnaireOverlay({
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
 
   const ai = useSettingsStore((s) => s.ai);
-  const aiConfigured = isAIConfigured();
 
   // Reset state when opened
   useEffect(() => {
@@ -102,12 +101,6 @@ export function GuidedQuestionnaireOverlay({
   }, [isOpen]);
 
   const startGuide = async () => {
-    if (!aiConfigured) {
-      setError('Please configure your AI API key in settings first.');
-      setViewState('error');
-      return;
-    }
-
     setViewState('loading');
 
     try {
