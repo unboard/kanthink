@@ -40,7 +40,7 @@ export function AccountSection() {
                 Free tier includes 10 AI requests per month
               </p>
             </div>
-            <Button onClick={() => signIn('google')} className="w-full max-w-xs">
+            <Button onClick={() => signIn('google', { callbackUrl: '/settings' })} className="w-full max-w-xs">
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                 <path
                   fill="currentColor"

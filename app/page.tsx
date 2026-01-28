@@ -96,7 +96,7 @@ export default function Home() {
         onClose={handleWelcomeClose}
         onCreate={handleWelcomeCreate}
         isSignedIn={!!session}
-        onSignIn={() => signIn('google')}
+        onSignIn={() => signIn('google', { callbackUrl: '/' })}
       />
     </div>
   );
