@@ -1,0 +1,303 @@
+export type ID = string;
+
+export type ChannelStatus = 'active' | 'paused' | 'archived';
+export type CardSource = 'manual' | 'ai';
+export type QuestionStatus = 'pending' | 'answered' | 'dismissed';
+export type SuggestionMode = 'off' | 'manual' | 'daily';
+export type InstructionSource = 'user' | 'ai-suggested' | 'ai-auto';
+export type PropertyDisplayType = 'chip' | 'field';
+export type TaskStatus = 'not_started' | 'in_progress' | 'done';
+export type CardMessageType = 'note' | 'question' | 'ai_response';
+
+// Instruction Card types
+export type InstructionAction = 'generate' | 'modify' | 'move';
+export type InstructionRunMode = 'manual' | 'automatic';
+
+// Automation trigger types
+export type TriggerType = 'scheduled' | 'event' | 'threshold';
+export type ScheduleInterval = 'hourly' | 'every4hours' | 'daily' | 'weekly';
+export type EventTriggerType = 'card_moved_to' | 'card_created_in' | 'card_modified';
+export type ThresholdOperator = 'below' | 'above';
+
+export interface ScheduledTrigger {
+  type: 'scheduled';
+  interval: ScheduleInterval;
+  specificTime?: string;  // HH:mm format for daily/weekly
+  dayOfWeek?: number;     // 0-6 for weekly (0 = Sunday)
+}
+
+export interface EventTrigger {
+  type: 'event';
+  eventType: EventTriggerType;
+  columnId: ID;
+}
+
+export interface ThresholdTrigger {
+  type: 'threshold';
+  columnId: ID;
+  operator: ThresholdOperator;
+  threshold: number;
+}
+
+export type AutomaticTrigger = ScheduledTrigger | EventTrigger | ThresholdTrigger;
+
+export interface AutomaticSafeguards {
+  cooldownMinutes: number;
+  dailyCap: number;
+  preventLoops: boolean;
+}
+
+export interface ExecutionRecord {
+  timestamp: string;
+  triggeredBy: TriggerType;
+  success: boolean;
+  cardsAffected: number;
+}
+
+export type InstructionTarget =
+  | { type: 'column'; columnId: ID }
+  | { type: 'columns'; columnIds: ID[] }
+  | { type: 'board' };
+
+// Which columns AI considers for context (separate from destination)
+export type ContextColumnSelection =
+  | { type: 'all' }                      // All columns (default)
+  | { type: 'columns'; columnIds: ID[] }; // Specific columns
+
+export interface CardProperty {
+  key: string;
+  value: string;
+  displayType: PropertyDisplayType;
+  color?: string;  // For chips: "red", "blue", "green", etc.
+}
+
+export interface PropertyDefinition {
+  id: ID;
+  key: string;
+  label: string;
+  displayType: PropertyDisplayType;
+  allowedValues?: string[];
+  color?: string;
+}
+
+export interface TagDefinition {
+  id: ID;
+  name: string;
+  color: string;
+}
+
+// Folder for organizing channels
+export interface Folder {
+  id: ID;
+  name: string;
+  channelIds: ID[];              // Channels in this folder (ordered)
+  isCollapsed?: boolean;         // UI state - collapsed in sidebar
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Column {
+  id: ID;
+  name: string;
+  instructions?: string;         // Description of what belongs in this column
+  processingPrompt?: string;     // Prompt to run on cards entering this column
+  autoProcess?: boolean;         // Auto-run vs manual trigger (default: false)
+  cardIds: ID[];
+  backsideCardIds?: ID[];
+  isAiTarget?: boolean;
+}
+
+export interface ChannelQuestion {
+  id: ID;
+  question: string;
+  context: string;  // AI explanation of why this is being asked
+  status: QuestionStatus;
+  answer?: string;
+  suggestedAnswers?: string[];  // AI-generated answer options
+  createdAt: string;
+  answeredAt?: string;
+}
+
+export interface InstructionRevision {
+  id: ID;
+  instructions: string;
+  source: InstructionSource;
+  appliedAt: string;
+}
+
+export interface InstructionCard {
+  id: ID;
+  channelId: ID;
+  title: string;
+  instructions: string;
+  action: InstructionAction;
+  target: InstructionTarget;              // Destination: where cards are added
+  contextColumns?: ContextColumnSelection; // Context: what AI sees (default: all)
+  runMode: InstructionRunMode;
+  cardCount?: number;
+  interviewQuestions?: string[];
+  createdAt: string;
+  updatedAt: string;
+  // Automation fields (only used when runMode === 'automatic')
+  triggers?: AutomaticTrigger[];
+  safeguards?: AutomaticSafeguards;
+  isEnabled?: boolean;                    // Master on/off for automatic execution
+  lastExecutedAt?: string;
+  nextScheduledRun?: string;              // Computed next run time for scheduled triggers
+  dailyExecutionCount?: number;
+  dailyCountResetAt?: string;
+  executionHistory?: ExecutionRecord[];   // Last N executions for tracking
+}
+
+export interface Task {
+  id: ID;
+  cardId: ID | null;        // null = standalone task
+  channelId: ID;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  // Future extensibility
+  assignedTo?: string;
+  dueDate?: string;
+}
+
+export interface CardMessage {
+  id: ID;
+  type: CardMessageType;
+  content: string;           // Plain text (no HTML)
+  imageUrls?: string[];      // Attached image URLs
+  createdAt: string;
+  replyToMessageId?: ID;     // For AI responses, links to the question
+}
+
+export interface Channel {
+  id: ID;
+  name: string;
+  description: string;
+  status: ChannelStatus;
+  aiInstructions: string;
+  includeBacksideInAI?: boolean;
+  instructionCardIds?: ID[];
+  columns: Column[];
+  questions?: ChannelQuestion[];
+  instructionHistory?: InstructionRevision[];
+  suggestionMode?: SuggestionMode;
+  propertyDefinitions?: PropertyDefinition[];
+  tagDefinitions?: TagDefinition[];
+  unlinkedTaskOrder?: ID[];  // Order of standalone tasks (no cardId)
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Card {
+  id: ID;
+  channelId: ID;
+  title: string;
+  messages: CardMessage[];   // Chat messages (replaces content)
+  coverImageUrl?: string;    // Cover image URL (Trello-style banner)
+  summary?: string;          // AI-generated preview text
+  summaryUpdatedAt?: string;
+  source: CardSource;
+  properties?: CardProperty[];
+  tags?: string[];  // Tag names assigned to this card
+  isProcessing?: boolean;  // True while AI is processing this card
+  processingStatus?: string;  // Creative status message while processing
+  spawnedChannelIds?: ID[];  // Channels created from this card
+  taskIds?: ID[];           // Tasks within this card
+  hideCompletedTasks?: boolean;  // User preference to hide done tasks
+  createdAt: string;
+  updatedAt: string;
+  createdByInstructionId?: ID;  // For loop prevention: tracks which instruction created this card
+  processedByInstructions?: Record<ID, string>;  // instructionId -> ISO timestamp of last run
+}
+
+export interface ChannelInput {
+  name: string;
+  description?: string;
+  aiInstructions?: string;
+}
+
+export interface CardInput {
+  title: string;
+  initialMessage?: string;  // Optional first message content
+}
+
+export interface InstructionCardInput {
+  title: string;
+  instructions: string;
+  action: InstructionAction;
+  target: InstructionTarget;
+  contextColumns?: ContextColumnSelection;
+  runMode?: InstructionRunMode;
+  cardCount?: number;
+  interviewQuestions?: string[];
+}
+
+export interface TaskInput {
+  title: string;
+  description?: string;
+}
+
+export interface BoardState {
+  channels: Record<ID, Channel>;
+  cards: Record<ID, Card>;
+  tasks: Record<ID, Task>;
+  instructionCards: Record<ID, InstructionCard>;
+  channelOrder: ID[];
+}
+
+// Global AI operation state for status bar
+export interface AIOperationContext {
+  action: 'generate' | 'modify' | 'move' | 'process';
+  instructionTitle?: string;
+  targetColumnName?: string;
+  cardCount?: number;
+  keywords?: string[];  // Extracted from instructions for contextual messages
+}
+
+export interface AIOperation {
+  isActive: boolean;
+  status: string;
+  context?: AIOperationContext;
+  startedAt?: string;
+  runningInstructionIds: ID[];  // Track which instructions are currently running
+}
+
+// Automation event types
+export interface CardEvent {
+  type: 'moved' | 'created' | 'modified';
+  cardId: ID;
+  channelId: ID;
+  toColumnId?: ID;
+  fromColumnId?: ID;
+  createdByInstructionId?: ID;  // For loop prevention
+}
+
+// Instruction undo types
+export type CardChangeType = 'task_added' | 'property_set' | 'title_changed' | 'message_added' | 'tag_added';
+
+export interface CardChange {
+  cardId: ID;
+  type: CardChangeType;
+  // Reversal data - only what's needed to undo:
+  taskId?: ID;              // task_added: delete this task to undo
+  previousTitle?: string;   // title_changed: restore this value
+  propertyKey?: string;     // property_set: key that was set
+  previousValue?: string;   // property_set: previous value (undefined = was new)
+  messageId?: ID;           // message_added: delete this message
+  tagName?: string;         // tag_added: remove this tag to undo
+}
+
+export interface InstructionRun {
+  id: ID;
+  instructionId: ID;
+  instructionTitle: string;
+  channelId: ID;
+  timestamp: string;
+  changes: CardChange[];
+  undone: boolean;
+}
+

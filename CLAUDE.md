@@ -20,6 +20,11 @@ A Kanban app where each channel is an AI-assisted, goal-driven space that genera
 - Minimal UI with deep capability
 - Calm, intentional, fast
 
+## Kan — the AI personality
+- **Kan** is the name of the AI assistant within Kanthink. The mascot is a mushroom character.
+- In the UI, refer to the AI as "Kan" (e.g. "Ask Kan", responses labeled "Kan").
+- The `KanthinkIcon` component renders the Kan mascot logo.
+
 ## Phase 1 goal (MVP)
 A single-user Kanban board with channels, columns, cards, and a basic "AI generate cards into Inbox" flow.
 
@@ -57,10 +62,44 @@ A single-user Kanban board with channels, columns, cards, and a basic "AI genera
    - Generate cards using channel instructions + column instructions (optional)
    - No long-term learning yet; just store feedback signals for future
 
+## Instruction Intelligence
+
+The AI is primarily a clarity engine, not just a generator. Its job is to observe how channels are used, infer purpose, and help users clarify and evolve that purpose over time.
+
+### Core Mechanisms
+
+1. **Questions as first-class objects**
+   - AI generates clarifying questions based on observed usage patterns
+   - Questions appear in channel settings near instructions
+   - Each question has a "Why am I being asked this?" context tooltip
+   - User can answer, dismiss, or ignore
+
+2. **Instruction refinement**
+   - AI can propose changes to channel instructions
+   - Changes require user approval (diff view with Apply/Dismiss)
+   - Prefer accumulating clarity by appending/refining, not constant rewrites
+   - All changes logged in revision history with rollback capability
+
+3. **Drift detection**
+   - If channel usage diverges from stated purpose, surface gentle suggestions
+   - No hard errors - boards can be playful and messy
+
+4. **Suggestion modes**
+   - Off: No AI analysis (default for new users)
+   - Manual: "Analyze channel" button in settings
+   - Daily: Background analysis runs overnight, surfaces questions next day
+
+### UI Indicators
+
+- Gear icon in channel header shows dot when pending questions exist
+- Settings page shows Questions section below instructions
+- History section (collapsible) shows instruction revisions
+
 ## Phase 2 (later)
 - Scheduled/adaptive fetching
 - Card full-page view with rich text + comments
-- Promote card to channel
+- Promote card to channel: Any card can become its own dedicated channel for recursive deep dives
+- Email/Newsletter per channel: Prompt-driven digest publishing (not notifications)
 - Multi-user real-time collaboration
 
 ## Out of scope for initial release

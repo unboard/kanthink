@@ -1,0 +1,1 @@
+export { MushroomIcon } from './MushroomIcon';

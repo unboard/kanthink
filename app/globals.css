@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   --background: #ffffff;
@@ -14,13 +15,560 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #151515;
     --foreground: #ededed;
   }
+}
+
+/* ===========================================
+   THEME: TERMINAL
+   Override Tailwind classes with terminal styling
+   =========================================== */
+
+/* Terminal: Override root background */
+[data-theme="terminal"] {
+  --background: rgb(10 10 10) !important;
+  --foreground: rgb(229 229 229) !important;
+}
+
+/* Terminal: Force monospace fonts on everything */
+[data-theme="terminal"] body,
+[data-theme="terminal"] * {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
+
+/* Terminal: Body background */
+[data-theme="terminal"] body {
+  background: rgb(10 10 10) !important;
+}
+
+/* Terminal: Main container background */
+[data-theme="terminal"] main {
+  background: rgb(10 10 10) !important;
+}
+
+/* Terminal: Sidebar styling */
+[data-theme="terminal"] .sidebar {
+  background-color: rgb(10 10 10) !important;
+  border-right: 1px solid rgb(38 38 38) !important;
+}
+
+/* Terminal: Column styling - override Tailwind bg classes */
+[data-theme="terminal"] .column-container {
+  background-color: rgb(23 23 23) !important;
+  border: 1px solid rgb(38 38 38) !important;
+}
+
+/* Terminal: Card styling - override Tailwind bg classes */
+[data-theme="terminal"] .card-container {
+  background-color: rgb(23 23 23) !important;
+  border: 1px solid rgb(38 38 38) !important;
+  box-shadow: none !important;
+}
+
+[data-theme="terminal"] .card-container:hover {
+  border-color: rgb(64 64 64) !important;
+}
+
+/* Terminal: All buttons with violet accents */
+[data-theme="terminal"] button[class*="bg-violet"],
+[data-theme="terminal"] button[class*="bg-purple"] {
+  background-color: rgb(124 58 237) !important;
+}
+
+[data-theme="terminal"] button[class*="bg-violet"]:hover,
+[data-theme="terminal"] button[class*="bg-purple"]:hover {
+  background-color: rgb(109 40 217) !important;
+}
+
+/* Terminal: Input/textarea styling */
+[data-theme="terminal"] input,
+[data-theme="terminal"] textarea,
+[data-theme="terminal"] select {
+  background-color: rgb(23 23 23) !important;
+  border-color: rgb(38 38 38) !important;
+}
+
+[data-theme="terminal"] input:focus,
+[data-theme="terminal"] textarea:focus,
+[data-theme="terminal"] select:focus {
+  border-color: rgb(124 58 237) !important;
+  outline: none !important;
+}
+
+/* Terminal: Dropdown menus and popovers */
+[data-theme="terminal"] [role="menu"],
+[data-theme="terminal"] [role="dialog"],
+[data-theme="terminal"] .dropdown-menu {
+  background-color: rgb(10 10 10) !important;
+  border-color: rgb(38 38 38) !important;
+}
+
+/* Terminal: Settings page cards */
+[data-theme="terminal"] .settings-section {
+  background-color: rgb(23 23 23) !important;
+}
+
+/* Terminal: Borders throughout */
+[data-theme="terminal"] hr {
+  border-color: rgb(38 38 38) !important;
+}
+
+/* Terminal: Scrollbar */
+[data-theme="terminal"] * {
+  scrollbar-color: rgb(64 64 64) transparent !important;
+}
+
+[data-theme="terminal"] *::-webkit-scrollbar-thumb {
+  background: rgb(64 64 64) !important;
+}
+
+/* Terminal: Text colors - make secondary text dimmer */
+[data-theme="terminal"] .text-neutral-400,
+[data-theme="terminal"] .text-neutral-500 {
+  color: rgb(115 115 115) !important;
+}
+
+/* Body class for theme (backup selector) */
+body.theme-terminal {
+  background: rgb(10 10 10) !important;
+  font-family: var(--font-geist-mono), ui-monospace, monospace !important;
+}
+
+body.theme-terminal main {
+  background: rgb(10 10 10) !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Mobile sidebar animation */
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in-left 0.2s ease-out;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Starfield ambient background */
+.starfield {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: transparent;
+}
+
+.starfield-star {
+  position: absolute;
+  border-radius: 50%;
+  background: white;
+}
+
+.starfield-star-twinkle {
+  animation: starfield-twinkle 4s ease-in-out infinite;
+}
+
+@keyframes starfield-twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
+.starfield-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Custom scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(115, 115, 115, 0.4) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(115, 115, 115, 0.4);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(115, 115, 115, 0.6);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Hide scrollbar completely (for carousel-style elements) */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Instruction button loading state */
+@keyframes border-travel {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.gradient-border-animated {
+  position: relative;
+  padding: 2px;
+  border-radius: 0.5rem;
+  background: linear-gradient(
+    90deg,
+    rgba(139, 92, 246, 0.3),
+    #8b5cf6,
+    rgba(139, 92, 246, 0.3)
+  );
+  background-size: 200% 100%;
+  animation: border-travel 2.5s linear infinite;
+}
+
+.gradient-border-animated > .gradient-border-content {
+  border-radius: calc(0.5rem - 2px);
+}
+
+/* Gentle ambient glow for cards receiving info */
+@keyframes gentle-glow {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.card-processing {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Soft glowing top edge */
+.card-processing::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(139, 92, 246, 0.6) 50%,
+    transparent 100%
+  );
+  animation: gentle-glow 3s ease-in-out infinite;
+  z-index: 10;
+  border-radius: 0.375rem 0.375rem 0 0;
+}
+
+/* Ambient glow wash from top */
+.card-processing::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  background: linear-gradient(
+    to bottom,
+    rgba(139, 92, 246, 0.08) 0%,
+    transparent 100%
+  );
+  animation: gentle-glow 3s ease-in-out infinite;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 0.375rem 0.375rem 0 0;
+}
+
+/* ===========================================
+   HALFTONE SKELETON LOADING STYLES
+   =========================================== */
+
+/* Base skeleton bar styles */
+.skeleton-bar {
+  background: rgba(115, 115, 115, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Pulse animation for all variants */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* Shimmer animation */
+@keyframes skeleton-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* --- VARIANT 1: Classic Dots --- */
+.skeleton-halftone-dots {
+  --dot-color: rgba(115, 115, 115, 0.12);
+  --dot-size: 2px;
+  --dot-space: 6px;
+}
+
+.skeleton-halftone-dots::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    var(--dot-color) var(--dot-size),
+    transparent var(--dot-size)
+  );
+  background-size: var(--dot-space) var(--dot-space);
+  animation: skeleton-pulse 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.skeleton-halftone-dots .skeleton-bar {
+  background: rgba(115, 115, 115, 0.2);
+}
+
+.skeleton-halftone-dots .skeleton-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    rgba(80, 80, 80, 0.3) 1.5px,
+    transparent 1.5px
+  );
+  background-size: 4px 4px;
+  animation: skeleton-pulse 2s ease-in-out infinite;
+}
+
+/* --- VARIANT 2: Gradient Dots --- */
+.skeleton-halftone-gradient {
+  --dot-color-dense: rgba(139, 92, 246, 0.15);
+  --dot-color-sparse: rgba(139, 92, 246, 0.05);
+}
+
+.skeleton-halftone-gradient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 2px 2px, var(--dot-color-dense) 1.5px, transparent 1.5px),
+    linear-gradient(to bottom, rgba(139, 92, 246, 0.08), transparent 60%);
+  background-size: 5px 5px, 100% 100%;
+  mask-image: linear-gradient(to bottom, black 0%, transparent 80%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 80%);
+  animation: skeleton-pulse 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.skeleton-halftone-gradient .skeleton-bar {
+  background: linear-gradient(
+    90deg,
+    rgba(139, 92, 246, 0.1) 0%,
+    rgba(139, 92, 246, 0.2) 50%,
+    rgba(139, 92, 246, 0.1) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 2s ease-in-out infinite;
+}
+
+.skeleton-halftone-gradient .skeleton-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    rgba(139, 92, 246, 0.4) 1px,
+    transparent 1px
+  );
+  background-size: 4px 4px;
+  opacity: 0.6;
+}
+
+/* --- VARIANT 3: Film Grain --- */
+.skeleton-halftone-grain {
+  --grain-opacity: 0.15;
+}
+
+.skeleton-halftone-grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: var(--grain-opacity);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+@media (prefers-color-scheme: dark) {
+  .skeleton-halftone-grain::before {
+    mix-blend-mode: screen;
+    opacity: 0.1;
+  }
+}
+
+.skeleton-halftone-grain .skeleton-bar {
+  background: rgba(115, 115, 115, 0.18);
+  position: relative;
+}
+
+.skeleton-halftone-grain .skeleton-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise2'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.5' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise2)'/%3E%3C/svg%3E");
+  opacity: 0.3;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* --- VARIANT 4: Scan Lines --- */
+.skeleton-halftone-lines {
+  --line-color: rgba(115, 115, 115, 0.08);
+  --line-height: 2px;
+  --line-gap: 4px;
+}
+
+.skeleton-halftone-lines::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--line-color) 0px,
+    var(--line-color) var(--line-height),
+    transparent var(--line-height),
+    transparent calc(var(--line-height) + var(--line-gap))
+  );
+  animation: skeleton-pulse 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.skeleton-halftone-lines .skeleton-bar {
+  background: rgba(115, 115, 115, 0.15);
+}
+
+.skeleton-halftone-lines .skeleton-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(80, 80, 80, 0.25) 0px,
+    rgba(80, 80, 80, 0.25) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  animation: skeleton-pulse 2s ease-in-out infinite;
+}
+
+/* Dark mode adjustments for all variants */
+@media (prefers-color-scheme: dark) {
+  .skeleton-bar {
+    background: rgba(200, 200, 200, 0.08);
+  }
+
+  .skeleton-halftone-dots {
+    --dot-color: rgba(200, 200, 200, 0.08);
+  }
+
+  .skeleton-halftone-dots .skeleton-bar {
+    background: rgba(200, 200, 200, 0.12);
+  }
+
+  .skeleton-halftone-dots .skeleton-bar::after {
+    background-image: radial-gradient(
+      circle,
+      rgba(200, 200, 200, 0.2) 1.5px,
+      transparent 1.5px
+    );
+  }
+
+  .skeleton-halftone-gradient {
+    --dot-color-dense: rgba(139, 92, 246, 0.2);
+    --dot-color-sparse: rgba(139, 92, 246, 0.08);
+  }
+
+  .skeleton-halftone-gradient .skeleton-bar {
+    background: linear-gradient(
+      90deg,
+      rgba(139, 92, 246, 0.15) 0%,
+      rgba(139, 92, 246, 0.25) 50%,
+      rgba(139, 92, 246, 0.15) 100%
+    );
+  }
+
+  .skeleton-halftone-lines {
+    --line-color: rgba(200, 200, 200, 0.06);
+  }
+
+  .skeleton-halftone-lines .skeleton-bar {
+    background: rgba(200, 200, 200, 0.1);
+  }
+
+  .skeleton-halftone-lines .skeleton-bar::after {
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(200, 200, 200, 0.15) 0px,
+      rgba(200, 200, 200, 0.15) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+}
+
+/* ===========================================
+   KAN WELCOME OVERLAY ANIMATIONS
+   =========================================== */
+
+@keyframes kan-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes kan-glow {
+  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.1); }
+}
+
+@keyframes kan-dot {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.3); }
 }
