@@ -1046,22 +1046,33 @@ export const useStore = create<KanthinkState>()(
         };
 
         let result: CardMessage | null = null;
+        let channelId: string | null = null;
+        let updatedMessages: CardMessage[] = [];
+
         set((state) => {
           const card = state.cards[cardId];
           if (!card) return state;
 
           result = message;
+          channelId = card.channelId;
+          updatedMessages = [...(card.messages ?? []), message];
+
           return {
             cards: {
               ...state.cards,
               [cardId]: {
                 ...card,
-                messages: [...(card.messages ?? []), message],
+                messages: updatedMessages,
                 updatedAt: timestamp,
               },
             },
           };
         });
+
+        // Sync to server
+        if (channelId) {
+          sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
+        }
 
         return result;
       },
@@ -1078,62 +1089,95 @@ export const useStore = create<KanthinkState>()(
         };
 
         let result: CardMessage | null = null;
+        let channelId: string | null = null;
+        let updatedMessages: CardMessage[] = [];
+
         set((state) => {
           const card = state.cards[cardId];
           if (!card) return state;
 
           result = message;
+          channelId = card.channelId;
+          updatedMessages = [...(card.messages ?? []), message];
+
           return {
             cards: {
               ...state.cards,
               [cardId]: {
                 ...card,
-                messages: [...(card.messages ?? []), message],
+                messages: updatedMessages,
                 updatedAt: timestamp,
               },
             },
           };
         });
 
+        // Sync to server
+        if (channelId) {
+          sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
+        }
+
         return result;
       },
 
       editMessage: (cardId, messageId, content) => {
+        let channelId: string | null = null;
+        let updatedMessages: CardMessage[] = [];
+
         set((state) => {
           const card = state.cards[cardId];
           if (!card) return state;
+
+          channelId = card.channelId;
+          updatedMessages = (card.messages ?? []).map((m) =>
+            m.id === messageId ? { ...m, content } : m
+          );
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
                 ...card,
-                messages: (card.messages ?? []).map((m) =>
-                  m.id === messageId ? { ...m, content } : m
-                ),
+                messages: updatedMessages,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        if (channelId) {
+          sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
+        }
       },
 
       deleteMessage: (cardId, messageId) => {
+        let channelId: string | null = null;
+        let updatedMessages: CardMessage[] = [];
+
         set((state) => {
           const card = state.cards[cardId];
           if (!card) return state;
+
+          channelId = card.channelId;
+          updatedMessages = (card.messages ?? []).filter((m) => m.id !== messageId);
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
                 ...card,
-                messages: (card.messages ?? []).filter((m) => m.id !== messageId),
+                messages: updatedMessages,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        if (channelId) {
+          sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
+        }
       },
 
       setCardSummary: (cardId, summary) => {
