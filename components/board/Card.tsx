@@ -80,7 +80,7 @@ export function Card({ card }: CardProps) {
         className={`
           card-container
           group relative cursor-grab rounded-md p-3 transition-shadow select-none
-          touch-pan-y
+          touch-manipulation
           ${isTerminal
             ? 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700'
             : 'bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md'
