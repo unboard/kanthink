@@ -301,3 +301,60 @@ export interface InstructionRun {
   undone: boolean;
 }
 
+// ===== SHARING TYPES =====
+
+export type ChannelRole = 'owner' | 'editor' | 'viewer';
+
+export interface ChannelShare {
+  id: ID;
+  channelId: ID;
+  userId: ID | null;
+  email: string | null;
+  role: ChannelRole;
+  invitedBy: ID | null;
+  invitedAt: string;
+  acceptedAt: string | null;
+  isPending: boolean;
+  user?: {
+    id: ID;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+  };
+}
+
+export interface ChannelInviteLink {
+  id: ID;
+  channelId: ID;
+  token: string;
+  defaultRole: 'editor' | 'viewer';
+  requiresApproval: boolean;
+  expiresAt: string | null;
+  maxUses: number | null;
+  useCount: number;
+  createdAt: string;
+  isExpired: boolean;
+  isExhausted: boolean;
+}
+
+// Real-time sync types
+export type RealtimeEventType =
+  | 'card:created'
+  | 'card:updated'
+  | 'card:moved'
+  | 'card:deleted'
+  | 'column:created'
+  | 'column:updated'
+  | 'column:deleted'
+  | 'column:reordered'
+  | 'presence:join'
+  | 'presence:leave';
+
+export interface RealtimeEvent {
+  type: RealtimeEventType;
+  channelId: ID;
+  userId: ID;
+  data: Record<string, unknown>;
+  timestamp: string;
+}
+

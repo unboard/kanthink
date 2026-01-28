@@ -5,6 +5,7 @@ import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestio
 import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
 import { KANTHINK_IDEAS_CHANNEL, KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
 import { emitCardMoved, emitCardCreated, emitCardDeleted } from './automationEvents';
+import * as sync from './api/sync';
 
 // Module-level abort controller (not stored in Zustand - can't be serialized)
 let currentAbortController: AbortController | null = null;
@@ -162,6 +163,32 @@ interface KanthinkState {
 
   // Hydration
   setHasHydrated: (state: boolean) => void;
+
+  // Server sync
+  loadFromServer: (data: ServerData) => void;
+  clearLocalData: () => void;
+  getLocalDataForMigration: () => LocalStorageExport | null;
+}
+
+// Types for server sync
+export interface ServerData {
+  channels: Record<ID, Channel>;
+  cards: Record<ID, Card>;
+  tasks: Record<ID, Task>;
+  instructionCards: Record<ID, InstructionCard>;
+  folders: Record<ID, Folder>;
+  folderOrder: ID[];
+  channelOrder: ID[];
+}
+
+export interface LocalStorageExport {
+  channels: Record<ID, Channel>;
+  cards: Record<ID, Card>;
+  tasks: Record<ID, Task>;
+  instructionCards: Record<ID, InstructionCard>;
+  folders: Record<ID, Folder>;
+  folderOrder: ID[];
+  channelOrder: ID[];
 }
 
 function createDefaultColumns(): Column[] {
@@ -194,6 +221,49 @@ export const useStore = create<KanthinkState>()(
 
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 
+      // Server sync actions
+      loadFromServer: (data) => {
+        set({
+          channels: data.channels,
+          cards: data.cards,
+          tasks: data.tasks,
+          instructionCards: data.instructionCards,
+          folders: data.folders,
+          folderOrder: data.folderOrder,
+          channelOrder: data.channelOrder,
+          _hasHydrated: true,
+        });
+      },
+
+      clearLocalData: () => {
+        set({
+          channels: {},
+          cards: {},
+          tasks: {},
+          instructionCards: {},
+          folders: {},
+          folderOrder: [],
+          channelOrder: [],
+          instructionRuns: {},
+        });
+      },
+
+      getLocalDataForMigration: () => {
+        const state = get();
+        if (Object.keys(state.channels).length === 0) {
+          return null;
+        }
+        return {
+          channels: state.channels,
+          cards: state.cards,
+          tasks: state.tasks,
+          instructionCards: state.instructionCards,
+          folders: state.folders,
+          folderOrder: state.folderOrder,
+          channelOrder: state.channelOrder,
+        };
+      },
+
       // Folder actions
       createFolder: (name) => {
         const id = nanoid();
@@ -212,6 +282,9 @@ export const useStore = create<KanthinkState>()(
           folderOrder: [...state.folderOrder, id],
         }));
 
+        // Sync to server
+        sync.syncFolderCreate(id, name);
+
         return folder;
       },
 
@@ -227,6 +300,9 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncFolderUpdate(id, updates);
       },
 
       deleteFolder: (id) => {
@@ -244,15 +320,24 @@ export const useStore = create<KanthinkState>()(
             channelOrder: newChannelOrder,
           };
         });
+
+        // Sync to server
+        sync.syncFolderDelete(id);
       },
 
       reorderFolders: (fromIndex, toIndex) => {
+        const folderId = get().folderOrder[fromIndex];
         set((state) => {
           const newOrder = [...state.folderOrder];
           const [moved] = newOrder.splice(fromIndex, 1);
           newOrder.splice(toIndex, 0, moved);
           return { folderOrder: newOrder };
         });
+
+        // Sync to server
+        if (folderId) {
+          sync.syncReorderFolders(folderId, fromIndex, toIndex);
+        }
       },
 
       moveChannelToFolder: (channelId, folderId) => {
@@ -286,6 +371,9 @@ export const useStore = create<KanthinkState>()(
 
           return { folders: newFolders, channelOrder: newChannelOrder };
         });
+
+        // Sync to server
+        sync.syncMoveChannelToFolder(channelId, folderId);
       },
 
       toggleFolderCollapse: (folderId) => {
@@ -323,6 +411,7 @@ export const useStore = create<KanthinkState>()(
       createChannel: (input) => {
         const id = nanoid();
         const timestamp = now();
+        const columns = createDefaultColumns();
         const channel: Channel = {
           id,
           name: input.name,
@@ -330,7 +419,7 @@ export const useStore = create<KanthinkState>()(
           status: 'active',
           aiInstructions: input.aiInstructions ?? '',
           instructionCardIds: [],
-          columns: createDefaultColumns(),
+          columns,
           createdAt: timestamp,
           updatedAt: timestamp,
         };
@@ -339,6 +428,14 @@ export const useStore = create<KanthinkState>()(
           channels: { ...state.channels, [id]: channel },
           channelOrder: [...state.channelOrder, id],
         }));
+
+        // Sync to server
+        sync.syncChannelCreate(id, {
+          name: input.name,
+          description: input.description,
+          aiInstructions: input.aiInstructions,
+          columnNames: columns.map(c => c.name),
+        });
 
         return channel;
       },
@@ -415,6 +512,9 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(id, updates);
       },
 
       deleteChannel: (id) => {
@@ -445,6 +545,9 @@ export const useStore = create<KanthinkState>()(
             channelOrder: state.channelOrder.filter((cid) => cid !== id),
           };
         });
+
+        // Sync to server
+        sync.syncChannelDelete(id);
       },
 
       reorderChannels: (fromIndex, toIndex) => {
@@ -614,6 +717,12 @@ export const useStore = create<KanthinkState>()(
           createdByInstructionId,
         };
 
+        // Get current column length for position
+        const state = get();
+        const channel = state.channels[channelId];
+        const column = channel?.columns.find(c => c.id === columnId);
+        const position = column?.cardIds.length ?? 0;
+
         set((state) => {
           const channel = state.channels[channelId];
           if (!channel) return state;
@@ -637,10 +746,22 @@ export const useStore = create<KanthinkState>()(
         // Emit automation event for card creation
         emitCardCreated(id, channelId, columnId, createdByInstructionId);
 
+        // Sync to server
+        sync.syncCardCreate(channelId, {
+          columnId,
+          title: input.title,
+          initialMessage: input.initialMessage,
+          source,
+          position,
+        });
+
         return card;
       },
 
       updateCard: (id, updates) => {
+        const card = get().cards[id];
+        if (!card) return;
+
         set((state) => {
           const card = state.cards[id];
           if (!card) return state;
@@ -652,6 +773,9 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, id, updates);
       },
 
       deleteCard: (id) => {
@@ -689,6 +813,8 @@ export const useStore = create<KanthinkState>()(
         // Emit automation event for card deletion (threshold check)
         if (channelId) {
           emitCardDeleted(channelId);
+          // Sync to server
+          sync.syncCardDelete(channelId, id);
         }
       },
 
@@ -780,6 +906,11 @@ export const useStore = create<KanthinkState>()(
             toColumnId,
             preCard.createdByInstructionId
           );
+        }
+
+        // Sync to server
+        if (preCard) {
+          sync.syncCardMove(preCard.channelId, cardId, toColumnId, toIndex, false);
         }
       },
 

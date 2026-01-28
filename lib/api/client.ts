@@ -1,0 +1,285 @@
+/**
+ * API client for server-side channel operations.
+ * These functions call the server APIs and return typed responses.
+ */
+
+import type {
+  Channel,
+  Card,
+  Column,
+  Task,
+  InstructionCard,
+  Folder,
+  CardInput,
+  ChannelInput,
+} from '@/lib/types'
+
+// Response types
+interface ChannelListResponse {
+  channels: Array<Channel & { role: 'owner' | 'editor' | 'viewer' }>
+  organization: Array<{ channelId: string; folderId: string | null; position: number }>
+}
+
+interface ChannelDetailResponse {
+  channel: Channel & { role: 'owner' | 'editor' | 'viewer' }
+  columns: Column[]
+  cards: Card[]
+  tasks: Task[]
+  instructionCards: InstructionCard[]
+}
+
+interface FoldersResponse {
+  folders: Array<Folder & { channelIds: string[] }>
+  rootChannelIds: string[]
+}
+
+// ===== CHANNELS =====
+
+export async function fetchChannels(): Promise<ChannelListResponse> {
+  const res = await fetch('/api/channels')
+  if (!res.ok) {
+    throw new Error('Failed to fetch channels')
+  }
+  return res.json()
+}
+
+export async function fetchChannel(channelId: string): Promise<ChannelDetailResponse> {
+  const res = await fetch(`/api/channels/${channelId}`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch channel')
+  }
+  return res.json()
+}
+
+export async function createChannel(input: ChannelInput & { columnNames?: string[] }): Promise<{ channel: Channel; columns: Column[] }> {
+  const res = await fetch('/api/channels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to create channel')
+  }
+  return res.json()
+}
+
+export async function updateChannel(channelId: string, updates: Partial<Channel>): Promise<{ channel: Channel }> {
+  const res = await fetch(`/api/channels/${channelId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to update channel')
+  }
+  return res.json()
+}
+
+export async function deleteChannel(channelId: string): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete channel')
+  }
+}
+
+// ===== CARDS =====
+
+export async function createCard(
+  channelId: string,
+  input: { columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number }
+): Promise<{ card: Card }> {
+  const res = await fetch(`/api/channels/${channelId}/cards`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to create card')
+  }
+  return res.json()
+}
+
+export async function updateCard(channelId: string, cardId: string, updates: Partial<Card>): Promise<{ card: Card }> {
+  const res = await fetch(`/api/channels/${channelId}/cards/${cardId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to update card')
+  }
+  return res.json()
+}
+
+export async function deleteCard(channelId: string, cardId: string): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/cards/${cardId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete card')
+  }
+}
+
+export async function moveCard(
+  channelId: string,
+  cardId: string,
+  toColumnId: string,
+  toPosition: number,
+  isArchived = false
+): Promise<{ card: Card }> {
+  const res = await fetch(`/api/channels/${channelId}/cards/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cardId, toColumnId, toPosition, isArchived }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to move card')
+  }
+  return res.json()
+}
+
+// ===== COLUMNS =====
+
+export async function createColumn(channelId: string, name: string): Promise<{ column: Column }> {
+  const res = await fetch(`/api/channels/${channelId}/columns`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to create column')
+  }
+  return res.json()
+}
+
+export async function updateColumn(channelId: string, columnId: string, updates: Partial<Column>): Promise<{ column: Column }> {
+  const res = await fetch(`/api/channels/${channelId}/columns/${columnId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to update column')
+  }
+  return res.json()
+}
+
+export async function deleteColumn(channelId: string, columnId: string): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/columns/${columnId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete column')
+  }
+}
+
+export async function reorderColumns(channelId: string, columnId: string, toPosition: number): Promise<{ columns: Column[] }> {
+  const res = await fetch(`/api/channels/${channelId}/columns/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ columnId, toPosition }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to reorder columns')
+  }
+  return res.json()
+}
+
+// ===== FOLDERS =====
+
+export async function fetchFolders(): Promise<FoldersResponse> {
+  const res = await fetch('/api/folders')
+  if (!res.ok) {
+    throw new Error('Failed to fetch folders')
+  }
+  return res.json()
+}
+
+export async function createFolder(name: string): Promise<{ folder: Folder }> {
+  const res = await fetch('/api/folders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to create folder')
+  }
+  return res.json()
+}
+
+export async function updateFolder(folderId: string, updates: Partial<Folder>): Promise<{ folder: Folder }> {
+  const res = await fetch(`/api/folders/${folderId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to update folder')
+  }
+  return res.json()
+}
+
+export async function deleteFolder(folderId: string): Promise<void> {
+  const res = await fetch(`/api/folders/${folderId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete folder')
+  }
+}
+
+// ===== ORGANIZATION =====
+
+export async function moveChannelToFolder(channelId: string, targetFolderId: string | null): Promise<void> {
+  const res = await fetch('/api/organization', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operation: 'moveChannelToFolder', channelId, targetFolderId }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to move channel')
+  }
+}
+
+export async function reorderChannelInFolder(
+  channelId: string,
+  folderId: string | null,
+  fromIndex: number,
+  toIndex: number
+): Promise<void> {
+  const res = await fetch('/api/organization', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operation: 'reorderChannelInFolder', channelId, folderId, fromIndex, toIndex }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to reorder channel')
+  }
+}
+
+export async function reorderFolders(folderId: string, fromIndex: number, toIndex: number): Promise<void> {
+  const res = await fetch('/api/organization', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operation: 'reorderFolders', folderId, fromIndex, toIndex }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to reorder folders')
+  }
+}
+
+// ===== MIGRATION =====
+
+export async function migrateData(data: unknown): Promise<{ migrated: Record<string, number> }> {
+  const res = await fetch('/api/migrate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    throw new Error('Migration failed')
+  }
+  return res.json()
+}

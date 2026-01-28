@@ -9,6 +9,7 @@ import { AutomationProvider } from "@/components/providers/AutomationProvider";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { SidebarProvider } from "@/components/providers/SidebarProvider";
+import { ServerSyncProvider } from "@/components/providers/ServerSyncProvider";
 import { ToastContainer } from "@/components/ui";
 
 const geistSans = Geist({
@@ -42,8 +43,9 @@ export default function RootLayout({
         <ThemeProvider>
           <Starfield />
           <AuthProvider>
-            <AutomationProvider>
-              <SidebarProvider>
+            <ServerSyncProvider>
+              <AutomationProvider>
+                <SidebarProvider>
                 <div className="relative z-10 flex h-screen">
                   <Sidebar />
                   <div className="flex flex-1 flex-col overflow-hidden">
@@ -54,9 +56,10 @@ export default function RootLayout({
                   </div>
                   <AIStatusBar />
                 </div>
-              </SidebarProvider>
-              <ToastContainer />
-            </AutomationProvider>
+                </SidebarProvider>
+                <ToastContainer />
+              </AutomationProvider>
+            </ServerSyncProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>
