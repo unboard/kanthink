@@ -179,10 +179,10 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
   return (
     <div
       ref={containerRef}
-      className={`px-3 pb-3 pt-2 ${isFocused ? 'relative z-50' : ''}`}
+      className={`px-3 pb-3 pt-2 ${isFocused ? 'relative z-50 bg-white dark:bg-neutral-900' : ''}`}
       style={mobileKeyboardStyle}
     >
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800/80 px-3 py-2.5">
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2.5">
         {/* Staged images preview */}
         {stagedImages.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
