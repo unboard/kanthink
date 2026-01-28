@@ -8,6 +8,13 @@
       "when": 1769620386239,
       "tag": "0000_youthful_puppet_master",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1769643510805,
+      "tag": "0001_melted_archangel",
+      "breakpoints": true
     }
   ]
 }

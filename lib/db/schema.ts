@@ -20,6 +20,9 @@ export const users = sqliteTable('users', {
   byokApiKey: text('byok_api_key'),
   byokModel: text('byok_model'),
 
+  // Admin flag - bypasses usage limits
+  isAdmin: integer('is_admin', { mode: 'boolean' }).default(false),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
