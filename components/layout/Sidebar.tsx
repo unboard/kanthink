@@ -22,6 +22,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { useSession, signIn } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
 import { useSidebar } from '@/components/providers/SidebarProvider';
@@ -251,6 +252,7 @@ function DraggableFolder({
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { data: session } = useSession();
   const { isOpen, isCollapsed, isMobile, close, toggleCollapse } = useSidebar();
   const channels = useStore((s) => s.channels);
   const channelOrder = useStore((s) => s.channelOrder);
@@ -580,6 +582,17 @@ export function Sidebar() {
       </div>
 
       <div className={`p-2 ${isCollapsed && !isMobile ? 'hidden' : ''}`}>
+        {!session && (
+          <button
+            onClick={() => signIn('google')}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300 mb-1"
+          >
+            <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+            </svg>
+            Sign in
+          </button>
+        )}
         <Link
           href="/settings"
           className={`
@@ -620,6 +633,17 @@ export function Sidebar() {
       {/* Collapsed state: just show icons */}
       {isCollapsed && !isMobile && (
         <div className="p-2 flex flex-col items-center gap-2">
+          {!session && (
+            <button
+              onClick={() => signIn('google')}
+              className="p-2 rounded-md transition-colors text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300"
+              title="Sign in"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+              </svg>
+            </button>
+          )}
           <Link
             href="/settings"
             className={`

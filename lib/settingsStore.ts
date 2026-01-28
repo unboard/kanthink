@@ -18,12 +18,14 @@ interface SettingsState {
   questionFrequency: QuestionFrequency;
   _hasHydrated: boolean;
   _serverHasOwnerKey: boolean;
+  _isSignedIn: boolean;
 
   updateAISettings: (updates: Partial<AISettings>) => void;
   setTheme: (theme: Theme) => void;
   setQuestionFrequency: (frequency: QuestionFrequency) => void;
   setHasHydrated: (state: boolean) => void;
   setServerHasOwnerKey: (has: boolean) => void;
+  setIsSignedIn: (signedIn: boolean) => void;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -41,6 +43,7 @@ export const useSettingsStore = create<SettingsState>()(
       questionFrequency: 'light',
       _hasHydrated: false,
       _serverHasOwnerKey: false,
+      _isSignedIn: false,
 
       updateAISettings: (updates) => {
         set((state) => ({
@@ -55,6 +58,8 @@ export const useSettingsStore = create<SettingsState>()(
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 
       setServerHasOwnerKey: (has) => set({ _serverHasOwnerKey: has }),
+
+      setIsSignedIn: (signedIn) => set({ _isSignedIn: signedIn }),
     }),
     {
       name: 'kanthink-settings',
@@ -71,10 +76,10 @@ export const useSettingsStore = create<SettingsState>()(
   )
 );
 
-// Helper to check if AI is configured (user BYOK or server owner key)
+// Helper to check if AI is configured (user BYOK, server owner key, or signed-in user with server-side access)
 export function isAIConfigured(): boolean {
-  const { ai, _serverHasOwnerKey } = useSettingsStore.getState();
-  return !!ai.apiKey || _serverHasOwnerKey;
+  const { ai, _serverHasOwnerKey, _isSignedIn } = useSettingsStore.getState();
+  return !!ai.apiKey || _serverHasOwnerKey || _isSignedIn;
 }
 
 // Fetch server AI status on app load
