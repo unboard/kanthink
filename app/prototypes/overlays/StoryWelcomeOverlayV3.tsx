@@ -229,16 +229,16 @@ export function StoryWelcomeOverlayV3({
     }
 
     const styleClasses = {
-      normal: 'text-neutral-200',
-      dim: 'text-neutral-500',
+      normal: 'text-neutral-300',
+      dim: 'text-neutral-500 text-sm',
       accent: 'text-violet-400',
-      heading: 'text-white text-xl font-medium',
+      heading: 'text-white text-2xl font-bold',
     };
 
     return (
       <div
         key={lineIndex}
-        className={`font-mono leading-relaxed ${styleClasses[line.style || 'normal']}`}
+        className={`leading-relaxed ${styleClasses[line.style || 'normal']}`}
       >
         {displayText}
         {isCurrentLine && (
@@ -250,33 +250,44 @@ export function StoryWelcomeOverlayV3({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Gradient backdrop */}
       <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        className="absolute inset-0 bg-gradient-to-br from-violet-950/90 via-neutral-950/95 to-neutral-950/95"
         onClick={onClose}
       />
 
-      <div className="relative z-10 w-full max-w-2xl bg-neutral-950 rounded-2xl shadow-2xl overflow-hidden border border-neutral-800">
-        <div className="h-0.5 bg-neutral-800">
-          <div
-            className="h-full bg-gradient-to-r from-violet-600 to-violet-400 transition-all duration-700 ease-out"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
+      {/* Decorative blur elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
+      </div>
 
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800">
-          <div className="flex gap-1.5">
-            <button
-              onClick={onClose}
-              className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 transition-colors"
+      <div className="relative z-10 w-full max-w-2xl">
+        {/* Skip button */}
+        <button
+          onClick={onClose}
+          className="absolute -top-12 right-0 text-sm text-neutral-400 hover:text-white transition-colors"
+        >
+          Skip for now
+        </button>
+
+        {/* Progress dots */}
+        <div className="flex justify-center gap-2 mb-8">
+          {story.map((scene, i) => (
+            <div
+              key={scene.id}
+              className={`h-1 rounded-full transition-all duration-300 ${
+                i <= sceneIndex
+                  ? 'w-8 bg-violet-500'
+                  : 'w-2 bg-neutral-700'
+              }`}
             />
-            <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-            <div className="w-3 h-3 rounded-full bg-green-500/80" />
-          </div>
-          <KanthinkIcon size={14} className="ml-2 text-violet-400" />
-          <span className="text-xs text-neutral-500 font-mono">kan://welcome</span>
+          ))}
         </div>
 
-        <div className="p-8 min-h-[320px]">
+        {/* Card */}
+        <div className="bg-neutral-900/80 backdrop-blur-xl rounded-2xl border border-neutral-800 overflow-hidden shadow-2xl">
+          <div className="p-8 min-h-[320px]">
           <style>{`
             @keyframes kan-sprout {
               0% { transform: scale(0) translateY(12px); opacity: 0; }
@@ -307,20 +318,14 @@ export function StoryWelcomeOverlayV3({
           )}
         </div>
 
-        <div className="px-8 py-4 border-t border-neutral-800 flex justify-between items-center">
+        <div className="px-8 py-5 border-t border-neutral-800 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <button
-              onClick={onClose}
-              className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
-            >
-              [esc] skip
-            </button>
             {currentScene.id === 'signin' && !isTyping && (
               <button
                 onClick={advanceScene}
-                className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors font-mono"
+                className="text-sm text-neutral-400 hover:text-white transition-colors"
               >
-                skip sign-in
+                Skip sign-in
               </button>
             )}
           </div>
@@ -330,7 +335,7 @@ export function StoryWelcomeOverlayV3({
               <input type="hidden" name="redirectTo" value={signInRedirectTo} />
               <button
                 type="submit"
-                className="group flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-sm transition-all bg-violet-600 hover:bg-violet-500 text-white"
+                className="group flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all bg-violet-600 hover:bg-violet-500 text-white"
               >
                 {currentScene.prompt}
                 <svg
@@ -352,16 +357,16 @@ export function StoryWelcomeOverlayV3({
             <button
               onClick={handleContinue}
               className={`
-                group flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-sm transition-all
+                group flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all
                 ${
                   isTyping
-                    ? 'text-neutral-400 hover:text-neutral-200'
+                    ? 'text-neutral-400 hover:text-white'
                     : 'bg-violet-600 hover:bg-violet-500 text-white'
                 }
               `}
             >
               {isTyping ? (
-                '[space] skip'
+                'Skip intro'
               ) : sceneIndex === story.length - 1 ? (
                 <>
                   {currentScene.prompt}
@@ -381,12 +386,12 @@ export function StoryWelcomeOverlayV3({
                 </>
               ) : (
                 <>
-                  {currentScene.prompt || 'continue'}
-                  <span className="text-violet-300">[enter]</span>
+                  {currentScene.prompt || 'Continue'}
                 </>
               )}
             </button>
           )}
+        </div>
         </div>
       </div>
     </div>
