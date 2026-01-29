@@ -382,6 +382,22 @@ export function TaskListView({ channelId }: TaskListViewProps) {
           </div>
         </div>
 
+        {/* Task progress bar */}
+        {channelTasks.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between text-sm text-neutral-500 dark:text-neutral-400 mb-2">
+              <span>{completedCount}/{channelTasks.length} tasks completed</span>
+              <span>{Math.round((completedCount / channelTasks.length) * 100)}%</span>
+            </div>
+            <div className="h-2 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-500 dark:bg-green-600 rounded-full transition-all duration-300"
+                style={{ width: `${(completedCount / channelTasks.length) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Task groups */}
         {groupedTasks.length === 0 ? (
           <div className="text-center py-12">

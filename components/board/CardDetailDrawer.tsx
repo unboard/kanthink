@@ -692,6 +692,22 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
       {/* Tab Content - fills remaining space */}
       {activeTab === 'tasks' && (
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Task progress bar */}
+          {cardTasks.length > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between text-sm text-neutral-500 dark:text-neutral-400 mb-2">
+                <span>{completedCount}/{cardTasks.length} tasks completed</span>
+                <span>{Math.round((completedCount / cardTasks.length) * 100)}%</span>
+              </div>
+              <div className="h-2 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 dark:bg-green-600 rounded-full transition-all duration-300"
+                  style={{ width: `${(completedCount / cardTasks.length) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               {completedCount > 0 && (
