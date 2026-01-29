@@ -44,7 +44,7 @@ export function Drawer({ isOpen, onClose, children, width = 'lg', floating = fal
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 z-50 flex justify-end ${floating ? 'p-4' : ''}`}>
+    <div className={`fixed inset-0 z-50 flex justify-end ${floating ? 'sm:p-4' : ''}`}>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40 transition-opacity"
@@ -57,7 +57,7 @@ export function Drawer({ isOpen, onClose, children, width = 'lg', floating = fal
         className={`
           relative w-full ${widthClasses[width]} shadow-2xl overflow-y-auto
           animate-in slide-in-from-right duration-200
-          ${floating ? 'rounded-2xl h-auto max-h-full' : 'h-full'}
+          ${floating ? 'h-full sm:h-auto sm:max-h-full sm:rounded-2xl' : 'h-full'}
           ${isTerminal
             ? 'bg-neutral-950 border border-neutral-800'
             : 'bg-white dark:bg-neutral-900'

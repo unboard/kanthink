@@ -323,9 +323,9 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
 
   return (
     <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating>
-      <div className="flex flex-col h-full max-h-[calc(100vh-2rem)]">
-        {/* Compact Header */}
-        <div className="flex-shrink-0 flex items-center gap-3 px-4 pt-5 pb-3 pr-14 border-b border-neutral-200 dark:border-neutral-800">
+      <div className="flex flex-col h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]">
+        {/* Compact Header - sticky on mobile */}
+        <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 pt-5 pb-3 pr-14 border-b border-neutral-200 dark:border-neutral-800">
           <h2 className="flex-1 font-medium text-neutral-900 dark:text-white truncate">
             {card.title}
           </h2>
@@ -772,8 +772,8 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
           )}
         </div>
 
-        {/* Bottom Tabs */}
-        <div className="flex-shrink-0 flex border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        {/* Bottom Tabs - sticky on mobile */}
+        <div className="flex-shrink-0 sticky bottom-0 z-10 flex border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
           <button
             onClick={() => setActiveTab('thread')}
             className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
