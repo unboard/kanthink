@@ -377,17 +377,25 @@ export const useStore = create<KanthinkState>()(
       },
 
       toggleFolderCollapse: (folderId) => {
+        const folder = get().folders[folderId];
+        if (!folder) return;
+
+        const isCollapsed = !folder.isCollapsed;
+
         set((state) => {
-          const folder = state.folders[folderId];
-          if (!folder) return state;
+          const f = state.folders[folderId];
+          if (!f) return state;
 
           return {
             folders: {
               ...state.folders,
-              [folderId]: { ...folder, isCollapsed: !folder.isCollapsed },
+              [folderId]: { ...f, isCollapsed },
             },
           };
         });
+
+        // Sync to server
+        sync.syncFolderUpdate(folderId, { isCollapsed });
       },
 
       reorderChannelInFolder: (folderId, fromIndex, toIndex) => {
@@ -559,12 +567,19 @@ export const useStore = create<KanthinkState>()(
       },
 
       reorderChannels: (fromIndex, toIndex) => {
+        const channelId = get().channelOrder[fromIndex];
+
         set((state) => {
           const newOrder = [...state.channelOrder];
           const [removed] = newOrder.splice(fromIndex, 1);
           newOrder.splice(toIndex, 0, removed);
           return { channelOrder: newOrder };
         });
+
+        // Sync to server - this is for root-level channels (not in folder)
+        if (channelId) {
+          sync.syncReorderChannelInFolder(channelId, null, fromIndex, toIndex);
+        }
       },
 
       createColumn: (channelId, name) => {
@@ -849,35 +864,49 @@ export const useStore = create<KanthinkState>()(
       },
 
       deleteAllCardsInColumn: (channelId, columnId) => {
-        set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+        const channel = get().channels[channelId];
+        if (!channel) return;
 
-          const column = channel.columns.find((c) => c.id === columnId);
-          if (!column || column.cardIds.length === 0) return state;
+        const column = channel.columns.find((c) => c.id === columnId);
+        if (!column || column.cardIds.length === 0) return;
+
+        // Capture card IDs before deletion for sync
+        const cardIdsToDelete = [...column.cardIds];
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          const col = ch.columns.find((c) => c.id === columnId);
+          if (!col) return state;
 
           // Remove all cards in this column from the cards record
           const remainingCards = { ...state.cards };
-          for (const cardId of column.cardIds) {
+          for (const cardId of col.cardIds) {
             delete remainingCards[cardId];
           }
 
           // Clear the column's cardIds
-          const updatedColumns = channel.columns.map((col) => {
-            if (col.id === columnId) {
-              return { ...col, cardIds: [] };
+          const updatedColumns = ch.columns.map((c) => {
+            if (c.id === columnId) {
+              return { ...c, cardIds: [] };
             }
-            return col;
+            return c;
           });
 
           return {
             cards: remainingCards,
             channels: {
               ...state.channels,
-              [channelId]: { ...channel, columns: updatedColumns, updatedAt: now() },
+              [channelId]: { ...ch, columns: updatedColumns, updatedAt: now() },
             },
           };
         });
+
+        // Sync each card deletion to server
+        for (const cardId of cardIdsToDelete) {
+          sync.syncCardDelete(channelId, cardId);
+        }
       },
 
       moveCard: (cardId, toColumnId, toIndex) => {
@@ -1454,157 +1483,198 @@ export const useStore = create<KanthinkState>()(
       },
 
       reorderUnlinkedTasks: (channelId, fromIndex, toIndex) => {
+        const channel = get().channels[channelId];
+        if (!channel) return;
+
+        // Get current unlinked task order, or build it from existing unlinked tasks
+        let currentOrder = channel.unlinkedTaskOrder ?? [];
+
+        // If no order exists, build it from existing unlinked tasks (sorted by createdAt)
+        if (currentOrder.length === 0) {
+          const tasks = get().tasks;
+          const unlinkedTasks = Object.values(tasks)
+            .filter((t) => t.channelId === channelId && !t.cardId)
+            .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          currentOrder = unlinkedTasks.map((t) => t.id);
+        }
+
+        const unlinkedTaskOrder = [...currentOrder];
+        const [removed] = unlinkedTaskOrder.splice(fromIndex, 1);
+        unlinkedTaskOrder.splice(toIndex, 0, removed);
+
         set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
-
-          // Get current unlinked task order, or build it from existing unlinked tasks
-          let currentOrder = channel.unlinkedTaskOrder ?? [];
-
-          // If no order exists, build it from existing unlinked tasks (sorted by createdAt)
-          if (currentOrder.length === 0) {
-            const unlinkedTasks = Object.values(state.tasks)
-              .filter((t) => t.channelId === channelId && !t.cardId)
-              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-            currentOrder = unlinkedTasks.map((t) => t.id);
-          }
-
-          const newOrder = [...currentOrder];
-          const [removed] = newOrder.splice(fromIndex, 1);
-          newOrder.splice(toIndex, 0, removed);
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                unlinkedTaskOrder: newOrder,
+                ...ch,
+                unlinkedTaskOrder,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { unlinkedTaskOrder });
       },
 
       addQuestion: (channelId, questionData) => {
-        set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+        const channel = get().channels[channelId];
+        if (!channel) return;
 
-          const question: ChannelQuestion = {
-            id: nanoid(),
-            ...questionData,
-            createdAt: now(),
-          };
+        const question: ChannelQuestion = {
+          id: nanoid(),
+          ...questionData,
+          createdAt: now(),
+        };
+
+        const questions = [...(channel.questions ?? []), question];
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                questions: [...(channel.questions ?? []), question],
+                ...ch,
+                questions,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { questions });
       },
 
       answerQuestion: (channelId, questionId, answer) => {
-        set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+        const channel = get().channels[channelId];
+        if (!channel) return;
 
-          const updatedQuestions = (channel.questions ?? []).map((q) => {
-            if (q.id === questionId) {
-              return { ...q, status: 'answered' as const, answer, answeredAt: now() };
-            }
-            return q;
-          });
+        const questions = (channel.questions ?? []).map((q) => {
+          if (q.id === questionId) {
+            return { ...q, status: 'answered' as const, answer, answeredAt: now() };
+          }
+          return q;
+        });
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                questions: updatedQuestions,
+                ...ch,
+                questions,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { questions });
       },
 
       dismissQuestion: (channelId, questionId) => {
-        set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+        const channel = get().channels[channelId];
+        if (!channel) return;
 
-          const updatedQuestions = (channel.questions ?? []).map((q) => {
-            if (q.id === questionId) {
-              return { ...q, status: 'dismissed' as const };
-            }
-            return q;
-          });
+        const questions = (channel.questions ?? []).map((q) => {
+          if (q.id === questionId) {
+            return { ...q, status: 'dismissed' as const };
+          }
+          return q;
+        });
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                questions: updatedQuestions,
+                ...ch,
+                questions,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { questions });
       },
 
       addInstructionRevision: (channelId, instructions, source) => {
-        set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+        const channel = get().channels[channelId];
+        if (!channel) return;
 
-          const revision: InstructionRevision = {
-            id: nanoid(),
-            instructions,
-            source,
-            appliedAt: now(),
-          };
+        const revision: InstructionRevision = {
+          id: nanoid(),
+          instructions,
+          source,
+          appliedAt: now(),
+        };
+
+        const instructionHistory = [...(channel.instructionHistory ?? []), revision];
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
+                ...ch,
                 aiInstructions: instructions,
-                instructionHistory: [...(channel.instructionHistory ?? []), revision],
+                instructionHistory,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { aiInstructions: instructions, instructionHistory });
       },
 
       rollbackInstruction: (channelId, revisionId) => {
-        set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+        const channel = get().channels[channelId];
+        if (!channel) return;
 
-          const revision = (channel.instructionHistory ?? []).find((r) => r.id === revisionId);
-          if (!revision) return state;
+        const revision = (channel.instructionHistory ?? []).find((r) => r.id === revisionId);
+        if (!revision) return;
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
+                ...ch,
                 aiInstructions: revision.instructions,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { aiInstructions: revision.instructions });
       },
 
       setSuggestionMode: (channelId, mode) => {
@@ -1623,6 +1693,9 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { suggestionMode: mode });
       },
 
       addPropertyDefinition: (channelId, definition) => {
@@ -2430,6 +2503,30 @@ export const useStore = create<KanthinkState>()(
           instructionCards: { ...state.instructionCards, ...newInstructionCards },
           channelOrder: [...state.channelOrder, channelId],
         }));
+
+        // Sync channel creation to server
+        sync.syncChannelCreate(channelId, {
+          name: channel.name,
+          description: channel.description,
+          aiInstructions: channel.aiInstructions,
+          columnNames: columns.map((c) => c.name),
+        });
+
+        // Sync instruction cards
+        for (const icId of instructionCardIds) {
+          const ic = newInstructionCards[icId];
+          sync.syncInstructionCardCreate(channelId, icId, {
+            title: ic.title,
+            instructions: ic.instructions,
+            action: ic.action,
+            target: ic.target,
+            runMode: ic.runMode,
+            cardCount: ic.cardCount,
+          });
+        }
+
+        // Sync card update (spawnedChannelIds)
+        sync.syncCardUpdate(card.channelId, cardId, { spawnedChannelIds: updatedCard.spawnedChannelIds });
 
         return channel;
       },
