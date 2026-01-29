@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, type MouseEvent, type TouchEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
@@ -75,41 +75,27 @@ export function GuidedQuestionnaireOverlay({
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
 
   const ai = useSettingsStore((s) => s.ai);
+
+  // Track if this is a touch device - if so, disable backdrop close entirely
+  // Users can use the Cancel button instead. This avoids all mobile keyboard issues.
+  const isTouchDevice = useRef(false);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
-  // Track where mouse/touch started for backdrop click protection
-  const handleBackdropMouseDown = (e: MouseEvent | TouchEvent) => {
+  useEffect(() => {
+    // Detect touch capability on mount
+    isTouchDevice.current = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  }, []);
+
+  // Only track mousedown for non-touch (desktop) clicks
+  const handleBackdropMouseDown = (e: MouseEvent) => {
+    if (isTouchDevice.current) return;
     mouseDownTargetRef.current = e.target;
   };
 
-  const shouldPreventClose = () => {
-    // Don't close if an input/textarea is focused (keyboard is open on mobile)
-    const active = document.activeElement;
-    return active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA';
-  };
-
+  // Desktop only: close on backdrop click
   const handleBackdropClick = (e: MouseEvent) => {
-    // Only close if both mousedown and click happened on the backdrop itself
-    // This prevents closing when keyboard appears and causes layout shifts
+    if (isTouchDevice.current) return;
     if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
-      if (shouldPreventClose()) {
-        mouseDownTargetRef.current = null;
-        return;
-      }
-      onClose();
-    }
-    mouseDownTargetRef.current = null;
-  };
-
-  // Handle touch end for mobile - some browsers don't fire click after touch
-  const handleBackdropTouchEnd = (e: TouchEvent) => {
-    if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
-      if (shouldPreventClose()) {
-        mouseDownTargetRef.current = null;
-        return;
-      }
-      // Prevent the subsequent click event from also firing
-      e.preventDefault();
       onClose();
     }
     mouseDownTargetRef.current = null;
@@ -277,12 +263,10 @@ export function GuidedQuestionnaireOverlay({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Gradient backdrop */}
+      {/* Gradient backdrop - only closes on desktop click, not touch */}
       <div
         className="absolute inset-0 bg-gradient-to-br from-violet-950/90 via-neutral-950/95 to-neutral-950/95"
         onMouseDown={handleBackdropMouseDown}
-        onTouchStart={handleBackdropMouseDown}
-        onTouchEnd={handleBackdropTouchEnd}
         onClick={handleBackdropClick}
       />
 
@@ -401,11 +385,7 @@ export function GuidedQuestionnaireOverlay({
               {/* Options */}
               <div className="space-y-2">
                 {isTextOnlyStep ? (
-                  <div
-                    className="space-y-3"
-                    onTouchStart={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
+                  <div className="space-y-3">
                     <input
                       type="text"
                       value={customValue}
@@ -497,11 +477,7 @@ export function GuidedQuestionnaireOverlay({
 
                     {/* Custom input field */}
                     {showCustomInput && (
-                      <div
-                        className="flex gap-2 mt-2"
-                        onTouchStart={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                      >
+                      <div className="flex gap-2 mt-2">
                         <input
                           type="text"
                           value={customValue}
