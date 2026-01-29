@@ -21,6 +21,7 @@ interface SettingsState {
   _serverHasOwnerKey: boolean;
   _isSignedIn: boolean;
   _hasByokConfigured: boolean;
+  _showSignUpOverlay: boolean;
 
   updateAISettings: (updates: Partial<AISettings>) => void;
   setTheme: (theme: Theme) => void;
@@ -29,6 +30,7 @@ interface SettingsState {
   setServerHasOwnerKey: (has: boolean) => void;
   setIsSignedIn: (signedIn: boolean) => void;
   setHasByokConfigured: (configured: boolean) => void;
+  setShowSignUpOverlay: (show: boolean) => void;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
@@ -47,6 +49,7 @@ export const useSettingsStore = create<SettingsState>()(
       _serverHasOwnerKey: false,
       _isSignedIn: false,
       _hasByokConfigured: false,
+      _showSignUpOverlay: false,
 
       updateAISettings: (updates) => {
         set((state) => ({
@@ -65,6 +68,8 @@ export const useSettingsStore = create<SettingsState>()(
       setIsSignedIn: (signedIn) => set({ _isSignedIn: signedIn }),
 
       setHasByokConfigured: (configured) => set({ _hasByokConfigured: configured }),
+
+      setShowSignUpOverlay: (show) => set({ _showSignUpOverlay: show }),
     }),
     {
       name: 'kanthink-settings',
@@ -90,6 +95,17 @@ export const useSettingsStore = create<SettingsState>()(
 export function isAIConfigured(): boolean {
   const { _serverHasOwnerKey, _isSignedIn, _hasByokConfigured } = useSettingsStore.getState();
   return _hasByokConfigured || _serverHasOwnerKey || _isSignedIn;
+}
+
+// Helper to require sign-in for AI features
+// Returns true if user is signed in, otherwise shows sign-up overlay and returns false
+export function requireSignInForAI(): boolean {
+  const { _isSignedIn, setShowSignUpOverlay } = useSettingsStore.getState();
+  if (_isSignedIn) {
+    return true;
+  }
+  setShowSignUpOverlay(true);
+  return false;
 }
 
 // Fetch server AI status on app load

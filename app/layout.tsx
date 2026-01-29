@@ -10,7 +10,7 @@ import { AuthProvider } from "@/components/providers/AuthProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { SidebarProvider } from "@/components/providers/SidebarProvider";
 import { ServerSyncProvider } from "@/components/providers/ServerSyncProvider";
-import { ToastContainer } from "@/components/ui";
+import { ToastContainer, SignUpOverlay } from "@/components/ui";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -58,6 +58,7 @@ export default function RootLayout({
                 </div>
                 </SidebarProvider>
                 <ToastContainer />
+                <SignUpOverlay />
               </AutomationProvider>
             </ServerSyncProvider>
           </AuthProvider>

@@ -6,3 +6,4 @@ export { Modal } from './Modal';
 export { Textarea } from './Textarea';
 export { TerminalHeader, TrafficLights } from './TerminalHeader';
 export { ToastContainer } from './Toast';
+export { SignUpOverlay } from './SignUpOverlay';

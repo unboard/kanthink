@@ -28,6 +28,7 @@ import { processCard } from '@/lib/ai/processCard';
 import { runInstruction } from '@/lib/ai/runInstruction';
 import { generateProcessingStatus } from '@/lib/processingStatus';
 import { Button, Input, Modal } from '@/components/ui';
+import { requireSignInForAI } from '@/lib/settingsStore';
 import { SortableColumn } from './SortableColumn';
 import { AIDebugModal } from './AIDebugModal';
 // Commented out - question system disabled
@@ -225,6 +226,11 @@ export function Board({ channel }: BoardProps) {
 
   // Auto-process a card that was moved to a column with autoProcess enabled
   const triggerAutoProcess = async (cardId: ID, targetColumn: ColumnType) => {
+    // Check if user is signed in before auto-processing
+    if (!requireSignInForAI()) {
+      return;
+    }
+
     // Get fresh state from store (closures may be stale after drag)
     const state = useStore.getState();
     const card = state.cards[cardId];

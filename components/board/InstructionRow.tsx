@@ -17,6 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import type { Channel, ID, InstructionCard as InstructionCardType } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { requireSignInForAI } from '@/lib/settingsStore';
 import { SortableInstructionCard } from './SortableInstructionCard';
 import { InstructionDetailDrawer } from './InstructionDetailDrawer';
 
@@ -113,6 +114,11 @@ export function InstructionRow({ channel, onRunInstruction }: InstructionRowProp
   };
 
   const handleRunInstruction = async (card: InstructionCardType) => {
+    // Check if user is signed in before running AI action
+    if (!requireSignInForAI()) {
+      return;
+    }
+
     setRunningInstructionId(card.id);
     setSelectedCardId(null); // Close drawer when running
     try {

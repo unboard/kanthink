@@ -3,7 +3,7 @@
 import { useRef, useEffect, useState } from 'react';
 import type { Card, CardMessageType } from '@/lib/types';
 import { useStore } from '@/lib/store';
-import { useSettingsStore } from '@/lib/settingsStore';
+import { useSettingsStore, requireSignInForAI } from '@/lib/settingsStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 
@@ -56,6 +56,11 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
   }, [isFullscreen]);
 
   const handleSubmit = async (content: string, type: CardMessageType, imageUrls?: string[]) => {
+    // If it's a question, check auth before proceeding
+    if (type === 'question' && !requireSignInForAI()) {
+      return;
+    }
+
     // Add the message
     const message = addMessage(card.id, type, content, imageUrls);
     if (!message) return;
