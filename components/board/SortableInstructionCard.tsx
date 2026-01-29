@@ -11,6 +11,7 @@ interface SortableInstructionCardProps {
   onClick: () => void;
   onRun: () => void;
   isRunning?: boolean;
+  fullWidth?: boolean;
 }
 
 export function SortableInstructionCard({
@@ -19,6 +20,7 @@ export function SortableInstructionCard({
   onClick,
   onRun,
   isRunning,
+  fullWidth,
 }: SortableInstructionCardProps) {
   const {
     attributes,
@@ -43,6 +45,7 @@ export function SortableInstructionCard({
         onClick={onClick}
         onRun={onRun}
         isRunning={isRunning}
+        fullWidth={fullWidth}
       />
     </div>
   );

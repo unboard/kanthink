@@ -33,7 +33,7 @@ import { SortableColumn } from './SortableColumn';
 import { AIDebugModal } from './AIDebugModal';
 // Commented out - question system disabled
 // import { QuestionsDrawer } from './QuestionsDrawer';
-import { InstructionRow } from './InstructionRow';
+import { ShroomsDrawer } from './ShroomsDrawer';
 import { TaskListView } from './TaskListView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
@@ -68,6 +68,7 @@ export function Board({ channel }: BoardProps) {
   const [isQuestionsOpen, setIsQuestionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isShroomsOpen, setIsShroomsOpen] = useState(false);
   const { isServerMode } = useServerSync();
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
 
@@ -721,6 +722,18 @@ export function Board({ channel }: BoardProps) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setIsShroomsOpen(true)}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+            title="Actions"
+          >
+            <img
+              src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+              alt=""
+              className="h-5 w-5"
+            />
+            <span className="hidden sm:inline">Shrooms</span>
+          </button>
           {debugInfo && (
             <button
               onClick={() => setIsDebugModalOpen(true)}
@@ -760,9 +773,6 @@ export function Board({ channel }: BoardProps) {
         <TaskListView channelId={channel.id} />
       ) : (
         <>
-          {/* Instruction cards row */}
-          <InstructionRow channel={channel} onRunInstruction={handleRunInstruction} />
-
           <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
@@ -917,6 +927,13 @@ export function Board({ channel }: BoardProps) {
         channelName={channel.name}
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
+      />
+
+      <ShroomsDrawer
+        channel={channel}
+        isOpen={isShroomsOpen}
+        onClose={() => setIsShroomsOpen(false)}
+        onRunInstruction={handleRunInstruction}
       />
     </div>
   );

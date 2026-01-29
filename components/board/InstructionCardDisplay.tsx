@@ -10,9 +10,10 @@ interface InstructionCardDisplayProps {
   onClick: () => void;
   onRun: () => void;
   isRunning?: boolean;
+  fullWidth?: boolean;
 }
 
-export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunning: isRunningProp }: InstructionCardDisplayProps) {
+export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunning: isRunningProp, fullWidth }: InstructionCardDisplayProps) {
   // Check store for running state (for automatic runs)
   const selector = useCallback(
     (s: ReturnType<typeof useStore.getState>) => s.aiOperation?.runningInstructionIds?.includes(card.id) ?? false,
@@ -67,7 +68,7 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
 
   if (isRunning) {
     return (
-      <div className="gradient-border-animated flex-shrink-0 min-w-[160px] max-w-[220px] rounded-lg">
+      <div className={`gradient-border-animated rounded-lg ${fullWidth ? 'w-full' : 'flex-shrink-0 min-w-[160px] max-w-[220px]'}`}>
         <div className="flex h-[49px] items-center gap-2 rounded-lg px-3 bg-neutral-100 dark:bg-neutral-800/50">
           {/* Left side buttons */}
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -97,7 +98,7 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
 
   return (
     <div
-      className="group relative flex-shrink-0 min-w-[160px] max-w-[220px] rounded-lg bg-neutral-100 dark:bg-neutral-800/50 hover:bg-neutral-200/80 dark:hover:bg-neutral-700/50 transition-colors duration-75"
+      className={`group relative rounded-lg bg-neutral-100 dark:bg-neutral-800/50 hover:bg-neutral-200/80 dark:hover:bg-neutral-700/50 transition-colors duration-75 ${fullWidth ? 'w-full' : 'flex-shrink-0 min-w-[160px] max-w-[220px]'}`}
     >
       <div className="flex h-[49px] items-center gap-2 px-3">
         {/* Left side buttons - always visible */}

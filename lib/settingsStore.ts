@@ -17,6 +17,7 @@ interface SettingsState {
   ai: AISettings;
   theme: Theme;
   questionFrequency: QuestionFrequency;
+  shroomsExplainerDismissed: boolean;
   _hasHydrated: boolean;
   _serverHasOwnerKey: boolean;
   _isSignedIn: boolean;
@@ -26,6 +27,7 @@ interface SettingsState {
   updateAISettings: (updates: Partial<AISettings>) => void;
   setTheme: (theme: Theme) => void;
   setQuestionFrequency: (frequency: QuestionFrequency) => void;
+  setShroomsExplainerDismissed: (dismissed: boolean) => void;
   setHasHydrated: (state: boolean) => void;
   setServerHasOwnerKey: (has: boolean) => void;
   setIsSignedIn: (signedIn: boolean) => void;
@@ -45,6 +47,7 @@ export const useSettingsStore = create<SettingsState>()(
       ai: DEFAULT_AI_SETTINGS,
       theme: 'default',
       questionFrequency: 'light',
+      shroomsExplainerDismissed: false,
       _hasHydrated: false,
       _serverHasOwnerKey: false,
       _isSignedIn: false,
@@ -60,6 +63,8 @@ export const useSettingsStore = create<SettingsState>()(
       setTheme: (theme) => set({ theme }),
 
       setQuestionFrequency: (frequency) => set({ questionFrequency: frequency }),
+
+      setShroomsExplainerDismissed: (dismissed) => set({ shroomsExplainerDismissed: dismissed }),
 
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 
@@ -83,6 +88,7 @@ export const useSettingsStore = create<SettingsState>()(
         },
         theme: state.theme,
         questionFrequency: state.questionFrequency,
+        shroomsExplainerDismissed: state.shroomsExplainerDismissed,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
