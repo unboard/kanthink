@@ -13,7 +13,7 @@ const variantDescriptions: Record<Variant, { name: string; description: string }
   },
   'bottom-tabs': {
     name: 'Bottom Tabs',
-    description: 'Persistent tabs at bottom for Chat/Tasks/Info. Quick switching while keeping context. Native app feel.',
+    description: 'Persistent tabs at bottom for Thread/Tasks/Info. Quick switching while keeping context. Native app feel.',
   },
 };
 
@@ -25,8 +25,9 @@ const mockCard = {
   columnId: 'col1',
   summary: 'Working on keyword research and content optimization for the product launch.',
   tags: ['urgent', 'marketing'],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  source: 'ai' as const,
+  createdAt: new Date(Date.now() - 86400000 * 3).toISOString(), // 3 days ago
+  updatedAt: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
   messages: [
     {
       id: 'm1',
@@ -72,6 +73,21 @@ const mockTags = [
   { id: 'tag1', name: 'urgent', color: 'red' },
   { id: 'tag2', name: 'marketing', color: 'blue' },
   { id: 'tag3', name: 'seo', color: 'green' },
+];
+
+const mockInstructionRuns = [
+  {
+    id: 'run1',
+    instructionTitle: 'Generate SEO content ideas',
+    timestamp: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 days ago
+    cardsCreated: 5,
+  },
+  {
+    id: 'run2',
+    instructionTitle: 'Analyze competitor keywords',
+    timestamp: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+    cardsCreated: 3,
+  },
 ];
 
 export default function CardDetailPrototypePage() {
@@ -201,6 +217,7 @@ export default function CardDetailPrototypePage() {
         card={mockCard}
         tasks={mockTasks}
         tags={mockTags}
+        instructionRuns={mockInstructionRuns}
       />
     </div>
   );

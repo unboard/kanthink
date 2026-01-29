@@ -29,6 +29,13 @@ interface Tag {
   color: string;
 }
 
+interface InstructionRun {
+  id: string;
+  instructionTitle: string;
+  timestamp: string;
+  cardsCreated: number;
+}
+
 interface CardDetailV2Props {
   isOpen: boolean;
   onClose: () => void;
@@ -39,24 +46,55 @@ interface CardDetailV2Props {
     tags?: string[];
     messages?: Message[];
     createdAt?: string;
+    updatedAt?: string;
+    source?: 'manual' | 'ai';
   };
   tasks: Task[];
   tags: Tag[];
+  instructionRuns?: InstructionRun[];
 }
 
-type Tab = 'chat' | 'tasks' | 'info';
+type Tab = 'thread' | 'tasks' | 'info';
 
-export function CardDetailV2BottomTabs({ isOpen, onClose, card, tasks, tags }: CardDetailV2Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('chat');
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+const tagColorStyles: Record<string, { bg: string; text: string }> = {
+  red: { bg: 'bg-red-400', text: 'text-neutral-900' },
+  orange: { bg: 'bg-orange-400', text: 'text-neutral-900' },
+  yellow: { bg: 'bg-yellow-300', text: 'text-neutral-900' },
+  green: { bg: 'bg-green-400', text: 'text-neutral-900' },
+  blue: { bg: 'bg-blue-400', text: 'text-neutral-900' },
+  purple: { bg: 'bg-purple-400', text: 'text-neutral-900' },
+  pink: { bg: 'bg-pink-400', text: 'text-neutral-900' },
+  gray: { bg: 'bg-neutral-400', text: 'text-neutral-900' },
+};
+
+export function CardDetailV2BottomTabs({ isOpen, onClose, card, tasks, tags, instructionRuns = [] }: CardDetailV2Props) {
+  const [activeTab, setActiveTab] = useState<Tab>('thread');
   const [inputValue, setInputValue] = useState('');
   const [inputMode, setInputMode] = useState<'note' | 'question'>('question');
+  const [title, setTitle] = useState(card.title);
+  const [showRunLogs, setShowRunLogs] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (activeTab === 'chat') {
+    if (activeTab === 'thread') {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [card.messages, activeTab]);
+
+  useEffect(() => {
+    setTitle(card.title);
+  }, [card.title]);
 
   if (!isOpen) return null;
 
@@ -87,8 +125,8 @@ export function CardDetailV2BottomTabs({ isOpen, onClose, card, tasks, tags }: C
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Chat Tab */}
-          {activeTab === 'chat' && (
+          {/* Thread Tab */}
+          {activeTab === 'thread' && (
             <>
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {card.messages?.map(message => (
@@ -220,7 +258,7 @@ export function CardDetailV2BottomTabs({ isOpen, onClose, card, tasks, tags }: C
                 <div className="h-2 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-green-500 rounded-full transition-all"
-                    style={{ width: `${(completedTasks / tasks.length) * 100}%` }}
+                    style={{ width: tasks.length > 0 ? `${(completedTasks / tasks.length) * 100}%` : '0%' }}
                   />
                 </div>
                 <div className="flex gap-4 mt-2 text-xs text-neutral-500">
@@ -274,84 +312,148 @@ export function CardDetailV2BottomTabs({ isOpen, onClose, card, tasks, tags }: C
 
           {/* Info Tab */}
           {activeTab === 'info' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-6">
-              {/* Summary */}
-              <div>
-                <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">Summary</h3>
-                {card.summary ? (
-                  <p className="text-sm text-neutral-700 dark:text-neutral-300">{card.summary}</p>
-                ) : (
-                  <p className="text-sm text-neutral-400 italic">No summary yet. Chat with Kan to generate one.</p>
-                )}
-              </div>
+            <div className="flex-1 overflow-y-auto">
+              {/* Card header section - mirrors current drawer */}
+              <div className="p-4 space-y-4">
+                {/* Title */}
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full text-xl font-semibold text-neutral-900 dark:text-white bg-transparent border-none outline-none placeholder-neutral-400"
+                  placeholder="Card title"
+                />
 
-              {/* Tags */}
-              <div>
-                <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">Tags</h3>
-                <div className="flex flex-wrap gap-2">
-                  {cardTags.map(tag => (
+                {/* Metadata rows */}
+                <div className="space-y-3">
+                  {/* Source */}
+                  <div className="flex items-center">
+                    <span className="w-24 text-sm text-neutral-500">Source</span>
                     <span
-                      key={tag.id}
-                      className="px-3 py-1.5 text-sm font-medium rounded-full"
-                      style={{
-                        backgroundColor: tag.color === 'red' ? '#fef2f2' : tag.color === 'blue' ? '#eff6ff' : tag.color === 'green' ? '#f0fdf4' : '#f5f5f5',
-                        color: tag.color === 'red' ? '#dc2626' : tag.color === 'blue' ? '#2563eb' : tag.color === 'green' ? '#16a34a' : '#525252'
-                      }}
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                        card.source === 'ai'
+                          ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
+                          : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400'
+                      }`}
                     >
-                      {tag.name}
-                    </span>
-                  ))}
-                  <button className="px-3 py-1.5 text-sm text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 border border-dashed border-neutral-300 dark:border-neutral-600 rounded-full hover:border-violet-400 hover:text-violet-600 transition-colors">
-                    + Add tag
-                  </button>
-                </div>
-              </div>
-
-              {/* Stats */}
-              <div>
-                <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">Activity</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/50">
-                    <div className="text-2xl font-semibold text-neutral-900 dark:text-white">{card.messages?.length ?? 0}</div>
-                    <div className="text-xs text-neutral-500">Messages</div>
-                  </div>
-                  <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/50">
-                    <div className="text-2xl font-semibold text-neutral-900 dark:text-white">{tasks.length}</div>
-                    <div className="text-xs text-neutral-500">Tasks</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Dates */}
-              <div>
-                <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">Details</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Created</span>
-                    <span className="text-neutral-700 dark:text-neutral-300">
-                      {card.createdAt ? new Date(card.createdAt).toLocaleDateString() : 'Unknown'}
+                      {card.source === 'ai' ? 'AI Generated' : 'Manual'}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Card ID</span>
-                    <span className="text-neutral-400 font-mono text-xs">{card.id}</span>
+
+                  {/* Created */}
+                  <div className="flex items-center">
+                    <span className="w-24 text-sm text-neutral-500">Created</span>
+                    <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                      {card.createdAt ? formatDate(card.createdAt) : 'Unknown'}
+                    </span>
+                  </div>
+
+                  {/* Modified */}
+                  <div className="flex items-center">
+                    <span className="w-24 text-sm text-neutral-500">Modified</span>
+                    <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                      {card.updatedAt ? formatDate(card.updatedAt) : 'Unknown'}
+                    </span>
+                  </div>
+
+                  {/* Tags */}
+                  <div className="flex items-start">
+                    <span className="w-24 text-sm text-neutral-500 pt-0.5">Tags</span>
+                    <div className="flex-1 flex flex-wrap items-center gap-1.5">
+                      {cardTags.map(tag => {
+                        const colorStyle = tagColorStyles[tag.color] || tagColorStyles.gray;
+                        return (
+                          <span
+                            key={tag.id}
+                            className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-medium ${colorStyle.bg} ${colorStyle.text}`}
+                          >
+                            {tag.name}
+                            <button className="ml-0.5 opacity-60 hover:opacity-100">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </span>
+                        );
+                      })}
+                      <button className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-violet-600 hover:text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        {cardTags.length === 0 ? 'Add tag' : ''}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 space-y-2">
-                <button className="w-full flex items-center gap-3 px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl transition-colors">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Divider */}
+              <div className="border-t border-neutral-200 dark:border-neutral-800" />
+
+              {/* Actions section */}
+              <div className="p-4 space-y-1">
+                <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">Actions</h3>
+
+                {/* Run Logs (if any) */}
+                {instructionRuns.length > 0 && (
+                  <div>
+                    <button
+                      onClick={() => setShowRunLogs(!showRunLogs)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="flex-1 text-left">Run history</span>
+                      <span className="text-xs text-neutral-400">{instructionRuns.length}</span>
+                      <svg className={`w-4 h-4 text-neutral-400 transition-transform ${showRunLogs ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {showRunLogs && (
+                      <div className="ml-7 mt-1 space-y-2 pb-2">
+                        {instructionRuns.map(run => (
+                          <div key={run.id} className="px-3 py-2 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg">
+                            <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{run.instructionTitle}</p>
+                            <p className="text-xs text-neutral-500">{formatDate(run.timestamp)}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <button className="text-xs text-amber-600 hover:text-amber-700 dark:text-amber-400 hover:underline">
+                                Undo
+                              </button>
+                              <button className="text-xs text-violet-600 hover:text-violet-700 dark:text-violet-400 hover:underline">
+                                Run again
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Create Channel */}
+                <button className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg transition-colors">
+                  <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Create channel from card
+                </button>
+
+                {/* Archive */}
+                <button className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg transition-colors">
+                  <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                   </svg>
-                  Archive card
+                  Archive
                 </button>
-                <button className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+                {/* Delete */}
+                <button className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                  Delete card
+                  Delete
                 </button>
               </div>
             </div>
@@ -361,9 +463,9 @@ export function CardDetailV2BottomTabs({ isOpen, onClose, card, tasks, tags }: C
         {/* Bottom Tabs */}
         <div className="flex-shrink-0 flex border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
           <button
-            onClick={() => setActiveTab('chat')}
+            onClick={() => setActiveTab('thread')}
             className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
-              activeTab === 'chat'
+              activeTab === 'thread'
                 ? 'text-violet-600 dark:text-violet-400'
                 : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
             }`}
@@ -371,10 +473,7 @@ export function CardDetailV2BottomTabs({ isOpen, onClose, card, tasks, tags }: C
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
-            <span className="text-xs font-medium">Chat</span>
-            {activeTab === 'chat' && (
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-violet-500 rounded-full" />
-            )}
+            <span className="text-xs font-medium">Thread</span>
           </button>
           <button
             onClick={() => setActiveTab('tasks')}
