@@ -29,6 +29,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const body = await req.json()
     const {
+      id: clientId,
       title,
       instructions,
       action,
@@ -59,7 +60,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const maxPosition = existingInstructions.length > 0 ? existingInstructions[0].position : -1
     const position = maxPosition + 1
 
-    const instructionId = nanoid()
+    // Use client-provided ID if given (for optimistic sync), otherwise generate
+    const instructionId = clientId || nanoid()
     const now = new Date()
 
     await db.insert(instructionCards).values({

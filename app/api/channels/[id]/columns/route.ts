@@ -28,7 +28,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     await requirePermission(channelId, userId, 'edit')
 
     const body = await req.json()
-    const { name, instructions, position: requestedPosition } = body
+    const { id: clientId, name, instructions, position: requestedPosition } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -54,7 +54,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         )
     }
 
-    const columnId = nanoid()
+    // Use client-provided ID if given (for optimistic sync), otherwise generate
+    const columnId = clientId || nanoid()
     const now = new Date()
 
     await db.insert(columns).values({

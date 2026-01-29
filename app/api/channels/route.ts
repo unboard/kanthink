@@ -74,13 +74,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { name, description, aiInstructions, columnNames } = body
+    const { id: clientId, name, description, aiInstructions, columnNames } = body
 
     if (!name || typeof name !== 'string') {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
-    const channelId = nanoid()
+    // Use client-provided ID if given (for optimistic sync), otherwise generate
+    const channelId = clientId || nanoid()
     const now = new Date()
 
     // Create the channel

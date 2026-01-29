@@ -29,6 +29,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const body = await req.json()
     const {
+      id: clientId,
       cardId,
       title,
       description = '',
@@ -79,7 +80,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         )
     }
 
-    const taskId = nanoid()
+    // Use client-provided ID if given (for optimistic sync), otherwise generate
+    const taskId = clientId || nanoid()
     const now = new Date()
 
     await db.insert(tasks).values({

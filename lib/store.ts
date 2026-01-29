@@ -777,7 +777,7 @@ export const useStore = create<KanthinkState>()(
         emitCardCreated(id, channelId, columnId, createdByInstructionId);
 
         // Sync to server
-        sync.syncCardCreate(channelId, {
+        sync.syncCardCreate(channelId, id, {
           columnId,
           title: input.title,
           initialMessage: input.initialMessage,
@@ -1289,7 +1289,7 @@ export const useStore = create<KanthinkState>()(
         });
 
         // Sync to server
-        sync.syncTaskCreate(channelId, {
+        sync.syncTaskCreate(channelId, id, {
           cardId: cardId ?? undefined,
           title: input.title,
           description: input.description ?? '',
@@ -2043,7 +2043,7 @@ export const useStore = create<KanthinkState>()(
         });
 
         // Sync to server
-        sync.syncInstructionCardCreate(channelId, {
+        sync.syncInstructionCardCreate(channelId, id, {
           title: input.title,
           instructions: input.instructions,
           action: input.action,
@@ -2145,7 +2145,7 @@ export const useStore = create<KanthinkState>()(
         });
 
         // Sync to server - create the duplicated instruction card
-        sync.syncInstructionCardCreate(instructionCard.channelId, {
+        sync.syncInstructionCardCreate(instructionCard.channelId, newId, {
           title: duplicatedCard.title,
           instructions: duplicatedCard.instructions,
           action: duplicatedCard.action,

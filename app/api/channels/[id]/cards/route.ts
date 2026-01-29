@@ -29,6 +29,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const body = await req.json()
     const {
+      id: clientId,
       columnId,
       title,
       initialMessage,
@@ -80,7 +81,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         )
     }
 
-    const cardId = nanoid()
+    // Use client-provided ID if given (for optimistic sync), otherwise generate
+    const cardId = clientId || nanoid()
     const now = new Date()
     const nowIso = now.toISOString()
 

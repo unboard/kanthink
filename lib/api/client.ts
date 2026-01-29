@@ -51,7 +51,7 @@ export async function fetchChannel(channelId: string): Promise<ChannelDetailResp
   return res.json()
 }
 
-export async function createChannel(input: ChannelInput & { columnNames?: string[] }): Promise<{ channel: Channel; columns: Column[] }> {
+export async function createChannel(input: ChannelInput & { id?: string; columnNames?: string[] }): Promise<{ channel: Channel; columns: Column[] }> {
   const res = await fetch('/api/channels', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -88,7 +88,7 @@ export async function deleteChannel(channelId: string): Promise<void> {
 
 export async function createCard(
   channelId: string,
-  input: { columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number }
+  input: { id?: string; columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number }
 ): Promise<{ card: Card }> {
   const res = await fetch(`/api/channels/${channelId}/cards`, {
     method: 'POST',
@@ -142,11 +142,11 @@ export async function moveCard(
 
 // ===== COLUMNS =====
 
-export async function createColumn(channelId: string, name: string): Promise<{ column: Column }> {
+export async function createColumn(channelId: string, name: string, id?: string): Promise<{ column: Column }> {
   const res = await fetch(`/api/channels/${channelId}/columns`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ id, name }),
   })
   if (!res.ok) {
     throw new Error('Failed to create column')
@@ -197,11 +197,11 @@ export async function fetchFolders(): Promise<FoldersResponse> {
   return res.json()
 }
 
-export async function createFolder(name: string): Promise<{ folder: Folder }> {
+export async function createFolder(name: string, id?: string): Promise<{ folder: Folder }> {
   const res = await fetch('/api/folders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ id, name }),
   })
   if (!res.ok) {
     throw new Error('Failed to create folder')
@@ -402,7 +402,7 @@ export async function deleteInviteLink(channelId: string, linkId: string): Promi
 
 export async function createTask(
   channelId: string,
-  input: { cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number }
+  input: { id?: string; cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number }
 ): Promise<{ task: Task }> {
   const res = await fetch(`/api/channels/${channelId}/tasks`, {
     method: 'POST',

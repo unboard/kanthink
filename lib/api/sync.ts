@@ -35,7 +35,8 @@ function syncInBackground(fn: () => Promise<void>) {
 
 export function syncChannelCreate(channelId: string, data: Parameters<typeof api.createChannel>[0]) {
   syncInBackground(async () => {
-    await api.createChannel(data)
+    // Pass the client-generated ID so server uses the same ID
+    await api.createChannel({ ...data, id: channelId })
   })
 }
 
@@ -55,10 +56,12 @@ export function syncChannelDelete(channelId: string) {
 
 export function syncCardCreate(
   channelId: string,
+  cardId: string,
   data: { columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number }
 ) {
   syncInBackground(async () => {
-    await api.createCard(channelId, data)
+    // Pass the client-generated ID so server uses the same ID
+    await api.createCard(channelId, { ...data, id: cardId })
   })
 }
 
@@ -90,7 +93,8 @@ export function syncCardMove(
 
 export function syncColumnCreate(channelId: string, columnId: string, name: string) {
   syncInBackground(async () => {
-    await api.createColumn(channelId, name)
+    // Pass the client-generated ID so server uses the same ID
+    await api.createColumn(channelId, name, columnId)
   })
 }
 
@@ -110,7 +114,8 @@ export function syncColumnDelete(channelId: string, columnId: string) {
 
 export function syncFolderCreate(folderId: string, name: string) {
   syncInBackground(async () => {
-    await api.createFolder(name)
+    // Pass the client-generated ID so server uses the same ID
+    await api.createFolder(name, folderId)
   })
 }
 
@@ -155,10 +160,12 @@ export function syncReorderFolders(folderId: string, fromIndex: number, toIndex:
 
 export function syncTaskCreate(
   channelId: string,
+  taskId: string,
   data: { cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number }
 ) {
   syncInBackground(async () => {
-    await api.createTask(channelId, data)
+    // Pass the client-generated ID so server uses the same ID
+    await api.createTask(channelId, { ...data, id: taskId })
   })
 }
 
@@ -182,9 +189,10 @@ export function syncTaskReorder(channelId: string, taskId: string, cardId: strin
 
 // ===== INSTRUCTION CARD SYNC =====
 
-export function syncInstructionCardCreate(channelId: string, data: Record<string, unknown>) {
+export function syncInstructionCardCreate(channelId: string, instructionId: string, data: Record<string, unknown>) {
   syncInBackground(async () => {
-    await api.createInstructionCard(channelId, data)
+    // Pass the client-generated ID so server uses the same ID
+    await api.createInstructionCard(channelId, { ...data, id: instructionId })
   })
 }
 

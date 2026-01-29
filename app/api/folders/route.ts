@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { name, position: requestedPosition } = body
+    const { id: clientId, name, position: requestedPosition } = body
 
     if (!name || typeof name !== 'string') {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -85,7 +85,8 @@ export async function POST(req: NextRequest) {
     const maxPosition = existingFolders.length > 0 ? existingFolders[0].position : -1
     const position = requestedPosition ?? maxPosition + 1
 
-    const folderId = nanoid()
+    // Use client-provided ID if given (for optimistic sync), otherwise generate
+    const folderId = clientId || nanoid()
     const now = new Date()
 
     await db.insert(folders).values({
