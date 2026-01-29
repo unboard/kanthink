@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
@@ -75,31 +75,6 @@ export function GuidedQuestionnaireOverlay({
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
 
   const ai = useSettingsStore((s) => s.ai);
-
-  // Track if this is a touch device - if so, disable backdrop close entirely
-  // Users can use the Cancel button instead. This avoids all mobile keyboard issues.
-  const isTouchDevice = useRef(false);
-  const mouseDownTargetRef = useRef<EventTarget | null>(null);
-
-  useEffect(() => {
-    // Detect touch capability on mount
-    isTouchDevice.current = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  }, []);
-
-  // Only track mousedown for non-touch (desktop) clicks
-  const handleBackdropMouseDown = (e: MouseEvent) => {
-    if (isTouchDevice.current) return;
-    mouseDownTargetRef.current = e.target;
-  };
-
-  // Desktop only: close on backdrop click
-  const handleBackdropClick = (e: MouseEvent) => {
-    if (isTouchDevice.current) return;
-    if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
-      onClose();
-    }
-    mouseDownTargetRef.current = null;
-  };
 
   // Reset state when opened
   useEffect(() => {
@@ -263,12 +238,8 @@ export function GuidedQuestionnaireOverlay({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* Gradient backdrop - only closes on desktop click, not touch */}
-      <div
-        className="absolute inset-0 bg-gradient-to-br from-violet-950/90 via-neutral-950/95 to-neutral-950/95"
-        onMouseDown={handleBackdropMouseDown}
-        onClick={handleBackdropClick}
-      />
+      {/* Gradient backdrop - no click-to-close, use Cancel button */}
+      <div className="absolute inset-0 bg-gradient-to-br from-violet-950/90 via-neutral-950/95 to-neutral-950/95" />
 
       {/* Decorative blur elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
