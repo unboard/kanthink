@@ -201,6 +201,8 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
 
   const activeDragTask = activeDragTaskId ? tasks[activeDragTaskId] : null;
 
+  // Only reset state when switching to a different card (by ID), not when the same card updates
+  const cardId = card?.id;
   useEffect(() => {
     if (card) {
       setTitle(card.title);
@@ -213,7 +215,8 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
       setIsMenuOpen(false);
       setActiveTab('details');
     }
-  }, [card]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId]);
 
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
