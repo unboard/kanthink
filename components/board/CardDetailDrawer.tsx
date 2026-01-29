@@ -325,7 +325,7 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
     <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating>
       <div className="flex flex-col h-full max-h-[calc(100vh-2rem)]">
         {/* Compact Header */}
-        <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3 pr-14 border-b border-neutral-200 dark:border-neutral-800">
+        <div className="flex-shrink-0 flex items-center gap-3 px-4 pt-5 pb-3 pr-14 border-b border-neutral-200 dark:border-neutral-800">
           <h2 className="flex-1 font-medium text-neutral-900 dark:text-white truncate">
             {card.title}
           </h2>
