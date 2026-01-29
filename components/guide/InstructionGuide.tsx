@@ -331,30 +331,32 @@ export function InstructionGuide({
 
           {/* Options or text input */}
           <div className="space-y-2">
-            {/* Text-only step (no options) */}
+            {/* Text-only step (no options) - fixed at bottom on mobile for keyboard */}
             {isTextOnlyStep ? (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={customValue}
-                  onChange={(e) => setCustomValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      submitCustom();
-                    }
-                  }}
-                  placeholder={currentStep.customPlaceholder || 'Type your answer...'}
-                  autoFocus
-                  className="flex-1 px-3 py-2.5 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors text-sm"
-                />
-                <button
-                  onClick={submitCustom}
-                  disabled={!customValue.trim()}
-                  className="px-4 py-2.5 rounded-md bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-medium hover:bg-neutral-800 dark:hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                >
-                  Continue
-                </button>
+              <div className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-50">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customValue}
+                    onChange={(e) => setCustomValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitCustom();
+                      }
+                    }}
+                    placeholder={currentStep.customPlaceholder || 'Type your answer...'}
+                    autoFocus
+                    className="flex-1 px-3 py-2.5 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors text-sm"
+                  />
+                  <button
+                    onClick={submitCustom}
+                    disabled={!customValue.trim()}
+                    className="px-4 py-2.5 rounded-md bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-medium hover:bg-neutral-800 dark:hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                  >
+                    Continue
+                  </button>
+                </div>
               </div>
             ) : (
               <>
@@ -386,34 +388,36 @@ export function InstructionGuide({
                   </button>
                 )}
 
-                {/* Custom input (when "Something else" is clicked) */}
+                {/* Custom input (when "Something else" is clicked) - fixed at bottom on mobile for keyboard */}
                 {showCustomInput && (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={customValue}
-                      onChange={(e) => setCustomValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          submitCustom();
-                        }
-                        if (e.key === 'Escape') {
-                          setShowCustomInput(false);
-                          setCustomValue('');
-                        }
-                      }}
-                      placeholder={currentStep.customPlaceholder || 'Type your answer...'}
-                      autoFocus
-                      className="flex-1 px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors text-sm"
-                    />
-                    <button
-                      onClick={submitCustom}
-                      disabled={!customValue.trim()}
-                      className="px-4 py-2 rounded-md bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-medium hover:bg-neutral-800 dark:hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                    >
-                      Go
-                    </button>
+                  <div className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-50">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={customValue}
+                        onChange={(e) => setCustomValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            submitCustom();
+                          }
+                          if (e.key === 'Escape') {
+                            setShowCustomInput(false);
+                            setCustomValue('');
+                          }
+                        }}
+                        placeholder={currentStep.customPlaceholder || 'Type your answer...'}
+                        autoFocus
+                        className="flex-1 px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors text-sm"
+                      />
+                      <button
+                        onClick={submitCustom}
+                        disabled={!customValue.trim()}
+                        className="px-4 py-2 rounded-md bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-medium hover:bg-neutral-800 dark:hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                      >
+                        Go
+                      </button>
+                    </div>
                   </div>
                 )}
               </>
