@@ -10,6 +10,7 @@ interface DrawerProps {
   width?: 'md' | 'lg' | 'xl';
   floating?: boolean;
   title?: string;
+  hideCloseButton?: boolean;
 }
 
 // On mobile, drawers are full-width. On larger screens, use max-width
@@ -19,7 +20,7 @@ const widthClasses = {
   xl: 'w-full sm:max-w-4xl',
 };
 
-export function Drawer({ isOpen, onClose, children, width = 'lg', floating = false, title }: DrawerProps) {
+export function Drawer({ isOpen, onClose, children, width = 'lg', floating = false, title, hideCloseButton = false }: DrawerProps) {
   const theme = useSettingsStore((s) => s.theme);
   const isTerminal = theme === 'terminal';
 
@@ -83,7 +84,7 @@ export function Drawer({ isOpen, onClose, children, width = 'lg', floating = fal
         )}
 
         {/* Close button (non-terminal) */}
-        {!isTerminal && (
+        {!isTerminal && !hideCloseButton && (
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-2 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-800 z-10"
