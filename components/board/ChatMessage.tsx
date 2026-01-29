@@ -15,6 +15,8 @@ interface ChatMessageProps {
   cardTags?: string[];
   onActionApprove?: (messageId: string, actionId: string, editedData?: StoredAction['data']) => void;
   onActionReject?: (messageId: string, actionId: string) => void;
+  onApproveAll?: (messageId: string) => void;
+  onRejectAll?: (messageId: string) => void;
 }
 
 function formatTime(dateString: string): string {
@@ -51,6 +53,8 @@ export function ChatMessage({
   cardTags = [],
   onActionApprove,
   onActionReject,
+  onApproveAll,
+  onRejectAll,
 }: ChatMessageProps) {
   const isAI = message.type === 'ai_response';
   const isQuestion = message.type === 'question';
@@ -246,26 +250,57 @@ export function ChatMessage({
         )}
 
         {/* Smart Snippets section */}
-        {hasSmartSnippets && onActionApprove && onActionReject && (
-          <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 mb-2">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              Suggested Actions
+        {hasSmartSnippets && onActionApprove && onActionReject && (() => {
+          const pendingActions = message.proposedActions!.filter(a => a.status === 'pending');
+          const hasPending = pendingActions.length > 0;
+          const hasMultiplePending = pendingActions.length > 1;
+
+          return (
+            <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  Kan suggests
+                </div>
+              </div>
+
+              {/* Action items */}
+              <div className="space-y-2">
+                {message.proposedActions!.map((action) => (
+                  <SmartSnippet
+                    key={action.id}
+                    action={action}
+                    tagDefinitions={tagDefinitions}
+                    cardTags={cardTags}
+                    onApprove={(actionId, editedData) => onActionApprove(message.id, actionId, editedData)}
+                    onReject={(actionId) => onActionReject(message.id, actionId)}
+                  />
+                ))}
+              </div>
+
+              {/* Bulk action buttons - only show if multiple pending */}
+              {hasPending && hasMultiplePending && onApproveAll && onRejectAll && (
+                <div className="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                  <button
+                    onClick={() => onRejectAll(message.id)}
+                    className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors"
+                  >
+                    Dismiss all
+                  </button>
+                  <button
+                    onClick={() => onApproveAll(message.id)}
+                    className="text-xs font-medium text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 px-2.5 py-1 rounded-md transition-colors"
+                  >
+                    Accept all
+                  </button>
+                </div>
+              )}
             </div>
-            {message.proposedActions!.map((action) => (
-              <SmartSnippet
-                key={action.id}
-                action={action}
-                tagDefinitions={tagDefinitions}
-                cardTags={cardTags}
-                onApprove={(actionId, editedData) => onActionApprove(message.id, actionId, editedData)}
-                onReject={(actionId) => onActionReject(message.id, actionId)}
-              />
-            ))}
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

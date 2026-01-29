@@ -47,47 +47,47 @@ export function SmartSnippet({
     setIsEditing(false);
   };
 
-  // Status styles
+  // Status-based container styles
   const containerStyles = isPending
-    ? 'bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800'
+    ? 'bg-neutral-50 dark:bg-neutral-800/50 border-neutral-200 dark:border-neutral-700'
     : isApproved
-    ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800'
-    : 'bg-neutral-100 dark:bg-neutral-800/50 border-neutral-200 dark:border-neutral-700 opacity-60';
+    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800/50'
+    : 'bg-neutral-50 dark:bg-neutral-800/30 border-neutral-200 dark:border-neutral-700 opacity-50';
+
+  // Icon color based on status
+  const iconColor = isApproved
+    ? 'text-green-500 dark:text-green-400'
+    : isRejected
+    ? 'text-neutral-400 dark:text-neutral-500'
+    : 'text-violet-500 dark:text-violet-400';
 
   return (
-    <div className={`rounded-lg border px-3 py-2 ${containerStyles}`}>
-      <div className="flex items-start gap-2">
-        {/* Action type indicator */}
-        <div className="flex-shrink-0 mt-0.5">
+    <div className={`rounded-lg border px-3 py-2.5 ${containerStyles}`}>
+      <div className="flex items-start gap-2.5">
+        {/* Action type icon - non-interactive indicator */}
+        <div className={`flex-shrink-0 mt-0.5 ${iconColor}`}>
           {action.type === 'create_task' && (
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                isApproved
-                  ? 'bg-green-500 border-green-500'
-                  : isRejected
-                  ? 'border-neutral-400'
-                  : 'border-violet-400'
-              }`}
-            >
-              {isApproved && (
-                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-            </div>
+            isApproved ? (
+              // Checkmark for approved tasks
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            ) : (
+              // Clipboard/task icon for pending/rejected
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            )
           )}
-          {(action.type === 'add_tag' || action.type === 'remove_tag') && (
-            <div className={`flex items-center justify-center w-4 h-4 ${isRejected ? 'text-neutral-400' : 'text-violet-500'}`}>
-              {action.type === 'add_tag' ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                </svg>
-              )}
-            </div>
+          {action.type === 'add_tag' && (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+          )}
+          {action.type === 'remove_tag' && (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
           )}
         </div>
 
@@ -115,15 +115,15 @@ export function SmartSnippet({
           )}
         </div>
 
-        {/* Action buttons */}
+        {/* Action buttons for pending items */}
         {isPending && (
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-0.5 flex-shrink-0">
             {isEditing ? (
               <>
                 <button
                   onClick={handleApprove}
-                  className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors"
-                  title="Apply"
+                  className="p-1.5 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-md transition-colors"
+                  title="Save"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -131,8 +131,8 @@ export function SmartSnippet({
                 </button>
                 <button
                   onClick={handleCancelEdit}
-                  className="p-1 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded transition-colors"
-                  title="Cancel edit"
+                  className="p-1.5 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-md transition-colors"
+                  title="Cancel"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -143,7 +143,7 @@ export function SmartSnippet({
               <>
                 <button
                   onClick={handleStartEdit}
-                  className="p-1 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded transition-colors"
+                  className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded-md transition-colors"
                   title="Edit"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,8 +152,8 @@ export function SmartSnippet({
                 </button>
                 <button
                   onClick={handleApprove}
-                  className="p-1 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors"
-                  title="Approve"
+                  className="p-1.5 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-md transition-colors"
+                  title="Accept"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -161,8 +161,8 @@ export function SmartSnippet({
                 </button>
                 <button
                   onClick={handleReject}
-                  className="p-1 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
-                  title="Reject"
+                  className="p-1.5 text-neutral-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                  title="Dismiss"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -175,13 +175,13 @@ export function SmartSnippet({
 
         {/* Status badge for completed actions */}
         {isApproved && (
-          <span className="text-xs text-green-600 dark:text-green-400 font-medium flex-shrink-0">
-            Applied
+          <span className="text-xs text-green-600 dark:text-green-400 font-medium flex-shrink-0 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
+            Added
           </span>
         )}
         {isRejected && (
-          <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium flex-shrink-0">
-            Skipped
+          <span className="text-xs text-neutral-500 dark:text-neutral-400 flex-shrink-0 line-through">
+            Dismissed
           </span>
         )}
       </div>

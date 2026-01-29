@@ -210,6 +210,28 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
     });
   };
 
+  // Handle approving all pending actions in a message
+  const handleApproveAll = (messageId: string) => {
+    const message = messages.find((m) => m.id === messageId);
+    if (!message?.proposedActions) return;
+
+    const pendingActions = message.proposedActions.filter(a => a.status === 'pending');
+    for (const action of pendingActions) {
+      handleActionApprove(messageId, action.id);
+    }
+  };
+
+  // Handle rejecting all pending actions in a message
+  const handleRejectAll = (messageId: string) => {
+    const message = messages.find((m) => m.id === messageId);
+    if (!message?.proposedActions) return;
+
+    const pendingActions = message.proposedActions.filter(a => a.status === 'pending');
+    for (const action of pendingActions) {
+      handleActionReject(messageId, action.id);
+    }
+  };
+
   const chatContent = (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Fullscreen header - only shown in fullscreen mode */}
@@ -276,6 +298,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
               cardTags={cardTags}
               onActionApprove={handleActionApprove}
               onActionReject={handleActionReject}
+              onApproveAll={handleApproveAll}
+              onRejectAll={handleRejectAll}
             />
           ))
         )}
