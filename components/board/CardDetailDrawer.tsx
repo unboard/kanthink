@@ -325,18 +325,10 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
     <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating>
       <div className="flex flex-col h-full max-h-[calc(100vh-2rem)]">
         {/* Compact Header */}
-        <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+        <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3 pr-14 border-b border-neutral-200 dark:border-neutral-800">
           <h2 className="flex-1 font-medium text-neutral-900 dark:text-white truncate">
             {card.title}
           </h2>
-          <button
-            onClick={handleClose}
-            className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
         </div>
 
         {/* Hidden file input for cover image */}
