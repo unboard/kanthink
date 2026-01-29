@@ -47,10 +47,34 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     mouseDownTargetRef.current = e.target;
   };
 
+  const shouldPreventClose = () => {
+    // Don't close if an input/textarea is focused (keyboard is open on mobile)
+    const active = document.activeElement;
+    return active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA';
+  };
+
   const handleBackdropClick = (e: React.MouseEvent) => {
     // Only close if both mousedown and click happened on the backdrop itself
     // This prevents closing when keyboard appears and causes layout shifts
     if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
+      if (shouldPreventClose()) {
+        mouseDownTargetRef.current = null;
+        return;
+      }
+      onClose();
+    }
+    mouseDownTargetRef.current = null;
+  };
+
+  // Handle touch end for mobile - some browsers don't fire click after touch
+  const handleBackdropTouchEnd = (e: React.TouchEvent) => {
+    if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
+      if (shouldPreventClose()) {
+        mouseDownTargetRef.current = null;
+        return;
+      }
+      // Prevent the subsequent click event from also firing
+      e.preventDefault();
       onClose();
     }
     mouseDownTargetRef.current = null;
@@ -64,6 +88,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
         className="fixed inset-0 bg-black/50"
         onMouseDown={handleBackdropMouseDown}
         onTouchStart={handleBackdropMouseDown}
+        onTouchEnd={handleBackdropTouchEnd}
         onClick={handleBackdropClick}
         aria-hidden="true"
       />

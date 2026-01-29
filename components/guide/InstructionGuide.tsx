@@ -333,7 +333,11 @@ export function InstructionGuide({
           <div className="space-y-2">
             {/* Text-only step (no options) - fixed at bottom on mobile for keyboard */}
             {isTextOnlyStep ? (
-              <div className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-50">
+              <div
+                className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-[60]"
+                onTouchStart={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -390,7 +394,11 @@ export function InstructionGuide({
 
                 {/* Custom input (when "Something else" is clicked) - fixed at bottom on mobile for keyboard */}
                 {showCustomInput && (
-                  <div className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-50">
+                  <div
+                    className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-[60]"
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
                     <div className="flex gap-2">
                       <input
                         type="text"
