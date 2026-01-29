@@ -160,16 +160,19 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
           ref={backdropRef}
           className={`
             absolute inset-0 w-full rounded-md px-3 py-2 text-sm z-0
-            overflow-hidden whitespace-pre-wrap break-words
+            overflow-y-auto whitespace-pre-wrap break-words
             pointer-events-none
             text-neutral-900 dark:text-white
             border border-transparent
+            scrollbar-none
           `}
           style={{
             wordBreak: 'break-word',
             fontFamily: 'inherit',
             lineHeight: '1.25rem',
             letterSpacing: 'normal',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
           }}
           aria-hidden="true"
         >
