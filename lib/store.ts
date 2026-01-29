@@ -514,6 +514,31 @@ export const useStore = create<KanthinkState>()(
           channelOrder: [...state.channelOrder, channelId],
         }));
 
+        // Sync channel to server
+        sync.syncChannelCreate(channelId, {
+          name: input.name,
+          description: input.description,
+          aiInstructions: input.aiInstructions,
+          columnNames: columns.map(c => c.name),
+        });
+
+        // Sync columns with their IDs
+        for (const column of columns) {
+          sync.syncColumnCreate(channelId, column.id, column.name);
+        }
+
+        // Sync instruction cards
+        for (const ic of Object.values(newInstructionCards)) {
+          sync.syncInstructionCardCreate(channelId, ic.id, {
+            title: ic.title,
+            instructions: ic.instructions,
+            action: ic.action,
+            target: ic.target,
+            runMode: ic.runMode,
+            cardCount: ic.cardCount,
+          });
+        }
+
         return channel;
       },
 
