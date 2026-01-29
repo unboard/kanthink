@@ -1255,39 +1255,55 @@ export const useStore = create<KanthinkState>()(
           };
         });
 
+        // Sync to server
+        sync.syncTaskCreate(channelId, {
+          cardId: cardId ?? undefined,
+          title: input.title,
+          description: input.description ?? '',
+        });
+
         return task;
       },
 
       updateTask: (id, updates) => {
+        const task = get().tasks[id];
+        if (!task) return;
+
         set((state) => {
-          const task = state.tasks[id];
-          if (!task) return state;
+          const t = state.tasks[id];
+          if (!t) return state;
 
           return {
             tasks: {
               ...state.tasks,
-              [id]: { ...task, ...updates, updatedAt: now() },
+              [id]: { ...t, ...updates, updatedAt: now() },
             },
           };
         });
+
+        // Sync to server
+        sync.syncTaskUpdate(task.channelId, id, updates);
       },
 
       deleteTask: (id) => {
+        const task = get().tasks[id];
+        if (!task) return;
+
         set((state) => {
-          const task = state.tasks[id];
-          if (!task) return state;
+          const t = state.tasks[id];
+          if (!t) return state;
 
           const { [id]: deleted, ...remainingTasks } = state.tasks;
 
           // If task belongs to a card, remove from card's taskIds
-          if (task.cardId) {
-            const card = state.cards[task.cardId];
+          if (t.cardId) {
+            const card = state.cards[t.cardId];
             if (card) {
               return {
                 tasks: remainingTasks,
                 cards: {
                   ...state.cards,
-                  [task.cardId]: {
+                  [t.cardId]: {
                     ...card,
                     taskIds: (card.taskIds ?? []).filter((tid) => tid !== id),
                     updatedAt: now(),
@@ -1299,47 +1315,64 @@ export const useStore = create<KanthinkState>()(
 
           return { tasks: remainingTasks };
         });
+
+        // Sync to server
+        sync.syncTaskDelete(task.channelId, id);
       },
 
       completeTask: (id) => {
+        const task = get().tasks[id];
+        if (!task) return;
+
+        const timestamp = now();
+
         set((state) => {
-          const task = state.tasks[id];
-          if (!task) return state;
+          const t = state.tasks[id];
+          if (!t) return state;
 
           return {
             tasks: {
               ...state.tasks,
               [id]: {
-                ...task,
+                ...t,
                 status: 'done',
-                completedAt: now(),
-                updatedAt: now(),
+                completedAt: timestamp,
+                updatedAt: timestamp,
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncTaskUpdate(task.channelId, id, {
+          status: 'done',
+          completedAt: timestamp,
+        });
       },
 
       toggleTaskStatus: (id) => {
+        const task = get().tasks[id];
+        if (!task) return;
+
+        // Cycle: not_started -> in_progress -> done -> not_started
+        const statusCycle: Record<TaskStatus, TaskStatus> = {
+          not_started: 'in_progress',
+          in_progress: 'done',
+          done: 'not_started',
+        };
+
+        const newStatus = statusCycle[task.status];
+        const timestamp = now();
+
         set((state) => {
-          const task = state.tasks[id];
-          if (!task) return state;
-
-          // Cycle: not_started -> in_progress -> done -> not_started
-          const statusCycle: Record<TaskStatus, TaskStatus> = {
-            not_started: 'in_progress',
-            in_progress: 'done',
-            done: 'not_started',
-          };
-
-          const newStatus = statusCycle[task.status];
-          const timestamp = now();
+          const t = state.tasks[id];
+          if (!t) return state;
 
           return {
             tasks: {
               ...state.tasks,
               [id]: {
-                ...task,
+                ...t,
                 status: newStatus,
                 completedAt: newStatus === 'done' ? timestamp : undefined,
                 updatedAt: timestamp,
@@ -1347,14 +1380,27 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncTaskUpdate(task.channelId, id, {
+          status: newStatus,
+          completedAt: newStatus === 'done' ? timestamp : undefined,
+        });
       },
 
       reorderTasks: (cardId, fromIndex, toIndex) => {
-        set((state) => {
-          const card = state.cards[cardId];
-          if (!card || !card.taskIds) return state;
+        const card = get().cards[cardId];
+        if (!card || !card.taskIds) return;
 
-          const newTaskIds = [...card.taskIds];
+        const taskId = card.taskIds[fromIndex];
+        const task = get().tasks[taskId];
+        if (!task) return;
+
+        set((state) => {
+          const c = state.cards[cardId];
+          if (!c || !c.taskIds) return state;
+
+          const newTaskIds = [...c.taskIds];
           const [removed] = newTaskIds.splice(fromIndex, 1);
           newTaskIds.splice(toIndex, 0, removed);
 
@@ -1362,13 +1408,16 @@ export const useStore = create<KanthinkState>()(
             cards: {
               ...state.cards,
               [cardId]: {
-                ...card,
+                ...c,
                 taskIds: newTaskIds,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncTaskReorder(task.channelId, taskId, cardId, toIndex);
       },
 
       reorderUnlinkedTasks: (channelId, fromIndex, toIndex) => {
@@ -1864,37 +1913,58 @@ export const useStore = create<KanthinkState>()(
           };
         });
 
+        // Sync to server
+        sync.syncInstructionCardCreate(channelId, {
+          title: input.title,
+          instructions: input.instructions,
+          action: input.action,
+          target: input.target,
+          contextColumns: input.contextColumns,
+          runMode: input.runMode ?? 'manual',
+          cardCount: input.cardCount,
+          interviewQuestions: input.interviewQuestions,
+        });
+
         return instructionCard;
       },
 
       updateInstructionCard: (id, updates) => {
+        const instructionCard = get().instructionCards[id];
+        if (!instructionCard) return;
+
         set((state) => {
-          const instructionCard = state.instructionCards[id];
-          if (!instructionCard) return state;
+          const ic = state.instructionCards[id];
+          if (!ic) return state;
 
           return {
             instructionCards: {
               ...state.instructionCards,
-              [id]: { ...instructionCard, ...updates, updatedAt: now() },
+              [id]: { ...ic, ...updates, updatedAt: now() },
             },
           };
         });
+
+        // Sync to server
+        sync.syncInstructionCardUpdate(instructionCard.channelId, id, updates);
       },
 
       deleteInstructionCard: (id) => {
+        const instructionCard = get().instructionCards[id];
+        if (!instructionCard) return;
+
         set((state) => {
-          const instructionCard = state.instructionCards[id];
-          if (!instructionCard) return state;
+          const ic = state.instructionCards[id];
+          if (!ic) return state;
 
           const { [id]: deleted, ...remainingInstructionCards } = state.instructionCards;
-          const channel = state.channels[instructionCard.channelId];
+          const channel = state.channels[ic.channelId];
           if (!channel) return { instructionCards: remainingInstructionCards };
 
           return {
             instructionCards: remainingInstructionCards,
             channels: {
               ...state.channels,
-              [instructionCard.channelId]: {
+              [ic.channelId]: {
                 ...channel,
                 instructionCardIds: (channel.instructionCardIds ?? []).filter((icId) => icId !== id),
                 updatedAt: now(),
@@ -1902,6 +1972,9 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncInstructionCardDelete(instructionCard.channelId, id);
       },
 
       duplicateInstructionCard: (id) => {
@@ -1940,6 +2013,21 @@ export const useStore = create<KanthinkState>()(
               },
             },
           };
+        });
+
+        // Sync to server - create the duplicated instruction card
+        sync.syncInstructionCardCreate(instructionCard.channelId, {
+          title: duplicatedCard.title,
+          instructions: duplicatedCard.instructions,
+          action: duplicatedCard.action,
+          target: duplicatedCard.target,
+          contextColumns: duplicatedCard.contextColumns,
+          runMode: duplicatedCard.runMode,
+          cardCount: duplicatedCard.cardCount,
+          interviewQuestions: duplicatedCard.interviewQuestions,
+          isEnabled: duplicatedCard.isEnabled,
+          triggers: duplicatedCard.triggers,
+          safeguards: duplicatedCard.safeguards,
         });
 
         return duplicatedCard;

@@ -150,3 +150,52 @@ export function syncReorderFolders(folderId: string, fromIndex: number, toIndex:
     await api.reorderFolders(folderId, fromIndex, toIndex)
   })
 }
+
+// ===== TASK SYNC =====
+
+export function syncTaskCreate(
+  channelId: string,
+  data: { cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number }
+) {
+  syncInBackground(async () => {
+    await api.createTask(channelId, data)
+  })
+}
+
+export function syncTaskUpdate(channelId: string, taskId: string, updates: Record<string, unknown>) {
+  syncInBackground(async () => {
+    await api.updateTask(channelId, taskId, updates)
+  })
+}
+
+export function syncTaskDelete(channelId: string, taskId: string) {
+  syncInBackground(async () => {
+    await api.deleteTask(channelId, taskId)
+  })
+}
+
+export function syncTaskReorder(channelId: string, taskId: string, cardId: string | null, toPosition: number) {
+  syncInBackground(async () => {
+    await api.reorderTasks(channelId, taskId, cardId, toPosition)
+  })
+}
+
+// ===== INSTRUCTION CARD SYNC =====
+
+export function syncInstructionCardCreate(channelId: string, data: Record<string, unknown>) {
+  syncInBackground(async () => {
+    await api.createInstructionCard(channelId, data)
+  })
+}
+
+export function syncInstructionCardUpdate(channelId: string, instructionId: string, updates: Record<string, unknown>) {
+  syncInBackground(async () => {
+    await api.updateInstructionCard(channelId, instructionId, updates)
+  })
+}
+
+export function syncInstructionCardDelete(channelId: string, instructionId: string) {
+  syncInBackground(async () => {
+    await api.deleteInstructionCard(channelId, instructionId)
+  })
+}

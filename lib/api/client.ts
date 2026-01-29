@@ -398,6 +398,97 @@ export async function deleteInviteLink(channelId: string, linkId: string): Promi
   }
 }
 
+// ===== TASKS =====
+
+export async function createTask(
+  channelId: string,
+  input: { cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number }
+): Promise<{ task: Task }> {
+  const res = await fetch(`/api/channels/${channelId}/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to create task')
+  }
+  return res.json()
+}
+
+export async function updateTask(channelId: string, taskId: string, updates: Partial<Task>): Promise<{ task: Task }> {
+  const res = await fetch(`/api/channels/${channelId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to update task')
+  }
+  return res.json()
+}
+
+export async function deleteTask(channelId: string, taskId: string): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/tasks/${taskId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete task')
+  }
+}
+
+export async function reorderTasks(channelId: string, taskId: string, cardId: string | null, toPosition: number): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/tasks/reorder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId, cardId, toPosition }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to reorder tasks')
+  }
+}
+
+// ===== INSTRUCTION CARDS =====
+
+export async function createInstructionCard(
+  channelId: string,
+  input: Partial<InstructionCard>
+): Promise<{ instructionCard: InstructionCard }> {
+  const res = await fetch(`/api/channels/${channelId}/instructions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to create instruction card')
+  }
+  return res.json()
+}
+
+export async function updateInstructionCard(
+  channelId: string,
+  instructionId: string,
+  updates: Partial<InstructionCard>
+): Promise<{ instructionCard: InstructionCard }> {
+  const res = await fetch(`/api/channels/${channelId}/instructions/${instructionId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to update instruction card')
+  }
+  return res.json()
+}
+
+export async function deleteInstructionCard(channelId: string, instructionId: string): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/instructions/${instructionId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete instruction card')
+  }
+}
+
 // ===== MIGRATION =====
 
 export async function migrateData(data: unknown): Promise<{ migrated: Record<string, number> }> {
