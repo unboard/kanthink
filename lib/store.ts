@@ -670,21 +670,31 @@ export const useStore = create<KanthinkState>()(
       },
 
       reorderColumns: (channelId, fromIndex, toIndex) => {
-        set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+        const channel = get().channels[channelId];
+        if (!channel) return;
 
-          const columns = [...channel.columns];
+        const columnId = channel.columns[fromIndex]?.id;
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          const columns = [...ch.columns];
           const [removed] = columns.splice(fromIndex, 1);
           columns.splice(toIndex, 0, removed);
 
           return {
             channels: {
               ...state.channels,
-              [channelId]: { ...channel, columns, updatedAt: now() },
+              [channelId]: { ...ch, columns, updatedAt: now() },
             },
           };
         });
+
+        // Sync column reorder to server
+        if (columnId) {
+          sync.syncColumnUpdate(channelId, columnId, { position: toIndex });
+        }
       },
 
       setColumnInstructions: (channelId, columnId, instructions) => {
@@ -706,6 +716,9 @@ export const useStore = create<KanthinkState>()(
             },
           };
         });
+
+        // Sync to server
+        sync.syncColumnUpdate(channelId, columnId, { instructions });
       },
 
       createCard: (channelId, columnId, input, source = 'manual', createdByInstructionId) => {
@@ -1020,17 +1033,23 @@ export const useStore = create<KanthinkState>()(
       },
 
       setCardTasksHidden: (cardId, hidden) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
         set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
-              [cardId]: { ...card, hideCompletedTasks: hidden, updatedAt: now() },
+              [cardId]: { ...c, hideCompletedTasks: hidden, updatedAt: now() },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { hideCompletedTasks: hidden });
       },
 
       // Card message actions
@@ -1181,40 +1200,54 @@ export const useStore = create<KanthinkState>()(
       },
 
       setCardSummary: (cardId, summary) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
+        const timestamp = now();
+
         set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
-                ...card,
+                ...c,
                 summary,
-                summaryUpdatedAt: now(),
-                updatedAt: now(),
+                summaryUpdatedAt: timestamp,
+                updatedAt: timestamp,
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { summary, summaryUpdatedAt: timestamp });
       },
 
       setCoverImage: (cardId, url) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
         set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
-                ...card,
+                ...c,
                 coverImageUrl: url ?? undefined,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { coverImageUrl: url });
       },
 
       // Task actions
@@ -1596,85 +1629,113 @@ export const useStore = create<KanthinkState>()(
         const id = nanoid();
         const propertyDef: PropertyDefinition = { id, ...definition };
 
+        const channel = get().channels[channelId];
+        const propertyDefinitions = [...(channel?.propertyDefinitions ?? []), propertyDef];
+
         set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                propertyDefinitions: [...(channel.propertyDefinitions ?? []), propertyDef],
+                ...ch,
+                propertyDefinitions,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { propertyDefinitions });
 
         return propertyDef;
       },
 
       removePropertyDefinition: (channelId, propertyId) => {
+        const channel = get().channels[channelId];
+        if (!channel) return;
+
+        const propertyDefinitions = (channel.propertyDefinitions ?? []).filter((p) => p.id !== propertyId);
+
         set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                propertyDefinitions: (channel.propertyDefinitions ?? []).filter((p) => p.id !== propertyId),
+                ...ch,
+                propertyDefinitions,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { propertyDefinitions });
       },
 
       setCardProperty: (cardId, key, value, displayType, color) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
+        const existingProperties = card.properties ?? [];
+        const existingIndex = existingProperties.findIndex((p) => p.key === key);
+        const newProperty: CardProperty = { key, value, displayType, color };
+
+        let updatedProperties: CardProperty[];
+        if (existingIndex >= 0) {
+          updatedProperties = [...existingProperties];
+          updatedProperties[existingIndex] = newProperty;
+        } else {
+          updatedProperties = [...existingProperties, newProperty];
+        }
+
         set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
-
-          const existingProperties = card.properties ?? [];
-          const existingIndex = existingProperties.findIndex((p) => p.key === key);
-          const newProperty: CardProperty = { key, value, displayType, color };
-
-          let updatedProperties: CardProperty[];
-          if (existingIndex >= 0) {
-            updatedProperties = [...existingProperties];
-            updatedProperties[existingIndex] = newProperty;
-          } else {
-            updatedProperties = [...existingProperties, newProperty];
-          }
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
-              [cardId]: { ...card, properties: updatedProperties, updatedAt: now() },
+              [cardId]: { ...c, properties: updatedProperties, updatedAt: now() },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { properties: updatedProperties });
       },
 
       removeCardProperty: (cardId, key) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
+        const updatedProperties = (card.properties ?? []).filter((p) => p.key !== key);
+
         set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
-                ...card,
-                properties: (card.properties ?? []).filter((p) => p.key !== key),
+                ...c,
+                properties: updatedProperties,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { properties: updatedProperties });
       },
 
       setCardProcessing: (cardId, isProcessing, status) => {
@@ -1696,100 +1757,134 @@ export const useStore = create<KanthinkState>()(
       },
 
       setCardProperties: (cardId, properties) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
         set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
-              [cardId]: { ...card, properties, updatedAt: now() },
+              [cardId]: { ...c, properties, updatedAt: now() },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { properties });
       },
 
       recordInstructionRun: (cardId, instructionId) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
+        const timestamp = now();
+        const processedByInstructions = {
+          ...(card.processedByInstructions ?? {}),
+          [instructionId]: timestamp,
+        };
+
         set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
-                ...card,
-                processedByInstructions: {
-                  ...(card.processedByInstructions ?? {}),
-                  [instructionId]: now(),
-                },
-                updatedAt: now(),
+                ...c,
+                processedByInstructions,
+                updatedAt: timestamp,
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { processedByInstructions });
       },
 
       clearInstructionRun: (cardId, instructionId) => {
-        set((state) => {
-          const card = state.cards[cardId];
-          if (!card || !card.processedByInstructions) return state;
+        const card = get().cards[cardId];
+        if (!card || !card.processedByInstructions) return;
 
-          const { [instructionId]: _, ...remainingInstructions } = card.processedByInstructions;
+        const { [instructionId]: _, ...remainingInstructions } = card.processedByInstructions;
+        const processedByInstructions = Object.keys(remainingInstructions).length > 0
+          ? remainingInstructions
+          : undefined;
+
+        set((state) => {
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
-                ...card,
-                processedByInstructions: Object.keys(remainingInstructions).length > 0
-                  ? remainingInstructions
-                  : undefined,
+                ...c,
+                processedByInstructions,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { processedByInstructions: processedByInstructions ?? {} });
       },
 
       addTagDefinition: (channelId, name, color) => {
         const id = nanoid();
         const tagDef: TagDefinition = { id, name, color };
 
+        const channel = get().channels[channelId];
+        const tagDefinitions = [...(channel?.tagDefinitions ?? []), tagDef];
+
         set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                tagDefinitions: [...(channel.tagDefinitions ?? []), tagDef],
+                ...ch,
+                tagDefinitions,
                 updatedAt: now(),
               },
             },
           };
         });
 
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { tagDefinitions });
+
         return tagDef;
       },
 
       updateTagDefinition: (channelId, tagId, updates) => {
+        const channel = get().channels[channelId];
+        if (!channel) return;
+
+        const tagDef = (channel.tagDefinitions ?? []).find((t) => t.id === tagId);
+        if (!tagDef) return;
+
+        const oldName = tagDef.name;
+        const newName = updates.name ?? oldName;
+
+        // Update tag definition
+        const tagDefinitions = (channel.tagDefinitions ?? []).map((t) =>
+          t.id === tagId ? { ...t, ...updates } : t
+        );
+
+        // Track cards that need sync if name changed
+        const cardsToSync: Array<{ id: string; tags: string[] }> = [];
+
         set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
-
-          const tagDef = (channel.tagDefinitions ?? []).find((t) => t.id === tagId);
-          if (!tagDef) return state;
-
-          const oldName = tagDef.name;
-          const newName = updates.name ?? oldName;
-
-          // Update tag definition
-          const newTagDefs = (channel.tagDefinitions ?? []).map((t) =>
-            t.id === tagId ? { ...t, ...updates } : t
-          );
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           // If name changed, update all cards with this tag
           let updatedCards = state.cards;
@@ -1798,11 +1893,13 @@ export const useStore = create<KanthinkState>()(
             for (const cardId of Object.keys(updatedCards)) {
               const card = updatedCards[cardId];
               if (card.channelId === channelId && card.tags?.includes(oldName)) {
+                const newTags = card.tags.map((t) => (t === oldName ? newName : t));
                 updatedCards[cardId] = {
                   ...card,
-                  tags: card.tags.map((t) => (t === oldName ? newName : t)),
+                  tags: newTags,
                   updatedAt: now(),
                 };
+                cardsToSync.push({ id: cardId, tags: newTags });
               }
             }
           }
@@ -1811,71 +1908,103 @@ export const useStore = create<KanthinkState>()(
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                tagDefinitions: newTagDefs,
+                ...ch,
+                tagDefinitions,
                 updatedAt: now(),
               },
             },
             cards: updatedCards,
           };
         });
+
+        // Sync channel tag definitions to server
+        sync.syncChannelUpdate(channelId, { tagDefinitions });
+
+        // Sync any cards whose tags were renamed
+        for (const { id, tags } of cardsToSync) {
+          sync.syncCardUpdate(channelId, id, { tags });
+        }
       },
 
       removeTagDefinition: (channelId, tagId) => {
+        const channel = get().channels[channelId];
+        if (!channel) return;
+
+        const tagDefinitions = (channel.tagDefinitions ?? []).filter((t) => t.id !== tagId);
+
         set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+          const ch = state.channels[channelId];
+          if (!ch) return state;
 
           return {
             channels: {
               ...state.channels,
               [channelId]: {
-                ...channel,
-                tagDefinitions: (channel.tagDefinitions ?? []).filter((t) => t.id !== tagId),
+                ...ch,
+                tagDefinitions,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncChannelUpdate(channelId, { tagDefinitions });
       },
 
       addTagToCard: (cardId, tagName) => {
-        set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
+        const card = get().cards[cardId];
+        if (!card) return;
 
-          const existingTags = card.tags ?? [];
-          if (existingTags.includes(tagName)) return state;
+        const existingTags = card.tags ?? [];
+        if (existingTags.includes(tagName)) return;
+
+        const tags = [...existingTags, tagName];
+
+        set((state) => {
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
-                ...card,
-                tags: [...existingTags, tagName],
+                ...c,
+                tags,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { tags });
       },
 
       removeTagFromCard: (cardId, tagName) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
+        const tags = (card.tags ?? []).filter((t) => t !== tagName);
+
         set((state) => {
-          const card = state.cards[cardId];
-          if (!card) return state;
+          const c = state.cards[cardId];
+          if (!c) return state;
 
           return {
             cards: {
               ...state.cards,
               [cardId]: {
-                ...card,
-                tags: (card.tags ?? []).filter((t) => t !== tagName),
+                ...c,
+                tags,
                 updatedAt: now(),
               },
             },
           };
         });
+
+        // Sync to server
+        sync.syncCardUpdate(card.channelId, cardId, { tags });
       },
 
       createInstructionCard: (channelId, input) => {
@@ -2034,21 +2163,31 @@ export const useStore = create<KanthinkState>()(
       },
 
       reorderInstructionCards: (channelId, fromIndex, toIndex) => {
-        set((state) => {
-          const channel = state.channels[channelId];
-          if (!channel) return state;
+        const channel = get().channels[channelId];
+        if (!channel) return;
 
-          const instructionCardIds = [...(channel.instructionCardIds ?? [])];
+        const instructionId = (channel.instructionCardIds ?? [])[fromIndex];
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          const instructionCardIds = [...(ch.instructionCardIds ?? [])];
           const [removed] = instructionCardIds.splice(fromIndex, 1);
           instructionCardIds.splice(toIndex, 0, removed);
 
           return {
             channels: {
               ...state.channels,
-              [channelId]: { ...channel, instructionCardIds, updatedAt: now() },
+              [channelId]: { ...ch, instructionCardIds, updatedAt: now() },
             },
           };
         });
+
+        // Sync position update to server
+        if (instructionId) {
+          sync.syncInstructionCardUpdate(channelId, instructionId, { position: toIndex });
+        }
       },
 
       seedInitialChannel: () => {
