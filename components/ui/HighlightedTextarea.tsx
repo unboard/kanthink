@@ -89,11 +89,12 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
         }
 
         // Add the highlighted keyword with background
+        // Note: No padding on mark to keep text aligned with textarea
         const matchedText = match[0];
         segments.push(
           <mark
             key={`keyword-${match.index}`}
-            className="text-purple-700 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/40 rounded px-0.5 font-medium"
+            className="text-purple-700 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/40 rounded-sm"
             data-tooltip={getTooltipForKeyword(matchedText)}
           >
             {matchedText}
@@ -154,6 +155,7 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
         onMouseLeave={() => setTooltip(null)}
       >
         {/* Backdrop with highlighted keywords - positioned behind textarea */}
+        {/* Must match textarea exactly: same padding, border (transparent), font metrics */}
         <div
           ref={backdropRef}
           className={`
@@ -161,11 +163,13 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
             overflow-hidden whitespace-pre-wrap break-words
             pointer-events-none
             text-neutral-900 dark:text-white
+            border border-transparent
           `}
           style={{
             wordBreak: 'break-word',
             fontFamily: 'inherit',
-            lineHeight: 'inherit',
+            lineHeight: '1.25rem',
+            letterSpacing: 'normal',
           }}
           aria-hidden="true"
         >
@@ -179,7 +183,7 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
           onChange={handleChange}
           onScroll={handleScroll}
           className={`
-            relative z-10 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm
+            relative z-10 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm leading-5
             placeholder:text-neutral-400 resize-none
             focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400
             disabled:cursor-not-allowed disabled:opacity-50
