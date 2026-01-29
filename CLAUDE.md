@@ -108,6 +108,16 @@ The AI is primarily a clarity engine, not just a generator. Its job is to observ
 - Marketplace/shared channels
 - Native mobile apps
 
+## Deployment
+
+**Deploy by pushing to git.** Vercel auto-deploys from the `main` branch.
+
+```bash
+git push
+```
+
+Do NOT use the Vercel CLI (`vercel --prod`). The repo is connected to Vercel via GitHub integration - every push to `main` triggers an automatic deployment.
+
 ## Working rules for Claude Code
 - Ask one clarifying question only when truly blocked; otherwise pick sensible defaults.
 - Prefer building small vertical slices end-to-end.
