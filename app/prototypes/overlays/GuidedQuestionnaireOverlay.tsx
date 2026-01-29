@@ -82,10 +82,34 @@ export function GuidedQuestionnaireOverlay({
     mouseDownTargetRef.current = e.target;
   };
 
+  const shouldPreventClose = () => {
+    // Don't close if an input/textarea is focused (keyboard is open on mobile)
+    const active = document.activeElement;
+    return active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA';
+  };
+
   const handleBackdropClick = (e: MouseEvent) => {
     // Only close if both mousedown and click happened on the backdrop itself
     // This prevents closing when keyboard appears and causes layout shifts
     if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
+      if (shouldPreventClose()) {
+        mouseDownTargetRef.current = null;
+        return;
+      }
+      onClose();
+    }
+    mouseDownTargetRef.current = null;
+  };
+
+  // Handle touch end for mobile - some browsers don't fire click after touch
+  const handleBackdropTouchEnd = (e: TouchEvent) => {
+    if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
+      if (shouldPreventClose()) {
+        mouseDownTargetRef.current = null;
+        return;
+      }
+      // Prevent the subsequent click event from also firing
+      e.preventDefault();
       onClose();
     }
     mouseDownTargetRef.current = null;
@@ -258,6 +282,7 @@ export function GuidedQuestionnaireOverlay({
         className="absolute inset-0 bg-gradient-to-br from-violet-950/90 via-neutral-950/95 to-neutral-950/95"
         onMouseDown={handleBackdropMouseDown}
         onTouchStart={handleBackdropMouseDown}
+        onTouchEnd={handleBackdropTouchEnd}
         onClick={handleBackdropClick}
       />
 
@@ -376,7 +401,11 @@ export function GuidedQuestionnaireOverlay({
               {/* Options */}
               <div className="space-y-2">
                 {isTextOnlyStep ? (
-                  <div className="space-y-3">
+                  <div
+                    className="space-y-3"
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="text"
                       value={customValue}
@@ -468,7 +497,11 @@ export function GuidedQuestionnaireOverlay({
 
                     {/* Custom input field */}
                     {showCustomInput && (
-                      <div className="flex gap-2 mt-2">
+                      <div
+                        className="flex gap-2 mt-2"
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="text"
                           value={customValue}
