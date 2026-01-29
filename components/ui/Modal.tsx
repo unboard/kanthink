@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, type ReactNode } from 'react';
+import { useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useSettingsStore } from '@/lib/settingsStore';
 
 interface ModalProps {
@@ -21,9 +21,15 @@ const sizeClasses = {
 export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
   const theme = useSettingsStore((s) => s.theme);
   const isTerminal = theme === 'terminal';
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
 
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
+      // Don't close on Escape if an input/textarea is focused
+      const active = document.activeElement;
+      if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA') {
+        return;
+      }
       if (e.key === 'Escape') onClose();
     },
     [onClose]
@@ -36,13 +42,29 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
     }
   }, [isOpen, handleEscape]);
 
+  // Track where the mouse/touch started to prevent accidental closes
+  const handleBackdropMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+    mouseDownTargetRef.current = e.target;
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    // Only close if both mousedown and click happened on the backdrop itself
+    // This prevents closing when keyboard appears and causes layout shifts
+    if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
+      onClose();
+    }
+    mouseDownTargetRef.current = null;
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 pt-[10vh] sm:pt-4 overflow-y-auto">
       <div
         className="fixed inset-0 bg-black/50"
-        onClick={onClose}
+        onMouseDown={handleBackdropMouseDown}
+        onTouchStart={handleBackdropMouseDown}
+        onClick={handleBackdropClick}
         aria-hidden="true"
       />
       <div
