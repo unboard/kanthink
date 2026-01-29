@@ -39,15 +39,15 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 pt-[10vh] sm:pt-4 overflow-y-auto">
       <div
-        className="absolute inset-0 bg-black/50"
+        className="fixed inset-0 bg-black/50"
         onClick={onClose}
         aria-hidden="true"
       />
       <div
         className={`
-          relative z-10 w-full ${sizeClasses[size]} rounded-lg shadow-xl overflow-hidden
+          relative z-10 w-full ${sizeClasses[size]} rounded-lg shadow-xl overflow-hidden my-auto
           ${isTerminal
             ? 'bg-neutral-950 border border-neutral-800'
             : 'bg-white dark:bg-neutral-900'
