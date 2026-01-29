@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { auth } from '@/lib/auth';
 import type { InstructionAction } from '@/lib/types';
 
 interface InstructionSuggestRequest {
@@ -7,30 +8,34 @@ interface InstructionSuggestRequest {
   action: InstructionAction;
   channelName: string;
   channelDescription: string;
-  aiConfig: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
-  };
 }
 
 export async function POST(request: Request) {
   try {
     const body: InstructionSuggestRequest = await request.json();
-    const { instructionTitle, action, channelName, channelDescription, aiConfig } = body;
+    const { instructionTitle, action, channelName, channelDescription } = body;
 
-    if (!instructionTitle || !aiConfig?.apiKey) {
+    if (!instructionTitle) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    const llm = createLLMClient({
-      provider: aiConfig.provider,
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
-    });
+    // Get LLM client - requires authentication
+    const session = await auth();
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      return NextResponse.json({ suggestions: [] });
+    }
+
+    const result = await getLLMClientForUser(userId);
+    if (!result.client) {
+      return NextResponse.json({ suggestions: [] });
+    }
+
+    const llm = result.client;
 
     const actionDescriptions: Record<InstructionAction, string> = {
       generate: 'create new cards',

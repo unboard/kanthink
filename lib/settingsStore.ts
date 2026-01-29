@@ -7,9 +7,10 @@ export type QuestionFrequency = 'off' | 'light' | 'moderate';
 
 export interface AISettings {
   provider: LLMProvider;
-  apiKey: string;
   model: string;
   systemInstructions: string;
+  // Note: apiKey is no longer stored client-side for security
+  // BYOK keys are encrypted and stored server-side only
 }
 
 interface SettingsState {
@@ -19,6 +20,7 @@ interface SettingsState {
   _hasHydrated: boolean;
   _serverHasOwnerKey: boolean;
   _isSignedIn: boolean;
+  _hasByokConfigured: boolean;
 
   updateAISettings: (updates: Partial<AISettings>) => void;
   setTheme: (theme: Theme) => void;
@@ -26,11 +28,11 @@ interface SettingsState {
   setHasHydrated: (state: boolean) => void;
   setServerHasOwnerKey: (has: boolean) => void;
   setIsSignedIn: (signedIn: boolean) => void;
+  setHasByokConfigured: (configured: boolean) => void;
 }
 
 const DEFAULT_AI_SETTINGS: AISettings = {
   provider: 'openai',
-  apiKey: '',
   model: '',
   systemInstructions: '',
 };
@@ -44,6 +46,7 @@ export const useSettingsStore = create<SettingsState>()(
       _hasHydrated: false,
       _serverHasOwnerKey: false,
       _isSignedIn: false,
+      _hasByokConfigured: false,
 
       updateAISettings: (updates) => {
         set((state) => ({
@@ -60,12 +63,19 @@ export const useSettingsStore = create<SettingsState>()(
       setServerHasOwnerKey: (has) => set({ _serverHasOwnerKey: has }),
 
       setIsSignedIn: (signedIn) => set({ _isSignedIn: signedIn }),
+
+      setHasByokConfigured: (configured) => set({ _hasByokConfigured: configured }),
     }),
     {
       name: 'kanthink-settings',
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        ai: state.ai,
+        // Only persist UI preferences, not API keys
+        ai: {
+          provider: state.ai.provider,
+          model: state.ai.model,
+          systemInstructions: state.ai.systemInstructions,
+        },
         theme: state.theme,
         questionFrequency: state.questionFrequency,
       }),
@@ -78,29 +88,45 @@ export const useSettingsStore = create<SettingsState>()(
 
 // Helper to check if AI is configured (user BYOK, server owner key, or signed-in user with server-side access)
 export function isAIConfigured(): boolean {
-  const { ai, _serverHasOwnerKey, _isSignedIn } = useSettingsStore.getState();
-  return !!ai.apiKey || _serverHasOwnerKey || _isSignedIn;
+  const { _serverHasOwnerKey, _isSignedIn, _hasByokConfigured } = useSettingsStore.getState();
+  return _hasByokConfigured || _serverHasOwnerKey || _isSignedIn;
 }
 
 // Fetch server AI status on app load
 export async function fetchAIStatus() {
   try {
-    const res = await fetch('/api/ai-status');
-    if (res.ok) {
-      const data = await res.json();
+    const [aiStatusRes, byokStatusRes] = await Promise.all([
+      fetch('/api/ai-status'),
+      fetch('/api/byok/status'),
+    ]);
+
+    if (aiStatusRes.ok) {
+      const data = await aiStatusRes.json();
       useSettingsStore.getState().setServerHasOwnerKey(data.hasOwnerKey);
     }
+
+    if (byokStatusRes.ok) {
+      const data = await byokStatusRes.json();
+      useSettingsStore.getState().setHasByokConfigured(data.configured);
+      // Sync provider and model from server if configured
+      if (data.configured && data.provider) {
+        useSettingsStore.getState().updateAISettings({
+          provider: data.provider,
+          model: data.model || '',
+        });
+      }
+    }
   } catch {
-    // Silently fail - client key check still works
+    // Silently fail - server status unavailable
   }
 }
 
 // Helper to get current AI config for LLM client
+// Note: apiKey is no longer available client-side, all AI calls go through server
 export function getAIConfig() {
   const { ai } = useSettingsStore.getState();
   return {
     provider: ai.provider,
-    apiKey: ai.apiKey,
     model: ai.model || undefined,
     systemInstructions: ai.systemInstructions,
   };

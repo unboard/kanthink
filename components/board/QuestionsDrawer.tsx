@@ -133,11 +133,6 @@ export function QuestionsDrawer({ channel, cards, isOpen, onClose }: QuestionsDr
         body: JSON.stringify({
           channel,
           cards,
-          aiConfig: {
-            provider: aiSettings.provider,
-            apiKey: aiSettings.apiKey,
-            model: aiSettings.model || undefined,
-          },
         }),
       });
 

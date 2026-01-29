@@ -422,11 +422,6 @@ export function InstructionDetailDrawer({
                       action,
                       channelName: channel.name,
                       channelDescription: channel.description,
-                      aiConfig: {
-                        provider: ai.provider,
-                        apiKey: ai.apiKey,
-                        model: ai.model,
-                      },
                     }),
                   });
                   if (response.ok) {

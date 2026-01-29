@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { CardMessage, Task } from '@/lib/types';
-import { createLLMClient, getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
+import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 
@@ -14,11 +14,6 @@ interface CardChatRequest {
     channelDescription: string;
     tasks: { title: string; status: string }[];
     previousMessages: CardMessage[];
-  };
-  aiConfig: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
   };
 }
 
@@ -86,44 +81,37 @@ Guidelines:
 export async function POST(request: Request) {
   try {
     const body: CardChatRequest = await request.json();
-    const { questionContent, imageUrls, context, aiConfig } = body;
+    const { questionContent, imageUrls, context } = body;
 
     // Validate required fields
-    if ((!questionContent && (!imageUrls || imageUrls.length === 0)) || !context || !aiConfig) {
+    if ((!questionContent && (!imageUrls || imageUrls.length === 0)) || !context) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // Get LLM client
+    // Get LLM client - requires authentication
     const session = await auth();
     const userId = session?.user?.id;
-    let llm;
-    let usingOwnerKey = false;
 
-    if (userId) {
-      const result = await getLLMClientForUser(userId);
-      if (!result.client) {
-        return NextResponse.json(
-          { error: result.error || 'No AI access available' },
-          { status: 403 }
-        );
-      }
-      llm = result.client;
-      usingOwnerKey = result.source === 'owner';
-    } else if (aiConfig?.apiKey) {
-      llm = createLLMClient({
-        provider: aiConfig.provider,
-        apiKey: aiConfig.apiKey,
-        model: aiConfig.model,
-      });
-    } else {
+    if (!userId) {
       return NextResponse.json(
-        { error: 'Please sign in or configure an API key in Settings.' },
+        { error: 'Please sign in to use AI features.' },
+        { status: 401 }
+      );
+    }
+
+    const result = await getLLMClientForUser(userId);
+    if (!result.client) {
+      return NextResponse.json(
+        { error: result.error || 'No AI access available. Configure your API key in Settings.' },
         { status: 403 }
       );
     }
+
+    const llm = result.client;
+    const usingOwnerKey = result.source === 'owner';
 
     // Build prompt
     const messages = buildPrompt(questionContent, context, imageUrls);

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { auth } from '@/lib/auth';
 
 interface ColumnSuggestRequest {
   columnName: string;
@@ -7,30 +8,34 @@ interface ColumnSuggestRequest {
   channelDescription: string;
   channelInstructions: string;
   otherColumns: Array<{ name: string; description?: string }>;
-  aiConfig: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
-  };
 }
 
 export async function POST(request: Request) {
   try {
     const body: ColumnSuggestRequest = await request.json();
-    const { columnName, channelName, channelDescription, channelInstructions, otherColumns, aiConfig } = body;
+    const { columnName, channelName, channelDescription, channelInstructions, otherColumns } = body;
 
-    if (!columnName || !aiConfig?.apiKey) {
+    if (!columnName) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    const llm = createLLMClient({
-      provider: aiConfig.provider,
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
-    });
+    // Get LLM client - requires authentication
+    const session = await auth();
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      return NextResponse.json({ suggestions: [] });
+    }
+
+    const result = await getLLMClientForUser(userId);
+    if (!result.client) {
+      return NextResponse.json({ suggestions: [] });
+    }
+
+    const llm = result.client;
 
     // Build context about other columns
     const otherColumnsContext = otherColumns

@@ -101,11 +101,6 @@ export function ColumnDetailDrawer({
           otherColumns: channel.columns
             .filter(c => c.id !== column.id)
             .map(c => ({ name: c.name, description: c.instructions })),
-          aiConfig: {
-            provider: ai.provider,
-            apiKey: ai.apiKey,
-            model: ai.model,
-          },
         }),
       });
 

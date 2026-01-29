@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { Channel, Card } from '@/lib/types';
-import { createLLMClient, getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 import { detectDrift, buildFeedbackContext, type DriftInsight } from '@/lib/ai/feedbackAnalyzer';
@@ -188,50 +188,39 @@ function parseAnalysisResponse(content: string): AnalysisResult {
 interface AnalyzeRequest {
   channel: Channel;
   cards: Record<string, Card>;
-  aiConfig: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
-  };
 }
 
 export async function POST(request: Request) {
   try {
     const body: AnalyzeRequest = await request.json();
-    const { channel, cards, aiConfig } = body;
+    const { channel, cards } = body;
 
-    if (!channel || !aiConfig) {
+    if (!channel) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // Detect drift (works regardless of API key)
+    // Detect drift (works regardless of auth)
     const driftInsights = detectDrift(channel, cards || {});
 
-    // Get LLM client
+    // Get LLM client - requires authentication
     const session = await auth();
     const userId = session?.user?.id;
-    let llm;
-    let usingOwnerKey = false;
 
-    if (userId) {
-      const result = await getLLMClientForUser(userId);
-      if (!result.client) {
-        return NextResponse.json({ questions: [], driftInsights });
-      }
-      llm = result.client;
-      usingOwnerKey = result.source === 'owner';
-    } else if (aiConfig?.apiKey) {
-      llm = createLLMClient({
-        provider: aiConfig.provider,
-        apiKey: aiConfig.apiKey,
-        model: aiConfig.model,
-      });
-    } else {
+    if (!userId) {
+      // Return drift insights without AI analysis for unauthenticated users
       return NextResponse.json({ questions: [], driftInsights });
     }
+
+    const result = await getLLMClientForUser(userId);
+    if (!result.client) {
+      return NextResponse.json({ questions: [], driftInsights });
+    }
+
+    const llm = result.client;
+    const usingOwnerKey = result.source === 'owner';
 
     const messages = buildAnalysisPrompt(channel, cards || {});
 

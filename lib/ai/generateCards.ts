@@ -14,8 +14,7 @@ export interface GenerateCardsResult {
 
 /**
  * Generate cards using AI via server-side API route.
- * API key is sent to our server, which makes the LLM call.
- * Browser never makes direct requests to OpenAI/Anthropic.
+ * API keys are securely stored server-side and never sent from the client.
  */
 export async function generateCards(
   channel: Channel,
@@ -24,7 +23,7 @@ export async function generateCards(
   targetColumnId?: string,
   signal?: AbortSignal
 ): Promise<GenerateCardsResult> {
-  // Get AI config from settings store
+  // Get system instructions from settings store (no API key)
   const { ai } = useSettingsStore.getState();
 
   try {
@@ -36,12 +35,7 @@ export async function generateCards(
         count,
         cards: allCards,
         targetColumnId,
-        aiConfig: {
-          provider: ai.provider,
-          apiKey: ai.apiKey,
-          model: ai.model || undefined,
-          systemInstructions: ai.systemInstructions,
-        },
+        systemInstructions: ai.systemInstructions,
       }),
       signal,
     });

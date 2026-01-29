@@ -90,7 +90,6 @@ export function useQuestionTrigger({
 
   // Fetch questions from API
   const fetchQuestionsIfNeeded = useCallback(async () => {
-    if (!aiSettings.apiKey) return;
     if (isFetchingRef.current) return;
     if (questionFrequency === 'off') return;
 
@@ -111,11 +110,6 @@ export function useQuestionTrigger({
         body: JSON.stringify({
           channel,
           cards,
-          aiConfig: {
-            provider: aiSettings.provider,
-            apiKey: aiSettings.apiKey,
-            model: aiSettings.model || undefined,
-          },
         }),
       });
 

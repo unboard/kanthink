@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { getLLMClientForUser, getLLMClient, createLLMClient, type LLMProvider } from './llm';
+import { getLLMClientForUser, getLLMClient, type LLMProvider } from './llm';
 import { recordUsage } from '@/lib/usage';
 
 export interface AuthenticatedLLMContext {
@@ -9,23 +9,19 @@ export interface AuthenticatedLLMContext {
   recordUsageAfterSuccess: () => Promise<void>;
 }
 
-interface LegacyAIConfig {
-  provider: 'anthropic' | 'openai';
-  apiKey: string;
-  model?: string;
-}
-
 /**
  * Get an authenticated LLM context for API routes.
  * Handles auth check, usage limits, and usage recording.
+ *
+ * All API keys are now stored encrypted server-side.
+ * Users must be authenticated to use BYOK keys.
  *
  * Returns either:
  * - { context: AuthenticatedLLMContext } on success
  * - { error: NextResponse } on failure (return this directly)
  */
 export async function getAuthenticatedLLM(
-  requestType: string,
-  legacyConfig?: LegacyAIConfig
+  requestType: string
 ): Promise<
   | { context: AuthenticatedLLMContext; error?: never }
   | { context?: never; error: NextResponse }
@@ -37,7 +33,7 @@ export async function getAuthenticatedLLM(
   let usingOwnerKey = false;
 
   if (userId) {
-    // Authenticated user - use the new system
+    // Authenticated user - check BYOK first, then owner key
     const result = await getLLMClientForUser(userId);
     if (!result.client) {
       return {
@@ -49,22 +45,15 @@ export async function getAuthenticatedLLM(
     }
     llm = result.client;
     usingOwnerKey = result.source === 'owner';
-  } else if (legacyConfig?.apiKey) {
-    // Legacy: unauthenticated with API key from client
-    llm = createLLMClient({
-      provider: legacyConfig.provider,
-      apiKey: legacyConfig.apiKey,
-      model: legacyConfig.model,
-    });
   } else {
-    // Try fallback to environment variables
+    // Not authenticated - try fallback to environment variables (for development)
     llm = getLLMClient();
   }
 
   if (!llm) {
     return {
       error: NextResponse.json(
-        { error: 'No AI configuration available. Please sign in or add your API key.' },
+        { error: 'No AI configuration available. Please sign in or add your API key in Settings.' },
         { status: 403 }
       ),
     };
@@ -89,10 +78,9 @@ export async function getAuthenticatedLLM(
 /**
  * Helper to check if request has valid AI access (without creating client)
  */
-export async function hasAIAccess(legacyApiKey?: string): Promise<boolean> {
+export async function hasAIAccess(): Promise<boolean> {
   const session = await auth();
   if (session?.user?.id) return true;
-  if (legacyApiKey) return true;
   return !!(
     process.env.OWNER_OPENAI_API_KEY ||
     process.env.OWNER_ANTHROPIC_API_KEY ||

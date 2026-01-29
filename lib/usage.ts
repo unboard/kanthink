@@ -1,6 +1,7 @@
 import { db } from './db'
 import { usageRecords, users } from './db/schema'
 import { eq, and, gte } from 'drizzle-orm'
+import { encrypt, decryptIfNeeded, isEncrypted } from './crypto'
 
 const FREE_MONTHLY_LIMIT = parseInt(process.env.FREE_MONTHLY_LIMIT || '10')
 const PREMIUM_MONTHLY_LIMIT = parseInt(process.env.PREMIUM_MONTHLY_LIMIT || '200')
@@ -112,24 +113,62 @@ export async function recordUsage(userId: string, requestType: string): Promise<
   })
 }
 
-export async function getUserByokConfig(userId: string): Promise<{
+export interface ByokConfig {
   provider: 'anthropic' | 'openai' | null
   apiKey: string | null
   model: string | null
-} | null> {
+}
+
+export interface ByokConfigResult {
+  config: ByokConfig | null
+  error?: string
+}
+
+export async function getUserByokConfig(userId: string): Promise<ByokConfig | null> {
+  const result = await getUserByokConfigWithError(userId)
+  return result.config
+}
+
+export async function getUserByokConfigWithError(userId: string): Promise<ByokConfigResult> {
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
   })
 
   if (!user?.byokApiKey) {
-    return null
+    return { config: null }
   }
 
-  return {
-    provider: user.byokProvider,
-    apiKey: user.byokApiKey,
-    model: user.byokModel,
+  // Decrypt the API key (handles both encrypted and legacy plaintext keys)
+  try {
+    const decryptedKey = decryptIfNeeded(user.byokApiKey)
+
+    return {
+      config: {
+        provider: user.byokProvider,
+        apiKey: decryptedKey,
+        model: user.byokModel,
+      }
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown decryption error'
+    console.error('Failed to decrypt BYOK API key for user', userId, ':', errorMessage)
+    return {
+      config: null,
+      error: `Failed to decrypt your API key. Please re-enter it in Settings. (${errorMessage})`
+    }
   }
+}
+
+/**
+ * Check if user has BYOK configured (without decrypting the key)
+ */
+export async function hasUserByokConfig(userId: string): Promise<boolean> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { byokApiKey: true },
+  })
+
+  return !!user?.byokApiKey
 }
 
 export async function setUserByokConfig(
@@ -151,13 +190,32 @@ export async function setUserByokConfig(
       })
       .where(eq(users.id, userId))
   } else {
+    // Encrypt the API key before storing
+    const encryptedKey = encrypt(config.apiKey)
+
     await db.update(users)
       .set({
         byokProvider: config.provider,
-        byokApiKey: config.apiKey,
+        byokApiKey: encryptedKey,
         byokModel: config.model || null,
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId))
   }
+}
+
+/**
+ * Check if a user's BYOK key is encrypted (for migration purposes)
+ */
+export async function isUserByokKeyEncrypted(userId: string): Promise<boolean | null> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { byokApiKey: true },
+  })
+
+  if (!user?.byokApiKey) {
+    return null
+  }
+
+  return isEncrypted(user.byokApiKey)
 }

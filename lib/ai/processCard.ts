@@ -24,6 +24,7 @@ export interface ProcessCardResult {
 /**
  * Process a card using AI via server-side API route.
  * This is called when a card enters a column with a processing prompt.
+ * API keys are securely stored server-side and never sent from the client.
  */
 export async function processCard(
   card: Card,
@@ -31,17 +32,6 @@ export async function processCard(
   channel: Channel,
   signal?: AbortSignal
 ): Promise<ProcessCardResult> {
-  const { ai } = useSettingsStore.getState();
-
-  if (!ai.apiKey) {
-    return {
-      success: false,
-      properties: [],
-      suggestedProperties: [],
-      error: 'No API key configured. Please add your API key in Settings.',
-    };
-  }
-
   if (!column.processingPrompt) {
     return {
       success: false,
@@ -59,11 +49,6 @@ export async function processCard(
         card,
         column,
         channel,
-        aiConfig: {
-          provider: ai.provider,
-          apiKey: ai.apiKey,
-          model: ai.model || undefined,
-        },
       }),
       signal,
     });

@@ -80,11 +80,6 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
               tasks: cardTasks.map((t) => ({ title: t.title, status: t.status })),
               previousMessages: messages.slice(-10),
             },
-            aiConfig: {
-              provider: ai.provider,
-              apiKey: ai.apiKey,
-              model: ai.model,
-            },
           }),
         });
 
@@ -118,11 +113,6 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
           cardTitle: card.title,
           messages: messages,
           tasks: cardTasks.map((t) => ({ title: t.title, status: t.status })),
-          aiConfig: {
-            provider: ai.provider,
-            apiKey: ai.apiKey,
-            model: ai.model,
-          },
         }),
       });
 

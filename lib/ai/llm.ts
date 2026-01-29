@@ -1,7 +1,7 @@
 import type { LLMProvider, LLMConfig } from './providers/types';
 import { createAnthropicProvider } from './providers/anthropic';
 import { createOpenAIProvider } from './providers/openai';
-import { getUserByokConfig, checkUsageLimit } from '../usage';
+import { getUserByokConfigWithError, checkUsageLimit } from '../usage';
 
 export type { LLMProvider, LLMMessage, LLMResponse, LLMConfig, LLMContentPart } from './providers/types';
 
@@ -38,12 +38,25 @@ export interface LLMClientResult {
  */
 export async function getLLMClientForUser(userId: string): Promise<LLMClientResult> {
   // 1. Check if user has BYOK configured
-  const byokConfig = await getUserByokConfig(userId);
-  if (byokConfig?.apiKey && byokConfig?.provider) {
+  const byokResult = await getUserByokConfigWithError(userId);
+
+  // If there was an error decrypting BYOK, return that error immediately
+  // Don't fall back to usage check - the user intended to use their own key
+  if (byokResult.error) {
+    console.error('BYOK decryption error for user', userId, ':', byokResult.error);
+    return {
+      client: null,
+      source: 'none',
+      error: byokResult.error,
+    };
+  }
+
+  if (byokResult.config?.apiKey && byokResult.config?.provider) {
+    console.log(`Using BYOK for user ${userId}, provider: ${byokResult.config.provider}`);
     const client = createLLMClient({
-      provider: byokConfig.provider,
-      apiKey: byokConfig.apiKey,
-      model: byokConfig.model || undefined,
+      provider: byokResult.config.provider,
+      apiKey: byokResult.config.apiKey,
+      model: byokResult.config.model || undefined,
     });
     return { client, source: 'byok' };
   }

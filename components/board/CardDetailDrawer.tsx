@@ -263,32 +263,25 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
       // Try to get AI-generated channel structure
       let config: PromoteConfig | undefined;
 
-      if (aiSettings.apiKey) {
-        try {
-          const response = await fetch('/api/promote-card', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              cardTitle: title || card.title,
-              cardContent: messagesText,
-              aiConfig: {
-                provider: aiSettings.provider,
-                apiKey: aiSettings.apiKey,
-                model: aiSettings.model || undefined,
-              },
-            }),
-          });
+      try {
+        const response = await fetch('/api/promote-card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cardTitle: title || card.title,
+            cardContent: messagesText,
+          }),
+        });
 
-          if (response.ok) {
-            const data = await response.json();
-            if (data.result) {
-              config = data.result;
-            }
+        if (response.ok) {
+          const data = await response.json();
+          if (data.result) {
+            config = data.result;
           }
-        } catch (error) {
-          console.error('Failed to get AI channel structure:', error);
-          // Continue with defaults
         }
+      } catch (error) {
+        console.error('Failed to get AI channel structure:', error);
+        // Continue with defaults
       }
 
       const newChannel = promoteCardToChannel(card.id, config);

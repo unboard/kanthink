@@ -110,11 +110,6 @@ export function GuidedQuestionnaireOverlay({
         body: JSON.stringify({
           action: 'start',
           choices: {},
-          aiConfig: {
-            provider: ai.provider,
-            apiKey: ai.apiKey,
-            model: ai.model,
-          },
         }),
       });
 
@@ -175,11 +170,6 @@ export function GuidedQuestionnaireOverlay({
             choices: newChoices,
             choiceLabels: newLabels,
             lastChoice: { stepId: currentStep.id, value, label },
-            aiConfig: {
-              provider: ai.provider,
-              apiKey: ai.apiKey,
-              model: ai.model,
-            },
           }),
         });
 

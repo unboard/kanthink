@@ -40,6 +40,7 @@ export interface RunInstructionResult {
 
 /**
  * Run an instruction card via server-side API route.
+ * API keys are securely stored server-side and never sent from the client.
  */
 export async function runInstruction(
   instructionCard: InstructionCard,
@@ -50,7 +51,7 @@ export async function runInstruction(
   triggeringCardId?: string,
   skipAlreadyProcessed?: boolean
 ): Promise<RunInstructionResult> {
-  // Get AI config from settings store
+  // Get system instructions from settings store (no API key)
   const { ai } = useSettingsStore.getState();
 
   try {
@@ -64,12 +65,7 @@ export async function runInstruction(
         tasks: allTasks,
         triggeringCardId,
         skipAlreadyProcessed,
-        aiConfig: {
-          provider: ai.provider,
-          apiKey: ai.apiKey,
-          model: ai.model || undefined,
-          systemInstructions: ai.systemInstructions,
-        },
+        systemInstructions: ai.systemInstructions,
       }),
       signal,
     });

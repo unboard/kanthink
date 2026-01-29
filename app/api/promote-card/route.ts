@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createLLMClient, getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 import type { InstructionAction, InstructionRunMode } from '@/lib/types';
@@ -7,11 +7,6 @@ import type { InstructionAction, InstructionRunMode } from '@/lib/types';
 interface PromoteCardRequest {
   cardTitle: string;
   cardContent: string;
-  aiConfig: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
-  };
 }
 
 interface ColumnConfig {
@@ -155,7 +150,7 @@ function parseResponse(content: string): PromoteCardResponse | null {
 export async function POST(request: Request) {
   try {
     const body: PromoteCardRequest = await request.json();
-    const { cardTitle, cardContent, aiConfig } = body;
+    const { cardTitle, cardContent } = body;
 
     if (!cardTitle) {
       return NextResponse.json(
@@ -164,28 +159,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get LLM client
+    // Get LLM client - requires authentication
     const session = await auth();
     const userId = session?.user?.id;
-    let llm;
-    let usingOwnerKey = false;
 
-    if (userId) {
-      const llmResult = await getLLMClientForUser(userId);
-      if (!llmResult.client) {
-        return NextResponse.json({ result: null });
-      }
-      llm = llmResult.client;
-      usingOwnerKey = llmResult.source === 'owner';
-    } else if (aiConfig?.apiKey) {
-      llm = createLLMClient({
-        provider: aiConfig.provider,
-        apiKey: aiConfig.apiKey,
-        model: aiConfig.model,
-      });
-    } else {
+    if (!userId) {
       return NextResponse.json({ result: null });
     }
+
+    const llmResult = await getLLMClientForUser(userId);
+    if (!llmResult.client) {
+      return NextResponse.json({ result: null });
+    }
+
+    const llm = llmResult.client;
+    const usingOwnerKey = llmResult.source === 'owner';
 
     const messages = buildPrompt(cardTitle, cardContent);
 

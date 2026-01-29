@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { marked } from 'marked';
 import type { Channel, Card, CardInput, InstructionCard, InstructionTarget, ContextColumnSelection, Task } from '@/lib/types';
-import { createLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { type LLMMessage } from '@/lib/ai/llm';
 import { buildFeedbackContext } from '@/lib/ai/feedbackAnalyzer';
 import { getAuthenticatedLLM } from '@/lib/ai/withAuth';
 
@@ -510,19 +510,12 @@ interface RunInstructionRequest {
   triggeringCardId?: string;
   skipAlreadyProcessed?: boolean;  // For automatic runs, skip cards already processed by this instruction
   systemInstructions?: string;
-  // Legacy: aiConfig is still accepted for backward compatibility
-  aiConfig?: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
-    systemInstructions?: string;
-  };
 }
 
 export async function POST(request: Request) {
   try {
     const body: RunInstructionRequest = await request.json();
-    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, skipAlreadyProcessed, systemInstructions, aiConfig } = body;
+    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, skipAlreadyProcessed, systemInstructions } = body;
 
     // Validate required fields
     if (!instructionCard || !channel) {
@@ -536,7 +529,7 @@ export async function POST(request: Request) {
     const contextColumnIds = getContextColumnIds(instructionCard.contextColumns, channel);
 
     // Get authenticated LLM client
-    const authResult = await getAuthenticatedLLM('run-instruction', aiConfig);
+    const authResult = await getAuthenticatedLLM('run-instruction');
     if (authResult.error) {
       // Check if we should return stub data for unauthenticated users
       if (instructionCard.action === 'generate') {
@@ -555,7 +548,7 @@ export async function POST(request: Request) {
     }
 
     const { llm, recordUsageAfterSuccess } = authResult.context;
-    const effectiveSystemInstructions = systemInstructions || aiConfig?.systemInstructions;
+    const effectiveSystemInstructions = systemInstructions;
 
     // Build debug info
     const debug = {

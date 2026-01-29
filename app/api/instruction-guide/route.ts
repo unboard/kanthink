@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createLLMClient, getLLMClientForUser, type LLMMessage, type LLMProvider } from '@/lib/ai/llm';
+import { getLLMClientForUser, type LLMMessage, type LLMProvider } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 
@@ -47,11 +47,6 @@ interface GuideRequest {
   choices: Record<string, string>;
   choiceLabels?: Record<string, string>;
   lastChoice?: { stepId: string; value: string; label?: string };
-  aiConfig: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
-  };
 }
 
 // Generate a dynamic, contextual response after the detail step
@@ -496,7 +491,7 @@ Make every field specific to what the user actually chose: "${fullContext}".`;
 export async function POST(request: Request) {
   try {
     const body: GuideRequest = await request.json();
-    const { action, channelName, choices, choiceLabels = {}, aiConfig } = body;
+    const { action, channelName, choices, choiceLabels = {} } = body;
 
     // Lazily resolve the LLM client only when AI is actually needed.
     // Early steps (start, static continue) are purely static and don't require auth or keys.
@@ -508,26 +503,16 @@ export async function POST(request: Request) {
       const session = await auth();
       const userId = session?.user?.id;
 
-      if (userId) {
-        const result = await getLLMClientForUser(userId);
-        if (!result.client) {
-          throw new Error(result.error || 'No AI access available');
-        }
-        _llmCache = { llm: result.client, userId, usingOwnerKey: result.source === 'owner' };
-        return _llmCache;
+      if (!userId) {
+        throw new Error('Please sign in to use AI features.');
       }
 
-      if (aiConfig?.apiKey) {
-        const client = createLLMClient({
-          provider: aiConfig.provider,
-          apiKey: aiConfig.apiKey,
-          model: aiConfig.model,
-        });
-        _llmCache = { llm: client, usingOwnerKey: false };
-        return _llmCache;
+      const result = await getLLMClientForUser(userId);
+      if (!result.client) {
+        throw new Error(result.error || 'No AI access available. Configure your API key in Settings.');
       }
-
-      throw new Error('Please sign in or configure an API key in Settings.');
+      _llmCache = { llm: result.client, userId, usingOwnerKey: result.source === 'owner' };
+      return _llmCache;
     }
 
     if (action === 'start') {

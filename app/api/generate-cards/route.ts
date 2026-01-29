@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { marked } from 'marked';
 import type { Channel, Card, CardInput, Column } from '@/lib/types';
-import { createLLMClient, getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 
@@ -190,13 +190,6 @@ interface GenerateRequest {
   cards: Record<string, Card>;
   targetColumnId?: string;
   systemInstructions?: string;
-  // Legacy: aiConfig is still accepted for backward compatibility
-  aiConfig?: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
-    systemInstructions?: string;
-  };
 }
 
 export async function POST(request: Request) {
@@ -206,7 +199,7 @@ export async function POST(request: Request) {
     const userId = session?.user?.id;
 
     const body: GenerateRequest = await request.json();
-    const { channel, count, cards, targetColumnId, systemInstructions, aiConfig } = body;
+    const { channel, count, cards, targetColumnId, systemInstructions } = body;
 
     // Validate required fields
     if (!channel) {
@@ -226,7 +219,7 @@ export async function POST(request: Request) {
     let usingOwnerKey = false;
 
     if (userId) {
-      // Authenticated user - use the new system
+      // Authenticated user - check BYOK first, then owner key
       const result = await getLLMClientForUser(userId);
       if (!result.client) {
         return NextResponse.json(
@@ -236,15 +229,8 @@ export async function POST(request: Request) {
       }
       llm = result.client;
       usingOwnerKey = result.source === 'owner';
-    } else if (aiConfig?.apiKey) {
-      // Legacy: unauthenticated with API key from client
-      llm = createLLMClient({
-        provider: aiConfig.provider,
-        apiKey: aiConfig.apiKey,
-        model: aiConfig.model,
-      });
     } else {
-      // No auth and no API key - return stub data
+      // No auth - return stub data
       const ideas = getRandomIdeas(count || 5);
       const columnContext = targetColumn?.instructions || targetColumn?.name || channel.name;
       return NextResponse.json({
@@ -256,8 +242,7 @@ export async function POST(request: Request) {
     }
 
     // Build prompt with column context
-    const effectiveSystemInstructions = systemInstructions || aiConfig?.systemInstructions;
-    const messages = buildPrompt(channel, targetColumn, count || 5, cards || {}, effectiveSystemInstructions);
+    const messages = buildPrompt(channel, targetColumn, count || 5, cards || {}, systemInstructions);
 
     // Build debug info
     const debug = {

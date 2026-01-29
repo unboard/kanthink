@@ -88,11 +88,6 @@ export function InstructionGuide({
           action: 'start',
           channelName,
           choices: {},
-          aiConfig: {
-            provider: ai.provider,
-            apiKey: ai.apiKey,
-            model: ai.model,
-          },
         }),
       });
 
@@ -149,11 +144,6 @@ export function InstructionGuide({
           choices: newChoices,
           choiceLabels: newLabels,
           lastChoice: { stepId: currentStep.id, value, label },
-          aiConfig: {
-            provider: ai.provider,
-            apiKey: ai.apiKey,
-            model: ai.model,
-          },
         }),
       });
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createLLMClient, getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 
@@ -14,11 +14,6 @@ interface InstructionChatRequest {
       role: 'user' | 'assistant';
       content: string;
     }>;
-  };
-  aiConfig: {
-    provider: 'anthropic' | 'openai';
-    apiKey: string;
-    model?: string;
   };
 }
 
@@ -90,10 +85,10 @@ function extractInstructions(response: string): string | null {
 export async function POST(request: Request) {
   try {
     const body: InstructionChatRequest = await request.json();
-    const { userMessage, isInitialGreeting, context, aiConfig } = body;
+    const { userMessage, isInitialGreeting, context } = body;
 
     // Validate required fields
-    if (!context || !aiConfig) {
+    if (!context) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -107,34 +102,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get LLM client
+    // Get LLM client - requires authentication
     const session = await auth();
     const userId = session?.user?.id;
-    let llm;
-    let usingOwnerKey = false;
 
-    if (userId) {
-      const result = await getLLMClientForUser(userId);
-      if (!result.client) {
-        return NextResponse.json(
-          { error: result.error || 'No AI access available' },
-          { status: 403 }
-        );
-      }
-      llm = result.client;
-      usingOwnerKey = result.source === 'owner';
-    } else if (aiConfig?.apiKey) {
-      llm = createLLMClient({
-        provider: aiConfig.provider,
-        apiKey: aiConfig.apiKey,
-        model: aiConfig.model,
-      });
-    } else {
+    if (!userId) {
       return NextResponse.json(
-        { error: 'Please sign in or configure an API key in Settings.' },
+        { error: 'Please sign in to use AI features.' },
+        { status: 401 }
+      );
+    }
+
+    const result = await getLLMClientForUser(userId);
+    if (!result.client) {
+      return NextResponse.json(
+        { error: result.error || 'No AI access available. Configure your API key in Settings.' },
         { status: 403 }
       );
     }
+
+    const llm = result.client;
+    const usingOwnerKey = result.source === 'owner';
 
     // Build prompt
     const messages = buildPrompt(userMessage || '', isInitialGreeting ?? false, context);
