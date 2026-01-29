@@ -430,9 +430,16 @@ export function Sidebar() {
     router.push(`/channel/${channel.id}`);
   };
 
-  // Don't render on mobile when closed (but keep mounted for state)
+  // Don't render sidebar on mobile when closed, but ALWAYS render the
+  // create channel overlay so it doesn't unmount when keyboard opens
   if (isMobile && !isOpen) {
-    return null;
+    return (
+      <GuidedQuestionnaireOverlay
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onCreate={handleCreateChannel}
+      />
+    );
   }
 
   return (
