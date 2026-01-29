@@ -1,9 +1,40 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import type { CardMessageType } from '@/lib/types';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+
+// Keyword highlighting for question mode
+const KEYWORD_CONFIG = {
+  task: {
+    keywords: ['task', 'tasks', 'action item', 'action items', 'todo', 'to-do'],
+    tooltip: 'Kan can create tasks for you',
+  },
+  tag: {
+    keywords: ['tag', 'tags', 'label', 'labels'],
+    tooltip: 'Kan can add or remove tags',
+  },
+};
+
+function buildKeywordRegex(): RegExp {
+  const allKeywords = Object.values(KEYWORD_CONFIG).flatMap(c => c.keywords);
+  const sorted = allKeywords.sort((a, b) => b.length - a.length);
+  const pattern = sorted.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return new RegExp(`\\b(${pattern})\\b`, 'gi');
+}
+
+const KEYWORD_REGEX = buildKeywordRegex();
+
+function getTooltipForKeyword(keyword: string): string {
+  const lowerKeyword = keyword.toLowerCase();
+  for (const config of Object.values(KEYWORD_CONFIG)) {
+    if (config.keywords.includes(lowerKeyword)) {
+      return config.tooltip;
+    }
+  }
+  return '';
+}
 
 type InputMode = 'note' | 'question';
 
@@ -62,12 +93,85 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
+  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const inputWrapperRef = useRef<HTMLDivElement>(null);
 
   const { uploadFile, isUploading, error: uploadError, clearError } = useImageUpload({ cardId });
   const { keyboardOffset, isFocused, onFocus, onBlur } = useKeyboardOffset();
+
+  // Sync scroll between textarea and backdrop (for keyword highlighting)
+  const handleScroll = useCallback(() => {
+    if (textareaRef.current && backdropRef.current) {
+      backdropRef.current.scrollTop = textareaRef.current.scrollTop;
+      backdropRef.current.scrollLeft = textareaRef.current.scrollLeft;
+    }
+  }, []);
+
+  // Render highlighted backdrop for question mode
+  const renderHighlightedBackdrop = useCallback((): ReactNode[] => {
+    const text = content;
+    const segments: ReactNode[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    KEYWORD_REGEX.lastIndex = 0;
+
+    while ((match = KEYWORD_REGEX.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        segments.push(
+          <span key={`text-${lastIndex}`} className="text-neutral-900 dark:text-white">
+            {text.slice(lastIndex, match.index)}
+          </span>
+        );
+      }
+
+      const matchedText = match[0];
+      segments.push(
+        <mark
+          key={`keyword-${match.index}`}
+          className="text-violet-700 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 rounded-sm"
+          data-tooltip={getTooltipForKeyword(matchedText)}
+        >
+          {matchedText}
+        </mark>
+      );
+
+      lastIndex = match.index + matchedText.length;
+    }
+
+    if (lastIndex < text.length) {
+      segments.push(
+        <span key={`text-${lastIndex}`} className="text-neutral-900 dark:text-white">
+          {text.slice(lastIndex)}
+        </span>
+      );
+    }
+
+    segments.push(<span key="trailing">&nbsp;</span>);
+    return segments;
+  }, [content]);
+
+  // Handle mouse events on backdrop for tooltips
+  const handleBackdropMouseMove = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'MARK' && target.dataset.tooltip) {
+      const rect = target.getBoundingClientRect();
+      const wrapperRect = inputWrapperRef.current?.getBoundingClientRect();
+      if (wrapperRect) {
+        setTooltip({
+          text: target.dataset.tooltip,
+          x: rect.left - wrapperRect.left + rect.width / 2,
+          y: rect.top - wrapperRect.top - 4,
+        });
+      }
+    } else {
+      setTooltip(null);
+    }
+  }, []);
 
   // Auto-resize textarea and track if scrolling is needed
   useEffect(() => {
@@ -248,21 +352,61 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
             onChange={handleFileSelect}
           />
 
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            onFocus={onFocus}
-            onBlur={onBlur}
-            placeholder={placeholder ?? defaultPlaceholder}
-            disabled={isLoading}
-            rows={1}
-            className={`chat-textarea flex-1 min-w-0 resize-none bg-transparent px-1 py-1 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none ${
-              needsScroll ? 'overflow-y-auto' : 'overflow-y-hidden'
-            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          />
+          {/* Textarea with keyword highlighting for question mode */}
+          <div
+            ref={inputWrapperRef}
+            className="relative flex-1 min-w-0"
+            onMouseMove={mode === 'question' ? handleBackdropMouseMove : undefined}
+            onMouseLeave={() => setTooltip(null)}
+          >
+            {/* Backdrop for keyword highlighting (only in question mode) */}
+            {mode === 'question' && (
+              <div
+                ref={backdropRef}
+                className="absolute inset-0 px-1 py-1 text-sm whitespace-pre-wrap break-words pointer-events-none overflow-hidden"
+                style={{ wordBreak: 'break-word' }}
+                aria-hidden="true"
+              >
+                {renderHighlightedBackdrop()}
+              </div>
+            )}
+
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onFocus={onFocus}
+              onBlur={onBlur}
+              onScroll={handleScroll}
+              placeholder={placeholder ?? defaultPlaceholder}
+              disabled={isLoading}
+              rows={1}
+              className={`chat-textarea w-full resize-none px-1 py-1 text-sm placeholder-neutral-400 focus:outline-none ${
+                needsScroll ? 'overflow-y-auto' : 'overflow-y-hidden'
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''} ${
+                mode === 'question'
+                  ? 'bg-transparent text-transparent caret-neutral-900 dark:caret-white selection:bg-violet-500/30'
+                  : 'bg-transparent text-neutral-900 dark:text-white'
+              }`}
+            />
+
+            {/* Tooltip for keywords */}
+            {tooltip && mode === 'question' && (
+              <div
+                className="absolute z-50 px-2 py-1 text-xs text-white bg-neutral-800 dark:bg-neutral-700 rounded shadow-lg whitespace-nowrap pointer-events-none"
+                style={{
+                  left: tooltip.x,
+                  top: tooltip.y,
+                  transform: 'translate(-50%, -100%)',
+                }}
+              >
+                {tooltip.text}
+                <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-neutral-800 dark:border-t-neutral-700" />
+              </div>
+            )}
+          </div>
 
           {/* Send button */}
           <button
