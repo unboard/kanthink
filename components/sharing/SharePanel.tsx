@@ -57,7 +57,15 @@ export function SharePanel({ channelId }: SharePanelProps) {
         setInviteLinks(linksRes.links)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load sharing data')
+      // If channel doesn't exist on server yet (local-only), don't show error
+      // Just show the default "only you have access" state
+      const errorMsg = err instanceof Error ? err.message : 'Failed to load sharing data'
+      if (errorMsg.includes('Failed to fetch shares') || errorMsg.includes('not found')) {
+        // Channel not synced yet - show default state without error
+        setSharesData(null)
+      } else {
+        setError(errorMsg)
+      }
     } finally {
       setIsLoading(false)
     }

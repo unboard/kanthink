@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type MouseEvent, type TouchEvent } from 'react';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
@@ -75,6 +75,21 @@ export function GuidedQuestionnaireOverlay({
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
 
   const ai = useSettingsStore((s) => s.ai);
+  const mouseDownTargetRef = useRef<EventTarget | null>(null);
+
+  // Track where mouse/touch started for backdrop click protection
+  const handleBackdropMouseDown = (e: MouseEvent | TouchEvent) => {
+    mouseDownTargetRef.current = e.target;
+  };
+
+  const handleBackdropClick = (e: MouseEvent) => {
+    // Only close if both mousedown and click happened on the backdrop itself
+    // This prevents closing when keyboard appears and causes layout shifts
+    if (mouseDownTargetRef.current === e.target && e.target === e.currentTarget) {
+      onClose();
+    }
+    mouseDownTargetRef.current = null;
+  };
 
   // Reset state when opened
   useEffect(() => {
@@ -195,6 +210,8 @@ export function GuidedQuestionnaireOverlay({
 
   const handleCreate = () => {
     if (result) {
+      // Close overlay first to prevent any race conditions
+      onClose();
       onCreate({
         channelName: result.channelName,
         channelDescription: result.channelDescription,
@@ -205,10 +222,15 @@ export function GuidedQuestionnaireOverlay({
     }
   };
 
-  // Escape to close
+  // Escape to close (but not if input is focused)
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't close on Escape if an input/textarea is focused
+      const active = document.activeElement;
+      if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA') {
+        return;
+      }
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', handleKeyDown);
@@ -234,7 +256,9 @@ export function GuidedQuestionnaireOverlay({
       {/* Gradient backdrop */}
       <div
         className="absolute inset-0 bg-gradient-to-br from-violet-950/90 via-neutral-950/95 to-neutral-950/95"
-        onClick={onClose}
+        onMouseDown={handleBackdropMouseDown}
+        onTouchStart={handleBackdropMouseDown}
+        onClick={handleBackdropClick}
       />
 
       {/* Decorative blur elements */}
