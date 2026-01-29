@@ -1,9 +1,9 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
-import type { Card, CardMessageType } from '@/lib/types';
+import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition } from '@/lib/types';
 import { useStore } from '@/lib/store';
-import { useSettingsStore, requireSignInForAI } from '@/lib/settingsStore';
+import { requireSignInForAI } from '@/lib/settingsStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 
@@ -11,9 +11,10 @@ interface CardChatProps {
   card: Card;
   channelName: string;
   channelDescription: string;
+  tagDefinitions?: TagDefinition[];
 }
 
-export function CardChat({ card, channelName, channelDescription }: CardChatProps) {
+export function CardChat({ card, channelName, channelDescription, tagDefinitions = [] }: CardChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
@@ -24,9 +25,12 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
   const editMessage = useStore((s) => s.editMessage);
   const deleteMessage = useStore((s) => s.deleteMessage);
   const setCardSummary = useStore((s) => s.setCardSummary);
+  const updateMessageAction = useStore((s) => s.updateMessageAction);
+  const createTask = useStore((s) => s.createTask);
+  const addTagDefinition = useStore((s) => s.addTagDefinition);
+  const addTagToCard = useStore((s) => s.addTagToCard);
+  const removeTagFromCard = useStore((s) => s.removeTagFromCard);
   const tasks = useStore((s) => s.tasks);
-
-  const ai = useSettingsStore((s) => s.ai);
 
   // Get tasks for this card
   const cardTasks = (card.taskIds ?? [])
@@ -35,6 +39,9 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
 
   // Safe access to messages array (handles legacy cards)
   const messages = card.messages ?? [];
+
+  // Get card tags
+  const cardTags = card.tags ?? [];
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -84,6 +91,8 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
               channelDescription,
               tasks: cardTasks.map((t) => ({ title: t.title, status: t.status })),
               previousMessages: messages.slice(-10),
+              cardTags: cardTags,
+              availableTags: tagDefinitions,
             },
           }),
         });
@@ -94,7 +103,8 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
         }
 
         const data = await response.json();
-        addAIResponse(card.id, message.id, data.response);
+        // Pass actions to addAIResponse
+        addAIResponse(card.id, message.id, data.response, data.actions);
 
         // Optionally trigger summary update
         if (messages.length >= 3 && (messages.length % 3 === 0 || !card.summary)) {
@@ -134,6 +144,70 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
     if (confirm('Delete this message?')) {
       deleteMessage(card.id, messageId);
     }
+  };
+
+  // Handle approving a smart snippet action
+  const handleActionApprove = (messageId: string, actionId: string, editedData?: StoredAction['data']) => {
+    // Find the message and action
+    const message = messages.find((m) => m.id === messageId);
+    if (!message?.proposedActions) return;
+
+    const action = message.proposedActions.find((a) => a.id === actionId);
+    if (!action || action.status !== 'pending') return;
+
+    const dataToUse = editedData ?? action.data;
+
+    // Execute the action based on type
+    let resultId: string | undefined;
+    const timestamp = new Date().toISOString();
+
+    try {
+      if (action.type === 'create_task') {
+        const taskData = dataToUse as CreateTaskActionData;
+        const task = createTask(card.channelId, card.id, {
+          title: taskData.title,
+          description: taskData.description,
+        });
+        resultId = task.id;
+      } else if (action.type === 'add_tag') {
+        const tagData = dataToUse as AddTagActionData;
+        // Check if tag definition needs to be created
+        const existingTag = tagDefinitions.find(
+          (t) => t.name.toLowerCase() === tagData.tagName.toLowerCase()
+        );
+        if (!existingTag && tagData.createDefinition !== false) {
+          // Create the tag definition
+          const newTag = addTagDefinition(
+            card.channelId,
+            tagData.tagName,
+            tagData.suggestedColor ?? 'blue'
+          );
+          resultId = newTag.id;
+        }
+        // Add tag to card
+        addTagToCard(card.id, tagData.tagName);
+      } else if (action.type === 'remove_tag') {
+        const tagData = dataToUse as RemoveTagActionData;
+        removeTagFromCard(card.id, tagData.tagName);
+      }
+
+      // Update the action status
+      updateMessageAction(card.id, messageId, actionId, {
+        status: 'approved',
+        editedData: editedData,
+        executedAt: timestamp,
+        resultId,
+      });
+    } catch (error) {
+      console.error('Failed to execute action:', error);
+    }
+  };
+
+  // Handle rejecting a smart snippet action
+  const handleActionReject = (messageId: string, actionId: string) => {
+    updateMessageAction(card.id, messageId, actionId, {
+      status: 'rejected',
+    });
   };
 
   const chatContent = (
@@ -198,6 +272,10 @@ export function CardChat({ card, channelName, channelDescription }: CardChatProp
               message={message}
               onDelete={() => handleDeleteMessage(message.id)}
               onEdit={(content) => editMessage(card.id, message.id, content)}
+              tagDefinitions={tagDefinitions}
+              cardTags={cardTags}
+              onActionApprove={handleActionApprove}
+              onActionReject={handleActionReject}
             />
           ))
         )}

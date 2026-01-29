@@ -164,6 +164,37 @@ export interface Task {
   dueDate?: string;
 }
 
+// Smart snippet types for actionable AI responses
+export type ProposedActionType = 'create_task' | 'add_tag' | 'remove_tag';
+export type ActionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface CreateTaskActionData {
+  title: string;
+  description?: string;
+}
+
+export interface AddTagActionData {
+  tagName: string;
+  createDefinition?: boolean;  // True if tag doesn't exist
+  suggestedColor?: string;
+}
+
+export interface RemoveTagActionData {
+  tagName: string;
+}
+
+export type ActionData = CreateTaskActionData | AddTagActionData | RemoveTagActionData;
+
+export interface StoredAction {
+  id: string;
+  type: ProposedActionType;
+  data: ActionData;
+  status: ActionStatus;
+  editedData?: ActionData;      // If user edited before approving
+  executedAt?: string;
+  resultId?: string;            // e.g., created task ID
+}
+
 export interface CardMessage {
   id: ID;
   type: CardMessageType;
@@ -171,6 +202,7 @@ export interface CardMessage {
   imageUrls?: string[];      // Attached image URLs
   createdAt: string;
   replyToMessageId?: ID;     // For AI responses, links to the question
+  proposedActions?: StoredAction[];  // Smart snippets for AI responses
 }
 
 export interface Channel {

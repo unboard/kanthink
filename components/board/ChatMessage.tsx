@@ -2,13 +2,19 @@
 
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import type { CardMessage } from '@/lib/types';
+import type { CardMessage, StoredAction, TagDefinition } from '@/lib/types';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { SmartSnippet } from './SmartSnippet';
 
 interface ChatMessageProps {
   message: CardMessage;
   onDelete?: () => void;
   onEdit?: (content: string) => void;
+  // Smart snippet props (optional for backwards compatibility)
+  tagDefinitions?: TagDefinition[];
+  cardTags?: string[];
+  onActionApprove?: (messageId: string, actionId: string, editedData?: StoredAction['data']) => void;
+  onActionReject?: (messageId: string, actionId: string) => void;
 }
 
 function formatTime(dateString: string): string {
@@ -37,7 +43,15 @@ function formatDate(dateString: string): string {
   });
 }
 
-export function ChatMessage({ message, onDelete, onEdit }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  onDelete,
+  onEdit,
+  tagDefinitions = [],
+  cardTags = [],
+  onActionApprove,
+  onActionReject,
+}: ChatMessageProps) {
   const isAI = message.type === 'ai_response';
   const isQuestion = message.type === 'question';
   const isNote = message.type === 'note';
@@ -46,6 +60,9 @@ export function ChatMessage({ message, onDelete, onEdit }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const editRef = useRef<HTMLTextAreaElement>(null);
+
+  // Check if there are any smart snippets to render
+  const hasSmartSnippets = isAI && message.proposedActions && message.proposedActions.length > 0;
 
   useEffect(() => {
     if (isEditing && editRef.current) {
@@ -224,6 +241,28 @@ export function ChatMessage({ message, onDelete, onEdit }: ChatMessageProps) {
                   loading="lazy"
                 />
               </a>
+            ))}
+          </div>
+        )}
+
+        {/* Smart Snippets section */}
+        {hasSmartSnippets && onActionApprove && onActionReject && (
+          <div className="mt-3 pt-3 border-t border-neutral-200 dark:border-neutral-700 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 mb-2">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Suggested Actions
+            </div>
+            {message.proposedActions!.map((action) => (
+              <SmartSnippet
+                key={action.id}
+                action={action}
+                tagDefinitions={tagDefinitions}
+                cardTags={cardTags}
+                onApprove={(actionId, editedData) => onActionApprove(message.id, actionId, editedData)}
+                onReject={(actionId) => onActionReject(message.id, actionId)}
+              />
             ))}
           </div>
         )}

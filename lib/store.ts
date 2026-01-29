@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
-import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange } from './types';
+import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction } from './types';
 import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
 import { KANTHINK_IDEAS_CHANNEL, KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
 import { emitCardMoved, emitCardCreated, emitCardDeleted } from './automationEvents';
@@ -91,7 +91,8 @@ interface KanthinkState {
 
   // Card message actions
   addMessage: (cardId: ID, type: CardMessageType, content: string, imageUrls?: string[]) => CardMessage | null;
-  addAIResponse: (cardId: ID, questionId: ID, content: string) => CardMessage | null;
+  addAIResponse: (cardId: ID, questionId: ID, content: string, actions?: StoredAction[]) => CardMessage | null;
+  updateMessageAction: (cardId: ID, messageId: ID, actionId: string, updates: Partial<StoredAction>) => void;
   editMessage: (cardId: ID, messageId: ID, content: string) => void;
   deleteMessage: (cardId: ID, messageId: ID) => void;
   setCardSummary: (cardId: ID, summary: string) => void;
@@ -1125,7 +1126,7 @@ export const useStore = create<KanthinkState>()(
         return result;
       },
 
-      addAIResponse: (cardId, questionId, content) => {
+      addAIResponse: (cardId, questionId, content, actions) => {
         const id = nanoid();
         const timestamp = now();
         const message: CardMessage = {
@@ -1134,6 +1135,7 @@ export const useStore = create<KanthinkState>()(
           content,
           createdAt: timestamp,
           replyToMessageId: questionId,
+          proposedActions: actions,
         };
 
         let result: CardMessage | null = null;
@@ -1166,6 +1168,59 @@ export const useStore = create<KanthinkState>()(
         }
 
         return result;
+      },
+
+      updateMessageAction: (cardId, messageId, actionId, updates) => {
+        let channelId: string | null = null;
+        let updatedMessages: CardMessage[] = [];
+
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card) return state;
+
+          const messageIndex = card.messages?.findIndex(m => m.id === messageId);
+          if (messageIndex === undefined || messageIndex < 0) return state;
+
+          const message = card.messages![messageIndex];
+          if (!message.proposedActions) return state;
+
+          const actionIndex = message.proposedActions.findIndex(a => a.id === actionId);
+          if (actionIndex < 0) return state;
+
+          const updatedAction = {
+            ...message.proposedActions[actionIndex],
+            ...updates,
+          };
+
+          const updatedProposedActions = [...message.proposedActions];
+          updatedProposedActions[actionIndex] = updatedAction;
+
+          const updatedMessage = {
+            ...message,
+            proposedActions: updatedProposedActions,
+          };
+
+          updatedMessages = [...card.messages!];
+          updatedMessages[messageIndex] = updatedMessage;
+
+          channelId = card.channelId;
+
+          return {
+            cards: {
+              ...state.cards,
+              [cardId]: {
+                ...card,
+                messages: updatedMessages,
+                updatedAt: now(),
+              },
+            },
+          };
+        });
+
+        // Sync to server
+        if (channelId) {
+          sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
+        }
       },
 
       editMessage: (cardId, messageId, content) => {

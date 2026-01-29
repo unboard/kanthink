@@ -792,6 +792,7 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
             card={card}
             channelName={channels[card.channelId]?.name ?? 'Unknown Channel'}
             channelDescription={channels[card.channelId]?.description ?? ''}
+            tagDefinitions={channels[card.channelId]?.tagDefinitions ?? []}
           />
         </div>
       )}
