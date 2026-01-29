@@ -186,7 +186,7 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
             dark:border-neutral-700 dark:placeholder:text-neutral-500
             dark:focus:border-neutral-500 dark:focus:ring-neutral-500
             bg-transparent text-transparent caret-black dark:caret-white
-            selection:bg-blue-200 dark:selection:bg-blue-800
+            selection:bg-blue-500/30 selection:text-neutral-900 dark:selection:bg-blue-400/30 dark:selection:text-white
             ${className}
           `}
           {...props}
