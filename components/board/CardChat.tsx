@@ -233,10 +233,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   };
 
   const chatContent = (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="relative flex flex-col h-full overflow-hidden">
       {/* Fullscreen header - only shown in fullscreen mode */}
       {isFullscreen && (
-        <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-200 dark:border-neutral-800">
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-2">
           <h3 className="text-sm font-medium text-neutral-900 dark:text-white">
             {card.title}
           </h3>
@@ -254,7 +254,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
 
       {/* Summary section */}
       {card.summary && (
-        <div className="px-4 py-3 bg-violet-50 dark:bg-violet-950/20 border-b border-violet-100 dark:border-violet-900/30">
+        <div className="flex-shrink-0 px-4 py-3 bg-violet-50 dark:bg-violet-950/20">
           <div className="flex items-start gap-2">
             <svg className="w-4 h-4 text-violet-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
@@ -271,8 +271,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         </div>
       )}
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 pb-2 space-y-3">
+      {/* Messages area - extra bottom padding so content scrolls behind input */}
+      <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-3">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-3">
@@ -343,8 +343,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <ChatInput onSubmit={handleSubmit} isLoading={isAILoading} cardId={card.id} />
+      {/* Input - absolute positioned at bottom with gradient fade */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8">
+        <ChatInput onSubmit={handleSubmit} isLoading={isAILoading} cardId={card.id} />
+      </div>
     </div>
   );
 
