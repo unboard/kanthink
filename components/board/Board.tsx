@@ -102,10 +102,11 @@ export function Board({ channel }: BoardProps) {
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        // Long press to initiate drag - allows scrolling without triggering drag
-        // Tolerance must be high enough for natural finger drift during long-press
-        delay: 200,
-        tolerance: 25,
+        // Long-press to drag. That's it. No cleverness.
+        // Before 250ms: scroll works normally (touch-action: pan-y on card)
+        // After 250ms: drag activates (card switches to touch-action: none)
+        delay: 250,
+        tolerance: 8,
       },
     }),
     useSensor(KeyboardSensor, {

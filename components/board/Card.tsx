@@ -71,8 +71,7 @@ export function Card({ card }: CardProps) {
 
   return (
     <>
-      {/* Outer wrapper gets ref, transform, attributes, and listeners for drag */}
-      {/* touch-manipulation allows scroll gestures, TouchSensor's 300ms delay differentiates scroll vs drag */}
+      {/* Long-press to drag. pan-y allows normal vertical scroll until drag activates */}
       <div
         ref={setNodeRef}
         style={style}
@@ -80,8 +79,9 @@ export function Card({ card }: CardProps) {
         {...listeners}
         className={`
           card-container
-          group relative cursor-grab rounded-md p-3 transition-shadow select-none
-          touch-manipulation
+          group relative cursor-grab rounded-md p-3 transition-shadow
+          select-none
+          ${isDragging ? 'touch-none' : 'touch-pan-y'}
           ${isTerminal
             ? 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700'
             : 'bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md'
