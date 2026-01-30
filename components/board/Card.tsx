@@ -104,8 +104,8 @@ export function Card({ card }: CardProps) {
           <img
             src={card.coverImageUrl}
             alt=""
-            className="w-full h-32 object-cover rounded-t-md -mx-3 -mt-3 mb-2"
-            style={{ width: 'calc(100% + 1.5rem)' }}
+            className="h-32 object-cover rounded-t-md mb-2"
+            style={{ width: 'calc(100% + 24px)', marginLeft: '-12px', marginTop: '-12px' }}
             loading="lazy"
             onClick={() => setIsCardDrawerOpen(true)}
           />
