@@ -111,8 +111,8 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Card content with padding */}
-        <div className="p-3">
-        {/* Quick action buttons - always visible on mobile, hover on desktop */}
+        <div className="relative p-3">
+        {/* Quick action buttons - positioned in content area, not over image */}
         <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10">
           <button
             onClick={handleQuickComplete}
