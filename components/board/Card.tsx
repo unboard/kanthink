@@ -71,21 +71,21 @@ export function Card({ card }: CardProps) {
 
   return (
     <>
+      {/* Outer wrapper gets ref, transform, attributes, and listeners for drag */}
       <div
         ref={setNodeRef}
         style={style}
         {...attributes}
         {...listeners}
-        onClick={() => setIsCardDrawerOpen(true)}
         className={`
           card-container
           group relative cursor-grab rounded-md p-3 transition-shadow select-none
-          touch-manipulation
+          touch-none
           ${isTerminal
             ? 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700'
             : 'bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md'
           }
-          ${isDragging ? 'opacity-50 shadow-lg touch-none' : ''}
+          ${isDragging ? 'opacity-50 shadow-lg' : ''}
           ${card.isProcessing ? 'card-processing' : ''}
         `}
       >
@@ -98,11 +98,12 @@ export function Card({ card }: CardProps) {
             className="w-full h-32 object-cover rounded-t-md -mx-3 -mt-3 mb-2"
             style={{ width: 'calc(100% + 1.5rem)' }}
             loading="lazy"
+            onClick={() => setIsCardDrawerOpen(true)}
           />
         )}
 
         {/* Quick action buttons - always visible on mobile, hover on desktop */}
-        <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+        <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-auto z-10">
           <button
             onClick={handleQuickComplete}
             className="p-1 rounded text-neutral-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
@@ -123,36 +124,39 @@ export function Card({ card }: CardProps) {
           </button>
         </div>
 
-        {/* Tags - above title */}
-        {(card.tags ?? []).length > 0 && (
-          <div className="mb-1.5 flex flex-wrap gap-1 pr-12">
-            {(card.tags ?? []).map((tagName) => {
-              const colorInfo = getTagColorInfo(tagName);
-              return (
-                <span
-                  key={tagName}
-                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colorInfo.className ?? ''}`}
-                  style={colorInfo.style}
-                >
-                  {tagName}
-                </span>
-              );
-            })}
-          </div>
-        )}
+        {/* Clickable content area */}
+        <div onClick={() => setIsCardDrawerOpen(true)} className="touch-auto">
+          {/* Tags - above title */}
+          {(card.tags ?? []).length > 0 && (
+            <div className="mb-1.5 flex flex-wrap gap-1 pr-12">
+              {(card.tags ?? []).map((tagName) => {
+                const colorInfo = getTagColorInfo(tagName);
+                return (
+                  <span
+                    key={tagName}
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colorInfo.className ?? ''}`}
+                    style={colorInfo.style}
+                  >
+                    {tagName}
+                  </span>
+                );
+              })}
+            </div>
+          )}
 
-        <h4 className="text-sm font-medium text-neutral-900 dark:text-white pr-6">
-          {card.title}
-        </h4>
-        {contentPreview && (
-          <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
-            {contentPreview}
-          </p>
-        )}
+          <h4 className="text-sm font-medium text-neutral-900 dark:text-white pr-6">
+            {card.title}
+          </h4>
+          {contentPreview && (
+            <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
+              {contentPreview}
+            </p>
+          )}
+        </div>
 
         {/* Task progress bar */}
         {cardTasks.length > 0 && (
-          <div className="mt-2">
+          <div className="mt-2" onClick={() => setIsCardDrawerOpen(true)}>
             <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
               <span>{cardTasks.filter(t => t.status === 'done').length}/{cardTasks.length} tasks</span>
               <span>{Math.round((cardTasks.filter(t => t.status === 'done').length / cardTasks.length) * 100)}%</span>
@@ -166,24 +170,25 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
-        {/* Tasks */}
-        <TaskListOnCard
-          cardId={card.id}
-          channelId={card.channelId}
-          tasks={cardTasks}
-          hideCompleted={card.hideCompletedTasks}
-          onTaskClick={(task) => {
-            setSelectedTask(task);
-            setIsCreatingTask(false);
-            setIsTaskDrawerOpen(true);
-          }}
-          onAddTaskClick={() => {
-            setSelectedTask(null);
-            setIsCreatingTask(true);
-            setIsTaskDrawerOpen(true);
-          }}
-        />
-
+        {/* Tasks - has its own touch handling */}
+        <div className="touch-auto">
+          <TaskListOnCard
+            cardId={card.id}
+            channelId={card.channelId}
+            tasks={cardTasks}
+            hideCompleted={card.hideCompletedTasks}
+            onTaskClick={(task) => {
+              setSelectedTask(task);
+              setIsCreatingTask(false);
+              setIsTaskDrawerOpen(true);
+            }}
+            onAddTaskClick={() => {
+              setSelectedTask(null);
+              setIsCreatingTask(true);
+              setIsTaskDrawerOpen(true);
+            }}
+          />
+        </div>
       </div>
       <CardDetailDrawer
         card={card}
