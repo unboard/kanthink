@@ -71,7 +71,7 @@ export function Card({ card }: CardProps) {
 
   return (
     <>
-      {/* Long-press to drag. pan-y allows normal vertical scroll until drag activates */}
+      {/* Long-press to drag. manipulation allows scroll in any direction until drag activates */}
       <div
         ref={setNodeRef}
         style={style}
@@ -81,7 +81,7 @@ export function Card({ card }: CardProps) {
           card-container
           group relative cursor-grab rounded-md p-3 transition-shadow
           select-none
-          ${isDragging ? 'touch-none' : 'touch-pan-y'}
+          ${isDragging ? 'touch-none' : 'touch-manipulation'}
           ${isTerminal
             ? 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700'
             : 'bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md'
