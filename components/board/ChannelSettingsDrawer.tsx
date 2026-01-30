@@ -332,7 +332,7 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
         </div>
 
         {/* AI Instructions */}
-        <div className="pt-4 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="pt-4">
           <div className="flex items-center justify-between mb-2">
             <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
               AI Instructions
@@ -369,7 +369,7 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
         </div>
 
         {/* Export/Import Section */}
-        <div className="pt-4 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="pt-4">
           <button
             type="button"
             onClick={() => setShowExport(!showExport)}
@@ -389,7 +389,7 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
           {showExport && (
             <div className="mt-3 space-y-3">
               {/* Tabs */}
-              <div className="flex gap-4 border-b border-neutral-200 dark:border-neutral-700">
+              <div className="flex gap-4">
                 <button
                   type="button"
                   onClick={() => setExportTab('export')}
@@ -488,7 +488,7 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
         </div>
 
         {/* Delete channel */}
-        <div className="pt-4 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="pt-4">
           <Button
             variant="ghost"
             onClick={handleDelete}

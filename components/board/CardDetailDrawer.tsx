@@ -382,7 +382,7 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
             <div className="flex-1 overflow-y-auto">
               {/* Task progress bar */}
               {cardTasks.length > 0 && (
-                <div className="px-4 py-4 border-b border-neutral-100 dark:border-neutral-800">
+                <div className="px-4 py-4">
                   <div className="flex items-center justify-between text-sm mb-2">
                     <span className="text-neutral-600 dark:text-neutral-400">Progress</span>
                     <span className="font-medium text-neutral-900 dark:text-white">{completedCount}/{cardTasks.length}</span>
@@ -646,9 +646,6 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
                 </div>
               </div>
 
-              {/* Divider */}
-              <div className="border-t border-neutral-200 dark:border-neutral-800" />
-
               {/* Actions section */}
               <div className="p-4 space-y-1">
                 <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">Actions</h3>
@@ -756,9 +753,7 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
 
               {/* Spawned channels section */}
               {spawnedChannels.length > 0 && (
-                <>
-                  <div className="border-t border-neutral-200 dark:border-neutral-800" />
-                  <div className="p-4">
+                <div className="p-4">
                     <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">Created Channels</h3>
                     <div className="space-y-1">
                       {spawnedChannels.map((channel) => (
@@ -776,7 +771,6 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
                       ))}
                     </div>
                   </div>
-                </>
               )}
             </div>
           )}

@@ -253,7 +253,7 @@ export function TaskDrawer({
         )}
 
         {/* Actions */}
-        <div className="flex justify-between pt-4 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="flex justify-between pt-4">
           {task ? (
             <>
               <Button

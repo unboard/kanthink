@@ -129,7 +129,7 @@ export function ColumnDetailDrawer({
     <Drawer isOpen={isOpen} onClose={handleClose} width="md" floating>
       <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="p-6 pt-12 pb-4 border-b border-neutral-200 dark:border-neutral-700">
+        <div className="p-6 pt-12 pb-4">
           <input
             type="text"
             value={name}

@@ -709,7 +709,7 @@ export function InstructionDetailDrawer({
         />
 
         {/* Actions */}
-        <div className="flex justify-between pt-4 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="flex justify-between pt-4">
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={handleDuplicate}>
               Duplicate
