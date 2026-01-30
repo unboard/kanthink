@@ -35,6 +35,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       description = '',
       status = 'not_started',
       position: requestedPosition,
+      createdAt: clientCreatedAt,
     } = body
 
     if (!title) {
@@ -83,6 +84,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     // Use client-provided ID if given (for optimistic sync), otherwise generate
     const taskId = clientId || nanoid()
     const now = new Date()
+    // Use client-provided createdAt if given (for optimistic sync consistency)
+    const createdAtDate = clientCreatedAt ? new Date(clientCreatedAt) : now
 
     await db.insert(tasks).values({
       id: taskId,
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       description,
       status,
       position,
-      createdAt: now,
+      createdAt: createdAtDate,
       updatedAt: now,
     })
 

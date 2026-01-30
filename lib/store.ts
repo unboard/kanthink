@@ -1402,6 +1402,7 @@ export const useStore = create<KanthinkState>()(
           cardId: cardId ?? undefined,
           title: input.title,
           description: input.description ?? '',
+          createdAt: timestamp,
         });
 
         return task;
