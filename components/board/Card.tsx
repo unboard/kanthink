@@ -72,6 +72,7 @@ export function Card({ card }: CardProps) {
   return (
     <>
       {/* Outer wrapper gets ref, transform, attributes, and listeners for drag */}
+      {/* touch-manipulation allows scroll gestures, TouchSensor's 300ms delay differentiates scroll vs drag */}
       <div
         ref={setNodeRef}
         style={style}
@@ -80,7 +81,7 @@ export function Card({ card }: CardProps) {
         className={`
           card-container
           group relative cursor-grab rounded-md p-3 transition-shadow select-none
-          touch-none
+          touch-manipulation
           ${isTerminal
             ? 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700'
             : 'bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md'
@@ -103,7 +104,7 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Quick action buttons - always visible on mobile, hover on desktop */}
-        <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity touch-auto z-10">
+        <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10">
           <button
             onClick={handleQuickComplete}
             className="p-1 rounded text-neutral-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
@@ -125,7 +126,7 @@ export function Card({ card }: CardProps) {
         </div>
 
         {/* Clickable content area */}
-        <div onClick={() => setIsCardDrawerOpen(true)} className="touch-auto">
+        <div onClick={() => setIsCardDrawerOpen(true)}>
           {/* Tags - above title */}
           {(card.tags ?? []).length > 0 && (
             <div className="mb-1.5 flex flex-wrap gap-1 pr-12">
@@ -170,8 +171,8 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
-        {/* Tasks - has its own touch handling */}
-        <div className="touch-auto">
+        {/* Tasks */}
+        <div>
           <TaskListOnCard
             cardId={card.id}
             channelId={card.channelId}
