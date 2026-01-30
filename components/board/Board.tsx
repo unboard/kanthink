@@ -102,10 +102,10 @@ export function Board({ channel }: BoardProps) {
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        // Long press to initiate drag - allows vertical scrolling without triggering drag
-        // This is the standard mobile Kanban pattern (Trello, Jira, etc.)
-        delay: 300,
-        tolerance: 5,
+        // Long press to initiate drag - allows scrolling without triggering drag
+        // Tolerance must be high enough for natural finger drift during long-press
+        delay: 200,
+        tolerance: 25,
       },
     }),
     useSensor(KeyboardSensor, {
