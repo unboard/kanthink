@@ -13,6 +13,29 @@ interface InstructionCardDisplayProps {
   fullWidth?: boolean;
 }
 
+// Format relative time from ISO timestamp
+function formatRelativeTime(isoTimestamp: string | undefined): string | null {
+  if (!isoTimestamp) return null;
+
+  const now = Date.now();
+  const then = new Date(isoTimestamp).getTime();
+  const diffMs = now - then;
+
+  if (diffMs < 60_000) return 'Just now';
+
+  const diffMins = Math.floor(diffMs / 60_000);
+  if (diffMins < 60) return `${diffMins}m ago`;
+
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  const diffWeeks = Math.floor(diffDays / 7);
+  return `${diffWeeks}w ago`;
+}
+
 export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunning: isRunningProp, fullWidth }: InstructionCardDisplayProps) {
   // Check store for running state (for automatic runs)
   const selector = useCallback(
@@ -21,6 +44,7 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
   );
   const isRunningInStore = useStore(selector);
   const isRunning = isRunningProp || isRunningInStore;
+
   // Get destination column name(s) - where cards will be added
   const getDestinationLabel = (): string => {
     const target = card.target;
@@ -43,20 +67,25 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
   };
 
   const isAutomatic = card.runMode === 'automatic';
+  const lastRun = formatRelativeTime(card.lastExecutedAt);
 
-  // Lightning bolt icon for automatic mode
-  const LightningIcon = () => (
-    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-      <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-    </svg>
-  );
+  // Action type config - subtle styling
+  const actionConfig = {
+    generate: {
+      label: 'Generate',
+      dotClass: 'bg-emerald-500',
+    },
+    modify: {
+      label: 'Modify',
+      dotClass: 'bg-amber-500',
+    },
+    move: {
+      label: 'Move',
+      dotClass: 'bg-blue-500',
+    },
+  };
 
-  // Play icon for manual mode
-  const PlayIcon = () => (
-    <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-      <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
-    </svg>
-  );
+  const action = actionConfig[card.action];
 
   // Edit (pencil) icon
   const EditIcon = () => (
@@ -65,69 +94,135 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
     </svg>
   );
 
-  if (isRunning) {
-    return (
-      <div className={`gradient-border-animated rounded-lg ${fullWidth ? 'w-full' : 'flex-shrink-0 min-w-[160px] max-w-[220px]'}`}>
-        <div className="flex h-[49px] items-center gap-2 rounded-lg px-3 bg-neutral-100 dark:bg-neutral-800/50">
-          {/* Play/Lightning icon on left */}
-          <div className={`p-1 rounded flex-shrink-0 ${isAutomatic ? 'text-amber-500' : 'text-neutral-400'}`}>
-            {isAutomatic ? <LightningIcon /> : <PlayIcon />}
-          </div>
+  // Arrow icon for destination
+  const ArrowIcon = () => (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+    </svg>
+  );
 
-          {/* Content */}
-          <div className="flex-1 min-w-0 text-left">
-            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200 truncate">
-              {card.title}
-            </div>
-            <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
-              {getDestinationLabel()}
-            </div>
-          </div>
+  // Lightning icon for auto mode
+  const LightningIcon = () => (
+    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+      <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+    </svg>
+  );
 
-          {/* Edit icon on right */}
-          <div className="p-1 rounded text-neutral-400 flex-shrink-0">
-            <EditIcon />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Spinner for running state
+  const Spinner = () => (
+    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+  );
+
+  // Play icon for run button
+  const PlayIcon = () => (
+    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+      <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
+    </svg>
+  );
 
   return (
     <div
-      className={`group relative rounded-lg bg-neutral-100 dark:bg-neutral-800/50 hover:bg-neutral-200/80 dark:hover:bg-neutral-700/50 transition-colors duration-75 ${fullWidth ? 'w-full' : 'flex-shrink-0 min-w-[160px] max-w-[220px]'}`}
+      className={`group relative rounded-xl border transition-all duration-150 ${
+        isRunning
+          ? 'border-violet-500/40'
+          : 'border-neutral-700/50 hover:border-violet-500/40'
+      } bg-gradient-to-b from-neutral-800/80 to-neutral-900/90 ${
+        fullWidth ? 'w-full' : 'flex-shrink-0 min-w-[220px] max-w-[280px]'
+      }`}
     >
-      <div className="flex h-[49px] items-center gap-2 px-3">
-        {/* Play/Lightning button on left */}
-        <button
-          onClick={onRun}
-          className={`p-1.5 rounded flex-shrink-0 hover:bg-black/10 dark:hover:bg-white/10 transition-colors ${
-            isAutomatic
-              ? 'text-amber-500 hover:text-amber-400'
-              : 'text-neutral-400 hover:text-violet-500'
-          }`}
-          title={isAutomatic ? 'Automatic trigger' : `Run: ${card.title}`}
-        >
-          {isAutomatic ? <LightningIcon /> : <PlayIcon />}
-        </button>
+      <div className="p-3">
+        {/* Top row: Action type + Auto indicator + Edit button */}
+        <div className="flex items-center gap-2 mb-2">
+          {/* Action type - subtle dot + text */}
+          <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+            <span className={`w-1.5 h-1.5 rounded-full ${action.dotClass}`} />
+            <span>{action.label}</span>
+          </div>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0 text-left">
-          <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200 truncate">
-            {card.title}
-          </div>
-          <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
-            {getDestinationLabel()}
-          </div>
+          {/* Auto mode indicator */}
+          {isAutomatic && (
+            <div className="flex items-center gap-1 text-xs text-amber-500/70">
+              <LightningIcon />
+              <span>Auto</span>
+            </div>
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Edit button */}
+          <button
+            onClick={onClick}
+            className="p-1.5 rounded-lg text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors"
+            title="Edit"
+          >
+            <EditIcon />
+          </button>
         </div>
 
-        {/* Edit button on right */}
+        {/* Title */}
+        <h3 className="font-semibold text-neutral-100 truncate mb-1">
+          {card.title}
+        </h3>
+
+        {/* Instructions preview */}
+        {card.instructions && (
+          <p className="text-xs text-neutral-400 line-clamp-2 mb-3 leading-relaxed">
+            {card.instructions}
+          </p>
+        )}
+
+        {/* Metadata row */}
+        <div className="flex items-center gap-2 text-xs text-neutral-500 mb-3 flex-wrap">
+          {/* Destination */}
+          <div className="flex items-center gap-1">
+            <ArrowIcon />
+            <span>{getDestinationLabel()}</span>
+          </div>
+
+          {/* Card count for generate actions */}
+          {card.action === 'generate' && card.cardCount && (
+            <>
+              <span className="text-neutral-600">•</span>
+              <span>{card.cardCount} cards</span>
+            </>
+          )}
+
+          {/* Last run time */}
+          {lastRun && (
+            <>
+              <span className="text-neutral-600">•</span>
+              <span>{lastRun}</span>
+            </>
+          )}
+        </div>
+
+        {/* Run button */}
         <button
-          onClick={onClick}
-          className="p-1.5 rounded flex-shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-          title="Edit"
+          onClick={onRun}
+          disabled={isRunning}
+          className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-medium text-sm transition-all duration-150 ${
+            isRunning
+              ? 'bg-neutral-700/50 text-neutral-400 cursor-not-allowed'
+              : isAutomatic
+                ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 hover:text-amber-200'
+                : 'bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 hover:text-violet-200'
+          }`}
         >
-          <EditIcon />
+          {isRunning ? (
+            <>
+              <Spinner />
+              <span>Running...</span>
+            </>
+          ) : (
+            <>
+              <PlayIcon />
+              <span>Run Now</span>
+            </>
+          )}
         </button>
       </div>
     </div>

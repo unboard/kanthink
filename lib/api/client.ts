@@ -402,7 +402,7 @@ export async function deleteInviteLink(channelId: string, linkId: string): Promi
 
 export async function createTask(
   channelId: string,
-  input: { id?: string; cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number }
+  input: { id?: string; cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number; createdAt?: string }
 ): Promise<{ task: Task }> {
   const res = await fetch(`/api/channels/${channelId}/tasks`, {
     method: 'POST',
@@ -475,7 +475,10 @@ export async function updateInstructionCard(
     body: JSON.stringify(updates),
   })
   if (!res.ok) {
-    throw new Error('Failed to update instruction card')
+    const errorData = await res.json().catch(() => ({}))
+    const errorMsg = errorData.error || `HTTP ${res.status}`
+    console.error(`Failed to update instruction card: ${errorMsg}`, { channelId, instructionId, updates })
+    throw new Error(`Failed to update instruction card: ${errorMsg}`)
   }
   return res.json()
 }

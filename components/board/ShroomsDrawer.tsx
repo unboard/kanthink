@@ -205,7 +205,7 @@ export function ShroomsDrawer({
                   items={channel.instructionCardIds ?? []}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {channelInstructionCards.map((card) => (
                       <SortableInstructionCard
                         key={card.id}
