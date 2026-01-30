@@ -327,9 +327,13 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
       <div className="flex flex-col h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]">
         {/* Compact Header - sticky on mobile */}
         <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3">
-          <h2 className="flex-1 font-medium text-neutral-900 dark:text-white truncate">
-            {card.title}
-          </h2>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => handleTitleChange(e.target.value)}
+            className="flex-1 font-medium text-neutral-900 dark:text-white bg-transparent border-none outline-none placeholder-neutral-400 truncate"
+            placeholder="Card title"
+          />
           <button
             onClick={handleClose}
             className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -543,15 +547,6 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
                     Add cover image
                   </button>
                 )}
-
-                {/* Title */}
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => handleTitleChange(e.target.value)}
-                  className="w-full text-xl font-semibold text-neutral-900 dark:text-white bg-transparent border-none outline-none placeholder-neutral-400"
-                  placeholder="Card title"
-                />
 
                 {/* Metadata rows */}
                 <div className="space-y-3">
