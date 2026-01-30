@@ -63,6 +63,7 @@ function SortableTaskItem({ task, onTaskClick, onToggleStatus }: SortableTaskIte
       <button
         {...attributes}
         {...listeners}
+        onClick={(e) => e.stopPropagation()}
         className="cursor-grab touch-none text-neutral-300 hover:text-neutral-500 dark:text-neutral-600 dark:hover:text-neutral-400"
       >
         <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
@@ -430,6 +431,7 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
                         {visibleTasks.map((task) => (
                           <div
                             key={task.id}
+                            onClick={() => handleTaskClick(task)}
                             className="flex items-center gap-3 p-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
                           >
                             <SortableTaskItem
