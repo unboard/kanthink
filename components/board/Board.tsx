@@ -7,7 +7,7 @@ import {
   pointerWithin,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -95,16 +95,17 @@ export function Board({ channel }: BoardProps) {
   const addTagToCard = useStore((s) => s.addTagToCard);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    // MouseSensor for desktop - activates after 8px movement
+    useSensor(MouseSensor, {
       activationConstraint: {
         distance: 8,
       },
     }),
+    // TouchSensor for mobile - activates after 250ms long-press
+    // This is the ONLY sensor that should handle touch. NOT PointerSensor.
+    // PointerSensor would hijack touch events and activate on movement.
     useSensor(TouchSensor, {
       activationConstraint: {
-        // Long-press to drag. That's it. No cleverness.
-        // Before 250ms: scroll works normally (touch-action: pan-y on card)
-        // After 250ms: drag activates (card switches to touch-action: none)
         delay: 250,
         tolerance: 8,
       },
