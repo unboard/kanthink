@@ -172,9 +172,10 @@ export function InstructionDetailDrawer({
       target = { type: 'columns', columnIds: selectedColumnIds };
     }
 
-    // Build contextColumns (undefined = all columns, which is the default)
-    const contextColumns: ContextColumnSelection | undefined = contextAllColumns
-      ? undefined
+    // Build contextColumns (null = all columns, which is the default)
+    // Note: We use null instead of undefined so JSON.stringify includes it in the request
+    const contextColumns: ContextColumnSelection | null = contextAllColumns
+      ? null
       : { type: 'columns', columnIds: contextColumnIds };
 
     // Use overrides if provided (for immediate saves before state updates)

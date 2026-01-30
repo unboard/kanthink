@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -22,6 +22,7 @@ import { requireSignInForAI, useSettingsStore } from '@/lib/settingsStore';
 import { Drawer } from '@/components/ui';
 import { SortableInstructionCard } from './SortableInstructionCard';
 import { InstructionDetailDrawer } from './InstructionDetailDrawer';
+import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
 
 interface ShroomsDrawerProps {
   channel: Channel;
@@ -42,6 +43,19 @@ export function ShroomsDrawer({
 
   const [selectedCardId, setSelectedCardId] = useState<ID | null>(null);
   const [runningInstructionId, setRunningInstructionId] = useState<ID | null>(null);
+  const [useV2Drawer, setUseV2Drawer] = useState(false);
+
+  // Load drawer version preference from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem('shroom-drawer-v2');
+    if (stored === 'true') setUseV2Drawer(true);
+  }, []);
+
+  const toggleDrawerVersion = () => {
+    const newValue = !useV2Drawer;
+    setUseV2Drawer(newValue);
+    localStorage.setItem('shroom-drawer-v2', String(newValue));
+  };
 
   const shroomsExplainerDismissed = useSettingsStore((s) => s.shroomsExplainerDismissed);
   const setShroomsExplainerDismissed = useSettingsStore((s) => s.setShroomsExplainerDismissed);
@@ -223,8 +237,8 @@ export function ShroomsDrawer({
             )}
           </div>
 
-          {/* Fixed footer with add button */}
-          <div className="p-4">
+          {/* Fixed footer with add button and version toggle */}
+          <div className="p-4 space-y-3">
             <button
               onClick={handleAddInstruction}
               className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 dark:border-neutral-700 px-4 py-3 text-sm font-medium text-neutral-600 dark:text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-700 dark:hover:border-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
@@ -234,18 +248,35 @@ export function ShroomsDrawer({
               </svg>
               Add shroom
             </button>
+            {/* Prototype toggle */}
+            <button
+              onClick={toggleDrawerVersion}
+              className="w-full text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 py-1"
+            >
+              Try {useV2Drawer ? 'original' : 'new'} editor design
+            </button>
           </div>
         </div>
       </Drawer>
 
       {/* Nested detail drawer for editing individual cards */}
-      <InstructionDetailDrawer
-        instructionCard={selectedCard}
-        channel={channel}
-        isOpen={selectedCardId !== null}
-        onClose={handleCloseDetailDrawer}
-        onRun={handleRunInstruction}
-      />
+      {useV2Drawer ? (
+        <InstructionDetailDrawerV2
+          instructionCard={selectedCard}
+          channel={channel}
+          isOpen={selectedCardId !== null}
+          onClose={handleCloseDetailDrawer}
+          onRun={handleRunInstruction}
+        />
+      ) : (
+        <InstructionDetailDrawer
+          instructionCard={selectedCard}
+          channel={channel}
+          isOpen={selectedCardId !== null}
+          onClose={handleCloseDetailDrawer}
+          onRun={handleRunInstruction}
+        />
+      )}
     </>
   );
 }

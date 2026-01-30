@@ -48,8 +48,8 @@ function getTargetColumnIds(target: InstructionTarget, channel: Channel): string
   return [];
 }
 
-function getContextColumnIds(contextColumns: ContextColumnSelection | undefined, channel: Channel): string[] {
-  // Default behavior: no contextColumns or 'all' = all columns
+function getContextColumnIds(contextColumns: ContextColumnSelection | null | undefined, channel: Channel): string[] {
+  // Default behavior: no contextColumns (null/undefined) or 'all' = all columns
   if (!contextColumns || contextColumns.type === 'all') {
     return channel.columns.map((c) => c.id);
   }

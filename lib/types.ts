@@ -132,7 +132,7 @@ export interface InstructionCard {
   instructions: string;
   action: InstructionAction;
   target: InstructionTarget;              // Destination: where cards are added
-  contextColumns?: ContextColumnSelection; // Context: what AI sees (default: all)
+  contextColumns?: ContextColumnSelection | null; // Context: what AI sees (null/undefined = all)
   runMode: InstructionRunMode;
   cardCount?: number;
   interviewQuestions?: string[];
@@ -262,7 +262,7 @@ export interface InstructionCardInput {
   instructions: string;
   action: InstructionAction;
   target: InstructionTarget;
-  contextColumns?: ContextColumnSelection;
+  contextColumns?: ContextColumnSelection | null;
   runMode?: InstructionRunMode;
   cardCount?: number;
   interviewQuestions?: string[];
