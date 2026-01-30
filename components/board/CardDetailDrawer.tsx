@@ -777,7 +777,7 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
         </div>
 
         {/* Bottom Tabs - sticky on mobile */}
-        <div className="flex-shrink-0 sticky bottom-0 z-10 flex border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        <div className="flex-shrink-0 sticky bottom-0 z-10 flex bg-white dark:bg-neutral-900">
           <button
             onClick={() => setActiveTab('thread')}
             className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
