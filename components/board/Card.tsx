@@ -87,7 +87,7 @@ export function Card({ card }: CardProps) {
         {...listeners}
         className={`
           card-container
-          group relative cursor-grab rounded-md p-3 transition-shadow
+          group relative cursor-grab rounded-md overflow-hidden transition-shadow
           select-none
           ${isDragging ? 'touch-none' : 'touch-manipulation'}
           ${isTerminal
@@ -104,13 +104,14 @@ export function Card({ card }: CardProps) {
           <img
             src={card.coverImageUrl}
             alt=""
-            className="h-32 object-cover rounded-t-md mb-2"
-            style={{ width: 'calc(100% + 24px)', marginLeft: '-12px', marginTop: '-12px' }}
+            className="w-full h-32 object-cover cursor-pointer"
             loading="lazy"
             onClick={() => setIsCardDrawerOpen(true)}
           />
         )}
 
+        {/* Card content with padding */}
+        <div className="p-3">
         {/* Quick action buttons - always visible on mobile, hover on desktop */}
         <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10">
           <button
@@ -198,6 +199,7 @@ export function Card({ card }: CardProps) {
             }}
           />
         </div>
+        </div>{/* End card content padding wrapper */}
       </div>
       <CardDetailDrawer
         card={card}
