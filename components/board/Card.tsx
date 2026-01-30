@@ -69,12 +69,6 @@ export function Card({ card }: CardProps) {
     return getTagStyles(tagDef?.color ?? 'gray');
   };
 
-  const handleCardClick = (e: React.MouseEvent | React.TouchEvent) => {
-    // Don't open drawer if we're dragging
-    if (isDragging) return;
-    setIsCardDrawerOpen(true);
-  };
-
   return (
     <>
       <div
@@ -82,21 +76,11 @@ export function Card({ card }: CardProps) {
         style={style}
         {...attributes}
         {...listeners}
-        onClick={handleCardClick}
-        onTouchEnd={(e) => {
-          // Only trigger on quick taps, not drags
-          if (!isDragging) {
-            // Small delay to let dnd-kit process first
-            setTimeout(() => {
-              if (!isDragging) {
-                setIsCardDrawerOpen(true);
-              }
-            }, 10);
-          }
-        }}
+        onClick={() => setIsCardDrawerOpen(true)}
         className={`
           card-container
           group relative cursor-grab rounded-md p-3 transition-shadow select-none
+          touch-manipulation
           ${isTerminal
             ? 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700'
             : 'bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md'
