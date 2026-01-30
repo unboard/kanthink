@@ -124,6 +124,28 @@ Do NOT use the Vercel CLI (`vercel --prod`). The repo is connected to Vercel via
 - Keep dependencies minimal.
 - Keep the UI clean and fast.
 
+## CRITICAL: Mobile Drag-and-Drop (DO NOT BREAK)
+
+The Kanban card drag-drop uses `@dnd-kit` with specific configuration that **must not change**:
+
+### Sensors (Board.tsx)
+- **MouseSensor** for desktop (distance: 8px to activate)
+- **TouchSensor** for mobile (250ms long-press to activate)
+- **DO NOT use PointerSensor** - it responds to touch-synthesized pointer events and hijacks touch, breaking mobile scroll
+
+### Card CSS (Card.tsx)
+- `touch-manipulation` when not dragging (allows scroll in any direction)
+- `touch-none` when isDragging (prevents scroll interference during drag)
+
+### Mobile behavior
+- Swipe = scroll (horizontal or vertical)
+- Long-press 250ms = drag activates
+
+### Why this matters
+PointerSensor + touch-manipulation = broken (drag activates on swipe, can't scroll)
+PointerSensor + touch-none = broken (can't scroll at all)
+MouseSensor + TouchSensor + touch-manipulation = works (proper long-press to drag)
+
 ## First build slice (do first)
 - Channel list (left nav) + create channel
 - Active channel board view with default columns

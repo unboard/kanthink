@@ -94,16 +94,28 @@ export function Board({ channel }: BoardProps) {
   const addTagDefinition = useStore((s) => s.addTagDefinition);
   const addTagToCard = useStore((s) => s.addTagToCard);
 
+  // ┌─────────────────────────────────────────────────────────────────────────┐
+  // │ CRITICAL: Mobile Drag-and-Drop Configuration                           │
+  // │                                                                         │
+  // │ DO NOT use PointerSensor - it hijacks touch events and breaks mobile.  │
+  // │ PointerSensor responds to pointer events (including touch-synthesized) │
+  // │ and activates on movement, which prevents scrolling.                   │
+  // │                                                                         │
+  // │ MouseSensor = desktop only (actual mouse events)                       │
+  // │ TouchSensor = mobile only (touch events with long-press delay)         │
+  // │                                                                         │
+  // │ Mobile behavior: long-press 250ms to drag, swipe to scroll             │
+  // │ Desktop behavior: click and drag 8px to start dragging                 │
+  // │                                                                         │
+  // │ Card.tsx must have: touch-manipulation (allows scroll)                 │
+  // │                     touch-none when isDragging (prevents scroll)       │
+  // └─────────────────────────────────────────────────────────────────────────┘
   const sensors = useSensors(
-    // MouseSensor for desktop - activates after 8px movement
     useSensor(MouseSensor, {
       activationConstraint: {
         distance: 8,
       },
     }),
-    // TouchSensor for mobile - activates after 250ms long-press
-    // This is the ONLY sensor that should handle touch. NOT PointerSensor.
-    // PointerSensor would hijack touch events and activate on movement.
     useSensor(TouchSensor, {
       activationConstraint: {
         delay: 250,

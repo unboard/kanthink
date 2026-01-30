@@ -71,7 +71,15 @@ export function Card({ card }: CardProps) {
 
   return (
     <>
-      {/* Long-press to drag. manipulation allows scroll in any direction until drag activates */}
+      {/* ────────────────────────────────────────────────────────────────────
+          CRITICAL: Mobile touch configuration - DO NOT CHANGE without testing
+
+          touch-manipulation: allows scroll (horizontal & vertical)
+          touch-none when dragging: prevents scroll interference
+
+          This works with TouchSensor's 250ms delay in Board.tsx.
+          See Board.tsx sensors comment for full explanation.
+          ──────────────────────────────────────────────────────────────────── */}
       <div
         ref={setNodeRef}
         style={style}
