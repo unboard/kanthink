@@ -772,98 +772,96 @@ export function Board({ channel }: BoardProps) {
       {viewMode === 'tasks' ? (
         <TaskListView channelId={channel.id} />
       ) : (
-        <>
-          <DndContext
-        sensors={sensors}
-        collisionDetection={collisionDetection}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="flex flex-1 gap-3 sm:gap-4 overflow-x-auto px-4 sm:px-6 py-3 sm:py-4">
-          <SortableContext
-            items={channel.columns.map((c) => `sortable-column-${c.id}`)}
-            strategy={horizontalListSortingStrategy}
-          >
-            {channel.columns.map((column) => (
-              <SortableColumn
-                key={column.id}
-                column={column}
-                channelId={channel.id}
-                columnCount={channel.columns.length}
-              />
-            ))}
-          </SortableContext>
-
-          {/* Add Column */}
-          <div className="flex h-full w-[280px] sm:w-72 flex-shrink-0 flex-col">
-            {isAddingColumn ? (
-              <div className="rounded-lg bg-neutral-100 p-3 dark:bg-neutral-800/50">
-                <Input
-                  placeholder="Column name"
-                  value={newColumnName}
-                  onChange={(e) => setNewColumnName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAddColumn();
-                    if (e.key === 'Escape') {
-                      setIsAddingColumn(false);
-                      setNewColumnName('');
-                    }
-                  }}
-                  autoFocus
+        <DndContext
+          sensors={sensors}
+          collisionDetection={collisionDetection}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex flex-1 gap-3 sm:gap-4 overflow-x-auto px-4 sm:px-6 py-3 sm:py-4">
+            <SortableContext
+              items={channel.columns.map((c) => `sortable-column-${c.id}`)}
+              strategy={horizontalListSortingStrategy}
+            >
+              {channel.columns.map((column) => (
+                <SortableColumn
+                  key={column.id}
+                  column={column}
+                  channelId={channel.id}
+                  columnCount={channel.columns.length}
                 />
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" onClick={handleAddColumn} disabled={!newColumnName.trim()}>
-                    Add
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setIsAddingColumn(false);
-                      setNewColumnName('');
+              ))}
+            </SortableContext>
+
+            {/* Add Column */}
+            <div className="flex h-full w-[280px] sm:w-72 flex-shrink-0 flex-col">
+              {isAddingColumn ? (
+                <div className="rounded-lg bg-neutral-100 p-3 dark:bg-neutral-800/50">
+                  <Input
+                    placeholder="Column name"
+                    value={newColumnName}
+                    onChange={(e) => setNewColumnName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddColumn();
+                      if (e.key === 'Escape') {
+                        setIsAddingColumn(false);
+                        setNewColumnName('');
+                      }
                     }}
-                  >
-                    Cancel
-                  </Button>
+                    autoFocus
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <Button size="sm" onClick={handleAddColumn} disabled={!newColumnName.trim()}>
+                      Add
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setIsAddingColumn(false);
+                        setNewColumnName('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsAddingColumn(true)}
-                className="flex h-10 items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 text-sm text-neutral-500 hover:border-neutral-400 hover:text-neutral-600 dark:border-neutral-700 dark:hover:border-neutral-600 dark:hover:text-neutral-400"
-              >
-                + Add column
-              </button>
-            )}
-          </div>
-        </div>
-        <DragOverlay>
-          {activeCard && (
-            <div className="w-72 cursor-grabbing rounded-md bg-white p-3 shadow-lg dark:bg-neutral-900">
-              <h4 className="text-sm font-medium text-neutral-900 dark:text-white">
-                {activeCard.title}
-              </h4>
-              {(activeCard.summary || (activeCard.messages ?? []).length > 0) && (
-                <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
-                  {activeCard.summary || (activeCard.messages ?? [])[0]?.content?.slice(0, 100)}
-                </p>
+              ) : (
+                <button
+                  onClick={() => setIsAddingColumn(true)}
+                  className="flex h-10 items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 text-sm text-neutral-500 hover:border-neutral-400 hover:text-neutral-600 dark:border-neutral-700 dark:hover:border-neutral-600 dark:hover:text-neutral-400"
+                >
+                  + Add column
+                </button>
               )}
             </div>
-          )}
-          {activeColumn && (
-            <div className="w-72 cursor-grabbing rounded-lg bg-neutral-100 p-3 shadow-lg opacity-80 dark:bg-neutral-800">
-              <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                {activeColumn.name}
-              </h3>
-              <p className="mt-1 text-xs text-neutral-400">
-                {activeColumn.cardIds.length} cards
-              </p>
-            </div>
-          )}
-        </DragOverlay>
-          </DndContext>
-        </>
+          </div>
+          <DragOverlay>
+            {activeCard && (
+              <div className="w-72 cursor-grabbing rounded-md bg-white p-3 shadow-lg dark:bg-neutral-900">
+                <h4 className="text-sm font-medium text-neutral-900 dark:text-white">
+                  {activeCard.title}
+                </h4>
+                {(activeCard.summary || (activeCard.messages ?? []).length > 0) && (
+                  <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
+                    {activeCard.summary || (activeCard.messages ?? [])[0]?.content?.slice(0, 100)}
+                  </p>
+                )}
+              </div>
+            )}
+            {activeColumn && (
+              <div className="w-72 cursor-grabbing rounded-lg bg-neutral-100 p-3 shadow-lg opacity-80 dark:bg-neutral-800">
+                <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  {activeColumn.name}
+                </h3>
+                <p className="mt-1 text-xs text-neutral-400">
+                  {activeColumn.cardIds.length} cards
+                </p>
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
       )}
 
       <AIDebugModal
