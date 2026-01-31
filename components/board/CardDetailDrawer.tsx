@@ -104,6 +104,7 @@ interface CardDetailDrawerProps {
   card: Card | null;
   isOpen: boolean;
   onClose: () => void;
+  autoFocusTitle?: boolean;
 }
 
 function formatDate(dateString: string): string {
@@ -119,7 +120,7 @@ function formatDate(dateString: string): string {
 
 type ActiveTab = 'thread' | 'tasks' | 'info';
 
-export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProps) {
+export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: CardDetailDrawerProps) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [isTitleDirty, setIsTitleDirty] = useState(false);
@@ -154,6 +155,7 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
   const [activeDragTaskId, setActiveDragTaskId] = useState<ID | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile: uploadCoverFile } = useImageUpload({ cardId: card?.id });
 
   const sensors = useSensors(
@@ -214,6 +216,18 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId]);
+
+  // Auto-focus title input when drawer opens with autoFocusTitle
+  useEffect(() => {
+    if (isOpen && autoFocusTitle && titleInputRef.current) {
+      // Small delay to ensure drawer animation has started
+      const timer = setTimeout(() => {
+        titleInputRef.current?.focus();
+        titleInputRef.current?.select();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, autoFocusTitle]);
 
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
@@ -328,6 +342,7 @@ export function CardDetailDrawer({ card, isOpen, onClose }: CardDetailDrawerProp
         {/* Compact Header - sticky on mobile */}
         <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3">
           <input
+            ref={titleInputRef}
             type="text"
             value={title}
             onChange={(e) => handleTitleChange(e.target.value)}

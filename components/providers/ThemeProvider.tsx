@@ -8,7 +8,7 @@ function applyTheme(theme: Theme) {
   const root = document.documentElement;
   root.setAttribute('data-theme', theme);
   // Force a style recalculation - remove all theme classes and add the current one
-  document.body.classList.remove('theme-default', 'theme-terminal', 'theme-dark-spore');
+  document.body.classList.remove('theme-spores', 'theme-stars', 'theme-terminal');
   document.body.classList.add('theme-' + theme);
 }
 
@@ -28,7 +28,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       if (stored) {
         const parsed = JSON.parse(stored);
         const storedTheme = parsed?.state?.theme;
-        if (storedTheme === 'default' || storedTheme === 'terminal' || storedTheme === 'dark-spore') {
+        if (storedTheme === 'spores' || storedTheme === 'stars' || storedTheme === 'terminal') {
           applyTheme(storedTheme);
         }
       }

@@ -7,11 +7,11 @@ import { SporeBackground } from './SporeBackground';
 export function AmbientBackground() {
   const theme = useSettingsStore((s) => s.theme);
 
-  // Dark spore theme uses particles.js
-  if (theme === 'dark-spore') {
+  // Spores theme uses particles.js
+  if (theme === 'spores') {
     return <SporeBackground />;
   }
 
-  // Default and terminal themes use the starfield
+  // Stars and terminal themes use the starfield
   return <Starfield />;
 }

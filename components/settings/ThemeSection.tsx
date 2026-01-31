@@ -65,7 +65,7 @@ function ThemeOption({
   );
 }
 
-function DefaultThemePreview() {
+function StarsThemePreview() {
   return (
     <div className="p-3 bg-neutral-900">
       <div className="flex gap-2">
@@ -118,7 +118,7 @@ function TerminalThemePreview() {
   );
 }
 
-function DarkSporeThemePreview() {
+function SporesThemePreview() {
   const glowColors = ['bg-cyan-400/30', 'bg-white/20', 'bg-violet-400/25', 'bg-cyan-300/35'];
   return (
     <div className="p-3 bg-neutral-900 relative overflow-hidden">
@@ -173,12 +173,21 @@ export function ThemeSection() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <ThemeOption
-          theme="default"
-          title="Default"
+          theme="spores"
+          title="Spores"
+          description="Bioluminescent particles"
+          selected={theme === 'spores'}
+          onSelect={() => setTheme('spores')}
+          preview={<SporesThemePreview />}
+        />
+
+        <ThemeOption
+          theme="stars"
+          title="Stars"
           description="Clean, neutral styling with stars"
-          selected={theme === 'default'}
-          onSelect={() => setTheme('default')}
-          preview={<DefaultThemePreview />}
+          selected={theme === 'stars'}
+          onSelect={() => setTheme('stars')}
+          preview={<StarsThemePreview />}
         />
 
         <ThemeOption
@@ -188,15 +197,6 @@ export function ThemeSection() {
           selected={theme === 'terminal'}
           onSelect={() => setTheme('terminal')}
           preview={<TerminalThemePreview />}
-        />
-
-        <ThemeOption
-          theme="dark-spore"
-          title="Dark Spore"
-          description="Default styling with interactive particles"
-          selected={theme === 'dark-spore'}
-          onSelect={() => setTheme('dark-spore')}
-          preview={<DarkSporeThemePreview />}
         />
       </div>
     </div>

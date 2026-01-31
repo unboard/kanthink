@@ -3,15 +3,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { Column as ColumnType, ID } from '@/lib/types';
+import type { Column as ColumnType, ID, Card as CardType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { Card } from './Card';
 import { BacksideCard } from './BacksideCard';
-import { CardCreateForm } from './CardCreateForm';
 import { ColumnMenu } from './ColumnMenu';
 import { ColumnDetailDrawer } from './ColumnDetailDrawer';
 import { SkeletonCard } from './SkeletonCard';
+import { CardDetailDrawer } from './CardDetailDrawer';
 
 interface ColumnProps {
   column: ColumnType;
@@ -23,6 +23,8 @@ interface ColumnProps {
 export function Column({ column, channelId, columnCount, dragHandleProps }: ColumnProps) {
   const cards = useStore((s) => s.cards);
   const updateColumn = useStore((s) => s.updateColumn);
+  const createCard = useStore((s) => s.createCard);
+  const deleteCard = useStore((s) => s.deleteCard);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
   const theme = useSettingsStore((s) => s.theme);
   const isTerminal = theme === 'terminal';
@@ -34,8 +36,9 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const [isRenaming, setIsRenaming] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
-  const [isAddingCard, setIsAddingCard] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [newCard, setNewCard] = useState<CardType | null>(null);
+  const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
@@ -81,6 +84,23 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
 
   const handleFlipColumn = () => {
     setIsFlipped(!isFlipped);
+  };
+
+  const handleAddCard = () => {
+    // Use placeholder title that will pass API validation
+    const card = createCard(channelId, column.id, { title: 'Untitled' });
+    setNewCard(card);
+    setIsCardDrawerOpen(true);
+  };
+
+  const handleCardDrawerClose = () => {
+    setIsCardDrawerOpen(false);
+    // If card title is still the placeholder or empty, delete it
+    const currentTitle = cards[newCard?.id ?? '']?.title?.trim();
+    if (newCard && (!currentTitle || currentTitle === 'Untitled')) {
+      deleteCard(newCard.id);
+    }
+    setNewCard(null);
   };
 
   // Header JSX for front side
@@ -131,16 +151,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
       </div>
       <div className="flex items-center gap-1">
         <span className="text-xs text-neutral-400">{isFlipped ? backsideCount : columnCards.length}</span>
-        {/* Add card button */}
-        <button
-          onClick={() => setIsAddingCard(true)}
-          className="p-1 rounded text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300 transition-colors"
-          title="Add card"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
         <ColumnMenu
           channelId={channelId}
           columnId={column.id}
@@ -193,10 +203,21 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         ) : (
           // Front side - show normal cards
           <>
-            {/* Add card form at top when adding */}
-            {isAddingCard && (
-              <CardCreateForm channelId={channelId} columnId={column.id} onClose={() => setIsAddingCard(false)} />
-            )}
+            {/* Add card button at top */}
+            <button
+              onClick={handleAddCard}
+              className={`
+                w-full flex items-center justify-center py-2.5 rounded-md transition-colors
+                ${isTerminal
+                  ? 'bg-neutral-900 text-neutral-500 hover:text-neutral-400'
+                  : 'bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
+                }
+              `}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
             <SortableContext items={column.cardIds} strategy={verticalListSortingStrategy}>
               {columnCards.map((card) => (
                 <Card key={card.id} card={card} />
@@ -238,6 +259,14 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         channelId={channelId}
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
+      />
+
+      {/* Card Detail Drawer for new cards */}
+      <CardDetailDrawer
+        card={newCard}
+        isOpen={isCardDrawerOpen}
+        onClose={handleCardDrawerClose}
+        autoFocusTitle
       />
     </div>
   );
