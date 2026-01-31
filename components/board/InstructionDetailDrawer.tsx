@@ -1,13 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, InstructionRunMode, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionRun } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, ScheduleInterval, EventTriggerType, ThresholdOperator } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { Drawer } from '@/components/ui/Drawer';
-import { Button, Input, Textarea, HighlightedTextarea } from '@/components/ui';
-import { ContextViewer } from './ContextViewer';
-import { AutomaticModeSettings } from './AutomaticModeSettings';
+import { HighlightedTextarea } from '@/components/ui';
 
 interface InstructionDetailDrawerProps {
   instructionCard: InstructionCard | null;
@@ -16,6 +14,19 @@ interface InstructionDetailDrawerProps {
   onClose: () => void;
   onRun: (card: InstructionCard) => Promise<void>;
 }
+
+const SCHEDULE_LABELS: Record<ScheduleInterval, string> = {
+  hourly: 'Every hour',
+  every4hours: 'Every 4 hours',
+  daily: 'Daily',
+  weekly: 'Weekly',
+};
+
+const EVENT_LABELS: Record<EventTriggerType, string> = {
+  card_moved_to: 'Card moved to',
+  card_created_in: 'Card created in',
+  card_modified: 'Card modified in',
+};
 
 export function InstructionDetailDrawer({
   instructionCard,
@@ -27,7 +38,6 @@ export function InstructionDetailDrawer({
   const updateInstructionCard = useStore((s) => s.updateInstructionCard);
   const deleteInstructionCard = useStore((s) => s.deleteInstructionCard);
   const duplicateInstructionCard = useStore((s) => s.duplicateInstructionCard);
-  const cards = useStore((s) => s.cards);
   const instructionRuns = useStore((s) => s.instructionRuns);
   const undoInstructionRun = useStore((s) => s.undoInstructionRun);
 
@@ -36,63 +46,34 @@ export function InstructionDetailDrawer({
   const [instructions, setInstructions] = useState('');
   const [action, setAction] = useState<InstructionAction>('generate');
   const [selectedColumnIds, setSelectedColumnIds] = useState<ID[]>([]);
-  const [runMode, setRunMode] = useState<InstructionRunMode>('manual');
   const [cardCount, setCardCount] = useState(5);
-  const [isColumnDropdownOpen, setIsColumnDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Automatic mode state
+  // Context state
+  const [contextEnabled, setContextEnabled] = useState(true);
+  const [contextColumnIds, setContextColumnIds] = useState<ID[]>([]);
+  const isSyncingRef = useRef(false);
+
+  // Automation state
+  const [automationExpanded, setAutomationExpanded] = useState(false);
+  const [isEnabled, setIsEnabled] = useState(false);
   const [triggers, setTriggers] = useState<AutomaticTrigger[]>([]);
   const [safeguards, setSafeguards] = useState<AutomaticSafeguards>({
     cooldownMinutes: 5,
     dailyCap: 50,
     preventLoops: true,
   });
-  const [isEnabled, setIsEnabled] = useState(false);
+  const [addingTriggerType, setAddingTriggerType] = useState<'scheduled' | 'event' | 'threshold' | null>(null);
 
-  // Context columns state
-  const [contextAllColumns, setContextAllColumns] = useState(true);
-  const [contextColumnIds, setContextColumnIds] = useState<ID[]>([]);
-  const [isContextDropdownOpen, setIsContextDropdownOpen] = useState(false);
-  const contextDropdownRef = useRef<HTMLDivElement>(null);
-  const isSyncingRef = useRef(false); // Track when we're syncing from props
-
-  // AI suggestions state
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
-  const ai = useSettingsStore((s) => s.ai);
-
-  // Get the latest run for this instruction that can be undone
+  // Get the latest run for undo
   const latestRun = instructionCard
     ? Object.values(instructionRuns)
-        .filter(r => r.instructionId === instructionCard.id)
+        .filter(r => r.instructionId === instructionCard.id && !r.undone)
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp))[0]
     : null;
 
-  const handleUndo = () => {
-    if (latestRun && !latestRun.undone) {
-      undoInstructionRun(latestRun.id);
-    }
-  };
-
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsColumnDropdownOpen(false);
-      }
-      if (contextDropdownRef.current && !contextDropdownRef.current.contains(event.target as Node)) {
-        setIsContextDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Sync form state when switching to a different instruction card (by ID)
-  // We only sync on ID change to avoid resetting local state during edits
+  // Sync form state when switching cards
   const instructionCardId = instructionCard?.id;
   useEffect(() => {
     if (instructionCard) {
@@ -101,31 +82,29 @@ export function InstructionDetailDrawer({
       setTitle(instructionCard.title);
       setInstructions(instructionCard.instructions);
       setAction(instructionCard.action);
-      setRunMode(instructionCard.runMode);
       setCardCount(instructionCard.cardCount ?? 5);
 
-      // Convert target to selectedColumnIds (destination)
+      // Convert target to selectedColumnIds
       const target = instructionCard.target;
       if (target.type === 'column') {
         setSelectedColumnIds([target.columnId]);
       } else if (target.type === 'columns') {
         setSelectedColumnIds(target.columnIds);
       } else {
-        // board = all columns
         setSelectedColumnIds(channel.columns.map(c => c.id));
       }
 
       // Sync context columns
       const ctx = instructionCard.contextColumns;
       if (!ctx || ctx.type === 'all') {
-        setContextAllColumns(true);
-        setContextColumnIds([]);
+        setContextEnabled(true);
+        setContextColumnIds(channel.columns.map(c => c.id));
       } else {
-        setContextAllColumns(false);
+        setContextEnabled(ctx.columnIds.length > 0);
         setContextColumnIds(ctx.columnIds);
       }
 
-      // Sync automatic mode state
+      // Sync automation state
       setTriggers(instructionCard.triggers || []);
       setSafeguards(instructionCard.safeguards || {
         cooldownMinutes: 5,
@@ -134,24 +113,19 @@ export function InstructionDetailDrawer({
       });
       setIsEnabled(instructionCard.isEnabled || false);
 
-      // Reset suggestions when switching cards
-      setSuggestions([]);
-
-      // Reset sync flag after state updates are processed
       setTimeout(() => { isSyncingRef.current = false; }, 0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instructionCardId, channel.columns]);
 
-  // Auto-save when context columns or destination columns change (but not when syncing from props)
+  // Auto-save when selections change
   useEffect(() => {
     if (!isSyncingRef.current && instructionCard) {
       handleSave();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextAllColumns, contextColumnIds, selectedColumnIds]);
+  }, [contextEnabled, contextColumnIds, selectedColumnIds]);
 
-  // Accept optional overrides for values that may not be in state yet (due to React batching)
   const handleSave = (overrides?: {
     triggers?: AutomaticTrigger[];
     safeguards?: AutomaticSafeguards;
@@ -159,10 +133,9 @@ export function InstructionDetailDrawer({
   }) => {
     if (!instructionCard) return;
 
-    // Convert selectedColumnIds to target (destination)
+    // Convert selectedColumnIds to target
     let target: InstructionTarget;
     if (selectedColumnIds.length === 0) {
-      // Default to first column if none selected
       target = { type: 'column', columnId: channel.columns[0]?.id || '' };
     } else if (selectedColumnIds.length === 1) {
       target = { type: 'column', columnId: selectedColumnIds[0] };
@@ -172,18 +145,16 @@ export function InstructionDetailDrawer({
       target = { type: 'columns', columnIds: selectedColumnIds };
     }
 
-    // Build contextColumns (null = all columns, which is the default)
-    // Note: We use null instead of undefined so JSON.stringify includes it in the request
-    const contextColumns: ContextColumnSelection | null = contextAllColumns
-      ? null
-      : { type: 'columns', columnIds: contextColumnIds };
+    // Build contextColumns
+    const contextColumns: ContextColumnSelection | null = !contextEnabled
+      ? { type: 'columns', columnIds: [] }
+      : contextColumnIds.length === channel.columns.length
+        ? null // null = all columns
+        : { type: 'columns', columnIds: contextColumnIds };
 
-    // Use overrides if provided (for immediate saves before state updates)
     const effectiveTriggers = overrides?.triggers ?? triggers;
     const effectiveSafeguards = overrides?.safeguards ?? safeguards;
     const effectiveIsEnabled = overrides?.isEnabled ?? isEnabled;
-    // Derive runMode from isEnabled
-    const effectiveRunMode = effectiveIsEnabled ? 'automatic' : 'manual';
 
     updateInstructionCard(instructionCard.id, {
       title,
@@ -191,9 +162,8 @@ export function InstructionDetailDrawer({
       action,
       target,
       contextColumns,
-      runMode: effectiveRunMode,
+      runMode: effectiveIsEnabled ? 'automatic' : 'manual',
       cardCount: action === 'generate' ? cardCount : undefined,
-      // Automatic mode fields - always save them
       triggers: effectiveTriggers,
       safeguards: effectiveSafeguards,
       isEnabled: effectiveIsEnabled,
@@ -227,501 +197,559 @@ export function InstructionDetailDrawer({
     }
   };
 
-  const handleColumnToggle = (columnId: ID) => {
-    setSelectedColumnIds((prev) =>
-      prev.includes(columnId) ? prev.filter((id) => id !== columnId) : [...prev, columnId]
+  const handleUndo = () => {
+    if (latestRun) {
+      undoInstructionRun(latestRun.id);
+    }
+  };
+
+  const toggleTarget = (colId: ID) => {
+    setSelectedColumnIds(prev =>
+      prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId]
     );
   };
 
-  const handleSelectAllColumns = () => {
-    if (selectedColumnIds.length === channel.columns.length) {
-      setSelectedColumnIds([]);
-    } else {
-      setSelectedColumnIds(channel.columns.map(c => c.id));
-    }
-  };
-
-  // Context column handlers (auto-saved via useEffect)
-  const handleContextColumnToggle = (columnId: ID) => {
-    setContextColumnIds((prev) =>
-      prev.includes(columnId) ? prev.filter((id) => id !== columnId) : [...prev, columnId]
+  const toggleContext = (colId: ID) => {
+    setContextColumnIds(prev =>
+      prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId]
     );
   };
 
-  const handleSelectAllContextColumns = () => {
-    if (contextColumnIds.length === channel.columns.length) {
-      setContextColumnIds([]);
-    } else {
-      setContextColumnIds(channel.columns.map(c => c.id));
+  const addTrigger = (type: 'scheduled' | 'event' | 'threshold') => {
+    const firstColumnId = channel.columns[0]?.id || '';
+    let newTrigger: AutomaticTrigger;
+
+    switch (type) {
+      case 'scheduled':
+        newTrigger = { type: 'scheduled', interval: 'daily' };
+        break;
+      case 'event':
+        newTrigger = { type: 'event', eventType: 'card_moved_to', columnId: firstColumnId };
+        break;
+      case 'threshold':
+        newTrigger = { type: 'threshold', columnId: firstColumnId, operator: 'below', threshold: 5 };
+        break;
     }
+
+    const newTriggers = [...triggers, newTrigger];
+    setTriggers(newTriggers);
+    setAddingTriggerType(null);
+    handleSave({ triggers: newTriggers });
   };
 
-  // Auto-save on blur
-  const handleFieldBlur = () => {
-    handleSave();
+  const removeTrigger = (index: number) => {
+    const newTriggers = triggers.filter((_, i) => i !== index);
+    setTriggers(newTriggers);
+    handleSave({ triggers: newTriggers });
   };
 
-  // Get display text for destination column selector
-  const getColumnSelectorText = () => {
-    if (selectedColumnIds.length === 0) return 'Select columns...';
-    if (selectedColumnIds.length === channel.columns.length) return 'All columns';
-    if (selectedColumnIds.length === 1) {
-      const col = channel.columns.find(c => c.id === selectedColumnIds[0]);
-      return col?.name || 'Unknown';
-    }
-    return `${selectedColumnIds.length} columns selected`;
+  const updateTrigger = (index: number, trigger: AutomaticTrigger) => {
+    const updated = [...triggers];
+    updated[index] = trigger;
+    setTriggers(updated);
+    handleSave({ triggers: updated });
   };
 
-  // Get display text for context column selector
-  const getContextSelectorText = () => {
-    if (contextColumnIds.length === 0) return 'Select columns...';
-    if (contextColumnIds.length === channel.columns.length) return 'All columns';
-    if (contextColumnIds.length === 1) {
-      const col = channel.columns.find(c => c.id === contextColumnIds[0]);
-      return col?.name || 'Unknown';
+  const getTriggerDescription = (trigger: AutomaticTrigger): string => {
+    switch (trigger.type) {
+      case 'scheduled': {
+        let desc = SCHEDULE_LABELS[trigger.interval];
+        if (trigger.interval === 'daily' && trigger.specificTime) {
+          desc += ` at ${trigger.specificTime}`;
+        }
+        if (trigger.interval === 'weekly' && trigger.dayOfWeek !== undefined) {
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          desc += ` on ${days[trigger.dayOfWeek]}`;
+          if (trigger.specificTime) desc += ` at ${trigger.specificTime}`;
+        }
+        return desc;
+      }
+      case 'event': {
+        const col = channel.columns.find(c => c.id === trigger.columnId);
+        return `${EVENT_LABELS[trigger.eventType]} "${col?.name || 'Unknown'}"`;
+      }
+      case 'threshold': {
+        const col = channel.columns.find(c => c.id === trigger.columnId);
+        return `"${col?.name || 'Unknown'}" ${trigger.operator === 'below' ? 'falls below' : 'exceeds'} ${trigger.threshold} cards`;
+      }
     }
-    return `${contextColumnIds.length} columns selected`;
   };
 
   if (!instructionCard) return null;
 
-  // Build context object for viewer - shows what AI will see when instruction runs
-  const destinationColumns = channel.columns.filter((c) => selectedColumnIds.includes(c.id));
-  const effectiveContextColumns = contextAllColumns
-    ? channel.columns
-    : channel.columns.filter((c) => contextColumnIds.includes(c.id));
+  const totalContextCards = channel.columns
+    .filter(c => contextColumnIds.includes(c.id))
+    .reduce((sum, c) => sum + c.cardIds.length, 0);
 
-  const contextCardsPreview = effectiveContextColumns.flatMap((col) =>
-    col.cardIds.slice(0, 3).map((cardId) => {
-      const card = cards[cardId];
-      if (!card) return null;
-      return {
-        column: col.name,
-        title: card.title,
-        preview: card.summary || (card.messages && card.messages[0]?.content.slice(0, 100)) || '',
-      };
-    }).filter(Boolean)
-  );
-
-  const aiContext = {
-    channel: {
-      name: channel.name,
-      description: channel.description,
-    },
-    instruction: {
-      title,
-      action,
-      instructions: instructions.slice(0, 200) + (instructions.length > 200 ? '...' : ''),
-      cardCount: action === 'generate' ? cardCount : undefined,
-      runMode,
-    },
-    addToColumns: destinationColumns.map((c) => c.name),
-    aiSees: contextAllColumns ? 'All columns' : effectiveContextColumns.map((c) => c.name),
-    existingCards: contextCardsPreview.length > 0 ? contextCardsPreview : '(no cards)',
-  };
+  const targetColumnNames = channel.columns
+    .filter(c => selectedColumnIds.includes(c.id))
+    .map(c => c.name);
 
   return (
     <Drawer isOpen={isOpen} onClose={onClose} width="md" floating>
-      <div className="p-6 space-y-6">
+      <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="flex items-center justify-between pr-8">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-              Edit Action
-            </h2>
-            <ContextViewer context={aiContext} title="Action Context" />
+        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-sm">
+              {action === 'generate' ? '✨' : action === 'modify' ? '✏️' : '↔️'}
+            </div>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={() => handleSave()}
+              className="text-lg font-semibold bg-transparent border-none outline-none text-neutral-900 dark:text-white placeholder-neutral-400"
+              placeholder="Action name..."
+            />
           </div>
           <div className="flex items-center gap-2">
             {latestRun && (
-              <Button
+              <button
                 onClick={handleUndo}
-                disabled={latestRun.undone}
-                variant="secondary"
-                className="gap-1.5"
-                title={latestRun.undone ? 'Already undone' : `Undo last run (${latestRun.changes.length} changes)`}
+                className="px-3 py-2 text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors flex items-center gap-1.5"
+                title={`Undo last run (${latestRun.changes.length} changes)`}
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                 </svg>
-                {latestRun.undone ? 'Undone' : 'Undo'}
-              </Button>
+                Undo
+              </button>
             )}
-            <Button onClick={handleRun} disabled={isRunning} className="gap-1.5">
+            <button
+              onClick={handleRun}
+              disabled={isRunning}
+              className="px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 rounded-lg text-sm font-medium text-white flex items-center gap-2 transition-colors"
+            >
               {isRunning ? (
-                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
               ) : (
-                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                 </svg>
               )}
               {isRunning ? 'Running...' : 'Run'}
-            </Button>
-          </div>
-        </div>
-
-        {/* Title */}
-        <div>
-          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-            Title
-          </label>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleFieldBlur}
-            placeholder="Action name"
-          />
-        </div>
-
-        {/* Instructions */}
-        <div>
-          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-            Instructions
-          </label>
-          <HighlightedTextarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            onBlur={handleFieldBlur}
-            placeholder="Describe what the AI should do..."
-            rows={6}
-          />
-
-          {/* Suggestions */}
-          {suggestions.length > 0 && (
-            <div className="mt-3 space-y-2">
-              <p className="text-xs text-neutral-500">Suggestions:</p>
-              {suggestions.map((suggestion, i) => (
-                <button
-                  key={i}
-                  onClick={() => {
-                    setInstructions(suggestion);
-                    setSuggestions([]);
-                    handleSave();
-                  }}
-                  className="w-full text-left px-3 py-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 hover:border-violet-300 dark:hover:border-violet-600 text-sm text-neutral-700 dark:text-neutral-300 transition-colors"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Suggest button */}
-          {!instructions && suggestions.length === 0 && title && (
-            <button
-              onClick={async () => {
-                setIsLoadingSuggestions(true);
-                setSuggestions([]);
-                try {
-                  const response = await fetch('/api/instruction-suggest', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      instructionTitle: title,
-                      action,
-                      channelName: channel.name,
-                      channelDescription: channel.description,
-                    }),
-                  });
-                  if (response.ok) {
-                    const data = await response.json();
-                    setSuggestions(data.suggestions || []);
-                  }
-                } catch (err) {
-                  console.error('Failed to get suggestions:', err);
-                } finally {
-                  setIsLoadingSuggestions(false);
-                }
-              }}
-              disabled={isLoadingSuggestions}
-              className="mt-3 text-sm text-violet-600 dark:text-violet-400 hover:underline disabled:opacity-50 flex items-center gap-1.5"
-            >
-              {isLoadingSuggestions ? (
-                <>
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Getting suggestions...
-                </>
-              ) : (
-                <>
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                  </svg>
-                  Suggest instructions
-                </>
-              )}
             </button>
-          )}
-
-          <p className="mt-2 text-xs text-neutral-500">
-            Be specific about what you want the AI to do.
-          </p>
+          </div>
         </div>
 
-        {/* Action Type - Radio buttons */}
-        <fieldset>
-          <legend className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">
-            Action
-          </legend>
-          <div className="space-y-3">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="instruction-action"
-                checked={action === 'generate'}
-                onChange={() => setAction('generate')}
-                onBlur={handleFieldBlur}
-                className="mt-1 h-4 w-4 text-violet-600 border-neutral-300 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
-              />
-              <div>
-                <div className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                  Generate new cards
-                </div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Create new cards in the target column(s) based on your instructions.
-                </div>
-              </div>
-            </label>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="instruction-action"
-                checked={action === 'modify'}
-                onChange={() => setAction('modify')}
-                onBlur={handleFieldBlur}
-                className="mt-1 h-4 w-4 text-violet-600 border-neutral-300 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
-              />
-              <div>
-                <div className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                  Modify existing cards
-                </div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Update the title and content of cards already in the target column(s).
-                </div>
-              </div>
-            </label>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="instruction-action"
-                checked={action === 'move'}
-                onChange={() => setAction('move')}
-                onBlur={handleFieldBlur}
-                className="mt-1 h-4 w-4 text-violet-600 border-neutral-300 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
-              />
-              <div>
-                <div className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                  Move cards
-                </div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Move cards between columns based on criteria you define.
-                </div>
-              </div>
-            </label>
-          </div>
-        </fieldset>
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-5">
+            {/* Pipeline Container */}
+            <div className="relative">
+              {/* Connecting Line */}
+              <div className="absolute left-6 top-10 bottom-10 w-0.5 bg-gradient-to-b from-violet-500/50 via-emerald-500/50 to-amber-500/30 dark:from-violet-500/30 dark:via-emerald-500/30 dark:to-amber-500/20" />
 
-        {/* Card Count (for generate action) */}
-        {action === 'generate' && (
-          <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-              Number of cards to generate
-            </label>
-            <Input
-              type="number"
-              value={cardCount}
-              onChange={(e) => setCardCount(parseInt(e.target.value) || 5)}
-              onBlur={handleFieldBlur}
-              min={1}
-              max={20}
-              className="w-24"
-            />
-          </div>
-        )}
-
-        {/* Destination Columns - contextual based on action */}
-        <div>
-          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-            {action === 'generate' ? 'Add to column(s)' : action === 'modify' ? 'Modify cards in' : 'Move cards from'}
-          </label>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
-            {action === 'generate'
-              ? 'Where should new cards be created?'
-              : action === 'modify'
-                ? 'Which column\'s cards should be modified?'
-                : 'Which column\'s cards should the AI consider moving?'}
-          </p>
-          <div className="relative" ref={dropdownRef}>
-            <button
-              type="button"
-              onClick={() => setIsColumnDropdownOpen(!isColumnDropdownOpen)}
-              className="w-full flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-left focus:border-neutral-400 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800"
-            >
-              <span className={selectedColumnIds.length === 0 ? 'text-neutral-400' : 'text-neutral-800 dark:text-neutral-200'}>
-                {getColumnSelectorText()}
-              </span>
-              <svg className={`h-4 w-4 text-neutral-400 transition-transform ${isColumnDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {isColumnDropdownOpen && (
-              <div className="absolute z-10 mt-1 w-full rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
-                <div className="p-2 border-b border-neutral-100 dark:border-neutral-700">
-                  <label className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-700">
-                    <input
-                      type="checkbox"
-                      checked={selectedColumnIds.length === channel.columns.length}
-                      onChange={handleSelectAllColumns}
-                      className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600"
-                    />
-                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                      Select all
-                    </span>
-                  </label>
+              {/* Step 1: Action */}
+              <div className="relative pl-14 pb-6">
+                <div className="absolute left-3 w-7 h-7 rounded-full bg-violet-500/20 border-2 border-violet-500/50 flex items-center justify-center">
+                  <span className="text-xs">⚡</span>
                 </div>
-                <div className="p-2 max-h-48 overflow-y-auto">
+                <div className="text-xs font-medium text-violet-600 dark:text-violet-400 mb-2">ACTION</div>
+
+                {/* Action type tabs */}
+                <div className="flex gap-2 mb-4">
+                  {(['generate', 'modify', 'move'] as const).map((a) => (
+                    <button
+                      key={a}
+                      onClick={() => { setAction(a); setTimeout(handleSave, 0); }}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        action === a
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+                      }`}
+                    >
+                      {a === 'generate' && '✨ Generate'}
+                      {a === 'modify' && '✏️ Modify'}
+                      {a === 'move' && '↔️ Move'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Instructions */}
+                <HighlightedTextarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  onBlur={() => handleSave()}
+                  placeholder="Describe what Kan should do..."
+                  rows={5}
+                  className="w-full"
+                />
+
+                {/* Card count for generate */}
+                {action === 'generate' && (
+                  <div className="flex items-center gap-3 mt-3">
+                    <span className="text-sm text-neutral-500 dark:text-neutral-400">Create</span>
+                    <div className="flex items-center bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => { setCardCount(Math.max(1, cardCount - 1)); setTimeout(handleSave, 0); }}
+                        className="w-8 h-8 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-700 dark:hover:text-white transition-colors flex items-center justify-center"
+                      >
+                        −
+                      </button>
+                      <span className="w-8 text-center text-neutral-900 dark:text-white font-medium">{cardCount}</span>
+                      <button
+                        onClick={() => { setCardCount(Math.min(20, cardCount + 1)); setTimeout(handleSave, 0); }}
+                        className="w-8 h-8 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-700 dark:hover:text-white transition-colors flex items-center justify-center"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <span className="text-sm text-neutral-500 dark:text-neutral-400">new cards</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Step 2: Output */}
+              <div className="relative pl-14 pb-6">
+                <div className="absolute left-3 w-7 h-7 rounded-full bg-emerald-500/20 border-2 border-emerald-500/50 flex items-center justify-center">
+                  <span className="text-xs">→</span>
+                </div>
+                <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-2">
+                  {action === 'generate' ? 'ADD TO' : action === 'modify' ? 'MODIFY IN' : 'MOVE BETWEEN'}
+                </div>
+                <div className="flex flex-wrap gap-2">
                   {channel.columns.map((col) => (
-                    <label key={col.id} className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-700">
-                      <input
-                        type="checkbox"
-                        checked={selectedColumnIds.includes(col.id)}
-                        onChange={() => handleColumnToggle(col.id)}
-                        className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600"
-                      />
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                        {col.name}
-                      </span>
-                    </label>
+                    <button
+                      key={col.id}
+                      onClick={() => toggleTarget(col.id)}
+                      className={`group relative px-3 py-2 rounded-lg text-sm transition-all ${
+                        selectedColumnIds.includes(col.id)
+                          ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-200'
+                          : 'bg-neutral-100 dark:bg-neutral-800 border border-transparent text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600'
+                      }`}
+                    >
+                      <div className="font-medium">{col.name}</div>
+                      {selectedColumnIds.includes(col.id) && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
+                          <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
+                    </button>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* AI Awareness - What columns AI sees */}
-        <div>
-          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-            AI sees
-          </label>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
-            What existing cards should the AI reference for context?
-          </p>
+              {/* Step 3: Learn From (Optional) */}
+              <div className="relative pl-14">
+                <div className={`absolute left-3 w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                  contextEnabled
+                    ? 'bg-amber-500/20 border-2 border-amber-500/50'
+                    : 'bg-neutral-200 dark:bg-neutral-800 border-2 border-neutral-300 dark:border-neutral-700'
+                }`}>
+                  <span className="text-xs">{contextEnabled ? '👁' : '○'}</span>
+                </div>
 
-          {/* All columns toggle */}
-          <label className="flex items-center gap-2 cursor-pointer mb-2">
-            <input
-              type="checkbox"
-              checked={contextAllColumns}
-              onChange={(e) => {
-                setContextAllColumns(e.target.checked);
-                if (e.target.checked) {
-                  setContextColumnIds([]);
-                }
-              }}
-              className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600"
-            />
-            <span className="text-sm text-neutral-700 dark:text-neutral-300">
-              Include all columns
-            </span>
-          </label>
+                {/* Header with toggle */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-medium ${contextEnabled ? 'text-amber-600 dark:text-amber-400' : 'text-neutral-400 dark:text-neutral-500'}`}>
+                      LEARN FROM
+                    </span>
+                    <span className="text-[10px] text-neutral-500 bg-neutral-200 dark:bg-neutral-800 px-1.5 py-0.5 rounded">
+                      OPTIONAL
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newEnabled = !contextEnabled;
+                      setContextEnabled(newEnabled);
+                      if (newEnabled) {
+                        setContextColumnIds(channel.columns.map(c => c.id));
+                      }
+                    }}
+                    className={`relative w-9 h-5 rounded-full transition-colors ${
+                      contextEnabled ? 'bg-amber-500/30' : 'bg-neutral-300 dark:bg-neutral-700'
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
+                      contextEnabled
+                        ? 'left-4 bg-amber-500'
+                        : 'left-0.5 bg-neutral-400 dark:bg-neutral-500'
+                    }`} />
+                  </button>
+                </div>
 
-          {/* Column selector (only shown when not "all") */}
-          {!contextAllColumns && (
-            <div className="relative" ref={contextDropdownRef}>
+                {contextEnabled ? (
+                  <>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                      Reference existing cards to avoid duplicates and stay relevant
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {channel.columns.map((col) => (
+                        <button
+                          key={col.id}
+                          onClick={() => toggleContext(col.id)}
+                          className={`group relative px-3 py-2 rounded-lg text-sm transition-all ${
+                            contextColumnIds.includes(col.id)
+                              ? 'bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-200'
+                              : 'bg-neutral-100 dark:bg-neutral-800 border border-transparent text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600'
+                          }`}
+                        >
+                          <div className="font-medium">{col.name}</div>
+                          <div className="text-xs opacity-60">{col.cardIds.length} cards</div>
+                          {contextColumnIds.includes(col.id) && (
+                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                              <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    {totalContextCards > 0 && (
+                      <div className="mt-2 text-xs text-neutral-500">
+                        {totalContextCards} cards available as context
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-xs text-neutral-400 dark:text-neutral-600">
+                    Kan won't reference existing cards
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Summary Preview */}
+            <div className="mt-8 p-4 bg-neutral-100 dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-700/50">
+              <div className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2">PREVIEW</div>
+              <p className="text-sm text-neutral-700 dark:text-neutral-300">
+                {action === 'generate' && (
+                  <>
+                    Generate <span className="text-violet-600 dark:text-violet-400 font-medium">{cardCount} cards</span> and add to{' '}
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                      {targetColumnNames.length === 0 ? '...' : targetColumnNames.join(', ')}
+                    </span>
+                    {contextEnabled && contextColumnIds.length > 0 && (
+                      <>, learning from <span className="text-amber-600 dark:text-amber-400 font-medium">{totalContextCards} existing cards</span></>
+                    )}
+                  </>
+                )}
+                {action === 'modify' && (
+                  <>
+                    Modify cards in{' '}
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                      {targetColumnNames.length === 0 ? '...' : targetColumnNames.join(', ')}
+                    </span>
+                  </>
+                )}
+                {action === 'move' && (
+                  <>
+                    Reorganize cards across{' '}
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                      {targetColumnNames.length === 0 ? '...' : targetColumnNames.join(', ')}
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Automation Section */}
+            <div className="mt-4">
               <button
-                type="button"
-                onClick={() => setIsContextDropdownOpen(!isContextDropdownOpen)}
-                className="w-full flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-left focus:border-neutral-400 focus:outline-none dark:border-neutral-700 dark:bg-neutral-800"
+                onClick={() => setAutomationExpanded(!automationExpanded)}
+                className="w-full flex items-center justify-between py-3 px-4 bg-neutral-100 dark:bg-neutral-800/50 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-xl border border-neutral-200 dark:border-neutral-700/50 transition-colors"
               >
-                <span className={contextColumnIds.length === 0 ? 'text-neutral-400' : 'text-neutral-800 dark:text-neutral-200'}>
-                  {getContextSelectorText()}
-                </span>
-                <svg className={`h-4 w-4 text-neutral-400 transition-transform ${isContextDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isEnabled ? 'bg-violet-500/20' : 'bg-neutral-200 dark:bg-neutral-700'}`}>
+                    <svg className={`w-4 h-4 ${isEnabled ? 'text-violet-600 dark:text-violet-400' : 'text-neutral-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Automation</div>
+                    <div className="text-xs text-neutral-500">
+                      {isEnabled ? `${triggers.length} trigger${triggers.length !== 1 ? 's' : ''} active` : 'Manual only'}
+                    </div>
+                  </div>
+                </div>
+                <svg className={`w-5 h-5 text-neutral-400 transition-transform ${automationExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
 
-              {isContextDropdownOpen && (
-                <div className="absolute z-10 mt-1 w-full rounded-lg border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-800">
-                  <div className="p-2 border-b border-neutral-100 dark:border-neutral-700">
-                    <label className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-700">
-                      <input
-                        type="checkbox"
-                        checked={contextColumnIds.length === channel.columns.length}
-                        onChange={handleSelectAllContextColumns}
-                        className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600"
-                      />
-                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                        Select all
-                      </span>
-                    </label>
+              {automationExpanded && (
+                <div className="mt-3 p-4 bg-neutral-50 dark:bg-neutral-800/30 rounded-xl border border-neutral-200 dark:border-neutral-700/50 space-y-4">
+                  {/* Enable toggle */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Enable automation</div>
+                      <div className="text-xs text-neutral-500">Run automatically based on triggers</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newEnabled = !isEnabled;
+                        setIsEnabled(newEnabled);
+                        handleSave({ isEnabled: newEnabled });
+                      }}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${
+                        isEnabled ? 'bg-violet-600' : 'bg-neutral-300 dark:bg-neutral-600'
+                      }`}
+                    >
+                      <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
+                        isEnabled ? 'left-6' : 'left-1'
+                      }`} />
+                    </button>
                   </div>
-                  <div className="p-2 max-h-48 overflow-y-auto">
-                    {channel.columns.map((col) => (
-                      <label key={col.id} className="flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded hover:bg-neutral-50 dark:hover:bg-neutral-700">
-                        <input
-                          type="checkbox"
-                          checked={contextColumnIds.includes(col.id)}
-                          onChange={() => handleContextColumnToggle(col.id)}
-                          className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600"
-                        />
-                        <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                          {col.name}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+
+                  {isEnabled && (
+                    <>
+                      {/* Triggers */}
+                      <div className="pt-3 border-t border-neutral-200 dark:border-neutral-700">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                            Triggers ({triggers.length})
+                          </div>
+                        </div>
+
+                        {/* Trigger list */}
+                        <div className="space-y-2">
+                          {triggers.map((trigger, index) => (
+                            <div key={index} className="flex items-center gap-2 p-2 bg-white dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700">
+                              <div className="w-6 h-6 rounded bg-neutral-100 dark:bg-neutral-700 flex items-center justify-center">
+                                {trigger.type === 'scheduled' && (
+                                  <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                )}
+                                {trigger.type === 'event' && (
+                                  <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                  </svg>
+                                )}
+                                {trigger.type === 'threshold' && (
+                                  <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                  </svg>
+                                )}
+                              </div>
+                              <span className="flex-1 text-sm text-neutral-700 dark:text-neutral-300">
+                                {getTriggerDescription(trigger)}
+                              </span>
+                              <button
+                                onClick={() => removeTrigger(index)}
+                                className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Add trigger buttons */}
+                        {addingTriggerType === null ? (
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={() => addTrigger('scheduled')}
+                              className="flex-1 px-3 py-2 text-xs font-medium text-neutral-600 dark:text-neutral-400 bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 rounded-lg transition-colors"
+                            >
+                              + Schedule
+                            </button>
+                            <button
+                              onClick={() => addTrigger('event')}
+                              className="flex-1 px-3 py-2 text-xs font-medium text-neutral-600 dark:text-neutral-400 bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 rounded-lg transition-colors"
+                            >
+                              + Event
+                            </button>
+                            <button
+                              onClick={() => addTrigger('threshold')}
+                              className="flex-1 px-3 py-2 text-xs font-medium text-neutral-600 dark:text-neutral-400 bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700 rounded-lg transition-colors"
+                            >
+                              + Threshold
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* Safeguards */}
+                      <div className="pt-3 border-t border-neutral-200 dark:border-neutral-700">
+                        <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">Safeguards</div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-neutral-500">Cooldown (min)</label>
+                            <input
+                              type="number"
+                              value={safeguards.cooldownMinutes}
+                              onChange={(e) => {
+                                const newSafeguards = { ...safeguards, cooldownMinutes: parseInt(e.target.value) || 5 };
+                                setSafeguards(newSafeguards);
+                                handleSave({ safeguards: newSafeguards });
+                              }}
+                              min={1}
+                              max={1440}
+                              className="w-full mt-1 px-3 py-1.5 text-sm bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-neutral-500">Daily cap</label>
+                            <input
+                              type="number"
+                              value={safeguards.dailyCap}
+                              onChange={(e) => {
+                                const newSafeguards = { ...safeguards, dailyCap: parseInt(e.target.value) || 50 };
+                                setSafeguards(newSafeguards);
+                                handleSave({ safeguards: newSafeguards });
+                              }}
+                              min={1}
+                              max={1000}
+                              className="w-full mt-1 px-3 py-1.5 text-sm bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg"
+                            />
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={safeguards.preventLoops}
+                            onChange={(e) => {
+                              const newSafeguards = { ...safeguards, preventLoops: e.target.checked };
+                              setSafeguards(newSafeguards);
+                              handleSave({ safeguards: newSafeguards });
+                            }}
+                            className="w-4 h-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
+                          />
+                          <span className="text-sm text-neutral-700 dark:text-neutral-300">Prevent loops</span>
+                        </label>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Automatic Execution Settings */}
-        <AutomaticModeSettings
-          triggers={triggers}
-          safeguards={safeguards}
-          isEnabled={isEnabled}
-          channel={channel}
-          onTriggersChange={(t) => {
-            setTriggers(t);
-            // Pass new triggers directly to avoid stale state
-            setTimeout(() => handleSave({ triggers: t }), 0);
-          }}
-          onSafeguardsChange={(s) => {
-            setSafeguards(s);
-            // Pass new safeguards directly to avoid stale state
-            setTimeout(() => handleSave({ safeguards: s }), 0);
-          }}
-          onEnabledChange={(e) => {
-            setIsEnabled(e);
-            // Sync runMode with isEnabled
-            const newRunMode = e ? 'automatic' : 'manual';
-            setRunMode(newRunMode);
-            // Pass both values directly to avoid stale state
-            setTimeout(() => handleSave({ isEnabled: e }), 0);
-          }}
-        />
-
-        {/* Actions */}
-        <div className="flex justify-between pt-4">
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={handleDuplicate}>
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
+          <div className="flex gap-1">
+            <button
+              onClick={handleDuplicate}
+              className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors"
+            >
               Duplicate
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleDelete} className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
+            </button>
+            <button
+              onClick={handleDelete}
+              className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            >
               Delete
-            </Button>
+            </button>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+          >
             Done
-          </Button>
+          </button>
         </div>
       </div>
     </Drawer>
