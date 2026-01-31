@@ -24,7 +24,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const cards = useStore((s) => s.cards);
   const updateColumn = useStore((s) => s.updateColumn);
   const createCard = useStore((s) => s.createCard);
-  const deleteCard = useStore((s) => s.deleteCard);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
   const theme = useSettingsStore((s) => s.theme);
   const isTerminal = theme === 'terminal';
@@ -87,7 +86,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   };
 
   const handleAddCard = () => {
-    // Use placeholder title that will pass API validation
     const card = createCard(channelId, column.id, { title: 'Untitled' });
     setNewCard(card);
     setIsCardDrawerOpen(true);
@@ -95,11 +93,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
 
   const handleCardDrawerClose = () => {
     setIsCardDrawerOpen(false);
-    // If card title is still the placeholder or empty, delete it
-    const currentTitle = cards[newCard?.id ?? '']?.title?.trim();
-    if (newCard && (!currentTitle || currentTitle === 'Untitled')) {
-      deleteCard(newCard.id);
-    }
     setNewCard(null);
   };
 
