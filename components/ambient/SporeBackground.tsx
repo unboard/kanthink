@@ -55,29 +55,18 @@ const particlesConfig: ISourceOptions = {
     events: {
       onHover: {
         enable: true,
-        mode: ['repulse', 'bubble'],
-      },
-      onClick: {
-        enable: true,
-        mode: 'push',
+        mode: 'bubble',
       },
       resize: {
         enable: true,
       },
     },
     modes: {
-      repulse: {
-        distance: 100,
-        duration: 0.4,
-      },
       bubble: {
         distance: 150,
         size: 3,
         duration: 0.4,
         opacity: 0.8,
-      },
-      push: {
-        quantity: 3,
       },
     },
   },
