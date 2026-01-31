@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import type { Column as ColumnType, ID, Card as CardType } from '@/lib/types';
+import type { Column as ColumnType, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { Card } from './Card';
@@ -36,7 +36,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const [isFlipped, setIsFlipped] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [newCard, setNewCard] = useState<CardType | null>(null);
+  const [newCardId, setNewCardId] = useState<ID | null>(null);
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -87,14 +87,17 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
 
   const handleAddCard = () => {
     const card = createCard(channelId, column.id, { title: 'Untitled' });
-    setNewCard(card);
+    setNewCardId(card.id);
     setIsCardDrawerOpen(true);
   };
 
   const handleCardDrawerClose = () => {
     setIsCardDrawerOpen(false);
-    setNewCard(null);
+    setNewCardId(null);
   };
+
+  // Get live card from store for the drawer
+  const newCard = newCardId ? cards[newCardId] : null;
 
   // Header JSX for front side
   const frontHeader = (
