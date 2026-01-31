@@ -229,6 +229,17 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
     }
   }, [isOpen, autoFocusTitle]);
 
+  // Auto-save title when it changes (debounced)
+  useEffect(() => {
+    if (!card || !isTitleDirty || !title.trim()) return;
+
+    const timer = setTimeout(() => {
+      updateCard(card.id, { title: title.trim() });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [title, card, isTitleDirty, updateCard]);
+
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
     setIsTitleDirty(true);
