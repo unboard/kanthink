@@ -3,17 +3,35 @@
 import { useEffect, useCallback } from 'react';
 
 interface ImageTheaterProps {
-  src: string;
+  images: string[];
+  currentIndex: number;
   isOpen: boolean;
   onClose: () => void;
+  onNavigate: (index: number) => void;
 }
 
-export function ImageTheater({ src, isOpen, onClose }: ImageTheaterProps) {
+export function ImageTheater({ images, currentIndex, isOpen, onClose, onNavigate }: ImageTheaterProps) {
+  const src = images[currentIndex] || '';
+  const canGoPrev = currentIndex > 0;
+  const canGoNext = currentIndex < images.length - 1;
+
+  const handlePrev = useCallback(() => {
+    if (canGoPrev) onNavigate(currentIndex - 1);
+  }, [canGoPrev, currentIndex, onNavigate]);
+
+  const handleNext = useCallback(() => {
+    if (canGoNext) onNavigate(currentIndex + 1);
+  }, [canGoNext, currentIndex, onNavigate]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       onClose();
+    } else if (e.key === 'ArrowLeft') {
+      handlePrev();
+    } else if (e.key === 'ArrowRight') {
+      handleNext();
     }
-  }, [onClose]);
+  }, [onClose, handlePrev, handleNext]);
 
   useEffect(() => {
     if (isOpen) {
@@ -77,6 +95,45 @@ export function ImageTheater({ src, isOpen, onClose }: ImageTheaterProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
         </svg>
       </button>
+
+      {/* Left arrow */}
+      {canGoPrev && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handlePrev();
+          }}
+          className="absolute left-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+          title="Previous image"
+        >
+          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+      )}
+
+      {/* Right arrow */}
+      {canGoNext && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleNext();
+          }}
+          className="absolute right-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+          title="Next image"
+        >
+          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
+
+      {/* Image counter */}
+      {images.length > 1 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-white/10 text-white text-sm">
+          {currentIndex + 1} / {images.length}
+        </div>
+      )}
 
       {/* Image container */}
       <div

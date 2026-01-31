@@ -64,8 +64,10 @@ export function ChatMessage({
 
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
-  const [theaterImage, setTheaterImage] = useState<string | null>(null);
+  const [theaterIndex, setTheaterIndex] = useState<number | null>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
+
+  const imageUrls = message.imageUrls || [];
 
   // Check if there are any smart snippets to render
   const hasSmartSnippets = isAI && message.proposedActions && message.proposedActions.length > 0;
@@ -229,12 +231,12 @@ export function ChatMessage({
         ) : null}
 
         {/* Attached images */}
-        {message.imageUrls && message.imageUrls.length > 0 && (
+        {imageUrls.length > 0 && (
           <div className={`flex flex-wrap gap-2 ${message.content ? 'mt-2' : ''}`}>
-            {message.imageUrls.map((url, i) => (
+            {imageUrls.map((url, i) => (
               <button
                 key={url + i}
-                onClick={() => setTheaterImage(url)}
+                onClick={() => setTheaterIndex(i)}
                 className="block rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors cursor-pointer"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -251,9 +253,11 @@ export function ChatMessage({
 
         {/* Image Theater */}
         <ImageTheater
-          src={theaterImage || ''}
-          isOpen={!!theaterImage}
-          onClose={() => setTheaterImage(null)}
+          images={imageUrls}
+          currentIndex={theaterIndex ?? 0}
+          isOpen={theaterIndex !== null}
+          onClose={() => setTheaterIndex(null)}
+          onNavigate={setTheaterIndex}
         />
 
         {/* Smart Snippets section */}
