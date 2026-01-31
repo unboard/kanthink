@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import type { CardMessage, StoredAction, TagDefinition } from '@/lib/types';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SmartSnippet } from './SmartSnippet';
+import { ImageTheater } from '@/components/ui/ImageTheater';
 
 interface ChatMessageProps {
   message: CardMessage;
@@ -63,6 +64,7 @@ export function ChatMessage({
 
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
+  const [theaterImage, setTheaterImage] = useState<string | null>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
   // Check if there are any smart snippets to render
@@ -230,12 +232,10 @@ export function ChatMessage({
         {message.imageUrls && message.imageUrls.length > 0 && (
           <div className={`flex flex-wrap gap-2 ${message.content ? 'mt-2' : ''}`}>
             {message.imageUrls.map((url, i) => (
-              <a
+              <button
                 key={url + i}
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors"
+                onClick={() => setTheaterImage(url)}
+                className="block rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors cursor-pointer"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -244,10 +244,17 @@ export function ChatMessage({
                   className="max-h-48 object-contain"
                   loading="lazy"
                 />
-              </a>
+              </button>
             ))}
           </div>
         )}
+
+        {/* Image Theater */}
+        <ImageTheater
+          src={theaterImage || ''}
+          isOpen={!!theaterImage}
+          onClose={() => setTheaterImage(null)}
+        />
 
         {/* Smart Snippets section */}
         {hasSmartSnippets && onActionApprove && onActionReject && (() => {
