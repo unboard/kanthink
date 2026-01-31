@@ -118,6 +118,48 @@ function TerminalThemePreview() {
   );
 }
 
+function DarkSporeThemePreview() {
+  const glowColors = ['bg-cyan-400/30', 'bg-white/20', 'bg-violet-400/25', 'bg-cyan-300/35'];
+  return (
+    <div className="p-3 bg-neutral-900 relative overflow-hidden">
+      {/* Bioluminescent particles preview */}
+      <div className="absolute inset-0 overflow-hidden">
+        {[...Array(8)].map((_, i) => (
+          <div
+            key={i}
+            className={`absolute rounded-full ${glowColors[i % glowColors.length]} animate-pulse`}
+            style={{
+              left: `${8 + (i * 12) % 85}%`,
+              top: `${12 + (i * 11) % 70}%`,
+              width: `${1.5 + (i % 2)}px`,
+              height: `${1.5 + (i % 2)}px`,
+              boxShadow: i % 3 === 0 ? '0 0 6px 2px rgba(34, 211, 238, 0.4)' : 'none',
+              animationDelay: `${i * 0.25}s`,
+              animationDuration: '3s',
+            }}
+          />
+        ))}
+      </div>
+      <div className="relative flex gap-2">
+        {/* Mini column preview - same as Default */}
+        <div className="flex-1 rounded bg-neutral-800/80 p-2">
+          <div className="h-2 w-12 rounded bg-neutral-600 mb-2" />
+          <div className="space-y-1.5">
+            <div className="h-6 rounded bg-neutral-700" />
+            <div className="h-6 rounded bg-neutral-700" />
+          </div>
+        </div>
+        <div className="flex-1 rounded bg-neutral-800/80 p-2">
+          <div className="h-2 w-8 rounded bg-neutral-600 mb-2" />
+          <div className="space-y-1.5">
+            <div className="h-6 rounded bg-neutral-700" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ThemeSection() {
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
@@ -133,7 +175,7 @@ export function ThemeSection() {
         <ThemeOption
           theme="default"
           title="Default"
-          description="Clean, neutral styling"
+          description="Clean, neutral styling with stars"
           selected={theme === 'default'}
           onSelect={() => setTheme('default')}
           preview={<DefaultThemePreview />}
@@ -146,6 +188,15 @@ export function ThemeSection() {
           selected={theme === 'terminal'}
           onSelect={() => setTheme('terminal')}
           preview={<TerminalThemePreview />}
+        />
+
+        <ThemeOption
+          theme="dark-spore"
+          title="Dark Spore"
+          description="Default styling with interactive particles"
+          selected={theme === 'dark-spore'}
+          onSelect={() => setTheme('dark-spore')}
+          preview={<DarkSporeThemePreview />}
         />
       </div>
     </div>

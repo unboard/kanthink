@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileHeader } from "@/components/layout/MobileHeader";
-import { Starfield } from "@/components/ambient/Starfield";
+import { AmbientBackground } from "@/components/ambient/AmbientBackground";
 import { AIStatusBar } from "@/components/AIStatusBar";
 import { AutomationProvider } from "@/components/providers/AutomationProvider";
 import { AuthProvider } from "@/components/providers/AuthProvider";
@@ -36,12 +36,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" data-theme="default">
+    <html lang="en" className="dark" data-theme="dark-spore">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ThemeProvider>
-          <Starfield />
+          <AmbientBackground />
           <AuthProvider>
             <ServerSyncProvider>
               <AutomationProvider>

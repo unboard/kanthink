@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type LLMProvider = 'anthropic' | 'openai';
-export type Theme = 'default' | 'terminal';
+export type Theme = 'default' | 'terminal' | 'dark-spore';
 export type QuestionFrequency = 'off' | 'light' | 'moderate';
 
 export interface AISettings {
@@ -45,7 +45,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       ai: DEFAULT_AI_SETTINGS,
-      theme: 'default',
+      theme: 'dark-spore',
       questionFrequency: 'light',
       shroomsExplainerDismissed: false,
       _hasHydrated: false,
