@@ -845,7 +845,7 @@ export function Board({ channel }: BoardProps) {
             ) : (
               <button
                 onClick={() => setIsAddingColumn(true)}
-                className="flex h-full w-10 items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 text-neutral-400 hover:border-neutral-400 hover:text-neutral-500 hover:bg-neutral-100/50 dark:border-neutral-700 dark:hover:border-neutral-600 dark:hover:text-neutral-400 dark:hover:bg-neutral-800/30 transition-colors"
+                className="flex h-full w-12 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
                 title="Add column"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
