@@ -734,7 +734,7 @@ export const useStore = create<KanthinkState>()(
 
         // Sync column reorder to server
         if (columnId) {
-          sync.syncColumnUpdate(channelId, columnId, { position: toIndex });
+          sync.syncColumnReorder(channelId, columnId, toIndex);
         }
       },
 
@@ -767,11 +767,12 @@ export const useStore = create<KanthinkState>()(
         const timestamp = now();
 
         // Create initial message if provided
+        // AI-generated cards show their content as Kan responses, manual cards as notes
         const messages: CardMessage[] = [];
         if (input.initialMessage) {
           messages.push({
             id: nanoid(),
-            type: 'note',
+            type: source === 'ai' ? 'ai_response' : 'note',
             content: input.initialMessage,
             createdAt: timestamp,
           });

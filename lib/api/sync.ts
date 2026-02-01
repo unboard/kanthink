@@ -110,6 +110,12 @@ export function syncColumnDelete(channelId: string, columnId: string) {
   })
 }
 
+export function syncColumnReorder(channelId: string, columnId: string, toPosition: number) {
+  syncInBackground(async () => {
+    await api.reorderColumns(channelId, columnId, toPosition)
+  })
+}
+
 // ===== FOLDER SYNC =====
 
 export function syncFolderCreate(folderId: string, name: string) {
