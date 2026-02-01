@@ -810,9 +810,9 @@ export function Board({ channel }: BoardProps) {
           </SortableContext>
 
           {/* Add Column */}
-          <div className="flex h-full w-[280px] sm:w-72 flex-shrink-0 flex-col">
+          <div className="flex-shrink-0 self-stretch">
             {isAddingColumn ? (
-              <div className="rounded-lg bg-neutral-100 p-3 dark:bg-neutral-800/50">
+              <div className="w-[280px] sm:w-72 rounded-lg bg-neutral-100 p-3 dark:bg-neutral-800/50">
                 <Input
                   placeholder="Column name"
                   value={newColumnName}
@@ -845,9 +845,12 @@ export function Board({ channel }: BoardProps) {
             ) : (
               <button
                 onClick={() => setIsAddingColumn(true)}
-                className="flex h-10 items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 text-sm text-neutral-500 hover:border-neutral-400 hover:text-neutral-600 dark:border-neutral-700 dark:hover:border-neutral-600 dark:hover:text-neutral-400"
+                className="flex h-full w-10 items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 text-neutral-400 hover:border-neutral-400 hover:text-neutral-500 hover:bg-neutral-100/50 dark:border-neutral-700 dark:hover:border-neutral-600 dark:hover:text-neutral-400 dark:hover:bg-neutral-800/30 transition-colors"
+                title="Add column"
               >
-                + Add column
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
               </button>
             )}
           </div>
