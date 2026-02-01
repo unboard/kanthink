@@ -60,7 +60,7 @@ declare module 'next-auth' {
       image?: string | null
       tier: 'free' | 'premium'
       subscriptionStatus: 'free' | 'active' | 'canceled' | 'past_due'
-      byokProvider?: 'anthropic' | 'openai' | null
+      byokProvider?: 'openai' | 'google' | null
       hasByok: boolean
     }
   }

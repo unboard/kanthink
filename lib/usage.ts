@@ -114,7 +114,7 @@ export async function recordUsage(userId: string, requestType: string): Promise<
 }
 
 export interface ByokConfig {
-  provider: 'anthropic' | 'openai' | null
+  provider: 'openai' | 'google' | null
   apiKey: string | null
   model: string | null
 }
@@ -174,7 +174,7 @@ export async function hasUserByokConfig(userId: string): Promise<boolean> {
 export async function setUserByokConfig(
   userId: string,
   config: {
-    provider: 'anthropic' | 'openai'
+    provider: 'openai' | 'google'
     apiKey: string
     model?: string
   } | null

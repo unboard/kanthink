@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-export type LLMProvider = 'anthropic' | 'openai';
+export type LLMProvider = 'openai' | 'google';
 export type Theme = 'spores' | 'stars' | 'terminal';
 export type QuestionFrequency = 'off' | 'light' | 'moderate';
 

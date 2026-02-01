@@ -16,7 +16,7 @@ export const users = sqliteTable('users', {
   currentPeriodEnd: integer('current_period_end', { mode: 'timestamp' }),
 
   // BYOK fields
-  byokProvider: text('byok_provider').$type<'anthropic' | 'openai' | null>(),
+  byokProvider: text('byok_provider').$type<'openai' | 'google' | null>(),
   byokApiKey: text('byok_api_key'),
   byokModel: text('byok_model'),
 

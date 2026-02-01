@@ -5,32 +5,37 @@ import { useSettingsStore, type LLMProvider, fetchAIStatus } from '@/lib/setting
 import { Button, Input } from '@/components/ui';
 
 const PROVIDERS: { value: LLMProvider; label: string; description: string }[] = [
-  { value: 'anthropic', label: 'Anthropic', description: 'Claude models' },
   { value: 'openai', label: 'OpenAI', description: 'GPT models' },
+  { value: 'google', label: 'Google', description: 'Gemini models' },
 ];
 
 const DEFAULT_MODELS: Record<LLMProvider, string> = {
-  anthropic: 'claude-sonnet-4-20250514',
-  openai: 'gpt-4o',
+  openai: 'gpt-5',
+  google: 'gemini-2.5-flash',
 };
 
 const MODEL_OPTIONS: Record<LLMProvider, { value: string; label: string }[]> = {
-  anthropic: [
-    { value: '', label: 'Default (Claude Sonnet 4)' },
-    { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
-    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-    { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
-    { value: 'other', label: 'Other...' },
-  ],
   openai: [
-    { value: '', label: 'Default (GPT-4o)' },
+    { value: '', label: 'Default (GPT-5)' },
+    { value: 'gpt-5.2', label: 'GPT-5.2' },
+    { value: 'gpt-5.1', label: 'GPT-5.1' },
+    { value: 'gpt-5', label: 'GPT-5' },
+    { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
+    { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
+    { value: 'gpt-5-pro', label: 'GPT-5 Pro' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
     { value: 'gpt-4o', label: 'GPT-4o' },
     { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-    { value: 'o1', label: 'o1' },
-    { value: 'o1-mini', label: 'o1 Mini' },
-    { value: 'o3-mini', label: 'o3 Mini' },
+    { value: 'other', label: 'Other...' },
+  ],
+  google: [
+    { value: '', label: 'Default (Gemini 2.5 Flash)' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+    { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
     { value: 'other', label: 'Other...' },
   ],
 };
@@ -231,7 +236,7 @@ export function AISettings() {
                   API key configured
                 </div>
                 <div className="text-sm text-green-600 dark:text-green-400">
-                  Your {ai.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key is securely stored
+                  Your {ai.provider === 'openai' ? 'OpenAI' : 'Google'} API key is securely stored
                 </div>
               </div>
             </div>
@@ -269,7 +274,7 @@ export function AISettings() {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={`Enter your ${ai.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key`}
+                placeholder={`Enter your ${ai.provider === 'openai' ? 'OpenAI' : 'Google'} API key`}
                 className="flex-1"
               />
               <Button

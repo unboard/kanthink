@@ -1,6 +1,6 @@
 import type { LLMProvider, LLMConfig } from './providers/types';
-import { createAnthropicProvider } from './providers/anthropic';
 import { createOpenAIProvider } from './providers/openai';
+import { createGoogleProvider } from './providers/google';
 import { getUserByokConfigWithError, checkUsageLimit } from '../usage';
 
 export type { LLMProvider, LLMMessage, LLMResponse, LLMConfig, LLMContentPart } from './providers/types';
@@ -10,17 +10,17 @@ export type { LLMProvider, LLMMessage, LLMResponse, LLMConfig, LLMContentPart } 
  */
 export function createLLMClient(config: LLMConfig): LLMProvider {
   switch (config.provider) {
-    case 'anthropic':
-      return createAnthropicProvider(config.apiKey, config.model);
     case 'openai':
       return createOpenAIProvider(config.apiKey, config.model);
+    case 'google':
+      return createGoogleProvider(config.apiKey, config.model);
     default:
       throw new Error(`Unknown LLM provider: ${config.provider}`);
   }
 }
 
 interface AIConfig {
-  provider: 'anthropic' | 'openai';
+  provider: 'openai' | 'google';
   apiKey: string;
   model?: string;
   systemInstructions?: string;
@@ -72,9 +72,9 @@ export async function getLLMClientForUser(userId: string): Promise<LLMClientResu
   }
 
   // 3. Use owner's key
-  const ownerApiKey = process.env.OWNER_OPENAI_API_KEY || process.env.OWNER_ANTHROPIC_API_KEY;
+  const ownerApiKey = process.env.OWNER_OPENAI_API_KEY || process.env.OWNER_GOOGLE_API_KEY;
   if (ownerApiKey) {
-    const provider = process.env.OWNER_OPENAI_API_KEY ? 'openai' : 'anthropic';
+    const provider = process.env.OWNER_OPENAI_API_KEY ? 'openai' : 'google';
     const client = createLLMClient({
       provider,
       apiKey: ownerApiKey,
@@ -83,9 +83,9 @@ export async function getLLMClientForUser(userId: string): Promise<LLMClientResu
   }
 
   // 4. Fall back to legacy environment variables (for development)
-  const legacyApiKey = process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY;
+  const legacyApiKey = process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY;
   if (legacyApiKey) {
-    const provider = process.env.OPENAI_API_KEY ? 'openai' : 'anthropic';
+    const provider = process.env.OPENAI_API_KEY ? 'openai' : 'google';
     const client = createLLMClient({
       provider,
       apiKey: legacyApiKey,
@@ -107,7 +107,7 @@ export async function getLLMClientForUser(userId: string): Promise<LLMClientResu
  */
 export function getLLMClient(config?: Partial<AIConfig>): LLMProvider | null {
   // Priority: config from settings store > environment variables
-  const provider = config?.provider || (process.env.LLM_PROVIDER as 'anthropic' | 'openai') || 'anthropic';
+  const provider = config?.provider || (process.env.LLM_PROVIDER as 'openai' | 'google') || 'openai';
   const model = config?.model || process.env.LLM_MODEL;
 
   // Check for API key: settings store first, then env vars
@@ -115,20 +115,20 @@ export function getLLMClient(config?: Partial<AIConfig>): LLMProvider | null {
 
   if (!apiKey) {
     // Try owner keys first
-    apiKey = process.env.OWNER_OPENAI_API_KEY || process.env.OWNER_ANTHROPIC_API_KEY;
+    apiKey = process.env.OWNER_OPENAI_API_KEY || process.env.OWNER_GOOGLE_API_KEY;
 
     // Fall back to legacy environment variables
     if (!apiKey) {
-      if (provider === 'anthropic') {
-        apiKey = process.env.ANTHROPIC_API_KEY;
-      } else if (provider === 'openai') {
+      if (provider === 'openai') {
         apiKey = process.env.OPENAI_API_KEY;
+      } else if (provider === 'google') {
+        apiKey = process.env.GOOGLE_API_KEY;
       }
     }
 
     // Last resort: try any available env key
     if (!apiKey) {
-      apiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+      apiKey = process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY;
     }
   }
 
@@ -137,20 +137,20 @@ export function getLLMClient(config?: Partial<AIConfig>): LLMProvider | null {
   }
 
   // Determine provider based on the key we're using
-  let effectiveProvider: 'anthropic' | 'openai';
+  let effectiveProvider: 'openai' | 'google';
   if (config?.apiKey) {
     effectiveProvider = provider;
   } else if (apiKey === process.env.OWNER_OPENAI_API_KEY || apiKey === process.env.OPENAI_API_KEY) {
     effectiveProvider = 'openai';
   } else {
-    effectiveProvider = 'anthropic';
+    effectiveProvider = 'google';
   }
 
   switch (effectiveProvider) {
-    case 'anthropic':
-      return createAnthropicProvider(apiKey, model);
     case 'openai':
       return createOpenAIProvider(apiKey, model);
+    case 'google':
+      return createGoogleProvider(apiKey, model);
     default:
       return null;
   }
@@ -163,8 +163,8 @@ export function isLLMConfigured(config?: Partial<AIConfig>): boolean {
   if (config?.apiKey) return true;
   return !!(
     process.env.OWNER_OPENAI_API_KEY ||
-    process.env.OWNER_ANTHROPIC_API_KEY ||
-    process.env.ANTHROPIC_API_KEY ||
-    process.env.OPENAI_API_KEY
+    process.env.OWNER_GOOGLE_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    process.env.GOOGLE_API_KEY
   );
 }

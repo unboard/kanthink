@@ -29,7 +29,7 @@ export interface LLMProvider {
 }
 
 export interface LLMConfig {
-  provider: 'anthropic' | 'openai';
+  provider: 'openai' | 'google';
   apiKey: string;
   model?: string;
 }

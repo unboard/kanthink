@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 import { auth } from '@/lib/auth';
 import { setUserByokConfig } from '@/lib/usage';
 
 interface SaveByokRequest {
-  provider: 'anthropic' | 'openai';
+  provider: 'openai' | 'google';
   apiKey: string;
   model?: string;
 }
@@ -32,28 +32,28 @@ export async function POST(request: Request) {
       );
     }
 
-    if (provider !== 'anthropic' && provider !== 'openai') {
+    if (provider !== 'openai' && provider !== 'google') {
       return NextResponse.json(
-        { error: 'Invalid provider. Must be "anthropic" or "openai"' },
+        { error: 'Invalid provider. Must be "openai" or "google"' },
         { status: 400 }
       );
     }
 
     // Validate the API key by making a test request
     try {
-      if (provider === 'anthropic') {
-        const client = new Anthropic({ apiKey });
-        await client.messages.create({
-          model: model || 'claude-sonnet-4-20250514',
+      if (provider === 'openai') {
+        const client = new OpenAI({ apiKey });
+        await client.chat.completions.create({
+          model: model || 'gpt-5',
           max_tokens: 10,
           messages: [{ role: 'user', content: 'Hi' }],
         });
       } else {
-        const client = new OpenAI({ apiKey });
-        await client.chat.completions.create({
-          model: model || 'gpt-4o',
-          max_tokens: 10,
-          messages: [{ role: 'user', content: 'Hi' }],
+        const client = new GoogleGenAI({ apiKey });
+        await client.models.generateContent({
+          model: model || 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: 'Hi' }] }],
+          config: { maxOutputTokens: 10 },
         });
       }
     } catch (validationError) {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 
 export async function POST(request: Request) {
   try {
@@ -13,26 +13,26 @@ export async function POST(request: Request) {
       );
     }
 
-    if (provider === 'anthropic') {
-      const client = new Anthropic({ apiKey });
-      // Make a minimal request to test the key
-      await client.messages.create({
-        model: model || 'claude-sonnet-4-20250514',
-        max_tokens: 10,
-        messages: [{ role: 'user', content: 'Hi' }],
-      });
-      return NextResponse.json({ success: true, provider: 'anthropic' });
-    }
-
     if (provider === 'openai') {
       const client = new OpenAI({ apiKey });
       // Make a minimal request to test the key
       await client.chat.completions.create({
-        model: model || 'gpt-4o',
+        model: model || 'gpt-5',
         max_tokens: 10,
         messages: [{ role: 'user', content: 'Hi' }],
       });
       return NextResponse.json({ success: true, provider: 'openai' });
+    }
+
+    if (provider === 'google') {
+      const client = new GoogleGenAI({ apiKey });
+      // Make a minimal request to test the key
+      await client.models.generateContent({
+        model: model || 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: 'Hi' }] }],
+        config: { maxOutputTokens: 10 },
+      });
+      return NextResponse.json({ success: true, provider: 'google' });
     }
 
     return NextResponse.json(

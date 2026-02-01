@@ -1,3 +1,3 @@
 export * from './types';
-export { createAnthropicProvider } from './anthropic';
 export { createOpenAIProvider } from './openai';
+export { createGoogleProvider } from './google';
