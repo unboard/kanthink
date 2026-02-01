@@ -254,8 +254,9 @@ export async function POST(request: Request) {
     const llm = result.client;
     const usingOwnerKey = result.source === 'owner';
 
-    // Extract and fetch URLs from the question, or perform web search
+    // Extract and fetch URLs from the question
     let webContext = '';
+    let useWebSearch = false;
 
     try {
       const webTools = await getWebTools();
@@ -270,25 +271,28 @@ export async function POST(request: Request) {
           console.error('Web fetch error:', error);
         }
       } else if (webTools.detectsSearchIntent(questionContent)) {
-        // No URLs found but user seems to want information - do a web search
-        try {
-          const searchResults = await webTools.webSearch(questionContent, 5);
-          if (searchResults.length > 0) {
-            webContext = webTools.formatSearchContext(questionContent, searchResults);
-          }
-        } catch (error) {
-          console.error('Web search error:', error);
-        }
+        // No URLs found but user seems to want current information
+        // Use OpenAI's web_search tool via Responses API
+        useWebSearch = true;
       }
     } catch (error) {
       console.error('Web tools load error:', error);
     }
 
-    // Build prompt with web context (from URL fetch or web search)
+    // Build prompt with web context (from URL fetch)
     const messages = buildPrompt(questionContent, context, imageUrls, webContext);
 
     try {
-      const llmResponse = await llm.complete(messages);
+      let llmResponse;
+
+      // Use OpenAI web search for search queries (if available)
+      if (useWebSearch && typeof llm.webSearch === 'function') {
+        const systemPrompt = `You are Kan, an AI assistant helping with a Kanban card titled "${context.cardTitle}" in the "${context.channelName}" channel. Search the web for current information and provide a helpful, concise response. Cite your sources when relevant.`;
+        llmResponse = await llm.webSearch(questionContent, systemPrompt);
+      } else {
+        // Regular completion (with URL context if available)
+        llmResponse = await llm.complete(messages);
+      }
 
       if (userId && usingOwnerKey) {
         await recordUsage(userId, 'card-chat');

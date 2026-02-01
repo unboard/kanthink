@@ -2,7 +2,6 @@ import OpenAI from 'openai';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart } from './types';
 
 const DEFAULT_MODEL = 'gpt-4o';
-const WEB_SEARCH_MODEL = 'gpt-4o'; // Model for web search queries
 
 function toOpenAIContent(content: string | LLMContentPart[]): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   if (typeof content === 'string') return content;
@@ -49,48 +48,26 @@ export function createOpenAIProvider(apiKey: string, model?: string): LLMProvide
 
     /**
      * Web search using OpenAI's Responses API with web_search tool
-     * This allows the model to search the web for current information
+     * https://platform.openai.com/docs/guides/tools-web-search
      */
     async webSearch(query: string, systemPrompt?: string): Promise<LLMResponse> {
       try {
-        // Use the Responses API with web_search tool
-        // The API structure may vary based on OpenAI SDK version
-        const responsesApi = (client as unknown as { responses: { create: (params: unknown) => Promise<unknown> } }).responses;
-
-        if (!responsesApi?.create) {
-          throw new Error('Responses API not available');
-        }
-
-        const response = await responsesApi.create({
-          model: WEB_SEARCH_MODEL,
+        // OpenAI Responses API with web_search tool
+        const response = await client.responses.create({
+          model: modelId,
           input: query,
           instructions: systemPrompt || 'You are Kan, a helpful AI assistant. Search the web and provide accurate, up-to-date information. Cite your sources when possible.',
           tools: [{ type: 'web_search' }],
-        }) as { output_text?: string; output?: Array<{ type: string; content?: Array<{ type: string; text?: string }> }> };
+        });
 
-        // Extract the text output from the response
-        let content = '';
-
-        if (response.output_text) {
-          content = response.output_text;
-        } else if (response.output) {
-          // Process output items
-          for (const item of response.output) {
-            if (item.type === 'message' && item.content) {
-              for (const block of item.content) {
-                if (block.type === 'text' && block.text) {
-                  content += block.text;
-                }
-              }
-            }
-          }
-        }
+        // The response has output_text for the final text response
+        const content = response.output_text || '';
 
         return {
           content: content || 'I searched the web but could not find relevant information.',
         };
       } catch (error) {
-        // If Responses API is not available, fall back to regular completion
+        // If Responses API fails, fall back to regular completion
         console.error('Web search error (falling back to regular completion):', error);
 
         const fallbackMessages: LLMMessage[] = [
