@@ -494,21 +494,25 @@ export interface SearchResult {
 }
 
 /**
- * Search the web using DuckDuckGo HTML search
+ * Search the web using DuckDuckGo Lite (more bot-friendly)
  * Returns top search results with titles, URLs, and snippets
  */
 export async function webSearch(query: string, maxResults: number = 5): Promise<SearchResult[]> {
   try {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    // Use DuckDuckGo Lite which is more lenient with bots
+    const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
 
     const response = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
     });
 
     if (!response.ok) {
-      throw new Error(`Search failed: ${response.status}`);
+      // Fallback: try to fetch top result directly from DuckDuckGo instant answer
+      return await fallbackInstantAnswer(query);
     }
 
     const html = await response.text();
@@ -516,36 +520,98 @@ export async function webSearch(query: string, maxResults: number = 5): Promise<
 
     const results: SearchResult[] = [];
 
-    // Parse DuckDuckGo HTML search results
-    $('.result').each((i, element) => {
+    // Parse DuckDuckGo Lite results (table-based layout)
+    $('a.result-link').each((i, element) => {
       if (results.length >= maxResults) return false;
 
-      const $el = $(element);
-      const titleEl = $el.find('.result__title a');
-      const snippetEl = $el.find('.result__snippet');
+      const $link = $(element);
+      const url = $link.attr('href') || '';
+      const title = $link.text().trim();
 
-      const title = titleEl.text().trim();
-      const url = titleEl.attr('href') || '';
-      const snippet = snippetEl.text().trim();
+      // Get snippet from the next table row
+      const $row = $link.closest('tr');
+      const $snippetRow = $row.next('tr');
+      const snippet = $snippetRow.find('td.result-snippet').text().trim();
 
-      // Skip if missing essential data or if it's an ad
-      if (!title || !url || url.includes('duckduckgo.com/y.js')) return;
-
-      // Extract actual URL from DuckDuckGo redirect
-      let actualUrl = url;
-      if (url.includes('uddg=')) {
-        const match = url.match(/uddg=([^&]+)/);
-        if (match) {
-          actualUrl = decodeURIComponent(match[1]);
-        }
+      if (title && url && !url.includes('duckduckgo.com')) {
+        results.push({ title, url, snippet: snippet || '' });
       }
-
-      results.push({ title, url: actualUrl, snippet });
     });
+
+    // Alternative parsing for different DDG Lite layouts
+    if (results.length === 0) {
+      $('table tr').each((i, element) => {
+        if (results.length >= maxResults) return false;
+
+        const $row = $(element);
+        const $link = $row.find('a').first();
+        const url = $link.attr('href') || '';
+        const title = $link.text().trim();
+
+        if (title && url && url.startsWith('http') && !url.includes('duckduckgo.com')) {
+          const snippet = $row.find('td').last().text().replace(title, '').trim();
+          results.push({ title, url, snippet });
+        }
+      });
+    }
 
     return results;
   } catch (error) {
     console.error('Web search error:', error);
+    // Try fallback
+    return await fallbackInstantAnswer(query);
+  }
+}
+
+/**
+ * Fallback using DuckDuckGo Instant Answer API
+ */
+async function fallbackInstantAnswer(query: string): Promise<SearchResult[]> {
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`;
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'KanthinkBot/1.0',
+      },
+    });
+
+    if (!response.ok) return [];
+
+    const data = await response.json() as {
+      AbstractText?: string;
+      AbstractURL?: string;
+      AbstractSource?: string;
+      RelatedTopics?: Array<{ Text?: string; FirstURL?: string }>;
+    };
+
+    const results: SearchResult[] = [];
+
+    // Main abstract result
+    if (data.AbstractText && data.AbstractURL) {
+      results.push({
+        title: data.AbstractSource || 'Wikipedia',
+        url: data.AbstractURL,
+        snippet: data.AbstractText,
+      });
+    }
+
+    // Related topics
+    if (data.RelatedTopics) {
+      for (const topic of data.RelatedTopics.slice(0, 4)) {
+        if (topic.Text && topic.FirstURL) {
+          results.push({
+            title: topic.Text.split(' - ')[0] || topic.Text.slice(0, 50),
+            url: topic.FirstURL,
+            snippet: topic.Text,
+          });
+        }
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error('Instant answer fallback error:', error);
     return [];
   }
 }
