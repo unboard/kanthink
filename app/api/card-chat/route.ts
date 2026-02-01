@@ -261,35 +261,20 @@ export async function POST(request: Request) {
 
     try {
       const webTools = await getWebTools();
-      console.log('[card-chat] Web tools loaded successfully');
-
       urls = webTools.extractUrls(questionContent);
-      console.log('[card-chat] Extracted URLs:', urls);
 
       if (urls.length > 0) {
         try {
           const pages = await webTools.fetchUrls(urls);
-          console.log('[card-chat] Fetched pages:', pages.map(p => ({
-            url: p.url,
-            status: p.status,
-            error: p.error,
-            textLength: p.text?.length || 0,
-            title: p.title,
-          })));
-
           webContext = webTools.formatWebContext(pages);
-          console.log('[card-chat] Web context length:', webContext.length);
         } catch (error) {
-          console.error('[card-chat] Web fetch error:', error);
-          // Continue without web context if fetch fails
+          console.error('Web fetch error:', error);
         }
       }
 
       isSearchQuery = webTools.detectsSearchIntent(questionContent) && urls.length === 0;
-      console.log('[card-chat] Is search query:', isSearchQuery);
     } catch (error) {
-      console.error('[card-chat] Web tools load error:', error);
-      // Continue without web tools if they fail to load
+      console.error('Web tools load error:', error);
     }
 
     // Build prompt with web context
