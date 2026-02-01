@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { CardMessage, StoredAction, TagDefinition } from '@/lib/types';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SmartSnippet } from './SmartSnippet';
@@ -136,23 +137,22 @@ export function ChatMessage({
             {formatDate(message.createdAt)} at {formatTime(message.createdAt)}
           </span>
 
-          {/* Action buttons - always visible on mobile, hover on desktop */}
-          <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+          {/* Action buttons */}
+          <div className="ml-auto flex items-center gap-1">
+            {/* Edit button - always visible for notes */}
             {canEdit && !isEditing && (
               <button
                 onClick={() => { setEditContent(message.content); setIsEditing(true); }}
-                className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                title="Edit note"
+                className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
+                Edit
               </button>
             )}
+            {/* Delete button - show on hover */}
             {onDelete && !isEditing && (
               <button
                 onClick={onDelete}
-                className="p-1 text-neutral-400 hover:text-red-500"
+                className="p-1 text-neutral-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                 title="Delete message"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -212,6 +212,7 @@ export function ChatMessage({
             onDoubleClick={canEdit ? () => { setEditContent(message.content); setIsEditing(true); } : undefined}
           >
             <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
               components={{
                 a: ({ href, children }) => (
                   <a
