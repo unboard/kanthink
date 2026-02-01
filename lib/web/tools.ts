@@ -135,6 +135,27 @@ function extractDomains(text: string): string[] {
   });
 }
 
+// Detect weather queries and generate a weather URL
+function extractWeatherQuery(text: string): string | null {
+  const weatherPattern = /weather\s+(?:in|for|at)?\s*([a-zA-Z\s,]+?)(?:\?|$|\.|\s+today|\s+tomorrow|\s+this week)/i;
+  const match = text.match(weatherPattern);
+  if (match && match[1]) {
+    const location = match[1].trim();
+    // Use wttr.in which returns text-friendly weather data
+    return `https://wttr.in/${encodeURIComponent(location)}?format=4`;
+  }
+
+  // Also match "what's the weather in X" pattern
+  const altPattern = /what(?:'s| is) the weather (?:like )?(?:in|for|at)?\s*([a-zA-Z\s,]+?)(?:\?|$|\.)/i;
+  const altMatch = text.match(altPattern);
+  if (altMatch && altMatch[1]) {
+    const location = altMatch[1].trim();
+    return `https://wttr.in/${encodeURIComponent(location)}?format=4`;
+  }
+
+  return null;
+}
+
 export function extractUrls(text: string): string[] {
   // First, extract full URLs
   const urlMatches = text.match(URL_REGEX) || [];
@@ -149,8 +170,15 @@ export function extractUrls(text: string): string[] {
     })
     .map(domain => `https://${domain}`);
 
+  // Check for weather queries
+  const weatherUrl = extractWeatherQuery(text);
+
   // Combine and deduplicate
   const allUrls = [...cleanedUrls, ...domainUrls];
+  if (weatherUrl && !allUrls.includes(weatherUrl)) {
+    allUrls.push(weatherUrl);
+  }
+
   const unique = [...new Set(allUrls)];
 
   // Limit to max URLs per request
