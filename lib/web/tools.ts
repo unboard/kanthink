@@ -3,8 +3,7 @@
  * Provides URL fetching with SSRF protection, caching, and HTML-to-text conversion
  */
 
-import { JSDOM } from 'jsdom';
-import { Readability } from '@mozilla/readability';
+import * as cheerio from 'cheerio';
 
 // ============================================================================
 // Types
@@ -162,47 +161,36 @@ export function extractUrls(text: string): string[] {
 // HTML to Text Conversion
 // ============================================================================
 
-function htmlToText(html: string, url: string): { title: string; text: string; excerpt: string } {
+function htmlToText(html: string): { title: string; text: string; excerpt: string } {
   try {
-    const dom = new JSDOM(html, { url });
-    const document = dom.window.document;
+    const $ = cheerio.load(html);
 
-    // Try Readability first for article-like content
-    const reader = new Readability(document.cloneNode(true) as Document);
-    const article = reader.parse();
+    // Get title
+    const title = $('title').text().trim() ||
+      $('meta[property="og:title"]').attr('content') ||
+      $('h1').first().text().trim() ||
+      '';
 
-    if (article && article.textContent) {
-      const text = article.textContent
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, CONFIG.MAX_TEXT_CHARS);
+    // Remove non-content elements
+    $('script, style, nav, footer, header, aside, noscript, iframe, svg').remove();
+    $('[role="navigation"], [role="banner"], [role="contentinfo"], [aria-hidden="true"]').remove();
+    $('form, button, input, select, textarea').remove();
 
-      return {
-        title: article.title || document.title || '',
-        text,
-        excerpt: article.excerpt || text.slice(0, 300) + '...',
-      };
+    // Try to find main content
+    let contentElement = $('main, article, [role="main"]').first();
+    if (contentElement.length === 0) {
+      contentElement = $('body');
     }
 
-    // Fallback: extract text from body
-    const body = document.body;
-    if (!body) {
-      return { title: document.title || '', text: '', excerpt: '' };
-    }
-
-    // Remove script, style, nav, footer, etc.
-    const elementsToRemove = body.querySelectorAll(
-      'script, style, nav, footer, header, aside, [role="navigation"], [role="banner"], [role="contentinfo"]'
-    );
-    elementsToRemove.forEach(el => el.remove());
-
-    const text = (body.textContent || '')
+    // Extract text, preserving some structure
+    const text = contentElement
+      .text()
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, CONFIG.MAX_TEXT_CHARS);
 
     return {
-      title: document.title || '',
+      title,
       text,
       excerpt: text.slice(0, 300) + (text.length > 300 ? '...' : ''),
     };
@@ -361,7 +349,7 @@ export async function fetchUrl(url: string): Promise<FetchedPage> {
     );
 
     // Parse HTML to text
-    const { title, text, excerpt } = htmlToText(html, finalUrl);
+    const { title, text, excerpt } = htmlToText(html);
 
     const page: FetchedPage = {
       url,
