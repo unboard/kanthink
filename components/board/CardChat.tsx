@@ -19,6 +19,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
   const addMessage = useStore((s) => s.addMessage);
   const addAIResponse = useStore((s) => s.addAIResponse);
@@ -119,6 +120,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   };
 
   const generateSummary = async () => {
+    if (isSummaryLoading) return;
+    setIsSummaryLoading(true);
 
     try {
       const response = await fetch('/api/card-summary', {
@@ -137,6 +140,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       }
     } catch {
       // Silently fail for summary - it's not critical
+    } finally {
+      setIsSummaryLoading(false);
     }
   };
 
@@ -259,9 +264,31 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             <svg className="w-4 h-4 text-violet-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
             </svg>
-            <div>
-              <div className="text-xs font-medium text-violet-600 dark:text-violet-400 mb-0.5">
-                AI Summary
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-xs font-medium text-violet-600 dark:text-violet-400">
+                  AI Summary
+                </span>
+                <button
+                  onClick={generateSummary}
+                  disabled={isSummaryLoading}
+                  className="p-0.5 rounded text-violet-400 hover:text-violet-600 dark:text-violet-500 dark:hover:text-violet-300 transition-colors disabled:opacity-50"
+                  title="Refresh summary"
+                >
+                  <svg
+                    className={`w-3.5 h-3.5 ${isSummaryLoading ? 'animate-spin' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                </button>
               </div>
               <p className="text-sm text-violet-800 dark:text-violet-200">
                 {card.summary}
