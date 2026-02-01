@@ -465,7 +465,7 @@ export function Sidebar() {
           transition-all duration-200 ease-in-out
         `}
       >
-        <div className="flex items-center justify-between px-3 py-3">
+        <div className="flex items-center justify-between px-3 py-3 sm:py-4">
           {(!isCollapsed || isMobile) ? (
             <img
               src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-full-v1_lc5ai6.svg"
