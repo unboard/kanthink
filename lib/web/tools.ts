@@ -468,13 +468,105 @@ const SEARCH_INTENT_PATTERNS = [
   /\b(compare|vs|versus|difference between)\b/i,
   /\b(best|top|popular|trending)\b/i,
   /\b(price|cost|review|rating)\b/i,
+  /\bwho won\b/i,
+  /\bwhat happened\b/i,
+  /\bwhen did\b/i,
+  /\bwhere can i\b/i,
 ];
 
 export function detectsSearchIntent(text: string): boolean {
-  // If there's a URL, don't treat as search intent
+  // If there's a URL or domain, don't treat as search intent
   if (extractUrls(text).length > 0) {
     return false;
   }
 
   return SEARCH_INTENT_PATTERNS.some(pattern => pattern.test(text));
+}
+
+// ============================================================================
+// Web Search (DuckDuckGo)
+// ============================================================================
+
+export interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+/**
+ * Search the web using DuckDuckGo HTML search
+ * Returns top search results with titles, URLs, and snippets
+ */
+export async function webSearch(query: string, maxResults: number = 5): Promise<SearchResult[]> {
+  try {
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+
+    const response = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.status}`);
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const results: SearchResult[] = [];
+
+    // Parse DuckDuckGo HTML search results
+    $('.result').each((i, element) => {
+      if (results.length >= maxResults) return false;
+
+      const $el = $(element);
+      const titleEl = $el.find('.result__title a');
+      const snippetEl = $el.find('.result__snippet');
+
+      const title = titleEl.text().trim();
+      const url = titleEl.attr('href') || '';
+      const snippet = snippetEl.text().trim();
+
+      // Skip if missing essential data or if it's an ad
+      if (!title || !url || url.includes('duckduckgo.com/y.js')) return;
+
+      // Extract actual URL from DuckDuckGo redirect
+      let actualUrl = url;
+      if (url.includes('uddg=')) {
+        const match = url.match(/uddg=([^&]+)/);
+        if (match) {
+          actualUrl = decodeURIComponent(match[1]);
+        }
+      }
+
+      results.push({ title, url: actualUrl, snippet });
+    });
+
+    return results;
+  } catch (error) {
+    console.error('Web search error:', error);
+    return [];
+  }
+}
+
+/**
+ * Format search results for LLM context
+ */
+export function formatSearchContext(query: string, results: SearchResult[]): string {
+  if (results.length === 0) {
+    return '';
+  }
+
+  const formatted = results.map((r, i) =>
+    `${i + 1}. ${r.title}\n   URL: ${r.url}\n   ${r.snippet}`
+  ).join('\n\n');
+
+  return `
+=== WEB_SEARCH_RESULTS for "${query}" ===
+${formatted}
+=== END WEB_SEARCH_RESULTS ===
+
+INSTRUCTION: Use these search results to answer the user's question. Cite sources when referencing specific information.
+`.trim();
 }

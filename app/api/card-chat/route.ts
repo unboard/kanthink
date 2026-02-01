@@ -10,8 +10,8 @@ export const runtime = 'nodejs';
 
 // Lazy import web tools to avoid module load issues
 async function getWebTools() {
-  const { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent } = await import('@/lib/web/tools');
-  return { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent };
+  const { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent, webSearch, formatSearchContext } = await import('@/lib/web/tools');
+  return { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent, webSearch, formatSearchContext };
 }
 
 interface CardChatRequest {
@@ -254,46 +254,41 @@ export async function POST(request: Request) {
     const llm = result.client;
     const usingOwnerKey = result.source === 'owner';
 
-    // Extract and fetch URLs from the question
+    // Extract and fetch URLs from the question, or perform web search
     let webContext = '';
-    let urls: string[] = [];
-    let isSearchQuery = false;
 
     try {
       const webTools = await getWebTools();
-      urls = webTools.extractUrls(questionContent);
+      const urls = webTools.extractUrls(questionContent);
 
       if (urls.length > 0) {
+        // Fetch specific URLs mentioned in the message
         try {
           const pages = await webTools.fetchUrls(urls);
           webContext = webTools.formatWebContext(pages);
         } catch (error) {
           console.error('Web fetch error:', error);
         }
+      } else if (webTools.detectsSearchIntent(questionContent)) {
+        // No URLs found but user seems to want information - do a web search
+        try {
+          const searchResults = await webTools.webSearch(questionContent, 5);
+          if (searchResults.length > 0) {
+            webContext = webTools.formatSearchContext(questionContent, searchResults);
+          }
+        } catch (error) {
+          console.error('Web search error:', error);
+        }
       }
-
-      isSearchQuery = webTools.detectsSearchIntent(questionContent) && urls.length === 0;
     } catch (error) {
       console.error('Web tools load error:', error);
     }
 
-    // Build prompt with web context
+    // Build prompt with web context (from URL fetch or web search)
     const messages = buildPrompt(questionContent, context, imageUrls, webContext);
 
     try {
-      let llmResponse;
-
-      // Check if this is a search query and we have web search capability
-      const hasWebSearch = typeof llm.webSearch === 'function';
-
-      if (isSearchQuery && hasWebSearch) {
-        // Use web search for research queries
-        const systemPrompt = `You are Kan, an AI assistant helping with a Kanban card titled "${context.cardTitle}" in the "${context.channelName}" channel. Search the web for current information and provide a helpful response. Be concise and cite sources when relevant.`;
-        llmResponse = await llm.webSearch!(questionContent, systemPrompt);
-      } else {
-        // Use regular completion (with fetched URL context if available)
-        llmResponse = await llm.complete(messages);
-      }
+      const llmResponse = await llm.complete(messages);
 
       if (userId && usingOwnerKey) {
         await recordUsage(userId, 'card-chat');
