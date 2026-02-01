@@ -116,17 +116,43 @@ function isBlockedUrl(url: string): { blocked: boolean; reason?: string } {
 
 const URL_REGEX = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
 
-export function extractUrls(text: string): string[] {
-  const matches = text.match(URL_REGEX) || [];
+// Match domain names like "jace.ai", "example.com", "sub.domain.co.uk"
+const DOMAIN_REGEX = /\b([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}\b/gi;
 
-  // Deduplicate and clean up trailing punctuation
-  const cleaned = matches.map(url => {
-    // Remove trailing punctuation that's likely not part of the URL
-    return url.replace(/[.,;:!?)]+$/, '');
+// Common TLDs to help identify domains vs normal words
+const COMMON_TLDS = new Set([
+  'com', 'org', 'net', 'io', 'ai', 'co', 'app', 'dev', 'xyz', 'info',
+  'biz', 'me', 'tv', 'cc', 'us', 'uk', 'ca', 'de', 'fr', 'jp', 'au',
+  'edu', 'gov', 'tech', 'online', 'site', 'store', 'blog', 'cloud',
+]);
+
+function extractDomains(text: string): string[] {
+  const matches = text.match(DOMAIN_REGEX) || [];
+
+  // Filter to only include likely domains (with common TLDs)
+  return matches.filter(domain => {
+    const tld = domain.split('.').pop()?.toLowerCase();
+    return tld && COMMON_TLDS.has(tld);
   });
+}
 
-  // Deduplicate
-  const unique = [...new Set(cleaned)];
+export function extractUrls(text: string): string[] {
+  // First, extract full URLs
+  const urlMatches = text.match(URL_REGEX) || [];
+  const cleanedUrls = urlMatches.map(url => url.replace(/[.,;:!?)]+$/, ''));
+
+  // Then, extract bare domains and convert to URLs
+  const domains = extractDomains(text);
+  const domainUrls = domains
+    .filter(domain => {
+      // Don't convert if it's already part of a full URL
+      return !cleanedUrls.some(url => url.includes(domain));
+    })
+    .map(domain => `https://${domain}`);
+
+  // Combine and deduplicate
+  const allUrls = [...cleanedUrls, ...domainUrls];
+  const unique = [...new Set(allUrls)];
 
   // Limit to max URLs per request
   return unique.slice(0, CONFIG.MAX_URLS_PER_REQUEST);
@@ -420,6 +446,9 @@ const SEARCH_INTENT_PATTERNS = [
   /\b(search|look up|find|google|lookup)\b/i,
   /\b(latest|recent|current|news|today)\b/i,
   /\b(what is|who is|where is|when is|how to)\b/i,
+  /\btell me about\b/i,
+  /\bwhat do you know about\b/i,
+  /\binfo on\b|information (on|about)\b/i,
   /\b(compare|vs|versus|difference between)\b/i,
   /\b(best|top|popular|trending)\b/i,
   /\b(price|cost|review|rating)\b/i,
