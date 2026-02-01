@@ -494,100 +494,122 @@ export interface SearchResult {
 }
 
 /**
- * Search the web using DuckDuckGo Lite (more bot-friendly)
- * Returns top search results with titles, URLs, and snippets
+ * Search the web using Tavily API (designed for AI apps)
+ * Falls back to DuckDuckGo Instant Answer if no API key
  */
 export async function webSearch(query: string, maxResults: number = 5): Promise<SearchResult[]> {
-  try {
-    // Use DuckDuckGo Lite which is more lenient with bots
-    const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+  const tavilyKey = process.env.TAVILY_API_KEY;
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-
-    if (!response.ok) {
-      // Fallback: try to fetch top result directly from DuckDuckGo instant answer
-      return await fallbackInstantAnswer(query);
-    }
-
-    const html = await response.text();
-    const $ = cheerio.load(html);
-
-    const results: SearchResult[] = [];
-
-    // Parse DuckDuckGo Lite results (table-based layout)
-    $('a.result-link').each((i, element) => {
-      if (results.length >= maxResults) return false;
-
-      const $link = $(element);
-      const url = $link.attr('href') || '';
-      const title = $link.text().trim();
-
-      // Get snippet from the next table row
-      const $row = $link.closest('tr');
-      const $snippetRow = $row.next('tr');
-      const snippet = $snippetRow.find('td.result-snippet').text().trim();
-
-      if (title && url && !url.includes('duckduckgo.com')) {
-        results.push({ title, url, snippet: snippet || '' });
-      }
-    });
-
-    // Alternative parsing for different DDG Lite layouts
-    if (results.length === 0) {
-      $('table tr').each((i, element) => {
-        if (results.length >= maxResults) return false;
-
-        const $row = $(element);
-        const $link = $row.find('a').first();
-        const url = $link.attr('href') || '';
-        const title = $link.text().trim();
-
-        if (title && url && url.startsWith('http') && !url.includes('duckduckgo.com')) {
-          const snippet = $row.find('td').last().text().replace(title, '').trim();
-          results.push({ title, url, snippet });
-        }
-      });
-    }
-
-    return results;
-  } catch (error) {
-    console.error('Web search error:', error);
-    // Try fallback
-    return await fallbackInstantAnswer(query);
+  if (tavilyKey) {
+    return await tavilySearch(query, tavilyKey, maxResults);
   }
+
+  // Fallback to DuckDuckGo Instant Answer API (limited but works)
+  return await duckDuckGoInstantAnswer(query);
 }
 
 /**
- * Fallback using DuckDuckGo Instant Answer API
+ * Tavily Search API - reliable, designed for AI
  */
-async function fallbackInstantAnswer(query: string): Promise<SearchResult[]> {
+async function tavilySearch(query: string, apiKey: string, maxResults: number): Promise<SearchResult[]> {
   try {
-    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`;
-
-    const response = await fetch(url, {
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
       headers: {
-        'User-Agent': 'KanthinkBot/1.0',
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        max_results: maxResults,
+        include_answer: true,
+        include_raw_content: false,
+      }),
     });
 
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.error('Tavily search failed:', response.status);
+      return await duckDuckGoInstantAnswer(query);
+    }
 
     const data = await response.json() as {
-      AbstractText?: string;
-      AbstractURL?: string;
-      AbstractSource?: string;
-      RelatedTopics?: Array<{ Text?: string; FirstURL?: string }>;
+      answer?: string;
+      results?: Array<{
+        title: string;
+        url: string;
+        content: string;
+      }>;
     };
 
     const results: SearchResult[] = [];
 
-    // Main abstract result
+    // Add Tavily's AI-generated answer as first result if available
+    if (data.answer) {
+      results.push({
+        title: 'Summary',
+        url: '',
+        snippet: data.answer,
+      });
+    }
+
+    // Add search results
+    if (data.results) {
+      for (const r of data.results) {
+        results.push({
+          title: r.title,
+          url: r.url,
+          snippet: r.content,
+        });
+      }
+    }
+
+    return results;
+  } catch (error) {
+    console.error('Tavily search error:', error);
+    return await duckDuckGoInstantAnswer(query);
+  }
+}
+
+/**
+ * DuckDuckGo Instant Answer API (free, no key needed, but limited)
+ */
+async function duckDuckGoInstantAnswer(query: string): Promise<SearchResult[]> {
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'KanthinkBot/1.0 (https://kanthink.com)',
+      },
+    });
+
+    if (!response.ok) {
+      console.error('DDG Instant Answer failed:', response.status);
+      return [];
+    }
+
+    const data = await response.json() as {
+      Abstract?: string;
+      AbstractText?: string;
+      AbstractURL?: string;
+      AbstractSource?: string;
+      Answer?: string;
+      AnswerType?: string;
+      RelatedTopics?: Array<{ Text?: string; FirstURL?: string; Result?: string }>;
+    };
+
+    const results: SearchResult[] = [];
+
+    // Direct answer (for factual queries)
+    if (data.Answer) {
+      results.push({
+        title: data.AnswerType || 'Answer',
+        url: '',
+        snippet: data.Answer,
+      });
+    }
+
+    // Abstract from Wikipedia etc
     if (data.AbstractText && data.AbstractURL) {
       results.push({
         title: data.AbstractSource || 'Wikipedia',
@@ -601,7 +623,7 @@ async function fallbackInstantAnswer(query: string): Promise<SearchResult[]> {
       for (const topic of data.RelatedTopics.slice(0, 4)) {
         if (topic.Text && topic.FirstURL) {
           results.push({
-            title: topic.Text.split(' - ')[0] || topic.Text.slice(0, 50),
+            title: topic.Text.split(' - ')[0]?.slice(0, 60) || 'Related',
             url: topic.FirstURL,
             snippet: topic.Text,
           });
@@ -611,7 +633,7 @@ async function fallbackInstantAnswer(query: string): Promise<SearchResult[]> {
 
     return results;
   } catch (error) {
-    console.error('Instant answer fallback error:', error);
+    console.error('DDG Instant Answer error:', error);
     return [];
   }
 }
