@@ -4,6 +4,7 @@ import type { CardMessage, TagDefinition, ProposedActionType, StoredAction } fro
 import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
+import { extractUrls, fetchUrls, formatWebContext } from '@/lib/web/tools';
 
 interface CardChatRequest {
   cardId: string;
@@ -41,7 +42,8 @@ interface AIStructuredResponse {
 function buildPrompt(
   questionContent: string,
   context: CardChatRequest['context'],
-  imageUrls?: string[]
+  imageUrls?: string[],
+  webContext?: string
 ): LLMMessage[] {
   const { cardTitle, channelName, channelDescription, tasks, previousMessages, cardTags, availableTags } = context;
 
@@ -53,12 +55,17 @@ function buildPrompt(
     ? `\n- Current card tags: ${cardTags.join(', ')}`
     : '';
 
+  // Build web context section
+  const webContextSection = webContext
+    ? `\n\n${webContext}`
+    : '';
+
   const systemPrompt = `You are Kan, an AI assistant helping with a Kanban card. Respond helpfully and concisely.
 
 Context:
 - Card: "${cardTitle}"
 - Channel: "${channelName}"${channelDescription ? ` - ${channelDescription}` : ''}
-${tasks.length > 0 ? `- Tasks: ${tasks.map(t => `${t.title} (${t.status})`).join(', ')}` : ''}${tagContext}${currentTagsContext}
+${tasks.length > 0 ? `- Tasks: ${tasks.map(t => `${t.title} (${t.status})`).join(', ')}` : ''}${tagContext}${currentTagsContext}${webContextSection}
 
 You can propose actionable items when relevant. When the user mentions creating tasks, adding tags, or removing tags, you should include them in your response.
 
@@ -239,8 +246,21 @@ export async function POST(request: Request) {
     const llm = result.client;
     const usingOwnerKey = result.source === 'owner';
 
-    // Build prompt
-    const messages = buildPrompt(questionContent, context, imageUrls);
+    // Extract and fetch URLs from the question
+    let webContext = '';
+    const urls = extractUrls(questionContent);
+    if (urls.length > 0) {
+      try {
+        const pages = await fetchUrls(urls);
+        webContext = formatWebContext(pages);
+      } catch (error) {
+        console.error('Web fetch error:', error);
+        // Continue without web context if fetch fails
+      }
+    }
+
+    // Build prompt with web context
+    const messages = buildPrompt(questionContent, context, imageUrls, webContext);
 
     try {
       const llmResponse = await llm.complete(messages);
