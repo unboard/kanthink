@@ -4,7 +4,7 @@ import type { CardMessage, TagDefinition, ProposedActionType, StoredAction } fro
 import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
-import { extractUrls, fetchUrls, formatWebContext } from '@/lib/web/tools';
+import { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent } from '@/lib/web/tools';
 
 interface CardChatRequest {
   cardId: string;
@@ -263,7 +263,20 @@ export async function POST(request: Request) {
     const messages = buildPrompt(questionContent, context, imageUrls, webContext);
 
     try {
-      const llmResponse = await llm.complete(messages);
+      let llmResponse;
+
+      // Check if this is a search query and we have web search capability
+      const isSearchQuery = detectsSearchIntent(questionContent) && urls.length === 0;
+      const hasWebSearch = typeof llm.webSearch === 'function';
+
+      if (isSearchQuery && hasWebSearch) {
+        // Use web search for research queries
+        const systemPrompt = `You are Kan, an AI assistant helping with a Kanban card titled "${context.cardTitle}" in the "${context.channelName}" channel. Search the web for current information and provide a helpful response. Be concise and cite sources when relevant.`;
+        llmResponse = await llm.webSearch!(questionContent, systemPrompt);
+      } else {
+        // Use regular completion (with fetched URL context if available)
+        llmResponse = await llm.complete(messages);
+      }
 
       if (userId && usingOwnerKey) {
         await recordUsage(userId, 'card-chat');

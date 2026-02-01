@@ -13,11 +13,19 @@ export interface LLMResponse {
     inputTokens: number;
     outputTokens: number;
   };
+  // Web search results (if web search was used)
+  webSearchResults?: {
+    url: string;
+    title: string;
+    snippet: string;
+  }[];
 }
 
 export interface LLMProvider {
   name: string;
   complete(messages: LLMMessage[]): Promise<LLMResponse>;
+  // Optional web search capability (OpenAI only for now)
+  webSearch?(query: string, systemPrompt?: string): Promise<LLMResponse>;
 }
 
 export interface LLMConfig {
