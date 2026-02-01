@@ -4,7 +4,15 @@ import type { CardMessage, TagDefinition, ProposedActionType, StoredAction } fro
 import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
-import { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent } from '@/lib/web/tools';
+
+// Force Node.js runtime for jsdom compatibility
+export const runtime = 'nodejs';
+
+// Lazy import web tools to avoid module load issues
+async function getWebTools() {
+  const { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent } = await import('@/lib/web/tools');
+  return { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent };
+}
 
 interface CardChatRequest {
   cardId: string;
@@ -248,15 +256,27 @@ export async function POST(request: Request) {
 
     // Extract and fetch URLs from the question
     let webContext = '';
-    const urls = extractUrls(questionContent);
-    if (urls.length > 0) {
-      try {
-        const pages = await fetchUrls(urls);
-        webContext = formatWebContext(pages);
-      } catch (error) {
-        console.error('Web fetch error:', error);
-        // Continue without web context if fetch fails
+    let urls: string[] = [];
+    let isSearchQuery = false;
+
+    try {
+      const webTools = await getWebTools();
+      urls = webTools.extractUrls(questionContent);
+
+      if (urls.length > 0) {
+        try {
+          const pages = await webTools.fetchUrls(urls);
+          webContext = webTools.formatWebContext(pages);
+        } catch (error) {
+          console.error('Web fetch error:', error);
+          // Continue without web context if fetch fails
+        }
       }
+
+      isSearchQuery = webTools.detectsSearchIntent(questionContent) && urls.length === 0;
+    } catch (error) {
+      console.error('Web tools load error:', error);
+      // Continue without web tools if they fail to load
     }
 
     // Build prompt with web context
@@ -266,7 +286,6 @@ export async function POST(request: Request) {
       let llmResponse;
 
       // Check if this is a search query and we have web search capability
-      const isSearchQuery = detectsSearchIntent(questionContent) && urls.length === 0;
       const hasWebSearch = typeof llm.webSearch === 'function';
 
       if (isSearchQuery && hasWebSearch) {
