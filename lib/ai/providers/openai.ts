@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart } from './types';
 
-const DEFAULT_MODEL = 'gpt-5';
+const DEFAULT_MODEL = 'gpt-4.1';
 
 function toOpenAIContent(content: string | LLMContentPart[]): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   if (typeof content === 'string') return content;

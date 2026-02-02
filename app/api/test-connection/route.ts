@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       const client = new OpenAI({ apiKey });
       // Make a minimal request to test the key
       await client.chat.completions.create({
-        model: model || 'gpt-5',
+        model: model || 'gpt-4.1',
         max_completion_tokens: 10,
         messages: [{ role: 'user', content: 'Hi' }],
       });

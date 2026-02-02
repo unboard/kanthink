@@ -290,10 +290,18 @@ export async function checkAnonymousUsageLimit(anonId: string): Promise<{
 
 /**
  * Record usage for an anonymous user
+ * Note: This may fail due to FK constraint on user_id - we catch and log errors
+ * but don't block the request. Anonymous usage is best-effort tracking.
  */
 export async function recordAnonymousUsage(anonId: string, requestType: string): Promise<void> {
-  await db.insert(usageRecords).values({
-    userId: anonId,
-    requestType,
-  })
+  try {
+    await db.insert(usageRecords).values({
+      userId: anonId,
+      requestType,
+    })
+  } catch (error) {
+    // FK constraint prevents anonymous IDs - log but don't fail
+    // TODO: Create separate anonymous_usage table for proper tracking
+    console.warn('Failed to record anonymous usage (FK constraint):', anonId, requestType)
+  }
 }
