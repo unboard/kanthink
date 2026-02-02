@@ -45,11 +45,95 @@ interface GuideResult {
 }
 
 interface GuideRequest {
-  action: 'start' | 'continue';
+  action: 'start' | 'continue' | 'workflow-options';
   channelName?: string;
   choices: Record<string, string>;
   choiceLabels?: Record<string, string>;
   lastChoice?: { stepId: string; value: string; label?: string };
+  purpose?: string; // For workflow-options action
+}
+
+// Generate workflow options based on purpose only (simplified flow)
+async function generateWorkflowOptionsForPurpose(
+  purpose: string,
+  llm: LLMProvider
+): Promise<Array<{ label: string; value: string; description: string }>> {
+  const purposeLabels: Record<string, string> = {
+    learning: 'Learning & Research',
+    ideas: 'Ideas & Brainstorming',
+    projects: 'Projects & Tasks',
+    tracking: 'Monitoring & Tracking',
+  };
+
+  const purposeLabel = purposeLabels[purpose] || purpose;
+
+  const systemPrompt = `You help users set up a Kanban channel in Kanthink.
+
+ABOUT KANTHINK:
+Kanthink is a text-based kanban board for organizing ideas, information, and tasks.
+Cards contain titles, messages, and tags. Users move cards between columns to categorize and track them.
+
+YOUR TASK:
+Generate 3 workflow options with columns that serve the user's stated goal.
+
+COLUMN GUIDELINES:
+- Each column needs a clear purpose - users should know what belongs there
+- Columns can be: progress stages, categories, time buckets, priority levels, or evaluative groupings
+- Use 3-4 columns per workflow
+- Make column names short and clear (1-3 words)
+
+EXAMPLES OF GOOD STRUCTURES:
+- For collecting ideas: "Inbox → Interesting → Worth Pursuing"
+- For research: "To Explore → Researching → Key Insights"
+- For tracking news: "New → Important → Reviewed"
+- For planning: "Ideas → This Week → Done"
+- For evaluation: "Unsorted → Like → Dislike"
+- For learning: "To Learn → Studying → Understood"
+
+Respond in JSON only (no markdown):
+{
+  "options": [
+    {
+      "label": "Column1 → Column2 → Column3",
+      "value": "workflow-1",
+      "description": "Brief explanation of what each column is for"
+    },
+    {
+      "label": "Column1 → Column2 → Column3",
+      "value": "workflow-2",
+      "description": "Brief explanation of what each column is for"
+    },
+    {
+      "label": "Column1 → Column2 → Column3",
+      "value": "workflow-3",
+      "description": "Brief explanation of what each column is for"
+    }
+  ]
+}`;
+
+  const userPrompt = `User's goal: ${purposeLabel}
+
+Generate 3 workflow options that help this user organize information for "${purposeLabel}".`;
+
+  const messages: LLMMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+
+  try {
+    const response = await llm.complete(messages);
+    let jsonStr = response.content;
+    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1];
+    }
+
+    const result = JSON.parse(jsonStr.trim());
+    return result.options || [];
+  } catch (err) {
+    console.error('Failed to generate workflow options:', err);
+    return [];
+  }
 }
 
 // Generate a dynamic, contextual response after the detail step
@@ -538,6 +622,42 @@ export async function POST(request: Request) {
       const next = getNextStep({});
       if (next) {
         return NextResponse.json({ step: next.step });
+      }
+    }
+
+    // New simplified action for WelcomeFlowOverlay
+    if (action === 'workflow-options') {
+      const { purpose } = body;
+      if (!purpose) {
+        return NextResponse.json({ error: 'Purpose is required' }, { status: 400 });
+      }
+
+      try {
+        const { llm, userId, anonId, usingOwnerKey } = await requireLLM();
+        const options = await generateWorkflowOptionsForPurpose(purpose, llm);
+
+        if (usingOwnerKey) {
+          if (userId) {
+            await recordUsage(userId, 'instruction-guide');
+          } else if (anonId) {
+            await recordAnonymousUsage(anonId, 'instruction-guide');
+          }
+        }
+
+        const response = NextResponse.json({ options });
+        if (anonId) {
+          response.cookies.set(ANON_COOKIE_NAME, anonId, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 60 * 60 * 24 * 365,
+          });
+        }
+        return response;
+      } catch (err) {
+        console.error('Failed to generate workflow options:', err);
+        // Return empty array, client will use defaults
+        return NextResponse.json({ options: [] });
       }
     }
 

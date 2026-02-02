@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
-import { StoryWelcomeOverlayV3 } from '@/app/prototypes/overlays/StoryWelcomeOverlayV3';
+import { WelcomeFlowOverlay, type WelcomeFlowResultData } from '@/app/prototypes/overlays/WelcomeFlowOverlay';
 import { GuidedQuestionnaireOverlay, type GuideResultData } from '@/app/prototypes/overlays/GuidedQuestionnaireOverlay';
 import { signInWithGoogle } from '@/lib/actions/auth';
 
@@ -35,12 +35,32 @@ export default function Home() {
     setShowWelcome(false);
   };
 
-  const handleWelcomeCreate = () => {
+  // Handle channel creation from the blended welcome flow
+  const handleWelcomeCreate = (result: WelcomeFlowResultData) => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
     setShowWelcome(false);
-    setIsCreateOpen(true);
+
+    let channel;
+    if (result.structure && result.structure.columns.length > 0) {
+      channel = createChannelWithStructure({
+        name: result.channelName,
+        description: result.channelDescription,
+        aiInstructions: result.instructions,
+        columns: result.structure.columns,
+        instructionCards: result.structure.instructionCards || [],
+      });
+    } else {
+      channel = createChannel({
+        name: result.channelName,
+        description: result.channelDescription,
+        aiInstructions: result.instructions,
+      });
+    }
+
+    router.push(`/channel/${channel.id}`);
   };
 
+  // Handle channel creation from the standalone questionnaire (for "Create channel" button)
   const handleCreateChannel = (result: GuideResultData) => {
     let channel;
 
@@ -92,7 +112,7 @@ export default function Home() {
         onCreate={handleCreateChannel}
       />
 
-      <StoryWelcomeOverlayV3
+      <WelcomeFlowOverlay
         isOpen={showWelcome}
         onClose={handleWelcomeClose}
         onCreate={handleWelcomeCreate}
