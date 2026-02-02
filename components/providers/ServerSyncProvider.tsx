@@ -1,10 +1,12 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react'
 import { useSession } from 'next-auth/react'
 import { useStore, type ServerData } from '@/lib/store'
 import { fetchChannels, fetchChannel, fetchFolders } from '@/lib/api/client'
 import { enableServerMode, disableServerMode } from '@/lib/api/sync'
+import { initBroadcastSync } from '@/lib/sync/broadcastSync'
+import { applyBroadcastEvent } from '@/lib/sync/applyBroadcastEvent'
 import { MigrationModal } from '@/components/MigrationModal'
 import { STORAGE_KEY } from '@/lib/constants'
 import type { Channel, Card, Task, InstructionCard, Folder, Column } from '@/lib/types'
@@ -280,6 +282,19 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       setIsServerMode(false)
     }
   }, [sessionStatus, session?.user?.id, hasFetched, fetchServerData])
+
+  // Initialize cross-tab sync via BroadcastChannel
+  useEffect(() => {
+    const cleanup = initBroadcastSync((event) => {
+      // Apply the event to our local store
+      // We use useStore.setState and useStore.getState to interact with the store
+      const set = useStore.setState
+      const get = useStore.getState
+      applyBroadcastEvent(event, set, get)
+    })
+
+    return cleanup
+  }, [])
 
   const handleMigrationComplete = useCallback(() => {
     setShowMigration(false)

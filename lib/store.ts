@@ -6,6 +6,7 @@ import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
 import { KANTHINK_IDEAS_CHANNEL, KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
 import { emitCardMoved, emitCardCreated, emitCardDeleted } from './automationEvents';
 import * as sync from './api/sync';
+import { broadcastEvent, type BroadcastEvent } from './sync/broadcastSync';
 
 // Module-level abort controller (not stored in Zustand - can't be serialized)
 let currentAbortController: AbortController | null = null;
@@ -234,6 +235,9 @@ export const useStore = create<KanthinkState>()(
           channelOrder: data.channelOrder,
           _hasHydrated: true,
         });
+
+        // Broadcast to other tabs that server data was loaded
+        broadcastEvent({ type: 'server:load', timestamp: new Date().toISOString() });
       },
 
       clearLocalData: () => {
@@ -247,6 +251,9 @@ export const useStore = create<KanthinkState>()(
           channelOrder: [],
           instructionRuns: {},
         });
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'server:clear' });
       },
 
       getLocalDataForMigration: () => {
@@ -286,6 +293,9 @@ export const useStore = create<KanthinkState>()(
         // Sync to server
         sync.syncFolderCreate(id, name);
 
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'folder:create', folder });
+
         return folder;
       },
 
@@ -304,9 +314,15 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncFolderUpdate(id, updates);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'folder:update', id, updates });
       },
 
       deleteFolder: (id) => {
+        const folder = get().folders[id];
+        const channelIds = folder?.channelIds ?? [];
+
         set((state) => {
           const folder = state.folders[id];
           if (!folder) return state;
@@ -324,6 +340,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncFolderDelete(id);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'folder:delete', id, channelIds });
       },
 
       reorderFolders: (fromIndex, toIndex) => {
@@ -339,6 +358,9 @@ export const useStore = create<KanthinkState>()(
         if (folderId) {
           sync.syncReorderFolders(folderId, fromIndex, toIndex);
         }
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'folder:reorder', fromIndex, toIndex });
       },
 
       moveChannelToFolder: (channelId, folderId) => {
@@ -375,6 +397,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncMoveChannelToFolder(channelId, folderId);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'channel:moveToFolder', channelId, folderId });
       },
 
       toggleFolderCollapse: (folderId) => {
@@ -397,6 +422,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncFolderUpdate(folderId, { isCollapsed });
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'folder:toggleCollapse', id: folderId, isCollapsed });
       },
 
       reorderChannelInFolder: (folderId, fromIndex, toIndex) => {
@@ -423,6 +451,9 @@ export const useStore = create<KanthinkState>()(
         if (channelId) {
           sync.syncReorderChannelInFolder(channelId, folderId, fromIndex, toIndex);
         }
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'channel:reorderInFolder', folderId, fromIndex, toIndex });
       },
 
       createChannel: (input) => {
@@ -453,6 +484,9 @@ export const useStore = create<KanthinkState>()(
           aiInstructions: input.aiInstructions,
           columnNames: columns.map(c => c.name),
         });
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'channel:create', channel });
 
         return channel;
       },
@@ -557,6 +591,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(id, updates);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'channel:update', id, updates });
       },
 
       deleteChannel: (id) => {
@@ -590,6 +627,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelDelete(id);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'channel:delete', id });
       },
 
       reorderChannels: (fromIndex, toIndex) => {
@@ -606,6 +646,9 @@ export const useStore = create<KanthinkState>()(
         if (channelId) {
           sync.syncReorderChannelInFolder(channelId, null, fromIndex, toIndex);
         }
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'channel:reorder', fromIndex, toIndex });
       },
 
       createColumn: (channelId, name) => {
@@ -637,6 +680,11 @@ export const useStore = create<KanthinkState>()(
         // Sync to server
         sync.syncColumnCreate(channelId, id, name);
 
+        // Broadcast to other tabs
+        if (result) {
+          broadcastEvent({ type: 'column:create', channelId, column });
+        }
+
         return result;
       },
 
@@ -662,6 +710,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncColumnUpdate(channelId, columnId, updates);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'column:update', channelId, columnId, updates });
       },
 
       deleteColumn: (channelId, columnId) => {
@@ -708,6 +759,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncColumnDelete(channelId, columnId);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'column:delete', channelId, columnId });
       },
 
       reorderColumns: (channelId, fromIndex, toIndex) => {
@@ -736,6 +790,9 @@ export const useStore = create<KanthinkState>()(
         if (columnId) {
           sync.syncColumnReorder(channelId, columnId, toIndex);
         }
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'column:reorder', channelId, fromIndex, toIndex });
       },
 
       setColumnInstructions: (channelId, columnId, instructions) => {
@@ -760,6 +817,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncColumnUpdate(channelId, columnId, { instructions });
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'column:update', channelId, columnId, updates: { instructions } });
       },
 
       createCard: (channelId, columnId, input, source = 'manual', createdByInstructionId) => {
@@ -827,6 +887,9 @@ export const useStore = create<KanthinkState>()(
           position,
         });
 
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'card:create', card, columnId, position });
+
         return card;
       },
 
@@ -848,13 +911,18 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, id, updates);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'card:update', id, updates });
       },
 
       deleteCard: (id) => {
-        // Capture channelId before deletion for automation event
+        // Capture channelId and columnId before deletion for automation event and broadcast
         const preState = get();
         const preCard = preState.cards[id];
         const channelId = preCard?.channelId;
+        const channel = channelId ? preState.channels[channelId] : null;
+        const columnId = channel?.columns.find(col => col.cardIds.includes(id))?.id;
 
         set((state) => {
           const card = state.cards[id];
@@ -887,6 +955,10 @@ export const useStore = create<KanthinkState>()(
           emitCardDeleted(channelId);
           // Sync to server
           sync.syncCardDelete(channelId, id);
+          // Broadcast to other tabs
+          if (columnId) {
+            broadcastEvent({ type: 'card:delete', id, channelId, columnId });
+          }
         }
       },
 
@@ -934,6 +1006,9 @@ export const useStore = create<KanthinkState>()(
         for (const cardId of cardIdsToDelete) {
           sync.syncCardDelete(channelId, cardId);
         }
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'card:deleteAllInColumn', channelId, columnId, cardIds: cardIdsToDelete });
       },
 
       moveCard: (cardId, toColumnId, toIndex) => {
@@ -998,6 +1073,18 @@ export const useStore = create<KanthinkState>()(
         if (preCard) {
           sync.syncCardMove(preCard.channelId, cardId, toColumnId, toIndex, false);
         }
+
+        // Broadcast to other tabs
+        if (preCard && fromColumnId) {
+          broadcastEvent({
+            type: 'card:move',
+            cardId,
+            channelId: preCard.channelId,
+            fromColumnId,
+            toColumnId,
+            toIndex,
+          });
+        }
       },
 
       archiveCard: (cardId) => {
@@ -1042,6 +1129,11 @@ export const useStore = create<KanthinkState>()(
           const backsidePosition = (column.backsideCardIds?.length ?? 0);
           sync.syncCardMove(preCard.channelId, cardId, column.id, backsidePosition, true);
         }
+
+        // Broadcast to other tabs
+        if (preCard && column) {
+          broadcastEvent({ type: 'card:archive', cardId, channelId: preCard.channelId, columnId: column.id });
+        }
       },
 
       unarchiveCard: (cardId) => {
@@ -1085,6 +1177,11 @@ export const useStore = create<KanthinkState>()(
         if (preCard && column) {
           const frontPosition = column.cardIds.length;
           sync.syncCardMove(preCard.channelId, cardId, column.id, frontPosition, false);
+        }
+
+        // Broadcast to other tabs
+        if (preCard && column) {
+          broadcastEvent({ type: 'card:unarchive', cardId, channelId: preCard.channelId, columnId: column.id });
         }
       },
 
@@ -1406,6 +1503,9 @@ export const useStore = create<KanthinkState>()(
           createdAt: timestamp,
         });
 
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'task:create', task, cardId });
+
         return task;
       },
 
@@ -1427,6 +1527,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncTaskUpdate(task.channelId, id, updates);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'task:update', id, updates });
       },
 
       deleteTask: (id) => {
@@ -1462,6 +1565,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncTaskDelete(task.channelId, id);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'task:delete', id, cardId: task.cardId, channelId: task.channelId });
       },
 
       completeTask: (id) => {
@@ -1492,6 +1598,9 @@ export const useStore = create<KanthinkState>()(
           status: 'done',
           completedAt: timestamp,
         });
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'task:complete', id, completedAt: timestamp });
       },
 
       toggleTaskStatus: (id) => {
@@ -1527,6 +1636,14 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncTaskUpdate(task.channelId, id, {
+          status: newStatus,
+          completedAt: newStatus === 'done' ? timestamp : undefined,
+        });
+
+        // Broadcast to other tabs
+        broadcastEvent({
+          type: 'task:toggleStatus',
+          id,
           status: newStatus,
           completedAt: newStatus === 'done' ? timestamp : undefined,
         });
@@ -2209,6 +2326,9 @@ export const useStore = create<KanthinkState>()(
           interviewQuestions: input.interviewQuestions,
         });
 
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'instructionCard:create', instructionCard });
+
         return instructionCard;
       },
 
@@ -2230,11 +2350,16 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncInstructionCardUpdate(instructionCard.channelId, id, updates);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'instructionCard:update', id, updates });
       },
 
       deleteInstructionCard: (id) => {
         const instructionCard = get().instructionCards[id];
         if (!instructionCard) return;
+
+        const channelId = instructionCard.channelId;
 
         set((state) => {
           const ic = state.instructionCards[id];
@@ -2258,7 +2383,10 @@ export const useStore = create<KanthinkState>()(
         });
 
         // Sync to server
-        sync.syncInstructionCardDelete(instructionCard.channelId, id);
+        sync.syncInstructionCardDelete(channelId, id);
+
+        // Broadcast to other tabs
+        broadcastEvent({ type: 'instructionCard:delete', id, channelId });
       },
 
       duplicateInstructionCard: (id) => {
