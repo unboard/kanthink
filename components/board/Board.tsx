@@ -38,6 +38,7 @@ import { TaskListView } from './TaskListView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
+import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
 // Commented out - question system disabled
 // import { QuestionToast } from '@/components/ui/QuestionToast';
 // import { useQuestionTrigger } from '@/lib/hooks/useQuestionTrigger';
@@ -782,6 +783,8 @@ export function Board({ channel }: BoardProps) {
           </button>
         </div>
       </header>
+
+      <AnonymousUpgradeBanner />
 
       {viewMode === 'tasks' ? (
         <TaskListView channelId={channel.id} />

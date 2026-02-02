@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { nanoid } from 'nanoid';
 import type { CardMessage, TagDefinition, ProposedActionType, StoredAction } from '@/lib/types';
-import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
+import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
-import { recordUsage } from '@/lib/usage';
+import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+
+const ANON_COOKIE_NAME = 'kanthink_anon_id';
 
 // Force Node.js runtime for jsdom compatibility
 export const runtime = 'nodejs';
@@ -232,27 +235,54 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get LLM client - requires authentication
+    // Get LLM client - supports both authenticated and anonymous users
     const session = await auth();
     const userId = session?.user?.id;
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Please sign in to use AI features.' },
-        { status: 401 }
-      );
-    }
+    let llm;
+    let usingOwnerKey = false;
+    let anonId: string | null = null;
 
-    const result = await getLLMClientForUser(userId);
-    if (!result.client) {
-      return NextResponse.json(
-        { error: result.error || 'No AI access available. Configure your API key in Settings.' },
-        { status: 403 }
-      );
-    }
+    if (userId) {
+      // Authenticated user
+      const result = await getLLMClientForUser(userId);
+      if (!result.client) {
+        return NextResponse.json(
+          { error: result.error || 'No AI access available. Configure your API key in Settings.' },
+          { status: 403 }
+        );
+      }
+      llm = result.client;
+      usingOwnerKey = result.source === 'owner';
+    } else {
+      // Anonymous user - check usage limit
+      const cookieStore = await cookies();
+      anonId = cookieStore.get(ANON_COOKIE_NAME)?.value || `anon_${crypto.randomUUID()}`;
 
-    const llm = result.client;
-    const usingOwnerKey = result.source === 'owner';
+      const usageCheck = await checkAnonymousUsageLimit(anonId);
+      if (!usageCheck.allowed) {
+        const response = NextResponse.json(
+          { error: usageCheck.message, code: 'ANONYMOUS_LIMIT_REACHED' },
+          { status: 403 }
+        );
+        response.cookies.set(ANON_COOKIE_NAME, anonId, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 365,
+        });
+        return response;
+      }
+
+      llm = getLLMClient();
+      if (!llm) {
+        return NextResponse.json(
+          { error: 'AI service not available' },
+          { status: 503 }
+        );
+      }
+      usingOwnerKey = true;
+    }
 
     // Extract and fetch URLs from the question
     let webContext = '';
@@ -294,8 +324,13 @@ export async function POST(request: Request) {
         llmResponse = await llm.complete(messages);
       }
 
-      if (userId && usingOwnerKey) {
-        await recordUsage(userId, 'card-chat');
+      // Record usage
+      if (usingOwnerKey) {
+        if (userId) {
+          await recordUsage(userId, 'card-chat');
+        } else if (anonId) {
+          await recordAnonymousUsage(anonId, 'card-chat');
+        }
       }
 
       // Parse the structured response
@@ -306,11 +341,23 @@ export async function POST(request: Request) {
         ? convertToStoredActions(parsed.actions)
         : undefined;
 
-      return NextResponse.json({
+      const response = NextResponse.json({
         success: true,
         response: parsed.response,
         actions: actions && actions.length > 0 ? actions : undefined,
       });
+
+      // Set anonymous cookie if needed
+      if (anonId) {
+        response.cookies.set(ANON_COOKIE_NAME, anonId, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 365,
+        });
+      }
+
+      return response;
     } catch (llmError) {
       console.error('LLM error:', llmError);
       return NextResponse.json(

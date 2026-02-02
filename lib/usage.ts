@@ -1,10 +1,11 @@
 import { db } from './db'
 import { usageRecords, users } from './db/schema'
-import { eq, and, gte } from 'drizzle-orm'
+import { eq, and, gte, like } from 'drizzle-orm'
 import { encrypt, decryptIfNeeded, isEncrypted } from './crypto'
 
 const FREE_MONTHLY_LIMIT = parseInt(process.env.FREE_MONTHLY_LIMIT || '10')
 const PREMIUM_MONTHLY_LIMIT = parseInt(process.env.PREMIUM_MONTHLY_LIMIT || '200')
+const ANONYMOUS_MONTHLY_LIMIT = parseInt(process.env.ANONYMOUS_MONTHLY_LIMIT || '10')
 
 export interface UsageStatus {
   used: number
@@ -218,4 +219,81 @@ export async function isUserByokKeyEncrypted(userId: string): Promise<boolean | 
   }
 
   return isEncrypted(user.byokApiKey)
+}
+
+// ============================================
+// Anonymous User Usage Tracking
+// ============================================
+
+export interface AnonymousUsageStatus {
+  used: number
+  limit: number
+  remaining: number
+  allowed: boolean
+  isAnonymous: true
+  resetAt: Date
+}
+
+/**
+ * Get usage status for an anonymous user (identified by cookie-based ID)
+ * Anonymous users get a limited number of free requests per month
+ */
+export async function getAnonymousUsageStatus(anonId: string): Promise<AnonymousUsageStatus> {
+  const monthStart = getMonthStart()
+
+  // Count usage this month for this anonymous ID
+  // Anonymous IDs are stored in userId field with 'anon_' prefix
+  const records = await db.query.usageRecords.findMany({
+    where: and(
+      eq(usageRecords.userId, anonId),
+      gte(usageRecords.createdAt, monthStart)
+    ),
+  })
+
+  const used = records.length
+  const limit = ANONYMOUS_MONTHLY_LIMIT
+  const remaining = Math.max(0, limit - used)
+
+  return {
+    used,
+    limit,
+    remaining,
+    allowed: remaining > 0,
+    isAnonymous: true,
+    resetAt: getNextMonthStart(),
+  }
+}
+
+/**
+ * Check if an anonymous user has remaining usage
+ */
+export async function checkAnonymousUsageLimit(anonId: string): Promise<{
+  allowed: boolean
+  remaining: number
+  message?: string
+}> {
+  const status = await getAnonymousUsageStatus(anonId)
+
+  if (!status.allowed) {
+    return {
+      allowed: false,
+      remaining: 0,
+      message: 'You\'ve used all your free AI requests. Sign up to unlock 10 more requests per month!',
+    }
+  }
+
+  return {
+    allowed: true,
+    remaining: status.remaining,
+  }
+}
+
+/**
+ * Record usage for an anonymous user
+ */
+export async function recordAnonymousUsage(anonId: string, requestType: string): Promise<void> {
+  await db.insert(usageRecords).values({
+    userId: anonId,
+    requestType,
+  })
 }

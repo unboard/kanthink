@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { marked } from 'marked';
 import type { Channel, Card, CardInput, Column } from '@/lib/types';
-import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { getLLMClientForUser, getLLMClient, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
-import { recordUsage } from '@/lib/usage';
+import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+
+const ANON_COOKIE_NAME = 'kanthink_anon_id';
 
 // Configure marked for safe HTML output
 marked.setOptions({
@@ -217,6 +220,7 @@ export async function POST(request: Request) {
     // Get LLM client
     let llm;
     let usingOwnerKey = false;
+    let anonId: string | null = null;
 
     if (userId) {
       // Authenticated user - check BYOK first, then owner key
@@ -230,15 +234,35 @@ export async function POST(request: Request) {
       llm = result.client;
       usingOwnerKey = result.source === 'owner';
     } else {
-      // No auth - return stub data
-      const ideas = getRandomIdeas(count || 5);
-      const columnContext = targetColumn?.instructions || targetColumn?.name || channel.name;
-      return NextResponse.json({
-        cards: ideas.map((idea) => ({
-          title: idea,
-          content: `<p>Generated for "${columnContext}". Sign in or configure an API key in Settings for AI suggestions.</p>`,
-        })),
-      });
+      // Anonymous user - check usage limit and get/create anon ID
+      const cookieStore = await cookies();
+      anonId = cookieStore.get(ANON_COOKIE_NAME)?.value || `anon_${crypto.randomUUID()}`;
+
+      const usageCheck = await checkAnonymousUsageLimit(anonId);
+      if (!usageCheck.allowed) {
+        const response = NextResponse.json(
+          { error: usageCheck.message, code: 'ANONYMOUS_LIMIT_REACHED' },
+          { status: 403 }
+        );
+        // Set cookie even on error so we track this user
+        response.cookies.set(ANON_COOKIE_NAME, anonId, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 365, // 1 year
+        });
+        return response;
+      }
+
+      // Try to get owner key for anonymous users
+      llm = getLLMClient();
+      if (!llm) {
+        return NextResponse.json(
+          { error: 'AI service not available' },
+          { status: 503 }
+        );
+      }
+      usingOwnerKey = true;
     }
 
     // Build prompt with column context
@@ -252,9 +276,9 @@ export async function POST(request: Request) {
     };
 
     try {
-      const response = await llm.complete(messages);
-      debug.rawResponse = response.content;
-      const generatedCards = parseResponse(response.content);
+      const llmResponse = await llm.complete(messages);
+      debug.rawResponse = llmResponse.content;
+      const generatedCards = parseResponse(llmResponse.content);
 
       if (generatedCards.length === 0) {
         return NextResponse.json({
@@ -267,14 +291,31 @@ export async function POST(request: Request) {
       }
 
       // Record usage if using owner's key
-      if (userId && usingOwnerKey) {
-        await recordUsage(userId, 'generate-cards');
+      if (usingOwnerKey) {
+        if (userId) {
+          await recordUsage(userId, 'generate-cards');
+        } else if (anonId) {
+          await recordAnonymousUsage(anonId, 'generate-cards');
+        }
       }
 
-      return NextResponse.json({
+      // Build response
+      const response = NextResponse.json({
         cards: generatedCards.slice(0, count || 5),
         debug,
       });
+
+      // Set anonymous cookie if needed
+      if (anonId) {
+        response.cookies.set(ANON_COOKIE_NAME, anonId, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 365, // 1 year
+        });
+      }
+
+      return response;
     } catch (llmError) {
       console.error('LLM error:', llmError);
       debug.rawResponse = `Error: ${llmError instanceof Error ? llmError.message : 'Unknown error'}`;
@@ -282,18 +323,35 @@ export async function POST(request: Request) {
       // Retry once
       try {
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        const response = await llm.complete(messages);
-        debug.rawResponse = response.content;
-        const generatedCards = parseResponse(response.content);
+        const retryResponse = await llm.complete(messages);
+        debug.rawResponse = retryResponse.content;
+        const generatedCards = parseResponse(retryResponse.content);
         if (generatedCards.length > 0) {
           // Record usage if using owner's key
-          if (userId && usingOwnerKey) {
-            await recordUsage(userId, 'generate-cards');
+          if (usingOwnerKey) {
+            if (userId) {
+              await recordUsage(userId, 'generate-cards');
+            } else if (anonId) {
+              await recordAnonymousUsage(anonId, 'generate-cards');
+            }
           }
-          return NextResponse.json({
+
+          const retryJsonResponse = NextResponse.json({
             cards: generatedCards.slice(0, count || 5),
             debug,
           });
+
+          // Set anonymous cookie if needed
+          if (anonId) {
+            retryJsonResponse.cookies.set(ANON_COOKIE_NAME, anonId, {
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production',
+              sameSite: 'lax',
+              maxAge: 60 * 60 * 24 * 365, // 1 year
+            });
+          }
+
+          return retryJsonResponse;
         }
       } catch (retryError) {
         console.error('LLM retry failed:', retryError);
