@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       // Make a minimal request to test the key
       await client.chat.completions.create({
         model: model || 'gpt-5',
-        max_tokens: 10,
+        max_completion_tokens: 10,
         messages: [{ role: 'user', content: 'Hi' }],
       });
       return NextResponse.json({ success: true, provider: 'openai' });

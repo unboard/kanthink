@@ -26,7 +26,7 @@ export function createOpenAIProvider(apiKey: string, model?: string): LLMProvide
     async complete(messages: LLMMessage[]): Promise<LLMResponse> {
       const response = await client.chat.completions.create({
         model: modelId,
-        max_tokens: 4096,
+        max_completion_tokens: 4096,
         messages: messages.map((m) => ({
           role: m.role,
           content: toOpenAIContent(m.content),
@@ -83,7 +83,7 @@ export function createOpenAIProvider(apiKey: string, model?: string): LLMProvide
 
         const response = await client.chat.completions.create({
           model: modelId,
-          max_tokens: 4096,
+          max_completion_tokens: 4096,
           messages: fallbackMessages.map((m) => ({
             role: m.role,
             content: m.content as string,
