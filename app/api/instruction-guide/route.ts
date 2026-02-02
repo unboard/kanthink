@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getLLMClientForUser, type LLMMessage, type LLMProvider } from '@/lib/ai/llm';
+import { cookies } from 'next/headers';
+import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMProvider } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
-import { recordUsage } from '@/lib/usage';
+import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+
+const ANON_COOKIE_NAME = 'kanthink_anon_id';
 
 interface GuideStep {
   id: string;
@@ -495,7 +498,7 @@ export async function POST(request: Request) {
 
     // Lazily resolve the LLM client only when AI is actually needed.
     // Early steps (start, static continue) are purely static and don't require auth or keys.
-    let _llmCache: { llm: LLMProvider; userId?: string; usingOwnerKey: boolean } | null = null;
+    let _llmCache: { llm: LLMProvider; userId?: string; anonId?: string; usingOwnerKey: boolean } | null = null;
 
     async function requireLLM() {
       if (_llmCache) return _llmCache;
@@ -503,15 +506,31 @@ export async function POST(request: Request) {
       const session = await auth();
       const userId = session?.user?.id;
 
-      if (!userId) {
-        throw new Error('Please sign in to use AI features.');
+      if (userId) {
+        // Authenticated user
+        const result = await getLLMClientForUser(userId);
+        if (!result.client) {
+          throw new Error(result.error || 'No AI access available. Configure your API key in Settings.');
+        }
+        _llmCache = { llm: result.client, userId, usingOwnerKey: result.source === 'owner' };
+        return _llmCache;
       }
 
-      const result = await getLLMClientForUser(userId);
-      if (!result.client) {
-        throw new Error(result.error || 'No AI access available. Configure your API key in Settings.');
+      // Anonymous user - check usage limit
+      const cookieStore = await cookies();
+      const anonId = cookieStore.get(ANON_COOKIE_NAME)?.value || `anon_${crypto.randomUUID()}`;
+
+      const usageCheck = await checkAnonymousUsageLimit(anonId);
+      if (!usageCheck.allowed) {
+        throw new Error(usageCheck.message || 'You\'ve used all your free AI requests. Sign up to unlock more!');
       }
-      _llmCache = { llm: result.client, userId, usingOwnerKey: result.source === 'owner' };
+
+      const llm = getLLMClient();
+      if (!llm) {
+        throw new Error('AI service not available');
+      }
+
+      _llmCache = { llm, anonId, usingOwnerKey: true };
       return _llmCache;
     }
 
@@ -529,12 +548,25 @@ export async function POST(request: Request) {
         // Check if this step needs dynamic AI generation
         if (next.needsDynamicGeneration && next.stepId === 'workflow') {
           try {
-            const { llm, userId, usingOwnerKey } = await requireLLM();
+            const { llm, userId, anonId, usingOwnerKey } = await requireLLM();
             const dynamicStep = await generateContextualWorkflowStep(choices, choiceLabels, llm);
-            if (userId && usingOwnerKey) {
-              await recordUsage(userId, 'instruction-guide');
+            if (usingOwnerKey) {
+              if (userId) {
+                await recordUsage(userId, 'instruction-guide');
+              } else if (anonId) {
+                await recordAnonymousUsage(anonId, 'instruction-guide');
+              }
             }
-            return NextResponse.json({ step: dynamicStep });
+            const response = NextResponse.json({ step: dynamicStep });
+            if (anonId) {
+              response.cookies.set(ANON_COOKIE_NAME, anonId, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax',
+                maxAge: 60 * 60 * 24 * 365,
+              });
+            }
+            return response;
           } catch (err) {
             console.error('Failed to generate dynamic step:', err);
             // Fall back to static step
@@ -545,10 +577,14 @@ export async function POST(request: Request) {
       } else {
         // All steps complete - generate full channel structure
         try {
-          const { llm, userId, usingOwnerKey } = await requireLLM();
+          const { llm, userId, anonId, usingOwnerKey } = await requireLLM();
           const result = await generateChannelStructure(choices, choiceLabels, channelName, llm);
-          if (userId && usingOwnerKey) {
-            await recordUsage(userId, 'instruction-guide');
+          if (usingOwnerKey) {
+            if (userId) {
+              await recordUsage(userId, 'instruction-guide');
+            } else if (anonId) {
+              await recordAnonymousUsage(anonId, 'instruction-guide');
+            }
           }
 
           // Build a summary message explaining what was created
@@ -556,11 +592,20 @@ export async function POST(request: Request) {
           const columnNames = structure?.columns.map(c => c.name).join(' → ') || 'Inbox → Review → Done';
           const topicLabel = choiceLabels.topic || choices.topic;
 
-          return NextResponse.json({
+          const response = NextResponse.json({
             complete: true,
             result,
             message: `I've designed your channel with a ${columnNames} workflow focused on ${topicLabel}.`,
           });
+          if (anonId) {
+            response.cookies.set(ANON_COOKIE_NAME, anonId, {
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production',
+              sameSite: 'lax',
+              maxAge: 60 * 60 * 24 * 365,
+            });
+          }
+          return response;
         } catch (err) {
           console.error('Failed to generate channel structure:', err);
           const message = err instanceof Error ? err.message : 'Failed to generate channel configuration';
