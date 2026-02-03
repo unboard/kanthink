@@ -388,8 +388,8 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
             {mode === 'question' && (
               <div
                 ref={backdropRef}
-                className="absolute inset-0 px-1 text-sm leading-[26px] whitespace-pre-wrap break-words pointer-events-none overflow-hidden"
-                style={{ wordBreak: 'break-word' }}
+                className="absolute inset-0 px-1 text-sm leading-[26px] whitespace-pre-wrap break-words pointer-events-none overflow-hidden font-[inherit]"
+                style={{ wordBreak: 'break-word', letterSpacing: 'inherit' }}
                 aria-hidden="true"
               >
                 {renderHighlightedBackdrop()}
@@ -408,14 +408,14 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
               placeholder={placeholder ?? defaultPlaceholder}
               disabled={isLoading}
               rows={1}
-              className={`chat-textarea w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none whitespace-pre-wrap break-words ${
+              className={`chat-textarea w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none whitespace-pre-wrap break-words font-[inherit] ${
                 needsScroll ? 'overflow-y-auto' : 'overflow-y-hidden'
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''} ${
                 mode === 'question'
                   ? 'bg-transparent text-transparent caret-neutral-900 dark:caret-white selection:bg-violet-500/30'
                   : 'bg-transparent text-neutral-900 dark:text-white'
               }`}
-              style={{ wordBreak: 'break-word' }}
+              style={{ wordBreak: 'break-word', letterSpacing: 'inherit' }}
             />
 
             {/* Tooltip for keywords */}
