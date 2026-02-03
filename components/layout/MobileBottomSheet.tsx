@@ -5,6 +5,24 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragEndEvent,
+  type DragOverEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useNav } from '@/components/providers/NavProvider';
 import { useStore } from '@/lib/store';
 import { useSettingsStore, type Theme } from '@/lib/settingsStore';
@@ -14,53 +32,104 @@ import { signInWithGoogle } from '@/lib/actions/auth';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
 import type { Channel, Folder } from '@/lib/types';
 
+// Prefixes to distinguish item types in dnd-kit
+const CHANNEL_PREFIX = 'channel:';
+const FOLDER_PREFIX = 'folder:';
+
 // ============================================
 // CONTENT COMPONENTS
 // ============================================
 
 // ============================================
-// SIMPLE CHANNEL ITEM (no drag-and-drop for mobile)
+// SORTABLE CHANNEL ITEM (with drag-and-drop)
 // ============================================
 
-interface ChannelItemProps {
+interface SortableChannelItemProps {
   channel: Channel;
   isActive: boolean;
   onNavigate: () => void;
+  isOverlay?: boolean;
 }
 
-function ChannelItem({ channel, isActive, onNavigate }: ChannelItemProps) {
+function SortableChannelItem({ channel, isActive, onNavigate, isOverlay }: SortableChannelItemProps) {
   const router = useRouter();
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `${CHANNEL_PREFIX}${channel.id}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+  };
 
   const handleClick = () => {
+    if (isDragging) return;
     onNavigate();
-    // Navigate after closing to feel snappier
     setTimeout(() => {
       router.push(`/channel/${channel.id}`);
     }, 50);
   };
 
+  // Overlay version (shown while dragging)
+  if (isOverlay) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-violet-100 dark:bg-violet-800 text-violet-700 dark:text-violet-200 text-sm font-medium shadow-lg">
+        <svg className="w-4 h-4 text-violet-400" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+        </svg>
+        {channel.name}
+      </div>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={handleClick}
+    <div
+      ref={setNodeRef}
+      style={style}
       className={`
-        w-full text-left px-4 py-3 rounded-xl text-sm transition-colors
+        flex items-center rounded-xl text-sm transition-colors
+        ${isDragging ? 'touch-none z-50' : 'touch-manipulation'}
         ${isActive
           ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-medium'
           : 'text-neutral-800 dark:text-neutral-200 active:bg-neutral-100 dark:active:bg-neutral-800'
         }
       `}
     >
-      {channel.name}
-    </button>
+      {/* Drag handle - long press here to drag */}
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="p-3 text-neutral-300 dark:text-neutral-600 touch-none"
+        aria-label="Drag to reorder"
+      >
+        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+        </svg>
+      </button>
+      {/* Channel name - tap to navigate */}
+      <button
+        type="button"
+        onClick={handleClick}
+        className="flex-1 text-left py-3 pr-4"
+      >
+        {channel.name}
+      </button>
+    </div>
   );
 }
 
 // ============================================
-// SIMPLE FOLDER ITEM (no drag-and-drop for mobile)
+// SORTABLE FOLDER ITEM (with drag-and-drop)
 // ============================================
 
-interface FolderItemProps {
+interface SortableFolderItemProps {
   folder: Folder;
   channels: Record<string, Channel>;
   pathname: string;
@@ -68,9 +137,11 @@ interface FolderItemProps {
   onRename: (name: string) => void;
   onDelete: () => void;
   onNavigate: () => void;
+  isOver?: boolean;
+  isOverlay?: boolean;
 }
 
-function FolderItem({
+function SortableFolderItem({
   folder,
   channels,
   pathname,
@@ -78,10 +149,27 @@ function FolderItem({
   onRename,
   onDelete,
   onNavigate,
-}: FolderItemProps) {
+  isOver,
+  isOverlay,
+}: SortableFolderItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(folder.name);
   const [showMenu, setShowMenu] = useState(false);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `${FOLDER_PREFIX}${folder.id}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+  };
 
   const folderChannels = folder.channelIds
     .map((id) => channels[id])
@@ -94,13 +182,51 @@ function FolderItem({
     setIsEditing(false);
   };
 
+  // Overlay version (shown while dragging)
+  if (isOverlay) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-sm font-medium shadow-lg">
+        <svg className="w-4 h-4 text-neutral-400" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+        </svg>
+        {folder.name}
+      </div>
+    );
+  }
+
+  // Channel IDs for sortable context within this folder
+  const channelIds = folderChannels.map((c) => `${CHANNEL_PREFIX}${c.id}`);
+
   return (
-    <div className="mb-2">
-      <div className="flex items-center rounded-xl bg-neutral-100 dark:bg-neutral-800 px-1">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`mb-2 ${isDragging ? 'touch-none z-50' : 'touch-manipulation'}`}
+    >
+      <div
+        className={`flex items-center rounded-xl px-1 transition-colors ${
+          isOver
+            ? 'bg-blue-100 dark:bg-blue-900/40 ring-2 ring-blue-400'
+            : 'bg-neutral-100 dark:bg-neutral-800'
+        }`}
+      >
+        {/* Drag handle for folder */}
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="p-3 text-neutral-300 dark:text-neutral-600 touch-none"
+          aria-label="Drag to reorder folder"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+          </svg>
+        </button>
+
         {/* Collapse toggle */}
         <button
           onClick={onToggle}
-          className="p-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+          className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
         >
           <svg
             className={`w-4 h-4 transition-transform ${folder.isCollapsed ? '' : 'rotate-90'}`}
@@ -166,20 +292,32 @@ function FolderItem({
         </div>
       </div>
 
+      {/* Folder contents - channels inside */}
       {!folder.isCollapsed && (
-        <div className="ml-6 mt-1 space-y-1">
-          {folderChannels.length === 0 ? (
-            <div className="px-4 py-2 text-xs text-neutral-400 italic">No channels</div>
-          ) : (
-            folderChannels.map((channel) => (
-              <ChannelItem
-                key={channel.id}
-                channel={channel}
-                isActive={pathname === `/channel/${channel.id}`}
-                onNavigate={onNavigate}
-              />
-            ))
-          )}
+        <div className="ml-8 mt-1 space-y-1">
+          <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>
+            {folderChannels.length === 0 ? (
+              <div className="px-4 py-2 text-xs text-neutral-400 italic">
+                {isOver ? 'Drop here' : 'No channels'}
+              </div>
+            ) : (
+              folderChannels.map((channel) => (
+                <SortableChannelItem
+                  key={channel.id}
+                  channel={channel}
+                  isActive={pathname === `/channel/${channel.id}`}
+                  onNavigate={onNavigate}
+                />
+              ))
+            )}
+          </SortableContext>
+        </div>
+      )}
+
+      {/* Drop zone indicator when folder is collapsed but being hovered */}
+      {folder.isCollapsed && isOver && (
+        <div className="ml-8 mt-1 px-4 py-2 text-xs text-blue-500 italic">
+          Drop to add to folder
         </div>
       )}
     </div>
@@ -187,7 +325,7 @@ function FolderItem({
 }
 
 // ============================================
-// SIMPLE CHANNELS LIST (no drag-and-drop for mobile)
+// CHANNELS LIST WITH DRAG-AND-DROP
 // ============================================
 
 function ChannelsList({ onClose }: { onClose: () => void }) {
@@ -203,11 +341,24 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
   const updateFolder = useStore((s) => s.updateFolder);
   const deleteFolder = useStore((s) => s.deleteFolder);
   const toggleFolderCollapse = useStore((s) => s.toggleFolderCollapse);
+  const moveChannelToFolder = useStore((s) => s.moveChannelToFolder);
+  const reorderChannels = useStore((s) => s.reorderChannels);
+  const reorderFolders = useStore((s) => s.reorderFolders);
+  const reorderChannelInFolder = useStore((s) => s.reorderChannelInFolder);
   const hasHydrated = useStore((s) => s._hasHydrated);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
+  // CRITICAL: Use MouseSensor + TouchSensor, NOT PointerSensor
+  // PointerSensor breaks mobile scroll (see CLAUDE.md)
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } })
+  );
 
   const handleCreateFolder = () => {
     if (newFolderName.trim()) {
@@ -219,6 +370,106 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
 
   const orderedFolders = folderOrder.map((id) => folders[id]).filter(Boolean);
   const rootChannels = channelOrder.map((id) => channels[id]).filter((c) => c && c.status !== 'archived');
+
+  // Build all sortable IDs for the main context
+  const allSortableIds = [
+    ...folderOrder.map((id) => `${FOLDER_PREFIX}${id}`),
+    ...channelOrder.map((id) => `${CHANNEL_PREFIX}${id}`),
+  ];
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    setOverId(over?.id as string | null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    setOverId(null);
+
+    if (!over || active.id === over.id) return;
+
+    const activeIdStr = active.id as string;
+    const overIdStr = over.id as string;
+
+    const isActiveChannel = activeIdStr.startsWith(CHANNEL_PREFIX);
+    const isActiveFolder = activeIdStr.startsWith(FOLDER_PREFIX);
+    const isOverChannel = overIdStr.startsWith(CHANNEL_PREFIX);
+    const isOverFolder = overIdStr.startsWith(FOLDER_PREFIX);
+
+    const activeRealId = activeIdStr.replace(CHANNEL_PREFIX, '').replace(FOLDER_PREFIX, '');
+    const overRealId = overIdStr.replace(CHANNEL_PREFIX, '').replace(FOLDER_PREFIX, '');
+
+    // Find which folder the active channel is in (if any)
+    const findChannelFolder = (channelId: string): string | null => {
+      for (const folder of Object.values(folders)) {
+        if (folder.channelIds.includes(channelId)) return folder.id;
+      }
+      return null;
+    };
+
+    // Find which folder the over channel is in (if any)
+    const overChannelFolder = isOverChannel ? findChannelFolder(overRealId) : null;
+
+    if (isActiveChannel) {
+      const activeFolder = findChannelFolder(activeRealId);
+
+      if (isOverFolder) {
+        // Dropping channel onto a folder - move it into that folder
+        moveChannelToFolder(activeRealId, overRealId);
+      } else if (isOverChannel) {
+        // Dropping channel onto another channel
+        if (activeFolder === overChannelFolder) {
+          // Same container - reorder
+          if (activeFolder) {
+            const folder = folders[activeFolder];
+            const oldIndex = folder.channelIds.indexOf(activeRealId);
+            const newIndex = folder.channelIds.indexOf(overRealId);
+            if (oldIndex !== -1 && newIndex !== -1) {
+              reorderChannelInFolder(activeFolder, oldIndex, newIndex);
+            }
+          } else {
+            // Both in root
+            const oldIndex = channelOrder.indexOf(activeRealId);
+            const newIndex = channelOrder.indexOf(overRealId);
+            if (oldIndex !== -1 && newIndex !== -1) {
+              reorderChannels(oldIndex, newIndex);
+            }
+          }
+        } else {
+          // Different containers - move to the target's folder
+          moveChannelToFolder(activeRealId, overChannelFolder);
+        }
+      }
+    } else if (isActiveFolder && isOverFolder) {
+      // Reorder folders
+      const oldIndex = folderOrder.indexOf(activeRealId);
+      const newIndex = folderOrder.indexOf(overRealId);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        reorderFolders(oldIndex, newIndex);
+      }
+    }
+  };
+
+  // Get active item for overlay
+  const activeItem = activeId
+    ? activeId.startsWith(CHANNEL_PREFIX)
+      ? channels[activeId.replace(CHANNEL_PREFIX, '')]
+      : folders[activeId.replace(FOLDER_PREFIX, '')]
+    : null;
+
+  // Check if a folder is being hovered over
+  const getHoveredFolderId = (): string | null => {
+    if (!overId || !activeId?.startsWith(CHANNEL_PREFIX)) return null;
+    if (overId.startsWith(FOLDER_PREFIX)) return overId.replace(FOLDER_PREFIX, '');
+    return null;
+  };
+
+  const hoveredFolderId = getHoveredFolderId();
 
   const handleCreateChannel = (result: ConversationalWelcomeResultData) => {
     let channel;
@@ -253,55 +504,89 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
   return (
     <>
       <div className="p-3">
-        <div className="space-y-1">
-          {/* Folders */}
-          {orderedFolders.map((folder) => (
-            <FolderItem
-              key={folder.id}
-              folder={folder}
-              channels={channels}
-              pathname={pathname}
-              onToggle={() => toggleFolderCollapse(folder.id)}
-              onRename={(name) => updateFolder(folder.id, { name })}
-              onDelete={() => deleteFolder(folder.id)}
-              onNavigate={onClose}
-            />
-          ))}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
+            <div className="space-y-1">
+              {/* Folders */}
+              {orderedFolders.map((folder) => (
+                <SortableFolderItem
+                  key={folder.id}
+                  folder={folder}
+                  channels={channels}
+                  pathname={pathname}
+                  onToggle={() => toggleFolderCollapse(folder.id)}
+                  onRename={(name) => updateFolder(folder.id, { name })}
+                  onDelete={() => deleteFolder(folder.id)}
+                  onNavigate={onClose}
+                  isOver={hoveredFolderId === folder.id}
+                />
+              ))}
 
-          {/* Root channels */}
-          {rootChannels.map((channel) => (
-            <ChannelItem
-              key={channel.id}
-              channel={channel}
-              isActive={pathname === `/channel/${channel.id}`}
-              onNavigate={onClose}
-            />
-          ))}
+              {/* Root channels */}
+              {rootChannels.map((channel) => (
+                <SortableChannelItem
+                  key={channel.id}
+                  channel={channel}
+                  isActive={pathname === `/channel/${channel.id}`}
+                  onNavigate={onClose}
+                />
+              ))}
 
-          {/* Empty state */}
-          {orderedFolders.length === 0 && rootChannels.length === 0 && (
-            <div className="py-12 text-center text-neutral-500">No channels yet</div>
-          )}
+              {/* Empty state */}
+              {orderedFolders.length === 0 && rootChannels.length === 0 && (
+                <div className="py-12 text-center text-neutral-500">No channels yet</div>
+              )}
 
-          {/* Create folder input */}
-          {isCreatingFolder && (
-            <div className="flex items-center gap-2 mt-2 px-2">
-              <input
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCreateFolder();
-                  if (e.key === 'Escape') setIsCreatingFolder(false);
-                }}
-                onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }}
-                placeholder="Folder name..."
-                className="flex-1 px-3 py-2 text-sm bg-neutral-100 dark:bg-neutral-800 border-none rounded-xl text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                autoFocus
-              />
+              {/* Create folder input */}
+              {isCreatingFolder && (
+                <div className="flex items-center gap-2 mt-2 px-2">
+                  <input
+                    type="text"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreateFolder();
+                      if (e.key === 'Escape') setIsCreatingFolder(false);
+                    }}
+                    onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }}
+                    placeholder="Folder name..."
+                    className="flex-1 px-3 py-2 text-sm bg-neutral-100 dark:bg-neutral-800 border-none rounded-xl text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    autoFocus
+                  />
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </SortableContext>
+
+          {/* Drag overlay - shows what's being dragged */}
+          <DragOverlay>
+            {activeItem && 'columns' in activeItem ? (
+              <SortableChannelItem
+                channel={activeItem as Channel}
+                isActive={false}
+                onNavigate={() => {}}
+                isOverlay
+              />
+            ) : activeItem && 'channelIds' in activeItem ? (
+              <SortableFolderItem
+                folder={activeItem as Folder}
+                channels={channels}
+                pathname={pathname}
+                onToggle={() => {}}
+                onRename={() => {}}
+                onDelete={() => {}}
+                onNavigate={() => {}}
+                isOverlay
+              />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
 
         {/* Action buttons */}
         <div className="flex gap-2 mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800">
