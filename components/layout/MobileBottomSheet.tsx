@@ -72,13 +72,17 @@ function DraggableChannel({ channel, isActive, isOverlay, onNavigate }: Draggabl
 
   if (isOverlay) {
     return (
-      <div className="flex items-center rounded-xl bg-neutral-200 dark:bg-neutral-700 px-4 py-3 text-sm text-neutral-900 dark:text-white shadow-lg">
+      <div className="flex items-center rounded-xl bg-violet-100 dark:bg-violet-800 px-4 py-3 text-sm text-violet-900 dark:text-white shadow-xl border-2 border-violet-300 dark:border-violet-600">
+        <svg className="w-4 h-4 mr-2 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
         {channel.name}
       </div>
     );
   }
 
-  const handleClick = () => {
+  const handleNavigate = () => {
+    if (isDragging) return; // Don't navigate while dragging
     onNavigate?.();
     requestAnimationFrame(() => {
       router.push(`/channel/${channel.id}`);
@@ -89,19 +93,39 @@ function DraggableChannel({ channel, isActive, isOverlay, onNavigate }: Draggabl
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      onClick={handleClick}
       className={`
-        w-full text-left px-4 py-3 rounded-xl text-sm transition-colors cursor-grab active:cursor-grabbing touch-manipulation
-        ${isDragging ? 'touch-none' : ''}
+        relative flex items-center rounded-xl text-sm transition-colors select-none
+        ${isDragging ? 'touch-none opacity-30 z-50' : 'touch-manipulation'}
         ${isActive
-          ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-medium'
-          : 'text-neutral-800 dark:text-neutral-200 active:bg-neutral-100 dark:active:bg-neutral-800'
+          ? 'bg-violet-100 dark:bg-violet-900/40'
+          : 'bg-white dark:bg-neutral-800/50'
         }
       `}
     >
-      {channel.name}
+      {/* Drag handle on the left */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="flex-shrink-0 p-3 cursor-grab active:cursor-grabbing text-neutral-400"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+        </svg>
+      </div>
+
+      {/* Clickable channel name */}
+      <button
+        onClick={handleNavigate}
+        className={`
+          flex-1 text-left py-3 pr-4 truncate
+          ${isActive
+            ? 'text-violet-700 dark:text-violet-300 font-medium'
+            : 'text-neutral-800 dark:text-neutral-200'
+          }
+        `}
+      >
+        {channel.name}
+      </button>
     </div>
   );
 }
@@ -161,8 +185,8 @@ function DraggableFolder({
 
   if (isOverlay) {
     return (
-      <div className="flex items-center rounded-xl bg-neutral-200 dark:bg-neutral-700 px-4 py-3 text-sm text-neutral-500 dark:text-neutral-300 shadow-lg">
-        <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+      <div className="flex items-center rounded-xl bg-blue-100 dark:bg-blue-800 px-4 py-3 text-sm text-blue-900 dark:text-white shadow-xl border-2 border-blue-300 dark:border-blue-600">
+        <svg className="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
           <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
         </svg>
         {folder.name}
@@ -173,17 +197,29 @@ function DraggableFolder({
   const channelIds = folderChannels.map((c) => `${CHANNEL_PREFIX}${c.id}`);
 
   return (
-    <div ref={setNodeRef} style={style} className="mb-2">
+    <div ref={setNodeRef} style={style} className={`mb-2 ${isDragging ? 'opacity-30' : ''}`}>
       <div
         className={`
-          flex items-center rounded-xl px-3 py-2 transition-colors touch-manipulation
-          ${isDragging ? 'touch-none' : ''}
-          ${isOver ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-neutral-100 dark:bg-neutral-800'}
+          flex items-center rounded-xl transition-colors select-none
+          ${isDragging ? 'touch-none' : 'touch-manipulation'}
+          ${isOver ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-dashed border-blue-400' : 'bg-neutral-100 dark:bg-neutral-800'}
         `}
       >
+        {/* Drag handle */}
+        <div
+          {...attributes}
+          {...listeners}
+          className="flex-shrink-0 p-3 cursor-grab active:cursor-grabbing text-neutral-400"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+          </svg>
+        </div>
+
+        {/* Collapse toggle */}
         <button
           onClick={onToggle}
-          className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+          className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
         >
           <svg
             className={`w-4 h-4 transition-transform ${folder.isCollapsed ? '' : 'rotate-90'}`}
@@ -193,6 +229,11 @@ function DraggableFolder({
             <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
           </svg>
         </button>
+
+        {/* Folder icon */}
+        <svg className="w-4 h-4 mr-2 text-neutral-400" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+        </svg>
 
         {isEditing ? (
           <input
@@ -204,15 +245,11 @@ function DraggableFolder({
               if (e.key === 'Enter') handleRename();
               if (e.key === 'Escape') setIsEditing(false);
             }}
-            className="flex-1 text-sm bg-transparent border-none outline-none text-neutral-900 dark:text-white py-1"
+            className="flex-1 text-sm bg-transparent border-none outline-none text-neutral-900 dark:text-white py-2"
             autoFocus
           />
         ) : (
-          <span
-            {...attributes}
-            {...listeners}
-            className="flex-1 text-sm font-medium text-neutral-600 dark:text-neutral-300 py-1 cursor-grab active:cursor-grabbing"
-          >
+          <span className="flex-1 text-sm font-medium text-neutral-600 dark:text-neutral-300 py-2">
             {folder.name}
           </span>
         )}
@@ -220,7 +257,7 @@ function DraggableFolder({
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+            className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
@@ -300,9 +337,10 @@ function ChannelsList({ onClose, onDragStateChange }: { onClose: () => void; onD
   const [overId, setOverId] = useState<string | null>(null);
 
   // CRITICAL: Use MouseSensor + TouchSensor, NOT PointerSensor
+  // Tolerance of 8 matches Board.tsx for consistent behavior
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
