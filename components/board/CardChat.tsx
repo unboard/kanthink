@@ -23,7 +23,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
   // Track keyboard height for mobile input positioning
-  const { keyboardOffset } = useKeyboardOffset();
+  // We pass onFocus/onBlur to ChatInput so they share the same keyboard state
+  const { keyboardOffset, onFocus: handleKeyboardFocus, onBlur: handleKeyboardBlur } = useKeyboardOffset();
 
   const addMessage = useStore((s) => s.addMessage);
   const addAIResponse = useStore((s) => s.addAIResponse);
@@ -489,7 +490,13 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         className="absolute left-0 right-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
         style={{ bottom: keyboardOffset > 0 ? `${keyboardOffset}px` : 0 }}
       >
-        <ChatInput onSubmit={handleSubmit} isLoading={isAILoading} cardId={card.id} />
+        <ChatInput
+          onSubmit={handleSubmit}
+          isLoading={isAILoading}
+          cardId={card.id}
+          onKeyboardFocus={handleKeyboardFocus}
+          onKeyboardBlur={handleKeyboardBlur}
+        />
       </div>
     </div>
   );

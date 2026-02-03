@@ -107,9 +107,12 @@ interface ChatInputProps {
   isLoading?: boolean;
   placeholder?: string;
   cardId?: string;
+  // Optional keyboard handlers from parent - when provided, parent controls keyboard offset
+  onKeyboardFocus?: () => void;
+  onKeyboardBlur?: () => void;
 }
 
-export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: ChatInputProps) {
+export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, onKeyboardFocus, onKeyboardBlur }: ChatInputProps) {
   const [mode, setMode] = useState<InputMode>('note');
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
@@ -123,7 +126,11 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
 
   const { uploadFile, isUploading, error: uploadError, clearError } = useImageUpload({ cardId });
   // Use keyboard offset hook for focus/blur handlers (parent handles positioning)
-  const { isFocused, onFocus, onBlur } = useKeyboardOffset();
+  const { isFocused, onFocus: hookOnFocus, onBlur: hookOnBlur } = useKeyboardOffset();
+
+  // Use parent's handlers if provided, otherwise use hook's handlers
+  const onFocus = onKeyboardFocus ?? hookOnFocus;
+  const onBlur = onKeyboardBlur ?? hookOnBlur;
 
   // Sync scroll between textarea and backdrop (for keyword highlighting)
   const handleScroll = useCallback(() => {
