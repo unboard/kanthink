@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { MiniNav } from "@/components/layout/MiniNav";
+import { ChannelsPanel } from "@/components/layout/ChannelsPanel";
+import { ShroomsPanel } from "@/components/layout/ShroomsPanel";
+import { AccountPanel } from "@/components/layout/AccountPanel";
+import { SettingsPanel } from "@/components/layout/SettingsPanel";
+import { MobileBottomSheet } from "@/components/layout/MobileBottomSheet";
 import { MobileHeader } from "@/components/layout/MobileHeader";
+import { MainContent } from "@/components/layout/MainContent";
 import { AmbientBackground } from "@/components/ambient/AmbientBackground";
 import { AIStatusBar } from "@/components/AIStatusBar";
 import { AutomationProvider } from "@/components/providers/AutomationProvider";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { SidebarProvider } from "@/components/providers/SidebarProvider";
+import { NavProvider } from "@/components/providers/NavProvider";
 import { ServerSyncProvider } from "@/components/providers/ServerSyncProvider";
 import { ToastContainer, SignUpOverlay } from "@/components/ui";
 
@@ -45,18 +51,31 @@ export default function RootLayout({
           <AuthProvider>
             <ServerSyncProvider>
               <AutomationProvider>
-                <SidebarProvider>
-                <div className="relative z-10 flex h-screen">
-                  <Sidebar />
-                  <div className="flex flex-1 flex-col overflow-hidden">
-                    <MobileHeader />
-                    <main className="flex-1 overflow-auto">
-                      {children}
-                    </main>
+                <NavProvider>
+                  <div className="relative z-10 flex h-screen">
+                    {/* Desktop: Icon rail always visible */}
+                    <MiniNav />
+
+                    {/* Panels - render based on activePanel */}
+                    <ChannelsPanel />
+                    <ShroomsPanel />
+                    <AccountPanel />
+                    <SettingsPanel />
+
+                    {/* Main content - margin adjusts when panel open */}
+                    <MainContent>
+                      <MobileHeader />
+                      <main className="flex-1 overflow-auto">
+                        {children}
+                      </main>
+                    </MainContent>
+
+                    <AIStatusBar />
                   </div>
-                  <AIStatusBar />
-                </div>
-                </SidebarProvider>
+
+                  {/* Mobile bottom sheet (opens from bottom nav) */}
+                  <MobileBottomSheet />
+                </NavProvider>
                 <ToastContainer />
                 <SignUpOverlay />
               </AutomationProvider>

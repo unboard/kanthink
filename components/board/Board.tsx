@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   DndContext,
   DragOverlay,
@@ -28,7 +29,7 @@ import { processCard } from '@/lib/ai/processCard';
 import { runInstruction } from '@/lib/ai/runInstruction';
 import { generateProcessingStatus } from '@/lib/processingStatus';
 import { Button, Input, Modal } from '@/components/ui';
-import { requireSignInForAI } from '@/lib/settingsStore';
+import { useSettingsStore, requireSignInForAI } from '@/lib/settingsStore';
 import { SortableColumn } from './SortableColumn';
 import { AIDebugModal } from './AIDebugModal';
 // Commented out - question system disabled
@@ -70,11 +71,66 @@ export function Board({ channel }: BoardProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isShroomsOpen, setIsShroomsOpen] = useState(false);
+  const [shroomsButtonPulse, setShroomsButtonPulse] = useState(false);
   const { isServerMode } = useServerSync();
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
+  const [pendingShroomAction, setPendingShroomAction] = useState<{ type: 'edit' | 'run' | 'create'; id?: string } | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Settings store for first-time highlight
+  const shroomsButtonHighlighted = useSettingsStore((s) => s.shroomsButtonHighlighted);
+  const setShroomsButtonHighlighted = useSettingsStore((s) => s.setShroomsButtonHighlighted);
+
+  // Pulse the Shrooms button on first board visit after welcome flow
+  useEffect(() => {
+    if (!shroomsButtonHighlighted) {
+      // Start pulse animation
+      setShroomsButtonPulse(true);
+      // Mark as highlighted so it doesn't happen again
+      setShroomsButtonHighlighted(true);
+      // Stop animation after 3 pulses (2s each = 6s)
+      const timer = setTimeout(() => {
+        setShroomsButtonPulse(false);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [shroomsButtonHighlighted, setShroomsButtonHighlighted]);
+
+  // Handle query params for opening shrooms drawer from mobile nav
+  useEffect(() => {
+    const shroomsParam = searchParams.get('shrooms');
+    const editParam = searchParams.get('edit');
+    const runParam = searchParams.get('run');
+    const createParam = searchParams.get('create');
+
+    if (shroomsParam === 'open') {
+      const isMobile = window.innerWidth < 768;
+
+      // On mobile with just a run action, don't open the drawer -
+      // store the action and handle it separately
+      if (isMobile && runParam && !editParam && !createParam) {
+        setPendingShroomAction({ type: 'run', id: runParam });
+        // Don't open the drawer on mobile for run-only actions
+      } else {
+        setIsShroomsOpen(true);
+        // Store the action to execute after drawer opens
+        if (editParam) {
+          setPendingShroomAction({ type: 'edit', id: editParam });
+        } else if (runParam) {
+          setPendingShroomAction({ type: 'run', id: runParam });
+        } else if (createParam === 'true') {
+          setPendingShroomAction({ type: 'create' });
+        }
+      }
+      // Clear the query params
+      router.replace(`/channel/${channel.id}`, { scroll: false });
+    }
+  }, [searchParams, router, channel.id]);
 
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
+  const instructionCards = useStore((s) => s.instructionCards);
   const moveCard = useStore((s) => s.moveCard);
   const createCard = useStore((s) => s.createCard);
   const updateCard = useStore((s) => s.updateCard);
@@ -699,10 +755,41 @@ export function Board({ channel }: BoardProps) {
     setPreflightResult(null);
   };
 
+  // Handle mobile run action without opening drawer
+  useEffect(() => {
+    if (pendingShroomAction?.type === 'run' && !isShroomsOpen && pendingShroomAction.id) {
+      const instructionCard = instructionCards[pendingShroomAction.id];
+      if (instructionCard) {
+        // Clear the pending action first to prevent re-runs
+        setPendingShroomAction(null);
+        // Execute the instruction
+        handleRunInstruction(instructionCard);
+      } else {
+        setPendingShroomAction(null);
+      }
+    }
+  }, [pendingShroomAction, isShroomsOpen, instructionCards]);
+
   return (
     <div className="flex h-full flex-col">
+      {/* Shrooms button pulse animation for first-time users */}
+      <style>{`
+        @keyframes shrooms-button-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+          50% { box-shadow: 0 0 0 6px rgba(139, 92, 246, 0.4); }
+        }
+        .shrooms-button-pulse {
+          animation: shrooms-button-pulse 2s ease-in-out 3;
+        }
+      `}</style>
       <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+          {/* Kanthink icon - mobile only */}
+          <img
+            src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+            alt="Kanthink"
+            className="h-5 w-5 flex-shrink-0 md:hidden"
+          />
           <h2 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate">
             {channel.name}
           </h2>
@@ -737,18 +824,7 @@ export function Board({ channel }: BoardProps) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={() => setIsShroomsOpen(true)}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-            title="Actions"
-          >
-            <img
-              src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
-              alt=""
-              className="h-5 w-5"
-            />
-            <span className="hidden sm:inline">Shrooms</span>
-          </button>
+{/* Shrooms button removed - now accessible from left nav */}
           {debugInfo && (
             <button
               onClick={() => setIsDebugModalOpen(true)}
@@ -954,6 +1030,8 @@ export function Board({ channel }: BoardProps) {
         isOpen={isShroomsOpen}
         onClose={() => setIsShroomsOpen(false)}
         onRunInstruction={handleRunInstruction}
+        pendingAction={pendingShroomAction}
+        onPendingActionHandled={() => setPendingShroomAction(null)}
       />
     </div>
   );

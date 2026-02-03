@@ -8,7 +8,8 @@ import {
   DragOverlay,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
@@ -22,12 +23,11 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
-import { useSidebar } from '@/components/providers/SidebarProvider';
-import { GuidedQuestionnaireOverlay, type GuideResultData } from '@/app/prototypes/overlays/GuidedQuestionnaireOverlay';
-import { signInWithGoogle } from '@/lib/actions/auth';
+import { NavPanel } from './NavPanel';
+import { useNav } from '@/components/providers/NavProvider';
+import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
 import type { Channel, Folder } from '@/lib/types';
 
 // Prefixes to distinguish item types in dnd-kit
@@ -38,9 +38,10 @@ interface DraggableChannelProps {
   channel: Channel;
   isActive: boolean;
   isOverlay?: boolean;
+  onNavigate?: () => void;
 }
 
-function DraggableChannel({ channel, isActive, isOverlay }: DraggableChannelProps) {
+function DraggableChannel({ channel, isActive, isOverlay, onNavigate }: DraggableChannelProps) {
   const {
     attributes,
     listeners,
@@ -71,13 +72,17 @@ function DraggableChannel({ channel, isActive, isOverlay }: DraggableChannelProp
       {...attributes}
       {...listeners}
       className={`
-        group relative flex items-center rounded-md transition-colors cursor-grab active:cursor-grabbing
+        group relative flex items-center rounded-md transition-colors cursor-grab active:cursor-grabbing touch-manipulation
+        ${isDragging ? 'touch-none' : ''}
         ${isActive ? 'bg-neutral-200 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}
       `}
     >
       <Link
         href={`/channel/${channel.id}`}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onNavigate?.();
+        }}
         className={`
           flex-1 block py-1.5 px-2 text-sm transition-colors truncate
           ${isActive ? 'text-neutral-900 dark:text-white' : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'}
@@ -98,6 +103,7 @@ interface DraggableFolderProps {
   onDelete: () => void;
   isOver?: boolean;
   isOverlay?: boolean;
+  onNavigate?: () => void;
 }
 
 function DraggableFolder({
@@ -109,6 +115,7 @@ function DraggableFolder({
   onDelete,
   isOver,
   isOverlay,
+  onNavigate,
 }: DraggableFolderProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(folder.name);
@@ -158,7 +165,8 @@ function DraggableFolder({
     <div ref={setNodeRef} style={style} className="mb-1">
       <div
         className={`
-          group flex items-center rounded-md transition-colors
+          group flex items-center rounded-md transition-colors touch-manipulation
+          ${isDragging ? 'touch-none' : ''}
           ${isOver ? 'bg-blue-100 dark:bg-blue-900/30' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}
         `}
       >
@@ -240,6 +248,7 @@ function DraggableFolder({
                   key={channel.id}
                   channel={channel}
                   isActive={pathname === `/channel/${channel.id}`}
+                  onNavigate={onNavigate}
                 />
               ))
             )}
@@ -250,11 +259,10 @@ function DraggableFolder({
   );
 }
 
-export function Sidebar() {
+export function ChannelsPanel() {
   const pathname = usePathname();
   const router = useRouter();
-  const { data: session } = useSession();
-  const { isOpen, isCollapsed, isMobile, close, toggleCollapse } = useSidebar();
+  const { closePanel } = useNav();
   const channels = useStore((s) => s.channels);
   const channelOrder = useStore((s) => s.channelOrder);
   const folders = useStore((s) => s.folders);
@@ -278,15 +286,11 @@ export function Sidebar() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
 
-  // Close sidebar on navigation on mobile
-  useEffect(() => {
-    if (isMobile) {
-      close();
-    }
-  }, [pathname, isMobile, close]);
-
+  // CRITICAL: Use MouseSensor + TouchSensor, NOT PointerSensor
+  // PointerSensor breaks mobile scroll (see CLAUDE.md)
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -407,7 +411,7 @@ export function Sidebar() {
 
   const hoveredFolderId = getHoveredFolderId();
 
-  const handleCreateChannel = (result: GuideResultData) => {
+  const handleCreateChannel = (result: ConversationalWelcomeResultData) => {
     let channel;
 
     if (result.structure && result.structure.columns.length > 0) {
@@ -427,270 +431,127 @@ export function Sidebar() {
     }
 
     setIsCreateOpen(false);
+    closePanel();
     router.push(`/channel/${channel.id}`);
   };
 
-  // Don't render sidebar on mobile when closed, but ALWAYS render the
-  // create channel overlay so it doesn't unmount when keyboard opens
-  if (isMobile && !isOpen) {
-    return (
-      <GuidedQuestionnaireOverlay
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onCreate={handleCreateChannel}
-      />
-    );
-  }
-
   return (
     <>
-      {/* Mobile overlay backdrop */}
-      {isMobile && isOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
-          onClick={close}
-          aria-hidden="true"
-        />
-      )}
-
-      <aside
-        className={`
-          sidebar flex h-full flex-col
-          ${isMobile
-            ? 'fixed inset-y-0 left-0 z-50 w-64 animate-slide-in bg-neutral-50 dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800'
-            : isCollapsed
-              ? 'w-14'
-              : 'w-56'
-          }
-          transition-all duration-200 ease-in-out
-        `}
-      >
-        <div className="flex items-center justify-between px-3 py-3 sm:py-4">
-          {(!isCollapsed || isMobile) ? (
-            <img
-              src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-full-v1_lc5ai6.svg"
-              alt="Kanthink"
-              className="h-6"
-            />
+      <NavPanel panelKey="channels" title="Channels" width="sm">
+        <div className="p-2">
+          {!hasHydrated ? (
+            <div className="px-2 py-1 text-sm text-neutral-400">Loading...</div>
           ) : (
-            <img
-              src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
-              alt="Kanthink"
-              className="h-6 w-6"
-            />
-          )}
-          {!isMobile && (
-            <button
-              onClick={toggleCollapse}
-              className="p-1.5 rounded-md text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
-              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
             >
-              <svg
-                className={`w-4 h-4 transition-transform ${isCollapsed ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-              </svg>
-            </button>
-          )}
-          {isMobile && (
-            <button
-              onClick={close}
-              className="p-1.5 rounded-md text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
-              title="Close sidebar"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </div>
+              <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
+                <nav className="space-y-0.5">
+                  {/* Folders */}
+                  {orderedFolders.map((folder) => (
+                    <DraggableFolder
+                      key={folder.id}
+                      folder={folder}
+                      channels={channels}
+                      pathname={pathname}
+                      onToggle={() => toggleFolderCollapse(folder.id)}
+                      onRename={(name) => updateFolder(folder.id, { name })}
+                      onDelete={() => deleteFolder(folder.id)}
+                      isOver={hoveredFolderId === folder.id}
+                      onNavigate={closePanel}
+                    />
+                  ))}
 
-        <div className={`flex-1 overflow-y-auto px-2 py-2 ${isCollapsed && !isMobile ? 'hidden' : ''}`}>
-        {!hasHydrated ? (
-          <div className="px-2 py-1 text-sm text-neutral-400">Loading...</div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-              <nav className="space-y-0.5">
-                {/* Folders */}
-                {orderedFolders.map((folder) => (
+                  {/* Root channels */}
+                  {rootChannels.map((channel) => (
+                    <DraggableChannel
+                      key={channel.id}
+                      channel={channel}
+                      isActive={pathname === `/channel/${channel.id}`}
+                      onNavigate={closePanel}
+                    />
+                  ))}
+
+                  {/* Empty state */}
+                  {orderedFolders.length === 0 && rootChannels.length === 0 && (
+                    <div className="px-2 py-1 text-sm text-neutral-400">No channels yet</div>
+                  )}
+
+                  {/* Create folder input */}
+                  {isCreatingFolder && (
+                    <div className="flex items-center gap-1 mt-2">
+                      <input
+                        type="text"
+                        value={newFolderName}
+                        onChange={(e) => setNewFolderName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleCreateFolder();
+                          if (e.key === 'Escape') setIsCreatingFolder(false);
+                        }}
+                        onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }}
+                        placeholder="Folder name..."
+                        className="flex-1 px-2 py-1 text-sm bg-transparent border border-neutral-300 dark:border-neutral-600 rounded-md text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:border-neutral-500"
+                        autoFocus
+                      />
+                    </div>
+                  )}
+                </nav>
+              </SortableContext>
+
+              <DragOverlay>
+                {activeItem && 'name' in activeItem && 'columns' in activeItem ? (
+                  <DraggableChannel channel={activeItem as Channel} isActive={false} isOverlay />
+                ) : activeItem && 'channelIds' in activeItem ? (
                   <DraggableFolder
-                    key={folder.id}
-                    folder={folder}
+                    folder={activeItem as Folder}
                     channels={channels}
                     pathname={pathname}
-                    onToggle={() => toggleFolderCollapse(folder.id)}
-                    onRename={(name) => updateFolder(folder.id, { name })}
-                    onDelete={() => deleteFolder(folder.id)}
-                    isOver={hoveredFolderId === folder.id}
+                    onToggle={() => {}}
+                    onRename={() => {}}
+                    onDelete={() => {}}
+                    isOverlay
                   />
-                ))}
-
-                {/* Root channels */}
-                {rootChannels.map((channel) => (
-                  <DraggableChannel
-                    key={channel.id}
-                    channel={channel}
-                    isActive={pathname === `/channel/${channel.id}`}
-                  />
-                ))}
-
-                {/* Empty state */}
-                {orderedFolders.length === 0 && rootChannels.length === 0 && (
-                  <div className="px-2 py-1 text-sm text-neutral-400">No channels yet</div>
-                )}
-
-                {/* Create folder input */}
-                {isCreatingFolder && (
-                  <div className="flex items-center gap-1 mt-2">
-                    <input
-                      type="text"
-                      value={newFolderName}
-                      onChange={(e) => setNewFolderName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleCreateFolder();
-                        if (e.key === 'Escape') setIsCreatingFolder(false);
-                      }}
-                      onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }}
-                      placeholder="Folder name..."
-                      className="flex-1 px-2 py-1 text-sm bg-transparent border border-neutral-300 dark:border-neutral-600 rounded-md text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:border-neutral-500"
-                      autoFocus
-                    />
-                  </div>
-                )}
-              </nav>
-            </SortableContext>
-
-            <DragOverlay>
-              {activeItem && 'name' in activeItem && 'columns' in activeItem ? (
-                <DraggableChannel channel={activeItem as Channel} isActive={false} isOverlay />
-              ) : activeItem && 'channelIds' in activeItem ? (
-                <DraggableFolder
-                  folder={activeItem as Folder}
-                  channels={channels}
-                  pathname={pathname}
-                  onToggle={() => {}}
-                  onRename={() => {}}
-                  onDelete={() => {}}
-                  isOverlay
-                />
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-        )}
-      </div>
-
-      <div className={`p-2 ${isCollapsed && !isMobile ? 'hidden' : ''}`}>
-        {!session && (
-          <form action={signInWithGoogle} className="mb-1">
-            <input type="hidden" name="redirectTo" value={pathname} />
-            <button
-              type="submit"
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300"
-            >
-              <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-              </svg>
-              Sign in
-            </button>
-          </form>
-        )}
-        <Link
-          href="/settings"
-          className={`
-            flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors
-            ${pathname === '/settings'
-              ? 'bg-neutral-200 dark:bg-neutral-800 text-neutral-900 dark:text-white'
-              : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300'}
-          `}
-        >
-          <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          Settings
-        </Link>
-        <div className="flex gap-1 mt-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="flex-1 justify-start"
-            onClick={() => setIsCreateOpen(true)}
-          >
-            + Channel
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsCreatingFolder(true)}
-            title="New folder"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-            </svg>
-          </Button>
-        </div>
-      </div>
-
-      {/* Collapsed state: just show icons */}
-      {isCollapsed && !isMobile && (
-        <div className="p-2 flex flex-col items-center gap-2">
-          {!session && (
-            <form action={signInWithGoogle}>
-              <input type="hidden" name="redirectTo" value={pathname} />
-              <button
-                type="submit"
-                className="p-2 rounded-md transition-colors text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300"
-                title="Sign in"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                </svg>
-              </button>
-            </form>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           )}
-          <Link
-            href="/settings"
-            className={`
-              p-2 rounded-md transition-colors
-              ${pathname === '/settings'
-                ? 'bg-neutral-200 dark:bg-neutral-800 text-neutral-900 dark:text-white'
-                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300'}
-            `}
-            title="Settings"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </Link>
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="p-2 rounded-md text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-            title="New channel"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
         </div>
-      )}
 
-      <GuidedQuestionnaireOverlay
+        {/* Bottom action buttons */}
+        <div className="sticky bottom-0 bg-neutral-50 dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-2">
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex-1 justify-start"
+              onClick={() => setIsCreateOpen(true)}
+            >
+              + Channel
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsCreatingFolder(true)}
+              title="New folder"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+            </Button>
+          </div>
+        </div>
+      </NavPanel>
+
+      <ConversationalWelcome
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         onCreate={handleCreateChannel}
+        isWelcome={false}
       />
-    </aside>
     </>
   );
 }

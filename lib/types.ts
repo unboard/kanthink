@@ -12,6 +12,7 @@ export type CardMessageType = 'note' | 'question' | 'ai_response';
 // Instruction Card types
 export type InstructionAction = 'generate' | 'modify' | 'move';
 export type InstructionRunMode = 'manual' | 'automatic';
+export type InstructionScope = 'channel' | 'global' | 'public';
 
 // Automation trigger types
 export type TriggerType = 'scheduled' | 'event' | 'threshold';
@@ -127,13 +128,14 @@ export interface InstructionRevision {
 
 export interface InstructionCard {
   id: ID;
-  channelId: ID;
+  channelId: ID;                          // For channel-scoped shrooms. Can be empty string for global shrooms
   title: string;
   instructions: string;
   action: InstructionAction;
   target: InstructionTarget;              // Destination: where cards are added
   contextColumns?: ContextColumnSelection | null; // Context: what AI sees (null/undefined = all)
   runMode: InstructionRunMode;
+  scope?: InstructionScope;               // 'channel' (default), 'global', or 'public'
   cardCount?: number;
   interviewQuestions?: string[];
   createdAt: string;
@@ -264,6 +266,7 @@ export interface InstructionCardInput {
   target: InstructionTarget;
   contextColumns?: ContextColumnSelection | null;
   runMode?: InstructionRunMode;
+  scope?: InstructionScope;
   cardCount?: number;
   interviewQuestions?: string[];
 }

@@ -5,7 +5,7 @@ import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -24,11 +24,18 @@ import { SortableInstructionCard } from './SortableInstructionCard';
 import { InstructionDetailDrawer } from './InstructionDetailDrawer';
 import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
 
+interface PendingShroomAction {
+  type: 'edit' | 'run' | 'create';
+  id?: string;
+}
+
 interface ShroomsDrawerProps {
   channel: Channel;
   isOpen: boolean;
   onClose: () => void;
   onRunInstruction: (card: InstructionCardType) => Promise<void>;
+  pendingAction?: PendingShroomAction | null;
+  onPendingActionHandled?: () => void;
 }
 
 export function ShroomsDrawer({
@@ -36,6 +43,8 @@ export function ShroomsDrawer({
   isOpen,
   onClose,
   onRunInstruction,
+  pendingAction,
+  onPendingActionHandled,
 }: ShroomsDrawerProps) {
   const instructionCards = useStore((s) => s.instructionCards);
   const createInstructionCard = useStore((s) => s.createInstructionCard);
@@ -50,6 +59,24 @@ export function ShroomsDrawer({
     const stored = localStorage.getItem('shroom-drawer-v2');
     if (stored === 'true') setUseV2Drawer(true);
   }, []);
+
+  // Handle pending actions from mobile nav
+  useEffect(() => {
+    if (!isOpen || !pendingAction) return;
+
+    if (pendingAction.type === 'edit' && pendingAction.id) {
+      setSelectedCardId(pendingAction.id);
+    } else if (pendingAction.type === 'run' && pendingAction.id) {
+      const card = instructionCards[pendingAction.id];
+      if (card) {
+        handleRunInstruction(card);
+      }
+    } else if (pendingAction.type === 'create') {
+      handleAddInstruction();
+    }
+
+    onPendingActionHandled?.();
+  }, [isOpen, pendingAction]);
 
   const toggleDrawerVersion = () => {
     const newValue = !useV2Drawer;
@@ -66,15 +93,17 @@ export function ShroomsDrawer({
 
   const selectedCard = selectedCardId ? instructionCards[selectedCardId] : null;
 
+  // CRITICAL: Use MouseSensor + TouchSensor, NOT PointerSensor
+  // PointerSensor breaks mobile scroll (see CLAUDE.md)
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: {
         distance: 8,
       },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 300,
+        delay: 250,
         tolerance: 5,
       },
     }),
@@ -247,13 +276,6 @@ export function ShroomsDrawer({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               Add shroom
-            </button>
-            {/* Prototype toggle */}
-            <button
-              onClick={toggleDrawerVersion}
-              className="w-full text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 py-1"
-            >
-              Try {useV2Drawer ? 'original' : 'new'} editor design
             </button>
           </div>
         </div>

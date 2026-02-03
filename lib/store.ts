@@ -2282,6 +2282,7 @@ export const useStore = create<KanthinkState>()(
       createInstructionCard: (channelId, input) => {
         const id = nanoid();
         const timestamp = now();
+        const scope = input.scope ?? 'channel';
         const instructionCard: InstructionCard = {
           id,
           channelId,
@@ -2291,6 +2292,7 @@ export const useStore = create<KanthinkState>()(
           target: input.target,
           contextColumns: input.contextColumns,
           runMode: input.runMode ?? 'manual',
+          scope,
           cardCount: input.cardCount,
           interviewQuestions: input.interviewQuestions,
           createdAt: timestamp,
@@ -2298,6 +2300,13 @@ export const useStore = create<KanthinkState>()(
         };
 
         set((state) => {
+          // For global shrooms, don't link to a specific channel
+          if (scope === 'global') {
+            return {
+              instructionCards: { ...state.instructionCards, [id]: instructionCard },
+            };
+          }
+
           const channel = state.channels[channelId];
           if (!channel) return state;
 
@@ -2984,3 +2993,16 @@ export const useStore = create<KanthinkState>()(
     }
   )
 );
+
+// Selector helpers for shrooms (instruction cards)
+export function getGlobalShrooms(state: KanthinkState): InstructionCard[] {
+  return Object.values(state.instructionCards).filter(
+    (ic) => ic.scope === 'global'
+  );
+}
+
+export function getChannelShrooms(state: KanthinkState, channelId: string): InstructionCard[] {
+  return Object.values(state.instructionCards).filter(
+    (ic) => ic.channelId === channelId && (ic.scope === 'channel' || !ic.scope)
+  );
+}
