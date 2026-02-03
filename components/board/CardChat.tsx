@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
+import { useTypewriter } from '@/lib/hooks/useTypewriter';
 
 interface CardChatProps {
   card: Card;
@@ -43,6 +44,36 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
 
   // Get card tags
   const cardTags = card.tags ?? [];
+
+  // Track the latest AI message for typewriter effect
+  const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
+
+  // Find the message being typed
+  const typingMessage = typingMessageId
+    ? messages.find(m => m.id === typingMessageId)
+    : null;
+
+  // Typewriter effect for the current AI message
+  const { displayedText, isTyping, skipToEnd } = useTypewriter(
+    typingMessage?.content || '',
+    {
+      speed: 80,
+      startDelay: 100,
+      onComplete: () => setTypingMessageId(null),
+    }
+  );
+
+  // When a new AI response is added, start typing it
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.type === 'ai_response' && lastMessage.id !== typingMessageId) {
+      // Check if this is a genuinely new message (not just a re-render)
+      const isNewMessage = !typingMessageId || !messages.some(m => m.id === typingMessageId);
+      if (isNewMessage) {
+        setTypingMessageId(lastMessage.id);
+      }
+    }
+  }, [messages, typingMessageId]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -299,34 +330,99 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       {/* Messages area - extra bottom padding so content scrolls behind input */}
       <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-3">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-3">
-              <svg className="w-6 h-6 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
+          <div className="flex flex-col h-full">
+            {/* Spacer to push suggestions toward bottom */}
+            <div className="flex-1" />
+            {/* Empty state suggestions - positioned near the input */}
+            <div className="px-1 pb-4 space-y-2">
+              <button
+                onClick={() => {
+                  // Switch to note mode and focus
+                  const noteBtn = document.querySelector('[data-mode="note"]') as HTMLButtonElement;
+                  noteBtn?.click();
+                  setTimeout(() => {
+                    const textarea = document.querySelector('.chat-textarea') as HTMLTextAreaElement;
+                    textarea?.focus();
+                  }, 50);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
+              >
+                <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">
+                  <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Add a note</p>
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500">Jot down thoughts or information</p>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  // Switch to question mode and focus
+                  const askKanBtn = document.querySelector('[data-mode="question"]') as HTMLButtonElement;
+                  askKanBtn?.click();
+                  setTimeout(() => {
+                    const textarea = document.querySelector('.chat-textarea') as HTMLTextAreaElement;
+                    textarea?.focus();
+                  }, 50);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors group"
+              >
+                <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center flex-shrink-0 group-hover:bg-violet-200 dark:group-hover:bg-violet-900/60 transition-colors">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+                    alt="Kan"
+                    className="w-5 h-5"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-violet-700 dark:text-violet-300">Ask Kan</p>
+                  <p className="text-xs text-violet-500 dark:text-violet-400">Get AI help with this card</p>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  // Trigger the file input in ChatInput
+                  const fileInput = document.querySelector('input[type="file"][accept*="image"]') as HTMLInputElement;
+                  fileInput?.click();
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
+              >
+                <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">
+                  <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Upload images</p>
+                  <p className="text-xs text-neutral-400 dark:text-neutral-500">Attach photos or screenshots</p>
+                </div>
+              </button>
             </div>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-1">
-              No messages yet
-            </p>
-            <p className="text-xs text-neutral-400 dark:text-neutral-500">
-              Add notes or ask AI questions about this card
-            </p>
           </div>
         ) : (
-          messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              message={message}
-              onDelete={() => handleDeleteMessage(message.id)}
-              onEdit={(content) => editMessage(card.id, message.id, content)}
-              tagDefinitions={tagDefinitions}
-              cardTags={cardTags}
-              onActionApprove={handleActionApprove}
-              onActionReject={handleActionReject}
-              onApproveAll={handleApproveAll}
-              onRejectAll={handleRejectAll}
-            />
-          ))
+          messages.map((message) => {
+            const isMessageTyping = message.id === typingMessageId && isTyping;
+            return (
+              <ChatMessage
+                key={message.id}
+                message={message}
+                onDelete={() => handleDeleteMessage(message.id)}
+                onEdit={(content) => editMessage(card.id, message.id, content)}
+                tagDefinitions={tagDefinitions}
+                cardTags={cardTags}
+                onActionApprove={handleActionApprove}
+                onActionReject={handleActionReject}
+                onApproveAll={handleApproveAll}
+                onRejectAll={handleRejectAll}
+                displayText={isMessageTyping ? displayedText : undefined}
+                isTyping={isMessageTyping}
+                onSkipTyping={isMessageTyping ? skipToEnd : undefined}
+              />
+            );
+          })
         )}
 
         {/* AI Loading indicator */}

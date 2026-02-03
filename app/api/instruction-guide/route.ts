@@ -3,6 +3,19 @@ import { cookies } from 'next/headers';
 import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMProvider } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+import {
+  inferIntent,
+  getIntentLabel,
+  getIntentDescription,
+  type ChannelIntent,
+} from '@/lib/channelCreation/inferIntent';
+import {
+  getWorkflowSuggestions,
+  getShroomsForIntent,
+  suggestChannelName,
+  suggestChannelDescription,
+  getChannelInstructions,
+} from '@/lib/channelCreation/generateShrooms';
 
 const ANON_COOKIE_NAME = 'kanthink_anon_id';
 
@@ -45,12 +58,16 @@ interface GuideResult {
 }
 
 interface GuideRequest {
-  action: 'start' | 'continue' | 'workflow-options';
+  action: 'start' | 'continue' | 'workflow-options' | 'infer-intent' | 'suggest-workflow' | 'generate-shrooms';
   channelName?: string;
   choices: Record<string, string>;
   choiceLabels?: Record<string, string>;
   lastChoice?: { stepId: string; value: string; label?: string };
   purpose?: string; // For workflow-options action
+  userInput?: string; // For infer-intent action
+  intent?: string; // For suggest-workflow and generate-shrooms actions
+  columns?: string[]; // For generate-shrooms action
+  topic?: string; // For generate-shrooms action
 }
 
 // Generate workflow options based on purpose only (simplified flow)
@@ -659,6 +676,61 @@ export async function POST(request: Request) {
         // Return empty array, client will use defaults
         return NextResponse.json({ options: [] });
       }
+    }
+
+    // New action for ConversationalWelcome: infer intent from user input
+    if (action === 'infer-intent') {
+      const { userInput } = body;
+      if (!userInput) {
+        return NextResponse.json({ error: 'userInput is required' }, { status: 400 });
+      }
+
+      // This is a lightweight, non-AI operation
+      const result = inferIntent(userInput);
+
+      return NextResponse.json({
+        intent: result.intent,
+        confidence: result.confidence,
+        matchedKeywords: result.matchedKeywords,
+        label: getIntentLabel(result.intent),
+        description: getIntentDescription(result.intent),
+      });
+    }
+
+    // New action for ConversationalWelcome: get workflow suggestions for an intent
+    if (action === 'suggest-workflow') {
+      const { intent } = body;
+      if (!intent) {
+        return NextResponse.json({ error: 'intent is required' }, { status: 400 });
+      }
+
+      // This is a lightweight, non-AI operation
+      const suggestions = getWorkflowSuggestions(intent as ChannelIntent);
+
+      return NextResponse.json({
+        suggestions,
+      });
+    }
+
+    // New action for ConversationalWelcome: generate shrooms for intent
+    if (action === 'generate-shrooms') {
+      const { intent, columns, topic } = body;
+      if (!intent || !columns) {
+        return NextResponse.json({ error: 'intent and columns are required' }, { status: 400 });
+      }
+
+      // This is a lightweight, non-AI operation
+      const shrooms = getShroomsForIntent(intent as ChannelIntent, columns, topic);
+      const channelName = suggestChannelName(intent as ChannelIntent, topic);
+      const channelDescription = suggestChannelDescription(intent as ChannelIntent, topic);
+      const instructions = getChannelInstructions(intent as ChannelIntent, topic);
+
+      return NextResponse.json({
+        shrooms,
+        channelName,
+        channelDescription,
+        instructions,
+      });
     }
 
     if (action === 'continue') {

@@ -180,6 +180,7 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
         </div>
 
         {/* Actual textarea - transparent so backdrop shows through */}
+        {/* Must match backdrop text rendering exactly for cursor positioning */}
         <textarea
           ref={setRefs}
           value={localValue}
@@ -194,8 +195,12 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
             dark:focus:border-neutral-500 dark:focus:ring-neutral-500
             bg-transparent text-transparent caret-black dark:caret-white
             selection:bg-blue-500/30 selection:text-neutral-900 dark:selection:bg-blue-400/30 dark:selection:text-white
+            whitespace-pre-wrap break-words
             ${className}
           `}
+          style={{
+            wordBreak: 'break-word',
+          }}
           {...props}
         />
 

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
-import { WelcomeFlowOverlay, type WelcomeFlowResultData } from '@/app/prototypes/overlays/WelcomeFlowOverlay';
+import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
 import { GuidedQuestionnaireOverlay, type GuideResultData } from '@/app/prototypes/overlays/GuidedQuestionnaireOverlay';
 import { signInWithGoogle } from '@/lib/actions/auth';
 
@@ -35,8 +35,8 @@ export default function Home() {
     setShowWelcome(false);
   };
 
-  // Handle channel creation from the blended welcome flow
-  const handleWelcomeCreate = (result: WelcomeFlowResultData) => {
+  // Handle channel creation from the conversational welcome flow
+  const handleWelcomeCreate = (result: ConversationalWelcomeResultData) => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
     setShowWelcome(false);
 
@@ -112,7 +112,7 @@ export default function Home() {
         onCreate={handleCreateChannel}
       />
 
-      <WelcomeFlowOverlay
+      <ConversationalWelcome
         isOpen={showWelcome}
         onClose={handleWelcomeClose}
         onCreate={handleWelcomeCreate}

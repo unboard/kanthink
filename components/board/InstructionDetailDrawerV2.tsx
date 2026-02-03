@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
 import { Button, Textarea } from '@/components/ui';
@@ -55,6 +55,9 @@ export function InstructionDetailDrawerV2({
   });
   const [isEnabled, setIsEnabled] = useState(false);
 
+  // Scope state
+  const [scope, setScope] = useState<InstructionScope>('channel');
+
   const isSyncingRef = useRef(false);
   const instructionCardId = instructionCard?.id;
 
@@ -88,6 +91,7 @@ export function InstructionDetailDrawerV2({
       setTriggers(instructionCard.triggers || []);
       setSafeguards(instructionCard.safeguards || { cooldownMinutes: 5, dailyCap: 50, preventLoops: true });
       setIsEnabled(instructionCard.isEnabled || false);
+      setScope(instructionCard.scope || 'channel');
 
       setTimeout(() => { isSyncingRef.current = false; }, 0);
     }
@@ -130,6 +134,7 @@ export function InstructionDetailDrawerV2({
       triggers,
       safeguards,
       isEnabled,
+      scope,
     });
   };
 
@@ -397,6 +402,52 @@ export function InstructionDetailDrawerV2({
             </button>
             {showAdvanced && (
               <div className="mt-4 space-y-4 pl-6">
+                {/* Scope selection */}
+                <div>
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2 block">
+                    Visibility
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setScope('channel');
+                        setTimeout(() => handleSave(), 0);
+                      }}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                        scope === 'channel'
+                          ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                          : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-600'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                      </svg>
+                      This Channel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setScope('global');
+                        setTimeout(() => handleSave(), 0);
+                      }}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                        scope === 'global'
+                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                          : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-600'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.912-2.706C6.512 5.73 6.974 6 7.5 6A1.5 1.5 0 019 7.5V8a2 2 0 004 0 2 2 0 011.523-1.943A5.977 5.977 0 0116 10c0 .34-.028.675-.083 1H15a2 2 0 00-2 2v2.197A5.973 5.973 0 0110 16v-2a2 2 0 00-2-2 2 2 0 01-2-2 2 2 0 00-1.668-1.973z" clipRule="evenodd" />
+                      </svg>
+                      Global
+                    </button>
+                  </div>
+                  <p className="text-xs text-neutral-500 mt-2">
+                    {scope === 'channel'
+                      ? 'Only visible and runnable in this channel'
+                      : 'Visible in Shrooms panel and runnable on any channel'}
+                  </p>
+                </div>
+
                 {/* Automatic execution toggle */}
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input

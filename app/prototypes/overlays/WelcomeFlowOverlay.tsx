@@ -112,6 +112,17 @@ function getAIInstructions(purpose: string): string {
   return instructions[purpose] || 'Generate helpful cards based on the channel purpose.';
 }
 
+// Purpose-aware Shroom title
+function getShroomTitle(purpose: string): string {
+  const titles: Record<string, string> = {
+    learning: 'Discover Resources',
+    ideas: 'Generate Ideas',
+    projects: 'Suggest Tasks',
+    tracking: 'Find Updates',
+  };
+  return titles[purpose] || 'Generate Cards';
+}
+
 export function WelcomeFlowOverlay({
   isOpen,
   onClose,
@@ -318,7 +329,7 @@ export function WelcomeFlowOverlay({
         columns,
         instructionCards: [
           {
-            title: 'Generate Cards',
+            title: getShroomTitle(purpose),
             instructions,
             action: 'generate',
             targetColumnName: columns[0].name,
@@ -589,6 +600,16 @@ export function WelcomeFlowOverlay({
             {/* Scene: Ready */}
             {scene === 'ready' && purpose && workflow && (
               <div className="space-y-6">
+                {/* Pulse animation for shroom preview */}
+                <style>{`
+                  @keyframes shroom-pulse {
+                    0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+                    50% { box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.3); }
+                  }
+                  .shroom-pulse {
+                    animation: shroom-pulse 2s ease-in-out 3;
+                  }
+                `}</style>
                 <div className="text-center">
                   <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-green-900/30 flex items-center justify-center">
                     <svg className="w-7 h-7 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -622,6 +643,34 @@ export function WelcomeFlowOverlay({
                             </span>
                           </div>
                         ))}
+                    </div>
+                  </div>
+
+                  {/* Shroom preview */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <KanthinkIcon size={16} className="text-violet-400" />
+                      <p className="text-xs font-medium text-neutral-500 uppercase tracking-wide">Your first Shroom</p>
+                    </div>
+                    <div className="shroom-pulse rounded-lg bg-neutral-900/80 border border-neutral-700 p-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                        <span className="text-sm font-medium text-white">Generate</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-neutral-400 mb-2">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        <span>
+                          {(workflowOptions.find((w) => w.value === workflow)?.label || 'Inbox → Review → Done')
+                            .split(' → ')[0]?.trim()}
+                        </span>
+                        <span className="text-neutral-600">·</span>
+                        <span>5 cards</span>
+                      </div>
+                      <p className="text-xs text-neutral-500 italic">
+                        Click the Shrooms button to run AI actions
+                      </p>
                     </div>
                   </div>
                 </div>

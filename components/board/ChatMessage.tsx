@@ -19,6 +19,10 @@ interface ChatMessageProps {
   onActionReject?: (messageId: string, actionId: string) => void;
   onApproveAll?: (messageId: string) => void;
   onRejectAll?: (messageId: string) => void;
+  // Typewriter effect props
+  displayText?: string; // If provided, shows this instead of message.content (for typewriter)
+  isTyping?: boolean; // Shows typing cursor
+  onSkipTyping?: () => void; // Callback to skip to end
 }
 
 function formatTime(dateString: string): string {
@@ -57,6 +61,9 @@ export function ChatMessage({
   onActionReject,
   onApproveAll,
   onRejectAll,
+  displayText,
+  isTyping = false,
+  onSkipTyping,
 }: ChatMessageProps) {
   const isAI = message.type === 'ai_response';
   const isQuestion = message.type === 'question';
@@ -194,8 +201,9 @@ export function ChatMessage({
               <span className="text-xs text-neutral-400 ml-auto">Enter to save, Esc to cancel</span>
             </div>
           </div>
-        ) : message.content ? (
+        ) : (message.content || displayText) ? (
           <div
+            onClick={isTyping && onSkipTyping ? onSkipTyping : undefined}
             className={`text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-neutral dark:prose-invert max-w-none
             prose-headings:font-semibold prose-headings:text-neutral-900 dark:prose-headings:text-neutral-100
             prose-h1:text-base prose-h1:mt-3 prose-h1:mb-2
@@ -208,6 +216,7 @@ export function ChatMessage({
             prose-strong:text-neutral-900 dark:prose-strong:text-neutral-100
             prose-code:text-xs prose-code:bg-neutral-100 dark:prose-code:bg-neutral-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
             prose-pre:bg-neutral-100 dark:prose-pre:bg-neutral-800 prose-pre:text-xs
+            ${isTyping && onSkipTyping ? 'cursor-pointer' : ''}
           `}
             onDoubleClick={canEdit ? () => { setEditContent(message.content); setIsEditing(true); } : undefined}
           >
@@ -226,8 +235,11 @@ export function ChatMessage({
                 ),
               }}
             >
-              {message.content}
+              {displayText !== undefined ? displayText : message.content}
             </ReactMarkdown>
+            {isTyping && (
+              <span className="inline-block w-0.5 h-4 ml-0.5 bg-violet-500 animate-pulse align-middle" />
+            )}
           </div>
         ) : null}
 
@@ -261,8 +273,8 @@ export function ChatMessage({
           onNavigate={setTheaterIndex}
         />
 
-        {/* Smart Snippets section */}
-        {hasSmartSnippets && onActionApprove && onActionReject && (() => {
+        {/* Smart Snippets section - only show after typing completes */}
+        {hasSmartSnippets && !isTyping && onActionApprove && onActionReject && (() => {
           const pendingActions = message.proposedActions!.filter(a => a.status === 'pending');
           const hasPending = pendingActions.length > 0;
           const hasMultiplePending = pendingActions.length > 1;

@@ -160,6 +160,25 @@ body {
   animation: slide-in-left 0.2s ease-out;
 }
 
+/* Mobile bottom sheet animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.25s ease-out;
+}
+
+/* Safe area for bottom nav and bottom sheet */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

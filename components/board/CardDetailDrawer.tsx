@@ -130,7 +130,9 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
   const [isInstructionHistoryOpen, setIsInstructionHistoryOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<ActiveTab>('thread');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('thread');
+  const [showTitleDrawer, setShowTitleDrawer] = useState(false);
+  const titleDrawerInputRef = useRef<HTMLInputElement>(null);
 
   const updateCard = useStore((s) => s.updateCard);
   const deleteCard = useStore((s) => s.deleteCard);
@@ -213,18 +215,20 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
       setIsTagPickerOpen(false);
       setIsInstructionHistoryOpen(false);
       setActiveTab('thread');
+      setShowTitleDrawer(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId]);
 
-  // Auto-focus title input when drawer opens with autoFocusTitle
+  // Show title drawer when opening with autoFocusTitle (first time viewing new card)
   useEffect(() => {
-    if (isOpen && autoFocusTitle && titleInputRef.current) {
-      // Small delay to ensure drawer animation has started
+    if (isOpen && autoFocusTitle) {
+      setShowTitleDrawer(true);
+      // Focus the title drawer input after animation
       const timer = setTimeout(() => {
-        titleInputRef.current?.focus();
-        titleInputRef.current?.select();
-      }, 100);
+        titleDrawerInputRef.current?.focus();
+        titleDrawerInputRef.current?.select();
+      }, 150);
       return () => clearTimeout(timer);
     }
   }, [isOpen, autoFocusTitle]);
@@ -858,6 +862,58 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
           setIsCreatingTask(false);
         }}
       />
+
+      {/* Mini title drawer - appears on first card view */}
+      {showTitleDrawer && (
+        <div className="absolute inset-0 z-20 overflow-hidden">
+          {/* Backdrop - covers full area, behind the drawer */}
+          <div
+            className="absolute inset-0 bg-black/20 dark:bg-black/40"
+            onClick={() => setShowTitleDrawer(false)}
+          />
+          {/* Mini drawer - 20% height from bottom */}
+          <div
+            className="absolute inset-x-0 bottom-0 bg-white dark:bg-neutral-900 rounded-t-2xl"
+            style={{ height: '20%', minHeight: '160px' }}
+          >
+            <div className="flex flex-col h-full p-4">
+              {/* Handle bar */}
+              <div className="flex justify-center mb-3">
+                <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+              </div>
+
+              {/* Title input */}
+              <div className="flex-1 flex flex-col">
+                <label className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2">
+                  Give this card a name
+                </label>
+                <input
+                  ref={titleDrawerInputRef}
+                  type="text"
+                  value={title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setShowTitleDrawer(false);
+                    }
+                  }}
+                  className="w-full px-3 py-2.5 text-base text-neutral-900 dark:text-white bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent placeholder-neutral-400"
+                  placeholder="Card title"
+                />
+              </div>
+
+              {/* Done button */}
+              <button
+                onClick={() => setShowTitleDrawer(false)}
+                className="mt-3 w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Drawer>
   );
 }

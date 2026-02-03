@@ -383,13 +383,14 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
               placeholder={placeholder ?? defaultPlaceholder}
               disabled={isLoading}
               rows={1}
-              className={`chat-textarea w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none ${
+              className={`chat-textarea w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none whitespace-pre-wrap break-words ${
                 needsScroll ? 'overflow-y-auto' : 'overflow-y-hidden'
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''} ${
                 mode === 'question'
                   ? 'bg-transparent text-transparent caret-neutral-900 dark:caret-white selection:bg-violet-500/30'
                   : 'bg-transparent text-neutral-900 dark:text-white'
               }`}
+              style={{ wordBreak: 'break-word' }}
             />
 
             {/* Tooltip for keywords */}
@@ -438,6 +439,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
         <div className="flex items-center mt-1.5 ml-8">
           <div className="inline-flex items-center gap-1 rounded-md p-0.5">
             <button
+              data-mode="note"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setMode('note')}
               disabled={isLoading}
@@ -450,6 +452,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
               Note
             </button>
             <button
+              data-mode="question"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setMode('question')}
               disabled={isLoading}

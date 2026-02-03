@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, ScheduleInterval, EventTriggerType, ThresholdOperator } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, ScheduleInterval, EventTriggerType, ThresholdOperator, InstructionScope } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { Drawer } from '@/components/ui/Drawer';
@@ -64,6 +64,9 @@ export function InstructionDetailDrawer({
   });
   const [addingTriggerType, setAddingTriggerType] = useState<'scheduled' | 'event' | 'threshold' | null>(null);
 
+  // Scope state
+  const [scope, setScope] = useState<InstructionScope>('channel');
+
   const [isRunning, setIsRunning] = useState(false);
 
   // Get the latest run for undo
@@ -113,6 +116,9 @@ export function InstructionDetailDrawer({
       });
       setIsEnabled(instructionCard.isEnabled || false);
 
+      // Sync scope
+      setScope(instructionCard.scope || 'channel');
+
       setTimeout(() => { isSyncingRef.current = false; }, 0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,6 +136,7 @@ export function InstructionDetailDrawer({
     triggers?: AutomaticTrigger[];
     safeguards?: AutomaticSafeguards;
     isEnabled?: boolean;
+    scope?: InstructionScope;
   }) => {
     if (!instructionCard) return;
 
@@ -155,6 +162,7 @@ export function InstructionDetailDrawer({
     const effectiveTriggers = overrides?.triggers ?? triggers;
     const effectiveSafeguards = overrides?.safeguards ?? safeguards;
     const effectiveIsEnabled = overrides?.isEnabled ?? isEnabled;
+    const effectiveScope = overrides?.scope ?? scope;
 
     updateInstructionCard(instructionCard.id, {
       title,
@@ -167,6 +175,7 @@ export function InstructionDetailDrawer({
       triggers: effectiveTriggers,
       safeguards: effectiveSafeguards,
       isEnabled: effectiveIsEnabled,
+      scope: effectiveScope,
     });
   };
 
@@ -724,6 +733,55 @@ export function InstructionDetailDrawer({
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Scope Section */}
+            <div className="mt-4 p-4 bg-neutral-100 dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-700/50">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-4 h-4 text-neutral-500" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.912-2.706C6.512 5.73 6.974 6 7.5 6A1.5 1.5 0 019 7.5V8a2 2 0 004 0 2 2 0 011.523-1.943A5.977 5.977 0 0116 10c0 .34-.028.675-.083 1H15a2 2 0 00-2 2v2.197A5.973 5.973 0 0110 16v-2a2 2 0 00-2-2 2 2 0 01-2-2 2 2 0 00-1.668-1.973z" clipRule="evenodd" />
+                </svg>
+                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Visibility</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setScope('channel');
+                    handleSave({ scope: 'channel' });
+                  }}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                    scope === 'channel'
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                  </svg>
+                  This Channel
+                </button>
+                <button
+                  onClick={() => {
+                    setScope('global');
+                    handleSave({ scope: 'global' });
+                  }}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                    scope === 'global'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 border border-neutral-200 dark:border-neutral-700'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.912-2.706C6.512 5.73 6.974 6 7.5 6A1.5 1.5 0 019 7.5V8a2 2 0 004 0 2 2 0 011.523-1.943A5.977 5.977 0 0116 10c0 .34-.028.675-.083 1H15a2 2 0 00-2 2v2.197A5.973 5.973 0 0110 16v-2a2 2 0 00-2-2 2 2 0 01-2-2 2 2 0 00-1.668-1.973z" clipRule="evenodd" />
+                  </svg>
+                  Global
+                </button>
+              </div>
+              <p className="text-xs text-neutral-500 mt-2">
+                {scope === 'channel'
+                  ? 'Only visible and runnable in this channel'
+                  : 'Visible in Shrooms panel and runnable on any channel'}
+              </p>
             </div>
           </div>
         </div>
