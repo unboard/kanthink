@@ -41,7 +41,8 @@ type InputMode = 'note' | 'question';
 const MAX_HEIGHT = 140;
 
 // Hook to handle mobile keyboard visibility
-function useKeyboardOffset() {
+// Returns the keyboard height so parent components can position inputs above it
+export function useKeyboardOffset() {
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [isFocused, setIsFocused] = useState(false);
 
@@ -51,11 +52,19 @@ function useKeyboardOffset() {
     const viewport = window.visualViewport;
 
     const handleResize = () => {
-      if (!isFocused) return;
-      // Calculate how much the viewport has shrunk (keyboard height)
+      // Always calculate offset when focused OR when there's a meaningful keyboard height
+      // This handles cases where resize fires slightly before/after focus
       const offsetFromBottom = window.innerHeight - viewport.height - viewport.offsetTop;
-      setKeyboardOffset(Math.max(0, offsetFromBottom));
+      const offset = Math.max(0, offsetFromBottom);
+
+      // Only update if we're focused OR if we need to reset
+      if (isFocused || offset === 0) {
+        setKeyboardOffset(offset);
+      }
     };
+
+    // Check immediately in case keyboard is already open
+    handleResize();
 
     viewport.addEventListener('resize', handleResize);
     viewport.addEventListener('scroll', handleResize);
@@ -66,10 +75,22 @@ function useKeyboardOffset() {
     };
   }, [isFocused]);
 
-  const onFocus = useCallback(() => setIsFocused(true), []);
+  const onFocus = useCallback(() => {
+    setIsFocused(true);
+    // Re-check keyboard offset on focus
+    if (window.visualViewport) {
+      const viewport = window.visualViewport;
+      const offsetFromBottom = window.innerHeight - viewport.height - viewport.offsetTop;
+      setKeyboardOffset(Math.max(0, offsetFromBottom));
+    }
+  }, []);
+
   const onBlur = useCallback(() => {
-    setIsFocused(false);
-    setKeyboardOffset(0);
+    // Small delay before resetting to handle focus transitions
+    setTimeout(() => {
+      setIsFocused(false);
+      setKeyboardOffset(0);
+    }, 100);
   }, []);
 
   return { keyboardOffset, isFocused, onFocus, onBlur };
@@ -101,7 +122,8 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
   const inputWrapperRef = useRef<HTMLDivElement>(null);
 
   const { uploadFile, isUploading, error: uploadError, clearError } = useImageUpload({ cardId });
-  const { keyboardOffset, isFocused, onFocus, onBlur } = useKeyboardOffset();
+  // Use keyboard offset hook for focus/blur handlers (parent handles positioning)
+  const { isFocused, onFocus, onBlur } = useKeyboardOffset();
 
   // Sync scroll between textarea and backdrop (for keyword highlighting)
   const handleScroll = useCallback(() => {
@@ -274,17 +296,13 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId }: 
     ? 'Add a note...'
     : 'Ask Kan a question...';
 
-  // On mobile, when keyboard is visible, apply offset to keep input above it
-  const mobileKeyboardStyle = keyboardOffset > 0 ? {
-    transform: `translateY(-${keyboardOffset}px)`,
-    transition: 'transform 0.1s ease-out',
-  } : undefined;
+  // Note: Keyboard positioning is now handled by the parent component (CardChat)
+  // which adjusts the `bottom` position of the input wrapper
 
   return (
     <div
       ref={containerRef}
       className={`px-3 pb-3 pt-2 ${isFocused ? 'relative z-50 bg-white dark:bg-neutral-900' : ''}`}
-      style={mobileKeyboardStyle}
     >
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2.5">
         {/* Staged images preview */}

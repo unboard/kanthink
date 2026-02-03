@@ -688,13 +688,16 @@ export function MobileBottomSheet() {
         onClick={handleBackdropClick}
       />
 
-      {/* Sheet - use capture phase to prevent backdrop from seeing interaction */}
+      {/* Sheet - pointer-events disabled until animation starts to prevent tap-through */}
       <div
         ref={sheetRef}
         className={`absolute left-0 right-0 bottom-0 bg-white dark:bg-neutral-900 rounded-t-3xl shadow-2xl transition-transform duration-300 ease-out ${
           isAnimating ? 'translate-y-0' : 'translate-y-full'
         }`}
-        style={{ maxHeight: activePanel ? PANEL_CONFIG[activePanel]?.height || '85vh' : '85vh' }}
+        style={{
+          maxHeight: activePanel ? PANEL_CONFIG[activePanel]?.height || '85vh' : '85vh',
+          pointerEvents: isAnimating ? 'auto' : 'none',
+        }}
         onPointerDownCapture={(e) => e.stopPropagation()}
       >
         {/* Drag handle - ONLY this area handles swipe-to-dismiss */}
@@ -741,15 +744,15 @@ export function MobileBottomSheet() {
         {/* Divider */}
         <div className="h-px bg-neutral-200 dark:bg-neutral-800 mx-5" />
 
-        {/* Content */}
+        {/* Content - only render when animation has started to prevent tap-through */}
         <div
           className="overflow-y-auto overscroll-contain"
           style={{ maxHeight: `calc(${activePanel ? PANEL_CONFIG[activePanel]?.height || '85vh' : '85vh'} - 120px)` }}
         >
-          {activePanel === 'channels' && <ChannelsList onClose={closePanel} />}
-          {activePanel === 'shrooms' && <ShroomsList onClose={closePanel} />}
-          {activePanel === 'account' && <AccountContent onClose={closePanel} />}
-          {activePanel === 'settings' && <SettingsContent onClose={closePanel} />}
+          {isAnimating && activePanel === 'channels' && <ChannelsList onClose={closePanel} />}
+          {isAnimating && activePanel === 'shrooms' && <ShroomsList onClose={closePanel} />}
+          {isAnimating && activePanel === 'account' && <AccountContent onClose={closePanel} />}
+          {isAnimating && activePanel === 'settings' && <SettingsContent onClose={closePanel} />}
         </div>
 
         {/* Safe area spacer for iPhone home indicator */}

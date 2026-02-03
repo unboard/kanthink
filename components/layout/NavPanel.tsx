@@ -58,21 +58,20 @@ export function NavPanel({ panelKey, title, width = 'sm', children }: NavPanelPr
     };
   }, [isOpen, isMobile, closePanel]);
 
-  // On mobile, panels are rendered inside MobileNavDrawer
-  if (isMobile) {
-    return null;
-  }
-
+  // On mobile, panels are rendered inside MobileBottomSheet
+  // Use CSS hidden class to avoid race conditions with isMobile state
+  // (state can be briefly false during hydration, causing desktop panel to flash)
   return (
     <div
       ref={panelRef}
       className={`
+        hidden md:block
         fixed left-14 top-0 h-full z-40
         bg-neutral-50 dark:bg-neutral-900
         border-r border-neutral-200 dark:border-neutral-800
         transition-all duration-200 ease-in-out
         ${widthClasses[width]}
-        ${isOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'}
+        ${isOpen && !isMobile ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'}
       `}
     >
       <div className="flex flex-col h-full">

@@ -5,7 +5,7 @@ import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagA
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { ChatMessage } from './ChatMessage';
-import { ChatInput } from './ChatInput';
+import { ChatInput, useKeyboardOffset } from './ChatInput';
 import { useTypewriter } from '@/lib/hooks/useTypewriter';
 
 interface CardChatProps {
@@ -21,6 +21,9 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const [aiError, setAIError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+
+  // Track keyboard height for mobile input positioning
+  const { keyboardOffset } = useKeyboardOffset();
 
   const addMessage = useStore((s) => s.addMessage);
   const addAIResponse = useStore((s) => s.addAIResponse);
@@ -481,7 +484,11 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       </div>
 
       {/* Input - absolute positioned at bottom with gradient fade */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8">
+      {/* On mobile, position above keyboard using keyboardOffset */}
+      <div
+        className="absolute left-0 right-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
+        style={{ bottom: keyboardOffset > 0 ? `${keyboardOffset}px` : 0 }}
+      >
         <ChatInput onSubmit={handleSubmit} isLoading={isAILoading} cardId={card.id} />
       </div>
     </div>
