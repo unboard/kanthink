@@ -18,6 +18,7 @@ interface SettingsState {
   theme: Theme;
   questionFrequency: QuestionFrequency;
   shroomsExplainerDismissed: boolean;
+  shroomsButtonHighlighted: boolean;
   _hasHydrated: boolean;
   _serverHasOwnerKey: boolean;
   _isSignedIn: boolean;
@@ -28,6 +29,7 @@ interface SettingsState {
   setTheme: (theme: Theme) => void;
   setQuestionFrequency: (frequency: QuestionFrequency) => void;
   setShroomsExplainerDismissed: (dismissed: boolean) => void;
+  setShroomsButtonHighlighted: (highlighted: boolean) => void;
   setHasHydrated: (state: boolean) => void;
   setServerHasOwnerKey: (has: boolean) => void;
   setIsSignedIn: (signedIn: boolean) => void;
@@ -48,6 +50,7 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'spores',
       questionFrequency: 'light',
       shroomsExplainerDismissed: false,
+      shroomsButtonHighlighted: false,
       _hasHydrated: false,
       _serverHasOwnerKey: false,
       _isSignedIn: false,
@@ -65,6 +68,8 @@ export const useSettingsStore = create<SettingsState>()(
       setQuestionFrequency: (frequency) => set({ questionFrequency: frequency }),
 
       setShroomsExplainerDismissed: (dismissed) => set({ shroomsExplainerDismissed: dismissed }),
+
+      setShroomsButtonHighlighted: (highlighted) => set({ shroomsButtonHighlighted: highlighted }),
 
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 
@@ -89,6 +94,7 @@ export const useSettingsStore = create<SettingsState>()(
         theme: state.theme,
         questionFrequency: state.questionFrequency,
         shroomsExplainerDismissed: state.shroomsExplainerDismissed,
+        shroomsButtonHighlighted: state.shroomsButtonHighlighted,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
