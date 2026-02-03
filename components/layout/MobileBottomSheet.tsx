@@ -10,7 +10,7 @@ import {
   DragOverlay,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -122,16 +122,17 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [activeDragChannelId, setActiveDragChannelId] = useState<string | null>(null);
 
-  // Same sensors as task reordering in CardDetailDrawer
+  // Use MouseSensor + TouchSensor (NOT PointerSensor) per CLAUDE.md guidelines
+  // PointerSensor breaks mobile drag-drop by hijacking touch events
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: {
         distance: 8,
       },
     }),
     useSensor(TouchSensor, {
       activationConstraint: {
-        delay: 200,
+        delay: 250,
         tolerance: 8,
       },
     }),
@@ -643,15 +644,13 @@ export function MobileBottomSheet() {
           pointerEvents: isAnimating ? 'auto' : 'none',
         }}
       >
-        {/* Drag handle - ONLY this area handles swipe-to-dismiss */}
+        {/* Swipe-to-dismiss touch area (no visible drag handle) */}
         <div
-          className="flex justify-center pt-3 pb-1 cursor-grab"
+          className="pt-3 pb-1"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-        >
-          <div className="w-12 h-1.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-        </div>
+        />
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3">
