@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { folders, userChannelOrg } from '@/lib/db/schema'
-import { eq, and, gte, lte, gt, lt, sql, asc } from 'drizzle-orm'
+import { eq, and, gte, lte, gt, lt, sql, asc, isNull } from 'drizzle-orm'
 
 /**
  * POST /api/organization
@@ -84,7 +84,7 @@ async function moveChannelToFolder(
       eq(userChannelOrg.userId, userId),
       targetFolderId
         ? eq(userChannelOrg.folderId, targetFolderId)
-        : eq(userChannelOrg.folderId, null as unknown as string)
+        : isNull(userChannelOrg.folderId)
     ),
     orderBy: [asc(userChannelOrg.position)],
   })
@@ -128,7 +128,7 @@ async function reorderChannelInFolder(
       eq(userChannelOrg.userId, userId),
       folderId
         ? eq(userChannelOrg.folderId, folderId)
-        : eq(userChannelOrg.folderId, null as unknown as string)
+        : isNull(userChannelOrg.folderId)
     ),
     orderBy: [asc(userChannelOrg.position)],
   })
@@ -150,7 +150,7 @@ async function reorderChannelInFolder(
           eq(userChannelOrg.userId, userId),
           folderId
             ? eq(userChannelOrg.folderId, folderId)
-            : eq(userChannelOrg.folderId, null as unknown as string),
+            : isNull(userChannelOrg.folderId),
           gt(userChannelOrg.position, fromIndex),
           lte(userChannelOrg.position, toIndex)
         )
@@ -165,7 +165,7 @@ async function reorderChannelInFolder(
           eq(userChannelOrg.userId, userId),
           folderId
             ? eq(userChannelOrg.folderId, folderId)
-            : eq(userChannelOrg.folderId, null as unknown as string),
+            : isNull(userChannelOrg.folderId),
           gte(userChannelOrg.position, toIndex),
           lt(userChannelOrg.position, fromIndex)
         )
@@ -200,7 +200,7 @@ async function reorderChannels(
         and(
           eq(userChannelOrg.userId, userId),
           eq(userChannelOrg.channelId, channelOrder[i]),
-          eq(userChannelOrg.folderId, null as unknown as string)
+          isNull(userChannelOrg.folderId)
         )
       )
   }
