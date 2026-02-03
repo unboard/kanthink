@@ -309,7 +309,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
   return (
     <div
       ref={containerRef}
-      className={`px-3 pb-3 pt-2 ${isFocused ? 'relative z-50 bg-white dark:bg-neutral-900' : ''}`}
+      className={`px-3 pt-2 ${isFocused ? 'pb-1 relative z-50 bg-white dark:bg-neutral-900' : 'pb-3'}`}
     >
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2.5">
         {/* Staged images preview */}

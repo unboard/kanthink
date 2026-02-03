@@ -486,9 +486,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
 
       {/* Input - absolute positioned at bottom with gradient fade */}
       {/* On mobile, position above keyboard using keyboardOffset */}
+      {/* Subtract ~60px to account for the tab bar below this container (keyboardOffset is from screen bottom) */}
       <div
         className="absolute left-0 right-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
-        style={{ bottom: keyboardOffset > 0 ? `${keyboardOffset}px` : 0 }}
+        style={{ bottom: keyboardOffset > 0 ? `${Math.max(0, keyboardOffset - 60)}px` : 0 }}
       >
         <ChatInput
           onSubmit={handleSubmit}
