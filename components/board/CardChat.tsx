@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
@@ -48,10 +48,26 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   // Track the latest AI message for typewriter effect
   const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
 
+  // Track messages that have already been displayed (to avoid replaying on re-mount)
+  const seenMessagesRef = useRef<Set<string>>(new Set());
+
+  // On mount, mark all existing messages as "seen" so we don't replay typewriter
+  useEffect(() => {
+    messages.forEach(m => seenMessagesRef.current.add(m.id));
+  }, []); // Only run on mount
+
   // Find the message being typed
   const typingMessage = typingMessageId
     ? messages.find(m => m.id === typingMessageId)
     : null;
+
+  // Callback to mark typing as complete
+  const handleTypingComplete = useCallback(() => {
+    if (typingMessageId) {
+      seenMessagesRef.current.add(typingMessageId);
+    }
+    setTypingMessageId(null);
+  }, [typingMessageId]);
 
   // Typewriter effect for the current AI message
   const { displayedText, isTyping, skipToEnd } = useTypewriter(
@@ -59,19 +75,19 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
     {
       speed: 80,
       startDelay: 100,
-      onComplete: () => setTypingMessageId(null),
+      onComplete: handleTypingComplete,
     }
   );
 
-  // When a new AI response is added, start typing it
+  // When a new AI response is added, start typing it (only if not already seen)
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.type === 'ai_response' && lastMessage.id !== typingMessageId) {
-      // Check if this is a genuinely new message (not just a re-render)
-      const isNewMessage = !typingMessageId || !messages.some(m => m.id === typingMessageId);
-      if (isNewMessage) {
-        setTypingMessageId(lastMessage.id);
-      }
+    if (
+      lastMessage?.type === 'ai_response' &&
+      lastMessage.id !== typingMessageId &&
+      !seenMessagesRef.current.has(lastMessage.id)
+    ) {
+      setTypingMessageId(lastMessage.id);
     }
   }, [messages, typingMessageId]);
 
