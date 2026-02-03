@@ -605,6 +605,8 @@ export function MobileBottomSheet() {
   const { activePanel, closePanel } = useNav();
   const [isVisible, setIsVisible] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
+  // Track when interaction is safe - prevents accidental taps during open animation
+  const [isInteractionReady, setIsInteractionReady] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef(0);
   const currentYRef = useRef(0);
@@ -613,14 +615,25 @@ export function MobileBottomSheet() {
   useEffect(() => {
     if (activePanel) {
       setIsVisible(true);
-      // Small delay to ensure DOM is ready for animation
+      setIsInteractionReady(false); // Block interaction until animation completes
+
+      // Start animation after DOM is ready
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           setIsAnimating(true);
         });
       });
+
+      // Allow interaction only after animation completes (300ms)
+      // This prevents accidental channel selection from the opening tap
+      const interactionTimer = setTimeout(() => {
+        setIsInteractionReady(true);
+      }, 350); // Slightly longer than 300ms animation
+
+      return () => clearTimeout(interactionTimer);
     } else {
       setIsAnimating(false);
+      setIsInteractionReady(false);
       const timer = setTimeout(() => setIsVisible(false), 300);
       return () => clearTimeout(timer);
     }
@@ -744,10 +757,14 @@ export function MobileBottomSheet() {
         {/* Divider */}
         <div className="h-px bg-neutral-200 dark:bg-neutral-800 mx-5" />
 
-        {/* Content - only render when animation has started to prevent tap-through */}
+        {/* Content - render when animating, but block interaction until animation completes */}
+        {/* This prevents accidental channel selection from the tap that opened the sheet */}
         <div
           className="overflow-y-auto overscroll-contain"
-          style={{ maxHeight: `calc(${activePanel ? PANEL_CONFIG[activePanel]?.height || '85vh' : '85vh'} - 120px)` }}
+          style={{
+            maxHeight: `calc(${activePanel ? PANEL_CONFIG[activePanel]?.height || '85vh' : '85vh'} - 120px)`,
+            pointerEvents: isInteractionReady ? 'auto' : 'none',
+          }}
         >
           {isAnimating && activePanel === 'channels' && <ChannelsList onClose={closePanel} />}
           {isAnimating && activePanel === 'shrooms' && <ShroomsList onClose={closePanel} />}
