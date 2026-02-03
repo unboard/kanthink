@@ -642,7 +642,6 @@ export function MobileBottomSheet() {
           maxHeight: activePanel ? PANEL_CONFIG[activePanel]?.height || '85vh' : '85vh',
           pointerEvents: isAnimating ? 'auto' : 'none',
         }}
-        onPointerDownCapture={(e) => e.stopPropagation()}
       >
         {/* Drag handle - ONLY this area handles swipe-to-dismiss */}
         <div
