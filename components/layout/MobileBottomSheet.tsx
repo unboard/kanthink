@@ -27,7 +27,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useNav } from '@/components/providers/NavProvider';
 import { useStore } from '@/lib/store';
-import { useSettingsStore, type Theme } from '@/lib/settingsStore';
+import { useSettingsStore } from '@/lib/settingsStore';
 import { Button } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { signInWithGoogle } from '@/lib/actions/auth';
@@ -575,25 +575,27 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Sticky footer with action buttons */}
-        <div className="flex-shrink-0 sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-4 space-y-2">
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white font-medium transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Channel
-          </button>
-          <button
-            onClick={() => setIsCreatingFolder(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-medium transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-            </svg>
-            New Folder
-          </button>
+        <div className="flex-shrink-0 sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white font-medium transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Channel
+            </button>
+            <button
+              onClick={() => setIsCreatingFolder(true)}
+              className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-400 transition-colors"
+              title="New Folder"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -838,29 +840,17 @@ function AccountContent({ onClose }: { onClose: () => void }) {
 }
 
 function SettingsContent({ onClose }: { onClose: () => void }) {
-  const theme = useSettingsStore((s) => s.theme);
-  const setTheme = useSettingsStore((s) => s.setTheme);
+  // Theme selection temporarily disabled - only spores theme available
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 p-6">
-        {/* Theme selector */}
+        {/* Theme info - selection disabled for now */}
         <div className="mb-8">
           <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Theme</p>
-          <div className="grid grid-cols-3 gap-3">
-            {(['spores', 'stars', 'terminal'] as Theme[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTheme(t)}
-                className={`py-4 px-3 text-sm font-medium rounded-xl border-2 transition-all ${
-                  theme === t
-                    ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300'
-                    : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 active:bg-neutral-100 dark:active:bg-neutral-800'
-                }`}
-              >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-              </button>
-            ))}
+          <div className="py-4 px-4 rounded-xl border-2 border-violet-500 bg-violet-50 dark:bg-violet-900/30">
+            <p className="text-sm font-medium text-violet-700 dark:text-violet-300">Spores</p>
+            <p className="text-xs text-neutral-500 mt-1">More themes coming soon</p>
           </div>
         </div>
       </div>
