@@ -30,6 +30,7 @@ import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
 import { CardChat } from './CardChat';
 import { TagPicker, getTagStyles } from './TagPicker';
+import { useKeyboardOffset } from './ChatInput';
 
 interface SortableTaskItemProps {
   task: Task;
@@ -133,6 +134,9 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   const [activeTab, setActiveTab] = useState<ActiveTab>('thread');
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const titleDrawerInputRef = useRef<HTMLInputElement>(null);
+
+  // Track keyboard height for mobile title drawer positioning
+  const { keyboardOffset, onFocus: handleKeyboardFocus, onBlur: handleKeyboardBlur } = useKeyboardOffset();
 
   const updateCard = useStore((s) => s.updateCard);
   const deleteCard = useStore((s) => s.deleteCard);
@@ -871,10 +875,14 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
             className="absolute inset-0 bg-black/20 dark:bg-black/40"
             onClick={() => setShowTitleDrawer(false)}
           />
-          {/* Mini drawer - 20% height from bottom */}
+          {/* Mini drawer - positioned above keyboard on mobile */}
           <div
-            className="absolute inset-x-0 bottom-0 bg-white dark:bg-neutral-900 rounded-t-2xl"
-            style={{ height: '20%', minHeight: '160px' }}
+            className="absolute inset-x-0 bg-white dark:bg-neutral-900 rounded-t-2xl transition-[bottom] duration-100"
+            style={{
+              bottom: keyboardOffset > 0 ? `${keyboardOffset}px` : 0,
+              minHeight: '160px',
+              maxHeight: '50%'
+            }}
           >
             <div className="flex flex-col h-full p-4">
               {/* Handle bar */}
@@ -892,6 +900,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
                   type="text"
                   value={title}
                   onChange={(e) => handleTitleChange(e.target.value)}
+                  onFocus={handleKeyboardFocus}
+                  onBlur={handleKeyboardBlur}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
