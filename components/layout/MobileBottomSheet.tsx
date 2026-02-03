@@ -5,26 +5,6 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  KeyboardSensor,
-  MouseSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragEndEvent,
-  type DragOverEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { useNav } from '@/components/providers/NavProvider';
 import { useStore } from '@/lib/store';
 import { useSettingsStore, type Theme } from '@/lib/settingsStore';
@@ -34,130 +14,74 @@ import { signInWithGoogle } from '@/lib/actions/auth';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
 import type { Channel, Folder } from '@/lib/types';
 
-// Prefixes to distinguish item types in dnd-kit
-const CHANNEL_PREFIX = 'channel:';
-const FOLDER_PREFIX = 'folder:';
-
 // ============================================
 // CONTENT COMPONENTS
 // ============================================
 
 // ============================================
-// DRAGGABLE COMPONENTS FOR CHANNELS
+// SIMPLE CHANNEL ITEM (no drag-and-drop for mobile)
 // ============================================
 
-interface DraggableChannelProps {
+interface ChannelItemProps {
   channel: Channel;
   isActive: boolean;
-  isOverlay?: boolean;
-  onNavigate?: () => void;
+  onNavigate: () => void;
 }
 
-function DraggableChannel({ channel, isActive, isOverlay, onNavigate }: DraggableChannelProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: `${CHANNEL_PREFIX}${channel.id}` });
+function ChannelItem({ channel, isActive, onNavigate }: ChannelItemProps) {
+  const router = useRouter();
 
-  // CRITICAL: style must be on the same element as setNodeRef, attributes, listeners
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.3 : 1,
+  const handleClick = () => {
+    onNavigate();
+    // Navigate after closing to feel snappier
+    setTimeout(() => {
+      router.push(`/channel/${channel.id}`);
+    }, 50);
   };
 
-  if (isOverlay) {
-    return (
-      <div className="flex items-center rounded-xl bg-violet-100 dark:bg-violet-800 px-4 py-3 text-sm text-violet-900 dark:text-white shadow-xl border-2 border-violet-300 dark:border-violet-600">
-        {channel.name}
-      </div>
-    );
-  }
-
-  // CRITICAL: ALL sortable props must be on the SAME element (ref, style, attributes, listeners)
-  // Navigation is handled by Link inside with stopPropagation
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
+    <button
+      type="button"
+      onClick={handleClick}
       className={`
-        relative flex items-center rounded-xl text-sm transition-colors select-none
-        cursor-grab active:cursor-grabbing
-        ${isDragging ? 'touch-none' : 'touch-manipulation'}
+        w-full text-left px-4 py-3 rounded-xl text-sm transition-colors
         ${isActive
-          ? 'bg-violet-100 dark:bg-violet-900/40'
-          : 'bg-white dark:bg-neutral-800/50 active:bg-neutral-100 dark:active:bg-neutral-700'
+          ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-medium'
+          : 'text-neutral-800 dark:text-neutral-200 active:bg-neutral-100 dark:active:bg-neutral-800'
         }
       `}
     >
-      {/* Link handles navigation - stopPropagation prevents triggering drag */}
-      <Link
-        href={`/channel/${channel.id}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onNavigate?.();
-        }}
-        className={`
-          flex-1 block px-4 py-3 truncate
-          ${isActive
-            ? 'text-violet-700 dark:text-violet-300 font-medium'
-            : 'text-neutral-800 dark:text-neutral-200'
-          }
-        `}
-      >
-        {channel.name}
-      </Link>
-    </div>
+      {channel.name}
+    </button>
   );
 }
 
-interface DraggableFolderProps {
+// ============================================
+// SIMPLE FOLDER ITEM (no drag-and-drop for mobile)
+// ============================================
+
+interface FolderItemProps {
   folder: Folder;
   channels: Record<string, Channel>;
   pathname: string;
   onToggle: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
-  isOver?: boolean;
-  isOverlay?: boolean;
-  onNavigate?: () => void;
+  onNavigate: () => void;
 }
 
-function DraggableFolder({
+function FolderItem({
   folder,
   channels,
   pathname,
   onToggle,
   onRename,
   onDelete,
-  isOver,
-  isOverlay,
   onNavigate,
-}: DraggableFolderProps) {
+}: FolderItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(folder.name);
   const [showMenu, setShowMenu] = useState(false);
-
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: `${FOLDER_PREFIX}${folder.id}` });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.3 : 1,
-  };
 
   const folderChannels = folder.channelIds
     .map((id) => channels[id])
@@ -170,37 +94,12 @@ function DraggableFolder({
     setIsEditing(false);
   };
 
-  if (isOverlay) {
-    return (
-      <div className="flex items-center rounded-xl bg-blue-100 dark:bg-blue-800 px-4 py-3 text-sm text-blue-900 dark:text-white shadow-xl border-2 border-blue-300 dark:border-blue-600">
-        <svg className="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-        </svg>
-        {folder.name}
-      </div>
-    );
-  }
-
-  const channelIds = folderChannels.map((c) => `${CHANNEL_PREFIX}${c.id}`);
-
-  // CRITICAL: ALL sortable props on the same outer element
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className={`
-        mb-2 rounded-xl transition-colors select-none cursor-grab active:cursor-grabbing
-        ${isDragging ? 'touch-none opacity-30' : 'touch-manipulation'}
-        ${isOver ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-dashed border-blue-400' : 'bg-neutral-100 dark:bg-neutral-800'}
-      `}
-    >
-      <div className="flex items-center">
-        {/* Collapse toggle - stopPropagation to prevent drag */}
+    <div className="mb-2">
+      <div className="flex items-center rounded-xl bg-neutral-100 dark:bg-neutral-800 px-1">
+        {/* Collapse toggle */}
         <button
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onToggle}
           className="p-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
         >
           <svg
@@ -222,7 +121,6 @@ function DraggableFolder({
             type="text"
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
-            onPointerDown={(e) => e.stopPropagation()}
             onBlur={handleRename}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleRename();
@@ -239,8 +137,7 @@ function DraggableFolder({
 
         <div className="relative">
           <button
-            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
-            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setShowMenu(!showMenu)}
             className="p-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -270,21 +167,19 @@ function DraggableFolder({
       </div>
 
       {!folder.isCollapsed && (
-        <div className="ml-4 mt-1 space-y-1">
-          <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>
-            {folderChannels.length === 0 ? (
-              <div className="px-4 py-2 text-xs text-neutral-400 italic">Drop channels here</div>
-            ) : (
-              folderChannels.map((channel) => (
-                <DraggableChannel
-                  key={channel.id}
-                  channel={channel}
-                  isActive={pathname === `/channel/${channel.id}`}
-                  onNavigate={onNavigate}
-                />
-              ))
-            )}
-          </SortableContext>
+        <div className="ml-6 mt-1 space-y-1">
+          {folderChannels.length === 0 ? (
+            <div className="px-4 py-2 text-xs text-neutral-400 italic">No channels</div>
+          ) : (
+            folderChannels.map((channel) => (
+              <ChannelItem
+                key={channel.id}
+                channel={channel}
+                isActive={pathname === `/channel/${channel.id}`}
+                onNavigate={onNavigate}
+              />
+            ))
+          )}
         </div>
       )}
     </div>
@@ -292,10 +187,10 @@ function DraggableFolder({
 }
 
 // ============================================
-// CHANNELS LIST WITH DND
+// SIMPLE CHANNELS LIST (no drag-and-drop for mobile)
 // ============================================
 
-function ChannelsList({ onClose, onDragStateChange }: { onClose: () => void; onDragStateChange?: (isDragging: boolean) => void }) {
+function ChannelsList({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const channels = useStore((s) => s.channels);
@@ -308,25 +203,11 @@ function ChannelsList({ onClose, onDragStateChange }: { onClose: () => void; onD
   const updateFolder = useStore((s) => s.updateFolder);
   const deleteFolder = useStore((s) => s.deleteFolder);
   const toggleFolderCollapse = useStore((s) => s.toggleFolderCollapse);
-  const moveChannelToFolder = useStore((s) => s.moveChannelToFolder);
-  const reorderChannels = useStore((s) => s.reorderChannels);
-  const reorderFolders = useStore((s) => s.reorderFolders);
-  const reorderChannelInFolder = useStore((s) => s.reorderChannelInFolder);
   const hasHydrated = useStore((s) => s._hasHydrated);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
-
-  // CRITICAL: Use MouseSensor + TouchSensor, NOT PointerSensor
-  // Tolerance of 8 matches Board.tsx for consistent behavior
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
 
   const handleCreateFolder = () => {
     if (newFolderName.trim()) {
@@ -338,103 +219,6 @@ function ChannelsList({ onClose, onDragStateChange }: { onClose: () => void; onD
 
   const orderedFolders = folderOrder.map((id) => folders[id]).filter(Boolean);
   const rootChannels = channelOrder.map((id) => channels[id]).filter((c) => c && c.status !== 'archived');
-
-  const allSortableIds = [
-    ...folderOrder.map((id) => `${FOLDER_PREFIX}${id}`),
-    ...channelOrder.map((id) => `${CHANNEL_PREFIX}${id}`),
-  ];
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-    onDragStateChange?.(true);
-  };
-
-  const handleDragOver = (event: DragOverEvent) => {
-    const { over } = event;
-    setOverId(over?.id as string | null);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-    setOverId(null);
-    onDragStateChange?.(false);
-
-    if (!over || active.id === over.id) return;
-
-    const activeIdStr = active.id as string;
-    const overIdStr = over.id as string;
-
-    const isActiveChannel = activeIdStr.startsWith(CHANNEL_PREFIX);
-    const isActiveFolder = activeIdStr.startsWith(FOLDER_PREFIX);
-    const isOverChannel = overIdStr.startsWith(CHANNEL_PREFIX);
-    const isOverFolder = overIdStr.startsWith(FOLDER_PREFIX);
-
-    const activeRealId = activeIdStr.replace(CHANNEL_PREFIX, '').replace(FOLDER_PREFIX, '');
-    const overRealId = overIdStr.replace(CHANNEL_PREFIX, '').replace(FOLDER_PREFIX, '');
-
-    const findChannelFolder = (channelId: string): string | null => {
-      for (const folder of Object.values(folders)) {
-        if (folder.channelIds.includes(channelId)) return folder.id;
-      }
-      return null;
-    };
-
-    const overChannelFolder = isOverChannel ? findChannelFolder(overRealId) : null;
-
-    if (isActiveChannel) {
-      const activeFolder = findChannelFolder(activeRealId);
-
-      if (isOverFolder) {
-        moveChannelToFolder(activeRealId, overRealId);
-      } else if (isOverChannel) {
-        if (activeFolder === overChannelFolder) {
-          if (activeFolder) {
-            const folder = folders[activeFolder];
-            const oldIndex = folder.channelIds.indexOf(activeRealId);
-            const newIndex = folder.channelIds.indexOf(overRealId);
-            if (oldIndex !== -1 && newIndex !== -1) {
-              reorderChannelInFolder(activeFolder, oldIndex, newIndex);
-            }
-          } else {
-            const oldIndex = channelOrder.indexOf(activeRealId);
-            const newIndex = channelOrder.indexOf(overRealId);
-            if (oldIndex !== -1 && newIndex !== -1) {
-              reorderChannels(oldIndex, newIndex);
-            }
-          }
-        } else {
-          moveChannelToFolder(activeRealId, overChannelFolder);
-        }
-      }
-    } else if (isActiveFolder && isOverFolder) {
-      const oldIndex = folderOrder.indexOf(activeRealId);
-      const newIndex = folderOrder.indexOf(overRealId);
-      if (oldIndex !== -1 && newIndex !== -1) {
-        reorderFolders(oldIndex, newIndex);
-      }
-    }
-  };
-
-  const handleDragCancel = () => {
-    setActiveId(null);
-    setOverId(null);
-    onDragStateChange?.(false);
-  };
-
-  const activeItem = activeId
-    ? activeId.startsWith(CHANNEL_PREFIX)
-      ? channels[activeId.replace(CHANNEL_PREFIX, '')]
-      : folders[activeId.replace(FOLDER_PREFIX, '')]
-    : null;
-
-  const getHoveredFolderId = (): string | null => {
-    if (!overId || !activeId?.startsWith(CHANNEL_PREFIX)) return null;
-    if (overId.startsWith(FOLDER_PREFIX)) return overId.replace(FOLDER_PREFIX, '');
-    return null;
-  };
-
-  const hoveredFolderId = getHoveredFolderId();
 
   const handleCreateChannel = (result: ConversationalWelcomeResultData) => {
     let channel;
@@ -457,7 +241,9 @@ function ChannelsList({ onClose, onDragStateChange }: { onClose: () => void; onD
 
     setIsCreateOpen(false);
     onClose();
-    router.push(`/channel/${channel.id}`);
+    setTimeout(() => {
+      router.push(`/channel/${channel.id}`);
+    }, 50);
   };
 
   if (!hasHydrated) {
@@ -467,83 +253,55 @@ function ChannelsList({ onClose, onDragStateChange }: { onClose: () => void; onD
   return (
     <>
       <div className="p-3">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-          <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
-            <div className="space-y-1">
-              {/* Folders */}
-              {orderedFolders.map((folder) => (
-                <DraggableFolder
-                  key={folder.id}
-                  folder={folder}
-                  channels={channels}
-                  pathname={pathname}
-                  onToggle={() => toggleFolderCollapse(folder.id)}
-                  onRename={(name) => updateFolder(folder.id, { name })}
-                  onDelete={() => deleteFolder(folder.id)}
-                  isOver={hoveredFolderId === folder.id}
-                  onNavigate={onClose}
-                />
-              ))}
+        <div className="space-y-1">
+          {/* Folders */}
+          {orderedFolders.map((folder) => (
+            <FolderItem
+              key={folder.id}
+              folder={folder}
+              channels={channels}
+              pathname={pathname}
+              onToggle={() => toggleFolderCollapse(folder.id)}
+              onRename={(name) => updateFolder(folder.id, { name })}
+              onDelete={() => deleteFolder(folder.id)}
+              onNavigate={onClose}
+            />
+          ))}
 
-              {/* Root channels */}
-              {rootChannels.map((channel) => (
-                <DraggableChannel
-                  key={channel.id}
-                  channel={channel}
-                  isActive={pathname === `/channel/${channel.id}`}
-                  onNavigate={onClose}
-                />
-              ))}
+          {/* Root channels */}
+          {rootChannels.map((channel) => (
+            <ChannelItem
+              key={channel.id}
+              channel={channel}
+              isActive={pathname === `/channel/${channel.id}`}
+              onNavigate={onClose}
+            />
+          ))}
 
-              {/* Empty state */}
-              {orderedFolders.length === 0 && rootChannels.length === 0 && (
-                <div className="py-12 text-center text-neutral-500">No channels yet</div>
-              )}
+          {/* Empty state */}
+          {orderedFolders.length === 0 && rootChannels.length === 0 && (
+            <div className="py-12 text-center text-neutral-500">No channels yet</div>
+          )}
 
-              {/* Create folder input */}
-              {isCreatingFolder && (
-                <div className="flex items-center gap-2 mt-2 px-2">
-                  <input
-                    type="text"
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleCreateFolder();
-                      if (e.key === 'Escape') setIsCreatingFolder(false);
-                    }}
-                    onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }}
-                    placeholder="Folder name..."
-                    className="flex-1 px-3 py-2 text-sm bg-neutral-100 dark:bg-neutral-800 border-none rounded-xl text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                    autoFocus
-                  />
-                </div>
-              )}
-            </div>
-          </SortableContext>
-
-          <DragOverlay>
-            {activeItem && 'name' in activeItem && 'columns' in activeItem ? (
-              <DraggableChannel channel={activeItem as Channel} isActive={false} isOverlay />
-            ) : activeItem && 'channelIds' in activeItem ? (
-              <DraggableFolder
-                folder={activeItem as Folder}
-                channels={channels}
-                pathname={pathname}
-                onToggle={() => {}}
-                onRename={() => {}}
-                onDelete={() => {}}
-                isOverlay
+          {/* Create folder input */}
+          {isCreatingFolder && (
+            <div className="flex items-center gap-2 mt-2 px-2">
+              <input
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreateFolder();
+                  if (e.key === 'Escape') setIsCreatingFolder(false);
+                }}
+                onBlur={() => { if (!newFolderName.trim()) setIsCreatingFolder(false); }}
+                placeholder="Folder name..."
+                className="flex-1 px-3 py-2 text-sm bg-neutral-100 dark:bg-neutral-800 border-none rounded-xl text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                autoFocus
               />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+            </div>
+          )}
+        </div>
 
         {/* Action buttons */}
         <div className="flex gap-2 mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800">
@@ -847,7 +605,6 @@ export function MobileBottomSheet() {
   const { activePanel, closePanel } = useNav();
   const [isVisible, setIsVisible] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [isDraggingItem, setIsDraggingItem] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef(0);
   const currentYRef = useRef(0);
@@ -885,15 +642,13 @@ export function MobileBottomSheet() {
     prevPathname.current = pathname;
   }, [pathname, activePanel, closePanel]);
 
-  // Handle swipe to dismiss (disabled when dragging items)
+  // Handle swipe to dismiss (only on drag handle bar)
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (isDraggingItem) return;
     startYRef.current = e.touches[0].clientY;
     currentYRef.current = 0;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (isDraggingItem) return;
     const deltaY = e.touches[0].clientY - startYRef.current;
     if (deltaY > 0 && sheetRef.current) {
       currentYRef.current = deltaY;
@@ -902,7 +657,6 @@ export function MobileBottomSheet() {
   };
 
   const handleTouchEnd = () => {
-    if (isDraggingItem) return;
     if (sheetRef.current) {
       if (currentYRef.current > 100) {
         // Dismiss if dragged down more than 100px
@@ -992,7 +746,7 @@ export function MobileBottomSheet() {
           className="overflow-y-auto overscroll-contain"
           style={{ maxHeight: `calc(${activePanel ? PANEL_CONFIG[activePanel]?.height || '85vh' : '85vh'} - 120px)` }}
         >
-          {activePanel === 'channels' && <ChannelsList onClose={closePanel} onDragStateChange={setIsDraggingItem} />}
+          {activePanel === 'channels' && <ChannelsList onClose={closePanel} />}
           {activePanel === 'shrooms' && <ShroomsList onClose={closePanel} />}
           {activePanel === 'account' && <AccountContent onClose={closePanel} />}
           {activePanel === 'settings' && <SettingsContent onClose={closePanel} />}
