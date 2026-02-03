@@ -31,8 +31,21 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Kanthink",
   description: "AI-driven Kanban channels",
+  manifest: "/manifest.json",
   icons: {
-    icon: "https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg",
+    icon: [
+      { url: "https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg", type: "image/svg+xml" },
+      { url: "https://res.cloudinary.com/dcht3dytz/image/upload/w_32,h_32,c_fit,f_png/v1769532115/kanthink-icon_pbne7q.png", sizes: "32x32", type: "image/png" },
+      { url: "https://res.cloudinary.com/dcht3dytz/image/upload/w_192,h_192,c_fit,f_png/v1769532115/kanthink-icon_pbne7q.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [
+      { url: "https://res.cloudinary.com/dcht3dytz/image/upload/w_180,h_180,c_fit,f_png/v1769532115/kanthink-icon_pbne7q.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Kanthink",
   },
 };
 

@@ -60,20 +60,19 @@ function SortableChannelItem({ channel, isActive, onNavigate, isOverlay }: Sorta
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: `${CHANNEL_PREFIX}${channel.id}` });
+  } = useSortable({
+    id: `${CHANNEL_PREFIX}${channel.id}`,
+    data: { type: 'channel', channel },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
   };
 
   const handleClick = () => {
-    if (isDragging) return;
     onNavigate();
-    setTimeout(() => {
-      router.push(`/channel/${channel.id}`);
-    }, 50);
+    setTimeout(() => router.push(`/channel/${channel.id}`), 50);
   };
 
   // Overlay version (shown while dragging)
@@ -88,37 +87,33 @@ function SortableChannelItem({ channel, isActive, onNavigate, isOverlay }: Sorta
     );
   }
 
+  // Pattern from SortableColumn: ref/style/attributes on wrapper, listeners on drag handle
   return (
     <div
       ref={setNodeRef}
       style={style}
+      {...attributes}
       className={`
-        flex items-center rounded-xl text-sm transition-colors
-        ${isDragging ? 'touch-none z-50' : 'touch-manipulation'}
+        flex items-center rounded-xl text-sm transition-colors select-none
+        ${isDragging ? 'opacity-50' : ''}
         ${isActive
           ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 font-medium'
           : 'text-neutral-800 dark:text-neutral-200 active:bg-neutral-100 dark:active:bg-neutral-800'
         }
       `}
     >
-      {/* Drag handle - long press here to drag */}
+      {/* Drag handle - listeners here, touch-none always */}
       <button
         type="button"
-        {...attributes}
+        className="p-3 text-neutral-300 dark:text-neutral-600 cursor-grab touch-none"
         {...listeners}
-        className="p-3 text-neutral-300 dark:text-neutral-600 touch-none"
-        aria-label="Drag to reorder"
       >
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
           <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
         </svg>
       </button>
       {/* Channel name - tap to navigate */}
-      <button
-        type="button"
-        onClick={handleClick}
-        className="flex-1 text-left py-3 pr-4"
-      >
+      <button type="button" onClick={handleClick} className="flex-1 text-left py-3 pr-4">
         {channel.name}
       </button>
     </div>
@@ -168,7 +163,7 @@ function SortableFolderItem({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isDragging ? 0.5 : 1,
   };
 
   const folderChannels = folder.channelIds
@@ -197,11 +192,15 @@ function SortableFolderItem({
   // Channel IDs for sortable context within this folder
   const channelIds = folderChannels.map((c) => `${CHANNEL_PREFIX}${c.id}`);
 
+  // CRITICAL: All dnd-kit props (ref, style, attributes, listeners) must be on the SAME element
+  // Click handlers go on CHILD elements inside. This follows the working Card.tsx pattern.
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`mb-2 ${isDragging ? 'touch-none z-50' : 'touch-manipulation'}`}
+      {...attributes}
+      {...listeners}
+      className={`mb-2 cursor-grab select-none ${isDragging ? 'touch-none z-50 shadow-lg' : 'touch-manipulation'}`}
     >
       <div
         className={`flex items-center rounded-xl px-1 transition-colors ${
@@ -210,21 +209,15 @@ function SortableFolderItem({
             : 'bg-neutral-100 dark:bg-neutral-800'
         }`}
       >
-        {/* Drag handle for folder */}
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="p-3 text-neutral-300 dark:text-neutral-600 touch-none"
-          aria-label="Drag to reorder folder"
-        >
+        {/* Drag handle icon (visual only - the whole folder row is draggable) */}
+        <div className="p-3 text-neutral-300 dark:text-neutral-600">
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
             <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
           </svg>
-        </button>
+        </div>
 
-        {/* Collapse toggle */}
-        <button
+        {/* Collapse toggle - click handler on child */}
+        <div
           onClick={onToggle}
           className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
         >
@@ -235,7 +228,7 @@ function SortableFolderItem({
           >
             <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
           </svg>
-        </button>
+        </div>
 
         {/* Folder icon */}
         <svg className="w-4 h-4 mr-2 text-neutral-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -254,6 +247,7 @@ function SortableFolderItem({
             }}
             className="flex-1 text-sm bg-transparent border-none outline-none text-neutral-900 dark:text-white py-2"
             autoFocus
+            onClick={(e) => e.stopPropagation()}
           />
         ) : (
           <span className="flex-1 text-sm font-medium text-neutral-600 dark:text-neutral-300 py-2">
@@ -262,14 +256,14 @@ function SortableFolderItem({
         )}
 
         <div className="relative">
-          <button
+          <div
             onClick={() => setShowMenu(!showMenu)}
             className="p-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
             </svg>
-          </button>
+          </div>
           {showMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
@@ -292,7 +286,7 @@ function SortableFolderItem({
         </div>
       </div>
 
-      {/* Folder contents - channels inside */}
+      {/* Folder contents - channels inside (NOT inside the draggable area) */}
       {!folder.isCollapsed && (
         <div className="ml-8 mt-1 space-y-1">
           <SortableContext items={channelIds} strategy={verticalListSortingStrategy}>

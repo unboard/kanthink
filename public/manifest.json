@@ -1,0 +1,23 @@
+{
+  "name": "Kanthink",
+  "short_name": "Kanthink",
+  "description": "AI-driven Kanban channels",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#8b5cf6",
+  "icons": [
+    {
+      "src": "https://res.cloudinary.com/dcht3dytz/image/upload/w_192,h_192,c_fit,f_png/v1769532115/kanthink-icon_pbne7q.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://res.cloudinary.com/dcht3dytz/image/upload/w_512,h_512,c_fit,f_png/v1769532115/kanthink-icon_pbne7q.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
