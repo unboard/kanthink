@@ -34,7 +34,7 @@ import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/a
 import type { Channel } from '@/lib/types';
 
 // ============================================
-// SORTABLE CHANNEL ITEM (modeled after SortableTaskItem)
+// SORTABLE CHANNEL ITEM
 // ============================================
 
 interface SortableChannelItemProps {
@@ -60,6 +60,8 @@ function SortableChannelItem({ channel, isActive, onNavigate }: SortableChannelI
   };
 
   const handleClick = () => {
+    // Don't navigate if we're dragging
+    if (isDragging) return;
     onNavigate();
     setTimeout(() => router.push(`/channel/${channel.id}`), 50);
   };
@@ -68,39 +70,34 @@ function SortableChannelItem({ channel, isActive, onNavigate }: SortableChannelI
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-2 p-2 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800 group ${
-        isDragging ? 'opacity-50 shadow-md bg-white dark:bg-neutral-900' : ''
-      } ${isActive ? 'bg-violet-100 dark:bg-violet-900/40' : ''}`}
+      {...attributes}
+      {...listeners}
+      onClick={handleClick}
+      className={`flex items-center gap-3 p-3 rounded-xl select-none ${
+        isDragging
+          ? 'opacity-50 shadow-lg bg-white dark:bg-neutral-800 touch-none'
+          : 'touch-manipulation'
+      } ${isActive
+        ? 'bg-violet-100 dark:bg-violet-900/40'
+        : 'bg-neutral-50 dark:bg-neutral-800/50 active:bg-neutral-100 dark:active:bg-neutral-800'
+      }`}
     >
-      <button
-        {...attributes}
-        {...listeners}
-        onClick={(e) => e.stopPropagation()}
-        className="cursor-grab touch-none text-neutral-300 hover:text-neutral-500 dark:text-neutral-600 dark:hover:text-neutral-400"
-      >
-        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+      {/* Drag handle indicator (visual only) */}
+      <div className="text-neutral-300 dark:text-neutral-600 flex-shrink-0">
+        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
         </svg>
-      </button>
-      <button
-        onClick={handleClick}
-        className={`text-sm flex-1 text-left py-1 ${
+      </div>
+      {/* Channel name */}
+      <span
+        className={`text-sm flex-1 ${
           isActive
             ? 'text-violet-700 dark:text-violet-300 font-medium'
             : 'text-neutral-700 dark:text-neutral-300'
         }`}
       >
         {channel.name}
-      </button>
-      <svg
-        className="w-4 h-4 text-neutral-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity cursor-pointer"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-        onClick={handleClick}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-      </svg>
+      </span>
     </div>
   );
 }
@@ -201,13 +198,8 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
   return (
     <>
       <div className="flex flex-col h-full">
-        {/* Hint for drag-and-drop */}
-        <div className="px-4 py-2 text-xs text-neutral-400 dark:text-neutral-500">
-          Long-press and drag to reorder
-        </div>
-
         {/* Channel list with drag-and-drop */}
-        <div className="flex-1 px-4">
+        <div className="flex-1 px-4 pt-2">
           {rootChannels.length > 0 && (
             <DndContext
               sensors={sensors}
@@ -219,7 +211,7 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
                 items={rootChannels.map((c) => c.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {rootChannels.map((channel) => (
                     <SortableChannelItem
                       key={channel.id}
@@ -232,8 +224,8 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
               </SortableContext>
               <DragOverlay>
                 {activeDragChannel && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-white dark:bg-neutral-800 shadow-xl border border-neutral-200 dark:border-neutral-700">
-                    <svg className="h-4 w-4 text-neutral-400" fill="currentColor" viewBox="0 0 20 20">
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-neutral-800 shadow-xl border border-neutral-200 dark:border-neutral-700">
+                    <svg className="h-5 w-5 text-neutral-400" fill="currentColor" viewBox="0 0 20 20">
                       <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
                     </svg>
                     <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
