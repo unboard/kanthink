@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, memo } from 'react';
 import Particles, { initParticlesEngine } from '@tsparticles/react';
 import { loadSlim } from '@tsparticles/slim';
 import type { ISourceOptions } from '@tsparticles/engine';
@@ -79,7 +79,17 @@ const particlesConfig: ISourceOptions = {
   },
 };
 
-export function SporeBackground() {
+interface SporeBackgroundProps {
+  /** Custom class for the container (default: fixed positioning for page background) */
+  className?: string;
+  /** Unique ID for particles instance (needed if multiple on page) */
+  id?: string;
+}
+
+export const SporeBackground = memo(function SporeBackground({
+  className = "fixed inset-0 z-0 pointer-events-none overflow-hidden",
+  id = "spore-particles"
+}: SporeBackgroundProps) {
   const [init, setInit] = useState(false);
 
   useEffect(() => {
@@ -96,14 +106,14 @@ export function SporeBackground() {
 
   return (
     <div
-      className="fixed inset-0 z-0 pointer-events-none overflow-hidden"
+      className={className}
       aria-hidden="true"
     >
       <Particles
-        id="spore-particles"
+        id={id}
         options={particlesConfig}
         className="absolute inset-0 w-full h-full"
       />
     </div>
   );
-}
+});
