@@ -74,11 +74,12 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   }, [typingMessageId]);
 
   // Typewriter effect for the current AI message
+  // Speed of 400 chars/sec (~2.5ms per char) gives a quick streaming feel without being distracting
   const { displayedText, isTyping, skipToEnd } = useTypewriter(
     typingMessage?.content || '',
     {
-      speed: 80,
-      startDelay: 100,
+      speed: 400,
+      startDelay: 50,
       onComplete: handleTypingComplete,
     }
   );
