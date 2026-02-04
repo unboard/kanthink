@@ -34,6 +34,8 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData()
   const socketId = formData.get('socket_id') as string
   const pusherChannel = formData.get('channel_name') as string
+  // Client sends a unique tab ID for presence channels
+  const tabId = formData.get('tab_id') as string | null
 
   if (!socketId || !pusherChannel) {
     return NextResponse.json(
@@ -112,12 +114,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Authorize the presence channel with user info
+    // Use tabId to make each browser tab unique in presence (allows same user on multiple tabs/devices)
     try {
+      const presenceId = tabId ? `${userId}:${tabId}` : userId
       const userInfo = {
-        id: userId,
+        id: presenceId,
         name: session.user.name || session.user.email || 'Anonymous',
         image: session.user.image || null,
-        color: getUserColor(userId),
+        color: getUserColor(userId), // Color based on actual userId for consistency
       }
       const authResponse = authenticatePresence(socketId, pusherChannel, userInfo)
       return NextResponse.json(authResponse)

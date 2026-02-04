@@ -107,6 +107,10 @@ export function initPusher(onEvent: EventCallback): boolean {
       headers: {
         // Cookies are sent automatically
       },
+      params: {
+        // Send tab ID so each tab gets a unique presence identity
+        tab_id: clientId,
+      },
     },
   })
 
