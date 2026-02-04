@@ -5,6 +5,7 @@
 
 import Pusher, { type Channel, type PresenceChannel, type Members } from 'pusher-js'
 import type { BroadcastEvent } from './broadcastSync'
+import { isDuplicateEvent } from './broadcastSync'
 
 /**
  * User presence info from Pusher.
@@ -41,6 +42,7 @@ type CursorCallback = (cursors: Map<string, CursorPosition>) => void
  */
 interface PusherEventPayload {
   event: BroadcastEvent
+  eventId: string
   senderId: string
   timestamp: number
 }
@@ -153,6 +155,11 @@ export function subscribeToChannel(channelId: string): void {
       return
     }
 
+    // Check for duplicate (may have received via BroadcastChannel already)
+    if (data.eventId && isDuplicateEvent(data.eventId)) {
+      return
+    }
+
     if (eventCallback) {
       eventCallback(data.event)
     }
@@ -202,6 +209,11 @@ export function subscribeToUser(userId: string): void {
   channel.bind('sync', (data: PusherEventPayload) => {
     // Ignore events from this client (prevent echo)
     if (data.senderId === clientId) {
+      return
+    }
+
+    // Check for duplicate (may have received via BroadcastChannel already)
+    if (data.eventId && isDuplicateEvent(data.eventId)) {
       return
     }
 

@@ -107,8 +107,60 @@ export type BroadcastEvent =
 // Wrapper message with metadata
 interface BroadcastMessage {
   event: BroadcastEvent
+  eventId: string
   senderId: string
   timestamp: number
+}
+
+// Cache of recently processed event IDs for deduplication
+const processedEventIds = new Set<string>()
+const MAX_PROCESSED_CACHE = 1000
+
+/**
+ * Generate a unique event ID.
+ */
+export function generateEventId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
+/**
+ * Check if an event has already been processed (for deduplication).
+ * Returns true if this is a duplicate event.
+ */
+export function isDuplicateEvent(eventId: string): boolean {
+  if (processedEventIds.has(eventId)) {
+    return true
+  }
+
+  // Add to cache
+  processedEventIds.add(eventId)
+
+  // Trim cache if too large
+  if (processedEventIds.size > MAX_PROCESSED_CACHE) {
+    const iterator = processedEventIds.values()
+    for (let i = 0; i < 100; i++) {
+      const oldest = iterator.next().value
+      if (oldest) processedEventIds.delete(oldest)
+    }
+  }
+
+  return false
+}
+
+/**
+ * Mark an event ID as processed (called when we originate the event).
+ */
+export function markEventProcessed(eventId: string): void {
+  processedEventIds.add(eventId)
+
+  // Trim cache if too large
+  if (processedEventIds.size > MAX_PROCESSED_CACHE) {
+    const iterator = processedEventIds.values()
+    for (let i = 0; i < 100; i++) {
+      const oldest = iterator.next().value
+      if (oldest) processedEventIds.delete(oldest)
+    }
+  }
 }
 
 // Generate a unique ID for this tab/client
@@ -148,10 +200,15 @@ export function initBroadcastSync(onEvent: EventListener): () => void {
   listener = onEvent
 
   channel.onmessage = (event: MessageEvent<BroadcastMessage>) => {
-    const { event: syncEvent, senderId } = event.data
+    const { event: syncEvent, eventId, senderId } = event.data
 
     // Ignore events from this tab
     if (senderId === tabId) {
+      return
+    }
+
+    // Check for duplicate (may have received via Pusher already)
+    if (eventId && isDuplicateEvent(eventId)) {
       return
     }
 
@@ -179,20 +236,27 @@ export function initBroadcastSync(onEvent: EventListener): () => void {
 /**
  * Broadcast an event to other tabs.
  * Will not broadcast if we're currently applying a remote event (prevents loops).
+ * Returns the event ID for use in Pusher publish.
  */
-export function broadcastEvent(event: BroadcastEvent): void {
+export function broadcastEvent(event: BroadcastEvent, eventId?: string): string {
+  const id = eventId || generateEventId()
+
   // Don't broadcast if we're applying a remote event
   if (isApplyingRemoteEvent) {
-    return
+    return id
   }
+
+  // Mark this event as processed so we don't apply it again from Pusher
+  markEventProcessed(id)
 
   // Don't broadcast in SSR or unsupported browsers
   if (typeof window === 'undefined' || !channel) {
-    return
+    return id
   }
 
   const message: BroadcastMessage = {
     event,
+    eventId: id,
     senderId: tabId,
     timestamp: Date.now(),
   }
@@ -202,6 +266,8 @@ export function broadcastEvent(event: BroadcastEvent): void {
   } catch (error) {
     console.error('Failed to broadcast event:', error)
   }
+
+  return id
 }
 
 /**
@@ -277,15 +343,15 @@ function getChannelIdFromEvent(event: BroadcastEvent): string | null {
  * This is the main function to use for syncing store mutations.
  */
 export function broadcastAndPublish(event: BroadcastEvent): void {
-  broadcastEvent(event)
-  publishToPusher(event)
+  const eventId = broadcastEvent(event)
+  publishToPusher(event, eventId)
 }
 
 /**
  * Publish an event to Pusher for cross-device sync.
  * Fire-and-forget - doesn't block on response.
  */
-export function publishToPusher(event: BroadcastEvent): void {
+export function publishToPusher(event: BroadcastEvent, eventId?: string): void {
   // Don't publish if we're applying a remote event
   if (isApplyingRemoteEvent) {
     return
@@ -318,6 +384,7 @@ export function publishToPusher(event: BroadcastEvent): void {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       event,
+      eventId: eventId || generateEventId(),
       channelId,
       senderId: clientId,
     }),

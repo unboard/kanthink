@@ -13,6 +13,7 @@ import type { BroadcastEvent } from '@/lib/sync/broadcastSync'
 
 interface BroadcastRequest {
   event: BroadcastEvent
+  eventId: string     // Unique ID for deduplication
   channelId?: string  // For channel-scoped events
   senderId: string
 }
@@ -113,11 +114,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { event, channelId, senderId } = body
+  const { event, eventId, channelId, senderId } = body
 
-  if (!event || !senderId) {
+  if (!event || !senderId || !eventId) {
     return NextResponse.json(
-      { error: 'Missing event or senderId' },
+      { error: 'Missing event, eventId, or senderId' },
       { status: 400 }
     )
   }
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest) {
   // Check if this is a user-scoped event
   if (USER_SCOPED_EVENTS.has(event.type)) {
     // Publish to user's personal channel
-    await publishToUser(userId, event, senderId)
+    await publishToUser(userId, event, senderId, eventId)
     return NextResponse.json({ success: true })
   }
 
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Publish to the channel
-  await publishToChannel(channelId, event, senderId)
+  await publishToChannel(channelId, event, senderId, eventId)
 
   return NextResponse.json({ success: true })
 }

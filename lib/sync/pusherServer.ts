@@ -44,6 +44,7 @@ function getPusher(): Pusher | null {
  */
 export interface PusherEventPayload {
   event: BroadcastEvent
+  eventId: string
   senderId: string
   timestamp: number
 }
@@ -55,11 +56,13 @@ export interface PusherEventPayload {
  * @param channelId - The Kanthink channel ID
  * @param event - The broadcast event to publish
  * @param senderId - The client ID of the sender (to prevent echo)
+ * @param eventId - Unique event ID for deduplication
  */
 export async function publishToChannel(
   channelId: string,
   event: BroadcastEvent,
-  senderId: string
+  senderId: string,
+  eventId: string
 ): Promise<boolean> {
   const pusher = getPusher()
   if (!pusher) {
@@ -68,6 +71,7 @@ export async function publishToChannel(
 
   const payload: PusherEventPayload = {
     event,
+    eventId,
     senderId,
     timestamp: Date.now(),
   }
@@ -88,11 +92,13 @@ export async function publishToChannel(
  * @param userId - The user ID
  * @param event - The broadcast event to publish
  * @param senderId - The client ID of the sender (to prevent echo)
+ * @param eventId - Unique event ID for deduplication
  */
 export async function publishToUser(
   userId: string,
   event: BroadcastEvent,
-  senderId: string
+  senderId: string,
+  eventId: string
 ): Promise<boolean> {
   const pusher = getPusher()
   if (!pusher) {
@@ -101,6 +107,7 @@ export async function publishToUser(
 
   const payload: PusherEventPayload = {
     event,
+    eventId,
     senderId,
     timestamp: Date.now(),
   }
