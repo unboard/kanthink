@@ -96,8 +96,9 @@ export function initPusher(onEvent: EventCallback): boolean {
 
   console.log('[Pusher Client] Initializing with cluster:', cluster)
 
-  // Already initialized
+  // Already initialized - don't create a new instance
   if (pusherInstance) {
+    console.log('[Pusher Client] Already initialized, reusing existing connection')
     eventCallback = onEvent
     return true
   }

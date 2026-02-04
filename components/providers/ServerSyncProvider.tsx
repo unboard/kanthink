@@ -359,6 +359,8 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
   }, [applyEventHandler])
 
   // Initialize Pusher for cross-device sync
+  // Note: We don't disconnect on cleanup to avoid React StrictMode double-render issues
+  // Pusher will be disconnected when the user logs out or the page unloads
   useEffect(() => {
     if (!isServerMode || !session?.user?.id || pusherInitialized) {
       return
@@ -378,12 +380,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
         subscribeToChannels(loadedChannelIdsRef.current)
       }
     }
-
-    return () => {
-      // Cleanup Pusher on unmount
-      disconnectPusher()
-      setPusherInitialized(false)
-    }
+    // No cleanup - Pusher connection persists for the session
   }, [isServerMode, session?.user?.id, pusherInitialized, applyEventHandler])
 
   // Track channel changes for Pusher subscriptions
