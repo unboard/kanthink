@@ -33,6 +33,7 @@ function ShroomCard({ shroom, onRun, onEdit }: ShroomCardProps) {
   };
 
   const isGlobal = shroom.scope === 'global';
+  const isKanthinkResource = shroom.isGlobalResource;
 
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors group">
@@ -47,7 +48,12 @@ function ShroomCard({ shroom, onRun, onEdit }: ShroomCardProps) {
           <span className="font-medium text-sm text-neutral-900 dark:text-white truncate">
             {shroom.title}
           </span>
-          {isGlobal && (
+          {isKanthinkResource && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400">
+              by Kanthink
+            </span>
+          )}
+          {isGlobal && !isKanthinkResource && (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
               <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.912-2.706C6.512 5.73 6.974 6 7.5 6A1.5 1.5 0 019 7.5V8a2 2 0 004 0 2 2 0 011.523-1.943A5.977 5.977 0 0116 10c0 .34-.028.675-.083 1H15a2 2 0 00-2 2v2.197A5.973 5.973 0 0110 16v-2a2 2 0 00-2-2 2 2 0 01-2-2 2 2 0 00-1.668-1.973z" clipRule="evenodd" />

@@ -134,7 +134,7 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
       }`}
     >
       <div className="p-3">
-        {/* Top row: Action type + Auto indicator + Edit button */}
+        {/* Top row: Action type + Auto indicator + Kanthink badge + Edit button */}
         <div className="flex items-center gap-2 mb-2">
           {/* Action type - subtle dot + text */}
           <div className="flex items-center gap-1.5 text-xs text-neutral-500">
@@ -148,6 +148,13 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
               <LightningIcon />
               <span>Auto</span>
             </div>
+          )}
+
+          {/* Kanthink resource badge */}
+          {card.isGlobalResource && (
+            <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 text-[10px] font-medium">
+              by Kanthink
+            </span>
           )}
 
           {/* Spacer */}

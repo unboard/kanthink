@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
@@ -31,9 +32,11 @@ export function InstructionDetailDrawerV2({
   onClose,
   onRun,
 }: InstructionDetailDrawerV2Props) {
+  const { data: session } = useSession();
   const updateInstructionCard = useStore((s) => s.updateInstructionCard);
   const deleteInstructionCard = useStore((s) => s.deleteInstructionCard);
   const cards = useStore((s) => s.cards);
+  const isAdminUser = session?.user?.isAdmin ?? false;
 
   // Local form state
   const [title, setTitle] = useState('');
@@ -57,6 +60,9 @@ export function InstructionDetailDrawerV2({
 
   // Scope state
   const [scope, setScope] = useState<InstructionScope>('channel');
+
+  // Global resource state (admin only)
+  const [isGlobalResource, setIsGlobalResource] = useState(false);
 
   const isSyncingRef = useRef(false);
   const instructionCardId = instructionCard?.id;
@@ -92,6 +98,7 @@ export function InstructionDetailDrawerV2({
       setSafeguards(instructionCard.safeguards || { cooldownMinutes: 5, dailyCap: 50, preventLoops: true });
       setIsEnabled(instructionCard.isEnabled || false);
       setScope(instructionCard.scope || 'channel');
+      setIsGlobalResource(instructionCard.isGlobalResource || false);
 
       setTimeout(() => { isSyncingRef.current = false; }, 0);
     }
@@ -135,6 +142,7 @@ export function InstructionDetailDrawerV2({
       safeguards,
       isEnabled,
       scope,
+      isGlobalResource,
     });
   };
 
@@ -468,6 +476,31 @@ export function InstructionDetailDrawerV2({
                     </p>
                   </div>
                 </label>
+
+                {/* Admin-only: Share as Kanthink Resource */}
+                {isAdminUser && (
+                  <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 mt-4">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isGlobalResource}
+                        onChange={(e) => {
+                          setIsGlobalResource(e.target.checked);
+                          setTimeout(() => handleSave(), 0);
+                        }}
+                        className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
+                      />
+                      <div>
+                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                          Share as Kanthink Resource
+                        </span>
+                        <p className="text-xs text-neutral-500">
+                          This shroom will be available to all users and marked as &quot;by Kanthink&quot;
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                )}
               </div>
             )}
           </div>
