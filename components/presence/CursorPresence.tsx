@@ -29,16 +29,14 @@ export function CursorPresence({ channelId }: CursorPresenceProps) {
   const throttleMs = 50 // Send cursor updates at most every 50ms
 
   // Subscribe to presence when channel changes
+  // Note: No cleanup to avoid React StrictMode double-render unsubscribing
   useEffect(() => {
     if (!channelId || !isServerMode()) {
       return
     }
 
+    console.log('[CursorPresence] Subscribing to presence for channel:', channelId)
     subscribeToPresence(channelId)
-
-    return () => {
-      unsubscribeFromPresence(channelId)
-    }
   }, [channelId])
 
   // Set up callbacks for cursor and member updates
