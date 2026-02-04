@@ -358,13 +358,9 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             <div className="px-1 pb-4 space-y-2">
               <button
                 onClick={() => {
-                  // Switch to note mode and focus
+                  // Switch to note mode and activate input
                   const noteBtn = document.querySelector('[data-mode="note"]') as HTMLButtonElement;
                   noteBtn?.click();
-                  setTimeout(() => {
-                    const textarea = document.querySelector('.chat-textarea') as HTMLTextAreaElement;
-                    textarea?.focus();
-                  }, 50);
                 }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
               >
@@ -380,13 +376,9 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
               </button>
               <button
                 onClick={() => {
-                  // Switch to question mode and focus
+                  // Switch to question mode and activate input
                   const askKanBtn = document.querySelector('[data-mode="question"]') as HTMLButtonElement;
                   askKanBtn?.click();
-                  setTimeout(() => {
-                    const textarea = document.querySelector('.chat-textarea') as HTMLTextAreaElement;
-                    textarea?.focus();
-                  }, 50);
                 }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors group"
               >

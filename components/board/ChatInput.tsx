@@ -118,6 +118,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
   const [needsScroll, setNeedsScroll] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [inputActivated, setInputActivated] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -127,6 +128,11 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
   const { uploadFile, isUploading, error: uploadError, clearError } = useImageUpload({ cardId });
   // Use keyboard offset hook for focus/blur handlers (parent handles positioning)
   const { isFocused, onFocus: hookOnFocus, onBlur: hookOnBlur } = useKeyboardOffset();
+
+  // Reset input activation when card changes (prevents auto-focus on new card)
+  useEffect(() => {
+    setInputActivated(false);
+  }, [cardId]);
 
   // Use parent's handlers if provided, otherwise use hook's handlers
   const onFocus = onKeyboardFocus ?? hookOnFocus;
@@ -402,9 +408,26 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
               onChange={(e) => setContent(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              onFocus={onFocus}
+              onFocus={(e) => {
+                if (!inputActivated) {
+                  // Prevent focus if not activated - blur immediately
+                  e.target.blur();
+                  return;
+                }
+                onFocus();
+              }}
               onBlur={onBlur}
               onScroll={handleScroll}
+              onClick={() => {
+                if (!inputActivated) {
+                  setInputActivated(true);
+                  // Focus after activation
+                  setTimeout(() => {
+                    textareaRef.current?.focus();
+                  }, 50);
+                }
+              }}
+              readOnly={!inputActivated}
               placeholder={placeholder ?? defaultPlaceholder}
               disabled={isLoading}
               rows={1}
@@ -414,7 +437,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
                 mode === 'question'
                   ? 'bg-transparent text-transparent caret-neutral-900 dark:caret-white selection:bg-violet-500/30'
                   : 'bg-transparent text-neutral-900 dark:text-white'
-              }`}
+              } ${!inputActivated ? 'cursor-pointer' : ''}`}
               style={{ wordBreak: 'break-word', letterSpacing: 'inherit' }}
             />
 
@@ -466,7 +489,14 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
             <button
               data-mode="note"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => setMode('note')}
+              onClick={() => {
+                setMode('note');
+                // Activate input when mode is clicked
+                if (!inputActivated) {
+                  setInputActivated(true);
+                  setTimeout(() => textareaRef.current?.focus(), 50);
+                }
+              }}
               disabled={isLoading}
               className={`px-2 py-0.5 text-xs rounded transition-colors ${
                 mode === 'note'
@@ -479,7 +509,14 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
             <button
               data-mode="question"
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => setMode('question')}
+              onClick={() => {
+                setMode('question');
+                // Activate input when mode is clicked
+                if (!inputActivated) {
+                  setInputActivated(true);
+                  setTimeout(() => textareaRef.current?.focus(), 50);
+                }
+              }}
               disabled={isLoading}
               className={`px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1 ${
                 mode === 'question'
