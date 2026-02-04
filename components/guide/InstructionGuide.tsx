@@ -66,6 +66,9 @@ export function InstructionGuide({
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customValue, setCustomValue] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [inputActivated, setInputActivated] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const customInputRef = useRef<HTMLInputElement>(null);
 
   const ai = useSettingsStore((s) => s.ai);
 
@@ -120,6 +123,9 @@ export function InstructionGuide({
     if (data.step) {
       setCurrentStep(data.step);
       setViewState('options');
+      // Reset input activation state for new step
+      setInputActivated(false);
+      setShowCustomInput(false);
     }
   };
 
@@ -334,12 +340,13 @@ export function InstructionGuide({
             {/* Text-only step (no options) - fixed at bottom on mobile for keyboard */}
             {isTextOnlyStep ? (
               <div
-                className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-[60]"
+                className={`${inputActivated ? 'fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-[60]' : ''}`}
                 onTouchStart={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="flex gap-2">
                   <input
+                    ref={inputRef}
                     type="text"
                     value={customValue}
                     onChange={(e) => setCustomValue(e.target.value)}
@@ -350,13 +357,32 @@ export function InstructionGuide({
                       }
                     }}
                     onFocus={(e) => {
+                      if (!inputActivated) {
+                        // Prevent focus if not activated - blur immediately
+                        e.target.blur();
+                        return;
+                      }
                       // Scroll input into view when keyboard opens on mobile
                       setTimeout(() => {
                         e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                       }, 300);
                     }}
-                    placeholder={currentStep.customPlaceholder || 'Type your answer...'}
-                    className="flex-1 px-3 py-2.5 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors text-sm"
+                    onClick={() => {
+                      if (!inputActivated) {
+                        setInputActivated(true);
+                        // Focus after a brief delay to ensure state is updated
+                        setTimeout(() => {
+                          inputRef.current?.focus();
+                        }, 50);
+                      }
+                    }}
+                    readOnly={!inputActivated}
+                    placeholder={inputActivated ? (currentStep.customPlaceholder || 'Type your answer...') : 'Tap to type...'}
+                    className={`flex-1 px-3 py-2.5 rounded-md border bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none transition-colors text-sm ${
+                      inputActivated
+                        ? 'border-neutral-500 dark:border-neutral-400'
+                        : 'border-neutral-300 dark:border-neutral-600 cursor-pointer'
+                    }`}
                   />
                   <button
                     onClick={submitCustom}
@@ -400,12 +426,13 @@ export function InstructionGuide({
                 {/* Custom input (when "Something else" is clicked) - fixed at bottom on mobile for keyboard */}
                 {showCustomInput && (
                   <div
-                    className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-[60]"
+                    className={`${inputActivated ? 'fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto p-4 sm:p-0 bg-white dark:bg-neutral-900 sm:bg-transparent border-t sm:border-t-0 border-neutral-200 dark:border-neutral-700 z-[60]' : ''}`}
                     onTouchStart={(e) => e.stopPropagation()}
                     onMouseDown={(e) => e.stopPropagation()}
                   >
                     <div className="flex gap-2">
                       <input
+                        ref={customInputRef}
                         type="text"
                         value={customValue}
                         onChange={(e) => setCustomValue(e.target.value)}
@@ -417,16 +444,36 @@ export function InstructionGuide({
                           if (e.key === 'Escape') {
                             setShowCustomInput(false);
                             setCustomValue('');
+                            setInputActivated(false);
                           }
                         }}
                         onFocus={(e) => {
+                          if (!inputActivated) {
+                            // Prevent focus if not activated - blur immediately
+                            e.target.blur();
+                            return;
+                          }
                           // Scroll input into view when keyboard opens on mobile
                           setTimeout(() => {
                             e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                           }, 300);
                         }}
-                        placeholder={currentStep.customPlaceholder || 'Type your answer...'}
-                        className="flex-1 px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors text-sm"
+                        onClick={() => {
+                          if (!inputActivated) {
+                            setInputActivated(true);
+                            // Focus after a brief delay to ensure state is updated
+                            setTimeout(() => {
+                              customInputRef.current?.focus();
+                            }, 50);
+                          }
+                        }}
+                        readOnly={!inputActivated}
+                        placeholder={inputActivated ? (currentStep.customPlaceholder || 'Type your answer...') : 'Tap to type...'}
+                        className={`flex-1 px-3 py-2 rounded-md border bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none transition-colors text-sm ${
+                          inputActivated
+                            ? 'border-neutral-500 dark:border-neutral-400'
+                            : 'border-neutral-300 dark:border-neutral-600 cursor-pointer'
+                        }`}
                       />
                       <button
                         onClick={submitCustom}
