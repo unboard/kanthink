@@ -109,13 +109,10 @@ export function initPusher(onEvent: EventCallback): boolean {
 
   pusherInstance = new Pusher(key, {
     cluster,
+    forceTLS: true,
     authEndpoint: '/api/pusher/auth',
     auth: {
-      headers: {
-        // Cookies are sent automatically
-      },
       params: {
-        // Send tab ID so each tab gets a unique presence identity
         tab_id: clientId,
       },
     },
@@ -140,6 +137,10 @@ export function initPusher(onEvent: EventCallback): boolean {
 
   pusherInstance.connection.bind('failed', () => {
     console.error('[Pusher Client] Connection failed - check key and cluster')
+  })
+
+  pusherInstance.connection.bind('unavailable', () => {
+    console.error('[Pusher Client] Connection unavailable')
   })
 
   return true
