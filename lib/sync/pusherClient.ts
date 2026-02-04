@@ -104,6 +104,9 @@ export function initPusher(onEvent: EventCallback): boolean {
 
   eventCallback = onEvent
 
+  // Enable Pusher's built-in debug logging
+  Pusher.logToConsole = true
+
   pusherInstance = new Pusher(key, {
     cluster,
     authEndpoint: '/api/pusher/auth',
