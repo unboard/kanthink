@@ -2,8 +2,10 @@
 @plugin "@tailwindcss/typography";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Always dark mode - no light mode support */
+  --background: #151515;
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -11,13 +13,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #151515;
-    --foreground: #ededed;
-  }
 }
 
 /* ===========================================

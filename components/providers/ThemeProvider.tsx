@@ -8,6 +8,11 @@ function applyTheme(theme: Theme) {
   // Force spores theme - other themes disabled for now
   const safeTheme: Theme = 'spores';
   const root = document.documentElement;
+
+  // ALWAYS force dark mode - no light mode support
+  root.classList.add('dark');
+  root.classList.remove('light');
+
   root.setAttribute('data-theme', safeTheme);
   // Force a style recalculation - remove all theme classes and add the current one
   document.body.classList.remove('theme-spores', 'theme-stars', 'theme-terminal');
