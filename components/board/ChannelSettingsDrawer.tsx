@@ -8,9 +8,6 @@ import { useStore } from '@/lib/store';
 import { Button, Input, Textarea, Drawer } from '@/components/ui';
 import { InstructionGuide, type GuideResult } from '@/components/guide/InstructionGuide';
 
-// Admin email - must match ADMIN_EMAIL env var
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
-
 // Export format that's portable (uses column names instead of IDs)
 interface ChannelExport {
   name: string;
@@ -148,8 +145,8 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
 
-  // Check if current user is admin
-  const isAdminUser = ADMIN_EMAIL && session?.user?.email?.toLowerCase() === ADMIN_EMAIL;
+  // Check if current user is admin (set server-side in session)
+  const isAdminUser = session?.user?.isAdmin ?? false;
 
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
   const createCard = useStore((s) => s.createCard);

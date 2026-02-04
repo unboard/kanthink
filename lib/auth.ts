@@ -51,6 +51,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.subscriptionStatus = dbUser.subscriptionStatus || 'free'
         session.user.byokProvider = dbUser.byokProvider
         session.user.hasByok = !!dbUser.byokApiKey
+        session.user.isAdmin = isAdmin(dbUser.email)
       }
 
       return session
@@ -73,6 +74,7 @@ declare module 'next-auth' {
       subscriptionStatus: 'free' | 'active' | 'canceled' | 'past_due'
       byokProvider?: 'openai' | 'google' | null
       hasByok: boolean
+      isAdmin: boolean
     }
   }
 }
