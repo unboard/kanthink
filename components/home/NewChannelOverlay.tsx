@@ -15,18 +15,16 @@ import {
 interface NewChannelOverlayProps {
   isOpen: boolean
   onClose: () => void
-  onKanHelp: () => void // Opens the conversational channel creation
+  onKanHelp: () => void
 }
-
-type ViewMode = 'main' | 'templates' | 'import'
 
 export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOverlayProps) {
   const router = useRouter()
-  const [viewMode, setViewMode] = useState<ViewMode>('main')
-  const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | 'all'>('all')
+  const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | 'all' | 'kan'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [importJson, setImportJson] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure)
@@ -36,15 +34,14 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
   const updateTask = useStore((s) => s.updateTask)
 
   const handleClose = useCallback(() => {
-    setViewMode('main')
     setSelectedCategory('all')
     setSearchQuery('')
     setImportJson('')
     setImportError(null)
+    setShowImport(false)
     onClose()
   }, [onClose])
 
-  // Create channel from template
   const handleCreateFromTemplate = useCallback(
     (template: ChannelTemplate) => {
       const channel = createChannelWithStructure({
@@ -72,12 +69,10 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
     [createChannelWithStructure, handleClose, router]
   )
 
-  // Create Quick Start channel
   const handleQuickStart = useCallback(() => {
     handleCreateFromTemplate(QUICK_START_TEMPLATE)
   }, [handleCreateFromTemplate])
 
-  // Import from JSON
   const handleImport = useCallback(() => {
     try {
       const data = JSON.parse(importJson)
@@ -115,7 +110,6 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
           ) || [],
       })
 
-      // Import cards if present
       if (data.cards && Array.isArray(data.cards)) {
         const columnNameToId = new Map(
           newChannel.columns.map((col: { id: string; name: string }) => [col.name, col.id])
@@ -137,14 +131,12 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
             'manual'
           )
 
-          // Add remaining messages
           const startIndex = firstNote ? 1 : 0
           for (let i = startIndex; i < (importedCard.messages?.length || 0); i++) {
             const msg = importedCard.messages[i]
             addMessage(newCard.id, msg.type, msg.content)
           }
 
-          // Import tasks
           if (importedCard.tasks) {
             for (const task of importedCard.tasks) {
               const newTask = createTask(newChannel.id, newCard.id, {
@@ -166,7 +158,7 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
 
       handleClose()
       router.push(`/channel/${newChannel.id}`)
-    } catch (e) {
+    } catch {
       setImportError('Invalid JSON format')
     }
   }, [
@@ -180,7 +172,6 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
     router,
   ])
 
-  // Handle file upload
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -199,7 +190,7 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
 
   // Filter templates
   const filteredTemplates =
-    selectedCategory === 'all'
+    selectedCategory === 'all' || selectedCategory === 'kan'
       ? CHANNEL_TEMPLATES
       : CHANNEL_TEMPLATES.filter((t) => t.category === selectedCategory)
 
@@ -215,387 +206,245 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-3xl mx-4 my-8 sm:my-16 rounded-2xl bg-zinc-900 border border-white/10 shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            {viewMode !== 'main' && (
-              <button
-                onClick={() => setViewMode('main')}
-                className="p-1.5 -ml-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 19l-7-7 7-7"
-                  />
-                </svg>
-              </button>
-            )}
-            <h2 className="text-lg font-semibold text-white">
-              {viewMode === 'main' && 'Create a Channel'}
-              {viewMode === 'templates' && 'Template Library'}
-              {viewMode === 'import' && 'Import Channel'}
-            </h2>
+      <div className="relative z-10 w-full max-w-4xl h-[600px] rounded-2xl bg-zinc-900 border border-white/10 shadow-2xl overflow-hidden flex">
+        {/* Left Nav */}
+        <div className="w-56 flex-shrink-0 border-r border-white/10 flex flex-col">
+          {/* Header */}
+          <div className="p-4 border-b border-white/10">
+            <h2 className="text-lg font-semibold text-white">New Channel</h2>
           </div>
-          <button
-            onClick={handleClose}
-            className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
 
-        {/* Content */}
-        <div className="p-6">
-          {viewMode === 'main' && (
-            <MainView
-              onQuickStart={handleQuickStart}
-              onKanHelp={() => {
+          {/* Nav Items */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {/* Kan Help - Featured */}
+            <button
+              onClick={() => {
                 handleClose()
                 onKanHelp()
               }}
-              onBrowseTemplates={() => setViewMode('templates')}
-              onImport={() => setViewMode('import')}
-            />
-          )}
-
-          {viewMode === 'templates' && (
-            <TemplatesView
-              templates={searchedTemplates}
-              selectedCategory={selectedCategory}
-              searchQuery={searchQuery}
-              onCategoryChange={setSelectedCategory}
-              onSearchChange={setSearchQuery}
-              onSelectTemplate={handleCreateFromTemplate}
-            />
-          )}
-
-          {viewMode === 'import' && (
-            <ImportView
-              importJson={importJson}
-              importError={importError}
-              fileInputRef={fileInputRef}
-              onJsonChange={(v) => {
-                setImportJson(v)
-                setImportError(null)
-              }}
-              onFileSelect={handleFileSelect}
-              onImport={handleImport}
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ============ Main View ============
-interface MainViewProps {
-  onQuickStart: () => void
-  onKanHelp: () => void
-  onBrowseTemplates: () => void
-  onImport: () => void
-}
-
-function MainView({ onQuickStart, onKanHelp, onBrowseTemplates, onImport }: MainViewProps) {
-  return (
-    <div className="space-y-6">
-      {/* Quick Start */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-white/70 uppercase tracking-wide">Quick Start</h3>
-        <button
-          onClick={onQuickStart}
-          className="w-full flex items-center gap-4 p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all group text-left"
-        >
-          <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500/20 to-violet-500/20 flex items-center justify-center text-2xl">
-            ⚡
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-white group-hover:text-cyan-100 transition-colors">
-              Blank Board
-            </div>
-            <div className="text-sm text-white/50">
-              Start with a simple Inbox → Working On → Done setup
-            </div>
-          </div>
-          <svg
-            className="w-5 h-5 text-white/30 group-hover:text-white/60 transition-colors"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {/* AI-Assisted */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-white/70 uppercase tracking-wide">
-          AI-Assisted Setup
-        </h3>
-        <button
-          onClick={onKanHelp}
-          className="w-full flex items-center gap-4 p-4 rounded-xl border border-violet-500/30 bg-gradient-to-r from-violet-500/10 to-cyan-500/10 hover:from-violet-500/20 hover:to-cyan-500/20 transition-all group text-left"
-        >
-          <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/30 to-cyan-500/30 flex items-center justify-center">
-            <KanthinkIcon size={28} className="text-violet-300" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-white group-hover:text-violet-100 transition-colors flex items-center gap-2">
-              Have Kan help you
-              <span className="text-xs px-1.5 py-0.5 rounded bg-violet-500/30 text-violet-300">
-                Recommended
-              </span>
-            </div>
-            <div className="text-sm text-white/50">
-              Tell Kan what you want to accomplish and get a custom board
-            </div>
-          </div>
-          <svg
-            className="w-5 h-5 text-white/30 group-hover:text-white/60 transition-colors"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {/* Templates */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-white/70 uppercase tracking-wide">
-          Start from Template
-        </h3>
-        <button
-          onClick={onBrowseTemplates}
-          className="w-full flex items-center gap-4 p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all group text-left"
-        >
-          <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center text-2xl">
-            📚
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-white group-hover:text-amber-100 transition-colors">
-              Browse Templates
-            </div>
-            <div className="text-sm text-white/50">
-              Choose from {CHANNEL_TEMPLATES.length}+ pre-built boards for various workflows
-            </div>
-          </div>
-          <svg
-            className="w-5 h-5 text-white/30 group-hover:text-white/60 transition-colors"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {/* Import & Community */}
-      <div className="flex gap-3 pt-2">
-        <button
-          onClick={onImport}
-          className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-white/70 hover:text-white"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-            />
-          </svg>
-          Import JSON
-        </button>
-        <button
-          disabled
-          className="flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border border-white/10 bg-white/5 text-white/40 cursor-not-allowed"
-          title="Coming soon"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-            />
-          </svg>
-          Community
-          <span className="text-[10px] px-1 py-0.5 rounded bg-white/10">Soon</span>
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ============ Templates View ============
-interface TemplatesViewProps {
-  templates: ChannelTemplate[]
-  selectedCategory: TemplateCategory | 'all'
-  searchQuery: string
-  onCategoryChange: (category: TemplateCategory | 'all') => void
-  onSearchChange: (query: string) => void
-  onSelectTemplate: (template: ChannelTemplate) => void
-}
-
-function TemplatesView({
-  templates,
-  selectedCategory,
-  searchQuery,
-  onCategoryChange,
-  onSearchChange,
-  onSelectTemplate,
-}: TemplatesViewProps) {
-  return (
-    <div className="space-y-4">
-      {/* Search */}
-      <div className="relative">
-        <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-          />
-        </svg>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search templates..."
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20"
-        />
-      </div>
-
-      {/* Category tabs */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => onCategoryChange('all')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-            selectedCategory === 'all'
-              ? 'bg-white/20 text-white'
-              : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          All
-        </button>
-        {(Object.entries(TEMPLATE_CATEGORIES) as [TemplateCategory, { label: string; icon: string }][]).map(
-          ([key, { label, icon }]) => (
-            <button
-              key={key}
-              onClick={() => onCategoryChange(key)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                selectedCategory === key
-                  ? 'bg-white/20 text-white'
-                  : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
-              }`}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all bg-gradient-to-r from-violet-500/20 to-cyan-500/20 border border-violet-500/30 hover:from-violet-500/30 hover:to-cyan-500/30"
             >
-              <span>{icon}</span>
-              <span className="hidden sm:inline">{label}</span>
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/40 to-cyan-500/40 flex items-center justify-center flex-shrink-0">
+                <KanthinkIcon size={18} className="text-violet-200" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-white">Have Kan help</div>
+                <div className="text-[10px] text-white/50 truncate">AI-assisted setup</div>
+              </div>
             </button>
-          )
-        )}
-      </div>
 
-      {/* Template grid */}
-      <div className="grid gap-3 sm:grid-cols-2 max-h-[400px] overflow-y-auto pr-2 -mr-2">
-        {templates.map((template) => (
-          <button
-            key={template.id}
-            onClick={() => onSelectTemplate(template)}
-            className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
-          >
-            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center text-xl">
-              {template.icon}
+            <div className="h-px bg-white/10 my-2" />
+
+            {/* All Templates */}
+            <NavItem
+              icon="📚"
+              label="All Templates"
+              count={CHANNEL_TEMPLATES.length}
+              active={selectedCategory === 'all'}
+              onClick={() => setSelectedCategory('all')}
+            />
+
+            {/* Categories */}
+            {(Object.entries(TEMPLATE_CATEGORIES) as [TemplateCategory, { label: string; icon: string }][]).map(
+              ([key, { label, icon }]) => (
+                <NavItem
+                  key={key}
+                  icon={icon}
+                  label={label}
+                  count={CHANNEL_TEMPLATES.filter((t) => t.category === key).length}
+                  active={selectedCategory === key}
+                  onClick={() => setSelectedCategory(key)}
+                />
+              )
+            )}
+
+            {/* Community placeholder */}
+            <div className="h-px bg-white/10 my-2" />
+            <NavItem
+              icon="👥"
+              label="Community"
+              disabled
+              badge="Soon"
+              onClick={() => {}}
+            />
+          </div>
+
+          {/* Bottom Actions */}
+          <div className="p-2 border-t border-white/10 space-y-1">
+            <button
+              onClick={handleQuickStart}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <span className="text-lg">⚡</span>
+              <span className="text-sm">Blank Board</span>
+            </button>
+            <button
+              onClick={() => setShowImport(true)}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <span className="text-sm">Import JSON</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Right Content */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Header with search */}
+          <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-white/10">
+            <div className="flex-1 relative">
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search templates..."
+                className="w-full pl-10 pr-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder-white/40 focus:outline-none focus:border-white/30"
+              />
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium text-white group-hover:text-cyan-100 transition-colors">
-                {template.name}
-              </div>
-              <div className="text-xs text-white/50 line-clamp-2 mt-0.5">
-                {template.description}
-              </div>
-              <div className="flex items-center gap-2 mt-2 text-[10px] text-white/40">
-                <span>{template.columns.length} columns</span>
-                {template.instructionCards && template.instructionCards.length > 0 && (
-                  <>
-                    <span>•</span>
-                    <span>{template.instructionCards.length} shrooms</span>
-                  </>
+            <button
+              onClick={handleClose}
+              className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Template Grid */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {showImport ? (
+              <ImportView
+                importJson={importJson}
+                importError={importError}
+                fileInputRef={fileInputRef}
+                onJsonChange={(v) => {
+                  setImportJson(v)
+                  setImportError(null)
+                }}
+                onFileSelect={handleFileSelect}
+                onImport={handleImport}
+                onBack={() => setShowImport(false)}
+              />
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {searchedTemplates.map((template) => (
+                  <TemplateCard
+                    key={template.id}
+                    template={template}
+                    onClick={() => handleCreateFromTemplate(template)}
+                  />
+                ))}
+
+                {searchedTemplates.length === 0 && (
+                  <div className="col-span-full text-center py-12 text-white/50">
+                    <p>No templates found</p>
+                    <p className="text-sm mt-1">Try a different search term</p>
+                  </div>
                 )}
               </div>
-            </div>
-          </button>
-        ))}
-
-        {templates.length === 0 && (
-          <div className="col-span-2 text-center py-8 text-white/50">
-            No templates found matching your search
+            )}
           </div>
-        )}
-      </div>
-
-      {/* Community section placeholder */}
-      <div className="pt-4 border-t border-white/10">
-        <div className="flex items-center gap-2 mb-3">
-          <svg className="w-4 h-4 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-            />
-          </svg>
-          <h3 className="text-sm font-medium text-white/70 uppercase tracking-wide">
-            Community Templates
-          </h3>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/50">
-            Coming Soon
-          </span>
         </div>
-        <p className="text-sm text-white/40">
-          Discover boards shared by the community. Share your own templates and get inspired by others.
-        </p>
       </div>
     </div>
+  )
+}
+
+// ============ Nav Item ============
+interface NavItemProps {
+  icon: string
+  label: string
+  count?: number
+  active?: boolean
+  disabled?: boolean
+  badge?: string
+  onClick: () => void
+}
+
+function NavItem({ icon, label, count, active, disabled, badge, onClick }: NavItemProps) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+        active
+          ? 'bg-white/15 text-white'
+          : disabled
+          ? 'text-white/30 cursor-not-allowed'
+          : 'text-white/70 hover:text-white hover:bg-white/10'
+      }`}
+    >
+      <span className="text-base">{icon}</span>
+      <span className="flex-1 text-sm truncate">{label}</span>
+      {count !== undefined && (
+        <span className="text-xs text-white/40">{count}</span>
+      )}
+      {badge && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/50">{badge}</span>
+      )}
+    </button>
+  )
+}
+
+// ============ Template Card ============
+interface TemplateCardProps {
+  template: ChannelTemplate
+  onClick: () => void
+}
+
+function TemplateCard({ template, onClick }: TemplateCardProps) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
+    >
+      <div className="flex items-start gap-3 mb-2">
+        <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center text-xl flex-shrink-0">
+          {template.icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-white group-hover:text-cyan-100 transition-colors truncate">
+            {template.name}
+          </div>
+          <div className="text-[10px] text-white/40 mt-0.5">
+            {TEMPLATE_CATEGORIES[template.category]?.label}
+          </div>
+        </div>
+      </div>
+      <p className="text-xs text-white/50 line-clamp-2 mb-3">
+        {template.description}
+      </p>
+      <div className="flex items-center gap-3 text-[10px] text-white/40 mt-auto">
+        <span className="flex items-center gap-1">
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+          </svg>
+          {template.columns.length} columns
+        </span>
+        {template.instructionCards && template.instructionCards.length > 0 && (
+          <span className="flex items-center gap-1">
+            <KanthinkIcon size={10} />
+            {template.instructionCards.length} shrooms
+          </span>
+        )}
+      </div>
+    </button>
   )
 }
 
@@ -607,6 +456,7 @@ interface ImportViewProps {
   onJsonChange: (value: string) => void
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void
   onImport: () => void
+  onBack: () => void
 }
 
 function ImportView({
@@ -616,13 +466,26 @@ function ImportView({
   onJsonChange,
   onFileSelect,
   onImport,
+  onBack,
 }: ImportViewProps) {
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-white/60">
-        Import a channel from a JSON export file. You can export channels from the channel settings
-        menu.
-      </p>
+    <div className="max-w-lg mx-auto space-y-4">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-2 text-sm text-white/60 hover:text-white transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        Back to templates
+      </button>
+
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-2">Import Channel</h3>
+        <p className="text-sm text-white/60">
+          Import a channel from a JSON export file. You can export channels from the channel settings.
+        </p>
+      </div>
 
       {/* File upload */}
       <div>
@@ -635,15 +498,10 @@ function ImportView({
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="w-full flex items-center justify-center gap-3 p-6 rounded-xl border-2 border-dashed border-white/20 hover:border-white/40 bg-white/5 hover:bg-white/10 transition-all text-white/60 hover:text-white"
+          className="w-full flex items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed border-white/20 hover:border-white/40 bg-white/5 hover:bg-white/10 transition-all text-white/60 hover:text-white"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
           <span>Choose JSON file or drag and drop</span>
         </button>
@@ -655,22 +513,19 @@ function ImportView({
         <div className="flex-1 h-px bg-white/10" />
       </div>
 
-      {/* JSON textarea */}
       <textarea
         value={importJson}
         onChange={(e) => onJsonChange(e.target.value)}
         placeholder='{"name": "My Channel", "columns": [...], ...}'
-        className="w-full h-48 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-mono placeholder-white/30 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 resize-none"
+        className="w-full h-40 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-mono placeholder-white/30 focus:outline-none focus:border-white/30 resize-none"
       />
 
-      {/* Error message */}
       {importError && (
         <div className="p-3 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-sm">
           {importError}
         </div>
       )}
 
-      {/* Import button */}
       <button
         onClick={onImport}
         disabled={!importJson.trim()}

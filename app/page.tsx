@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
+import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { ChannelGrid } from '@/components/home/ChannelGrid';
 import { NewChannelOverlay } from '@/components/home/NewChannelOverlay';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
@@ -13,7 +14,8 @@ const WELCOME_SEEN_KEY = 'kanthink-welcome-seen';
 
 export default function Home() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
+  const { isLoading: isServerLoading } = useServerSync();
   const [showNewChannelOverlay, setShowNewChannelOverlay] = useState(false);
   const [showKanHelp, setShowKanHelp] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -24,9 +26,12 @@ export default function Home() {
   const channels = useStore((s) => s.channels);
   const hasHydrated = useStore((s) => s._hasHydrated);
 
+  // For authenticated users, wait for server data before showing welcome
+  const isFullyLoaded = hasHydrated && (sessionStatus !== 'authenticated' || !isServerLoading);
+
   // Check if user has seen welcome on mount
   useEffect(() => {
-    if (!hasHydrated) return;
+    if (!isFullyLoaded) return;
 
     const hasSeenWelcome = localStorage.getItem(WELCOME_SEEN_KEY);
     const hasChannels = Object.keys(channels).length > 0;
@@ -36,7 +41,7 @@ export default function Home() {
       setShowWelcome(true);
     }
     setHasCheckedWelcome(true);
-  }, [hasHydrated, channels]);
+  }, [isFullyLoaded, channels]);
 
   const handleWelcomeClose = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
@@ -69,8 +74,8 @@ export default function Home() {
     router.push(`/channel/${channel.id}`);
   };
 
-  // Don't render until we've checked welcome status
-  if (!hasCheckedWelcome) {
+  // Don't render until fully loaded and welcome status checked
+  if (!isFullyLoaded || !hasCheckedWelcome) {
     return null;
   }
 

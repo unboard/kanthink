@@ -3,6 +3,7 @@
 import { useMemo, useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useStore } from '@/lib/store'
+import { useServerSync } from '@/components/providers/ServerSyncProvider'
 import { ChannelCard } from './ChannelCard'
 import { SporeBackground } from '@/components/ambient/SporeBackground'
 import type { Task, ID } from '@/lib/types'
@@ -15,7 +16,8 @@ interface ChannelGridProps {
 }
 
 export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
-  const { data: session } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
+  const { isLoading: isServerLoading } = useServerSync()
   const channels = useStore((s) => s.channels)
   const channelOrder = useStore((s) => s.channelOrder)
   const folderOrder = useStore((s) => s.folderOrder)
@@ -81,7 +83,11 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     }
   }, [orderedChannelIds])
 
-  if (!hasHydrated) {
+  // Show loading state until both local hydration and server sync complete
+  // For authenticated users, we need to wait for server data to prevent race conditions
+  const isFullyLoaded = hasHydrated && (sessionStatus !== 'authenticated' || !isServerLoading)
+
+  if (!isFullyLoaded) {
     return (
       <div className="relative flex h-full items-center justify-center">
         <SporeBackground />
