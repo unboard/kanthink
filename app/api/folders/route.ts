@@ -52,26 +52,35 @@ export async function GET() {
     .map(entry => entry.channelId)
 
   // Fetch global help channels for the Help folder
-  const globalHelpChannels = await db.query.channels.findMany({
-    where: eq(channels.isGlobalHelp, true),
-    columns: { id: true, name: true },
-    orderBy: [asc(channels.name)],
-  })
+  // Wrapped in try-catch in case the column doesn't exist yet in production
+  let helpFolder = null
+  try {
+    const globalHelpChannels = await db.query.channels.findMany({
+      where: eq(channels.isGlobalHelp, true),
+      columns: { id: true, name: true },
+      orderBy: [asc(channels.name)],
+    })
 
-  const globalChannelIds = globalHelpChannels.map(c => c.id)
+    const globalChannelIds = globalHelpChannels.map(c => c.id)
 
-  // Build response with Help folder first if there are global channels
-  const helpFolder = globalChannelIds.length > 0 ? {
-    id: HELP_FOLDER_ID,
-    name: 'Help',
-    channelIds: globalChannelIds,
-    isCollapsed: false,
-    isVirtual: true,
-    isLocked: true,
-    position: -1,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  } : null
+    // Build response with Help folder first if there are global channels
+    if (globalChannelIds.length > 0) {
+      helpFolder = {
+        id: HELP_FOLDER_ID,
+        name: 'Help',
+        channelIds: globalChannelIds,
+        isCollapsed: false,
+        isVirtual: true,
+        isLocked: true,
+        position: -1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    }
+  } catch (e) {
+    // Column may not exist yet - ignore
+    console.warn('Could not fetch global help channels:', e)
+  }
 
   return NextResponse.json({
     folders: helpFolder ? [helpFolder, ...foldersWithChannels] : foldersWithChannels,

@@ -5,7 +5,6 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Card as CardType, Task } from '@/lib/types';
 import { useStore } from '@/lib/store';
-import { useSettingsStore } from '@/lib/settingsStore';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { TaskListOnCard } from './TaskListOnCard';
 import { TaskDrawer } from './TaskDrawer';
@@ -24,8 +23,6 @@ export function Card({ card }: CardProps) {
   const archiveCard = useStore((s) => s.archiveCard);
   const tasks = useStore((s) => s.tasks);
   const channels = useStore((s) => s.channels);
-  const theme = useSettingsStore((s) => s.theme);
-  const isTerminal = theme === 'terminal';
 
   // Get tasks for this card
   const cardTasks = (card.taskIds ?? [])
@@ -90,10 +87,7 @@ export function Card({ card }: CardProps) {
           group relative cursor-grab rounded-md overflow-hidden transition-shadow
           select-none
           ${isDragging ? 'touch-none' : 'touch-manipulation'}
-          ${isTerminal
-            ? 'bg-neutral-900 border border-neutral-800 hover:border-neutral-700'
-            : 'bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md'
-          }
+          bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md
           ${isDragging ? 'opacity-50 shadow-lg' : ''}
           ${card.isProcessing ? 'card-processing' : ''}
         `}

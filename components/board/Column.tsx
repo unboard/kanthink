@@ -5,7 +5,6 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { Column as ColumnType, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
-import { useSettingsStore } from '@/lib/settingsStore';
 import { Card } from './Card';
 import { BacksideCard } from './BacksideCard';
 import { ColumnMenu } from './ColumnMenu';
@@ -25,8 +24,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const updateColumn = useStore((s) => s.updateColumn);
   const createCard = useStore((s) => s.createCard);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
-  const theme = useSettingsStore((s) => s.theme);
-  const isTerminal = theme === 'terminal';
 
   const columnCards = column.cardIds.map((id) => cards[id]).filter(Boolean);
   const backsideCards = (column.backsideCardIds ?? []).map((id) => cards[id]).filter(Boolean);
@@ -101,19 +98,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
 
   // Header JSX for front side
   const frontHeader = (
-    <div className={`flex flex-col ${isTerminal ? 'border-b border-neutral-800' : ''}`}>
-      {/* Terminal traffic lights */}
-      {isTerminal && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-800">
-          <div className="flex gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
-            <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/80" />
-            <div className="w-2.5 h-2.5 rounded-full bg-green-500/80" />
-          </div>
-          <span className="text-[10px] text-neutral-600 font-mono truncate">{column.name.toLowerCase().replace(/\s+/g, '-')}</span>
-        </div>
-      )}
-
+    <div className="flex flex-col">
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <button
@@ -169,9 +154,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         flex flex-col rounded-lg transition-colors
         ${isFlipped
           ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
-          : isTerminal
-            ? 'bg-neutral-950 border border-neutral-800'
-            : 'bg-neutral-100 dark:bg-neutral-800/50'
+          : 'bg-neutral-100 dark:bg-neutral-800/50'
         }
       `}
     >
@@ -202,13 +185,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
             {/* Add card button at top */}
             <button
               onClick={handleAddCard}
-              className={`
-                w-full flex items-center justify-center py-2.5 rounded-md transition-colors
-                ${isTerminal
-                  ? 'bg-neutral-900 text-neutral-500 hover:text-neutral-400'
-                  : 'bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
-                }
-              `}
+              className="w-full flex items-center justify-center py-2.5 rounded-md transition-colors bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />

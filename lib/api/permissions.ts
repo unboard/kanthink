@@ -130,10 +130,16 @@ export async function getUserChannels(userId: string): Promise<Array<{ channelId
   })
 
   // Get global help channels (available to all users)
-  const globalHelpChannels = await db.query.channels.findMany({
-    where: eq(channels.isGlobalHelp, true),
-    columns: { id: true },
-  })
+  // Wrapped in try-catch in case the column doesn't exist yet
+  let globalHelpChannels: { id: string }[] = []
+  try {
+    globalHelpChannels = await db.query.channels.findMany({
+      where: eq(channels.isGlobalHelp, true),
+      columns: { id: true },
+    })
+  } catch (e) {
+    // Column may not exist yet - ignore
+  }
 
   const result: Array<{ channelId: string; role: ChannelRole }> = []
 

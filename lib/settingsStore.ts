@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type LLMProvider = 'openai' | 'google';
-export type Theme = 'spores' | 'stars' | 'terminal';
+export type Theme = 'spores'; // Only spores theme for now - others will be added back later
 export type QuestionFrequency = 'off' | 'light' | 'moderate';
 
 export interface AISettings {

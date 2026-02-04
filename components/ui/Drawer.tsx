@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useCallback, type ReactNode } from 'react';
-import { useSettingsStore } from '@/lib/settingsStore';
 
 interface DrawerProps {
   isOpen: boolean;
@@ -20,9 +19,7 @@ const widthClasses = {
   xl: 'w-full sm:max-w-4xl',
 };
 
-export function Drawer({ isOpen, onClose, children, width = 'lg', floating = false, title, hideCloseButton = false }: DrawerProps) {
-  const theme = useSettingsStore((s) => s.theme);
-  const isTerminal = theme === 'terminal';
+export function Drawer({ isOpen, onClose, children, width = 'lg', floating = false, hideCloseButton = false }: DrawerProps) {
 
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
@@ -59,32 +56,11 @@ export function Drawer({ isOpen, onClose, children, width = 'lg', floating = fal
           relative w-full ${widthClasses[width]} shadow-2xl overflow-y-auto
           animate-in slide-in-from-right duration-200
           ${floating ? 'h-full sm:h-auto sm:max-h-full sm:rounded-2xl' : 'h-full'}
-          ${isTerminal
-            ? 'bg-neutral-950 border border-neutral-800'
-            : 'bg-white dark:bg-neutral-900'
-          }
+          bg-white dark:bg-neutral-900
         `}
       >
-        {/* Terminal header with traffic lights */}
-        {isTerminal && (
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-800">
-            <div className="flex gap-1.5">
-              <button
-                onClick={onClose}
-                className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 transition-colors"
-                aria-label="Close"
-              />
-              <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-              <div className="w-3 h-3 rounded-full bg-green-500/80" />
-            </div>
-            {title && (
-              <span className="ml-2 text-xs text-neutral-500 font-mono">{title}</span>
-            )}
-          </div>
-        )}
-
-        {/* Close button (non-terminal) */}
-        {!isTerminal && !hideCloseButton && (
+        {/* Close button */}
+        {!hideCloseButton && (
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-2 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-800 z-10"

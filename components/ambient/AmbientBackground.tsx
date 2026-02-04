@@ -1,17 +1,9 @@
 'use client';
 
-import { useSettingsStore } from '@/lib/settingsStore';
-import { Starfield } from './Starfield';
 import { SporeBackground } from './SporeBackground';
+// import { Starfield } from './Starfield'; // Disabled - only spores theme available for now
 
 export function AmbientBackground() {
-  const theme = useSettingsStore((s) => s.theme);
-
-  // Spores theme uses particles.js
-  if (theme === 'spores') {
-    return <SporeBackground />;
-  }
-
-  // Stars and terminal themes use the starfield
-  return <Starfield />;
+  // Only spores theme available for now
+  return <SporeBackground />;
 }
