@@ -3,6 +3,38 @@
 import { useEffect } from 'react';
 import { useSettingsStore, type Theme, fetchAIStatus } from '@/lib/settingsStore';
 
+// Migration: fix any corrupted localStorage settings
+function migrateSettings() {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const stored = localStorage.getItem('kanthink-settings');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      let needsMigration = false;
+
+      // Fix invalid theme values (only 'spores' is valid now)
+      if (parsed.state?.theme && parsed.state.theme !== 'spores') {
+        parsed.state.theme = 'spores';
+        needsMigration = true;
+      }
+
+      // Fix any corrupted structure
+      if (!parsed.state) {
+        localStorage.removeItem('kanthink-settings');
+        return;
+      }
+
+      if (needsMigration) {
+        localStorage.setItem('kanthink-settings', JSON.stringify(parsed));
+      }
+    }
+  } catch {
+    // If localStorage is corrupted, clear it entirely
+    localStorage.removeItem('kanthink-settings');
+  }
+}
+
 function applyTheme(theme: Theme) {
   if (typeof window === 'undefined') return;
   // Force spores theme - other themes disabled for now
@@ -30,7 +62,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Also apply on initial mount from localStorage (before store hydration)
   // Always force spores theme regardless of stored value
+  // Also migrate any corrupted settings
   useEffect(() => {
+    migrateSettings();
     applyTheme('spores');
   }, []);
 
