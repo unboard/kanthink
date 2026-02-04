@@ -202,7 +202,6 @@ export function CreateChannelModal({
                   setImportError(null);
                 }}
                 placeholder='{"name": "My Channel", "columns": [...], ...}'
-                autoFocus
                 rows={8}
                 className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors font-mono text-sm"
               />
@@ -359,7 +358,6 @@ export function CreateChannelModal({
                   value={manualName}
                   onChange={(e) => setManualName(e.target.value)}
                   placeholder="e.g., Book Recommendations"
-                  autoFocus
                   className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors"
                 />
 

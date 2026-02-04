@@ -349,8 +349,13 @@ export function InstructionGuide({
                         submitCustom();
                       }
                     }}
+                    onFocus={(e) => {
+                      // Scroll input into view when keyboard opens on mobile
+                      setTimeout(() => {
+                        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }, 300);
+                    }}
                     placeholder={currentStep.customPlaceholder || 'Type your answer...'}
-                    autoFocus
                     className="flex-1 px-3 py-2.5 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors text-sm"
                   />
                   <button
@@ -414,8 +419,13 @@ export function InstructionGuide({
                             setCustomValue('');
                           }
                         }}
+                        onFocus={(e) => {
+                          // Scroll input into view when keyboard opens on mobile
+                          setTimeout(() => {
+                            e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }, 300);
+                        }}
                         placeholder={currentStep.customPlaceholder || 'Type your answer...'}
-                        autoFocus
                         className="flex-1 px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-400 transition-colors text-sm"
                       />
                       <button
