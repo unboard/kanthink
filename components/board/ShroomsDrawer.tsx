@@ -52,7 +52,9 @@ export function ShroomsDrawer({
 
   const [selectedCardId, setSelectedCardId] = useState<ID | null>(null);
   const [runningInstructionId, setRunningInstructionId] = useState<ID | null>(null);
-  const [useV2Drawer, setUseV2Drawer] = useState(false);
+  const [useV2Drawer, setUseV2Drawer] = useState(true);
+  // Track if detail drawer was opened via pending action (for close-all behavior)
+  const [openedViaPendingAction, setOpenedViaPendingAction] = useState(false);
 
   // Load drawer version preference from localStorage
   useEffect(() => {
@@ -60,12 +62,21 @@ export function ShroomsDrawer({
     if (stored === 'true') setUseV2Drawer(true);
   }, []);
 
+  // Reset state when drawer closes
+  useEffect(() => {
+    if (!isOpen) {
+      setOpenedViaPendingAction(false);
+      setSelectedCardId(null);
+    }
+  }, [isOpen]);
+
   // Handle pending actions from mobile nav
   useEffect(() => {
     if (!isOpen || !pendingAction) return;
 
     if (pendingAction.type === 'edit' && pendingAction.id) {
       setSelectedCardId(pendingAction.id);
+      setOpenedViaPendingAction(true);
     } else if (pendingAction.type === 'run' && pendingAction.id) {
       const card = instructionCards[pendingAction.id];
       if (card) {
@@ -73,6 +84,7 @@ export function ShroomsDrawer({
       }
     } else if (pendingAction.type === 'create') {
       handleAddInstruction();
+      setOpenedViaPendingAction(true);
     }
 
     onPendingActionHandled?.();
@@ -130,6 +142,11 @@ export function ShroomsDrawer({
 
   const handleCloseDetailDrawer = () => {
     setSelectedCardId(null);
+    // If opened via left nav/mobile pending action, close the entire drawer
+    if (openedViaPendingAction) {
+      setOpenedViaPendingAction(false);
+      onClose();
+    }
   };
 
   const handleRunInstruction = async (card: InstructionCardType) => {

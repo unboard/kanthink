@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SporeBackground } from '@/components/ambient/SporeBackground';
+import { useKeyboardOffset } from '@/components/board/ChatInput';
 import { useMessageTypewriter } from '@/lib/hooks/useTypewriter';
 import {
   inferIntent,
@@ -110,6 +111,10 @@ export function ConversationalWelcome({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isInitialMount = useRef(true);
 
+  // Mobile keyboard handling
+  const [inputActivated, setInputActivated] = useState(false);
+  const { keyboardOffset, onFocus: kbOnFocus, onBlur: kbOnBlur } = useKeyboardOffset();
+
   // Typewriter effect for Kan's messages
   const { getDisplayText, isTyping: isKanTyping, skipToEnd, typingMessageId } = useMessageTypewriter(
     messages,
@@ -143,6 +148,7 @@ export function ConversationalWelcome({
       setSpecificDetails('');
       setSelectedWorkflow(null);
       setSelectedShrooms([]);
+      setInputActivated(false);
     }
   }, [isOpen, isWelcome]);
 
@@ -158,12 +164,12 @@ export function ConversationalWelcome({
     }
   }, [messages]);
 
-  // Focus input
+  // Reset input activation when modal closes/opens
   useEffect(() => {
-    if (isOpen && !isLoading) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+    if (!isOpen) {
+      setInputActivated(false);
     }
-  }, [isOpen, isLoading, messages]);
+  }, [isOpen]);
 
   // Add a message to the conversation
   const addMessage = useCallback((msg: Omit<Message, 'id'>) => {
@@ -597,9 +603,12 @@ export function ConversationalWelcome({
         </div>
       </div>
 
-      {/* Input area - fixed at bottom */}
+      {/* Input area - fixed at bottom, positioned above keyboard on mobile */}
       {showInput && (
-        <div className="relative z-10 flex-shrink-0">
+        <div
+          className="relative z-10 flex-shrink-0 transition-transform duration-150"
+          style={{ transform: keyboardOffset > 0 ? `translateY(-${keyboardOffset}px)` : undefined }}
+        >
           <div className="max-w-2xl mx-auto px-6 py-4">
             <div className="flex items-center gap-3 bg-neutral-900 border border-neutral-800 rounded-full px-4 py-2">
               <textarea
@@ -610,6 +619,19 @@ export function ConversationalWelcome({
                 placeholder="Type your answer..."
                 disabled={isLoading}
                 rows={1}
+                readOnly={!inputActivated}
+                onFocus={(e) => {
+                  // On mobile, blur immediately if not activated (prevents keyboard)
+                  if (!inputActivated) {
+                    e.target.blur();
+                    setInputActivated(true);
+                    // Re-focus after activation
+                    setTimeout(() => inputRef.current?.focus(), 50);
+                    return;
+                  }
+                  kbOnFocus();
+                }}
+                onBlur={kbOnBlur}
                 className="flex-1 resize-none bg-transparent text-sm text-neutral-200 placeholder-neutral-500 focus:outline-none py-1"
               />
               <button
