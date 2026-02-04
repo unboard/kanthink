@@ -142,11 +142,7 @@ export function ShroomsDrawer({
 
   const handleCloseDetailDrawer = () => {
     setSelectedCardId(null);
-    // If opened via left nav/mobile pending action, close the entire drawer
-    if (openedViaPendingAction) {
-      setOpenedViaPendingAction(false);
-      onClose();
-    }
+    setOpenedViaPendingAction(false);
   };
 
   const handleRunInstruction = async (card: InstructionCardType) => {
