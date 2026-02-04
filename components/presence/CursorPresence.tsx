@@ -35,7 +35,6 @@ export function CursorPresence({ channelId }: CursorPresenceProps) {
       return
     }
 
-    console.log('[CursorPresence] Subscribing to presence for channel:', channelId)
     subscribeToPresence(channelId)
   }, [channelId])
 

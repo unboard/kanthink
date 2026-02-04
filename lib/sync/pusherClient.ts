@@ -89,24 +89,18 @@ export function initPusher(onEvent: EventCallback): boolean {
 
   if (!key || !cluster) {
     console.log('[Pusher Client] Not configured - real-time sync disabled')
-    console.log('[Pusher Client] NEXT_PUBLIC_PUSHER_KEY:', key ? `${key.slice(0, 4)}...` : 'missing')
-    console.log('[Pusher Client] NEXT_PUBLIC_PUSHER_CLUSTER:', cluster || 'missing')
     return false
   }
 
-  console.log('[Pusher Client] Initializing with cluster:', cluster)
-
   // Already initialized - don't create a new instance
   if (pusherInstance) {
-    console.log('[Pusher Client] Already initialized, reusing existing connection')
     eventCallback = onEvent
     return true
   }
 
   eventCallback = onEvent
 
-  // Enable Pusher's built-in debug logging
-  Pusher.logToConsole = true
+  // Pusher.logToConsole = true  // Uncomment for debugging
 
   pusherInstance = new Pusher(key, {
     cluster,
@@ -130,18 +124,6 @@ export function initPusher(onEvent: EventCallback): boolean {
 
   pusherInstance.connection.bind('error', (err: unknown) => {
     console.error('[Pusher Client] Connection error:', err)
-  })
-
-  pusherInstance.connection.bind('state_change', (states: { previous: string; current: string }) => {
-    console.log(`[Pusher Client] State: ${states.previous} -> ${states.current}`)
-  })
-
-  pusherInstance.connection.bind('failed', () => {
-    console.error('[Pusher Client] Connection failed - check key and cluster')
-  })
-
-  pusherInstance.connection.bind('unavailable', () => {
-    console.error('[Pusher Client] Connection unavailable')
   })
 
   return true
