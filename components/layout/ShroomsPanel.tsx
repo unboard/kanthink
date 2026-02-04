@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { NavPanel } from './NavPanel';
 import { useNav } from '@/components/providers/NavProvider';
 import { useStore, getGlobalShrooms, getChannelShrooms } from '@/lib/store';
+import { useSettingsStore } from '@/lib/settingsStore';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import type { InstructionCard } from '@/lib/types';
 
@@ -113,6 +114,10 @@ export function ShroomsPanel() {
   const globalShrooms = getGlobalShrooms(state);
   const channelShrooms = channelId ? getChannelShrooms(state, channelId) : [];
 
+  // Explainer card state
+  const shroomsExplainerDismissed = useSettingsStore((s) => s.shroomsExplainerDismissed);
+  const setShroomsExplainerDismissed = useSettingsStore((s) => s.setShroomsExplainerDismissed);
+
   const handleRunShroom = (shroom: InstructionCard) => {
     const targetChannelId = shroom.channelId || channelId;
     if (targetChannelId) {
@@ -143,8 +148,37 @@ export function ShroomsPanel() {
   }
 
   return (
-    <NavPanel panelKey="shrooms" title="Shrooms" width="md">
+    <NavPanel panelKey="shrooms" title="Shrooms" subtitle="AI-powered actions for your board" width="md">
       <div className="p-4 space-y-6">
+        {/* What are shrooms? explainer */}
+        {!shroomsExplainerDismissed && (
+          <div className="p-4 rounded-xl bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-950/30 dark:to-purple-950/30 relative">
+            <button
+              onClick={() => setShroomsExplainerDismissed(true)}
+              className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center text-violet-400 hover:text-violet-600 dark:text-violet-500 dark:hover:text-violet-300 rounded-full hover:bg-violet-100 dark:hover:bg-violet-900/30"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div className="flex items-start gap-3 pr-6">
+              <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-violet-900 dark:text-violet-100">
+                  What are shrooms?
+                </h3>
+                <p className="mt-1 text-xs text-violet-700/80 dark:text-violet-300/70 leading-relaxed">
+                  Shrooms are AI-powered automations that can generate new cards, enrich existing ones with data, or move cards between columns based on rules you define.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Empty state */}
         {channelShrooms.length === 0 && globalShrooms.length === 0 && (
           <div className="text-center py-8">

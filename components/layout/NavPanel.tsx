@@ -20,11 +20,12 @@ const widthPixels: Record<PanelWidth, number> = {
 interface NavPanelProps {
   panelKey: 'channels' | 'shrooms' | 'account' | 'settings';
   title: string;
+  subtitle?: string;
   width?: PanelWidth;
   children: ReactNode;
 }
 
-export function NavPanel({ panelKey, title, width = 'sm', children }: NavPanelProps) {
+export function NavPanel({ panelKey, title, subtitle, width = 'sm', children }: NavPanelProps) {
   const { activePanel, closePanel, isMobile } = useNav();
   const panelRef = useRef<HTMLDivElement>(null);
   const isOpen = activePanel === panelKey;
@@ -77,9 +78,16 @@ export function NavPanel({ panelKey, title, width = 'sm', children }: NavPanelPr
       <div className="flex flex-col h-full">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-neutral-200 dark:border-neutral-800">
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
-            {title}
-          </h2>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
+              {title}
+            </h2>
+            {subtitle && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                {subtitle}
+              </p>
+            )}
+          </div>
           <button
             onClick={closePanel}
             className="p-1.5 rounded-md text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"

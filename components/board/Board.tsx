@@ -34,7 +34,7 @@ import { SortableColumn } from './SortableColumn';
 import { AIDebugModal } from './AIDebugModal';
 // Commented out - question system disabled
 // import { QuestionsDrawer } from './QuestionsDrawer';
-import { ShroomsDrawer } from './ShroomsDrawer';
+import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
 import { TaskListView } from './TaskListView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
@@ -70,7 +70,7 @@ export function Board({ channel }: BoardProps) {
   const [isQuestionsOpen, setIsQuestionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [isShroomsOpen, setIsShroomsOpen] = useState(false);
+  const [editingShroomId, setEditingShroomId] = useState<string | null>(null);
   const [shroomsButtonPulse, setShroomsButtonPulse] = useState(false);
   const { isServerMode } = useServerSync();
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
@@ -97,7 +97,7 @@ export function Board({ channel }: BoardProps) {
     }
   }, [shroomsButtonHighlighted, setShroomsButtonHighlighted]);
 
-  // Handle query params for opening shrooms drawer from mobile nav
+  // Handle query params for opening shroom edit drawer from nav
   useEffect(() => {
     const shroomsParam = searchParams.get('shrooms');
     const editParam = searchParams.get('edit');
@@ -105,23 +105,15 @@ export function Board({ channel }: BoardProps) {
     const createParam = searchParams.get('create');
 
     if (shroomsParam === 'open') {
-      const isMobile = window.innerWidth < 768;
-
-      // On mobile with just a run action, don't open the drawer -
-      // store the action and handle it separately
-      if (isMobile && runParam && !editParam && !createParam) {
+      // Handle edit - open the edit drawer directly
+      if (editParam) {
+        setEditingShroomId(editParam);
+      } else if (runParam) {
+        // Run the shroom directly
         setPendingShroomAction({ type: 'run', id: runParam });
-        // Don't open the drawer on mobile for run-only actions
-      } else {
-        setIsShroomsOpen(true);
-        // Store the action to execute after drawer opens
-        if (editParam) {
-          setPendingShroomAction({ type: 'edit', id: editParam });
-        } else if (runParam) {
-          setPendingShroomAction({ type: 'run', id: runParam });
-        } else if (createParam === 'true') {
-          setPendingShroomAction({ type: 'create' });
-        }
+      } else if (createParam === 'true') {
+        // Create a new shroom and open edit drawer
+        setPendingShroomAction({ type: 'create' });
       }
       // Clear the query params
       router.replace(`/channel/${channel.id}`, { scroll: false });
@@ -148,6 +140,7 @@ export function Board({ channel }: BoardProps) {
   const clearGeneratingSkeletons = useStore((s) => s.clearGeneratingSkeletons);
   const recordInstructionRun = useStore((s) => s.recordInstructionRun);
   const saveInstructionRun = useStore((s) => s.saveInstructionRun);
+  const createInstructionCard = useStore((s) => s.createInstructionCard);
   const addTagDefinition = useStore((s) => s.addTagDefinition);
   const addTagToCard = useStore((s) => s.addTagToCard);
 
@@ -755,20 +748,32 @@ export function Board({ channel }: BoardProps) {
     setPreflightResult(null);
   };
 
-  // Handle mobile run action without opening drawer
+  // Handle pending shroom actions (run or create)
   useEffect(() => {
-    if (pendingShroomAction?.type === 'run' && !isShroomsOpen && pendingShroomAction.id) {
+    if (!pendingShroomAction) return;
+
+    if (pendingShroomAction.type === 'run' && pendingShroomAction.id) {
       const instructionCard = instructionCards[pendingShroomAction.id];
       if (instructionCard) {
-        // Clear the pending action first to prevent re-runs
         setPendingShroomAction(null);
-        // Execute the instruction
         handleRunInstruction(instructionCard);
       } else {
         setPendingShroomAction(null);
       }
+    } else if (pendingShroomAction.type === 'create') {
+      // Create a new shroom and open edit drawer
+      const newCard = createInstructionCard(channel.id, {
+        title: 'New Action',
+        instructions: '',
+        action: 'generate',
+        target: { type: 'column', columnId: channel.columns[0]?.id || '' },
+        runMode: 'manual',
+        cardCount: 5,
+      });
+      setPendingShroomAction(null);
+      setEditingShroomId(newCard.id);
     }
-  }, [pendingShroomAction, isShroomsOpen, instructionCards]);
+  }, [pendingShroomAction, instructionCards, channel.id, channel.columns, createInstructionCard]);
 
   return (
     <div className="flex h-full flex-col">
@@ -1025,13 +1030,12 @@ export function Board({ channel }: BoardProps) {
         onClose={() => setIsShareOpen(false)}
       />
 
-      <ShroomsDrawer
+      <InstructionDetailDrawerV2
+        instructionCard={editingShroomId ? instructionCards[editingShroomId] : null}
         channel={channel}
-        isOpen={isShroomsOpen}
-        onClose={() => setIsShroomsOpen(false)}
-        onRunInstruction={handleRunInstruction}
-        pendingAction={pendingShroomAction}
-        onPendingActionHandled={() => setPendingShroomAction(null)}
+        isOpen={editingShroomId !== null}
+        onClose={() => setEditingShroomId(null)}
+        onRun={handleRunInstruction}
       />
     </div>
   );
