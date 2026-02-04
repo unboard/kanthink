@@ -350,7 +350,9 @@ export function subscribeToPresence(channelId: string): void {
 
   channel.bind('pusher:subscription_succeeded', (members: Members) => {
     // Store my own user ID from the presence channel
-    myPresenceUserId = members.myID() as string
+    // members.me contains our own member info
+    const me = members.me
+    myPresenceUserId = me?.id ?? null
 
     const memberList: PresenceUser[] = []
     members.each((member: { id: string; info: { name: string; image: string | null; color: string } }) => {
