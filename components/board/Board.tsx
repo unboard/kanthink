@@ -40,6 +40,7 @@ import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
+import { CursorPresence, PresenceIndicator } from '@/components/presence/CursorPresence';
 // Commented out - question system disabled
 // import { QuestionToast } from '@/components/ui/QuestionToast';
 // import { useQuestionTrigger } from '@/lib/hooks/useQuestionTrigger';
@@ -777,6 +778,10 @@ export function Board({ channel }: BoardProps) {
 
   return (
     <div className="flex h-full flex-col">
+      {/* Cursor presence overlay - shows other users' cursors */}
+      {isServerMode && (
+        <CursorPresence channelId={channel.id} />
+      )}
       {/* Shrooms button pulse animation for first-time users */}
       <style>{`
         @keyframes shrooms-button-pulse {
@@ -829,6 +834,10 @@ export function Board({ channel }: BoardProps) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Presence indicator - shows who else is viewing */}
+          {isServerMode && (
+            <PresenceIndicator channelId={channel.id} />
+          )}
 {/* Shrooms button removed - now accessible from left nav */}
           {debugInfo && (
             <button

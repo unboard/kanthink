@@ -6,7 +6,7 @@ import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
 import { KANTHINK_IDEAS_CHANNEL, KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
 import { emitCardMoved, emitCardCreated, emitCardDeleted } from './automationEvents';
 import * as sync from './api/sync';
-import { broadcastEvent, type BroadcastEvent } from './sync/broadcastSync';
+import { broadcastEvent, broadcastAndPublish, type BroadcastEvent } from './sync/broadcastSync';
 
 // Module-level abort controller (not stored in Zustand - can't be serialized)
 let currentAbortController: AbortController | null = null;
@@ -294,7 +294,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncFolderCreate(id, name);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'folder:create', folder });
+        broadcastAndPublish({ type: 'folder:create', folder });
 
         return folder;
       },
@@ -319,7 +319,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncFolderUpdate(id, updates);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'folder:update', id, updates });
+        broadcastAndPublish({ type: 'folder:update', id, updates });
       },
 
       deleteFolder: (id) => {
@@ -348,7 +348,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncFolderDelete(id);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'folder:delete', id, channelIds });
+        broadcastAndPublish({ type: 'folder:delete', id, channelIds });
       },
 
       reorderFolders: (fromIndex, toIndex) => {
@@ -366,7 +366,7 @@ export const useStore = create<KanthinkState>()(
         }
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'folder:reorder', fromIndex, toIndex });
+        broadcastAndPublish({ type: 'folder:reorder', fromIndex, toIndex });
       },
 
       moveChannelToFolder: (channelId, folderId) => {
@@ -414,7 +414,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncMoveChannelToFolder(channelId, folderId);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'channel:moveToFolder', channelId, folderId });
+        broadcastAndPublish({ type: 'channel:moveToFolder', channelId, folderId });
       },
 
       toggleFolderCollapse: (folderId) => {
@@ -439,7 +439,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncFolderUpdate(folderId, { isCollapsed });
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'folder:toggleCollapse', id: folderId, isCollapsed });
+        broadcastAndPublish({ type: 'folder:toggleCollapse', id: folderId, isCollapsed });
       },
 
       reorderChannelInFolder: (folderId, fromIndex, toIndex) => {
@@ -468,7 +468,7 @@ export const useStore = create<KanthinkState>()(
         }
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'channel:reorderInFolder', folderId, fromIndex, toIndex });
+        broadcastAndPublish({ type: 'channel:reorderInFolder', folderId, fromIndex, toIndex });
       },
 
       createChannel: (input) => {
@@ -492,16 +492,16 @@ export const useStore = create<KanthinkState>()(
           channelOrder: [...state.channelOrder, id],
         }));
 
-        // Sync to server
+        // Sync to server - pass full column data to preserve IDs
         sync.syncChannelCreate(id, {
           name: input.name,
           description: input.description,
           aiInstructions: input.aiInstructions,
-          columnNames: columns.map(c => c.name),
+          columns: columns.map((c, i) => ({ id: c.id, name: c.name, isAiTarget: c.isAiTarget ?? i === 0 })),
         });
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'channel:create', channel });
+        broadcastAndPublish({ type: 'channel:create', channel });
 
         return channel;
       },
@@ -563,18 +563,13 @@ export const useStore = create<KanthinkState>()(
           channelOrder: [...state.channelOrder, channelId],
         }));
 
-        // Sync channel to server
+        // Sync channel to server with full column data
         sync.syncChannelCreate(channelId, {
           name: input.name,
           description: input.description,
           aiInstructions: input.aiInstructions,
-          columnNames: columns.map(c => c.name),
+          columns: columns.map((c, i) => ({ id: c.id, name: c.name, isAiTarget: c.isAiTarget ?? i === 0 })),
         });
-
-        // Sync columns with their IDs
-        for (const column of columns) {
-          sync.syncColumnCreate(channelId, column.id, column.name);
-        }
 
         // Sync instruction cards
         for (const ic of Object.values(newInstructionCards)) {
@@ -608,7 +603,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncChannelUpdate(id, updates);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'channel:update', id, updates });
+        broadcastAndPublish({ type: 'channel:update', id, updates });
       },
 
       deleteChannel: (id) => {
@@ -644,7 +639,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncChannelDelete(id);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'channel:delete', id });
+        broadcastAndPublish({ type: 'channel:delete', id });
       },
 
       reorderChannels: (fromIndex, toIndex) => {
@@ -663,7 +658,7 @@ export const useStore = create<KanthinkState>()(
         }
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'channel:reorder', fromIndex, toIndex });
+        broadcastAndPublish({ type: 'channel:reorder', fromIndex, toIndex });
       },
 
       createColumn: (channelId, name) => {
@@ -697,7 +692,7 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs
         if (result) {
-          broadcastEvent({ type: 'column:create', channelId, column });
+          broadcastAndPublish({ type: 'column:create', channelId, column });
         }
 
         return result;
@@ -727,7 +722,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncColumnUpdate(channelId, columnId, updates);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'column:update', channelId, columnId, updates });
+        broadcastAndPublish({ type: 'column:update', channelId, columnId, updates });
       },
 
       deleteColumn: (channelId, columnId) => {
@@ -776,7 +771,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncColumnDelete(channelId, columnId);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'column:delete', channelId, columnId });
+        broadcastAndPublish({ type: 'column:delete', channelId, columnId });
       },
 
       reorderColumns: (channelId, fromIndex, toIndex) => {
@@ -807,7 +802,7 @@ export const useStore = create<KanthinkState>()(
         }
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'column:reorder', channelId, fromIndex, toIndex });
+        broadcastAndPublish({ type: 'column:reorder', channelId, fromIndex, toIndex });
       },
 
       setColumnInstructions: (channelId, columnId, instructions) => {
@@ -834,7 +829,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncColumnUpdate(channelId, columnId, { instructions });
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'column:update', channelId, columnId, updates: { instructions } });
+        broadcastAndPublish({ type: 'column:update', channelId, columnId, updates: { instructions } });
       },
 
       createCard: (channelId, columnId, input, source = 'manual', createdByInstructionId) => {
@@ -903,7 +898,7 @@ export const useStore = create<KanthinkState>()(
         });
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'card:create', card, columnId, position });
+        broadcastAndPublish({ type: 'card:create', card, columnId, position });
 
         return card;
       },
@@ -928,7 +923,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncCardUpdate(card.channelId, id, updates);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'card:update', id, updates });
+        broadcastAndPublish({ type: 'card:update', id, updates });
       },
 
       deleteCard: (id) => {
@@ -972,7 +967,7 @@ export const useStore = create<KanthinkState>()(
           sync.syncCardDelete(channelId, id);
           // Broadcast to other tabs
           if (columnId) {
-            broadcastEvent({ type: 'card:delete', id, channelId, columnId });
+            broadcastAndPublish({ type: 'card:delete', id, channelId, columnId });
           }
         }
       },
@@ -1023,7 +1018,7 @@ export const useStore = create<KanthinkState>()(
         }
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'card:deleteAllInColumn', channelId, columnId, cardIds: cardIdsToDelete });
+        broadcastAndPublish({ type: 'card:deleteAllInColumn', channelId, columnId, cardIds: cardIdsToDelete });
       },
 
       moveCard: (cardId, toColumnId, toIndex) => {
@@ -1089,9 +1084,9 @@ export const useStore = create<KanthinkState>()(
           sync.syncCardMove(preCard.channelId, cardId, toColumnId, toIndex, false);
         }
 
-        // Broadcast to other tabs
+        // Broadcast to other tabs and devices
         if (preCard && fromColumnId) {
-          broadcastEvent({
+          broadcastAndPublish({
             type: 'card:move',
             cardId,
             channelId: preCard.channelId,
@@ -1147,7 +1142,7 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs
         if (preCard && column) {
-          broadcastEvent({ type: 'card:archive', cardId, channelId: preCard.channelId, columnId: column.id });
+          broadcastAndPublish({ type: 'card:archive', cardId, channelId: preCard.channelId, columnId: column.id });
         }
       },
 
@@ -1196,7 +1191,7 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs
         if (preCard && column) {
-          broadcastEvent({ type: 'card:unarchive', cardId, channelId: preCard.channelId, columnId: column.id });
+          broadcastAndPublish({ type: 'card:unarchive', cardId, channelId: preCard.channelId, columnId: column.id });
         }
       },
 
@@ -1261,6 +1256,11 @@ export const useStore = create<KanthinkState>()(
           sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
         }
 
+        // Broadcast to other tabs and devices
+        if (result) {
+          broadcastAndPublish({ type: 'card:addMessage', cardId, message: result });
+        }
+
         return result;
       },
 
@@ -1303,6 +1303,11 @@ export const useStore = create<KanthinkState>()(
         // Sync to server
         if (channelId) {
           sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
+        }
+
+        // Broadcast to other tabs and devices
+        if (result) {
+          broadcastAndPublish({ type: 'card:addAIResponse', cardId, questionId, message: result });
         }
 
         return result;
@@ -1359,6 +1364,9 @@ export const useStore = create<KanthinkState>()(
         if (channelId) {
           sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
         }
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:updateMessageAction', cardId, messageId, actionId, updates });
       },
 
       editMessage: (cardId, messageId, content) => {
@@ -1390,6 +1398,9 @@ export const useStore = create<KanthinkState>()(
         if (channelId) {
           sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
         }
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:editMessage', cardId, messageId, content });
       },
 
       deleteMessage: (cardId, messageId) => {
@@ -1419,6 +1430,9 @@ export const useStore = create<KanthinkState>()(
         if (channelId) {
           sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
         }
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:deleteMessage', cardId, messageId });
       },
 
       setCardSummary: (cardId, summary) => {
@@ -1446,6 +1460,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { summary, summaryUpdatedAt: timestamp });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:setSummary', cardId, summary });
       },
 
       setCoverImage: (cardId, url) => {
@@ -1470,6 +1487,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { coverImageUrl: url });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:setCoverImage', cardId, url });
       },
 
       // Task actions
@@ -1519,7 +1539,7 @@ export const useStore = create<KanthinkState>()(
         });
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'task:create', task, cardId });
+        broadcastAndPublish({ type: 'task:create', task, cardId });
 
         return task;
       },
@@ -1544,7 +1564,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncTaskUpdate(task.channelId, id, updates);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'task:update', id, updates });
+        broadcastAndPublish({ type: 'task:update', id, updates });
       },
 
       deleteTask: (id) => {
@@ -1582,7 +1602,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncTaskDelete(task.channelId, id);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'task:delete', id, cardId: task.cardId, channelId: task.channelId });
+        broadcastAndPublish({ type: 'task:delete', id, cardId: task.cardId, channelId: task.channelId });
       },
 
       completeTask: (id) => {
@@ -1615,7 +1635,7 @@ export const useStore = create<KanthinkState>()(
         });
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'task:complete', id, completedAt: timestamp });
+        broadcastAndPublish({ type: 'task:complete', id, completedAt: timestamp });
       },
 
       toggleTaskStatus: (id) => {
@@ -1655,8 +1675,8 @@ export const useStore = create<KanthinkState>()(
           completedAt: newStatus === 'done' ? timestamp : undefined,
         });
 
-        // Broadcast to other tabs
-        broadcastEvent({
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({
           type: 'task:toggleStatus',
           id,
           status: newStatus,
@@ -1694,6 +1714,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncTaskReorder(task.channelId, taskId, cardId, toIndex);
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'task:reorder', cardId, fromIndex, toIndex });
       },
 
       reorderUnlinkedTasks: (channelId, fromIndex, toIndex) => {
@@ -1734,6 +1757,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { unlinkedTaskOrder });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'task:reorderUnlinked', channelId, fromIndex, toIndex });
       },
 
       addQuestion: (channelId, questionData) => {
@@ -1766,6 +1792,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { questions });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'question:add', channelId, question });
       },
 
       answerQuestion: (channelId, questionId, answer) => {
@@ -1797,6 +1826,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { questions });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'question:answer', channelId, questionId, answer });
       },
 
       dismissQuestion: (channelId, questionId) => {
@@ -1828,6 +1860,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { questions });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'question:dismiss', channelId, questionId });
       },
 
       addInstructionRevision: (channelId, instructions, source) => {
@@ -1862,6 +1897,13 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { aiInstructions: instructions, instructionHistory });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({
+          type: 'instruction:addRevision',
+          channelId,
+          revision: { id: revision.id, instructions: revision.instructions, source: revision.source, timestamp: revision.appliedAt },
+        });
       },
 
       rollbackInstruction: (channelId, revisionId) => {
@@ -1889,6 +1931,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { aiInstructions: revision.instructions });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'instruction:rollback', channelId, revisionId, instructions: revision.instructions });
       },
 
       setSuggestionMode: (channelId, mode) => {
@@ -1910,6 +1955,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { suggestionMode: mode });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'instruction:setSuggestionMode', channelId, mode });
       },
 
       addPropertyDefinition: (channelId, definition) => {
@@ -1938,6 +1986,9 @@ export const useStore = create<KanthinkState>()(
         // Sync to server
         sync.syncChannelUpdate(channelId, { propertyDefinitions });
 
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'property:addDefinition', channelId, definition: propertyDef });
+
         return propertyDef;
       },
 
@@ -1965,6 +2016,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { propertyDefinitions });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'property:removeDefinition', channelId, propertyId });
       },
 
       setCardProperty: (cardId, key, value, displayType, color) => {
@@ -1997,6 +2051,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { properties: updatedProperties });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:setProperty', cardId, property: newProperty });
       },
 
       removeCardProperty: (cardId, key) => {
@@ -2023,6 +2080,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { properties: updatedProperties });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:removeProperty', cardId, key });
       },
 
       setCardProcessing: (cardId, isProcessing, status) => {
@@ -2061,6 +2121,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { properties });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:setProperties', cardId, properties });
       },
 
       recordInstructionRun: (cardId, instructionId) => {
@@ -2091,6 +2154,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { processedByInstructions });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:recordInstructionRun', cardId, instructionId });
       },
 
       clearInstructionRun: (cardId, instructionId) => {
@@ -2120,6 +2186,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { processedByInstructions: processedByInstructions ?? {} });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:clearInstructionRun', cardId, instructionId });
       },
 
       addTagDefinition: (channelId, name, color) => {
@@ -2147,6 +2216,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { tagDefinitions });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'tag:addDefinition', channelId, tag: tagDef });
 
         return tagDef;
       },
@@ -2211,6 +2283,9 @@ export const useStore = create<KanthinkState>()(
         for (const { id, tags } of cardsToSync) {
           sync.syncCardUpdate(channelId, id, { tags });
         }
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'tag:updateDefinition', channelId, tagId, updates });
       },
 
       removeTagDefinition: (channelId, tagId) => {
@@ -2237,6 +2312,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncChannelUpdate(channelId, { tagDefinitions });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'tag:removeDefinition', channelId, tagId });
       },
 
       addTagToCard: (cardId, tagName) => {
@@ -2266,6 +2344,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { tags });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:addTag', cardId, tagName });
       },
 
       removeTagFromCard: (cardId, tagName) => {
@@ -2292,6 +2373,9 @@ export const useStore = create<KanthinkState>()(
 
         // Sync to server
         sync.syncCardUpdate(card.channelId, cardId, { tags });
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'card:removeTag', cardId, tagName });
       },
 
       createInstructionCard: (channelId, input) => {
@@ -2351,7 +2435,7 @@ export const useStore = create<KanthinkState>()(
         });
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'instructionCard:create', instructionCard });
+        broadcastAndPublish({ type: 'instructionCard:create', instructionCard });
 
         return instructionCard;
       },
@@ -2376,7 +2460,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncInstructionCardUpdate(instructionCard.channelId, id, updates);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'instructionCard:update', id, updates });
+        broadcastAndPublish({ type: 'instructionCard:update', id, updates });
       },
 
       deleteInstructionCard: (id) => {
@@ -2410,7 +2494,7 @@ export const useStore = create<KanthinkState>()(
         sync.syncInstructionCardDelete(channelId, id);
 
         // Broadcast to other tabs
-        broadcastEvent({ type: 'instructionCard:delete', id, channelId });
+        broadcastAndPublish({ type: 'instructionCard:delete', id, channelId });
       },
 
       duplicateInstructionCard: (id) => {
@@ -2495,6 +2579,9 @@ export const useStore = create<KanthinkState>()(
         if (instructionId) {
           sync.syncInstructionCardUpdate(channelId, instructionId, { position: toIndex });
         }
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'instructionCard:reorder', channelId, fromIndex, toIndex });
       },
 
       seedInitialChannel: () => {
@@ -2846,6 +2933,10 @@ export const useStore = create<KanthinkState>()(
           return { instructionRuns: updatedRuns };
         });
 
+        // Broadcast to other tabs and devices
+        const fullRun: InstructionRun = { ...run, id };
+        broadcastAndPublish({ type: 'instructionRun:save', run: fullRun });
+
         return id;
       },
 
@@ -2966,6 +3057,9 @@ export const useStore = create<KanthinkState>()(
             [runId]: { ...run, undone: true },
           },
         }));
+
+        // Broadcast to other tabs and devices
+        broadcastAndPublish({ type: 'instructionRun:undo', runId });
       },
 
       getInstructionRuns: (instructionId) => {

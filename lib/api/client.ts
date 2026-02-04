@@ -51,7 +51,7 @@ export async function fetchChannel(channelId: string): Promise<ChannelDetailResp
   return res.json()
 }
 
-export async function createChannel(input: ChannelInput & { id?: string; columnNames?: string[] }): Promise<{ channel: Channel; columns: Column[] }> {
+export async function createChannel(input: ChannelInput & { id?: string; columnNames?: string[]; columns?: Array<{ id: string; name: string; isAiTarget?: boolean }> }): Promise<{ channel: Channel; columns: Column[] }> {
   const res = await fetch('/api/channels', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -7,6 +7,15 @@ import { fetchChannels, fetchChannel, fetchFolders, fetchGlobalShrooms } from '@
 import { enableServerMode, disableServerMode } from '@/lib/api/sync'
 import { initBroadcastSync } from '@/lib/sync/broadcastSync'
 import { applyBroadcastEvent } from '@/lib/sync/applyBroadcastEvent'
+import {
+  initPusher,
+  subscribeToChannels,
+  subscribeToUser,
+  subscribeToChannel,
+  unsubscribeFromChannel,
+  disconnect as disconnectPusher,
+  getSubscribedChannels,
+} from '@/lib/sync/pusherClient'
 import { MigrationModal } from '@/components/MigrationModal'
 import { STORAGE_KEY } from '@/lib/constants'
 import type { Channel, Card, Task, InstructionCard, Folder, Column } from '@/lib/types'
@@ -64,6 +73,10 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
   const [error, setError] = useState<string | null>(null)
   const [showMigration, setShowMigration] = useState(false)
   const [hasFetched, setHasFetched] = useState(false)
+  const [pusherInitialized, setPusherInitialized] = useState(false)
+
+  // Track channel IDs we've loaded for Pusher subscription
+  const loadedChannelIdsRef = useRef<string[]>([])
 
   const fetchServerData = useCallback(async () => {
     try {
@@ -304,6 +317,9 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       enableServerMode()
       setIsServerMode(true)
       setHasFetched(true)
+
+      // Store channel IDs for Pusher subscription
+      loadedChannelIdsRef.current = Object.keys(channels)
     } catch (err) {
       console.error('Failed to fetch server data:', err)
       setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -328,18 +344,71 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
     }
   }, [sessionStatus, session?.user?.id, hasFetched, fetchServerData])
 
+  // Handler for applying events from BroadcastChannel or Pusher
+  const applyEventHandler = useCallback((event: Parameters<typeof applyBroadcastEvent>[0]) => {
+    // Apply the event to our local store
+    const set = useStore.setState
+    const get = useStore.getState
+    applyBroadcastEvent(event, set, get)
+  }, [])
+
   // Initialize cross-tab sync via BroadcastChannel
   useEffect(() => {
-    const cleanup = initBroadcastSync((event) => {
-      // Apply the event to our local store
-      // We use useStore.setState and useStore.getState to interact with the store
-      const set = useStore.setState
-      const get = useStore.getState
-      applyBroadcastEvent(event, set, get)
-    })
-
+    const cleanup = initBroadcastSync(applyEventHandler)
     return cleanup
-  }, [])
+  }, [applyEventHandler])
+
+  // Initialize Pusher for cross-device sync
+  useEffect(() => {
+    if (!isServerMode || !session?.user?.id || pusherInitialized) {
+      return
+    }
+
+    // Initialize Pusher with the event handler
+    const success = initPusher(applyEventHandler)
+
+    if (success) {
+      setPusherInitialized(true)
+
+      // Subscribe to user's personal channel
+      subscribeToUser(session.user.id)
+
+      // Subscribe to all loaded channels
+      if (loadedChannelIdsRef.current.length > 0) {
+        subscribeToChannels(loadedChannelIdsRef.current)
+      }
+    }
+
+    return () => {
+      // Cleanup Pusher on unmount
+      disconnectPusher()
+      setPusherInitialized(false)
+    }
+  }, [isServerMode, session?.user?.id, pusherInitialized, applyEventHandler])
+
+  // Track channel changes for Pusher subscriptions
+  useEffect(() => {
+    if (!pusherInitialized) {
+      return
+    }
+
+    const currentChannelIds = Object.keys(localChannels)
+    const subscribedChannels = getSubscribedChannels()
+
+    // Subscribe to new channels
+    for (const channelId of currentChannelIds) {
+      if (!subscribedChannels.includes(channelId)) {
+        subscribeToChannel(channelId)
+      }
+    }
+
+    // Unsubscribe from removed channels
+    for (const channelId of subscribedChannels) {
+      if (!currentChannelIds.includes(channelId)) {
+        unsubscribeFromChannel(channelId)
+      }
+    }
+  }, [localChannels, pusherInitialized])
 
   const handleMigrationComplete = useCallback(() => {
     setShowMigration(false)

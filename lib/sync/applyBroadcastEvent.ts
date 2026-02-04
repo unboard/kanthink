@@ -757,6 +757,398 @@ export function applyBroadcastEvent(
       break
 
     // ===== SERVER SYNC EVENTS =====
+    // ===== CARD MESSAGE EVENTS =====
+    case 'card:addAIResponse':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: {
+              ...card,
+              messages: [...(card.messages ?? []), event.message],
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'card:updateMessageAction':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: {
+              ...card,
+              messages: (card.messages ?? []).map((m) =>
+                m.id === event.messageId
+                  ? {
+                      ...m,
+                      proposedActions: (m.proposedActions ?? []).map((a) =>
+                        a.id === event.actionId ? { ...a, ...event.updates } : a
+                      ),
+                    }
+                  : m
+              ),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    // ===== PROPERTY EVENTS =====
+    case 'property:addDefinition':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              propertyDefinitions: [...(channel.propertyDefinitions ?? []), event.definition],
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'property:removeDefinition':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              propertyDefinitions: (channel.propertyDefinitions ?? []).filter(
+                (p) => p.id !== event.propertyId
+              ),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'card:setProperty':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        const properties = card.properties ?? []
+        const existingIndex = properties.findIndex((p) => p.key === event.property.key)
+        const newProperties =
+          existingIndex >= 0
+            ? properties.map((p, i) => (i === existingIndex ? event.property : p))
+            : [...properties, event.property]
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: { ...card, properties: newProperties, updatedAt: now() },
+          },
+        }
+      })
+      break
+
+    case 'card:removeProperty':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: {
+              ...card,
+              properties: (card.properties ?? []).filter((p) => p.key !== event.key),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'card:setProperties':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: { ...card, properties: event.properties, updatedAt: now() },
+          },
+        }
+      })
+      break
+
+    case 'card:recordInstructionRun':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: {
+              ...card,
+              processedByInstructions: {
+                ...(card.processedByInstructions ?? {}),
+                [event.instructionId]: now(),
+              },
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'card:clearInstructionRun':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        const { [event.instructionId]: _, ...remaining } = card.processedByInstructions ?? {}
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: {
+              ...card,
+              processedByInstructions: remaining,
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    // ===== TAG EVENTS =====
+    case 'tag:addDefinition':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              tagDefinitions: [...(channel.tagDefinitions ?? []), event.tag],
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'tag:updateDefinition':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              tagDefinitions: (channel.tagDefinitions ?? []).map((t) =>
+                t.id === event.tagId ? { ...t, ...event.updates } : t
+              ),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'tag:removeDefinition':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              tagDefinitions: (channel.tagDefinitions ?? []).filter((t) => t.id !== event.tagId),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'card:addTag':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        const tags = card.tags ?? []
+        if (tags.includes(event.tagName)) return state
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: { ...card, tags: [...tags, event.tagName], updatedAt: now() },
+          },
+        }
+      })
+      break
+
+    case 'card:removeTag':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: {
+              ...card,
+              tags: (card.tags ?? []).filter((t) => t !== event.tagName),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    // ===== QUESTION EVENTS =====
+    case 'question:add':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              questions: [...(channel.questions ?? []), event.question],
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'question:answer':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              questions: (channel.questions ?? []).map((q) =>
+                q.id === event.questionId
+                  ? { ...q, status: 'answered' as const, answer: event.answer, answeredAt: now() }
+                  : q
+              ),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'question:dismiss':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              questions: (channel.questions ?? []).map((q) =>
+                q.id === event.questionId ? { ...q, status: 'dismissed' as const } : q
+              ),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    // ===== INSTRUCTION HISTORY EVENTS =====
+    case 'instruction:addRevision':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        // Transform event revision to InstructionRevision type
+        const revision = {
+          id: event.revision.id,
+          instructions: event.revision.instructions,
+          source: event.revision.source as 'user' | 'ai-suggested' | 'ai-auto',
+          appliedAt: event.revision.timestamp,
+        }
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              instructionHistory: [...(channel.instructionHistory ?? []), revision],
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'instruction:rollback':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              aiInstructions: event.instructions,
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'instruction:setSuggestionMode':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...channel,
+              suggestionMode: event.mode,
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    // ===== INSTRUCTION RUN EVENTS =====
+    case 'instructionRun:save':
+      set((state) => ({
+        instructionRuns: { ...state.instructionRuns, [event.run.id]: event.run },
+      }))
+      break
+
+    case 'instructionRun:undo':
+      set((state) => {
+        const run = state.instructionRuns[event.runId]
+        if (!run) return state
+        return {
+          instructionRuns: {
+            ...state.instructionRuns,
+            [event.runId]: { ...run, undone: true },
+          },
+        }
+      })
+      break
+
+    // ===== SERVER SYNC EVENTS =====
     case 'server:load':
       // Another tab loaded from server - we should refresh
       // For now, just log it - could trigger a refetch

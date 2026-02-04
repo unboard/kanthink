@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json()
-    const { id: clientId, name, description, aiInstructions, columnNames } = body
+    const { id: clientId, name, description, aiInstructions, columnNames, columns: clientColumns } = body
 
     if (!name || typeof name !== 'string') {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -97,20 +97,44 @@ export async function POST(req: NextRequest) {
       updatedAt: now,
     })
 
-    // Create default columns
-    const colNames = columnNames && Array.isArray(columnNames) && columnNames.length > 0
-      ? columnNames
-      : DEFAULT_COLUMN_NAMES
+    // Create columns - use client-provided columns with IDs if available
+    let columnInserts: Array<{
+      id: string
+      channelId: string
+      name: string
+      position: number
+      isAiTarget: boolean
+      createdAt: Date
+      updatedAt: Date
+    }>
 
-    const columnInserts = colNames.map((colName: string, index: number) => ({
-      id: nanoid(),
-      channelId,
-      name: colName,
-      position: index,
-      isAiTarget: index === 0, // First column is AI target by default
-      createdAt: now,
-      updatedAt: now,
-    }))
+    if (clientColumns && Array.isArray(clientColumns) && clientColumns.length > 0) {
+      // Use client-provided column IDs for optimistic sync consistency
+      columnInserts = clientColumns.map((col: { id: string; name: string; isAiTarget?: boolean }, index: number) => ({
+        id: col.id,
+        channelId,
+        name: col.name,
+        position: index,
+        isAiTarget: col.isAiTarget ?? index === 0,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    } else {
+      // Fallback to column names or defaults
+      const colNames = columnNames && Array.isArray(columnNames) && columnNames.length > 0
+        ? columnNames
+        : DEFAULT_COLUMN_NAMES
+
+      columnInserts = colNames.map((colName: string, index: number) => ({
+        id: nanoid(),
+        channelId,
+        name: colName,
+        position: index,
+        isAiTarget: index === 0,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    }
 
     await db.insert(columns).values(columnInserts)
 

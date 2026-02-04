@@ -22,11 +22,14 @@ export function isServerMode() {
 }
 
 // Helper to run sync in background without blocking UI
-function syncInBackground(fn: () => Promise<void>) {
-  if (!serverModeEnabled) return
+function syncInBackground(fn: () => Promise<void>, label?: string) {
+  if (!serverModeEnabled) {
+    console.warn(`[Sync] Skipping ${label || 'sync'} - server mode not enabled`)
+    return
+  }
 
   fn().catch((err) => {
-    console.error('Background sync failed:', err)
+    console.error(`[Sync] ${label || 'Background sync'} failed:`, err)
     // TODO: Could add retry logic or show toast notification
   })
 }
@@ -37,7 +40,7 @@ export function syncChannelCreate(channelId: string, data: Parameters<typeof api
   syncInBackground(async () => {
     // Pass the client-generated ID so server uses the same ID
     await api.createChannel({ ...data, id: channelId })
-  })
+  }, `channelCreate:${channelId}`)
 }
 
 export function syncChannelUpdate(channelId: string, updates: Parameters<typeof api.updateChannel>[1]) {

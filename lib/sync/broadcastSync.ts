@@ -3,9 +3,12 @@
  *
  * When any Zustand store mutation happens, we broadcast the event to other tabs.
  * Other tabs receive and apply the same mutation, keeping all tabs in sync.
+ *
+ * Also handles cross-device sync via Pusher when in server mode.
  */
 
 import type { ID, Channel, Card, Task, InstructionCard, Folder, Column, CardMessage, CardProperty, StoredAction, PropertyDefinition, TagDefinition, ChannelQuestion, SuggestionMode, InstructionRun } from '../types'
+import { isServerMode } from '../api/sync'
 
 const CHANNEL_NAME = 'kanthink-sync'
 
@@ -108,10 +111,14 @@ interface BroadcastMessage {
   timestamp: number
 }
 
-// Generate a unique ID for this tab
-const tabId = typeof crypto !== 'undefined'
+// Generate a unique ID for this tab/client
+// Exported so Pusher can use the same ID to prevent echo
+export const clientId = typeof crypto !== 'undefined'
   ? crypto.randomUUID()
   : `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+// Keep tabId as an alias for backwards compatibility
+const tabId = clientId
 
 // Singleton channel instance
 let channel: BroadcastChannel | null = null
@@ -210,4 +217,112 @@ export function isRemoteEvent(): boolean {
  */
 export function getTabId(): string {
   return tabId
+}
+
+// Events that are user-scoped (sent to user's personal channel)
+const USER_SCOPED_EVENTS = new Set([
+  'folder:create',
+  'folder:update',
+  'folder:delete',
+  'folder:reorder',
+  'folder:toggleCollapse',
+  'channel:moveToFolder',
+  'channel:reorderInFolder',
+  'channel:reorder',
+  'channel:create', // User needs to see new channels on other devices
+])
+
+/**
+ * Extract the channelId from an event, if applicable.
+ */
+function getChannelIdFromEvent(event: BroadcastEvent): string | null {
+  // Check if event has a channelId directly
+  if ('channelId' in event && event.channelId) {
+    return event.channelId as string
+  }
+
+  // Check for channel in event object
+  if (event.type === 'channel:create' && 'channel' in event) {
+    return (event as { channel: { id: string } }).channel.id
+  }
+  if (event.type === 'channel:update' || event.type === 'channel:delete') {
+    return (event as { id: string }).id
+  }
+
+  // Check for card with channelId
+  if (event.type === 'card:create' && 'card' in event) {
+    return (event as { card: { channelId: string } }).card.channelId
+  }
+
+  // Check for instruction card with channelId
+  if (event.type === 'instructionCard:create' && 'instructionCard' in event) {
+    return (event as { instructionCard: { channelId: string } }).instructionCard.channelId
+  }
+
+  // Check for task with channelId
+  if (event.type === 'task:create' && 'task' in event) {
+    return (event as { task: { channelId: string } }).task.channelId
+  }
+
+  // Check for instruction run with channelId
+  if (event.type === 'instructionRun:save' && 'run' in event) {
+    return (event as { run: { channelId: string } }).run.channelId
+  }
+
+  return null
+}
+
+/**
+ * Broadcast an event to both local tabs (BroadcastChannel) and cross-device (Pusher).
+ * This is the main function to use for syncing store mutations.
+ */
+export function broadcastAndPublish(event: BroadcastEvent): void {
+  broadcastEvent(event)
+  publishToPusher(event)
+}
+
+/**
+ * Publish an event to Pusher for cross-device sync.
+ * Fire-and-forget - doesn't block on response.
+ */
+export function publishToPusher(event: BroadcastEvent): void {
+  // Don't publish if we're applying a remote event
+  if (isApplyingRemoteEvent) {
+    return
+  }
+
+  // Only publish in server mode (authenticated)
+  if (!isServerMode()) {
+    return
+  }
+
+  // Don't publish in SSR
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  // Determine if this is a user-scoped event
+  const isUserScoped = USER_SCOPED_EVENTS.has(event.type)
+
+  // For channel-scoped events, get the channelId
+  const channelId = isUserScoped ? undefined : getChannelIdFromEvent(event)
+
+  // If it's not user-scoped and we couldn't find a channelId, skip
+  if (!isUserScoped && !channelId) {
+    return
+  }
+
+  // Fire-and-forget POST to broadcast endpoint
+  fetch('/api/sync/broadcast', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event,
+      channelId,
+      senderId: clientId,
+    }),
+  }).catch((error) => {
+    // Silently fail - this is fire-and-forget
+    console.warn('[Pusher] Failed to publish event:', error)
+  })
 }
