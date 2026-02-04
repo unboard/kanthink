@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { ChannelGrid } from '@/components/home/ChannelGrid';
+import { NewChannelOverlay } from '@/components/home/NewChannelOverlay';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
-import { GuidedQuestionnaireOverlay, type GuideResultData } from '@/app/prototypes/overlays/GuidedQuestionnaireOverlay';
 import { signInWithGoogle } from '@/lib/actions/auth';
 
 const WELCOME_SEEN_KEY = 'kanthink-welcome-seen';
@@ -14,7 +14,8 @@ const WELCOME_SEEN_KEY = 'kanthink-welcome-seen';
 export default function Home() {
   const router = useRouter();
   const { data: session } = useSession();
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [showNewChannelOverlay, setShowNewChannelOverlay] = useState(false);
+  const [showKanHelp, setShowKanHelp] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [hasCheckedWelcome, setHasCheckedWelcome] = useState(false);
 
@@ -42,10 +43,11 @@ export default function Home() {
     setShowWelcome(false);
   };
 
-  // Handle channel creation from the conversational welcome flow
-  const handleWelcomeCreate = (result: ConversationalWelcomeResultData) => {
+  // Handle channel creation from the conversational flows (welcome or Kan help)
+  const handleConversationalCreate = (result: ConversationalWelcomeResultData) => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
     setShowWelcome(false);
+    setShowKanHelp(false);
 
     let channel;
     if (result.structure && result.structure.columns.length > 0) {
@@ -64,30 +66,6 @@ export default function Home() {
       });
     }
 
-    router.push(`/channel/${channel.id}`);
-  };
-
-  // Handle channel creation from the standalone questionnaire (for "Create channel" button)
-  const handleCreateChannel = (result: GuideResultData) => {
-    let channel;
-
-    if (result.structure && result.structure.columns.length > 0) {
-      channel = createChannelWithStructure({
-        name: result.channelName,
-        description: result.channelDescription,
-        aiInstructions: result.instructions,
-        columns: result.structure.columns,
-        instructionCards: result.structure.instructionCards || [],
-      });
-    } else {
-      channel = createChannel({
-        name: result.channelName,
-        description: result.channelDescription,
-        aiInstructions: result.instructions,
-      });
-    }
-
-    setIsCreateOpen(false);
     router.push(`/channel/${channel.id}`);
   };
 
@@ -98,18 +76,34 @@ export default function Home() {
 
   return (
     <div className="h-full">
-      <ChannelGrid onCreateChannel={() => setIsCreateOpen(true)} />
+      <ChannelGrid onCreateChannel={() => setShowNewChannelOverlay(true)} />
 
-      <GuidedQuestionnaireOverlay
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onCreate={handleCreateChannel}
+      {/* New Channel Overlay - shows options for Quick Start, Kan Help, Templates */}
+      <NewChannelOverlay
+        isOpen={showNewChannelOverlay}
+        onClose={() => setShowNewChannelOverlay(false)}
+        onKanHelp={() => {
+          setShowNewChannelOverlay(false);
+          setShowKanHelp(true);
+        }}
       />
 
+      {/* Kan Help - Conversational channel creation */}
+      <ConversationalWelcome
+        isOpen={showKanHelp}
+        onClose={() => setShowKanHelp(false)}
+        onCreate={handleConversationalCreate}
+        isSignedIn={!!session}
+        signInAction={signInWithGoogle}
+        signInRedirectTo="/"
+        isWelcome={false}
+      />
+
+      {/* First-time Welcome - Full conversational welcome for new users */}
       <ConversationalWelcome
         isOpen={showWelcome}
         onClose={handleWelcomeClose}
-        onCreate={handleWelcomeCreate}
+        onCreate={handleConversationalCreate}
         isSignedIn={!!session}
         signInAction={signInWithGoogle}
         signInRedirectTo="/"
