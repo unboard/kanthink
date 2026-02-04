@@ -37,6 +37,7 @@ import type { Channel, Folder } from '@/lib/types';
 // Prefixes to distinguish item types in dnd-kit
 const CHANNEL_PREFIX = 'channel:';
 const FOLDER_PREFIX = 'folder:';
+const HELP_FOLDER_ID = '__help__';
 
 // ============================================
 // SORTABLE CHANNEL ITEM
@@ -106,6 +107,100 @@ function SortableChannelItem({ channel, isActive, onNavigate, indented }: Sortab
       >
         {channel.name}
       </span>
+    </div>
+  );
+}
+
+// ============================================
+// HELP FOLDER ITEM (Non-draggable)
+// ============================================
+
+interface HelpFolderItemProps {
+  folder: Folder;
+  channels: Record<string, Channel>;
+  pathname: string;
+  onNavigate: () => void;
+}
+
+function HelpFolderItem({ folder, channels, pathname, onNavigate }: HelpFolderItemProps) {
+  const router = useRouter();
+  const [isCollapsed, setIsCollapsed] = useState(folder.isCollapsed ?? false);
+
+  const folderChannels = folder.channelIds
+    .map((id) => channels[id])
+    .filter((c) => c && c.status !== 'archived');
+
+  const handleChannelClick = (channelId: string) => {
+    onNavigate();
+    setTimeout(() => router.push(`/channel/${channelId}`), 50);
+  };
+
+  return (
+    <div className="space-y-2">
+      {/* Folder header */}
+      <div className="flex items-center gap-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/30">
+        {/* Collapse/expand button */}
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-1 -ml-1 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+        >
+          <svg
+            className={`w-4 h-4 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+          </svg>
+        </button>
+
+        {/* Help icon */}
+        <svg className="w-4 h-4 text-blue-500 dark:text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+
+        {/* Folder name */}
+        <span className="flex-1 text-sm font-medium text-blue-600 dark:text-blue-400">
+          {folder.name}
+        </span>
+
+        {/* Channel count */}
+        <span className="text-xs text-blue-400 dark:text-blue-500">
+          {folderChannels.length}
+        </span>
+      </div>
+
+      {/* Folder contents */}
+      {!isCollapsed && (
+        <div className="space-y-2">
+          {folderChannels.length === 0 ? (
+            <div className="ml-6 px-3 py-2 text-xs text-neutral-400 italic">
+              No help channels
+            </div>
+          ) : (
+            folderChannels.map((channel) => (
+              <div
+                key={channel.id}
+                onClick={() => handleChannelClick(channel.id)}
+                className={`flex items-center gap-3 p-3 rounded-xl select-none ml-6 ${
+                  pathname === `/channel/${channel.id}`
+                    ? 'bg-violet-100 dark:bg-violet-900/40'
+                    : 'bg-neutral-50 dark:bg-neutral-800/50 active:bg-neutral-100 dark:active:bg-neutral-800'
+                }`}
+              >
+                <span
+                  className={`text-sm flex-1 ${
+                    pathname === `/channel/${channel.id}`
+                      ? 'text-violet-700 dark:text-violet-300 font-medium'
+                      : 'text-neutral-700 dark:text-neutral-300'
+                  }`}
+                >
+                  {channel.name}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -327,12 +422,17 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const orderedFolders = folderOrder.map((id) => folders[id]).filter(Boolean);
+  // Separate Help folder from user folders
+  const helpFolder = folders[HELP_FOLDER_ID];
+  const orderedFolders = folderOrder
+    .filter((id) => id !== HELP_FOLDER_ID)
+    .map((id) => folders[id])
+    .filter(Boolean);
   const rootChannels = channelOrder.map((id) => channels[id]).filter((c) => c && c.status !== 'archived');
 
-  // Build all sortable IDs for the main context
+  // Build all sortable IDs for the main context (excluding Help folder)
   const allSortableIds = [
-    ...folderOrder.map((id) => `${FOLDER_PREFIX}${id}`),
+    ...folderOrder.filter((id) => id !== HELP_FOLDER_ID).map((id) => `${FOLDER_PREFIX}${id}`),
     ...channelOrder.map((id) => `${CHANNEL_PREFIX}${id}`),
   ];
 
@@ -473,6 +573,18 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
       <div className="flex flex-col h-full">
         {/* Channel/folder list with drag-and-drop */}
         <div className="flex-1 px-4 pt-2 overflow-y-auto">
+          {/* Help folder - rendered outside DndContext, always first */}
+          {helpFolder && (
+            <div className="mb-4">
+              <HelpFolderItem
+                folder={helpFolder}
+                channels={channels}
+                pathname={pathname}
+                onNavigate={onClose}
+              />
+            </div>
+          )}
+
           {hasItems ? (
             <DndContext
               sensors={sensors}
@@ -483,7 +595,7 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
             >
               <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                 <div className="space-y-2">
-                  {/* Folders */}
+                  {/* User Folders */}
                   {orderedFolders.map((folder) => (
                     <SortableFolderItem
                       key={folder.id}
@@ -535,8 +647,8 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
                 ) : null}
               </DragOverlay>
             </DndContext>
-          ) : (
-            // Empty state
+          ) : !helpFolder ? (
+            // Empty state - only show if no Help folder either
             <div className="flex flex-col items-center justify-center py-16">
               <div className="w-16 h-16 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-3">
                 <svg className="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -546,7 +658,7 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
               <p className="text-base font-medium text-neutral-800 dark:text-neutral-200">No channels yet</p>
               <p className="text-sm text-neutral-500 mt-1">Create your first channel below</p>
             </div>
-          )}
+          ) : null}
 
           {/* Create folder input */}
           {isCreatingFolder && (

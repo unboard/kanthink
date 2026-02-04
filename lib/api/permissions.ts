@@ -51,20 +51,33 @@ export async function getChannelPermission(
     ),
   })
 
-  if (!share) {
-    return null
+  if (share) {
+    const role = share.role as ChannelRole
+    return {
+      channelId,
+      userId,
+      role,
+      isOwner: false,
+      canEdit: role === 'editor' || role === 'owner',
+      canDelete: false, // Only owner can delete
+      canManageShares: role === 'owner', // Only owner can manage shares
+    }
   }
 
-  const role = share.role as ChannelRole
-  return {
-    channelId,
-    userId,
-    role,
-    isOwner: false,
-    canEdit: role === 'editor' || role === 'owner',
-    canDelete: false, // Only owner can delete
-    canManageShares: role === 'owner', // Only owner can manage shares
+  // Grant viewer access to global help channels for any authenticated user
+  if (channel.isGlobalHelp) {
+    return {
+      channelId,
+      userId,
+      role: 'viewer',
+      isOwner: false,
+      canEdit: false,
+      canDelete: false,
+      canManageShares: false,
+    }
   }
+
+  return null
 }
 
 /**
@@ -100,7 +113,7 @@ export async function canManageShares(channelId: string, userId: string): Promis
 }
 
 /**
- * Get all channels accessible to a user (owned + shared).
+ * Get all channels accessible to a user (owned + shared + global help).
  * Returns channel IDs with their roles.
  */
 export async function getUserChannels(userId: string): Promise<Array<{ channelId: string; role: ChannelRole }>> {
@@ -116,6 +129,12 @@ export async function getUserChannels(userId: string): Promise<Array<{ channelId
     columns: { channelId: true, role: true },
   })
 
+  // Get global help channels (available to all users)
+  const globalHelpChannels = await db.query.channels.findMany({
+    where: eq(channels.isGlobalHelp, true),
+    columns: { id: true },
+  })
+
   const result: Array<{ channelId: string; role: ChannelRole }> = []
 
   // Add owned channels
@@ -128,6 +147,14 @@ export async function getUserChannels(userId: string): Promise<Array<{ channelId
   for (const share of sharedChannels) {
     if (!ownedIds.has(share.channelId)) {
       result.push({ channelId: share.channelId, role: share.role as ChannelRole })
+    }
+  }
+
+  // Add global help channels with viewer role (avoid duplicates)
+  const existingIds = new Set(result.map(r => r.channelId))
+  for (const channel of globalHelpChannels) {
+    if (!existingIds.has(channel.id)) {
+      result.push({ channelId: channel.id, role: 'viewer' })
     }
   }
 

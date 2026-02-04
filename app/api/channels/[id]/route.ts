@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { auth, isAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import {
   channels,
@@ -129,7 +129,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
-    await requirePermission(channelId, userId, 'edit')
+    const permission = await requirePermission(channelId, userId, 'edit')
 
     const body = await req.json()
     const {
@@ -144,6 +144,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       questions,
       instructionHistory,
       unlinkedTaskOrder,
+      isGlobalHelp,
     } = body
 
     // Build update object with only provided fields
@@ -162,6 +163,17 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (questions !== undefined) updates.questions = questions
     if (instructionHistory !== undefined) updates.instructionHistory = instructionHistory
     if (unlinkedTaskOrder !== undefined) updates.unlinkedTaskOrder = unlinkedTaskOrder
+
+    // Handle isGlobalHelp toggle (admin only, owner only)
+    if (isGlobalHelp !== undefined) {
+      if (!isAdmin(session.user.email)) {
+        return NextResponse.json({ error: 'Only admin can set global help status' }, { status: 403 })
+      }
+      if (!permission.isOwner) {
+        return NextResponse.json({ error: 'Can only mark owned channels as global' }, { status: 403 })
+      }
+      updates.isGlobalHelp = isGlobalHelp
+    }
 
     await db.update(channels).set(updates).where(eq(channels.id, channelId))
 

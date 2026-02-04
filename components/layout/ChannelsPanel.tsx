@@ -33,6 +33,7 @@ import type { Channel, Folder } from '@/lib/types';
 // Prefixes to distinguish item types in dnd-kit
 const CHANNEL_PREFIX = 'channel:';
 const FOLDER_PREFIX = 'folder:';
+const HELP_FOLDER_ID = '__help__';
 
 interface DraggableChannelProps {
   channel: Channel;
@@ -104,6 +105,82 @@ interface DraggableFolderProps {
   isOver?: boolean;
   isOverlay?: boolean;
   onNavigate?: () => void;
+}
+
+// Non-draggable Help folder component
+interface HelpFolderSectionProps {
+  folder: Folder;
+  channels: Record<string, Channel>;
+  pathname: string;
+  onNavigate?: () => void;
+}
+
+function HelpFolderSection({ folder, channels, pathname, onNavigate }: HelpFolderSectionProps) {
+  const [isCollapsed, setIsCollapsed] = useState(folder.isCollapsed ?? false);
+
+  const folderChannels = folder.channelIds
+    .map((id) => channels[id])
+    .filter((c) => c && c.status !== 'archived');
+
+  return (
+    <div className="mb-2">
+      <div className="group flex items-center rounded-md transition-colors bg-blue-50 dark:bg-blue-900/20">
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-1 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+        >
+          <svg
+            className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+          </svg>
+        </button>
+
+        {/* Help icon */}
+        <svg className="w-3.5 h-3.5 mr-1 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+
+        <span className="flex-1 text-sm text-blue-600 dark:text-blue-400 font-medium py-1">
+          {folder.name}
+        </span>
+      </div>
+
+      {!isCollapsed && (
+        <div className="ml-4 mt-0.5 space-y-0.5">
+          {folderChannels.length === 0 ? (
+            <div className="px-2 py-1 text-xs text-neutral-400 italic">No help channels</div>
+          ) : (
+            folderChannels.map((channel) => (
+              <div
+                key={channel.id}
+                className={`
+                  group relative flex items-center rounded-md transition-colors
+                  ${pathname === `/channel/${channel.id}` ? 'bg-neutral-200 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}
+                `}
+              >
+                <Link
+                  href={`/channel/${channel.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate?.();
+                  }}
+                  className={`
+                    flex-1 block py-1.5 px-2 text-sm transition-colors truncate
+                    ${pathname === `/channel/${channel.id}` ? 'text-neutral-900 dark:text-white' : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'}
+                  `}
+                >
+                  {channel.name}
+                </Link>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DraggableFolder({
@@ -302,7 +379,12 @@ export function ChannelsPanel() {
     }
   };
 
-  const orderedFolders = folderOrder.map((id) => folders[id]).filter(Boolean);
+  // Separate Help folder from user folders
+  const helpFolder = folders[HELP_FOLDER_ID];
+  const orderedFolders = folderOrder
+    .filter((id) => id !== HELP_FOLDER_ID)
+    .map((id) => folders[id])
+    .filter(Boolean);
   const rootChannels = channelOrder.map((id) => channels[id]).filter((c) => c && c.status !== 'archived');
 
   useEffect(() => {
@@ -311,9 +393,9 @@ export function ChannelsPanel() {
     }
   }, [hasHydrated, channels, seedInitialChannel]);
 
-  // Build all sortable IDs for the main context
+  // Build all sortable IDs for the main context (excluding Help folder)
   const allSortableIds = [
-    ...folderOrder.map((id) => `${FOLDER_PREFIX}${id}`),
+    ...folderOrder.filter((id) => id !== HELP_FOLDER_ID).map((id) => `${FOLDER_PREFIX}${id}`),
     ...channelOrder.map((id) => `${CHANNEL_PREFIX}${id}`),
   ];
 
@@ -449,9 +531,19 @@ export function ChannelsPanel() {
               onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
             >
+              {/* Help folder - rendered outside DndContext, always first */}
+              {helpFolder && (
+                <HelpFolderSection
+                  folder={helpFolder}
+                  channels={channels}
+                  pathname={pathname}
+                  onNavigate={closePanel}
+                />
+              )}
+
               <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                 <nav className="space-y-0.5">
-                  {/* Folders */}
+                  {/* User Folders */}
                   {orderedFolders.map((folder) => (
                     <DraggableFolder
                       key={folder.id}

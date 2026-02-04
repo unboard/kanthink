@@ -300,6 +300,9 @@ export const useStore = create<KanthinkState>()(
       },
 
       updateFolder: (id, updates) => {
+        // Block updates to the virtual Help folder
+        if (id === '__help__') return;
+
         set((state) => {
           const folder = state.folders[id];
           if (!folder) return state;
@@ -320,6 +323,9 @@ export const useStore = create<KanthinkState>()(
       },
 
       deleteFolder: (id) => {
+        // Block deletion of the virtual Help folder
+        if (id === '__help__') return;
+
         const folder = get().folders[id];
         const channelIds = folder?.channelIds ?? [];
 
@@ -364,13 +370,22 @@ export const useStore = create<KanthinkState>()(
       },
 
       moveChannelToFolder: (channelId, folderId) => {
+        // Block moving channels into or out of the virtual Help folder
+        if (folderId === '__help__') return;
+
+        const state = get();
+        // Check if channel is in Help folder - if so, block the move
+        const helpFolder = state.folders['__help__'];
+        if (helpFolder?.channelIds.includes(channelId)) return;
+
         set((state) => {
           // Remove from current location (either root or another folder)
           let newChannelOrder = state.channelOrder.filter((id) => id !== channelId);
           const newFolders = { ...state.folders };
 
-          // Remove from any existing folder
+          // Remove from any existing folder (except Help folder which is locked)
           for (const [fid, folder] of Object.entries(newFolders)) {
+            if (fid === '__help__') continue; // Skip Help folder
             if (folder.channelIds.includes(channelId)) {
               newFolders[fid] = {
                 ...folder,

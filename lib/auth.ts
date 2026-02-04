@@ -5,6 +5,17 @@ import { db } from './db'
 import { users, accounts, sessions, verificationTokens } from './db/schema'
 import { eq } from 'drizzle-orm'
 
+/**
+ * Check if the given email is an admin user.
+ * Admin email is configured via ADMIN_EMAIL environment variable.
+ */
+export function isAdmin(email: string | null | undefined): boolean {
+  if (!email) return false
+  const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase()
+  if (!adminEmail) return false
+  return adminEmail === email.toLowerCase()
+}
+
 // Only include Google provider if credentials are configured
 const providers = []
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {

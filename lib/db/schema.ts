@@ -77,6 +77,9 @@ export const channels = sqliteTable('channels', {
   includeBacksideInAI: integer('include_backside_in_ai', { mode: 'boolean' }).default(false),
   suggestionMode: text('suggestion_mode').$type<'off' | 'manual' | 'daily'>().default('off'),
 
+  // Global help channel (read-only for all users)
+  isGlobalHelp: integer('is_global_help', { mode: 'boolean' }).default(false),
+
   // JSON fields for complex data
   propertyDefinitions: text('property_definitions', { mode: 'json' }).$type<PropertyDefinitionJson[]>(),
   tagDefinitions: text('tag_definitions', { mode: 'json' }).$type<TagDefinitionJson[]>(),

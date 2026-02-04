@@ -93,6 +93,8 @@ export interface Folder {
   name: string;
   channelIds: ID[];              // Channels in this folder (ordered)
   isCollapsed?: boolean;         // UI state - collapsed in sidebar
+  isVirtual?: boolean;           // True for system folders like Help
+  isLocked?: boolean;            // Cannot be modified by user
   createdAt: string;
   updatedAt: string;
 }
@@ -222,6 +224,7 @@ export interface Channel {
   propertyDefinitions?: PropertyDefinition[];
   tagDefinitions?: TagDefinition[];
   unlinkedTaskOrder?: ID[];  // Order of standalone tasks (no cardId)
+  isGlobalHelp?: boolean;    // True if this is a global help resource (read-only for all users)
   createdAt: string;
   updatedAt: string;
 }

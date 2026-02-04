@@ -2,10 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import type { Channel, ChannelStatus, InstructionCard, Card, Task } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Button, Input, Textarea, Drawer } from '@/components/ui';
 import { InstructionGuide, type GuideResult } from '@/components/guide/InstructionGuide';
+
+// Admin email - must match ADMIN_EMAIL env var
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL?.toLowerCase();
 
 // Export format that's portable (uses column names instead of IDs)
 interface ChannelExport {
@@ -123,6 +127,7 @@ interface ChannelSettingsDrawerProps {
 
 export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSettingsDrawerProps) {
   const router = useRouter();
+  const { data: session } = useSession();
   const updateChannel = useStore((s) => s.updateChannel);
   const deleteChannel = useStore((s) => s.deleteChannel);
   const addInstructionRevision = useStore((s) => s.addInstructionRevision);
@@ -134,6 +139,7 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
   const [description, setDescription] = useState(channel.description);
   const [status, setStatus] = useState<ChannelStatus>(channel.status);
   const [includeBacksideInAI, setIncludeBacksideInAI] = useState(channel.includeBacksideInAI ?? false);
+  const [isGlobalHelp, setIsGlobalHelp] = useState(channel.isGlobalHelp ?? false);
   const [aiInstructions, setAiInstructions] = useState(channel.aiInstructions || '');
   const [showInstructionChat, setShowInstructionChat] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -141,6 +147,9 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
   const [copied, setCopied] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
+
+  // Check if current user is admin
+  const isAdminUser = ADMIN_EMAIL && session?.user?.email?.toLowerCase() === ADMIN_EMAIL;
 
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
   const createCard = useStore((s) => s.createCard);
@@ -155,6 +164,7 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
       setDescription(channel.description);
       setStatus(channel.status);
       setIncludeBacksideInAI(channel.includeBacksideInAI ?? false);
+      setIsGlobalHelp(channel.isGlobalHelp ?? false);
       setAiInstructions(channel.aiInstructions || '');
       setShowInstructionChat(false);
       setShowExport(false);
@@ -486,6 +496,31 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
             </div>
           )}
         </div>
+
+        {/* Admin: Global Help Toggle */}
+        {isAdminUser && (
+          <div className="border-t border-neutral-200 dark:border-neutral-800 pt-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isGlobalHelp}
+                onChange={(e) => {
+                  setIsGlobalHelp(e.target.checked);
+                  updateChannel(channel.id, { isGlobalHelp: e.target.checked });
+                }}
+                className="mt-1 w-4 h-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 dark:border-neutral-600 dark:bg-neutral-800"
+              />
+              <div>
+                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  Share as Help Resource
+                </span>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  This channel will appear in everyone's Help folder (read-only)
+                </p>
+              </div>
+            </label>
+          </div>
+        )}
 
         {/* Delete channel */}
         <div className="pt-4">

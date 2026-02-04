@@ -41,10 +41,11 @@ export async function GET() {
     orderBy: [asc(userChannelOrg.position)],
   })
 
-  // Build response with roles attached
+  // Build response with roles attached and isGlobalHelp flag
   const channelsWithRoles = channelList.map(channel => ({
     ...channel,
     role: roleMap.get(channel.id) || 'viewer',
+    isGlobalHelp: channel.isGlobalHelp ?? false,
     createdAt: channel.createdAt?.toISOString(),
     updatedAt: channel.updatedAt?.toISOString(),
   }))

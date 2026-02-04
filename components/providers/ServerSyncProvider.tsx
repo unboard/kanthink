@@ -102,13 +102,15 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       const instructionCards: Record<string, InstructionCard> = {}
       const folders: Record<string, Folder> = {}
 
-      // Process folders
+      // Process folders (including virtual Help folder)
       for (const folder of foldersResponse.folders as ServerFolder[]) {
         folders[folder.id] = {
           id: folder.id,
           name: folder.name,
           channelIds: folder.channelIds,
           isCollapsed: folder.isCollapsed ?? false,
+          isVirtual: (folder as ServerFolder & { isVirtual?: boolean }).isVirtual,
+          isLocked: (folder as ServerFolder & { isLocked?: boolean }).isLocked,
           createdAt: folder.createdAt,
           updatedAt: folder.updatedAt,
         }
@@ -147,6 +149,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
           status: channel.status || 'active',
           aiInstructions: channel.aiInstructions || '',
           includeBacksideInAI: channel.includeBacksideInAI ?? false,
+          isGlobalHelp: channel.isGlobalHelp ?? false,
           columns: columnsWithCards.sort((a, b) => {
             const aCol = serverColumns.find((c) => c.id === a.id)
             const bCol = serverColumns.find((c) => c.id === b.id)
@@ -237,10 +240,16 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       }
 
       // Build folder order and channel order
+      // Help folder (if present) should always be first in the order
       const serverFolders = foldersResponse.folders as ServerFolder[]
-      const folderOrder = serverFolders
+      const helpFolder = serverFolders.find((f) => f.id === '__help__')
+      const userFolders = serverFolders
+        .filter((f) => f.id !== '__help__')
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-        .map((f) => f.id)
+
+      const folderOrder = helpFolder
+        ? ['__help__', ...userFolders.map((f) => f.id)]
+        : userFolders.map((f) => f.id)
 
       const channelOrder = foldersResponse.rootChannelIds
 

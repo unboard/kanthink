@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { folders, userChannelOrg } from '@/lib/db/schema'
+import { folders, userChannelOrg, channels } from '@/lib/db/schema'
 import { eq, desc, asc } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
+
+// Virtual folder ID for global help channels
+const HELP_FOLDER_ID = '__help__'
 
 /**
  * GET /api/folders
@@ -48,8 +51,30 @@ export async function GET() {
     .filter(entry => !entry.folderId)
     .map(entry => entry.channelId)
 
+  // Fetch global help channels for the Help folder
+  const globalHelpChannels = await db.query.channels.findMany({
+    where: eq(channels.isGlobalHelp, true),
+    columns: { id: true, name: true },
+    orderBy: [asc(channels.name)],
+  })
+
+  const globalChannelIds = globalHelpChannels.map(c => c.id)
+
+  // Build response with Help folder first if there are global channels
+  const helpFolder = globalChannelIds.length > 0 ? {
+    id: HELP_FOLDER_ID,
+    name: 'Help',
+    channelIds: globalChannelIds,
+    isCollapsed: false,
+    isVirtual: true,
+    isLocked: true,
+    position: -1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } : null
+
   return NextResponse.json({
-    folders: foldersWithChannels,
+    folders: helpFolder ? [helpFolder, ...foldersWithChannels] : foldersWithChannels,
     rootChannelIds,
   })
 }
