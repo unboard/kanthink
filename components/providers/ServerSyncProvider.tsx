@@ -334,8 +334,15 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       return
     }
 
-    if (sessionStatus === 'authenticated' && session?.user?.id && !hasFetched) {
-      fetchServerData()
+    if (sessionStatus === 'authenticated' && session?.user?.id) {
+      // Enable server mode immediately when authenticated so that
+      // any actions taken before data loads will still sync to server
+      enableServerMode()
+      setIsServerMode(true)
+
+      if (!hasFetched) {
+        fetchServerData()
+      }
     } else if (sessionStatus === 'unauthenticated') {
       // Not authenticated - use localStorage (default behavior)
       disableServerMode()

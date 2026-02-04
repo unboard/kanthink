@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
-import { Button } from '@/components/ui';
+import { ChannelGrid } from '@/components/home/ChannelGrid';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
 import { GuidedQuestionnaireOverlay, type GuideResultData } from '@/app/prototypes/overlays/GuidedQuestionnaireOverlay';
 import { signInWithGoogle } from '@/lib/actions/auth';
@@ -20,15 +20,22 @@ export default function Home() {
 
   const createChannel = useStore((s) => s.createChannel);
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
+  const channels = useStore((s) => s.channels);
+  const hasHydrated = useStore((s) => s._hasHydrated);
 
   // Check if user has seen welcome on mount
   useEffect(() => {
+    if (!hasHydrated) return;
+
     const hasSeenWelcome = localStorage.getItem(WELCOME_SEEN_KEY);
-    if (!hasSeenWelcome) {
+    const hasChannels = Object.keys(channels).length > 0;
+
+    // Show welcome if never seen and no channels exist
+    if (!hasSeenWelcome && !hasChannels) {
       setShowWelcome(true);
     }
     setHasCheckedWelcome(true);
-  }, []);
+  }, [hasHydrated, channels]);
 
   const handleWelcomeClose = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
@@ -90,21 +97,8 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">
-          Welcome to Kanthink
-        </h1>
-        <p className="mt-2 text-neutral-500 dark:text-neutral-400">
-          Create a channel to get started
-        </p>
-        <Button
-          className="mt-4"
-          onClick={() => setIsCreateOpen(true)}
-        >
-          Create channel
-        </Button>
-      </div>
+    <div className="h-full">
+      <ChannelGrid onCreateChannel={() => setIsCreateOpen(true)} />
 
       <GuidedQuestionnaireOverlay
         isOpen={isCreateOpen}
