@@ -97,6 +97,10 @@ export const useSettingsStore = create<SettingsState>()(
         shroomsButtonHighlighted: state.shroomsButtonHighlighted,
       }),
       onRehydrateStorage: () => (state) => {
+        // Migrate invalid theme values to 'spores' (the only valid theme now)
+        if (state && state.theme !== 'spores') {
+          state.setTheme('spores');
+        }
         state?.setHasHydrated(true);
       },
     }
