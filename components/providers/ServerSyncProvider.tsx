@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react'
 import { useSession } from 'next-auth/react'
 import { useStore, type ServerData } from '@/lib/store'
-import { fetchChannels, fetchChannel, fetchFolders } from '@/lib/api/client'
+import { fetchChannels, fetchChannel, fetchFolders, fetchGlobalShrooms } from '@/lib/api/client'
 import { enableServerMode, disableServerMode } from '@/lib/api/sync'
 import { initBroadcastSync } from '@/lib/sync/broadcastSync'
 import { applyBroadcastEvent } from '@/lib/sync/applyBroadcastEvent'
@@ -237,6 +237,42 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             updatedAt: ic.updatedAt,
           }
         }
+      }
+
+      // Fetch and merge global resource shrooms (available to all users)
+      try {
+        const globalShroomsResponse = await fetchGlobalShrooms()
+        for (const ic of globalShroomsResponse.instructionCards) {
+          // Only add if not already present (user might own the channel with this shroom)
+          if (!instructionCards[ic.id]) {
+            instructionCards[ic.id] = {
+              id: ic.id,
+              channelId: ic.channelId,
+              title: ic.title,
+              instructions: ic.instructions,
+              action: ic.action,
+              target: ic.target,
+              contextColumns: ic.contextColumns,
+              runMode: ic.runMode || 'manual',
+              cardCount: ic.cardCount,
+              interviewQuestions: ic.interviewQuestions || [],
+              isEnabled: ic.isEnabled ?? false,
+              triggers: ic.triggers || [],
+              safeguards: ic.safeguards,
+              lastExecutedAt: ic.lastExecutedAt,
+              nextScheduledRun: ic.nextScheduledRun,
+              dailyExecutionCount: ic.dailyExecutionCount ?? 0,
+              dailyCountResetAt: ic.dailyCountResetAt,
+              executionHistory: ic.executionHistory || [],
+              isGlobalResource: true,
+              createdAt: ic.createdAt,
+              updatedAt: ic.updatedAt,
+            }
+          }
+        }
+      } catch (e) {
+        // Global shrooms are optional - don't fail if this errors
+        console.warn('Could not fetch global shrooms:', e)
       }
 
       // Build folder order and channel order

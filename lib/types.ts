@@ -151,6 +151,7 @@ export interface InstructionCard {
   dailyExecutionCount?: number;
   dailyCountResetAt?: string;
   executionHistory?: ExecutionRecord[];   // Last N executions for tracking
+  isGlobalResource?: boolean;             // True if this is a global resource (available to all, by Kanthink)
 }
 
 export interface Task {

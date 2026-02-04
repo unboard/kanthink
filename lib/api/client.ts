@@ -492,6 +492,17 @@ export async function deleteInstructionCard(channelId: string, instructionId: st
   }
 }
 
+// ===== GLOBAL SHROOMS =====
+
+export async function fetchGlobalShrooms(): Promise<{ instructionCards: InstructionCard[] }> {
+  const res = await fetch('/api/global-shrooms')
+  if (!res.ok) {
+    // Don't throw - global shrooms are optional
+    return { instructionCards: [] }
+  }
+  return res.json()
+}
+
 // ===== MIGRATION =====
 
 export async function migrateData(data: unknown): Promise<{ migrated: Record<string, number> }> {

@@ -830,7 +830,12 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
                   <div className="flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500 mb-3">
                     <span>→ {targetInfo}</span>
                     {shroom.cardCount && <span>• {shroom.cardCount} cards</span>}
-                    {isGlobal && (
+                    {shroom.isGlobalResource && (
+                      <span className="px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400 text-[10px] font-medium">
+                        by Kanthink
+                      </span>
+                    )}
+                    {isGlobal && !shroom.isGlobalResource && (
                       <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 text-[10px]">
                         Global
                       </span>

@@ -193,6 +193,9 @@ export const instructionCards = sqliteTable('instruction_cards', {
   triggers: text('triggers', { mode: 'json' }).$type<AutomaticTriggerJson[]>(),
   safeguards: text('safeguards', { mode: 'json' }).$type<AutomaticSafeguardsJson>(),
 
+  // Global resource (available to all users, created by admin/Kanthink)
+  isGlobalResource: integer('is_global_resource', { mode: 'boolean' }).default(false),
+
   lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
   nextScheduledRun: integer('next_scheduled_run', { mode: 'timestamp' }),
   dailyExecutionCount: integer('daily_execution_count').default(0),

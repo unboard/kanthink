@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { auth, isAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { instructionCards } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
@@ -57,6 +57,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       dailyCountResetAt,
       executionHistory,
       position,
+      isGlobalResource,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -80,6 +81,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (dailyCountResetAt !== undefined) updates.dailyCountResetAt = dailyCountResetAt ? new Date(dailyCountResetAt) : null
     if (executionHistory !== undefined) updates.executionHistory = executionHistory
     if (position !== undefined) updates.position = position
+
+    // Handle isGlobalResource toggle (admin only)
+    if (isGlobalResource !== undefined) {
+      if (!isAdmin(session.user.email)) {
+        return NextResponse.json({ error: 'Only admin can set global resource status' }, { status: 403 })
+      }
+      updates.isGlobalResource = isGlobalResource
+    }
 
     await db.update(instructionCards).set(updates).where(eq(instructionCards.id, instructionId))
 

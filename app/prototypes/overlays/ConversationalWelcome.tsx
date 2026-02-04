@@ -108,6 +108,7 @@ export function ConversationalWelcome({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const isInitialMount = useRef(true);
 
   // Typewriter effect for Kan's messages
   const { getDisplayText, isTyping: isKanTyping, skipToEnd, typingMessageId } = useMessageTypewriter(
@@ -122,6 +123,7 @@ export function ConversationalWelcome({
   useEffect(() => {
     if (isOpen) {
       setStep('greeting');
+      isInitialMount.current = true; // Reset scroll behavior
 
       const greetingContent = isWelcome
         ? "Hi, I'm Kan.\n\nWelcome to Kanthink — a space to organize ideas, research topics, and get things done. I'll help you set up your first channel.\n\nWhat are you working on?"
@@ -144,9 +146,16 @@ export function ConversationalWelcome({
     }
   }, [isOpen, isWelcome]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change (but not on initial load)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    // Only scroll if there are multiple messages (user has interacted)
+    if (messages.length > 1) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   // Focus input
@@ -422,7 +431,7 @@ export function ConversationalWelcome({
 
       {/* Messages area */}
       <div className="relative z-10 flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-6 py-8 space-y-6">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-8 space-y-6">
           {messages.map((message) => {
             const isCurrentlyTyping = typingMessageId === message.id;
             const displayText = getDisplayText(message.id, message.content, message.type);
