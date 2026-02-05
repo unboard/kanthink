@@ -81,8 +81,6 @@ let currentPresenceChannelId: string | null = null
 // Current user's ID in the presence channel (set on subscription success)
 let myPresenceUserId: string | null = null
 
-// Base user ID (without tab suffix) for filtering all of self's tabs
-let myBaseUserId: string | null = null
 
 /**
  * Initialize the Pusher client connection.
@@ -329,7 +327,6 @@ export function disconnect(): void {
   pendingPresenceQueue.clear()
   currentPresenceChannelId = null
   myPresenceUserId = null
-  myBaseUserId = null
 
   // Disconnect
   pusherInstance.disconnect()
@@ -409,12 +406,11 @@ export function subscribeToPresence(channelId: string, retryCount = 0): void {
     // members.me contains our own member info
     const me = members.me
     myPresenceUserId = me?.id ?? null
-    myBaseUserId = myPresenceUserId ? myPresenceUserId.split(':')[0] : null
 
     const memberList: PresenceUser[] = []
     members.each((member: { id: string; info: { name: string; image: string | null; color: string } }) => {
-      // Don't include any of self's tabs in the member list
-      if (member.id.split(':')[0] !== myBaseUserId) {
+      // Don't include this exact tab in the member list
+      if (member.id !== myPresenceUserId) {
         memberList.push({
           id: member.id,
           info: member.info,
@@ -428,8 +424,8 @@ export function subscribeToPresence(channelId: string, retryCount = 0): void {
   })
 
   channel.bind('pusher:member_added', (member: { id: string; info: { name: string; image: string | null; color: string } }) => {
-    // Skip any of self's tabs
-    if (myBaseUserId && member.id.split(':')[0] === myBaseUserId) {
+    // Skip this exact tab
+    if (member.id === myPresenceUserId) {
       return
     }
     const current = presenceMembers.get(channelId) || []
