@@ -94,7 +94,35 @@ export async function GET() {
     }
   }
 
-  // Test 5: Try INSERT using PRIMARY URL (without region)
+  // Test 5: Check if user 8a42865c-80fc-49bc-8adf-5ee45cf6f44f exists
+  try {
+    const userResult = await db.run(sql`SELECT id, email FROM users WHERE id = '8a42865c-80fc-49bc-8adf-5ee45cf6f44f'`)
+    diagnostics.userCheck = {
+      success: true,
+      result: userResult,
+    }
+  } catch (error: unknown) {
+    diagnostics.userCheck = {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+
+  // Test 6: Count all users
+  try {
+    const usersResult = await db.run(sql`SELECT COUNT(*) as count FROM users`)
+    diagnostics.usersCount = {
+      success: true,
+      result: usersResult,
+    }
+  } catch (error: unknown) {
+    diagnostics.usersCount = {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+
+  // Test 8: Try INSERT using PRIMARY URL (without region)
   // Convert libsql://kanthink-unboard.aws-us-east-2.turso.io to libsql://kanthink-unboard.turso.io
   const primaryUrl = regionalUrl.replace(/\.(aws|gcp|azure)-[^.]+\./, '.')
   if (primaryUrl !== regionalUrl) {
