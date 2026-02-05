@@ -61,5 +61,23 @@ export async function GET() {
     }
   }
 
+  // Test 4: Try INSERT (this will test write permissions)
+  try {
+    // Insert and immediately delete a test record
+    const testId = `test-${Date.now()}`
+    await db.run(sql`INSERT INTO folders (id, user_id, name, position, created_at, updated_at) VALUES (${testId}, 'test-user', 'test-folder', 0, ${Date.now()}, ${Date.now()})`)
+    await db.run(sql`DELETE FROM folders WHERE id = ${testId}`)
+    diagnostics.writeTest = {
+      success: true,
+      message: 'INSERT and DELETE worked - token has write permissions',
+    }
+  } catch (error) {
+    diagnostics.writeTest = {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      hint: 'Token may be READ-ONLY. Create a new token with Full Access in Turso dashboard.',
+    }
+  }
+
   return NextResponse.json(diagnostics, { status: 200 })
 }
