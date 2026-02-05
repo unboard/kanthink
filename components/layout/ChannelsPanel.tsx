@@ -28,6 +28,7 @@ import { Button } from '@/components/ui';
 import { NavPanel } from './NavPanel';
 import { useNav } from '@/components/providers/NavProvider';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
+import { NewChannelOverlay } from '@/components/home/NewChannelOverlay';
 import type { Channel, Folder } from '@/lib/types';
 
 // Prefixes to distinguish item types in dnd-kit
@@ -354,10 +355,10 @@ export function ChannelsPanel() {
   const reorderChannels = useStore((s) => s.reorderChannels);
   const reorderFolders = useStore((s) => s.reorderFolders);
   const reorderChannelInFolder = useStore((s) => s.reorderChannelInFolder);
-  const seedInitialChannel = useStore((s) => s.seedInitialChannel);
   const hasHydrated = useStore((s) => s._hasHydrated);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isKanHelpOpen, setIsKanHelpOpen] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -386,12 +387,6 @@ export function ChannelsPanel() {
     .map((id) => folders[id])
     .filter(Boolean);
   const rootChannels = channelOrder.map((id) => channels[id]).filter((c) => c && c.status !== 'archived');
-
-  useEffect(() => {
-    if (hasHydrated && Object.keys(channels).length === 0) {
-      seedInitialChannel();
-    }
-  }, [hasHydrated, channels, seedInitialChannel]);
 
   // Build all sortable IDs for the main context (excluding Help folder)
   const allSortableIds = [
@@ -638,9 +633,18 @@ export function ChannelsPanel() {
         </div>
       </NavPanel>
 
-      <ConversationalWelcome
+      <NewChannelOverlay
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
+        onKanHelp={() => {
+          setIsCreateOpen(false);
+          setIsKanHelpOpen(true);
+        }}
+      />
+
+      <ConversationalWelcome
+        isOpen={isKanHelpOpen}
+        onClose={() => setIsKanHelpOpen(false)}
         onCreate={handleCreateChannel}
         isWelcome={false}
       />

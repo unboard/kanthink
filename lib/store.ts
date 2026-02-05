@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
 import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction } from './types';
 import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
-import { KANTHINK_IDEAS_CHANNEL, KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
+import { KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
 import { emitCardMoved, emitCardCreated, emitCardDeleted } from './automationEvents';
 import * as sync from './api/sync';
 import { broadcastEvent, broadcastAndPublish, type BroadcastEvent } from './sync/broadcastSync';
@@ -146,7 +146,6 @@ interface KanthinkState {
   reorderInstructionCards: (channelId: ID, fromIndex: number, toIndex: number) => void;
 
   // Seed and promote actions
-  seedInitialChannel: () => void;
   seedDevChannel: (initialCards?: Array<{ title: string; content: string }>) => Channel | null;
   promoteCardToChannel: (cardId: ID, config?: PromoteConfig) => Channel | null;
 
@@ -2713,70 +2712,6 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs and devices
         broadcastAndPublish({ type: 'instructionCard:reorder', channelId, fromIndex, toIndex });
-      },
-
-      seedInitialChannel: () => {
-        const state = get();
-        // Only seed if no channels exist
-        if (Object.keys(state.channels).length > 0) return;
-
-        const template = KANTHINK_IDEAS_CHANNEL;
-        const channelId = nanoid();
-        const timestamp = now();
-
-        // Create columns with IDs
-        const columns: Column[] = template.columns.map((col) => ({
-          id: nanoid(),
-          name: col.name,
-          cardIds: [],
-          isAiTarget: col.isAiTarget,
-        }));
-
-        // Create instruction cards
-        const instructionCardIds: ID[] = [];
-        const newInstructionCards: Record<ID, InstructionCard> = {};
-
-        for (const seedCard of template.instructionCards) {
-          const icId = nanoid();
-          const targetColumn = columns.find((c) => c.name === seedCard.targetColumnName);
-
-          const instructionCard: InstructionCard = {
-            id: icId,
-            channelId,
-            title: seedCard.title,
-            instructions: seedCard.instructions,
-            action: seedCard.action,
-            target: targetColumn
-              ? { type: 'column', columnId: targetColumn.id }
-              : { type: 'board' },
-            runMode: seedCard.runMode,
-            cardCount: seedCard.cardCount,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          };
-
-          instructionCardIds.push(icId);
-          newInstructionCards[icId] = instructionCard;
-        }
-
-        // Create the channel
-        const channel: Channel = {
-          id: channelId,
-          name: template.name,
-          description: template.description,
-          status: 'active',
-          aiInstructions: template.aiInstructions,
-          instructionCardIds,
-          columns,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        };
-
-        set((state) => ({
-          channels: { ...state.channels, [channelId]: channel },
-          instructionCards: { ...state.instructionCards, ...newInstructionCards },
-          channelOrder: [...state.channelOrder, channelId],
-        }));
       },
 
       seedDevChannel: (initialCards) => {
