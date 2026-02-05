@@ -88,6 +88,34 @@ export default function InvitePage() {
     }
   }
 
+  // Auto-accept invite when authenticated and doesn't have access yet
+  useEffect(() => {
+    if (
+      sessionStatus === 'authenticated' &&
+      userStatus?.isAuthenticated === true &&
+      userStatus?.hasAccess === false &&
+      !accepting &&
+      !acceptResult &&
+      !error
+    ) {
+      handleAccept()
+    }
+  }, [sessionStatus, userStatus, accepting, acceptResult, error])
+
+  // Auto-redirect when already a member
+  useEffect(() => {
+    if (userStatus?.hasAccess && invite?.channelId) {
+      router.replace(`/channel/${invite.channelId}`)
+    }
+  }, [userStatus?.hasAccess, invite?.channelId, router])
+
+  // Auto-redirect after successful accept
+  useEffect(() => {
+    if (acceptResult?.status === 'accepted' && acceptResult.channelId) {
+      router.replace(`/channel/${acceptResult.channelId}`)
+    }
+  }, [acceptResult, router])
+
   const handleSignIn = () => {
     signIn('google', { callbackUrl: `/invite/${token}` })
   }
@@ -145,24 +173,12 @@ export default function InvitePage() {
       )
     }
 
+    // Auto-redirect is handled by useEffect; show spinner while redirecting
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 rounded-2xl max-w-md w-full p-8 text-center">
-          <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="text-xl font-semibold text-white mb-2">You&apos;re In!</h1>
-          <p className="text-neutral-400 mb-6">
-            You now have access to <strong className="text-white">{acceptResult.channelName}</strong>
-          </p>
-          <Link
-            href={`/channel/${acceptResult.channelId}`}
-            className="inline-block px-5 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors font-medium"
-          >
-            Open Channel
-          </Link>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-500 mx-auto mb-4"></div>
+          <p className="text-neutral-400 text-sm">Opening channel...</p>
         </div>
       </div>
     )
@@ -172,29 +188,13 @@ export default function InvitePage() {
     return null
   }
 
-  // User already has access
+  // User already has access — auto-redirect is handled by useEffect
   if (userStatus?.hasAccess) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 rounded-2xl max-w-md w-full p-8 text-center">
-          <div className="w-12 h-12 bg-violet-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-6 h-6 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h1 className="text-xl font-semibold text-white mb-2">Already a Member</h1>
-          <p className="text-neutral-400 mb-2">
-            You already have access to <strong className="text-white">{invite.channelName}</strong>
-          </p>
-          <p className="text-sm text-neutral-500 mb-6">
-            Your role: <span className="capitalize">{userStatus.role}</span>
-          </p>
-          <Link
-            href={`/channel/${invite.channelId}`}
-            className="inline-block px-5 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors font-medium"
-          >
-            Open Channel
-          </Link>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-500 mx-auto mb-4"></div>
+          <p className="text-neutral-400 text-sm">Opening channel...</p>
         </div>
       </div>
     )
@@ -269,13 +269,10 @@ export default function InvitePage() {
             </button>
           </div>
         ) : (
-          <button
-            onClick={handleAccept}
-            disabled={accepting}
-            className="w-full px-4 py-3 bg-violet-600 text-white rounded-xl hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-          >
-            {accepting ? 'Joining...' : 'Accept Invite'}
-          </button>
+          <div className="flex items-center justify-center py-3">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500 mr-3"></div>
+            <span className="text-neutral-400 text-sm">Joining...</span>
+          </div>
         )}
       </div>
     </div>
