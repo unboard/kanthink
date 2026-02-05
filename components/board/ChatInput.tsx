@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
-import type { CardMessageType } from '@/lib/types';
+import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import type { CardMessageType, ChannelMember } from '@/lib/types';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { MentionDropdown } from './MentionDropdown';
 
 // Keyword highlighting for question mode
 const KEYWORD_CONFIG = {
@@ -102,28 +103,46 @@ interface StagedImage {
   file?: File;
 }
 
+interface MentionState {
+  isActive: boolean;
+  query: string;
+  startIndex: number; // cursor position of the '@'
+}
+
 interface ChatInputProps {
   onSubmit: (content: string, type: CardMessageType, imageUrls?: string[]) => void;
   isLoading?: boolean;
   placeholder?: string;
   cardId?: string;
+  members?: ChannelMember[];
   // Optional keyboard handlers from parent - when provided, parent controls keyboard offset
   onKeyboardFocus?: () => void;
   onKeyboardBlur?: () => void;
 }
 
-export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, onKeyboardFocus, onKeyboardBlur }: ChatInputProps) {
+export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, members = [], onKeyboardFocus, onKeyboardBlur }: ChatInputProps) {
   const [mode, setMode] = useState<InputMode>('note');
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [inputActivated, setInputActivated] = useState(false);
+  const [mention, setMention] = useState<MentionState>({ isActive: false, query: '', startIndex: 0 });
+  const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const inputWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Filtered members for mention dropdown
+  const filteredMembers = useMemo(() => {
+    if (!mention.isActive) return [];
+    const q = mention.query.toLowerCase();
+    return members.filter((m) =>
+      m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
+    );
+  }, [mention.isActive, mention.query, members]);
 
   const { uploadFile, isUploading, error: uploadError, clearError } = useImageUpload({ cardId });
   // Use keyboard offset hook for focus/blur handlers (parent handles positioning)
@@ -298,7 +317,50 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
     }
   };
 
+  const handleMentionSelect = useCallback((member: ChannelMember) => {
+    const before = content.slice(0, mention.startIndex);
+    const after = content.slice(mention.startIndex + 1 + mention.query.length); // +1 for @
+    const insert = `@[${member.name}](${member.id}) `;
+    const newContent = before + insert + after;
+    setContent(newContent);
+    setMention({ isActive: false, query: '', startIndex: 0 });
+
+    // Reposition cursor after the inserted mention
+    const newCursorPos = before.length + insert.length;
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.selectionStart = newCursorPos;
+        textareaRef.current.selectionEnd = newCursorPos;
+        textareaRef.current.focus();
+      }
+    });
+  }, [content, mention.startIndex, mention.query]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Intercept keys when mention dropdown is active
+    if (mention.isActive && filteredMembers.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionSelectedIndex((prev) => (prev + 1) % filteredMembers.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionSelectedIndex((prev) => (prev - 1 + filteredMembers.length) % filteredMembers.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        handleMentionSelect(filteredMembers[mentionSelectedIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMention({ isActive: false, query: '', startIndex: 0 });
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -317,7 +379,17 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
       ref={containerRef}
       className={`px-3 pt-2 ${isFocused ? 'pb-1 relative z-50 bg-white dark:bg-neutral-900' : 'pb-3'}`}
     >
-      <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2.5">
+      <div className="relative rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2.5">
+        {/* @mention dropdown */}
+        {mention.isActive && filteredMembers.length > 0 && (
+          <MentionDropdown
+            members={members}
+            query={mention.query}
+            selectedIndex={mentionSelectedIndex}
+            onSelect={handleMentionSelect}
+            onClose={() => setMention({ isActive: false, query: '', startIndex: 0 })}
+          />
+        )}
         {/* Staged images preview */}
         {stagedImages.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
@@ -405,7 +477,26 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, on
             <textarea
               ref={textareaRef}
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setContent(val);
+
+                // Detect @mention
+                if (members.length > 0) {
+                  const cursorPos = e.target.selectionStart;
+                  const textBeforeCursor = val.slice(0, cursorPos);
+                  // Find last @ that's preceded by whitespace or at start
+                  const atMatch = textBeforeCursor.match(/(?:^|[\s])@([^\s@]*)$/);
+                  if (atMatch) {
+                    const query = atMatch[1];
+                    const startIndex = cursorPos - query.length - 1; // position of @
+                    setMention({ isActive: true, query, startIndex });
+                    setMentionSelectedIndex(0);
+                  } else {
+                    setMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
+                  }
+                }
+              }}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               onFocus={(e) => {

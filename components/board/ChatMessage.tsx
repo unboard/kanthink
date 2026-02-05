@@ -127,21 +127,28 @@ export function ChatMessage({
               Kan
             </span>
           )}
-          {isQuestion && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
-              {session?.user?.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={session.user.image} alt="" className="w-3.5 h-3.5 rounded-full" />
-              ) : (
-                <div className="w-3.5 h-3.5 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center">
-                  <span className="text-violet-600 dark:text-violet-300 font-medium" style={{ fontSize: '7px' }}>
-                    {session?.user?.name?.[0] || session?.user?.email?.[0] || '?'}
-                  </span>
-                </div>
-              )}
-              You
-            </span>
-          )}
+          {(isQuestion || isNote) && (() => {
+            const isCurrentUser = message.authorId ? message.authorId === session?.user?.id : true;
+            const avatarUrl = message.authorImage ?? (isCurrentUser ? session?.user?.image : null);
+            const displayName = isCurrentUser ? 'You' : (message.authorName ?? 'Unknown');
+            const initials = message.authorName?.[0] ?? session?.user?.name?.[0] ?? session?.user?.email?.[0] ?? '?';
+
+            return (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                {avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarUrl} alt="" className="w-3.5 h-3.5 rounded-full" />
+                ) : (
+                  <div className="w-3.5 h-3.5 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center">
+                    <span className="text-violet-600 dark:text-violet-300 font-medium" style={{ fontSize: '7px' }}>
+                      {initials}
+                    </span>
+                  </div>
+                )}
+                {displayName}
+              </span>
+            );
+          })()}
           <span className="text-xs text-neutral-400 dark:text-neutral-500">
             {formatDate(message.createdAt)} at {formatTime(message.createdAt)}
           </span>
@@ -222,19 +229,31 @@ export function ChatMessage({
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    {children}
-                  </a>
-                ),
+                a: ({ href, children }) => {
+                  if (href?.startsWith('mention:')) {
+                    return (
+                      <span className="inline-flex items-center px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-xs font-medium">
+                        @{children}
+                      </span>
+                    );
+                  }
+                  return (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {children}
+                    </a>
+                  );
+                },
               }}
             >
-              {message.content}
+              {message.content.replace(
+                /@\[([^\]]+)\]\(([^)]+)\)/g,
+                '[$1](mention:$2)'
+              )}
             </ReactMarkdown>
           </div>
         ) : null}

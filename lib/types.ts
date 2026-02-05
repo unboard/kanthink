@@ -205,9 +205,19 @@ export interface CardMessage {
   type: CardMessageType;
   content: string;           // Plain text (no HTML)
   imageUrls?: string[];      // Attached image URLs
+  authorId?: string;         // User who created the message
+  authorName?: string;       // Display name at time of creation
+  authorImage?: string;      // Avatar URL at time of creation
   createdAt: string;
   replyToMessageId?: ID;     // For AI responses, links to the question
   proposedActions?: StoredAction[];  // Smart snippets for AI responses
+}
+
+export interface ChannelMember {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
 }
 
 export interface Channel {

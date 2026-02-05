@@ -1,9 +1,11 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
-import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition } from '@/lib/types';
+import { useSession } from 'next-auth/react';
+import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition, ChannelMember } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
+import { fetchShares } from '@/lib/api/client';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
 
@@ -20,6 +22,9 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const [aiError, setAIError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [members, setMembers] = useState<ChannelMember[]>([]);
+
+  const { data: session } = useSession();
 
   // Track keyboard height for mobile input positioning
   // We pass onFocus/onBlur to ChatInput so they share the same keyboard state
@@ -41,6 +46,39 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const cardTasks = (card.taskIds ?? [])
     .map((id) => tasks[id])
     .filter(Boolean);
+
+  // Fetch channel members for @mentions
+  useEffect(() => {
+    let cancelled = false;
+    fetchShares(card.channelId)
+      .then((data) => {
+        if (cancelled) return;
+        const memberList: ChannelMember[] = [];
+        if (data.owner) {
+          memberList.push({
+            id: data.owner.id,
+            name: data.owner.name ?? data.owner.email,
+            email: data.owner.email,
+            image: data.owner.image,
+          });
+        }
+        for (const share of data.shares) {
+          if (share.user && share.acceptedAt) {
+            memberList.push({
+              id: share.user.id,
+              name: share.user.name ?? share.user.email ?? '',
+              email: share.user.email ?? '',
+              image: share.user.image,
+            });
+          }
+        }
+        setMembers(memberList);
+      })
+      .catch(() => {
+        // Silently fail - mentions just won't show
+      });
+    return () => { cancelled = true; };
+  }, [card.channelId]);
 
   // Safe access to messages array (handles legacy cards)
   const messages = card.messages ?? [];
@@ -73,8 +111,15 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       return;
     }
 
+    // Build author from session
+    const author = session?.user?.id ? {
+      id: session.user.id as string,
+      name: (session.user.name ?? session.user.email ?? 'Unknown') as string,
+      image: session.user.image as string | undefined,
+    } : undefined;
+
     // Add the message
-    const message = addMessage(card.id, type, content, imageUrls);
+    const message = addMessage(card.id, type, content, imageUrls, author);
     if (!message) return;
 
     // If it's a question, send to AI
@@ -437,6 +482,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           cardId={card.id}
           onKeyboardFocus={handleKeyboardFocus}
           onKeyboardBlur={handleKeyboardBlur}
+          members={members}
         />
       </div>
     </div>
