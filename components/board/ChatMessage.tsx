@@ -113,7 +113,7 @@ export function ChatMessage({
           isAI
             ? 'bg-neutral-50 dark:bg-neutral-800/50'
             : isQuestion
-            ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800'
+            ? 'bg-blue-50 dark:bg-blue-950/20'
             : 'bg-neutral-100 dark:bg-neutral-800'
         }`}
       >
@@ -126,11 +126,11 @@ export function ChatMessage({
             </span>
           )}
           {isQuestion && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
-              Question
+              You
             </span>
           )}
           <span className="text-xs text-neutral-400 dark:text-neutral-500">
