@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { CardMessage, StoredAction, TagDefinition } from '@/lib/types';
@@ -63,6 +64,7 @@ export function ChatMessage({
   const isNote = message.type === 'note';
   const canEdit = isNote && !!onEdit;
 
+  const { data: session } = useSession();
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const [theaterIndex, setTheaterIndex] = useState<number | null>(null);
@@ -113,7 +115,7 @@ export function ChatMessage({
           isAI
             ? 'bg-neutral-50 dark:bg-neutral-800/50'
             : isQuestion
-            ? 'bg-blue-50 dark:bg-blue-950/20'
+            ? 'bg-neutral-50 dark:bg-neutral-800/50'
             : 'bg-neutral-100 dark:bg-neutral-800'
         }`}
       >
@@ -126,10 +128,17 @@ export function ChatMessage({
             </span>
           )}
           {isQuestion && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+              {session?.user?.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={session.user.image} alt="" className="w-3.5 h-3.5 rounded-full" />
+              ) : (
+                <div className="w-3.5 h-3.5 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center">
+                  <span className="text-violet-600 dark:text-violet-300 font-medium" style={{ fontSize: '7px' }}>
+                    {session?.user?.name?.[0] || session?.user?.email?.[0] || '?'}
+                  </span>
+                </div>
+              )}
               You
             </span>
           )}
