@@ -114,7 +114,7 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
           <p className="mt-2 text-white/50">Create your first channel to get started</p>
           <button
             onClick={onCreateChannel}
-            className="mt-6 rounded-full bg-gradient-to-r from-cyan-500 to-violet-500 px-6 py-2.5 font-medium text-white transition-all hover:opacity-90 hover:shadow-lg hover:shadow-cyan-500/25"
+            className="mt-6 rounded-lg bg-violet-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-violet-700"
           >
             Create channel
           </button>
@@ -138,7 +138,7 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
           </div>
           <button
             onClick={onCreateChannel}
-            className="flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-violet-500 px-5 py-2.5 font-medium text-white transition-all hover:opacity-90 hover:shadow-lg hover:shadow-cyan-500/25"
+            className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 font-medium text-white transition-colors hover:bg-violet-700"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

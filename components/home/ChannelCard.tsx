@@ -145,7 +145,7 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-400 transition-all duration-300"
+              className="h-full rounded-full bg-green-500 transition-all duration-300"
               style={{ width: `${taskStats.percentage}%` }}
             />
           </div>
