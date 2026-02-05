@@ -129,6 +129,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
   const [inputActivated, setInputActivated] = useState(false);
   const [mention, setMention] = useState<MentionState>({ isActive: false, query: '', startIndex: 0 });
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
+  const [mentionsMap, setMentionsMap] = useState<Record<string, string>>({}); // name -> userId
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -143,6 +144,18 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
       m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
     );
   }, [mention.isActive, mention.query, members]);
+
+  // Build regex to detect inserted mentions in content
+  const mentionNames = Object.keys(mentionsMap);
+  const mentionRegex = useMemo(() => {
+    if (mentionNames.length === 0) return null;
+    const escaped = mentionNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    return new RegExp(`@(${escaped.join('|')})(?=\\s|$)`, 'g');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mentionNames.join(',')]);
+
+  const hasMentions = mentionRegex !== null;
+  const showBackdrop = mode === 'question' || hasMentions;
 
   const { uploadFile, isUploading, error: uploadError, clearError } = useImageUpload({ cardId });
   // Use keyboard offset hook for focus/blur handlers (parent handles positioning)
@@ -165,36 +178,69 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
     }
   }, []);
 
-  // Render highlighted backdrop for question mode
-  const renderHighlightedBackdrop = useCallback((): ReactNode[] => {
+  // Render highlighted backdrop for mentions and/or keywords
+  const renderBackdropContent = useCallback((): ReactNode[] => {
     const text = content;
+    // Collect all highlight matches
+    const matches: Array<{ start: number; end: number; type: 'mention' | 'keyword'; text: string }> = [];
+
+    // Mention matches
+    if (mentionRegex) {
+      mentionRegex.lastIndex = 0;
+      let m;
+      while ((m = mentionRegex.exec(text)) !== null) {
+        matches.push({ start: m.index, end: m.index + m[0].length, type: 'mention', text: m[0] });
+      }
+    }
+
+    // Keyword matches (question mode only)
+    if (mode === 'question') {
+      KEYWORD_REGEX.lastIndex = 0;
+      let m;
+      while ((m = KEYWORD_REGEX.exec(text)) !== null) {
+        // Skip if overlapping with a mention
+        const overlaps = matches.some(
+          (existing) => m!.index < existing.end && m!.index + m![0].length > existing.start
+        );
+        if (!overlaps) {
+          matches.push({ start: m.index, end: m.index + m[0].length, type: 'keyword', text: m[0] });
+        }
+      }
+    }
+
+    matches.sort((a, b) => a.start - b.start);
+
     const segments: ReactNode[] = [];
     let lastIndex = 0;
-    let match: RegExpExecArray | null;
 
-    KEYWORD_REGEX.lastIndex = 0;
-
-    while ((match = KEYWORD_REGEX.exec(text)) !== null) {
-      if (match.index > lastIndex) {
+    for (const match of matches) {
+      if (match.start > lastIndex) {
         segments.push(
           <span key={`text-${lastIndex}`} className="text-neutral-900 dark:text-white">
-            {text.slice(lastIndex, match.index)}
+            {text.slice(lastIndex, match.start)}
           </span>
         );
       }
 
-      const matchedText = match[0];
-      segments.push(
-        <mark
-          key={`keyword-${match.index}`}
-          className="text-violet-700 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 rounded-sm"
-          data-tooltip={getTooltipForKeyword(matchedText)}
-        >
-          {matchedText}
-        </mark>
-      );
+      if (match.type === 'mention') {
+        segments.push(
+          <span key={`mention-${match.start}`} className="text-violet-500 dark:text-violet-400 font-medium">
+            {match.text}
+          </span>
+        );
+      } else {
+        segments.push(
+          <mark
+            key={`keyword-${match.start}`}
+            className="text-violet-700 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 rounded-sm"
+            data-tooltip={getTooltipForKeyword(match.text)}
+          >
+            {match.text}
+          </mark>
+        );
+      }
 
-      lastIndex = match.index + matchedText.length;
+      lastIndex = match.end;
     }
 
     if (lastIndex < text.length) {
@@ -207,7 +253,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
 
     segments.push(<span key="trailing">&nbsp;</span>);
     return segments;
-  }, [content]);
+  }, [content, mode, mentionRegex]);
 
   // Handle mouse events on backdrop for tooltips
   const handleBackdropMouseMove = useCallback((e: React.MouseEvent) => {
@@ -301,12 +347,23 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
       .filter((img) => !img.isLoading)
       .map((img) => img.url);
 
+    // Convert @Name mentions to @[Name](userId) format for storage
+    let finalContent = content.trim();
+    for (const [name, userId] of Object.entries(mentionsMap)) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      finalContent = finalContent.replace(
+        new RegExp(`@${escaped}(?=\\s|$)`, 'g'),
+        `@[${name}](${userId})`
+      );
+    }
+
     onSubmit(
-      content.trim(),
+      finalContent,
       mode,
       imageUrls.length > 0 ? imageUrls : undefined
     );
     setContent('');
+    setMentionsMap({});
     setStagedImages([]);
     setNeedsScroll(false);
     clearError();
@@ -320,9 +377,10 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
   const handleMentionSelect = useCallback((member: ChannelMember) => {
     const before = content.slice(0, mention.startIndex);
     const after = content.slice(mention.startIndex + 1 + mention.query.length); // +1 for @
-    const insert = `@[${member.name}](${member.id}) `;
+    const insert = `@${member.name} `;
     const newContent = before + insert + after;
     setContent(newContent);
+    setMentionsMap((prev) => ({ ...prev, [member.name]: member.id }));
     setMention({ isActive: false, query: '', startIndex: 0 });
 
     // Reposition cursor after the inserted mention
@@ -455,22 +513,22 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
             onChange={handleFileSelect}
           />
 
-          {/* Textarea with keyword highlighting for question mode */}
+          {/* Textarea with keyword/mention highlighting */}
           <div
             ref={inputWrapperRef}
             className="relative flex-1 min-w-0"
             onMouseMove={mode === 'question' ? handleBackdropMouseMove : undefined}
             onMouseLeave={() => setTooltip(null)}
           >
-            {/* Backdrop for keyword highlighting (only in question mode) */}
-            {mode === 'question' && (
+            {/* Backdrop for mention + keyword highlighting */}
+            {showBackdrop && (
               <div
                 ref={backdropRef}
                 className="absolute inset-0 px-1 text-sm leading-[26px] whitespace-pre-wrap break-words pointer-events-none overflow-hidden font-[inherit]"
                 style={{ wordBreak: 'break-word', letterSpacing: 'inherit' }}
                 aria-hidden="true"
               >
-                {renderHighlightedBackdrop()}
+                {renderBackdropContent()}
               </div>
             )}
 
@@ -525,7 +583,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
               className={`chat-textarea w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none whitespace-pre-wrap break-words font-[inherit] ${
                 needsScroll ? 'overflow-y-auto' : 'overflow-y-hidden'
               } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''} ${
-                mode === 'question'
+                showBackdrop
                   ? 'bg-transparent text-transparent caret-neutral-900 dark:caret-white selection:bg-violet-500/30'
                   : 'bg-transparent text-neutral-900 dark:text-white'
               } ${!inputActivated ? 'cursor-pointer' : ''}`}
@@ -533,7 +591,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
             />
 
             {/* Tooltip for keywords */}
-            {tooltip && mode === 'question' && (
+            {tooltip && showBackdrop && (
               <div
                 className="absolute z-50 px-2 py-1 text-xs text-white bg-neutral-800 dark:bg-neutral-700 rounded shadow-lg whitespace-nowrap pointer-events-none"
                 style={{
