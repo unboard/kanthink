@@ -84,6 +84,19 @@ export function AISettings() {
     setSaveStatus('idle');
   };
 
+  const saveModelToServer = async (modelValue: string) => {
+    if (!hasByokConfigured) return;
+    try {
+      await fetch('/api/byok/update-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelValue }),
+      });
+    } catch {
+      // Silently fail - localStorage still has the value
+    }
+  };
+
   const handleModelSelect = (value: string) => {
     if (value === 'other') {
       setIsCustomModel(true);
@@ -92,12 +105,14 @@ export function AISettings() {
       setIsCustomModel(false);
       setModel(value);
       updateAISettings({ model: value });
+      saveModelToServer(value);
     }
   };
 
   const handleCustomModelBlur = () => {
     if (model !== ai.model) {
       updateAISettings({ model });
+      saveModelToServer(model);
     }
   };
 

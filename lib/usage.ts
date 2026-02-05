@@ -205,6 +205,18 @@ export async function setUserByokConfig(
   }
 }
 
+export async function updateUserByokModel(
+  userId: string,
+  model: string | null
+): Promise<void> {
+  await db.update(users)
+    .set({
+      byokModel: model || null,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId))
+}
+
 /**
  * Check if a user's BYOK key is encrypted (for migration purposes)
  */
