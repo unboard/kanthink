@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useNav, type NavPanelType } from '@/components/providers/NavProvider';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -59,14 +60,14 @@ function DesktopNav() {
       data-mini-nav
       className="hidden md:flex flex-col items-center w-14 h-full py-4 bg-neutral-100/50 dark:bg-neutral-900/50 border-r border-neutral-200 dark:border-neutral-800"
     >
-      {/* Logo */}
-      <div className="mb-6">
+      {/* Logo - links to home dashboard */}
+      <Link href="/" className="mb-6 block hover:opacity-80 transition-opacity">
         <img
           src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
-          alt="Kanthink"
+          alt="Kanthink - Go to dashboard"
           className="h-6 w-6"
         />
-      </div>
+      </Link>
 
       {/* Main navigation icons */}
       <div className="flex flex-col items-center gap-2 flex-1">

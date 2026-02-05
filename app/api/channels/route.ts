@@ -77,6 +77,15 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { id: clientId, name, description, aiInstructions, columnNames, columns: clientColumns } = body
 
+    console.log('[API/channels] Creating channel:', {
+      clientId,
+      name,
+      description: description?.slice(0, 50),
+      hasColumns: !!clientColumns,
+      columnCount: clientColumns?.length,
+      userId,
+    })
+
     if (!name || typeof name !== 'string') {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
@@ -86,16 +95,23 @@ export async function POST(req: NextRequest) {
     const now = new Date()
 
     // Create the channel
-    await db.insert(channels).values({
-      id: channelId,
-      ownerId: userId,
-      name: name.trim(),
-      description: description || '',
-      aiInstructions: aiInstructions || '',
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    })
+    console.log('[API/channels] Step 1: Inserting channel into database...')
+    try {
+      await db.insert(channels).values({
+        id: channelId,
+        ownerId: userId,
+        name: name.trim(),
+        description: description || '',
+        aiInstructions: aiInstructions || '',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+      console.log('[API/channels] Step 1 complete: Channel inserted')
+    } catch (insertError) {
+      console.error('[API/channels] Step 1 FAILED - Channel insert error:', insertError)
+      throw insertError
+    }
 
     // Create columns - use client-provided columns with IDs if available
     let columnInserts: Array<{
@@ -136,7 +152,14 @@ export async function POST(req: NextRequest) {
       }))
     }
 
-    await db.insert(columns).values(columnInserts)
+    console.log('[API/channels] Step 2: Inserting columns...', { count: columnInserts.length })
+    try {
+      await db.insert(columns).values(columnInserts)
+      console.log('[API/channels] Step 2 complete: Columns inserted')
+    } catch (colError) {
+      console.error('[API/channels] Step 2 FAILED - Columns insert error:', colError)
+      throw colError
+    }
 
     // Add to user's channel organization at the end of root level
     const existingOrg = await db.query.userChannelOrg.findMany({
@@ -145,11 +168,18 @@ export async function POST(req: NextRequest) {
     })
     const maxPosition = existingOrg.length > 0 ? existingOrg[0].position : -1
 
-    await db.insert(userChannelOrg).values({
-      userId,
-      channelId,
-      position: maxPosition + 1,
-    })
+    console.log('[API/channels] Step 3: Inserting userChannelOrg...')
+    try {
+      await db.insert(userChannelOrg).values({
+        userId,
+        channelId,
+        position: maxPosition + 1,
+      })
+      console.log('[API/channels] Step 3 complete: UserChannelOrg inserted')
+    } catch (orgError) {
+      console.error('[API/channels] Step 3 FAILED - UserChannelOrg insert error:', orgError)
+      throw orgError
+    }
 
     // Fetch the created channel with columns
     const createdChannel = await db.query.channels.findFirst({
@@ -176,6 +206,14 @@ export async function POST(req: NextRequest) {
     }, { status: 201 })
   } catch (error) {
     console.error('Error creating channel:', error)
-    return NextResponse.json({ error: 'Failed to create channel' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    console.error('Error details:', { message: errorMessage, stack: errorStack })
+    // Always return error details for debugging
+    return NextResponse.json({
+      error: 'Failed to create channel',
+      details: errorMessage,
+      stack: errorStack?.split('\n').slice(0, 5).join('\n'),
+    }, { status: 500 })
   }
 }

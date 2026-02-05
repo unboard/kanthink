@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('[Pusher Auth] Failed to authenticate user channel:', error)
       return NextResponse.json(
-        { error: 'Authentication failed' },
+        { error: 'Authentication failed', details: error instanceof Error ? error.message : 'Unknown error' },
         { status: 500 }
       )
     }
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('[Pusher Auth] Failed to authenticate presence channel:', error)
       return NextResponse.json(
-        { error: 'Authentication failed' },
+        { error: 'Authentication failed', details: error instanceof Error ? error.message : 'Unknown error' },
         { status: 500 }
       )
     }
@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('[Pusher Auth] Failed to authenticate channel:', error)
       return NextResponse.json(
-        { error: 'Authentication failed' },
+        { error: 'Authentication failed', details: error instanceof Error ? error.message : 'Unknown error' },
         { status: 500 }
       )
     }
