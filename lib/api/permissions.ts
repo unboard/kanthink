@@ -195,19 +195,41 @@ export async function getUserChannelsWithSharerInfo(userId: string): Promise<Arr
     columns: { channelId: true, role: true, invitedBy: true },
   })
 
-  // Get the users who invited (sharedBy)
+  // Get channel IDs that are shared (not owned) to fetch their owners
+  const ownedIds = new Set(ownedChannels.map(c => c.id))
+  const sharedChannelIds = sharedChannels
+    .filter(s => !ownedIds.has(s.channelId))
+    .map(s => s.channelId)
+
+  // Get inviter IDs and channel owner IDs for fallback
   const inviterIds = sharedChannels
     .map(s => s.invitedBy)
     .filter((id): id is string => id !== null)
 
-  let invitersMap: Map<string, SharedByInfo> = new Map()
-  if (inviterIds.length > 0) {
-    const inviters = await db.query.users.findMany({
-      where: inArray(users.id, inviterIds),
+  // Fetch the channels to get owner IDs (for fallback when invitedBy is null)
+  let channelOwnerMap: Map<string, string> = new Map()
+  if (sharedChannelIds.length > 0) {
+    const sharedChannelData = await db.query.channels.findMany({
+      where: inArray(channels.id, sharedChannelIds),
+      columns: { id: true, ownerId: true },
+    })
+    for (const ch of sharedChannelData) {
+      if (ch.ownerId) channelOwnerMap.set(ch.id, ch.ownerId)
+    }
+  }
+
+  // Collect all user IDs we need to fetch (inviters + owners)
+  const ownerIds = [...channelOwnerMap.values()]
+  const allUserIds = [...new Set([...inviterIds, ...ownerIds])]
+
+  let usersMap: Map<string, SharedByInfo> = new Map()
+  if (allUserIds.length > 0) {
+    const usersList = await db.query.users.findMany({
+      where: inArray(users.id, allUserIds),
       columns: { id: true, name: true, email: true, image: true },
     })
-    for (const u of inviters) {
-      invitersMap.set(u.id, {
+    for (const u of usersList) {
+      usersMap.set(u.id, {
         id: u.id,
         name: u.name,
         email: u.email ?? '',
@@ -234,11 +256,20 @@ export async function getUserChannelsWithSharerInfo(userId: string): Promise<Arr
     result.push({ channelId: channel.id, role: 'owner' })
   }
 
-  // Add shared channels with sharer info
-  const ownedIds = new Set(ownedChannels.map(c => c.id))
+  // Add shared channels with sharer info (inviter or fallback to owner)
   for (const share of sharedChannels) {
     if (!ownedIds.has(share.channelId)) {
-      const sharedBy = share.invitedBy ? invitersMap.get(share.invitedBy) : undefined
+      // Try invitedBy first, fall back to channel owner
+      let sharedBy: SharedByInfo | undefined
+      if (share.invitedBy) {
+        sharedBy = usersMap.get(share.invitedBy)
+      }
+      if (!sharedBy) {
+        const ownerId = channelOwnerMap.get(share.channelId)
+        if (ownerId) {
+          sharedBy = usersMap.get(ownerId)
+        }
+      }
       result.push({
         channelId: share.channelId,
         role: share.role as ChannelRole,
