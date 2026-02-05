@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   DndContext,
   DragOverlay,
@@ -27,8 +27,6 @@ import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
 import { NavPanel } from './NavPanel';
 import { useNav } from '@/components/providers/NavProvider';
-import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
-import { NewChannelOverlay } from '@/components/home/NewChannelOverlay';
 import type { Channel, Folder } from '@/lib/types';
 
 // Prefixes to distinguish item types in dnd-kit
@@ -339,14 +337,11 @@ function DraggableFolder({
 
 export function ChannelsPanel() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { closePanel } = useNav();
+  const { closePanel, openNewChannel } = useNav();
   const channels = useStore((s) => s.channels);
   const channelOrder = useStore((s) => s.channelOrder);
   const folders = useStore((s) => s.folders);
   const folderOrder = useStore((s) => s.folderOrder);
-  const createChannel = useStore((s) => s.createChannel);
-  const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
   const createFolder = useStore((s) => s.createFolder);
   const updateFolder = useStore((s) => s.updateFolder);
   const deleteFolder = useStore((s) => s.deleteFolder);
@@ -357,8 +352,6 @@ export function ChannelsPanel() {
   const reorderChannelInFolder = useStore((s) => s.reorderChannelInFolder);
   const hasHydrated = useStore((s) => s._hasHydrated);
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isKanHelpOpen, setIsKanHelpOpen] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -488,30 +481,6 @@ export function ChannelsPanel() {
 
   const hoveredFolderId = getHoveredFolderId();
 
-  const handleCreateChannel = (result: ConversationalWelcomeResultData) => {
-    let channel;
-
-    if (result.structure && result.structure.columns.length > 0) {
-      channel = createChannelWithStructure({
-        name: result.channelName,
-        description: result.channelDescription,
-        aiInstructions: result.instructions,
-        columns: result.structure.columns,
-        instructionCards: result.structure.instructionCards || [],
-      });
-    } else {
-      channel = createChannel({
-        name: result.channelName,
-        description: result.channelDescription,
-        aiInstructions: result.instructions,
-      });
-    }
-
-    setIsCreateOpen(false);
-    closePanel();
-    router.push(`/channel/${channel.id}`);
-  };
-
   return (
     <>
       <NavPanel panelKey="channels" title="Channels" width="sm">
@@ -615,7 +584,7 @@ export function ChannelsPanel() {
               variant="ghost"
               size="sm"
               className="flex-1 justify-start"
-              onClick={() => setIsCreateOpen(true)}
+              onClick={openNewChannel}
             >
               + Channel
             </Button>
@@ -632,22 +601,6 @@ export function ChannelsPanel() {
           </div>
         </div>
       </NavPanel>
-
-      <NewChannelOverlay
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onKanHelp={() => {
-          setIsCreateOpen(false);
-          setIsKanHelpOpen(true);
-        }}
-      />
-
-      <ConversationalWelcome
-        isOpen={isKanHelpOpen}
-        onClose={() => setIsKanHelpOpen(false)}
-        onCreate={handleCreateChannel}
-        isWelcome={false}
-      />
     </>
   );
 }

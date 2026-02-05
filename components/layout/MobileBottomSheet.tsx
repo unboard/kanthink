@@ -31,7 +31,6 @@ import { useSettingsStore } from '@/lib/settingsStore';
 import { Button } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { signInWithGoogle } from '@/lib/actions/auth';
-import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
 import type { Channel, Folder } from '@/lib/types';
 
 // Prefixes to distinguish item types in dnd-kit
@@ -393,12 +392,11 @@ function SortableFolderItem({
 function ChannelsList({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { openNewChannel } = useNav();
   const channels = useStore((s) => s.channels);
   const channelOrder = useStore((s) => s.channelOrder);
   const folders = useStore((s) => s.folders);
   const folderOrder = useStore((s) => s.folderOrder);
-  const createChannel = useStore((s) => s.createChannel);
-  const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
   const createFolder = useStore((s) => s.createFolder);
   const updateFolder = useStore((s) => s.updateFolder);
   const deleteFolder = useStore((s) => s.deleteFolder);
@@ -409,7 +407,6 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
   const reorderChannelInFolder = useStore((s) => s.reorderChannelInFolder);
   const hasHydrated = useStore((s) => s._hasHydrated);
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -534,32 +531,6 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
       setNewFolderName('');
       setIsCreatingFolder(false);
     }
-  };
-
-  const handleCreateChannel = (result: ConversationalWelcomeResultData) => {
-    let channel;
-
-    if (result.structure && result.structure.columns.length > 0) {
-      channel = createChannelWithStructure({
-        name: result.channelName,
-        description: result.channelDescription,
-        aiInstructions: result.instructions,
-        columns: result.structure.columns,
-        instructionCards: result.structure.instructionCards || [],
-      });
-    } else {
-      channel = createChannel({
-        name: result.channelName,
-        description: result.channelDescription,
-        aiInstructions: result.instructions,
-      });
-    }
-
-    setIsCreateOpen(false);
-    onClose();
-    setTimeout(() => {
-      router.push(`/channel/${channel.id}`);
-    }, 50);
   };
 
   if (!hasHydrated) {
@@ -690,7 +661,7 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
         <div className="flex-shrink-0 sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-4">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsCreateOpen(true)}
+              onClick={openNewChannel}
               className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white font-medium transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -710,13 +681,6 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       </div>
-
-      <ConversationalWelcome
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onCreate={handleCreateChannel}
-        isWelcome={false}
-      />
     </>
   );
 }

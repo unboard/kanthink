@@ -17,6 +17,9 @@ interface NavContextValue {
   closePanel: () => void;
   togglePanel: (panel: NavPanelType) => void;
   isMobile: boolean;
+  showNewChannel: boolean;
+  openNewChannel: () => void;
+  closeNewChannel: () => void;
 }
 
 const NavContext = createContext<NavContextValue | null>(null);
@@ -36,6 +39,7 @@ interface NavProviderProps {
 export function NavProvider({ children }: NavProviderProps) {
   const [activePanel, setActivePanel] = useState<NavPanelType>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [showNewChannel, setShowNewChannel] = useState(false);
 
   // Check for mobile on mount and resize
   useEffect(() => {
@@ -81,6 +85,15 @@ export function NavProvider({ children }: NavProviderProps) {
     setActivePanel((current) => (current === panel ? null : panel));
   }, []);
 
+  const openNewChannel = useCallback(() => {
+    setActivePanel(null);
+    setShowNewChannel(true);
+  }, []);
+
+  const closeNewChannel = useCallback(() => {
+    setShowNewChannel(false);
+  }, []);
+
   return (
     <NavContext.Provider
       value={{
@@ -89,6 +102,9 @@ export function NavProvider({ children }: NavProviderProps) {
         closePanel,
         togglePanel,
         isMobile,
+        showNewChannel,
+        openNewChannel,
+        closeNewChannel,
       }}
     >
       {children}

@@ -17,6 +17,7 @@ import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { NavProvider } from "@/components/providers/NavProvider";
 import { ServerSyncProvider } from "@/components/providers/ServerSyncProvider";
 import { ToastContainer, SignUpOverlay } from "@/components/ui";
+import { GlobalNewChannelOverlay } from "@/components/layout/GlobalNewChannelOverlay";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -88,6 +89,9 @@ export default function RootLayout({
 
                   {/* Mobile bottom sheet (opens from bottom nav) */}
                   <MobileBottomSheet />
+
+                  {/* Global new channel overlay - triggered from nav buttons */}
+                  <GlobalNewChannelOverlay />
                 </NavProvider>
                 <ToastContainer />
                 <SignUpOverlay />
