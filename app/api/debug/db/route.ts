@@ -81,20 +81,48 @@ export async function GET() {
     }
   }
 
-  // Test 4b: Try INSERT into CHANNELS table with real user
+  // Test 4b: Try INSERT into CHANNELS table with real user (raw SQL)
   try {
     const testChannelId = `test-channel-${Date.now()}`
     await db.run(sql`INSERT INTO channels (id, owner_id, name, description, status, ai_instructions, created_at, updated_at) VALUES (${testChannelId}, ${realUserId}, 'Test Channel', 'test', 'active', '', ${Date.now()}, ${Date.now()})`)
     await db.run(sql`DELETE FROM channels WHERE id = ${testChannelId}`)
-    diagnostics.writeTestChannel = {
+    diagnostics.writeTestChannelRaw = {
       success: true,
-      message: 'INSERT into CHANNELS table WORKED!',
+      message: 'Raw SQL INSERT into CHANNELS WORKED!',
     }
   } catch (error: unknown) {
     const err = error as { message?: string; code?: string; cause?: unknown }
-    diagnostics.writeTestChannel = {
+    diagnostics.writeTestChannelRaw = {
       success: false,
       error: err.message || 'Unknown error',
+    }
+  }
+
+  // Test 4c: Try INSERT using Drizzle ORM (same as API does)
+  try {
+    const testChannelId = `test-drizzle-${Date.now()}`
+    const now = new Date()
+    await db.insert(channels).values({
+      id: testChannelId,
+      ownerId: realUserId,
+      name: 'Test Drizzle Channel',
+      description: 'test',
+      aiInstructions: '',
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    })
+    await db.run(sql`DELETE FROM channels WHERE id = ${testChannelId}`)
+    diagnostics.writeTestDrizzle = {
+      success: true,
+      message: 'Drizzle ORM INSERT WORKED!',
+    }
+  } catch (error: unknown) {
+    const err = error as { message?: string; code?: string; cause?: unknown }
+    diagnostics.writeTestDrizzle = {
+      success: false,
+      error: err.message || 'Unknown error',
+      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error as object)),
     }
   }
 
