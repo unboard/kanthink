@@ -199,13 +199,18 @@ export function PresenceIndicator({ channelId }: { channelId: string | null }) {
     }
   }, [channelId])
 
-  if (members.length === 0) {
+  // Deduplicate by base userId (same user may have multiple tabs)
+  const uniqueMembers = Array.from(
+    new Map(members.map(m => [m.id.split(':')[0], m])).values()
+  )
+
+  if (uniqueMembers.length === 0) {
     return null
   }
 
   // Show up to 3 avatars, then +N indicator
-  const visibleMembers = members.slice(0, 3)
-  const remainingCount = members.length - 3
+  const visibleMembers = uniqueMembers.slice(0, 3)
+  const remainingCount = uniqueMembers.length - 3
 
   return (
     <div className="flex items-center -space-x-2">

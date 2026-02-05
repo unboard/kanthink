@@ -81,6 +81,9 @@ let currentPresenceChannelId: string | null = null
 // Current user's ID in the presence channel (set on subscription success)
 let myPresenceUserId: string | null = null
 
+// Base user ID (without tab suffix) for filtering all of self's tabs
+let myBaseUserId: string | null = null
+
 /**
  * Initialize the Pusher client connection.
  * Returns false if Pusher is not configured.
@@ -97,6 +100,8 @@ export function initPusher(onEvent: EventCallback): boolean {
   // Already initialized - don't create a new instance
   if (pusherInstance) {
     eventCallback = onEvent
+    // Process any queued presence subscriptions
+    processPendingPresenceQueue()
     return true
   }
 
@@ -128,7 +133,22 @@ export function initPusher(onEvent: EventCallback): boolean {
     console.error('[Pusher Client] Connection error:', err)
   })
 
+  // Process any presence subscriptions that were queued before init
+  processPendingPresenceQueue()
+
   return true
+}
+
+/**
+ * Process any presence subscriptions that were queued before pusherInstance was ready.
+ */
+function processPendingPresenceQueue(): void {
+  if (pendingPresenceQueue.size === 0) return
+  const queued = Array.from(pendingPresenceQueue)
+  pendingPresenceQueue.clear()
+  for (const channelId of queued) {
+    subscribeToPresence(channelId)
+  }
 }
 
 // Track pending retries to avoid duplicate retry attempts
@@ -306,8 +326,10 @@ export function disconnect(): void {
   presenceSubscriptions.clear()
   presenceMembers.clear()
   cursorPositions.clear()
+  pendingPresenceQueue.clear()
   currentPresenceChannelId = null
   myPresenceUserId = null
+  myBaseUserId = null
 
   // Disconnect
   pusherInstance.disconnect()
@@ -351,12 +373,17 @@ export function setCursorCallback(callback: CursorCallback | null): void {
 // Track pending presence retries
 const pendingPresenceRetries = new Set<string>()
 
+// Queue for presence subscriptions requested before pusherInstance is ready
+const pendingPresenceQueue = new Set<string>()
+
 /**
  * Subscribe to a channel's presence for cursor tracking.
  * Includes retry logic for newly created channels.
  */
 export function subscribeToPresence(channelId: string, retryCount = 0): void {
   if (!pusherInstance) {
+    pendingPresenceQueue.add(channelId)
+    currentPresenceChannelId = channelId
     return
   }
 
@@ -382,11 +409,12 @@ export function subscribeToPresence(channelId: string, retryCount = 0): void {
     // members.me contains our own member info
     const me = members.me
     myPresenceUserId = me?.id ?? null
+    myBaseUserId = myPresenceUserId ? myPresenceUserId.split(':')[0] : null
 
     const memberList: PresenceUser[] = []
     members.each((member: { id: string; info: { name: string; image: string | null; color: string } }) => {
-      // Don't include self in the member list
-      if (member.id !== myPresenceUserId) {
+      // Don't include any of self's tabs in the member list
+      if (member.id.split(':')[0] !== myBaseUserId) {
         memberList.push({
           id: member.id,
           info: member.info,
@@ -400,6 +428,10 @@ export function subscribeToPresence(channelId: string, retryCount = 0): void {
   })
 
   channel.bind('pusher:member_added', (member: { id: string; info: { name: string; image: string | null; color: string } }) => {
+    // Skip any of self's tabs
+    if (myBaseUserId && member.id.split(':')[0] === myBaseUserId) {
+      return
+    }
     const current = presenceMembers.get(channelId) || []
     const updated = [...current, { id: member.id, info: member.info }]
     presenceMembers.set(channelId, updated)
@@ -481,6 +513,9 @@ export function subscribeToPresence(channelId: string, retryCount = 0): void {
  * Unsubscribe from a channel's presence.
  */
 export function unsubscribeFromPresence(channelId: string): void {
+  // Remove from pending queue in case it was queued but not yet subscribed
+  pendingPresenceQueue.delete(channelId)
+
   if (!pusherInstance) {
     return
   }
