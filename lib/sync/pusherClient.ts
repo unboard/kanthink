@@ -131,11 +131,15 @@ export function initPusher(onEvent: EventCallback): boolean {
   return true
 }
 
+// Track pending retries to avoid duplicate retry attempts
+const pendingRetries = new Set<string>()
+
 /**
  * Subscribe to a Kanthink channel's Pusher channel.
  * The user must have access to this channel (verified by auth endpoint).
+ * Includes retry logic for newly created channels that may not be in DB yet.
  */
-export function subscribeToChannel(channelId: string): void {
+export function subscribeToChannel(channelId: string, retryCount = 0): void {
   if (!pusherInstance) {
     return
   }
@@ -166,7 +170,29 @@ export function subscribeToChannel(channelId: string): void {
   })
 
   channel.bind('pusher:subscription_error', (err: unknown) => {
-    console.error(`[Pusher Client] Failed to subscribe to channel ${channelId}:`, err)
+    // Unsubscribe the failed channel so we can retry
+    pusherInstance?.unsubscribe(pusherChannelName)
+    subscriptions.delete(channelId)
+
+    // Retry for newly created channels (DB might not have it yet)
+    // Max 3 retries with exponential backoff: 500ms, 1000ms, 2000ms
+    const maxRetries = 3
+    if (retryCount < maxRetries && !pendingRetries.has(channelId)) {
+      const delay = 500 * Math.pow(2, retryCount)
+      console.log(`[Pusher Client] Subscription failed for ${channelId}, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`)
+      pendingRetries.add(channelId)
+      setTimeout(() => {
+        pendingRetries.delete(channelId)
+        subscribeToChannel(channelId, retryCount + 1)
+      }, delay)
+    } else if (retryCount >= maxRetries) {
+      console.error(`[Pusher Client] Failed to subscribe to channel ${channelId} after ${maxRetries} retries:`, err)
+    }
+  })
+
+  channel.bind('pusher:subscription_succeeded', () => {
+    // Clear any pending retry state on success
+    pendingRetries.delete(channelId)
   })
 
   subscriptions.set(channelId, channel)
@@ -319,10 +345,14 @@ export function setCursorCallback(callback: CursorCallback | null): void {
   cursorCallback = callback
 }
 
+// Track pending presence retries
+const pendingPresenceRetries = new Set<string>()
+
 /**
  * Subscribe to a channel's presence for cursor tracking.
+ * Includes retry logic for newly created channels.
  */
-export function subscribeToPresence(channelId: string): void {
+export function subscribeToPresence(channelId: string, retryCount = 0): void {
   if (!pusherInstance) {
     return
   }
@@ -343,6 +373,8 @@ export function subscribeToPresence(channelId: string): void {
   }
 
   channel.bind('pusher:subscription_succeeded', (members: Members) => {
+    // Clear any pending retry state on success
+    pendingPresenceRetries.delete(channelId)
     // Store my own user ID from the presence channel
     // members.me contains our own member info
     const me = members.me
@@ -417,7 +449,25 @@ export function subscribeToPresence(channelId: string): void {
   })
 
   channel.bind('pusher:subscription_error', (err: unknown) => {
-    console.error(`[Pusher Client] Failed to subscribe to presence channel ${channelId}:`, err)
+    // Unsubscribe the failed channel so we can retry
+    pusherInstance?.unsubscribe(presenceChannelName)
+    presenceSubscriptions.delete(channelId)
+    cursorPositions.delete(channelId)
+
+    // Retry for newly created channels (DB might not have it yet)
+    // Max 3 retries with exponential backoff: 500ms, 1000ms, 2000ms
+    const maxRetries = 3
+    if (retryCount < maxRetries && !pendingPresenceRetries.has(channelId)) {
+      const delay = 500 * Math.pow(2, retryCount)
+      console.log(`[Pusher Client] Presence subscription failed for ${channelId}, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`)
+      pendingPresenceRetries.add(channelId)
+      setTimeout(() => {
+        pendingPresenceRetries.delete(channelId)
+        subscribeToPresence(channelId, retryCount + 1)
+      }, delay)
+    } else if (retryCount >= maxRetries) {
+      console.error(`[Pusher Client] Failed to subscribe to presence channel ${channelId} after ${maxRetries} retries:`, err)
+    }
   })
 
   presenceSubscriptions.set(channelId, channel)
