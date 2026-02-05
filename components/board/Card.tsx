@@ -9,6 +9,7 @@ import { CardDetailDrawer } from './CardDetailDrawer';
 import { TaskListOnCard } from './TaskListOnCard';
 import { TaskDrawer } from './TaskDrawer';
 import { getTagStyles } from './TagPicker';
+import { stripMentionMarkup } from './ChatMessage';
 
 interface CardProps {
   card: CardType;
@@ -55,8 +56,9 @@ export function Card({ card }: CardProps) {
 
   // Use summary for preview, fall back to first message content
   const messages = card.messages ?? [];
-  const contentPreview = card.summary
+  const rawPreview = card.summary
     || (messages.length > 0 ? messages[0].content.slice(0, 150) : '');
+  const contentPreview = stripMentionMarkup(rawPreview);
 
   // Get tag definitions for color lookup
   const tagDefinitions = channels[card.channelId]?.tagDefinitions ?? [];

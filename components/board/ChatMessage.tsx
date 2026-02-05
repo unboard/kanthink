@@ -49,6 +49,87 @@ function formatDate(dateString: string): string {
   });
 }
 
+// Regex to match @[Name](userId) mention format
+const MENTION_REGEX = /@\[([^\]]+)\]\(([^)]+)\)/g;
+
+/** Strip mention markup to plain @Name (for previews, etc.) */
+export function stripMentionMarkup(text: string): string {
+  return text.replace(MENTION_REGEX, '@$1');
+}
+
+/** Render message content with mentions as styled spans, rest through ReactMarkdown */
+function renderContentWithMentions(content: string) {
+  // Split content by mention patterns
+  const parts: Array<{ type: 'text' | 'mention'; value: string; name?: string }> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  MENTION_REGEX.lastIndex = 0;
+  while ((match = MENTION_REGEX.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', value: content.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'mention', value: match[0], name: match[1] });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < content.length) {
+    parts.push({ type: 'text', value: content.slice(lastIndex) });
+  }
+
+  // If no mentions, render everything through ReactMarkdown
+  if (parts.every((p) => p.type === 'text')) {
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    );
+  }
+
+  // Render mixed content: markdown segments + mention spans
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.type === 'mention') {
+          return (
+            <span
+              key={i}
+              className="inline-flex items-center px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-xs font-medium"
+            >
+              @{part.name}
+            </span>
+          );
+        }
+        return (
+          <ReactMarkdown
+            key={i}
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // Unwrap <p> tags so inline mentions don't break layout
+              p: ({ children }) => <>{children}</>,
+              a: ({ href, children }) => (
+                <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                  {children}
+                </a>
+              ),
+            }}
+          >
+            {part.value}
+          </ReactMarkdown>
+        );
+      })}
+    </>
+  );
+}
+
 function UserMessageHeader({ message, session }: { message: CardMessage; session: Session | null }) {
   const isCurrentUser = message.authorId ? message.authorId === session?.user?.id : true;
   const avatarUrl = message.authorImage ?? (isCurrentUser ? session?.user?.image : null);
@@ -230,35 +311,7 @@ export function ChatMessage({
             prose-pre:bg-neutral-100 dark:prose-pre:bg-neutral-800 prose-pre:text-xs"
             onDoubleClick={canEdit ? () => { setEditContent(message.content); setIsEditing(true); } : undefined}
           >
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ href, children }) => {
-                  if (href?.startsWith('mention:')) {
-                    return (
-                      <span className="inline-flex items-center px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-xs font-medium">
-                        @{children}
-                      </span>
-                    );
-                  }
-                  return (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      {children}
-                    </a>
-                  );
-                },
-              }}
-            >
-              {message.content.replace(
-                /@\[([^\]]+)\]\(([^)]+)\)/g,
-                '[$1](mention:$2)'
-              )}
-            </ReactMarkdown>
+            {renderContentWithMentions(message.content)}
           </div>
         ) : null}
 
