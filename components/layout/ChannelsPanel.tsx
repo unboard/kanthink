@@ -182,6 +182,103 @@ function HelpFolderSection({ folder, channels, pathname, onNavigate }: HelpFolde
   );
 }
 
+// Shared with me section - shows channels that others have shared with this user
+interface SharedWithMeSectionProps {
+  channels: Record<string, Channel>;
+  pathname: string;
+  onNavigate?: () => void;
+}
+
+function SharedWithMeSection({ channels, pathname, onNavigate }: SharedWithMeSectionProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Filter to only channels that have sharedBy info (meaning user is not the owner)
+  const sharedChannels = Object.values(channels).filter(
+    (c) => c.sharedBy && c.status !== 'archived'
+  );
+
+  if (sharedChannels.length === 0) return null;
+
+  return (
+    <div className="mb-2">
+      <div className="group flex items-center rounded-md transition-colors bg-violet-50 dark:bg-violet-900/20">
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-1 text-violet-500 hover:text-violet-600 dark:text-violet-400 dark:hover:text-violet-300"
+        >
+          <svg
+            className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+          </svg>
+        </button>
+
+        {/* Share icon */}
+        <svg className="w-3.5 h-3.5 mr-1 text-violet-500 dark:text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+
+        <span className="flex-1 text-sm text-violet-600 dark:text-violet-400 font-medium py-1">
+          Shared with me
+        </span>
+      </div>
+
+      {!isCollapsed && (
+        <div className="ml-4 mt-0.5 space-y-0.5">
+          {sharedChannels.map((channel) => (
+            <div
+              key={channel.id}
+              className={`
+                group relative flex items-center rounded-md transition-colors
+                ${pathname === `/channel/${channel.id}` ? 'bg-neutral-200 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}
+              `}
+            >
+              {/* Sharer's avatar */}
+              {channel.sharedBy && (
+                <div className="ml-2 flex-shrink-0">
+                  {channel.sharedBy.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={channel.sharedBy.image}
+                      alt={channel.sharedBy.name || 'Sharer'}
+                      className="w-4 h-4 rounded-full"
+                      title={`Shared by ${channel.sharedBy.name || channel.sharedBy.email}`}
+                    />
+                  ) : (
+                    <div
+                      className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center"
+                      title={`Shared by ${channel.sharedBy.name || channel.sharedBy.email}`}
+                    >
+                      <span className="text-violet-600 dark:text-violet-300 font-medium" style={{ fontSize: '8px' }}>
+                        {(channel.sharedBy.name || channel.sharedBy.email)?.[0]?.toUpperCase() || '?'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+              <Link
+                href={`/channel/${channel.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigate?.();
+                }}
+                className={`
+                  flex-1 block py-1.5 px-2 text-sm transition-colors truncate
+                  ${pathname === `/channel/${channel.id}` ? 'text-neutral-900 dark:text-white' : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'}
+                `}
+              >
+                {channel.name}
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DraggableFolder({
   folder,
   channels,
@@ -504,6 +601,13 @@ export function ChannelsPanel() {
                   onNavigate={closePanel}
                 />
               )}
+
+              {/* Shared with me - virtual folder for channels shared by others */}
+              <SharedWithMeSection
+                channels={channels}
+                pathname={pathname}
+                onNavigate={closePanel}
+              />
 
               <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
                 <nav className="space-y-0.5">

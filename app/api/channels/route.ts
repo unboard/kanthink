@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { channels, columns, userChannelOrg, channelShares } from '@/lib/db/schema'
 import { eq, and, or, desc, asc } from 'drizzle-orm'
-import { getUserChannels, ChannelRole } from '@/lib/api/permissions'
+import { getUserChannelsWithSharerInfo, ChannelRole, SharedByInfo } from '@/lib/api/permissions'
 import { nanoid } from 'nanoid'
 
 const DEFAULT_COLUMN_NAMES = ['Inbox', 'Interesting', 'Useful', 'Archive']
@@ -21,10 +21,11 @@ export async function GET() {
 
   const userId = session.user.id
 
-  // Get all channel IDs with roles
-  const userChannelRoles = await getUserChannels(userId)
+  // Get all channel IDs with roles and sharer info
+  const userChannelRoles = await getUserChannelsWithSharerInfo(userId)
   const channelIds = userChannelRoles.map(c => c.channelId)
   const roleMap = new Map(userChannelRoles.map(c => [c.channelId, c.role]))
+  const sharedByMap = new Map(userChannelRoles.map(c => [c.channelId, c.sharedBy]))
 
   if (channelIds.length === 0) {
     return NextResponse.json({ channels: [], organization: { folders: [], channelOrder: [] } })
@@ -41,10 +42,11 @@ export async function GET() {
     orderBy: [asc(userChannelOrg.position)],
   })
 
-  // Build response with roles attached and isGlobalHelp flag
+  // Build response with roles, sharer info, and isGlobalHelp flag
   const channelsWithRoles = channelList.map(channel => ({
     ...channel,
     role: roleMap.get(channel.id) || 'viewer',
+    sharedBy: sharedByMap.get(channel.id),
     isGlobalHelp: channel.isGlobalHelp ?? false,
     createdAt: channel.createdAt?.toISOString(),
     updatedAt: channel.updatedAt?.toISOString(),

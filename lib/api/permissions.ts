@@ -1,8 +1,15 @@
 import { db } from '@/lib/db'
-import { channels, channelShares } from '@/lib/db/schema'
-import { eq, and, or } from 'drizzle-orm'
+import { channels, channelShares, users } from '@/lib/db/schema'
+import { eq, and, or, inArray } from 'drizzle-orm'
 
 export type ChannelRole = 'owner' | 'editor' | 'viewer'
+
+export interface SharedByInfo {
+  id: string
+  name: string | null
+  email: string
+  image: string | null
+}
 
 export interface ChannelPermission {
   channelId: string
@@ -157,6 +164,90 @@ export async function getUserChannels(userId: string): Promise<Array<{ channelId
   }
 
   // Add global help channels with viewer role (avoid duplicates)
+  const existingIds = new Set(result.map(r => r.channelId))
+  for (const channel of globalHelpChannels) {
+    if (!existingIds.has(channel.id)) {
+      result.push({ channelId: channel.id, role: 'viewer' })
+    }
+  }
+
+  return result
+}
+
+/**
+ * Get all channels accessible to a user with extended info including sharer details.
+ * Returns channel IDs with their roles and who shared it (if applicable).
+ */
+export async function getUserChannelsWithSharerInfo(userId: string): Promise<Array<{
+  channelId: string
+  role: ChannelRole
+  sharedBy?: SharedByInfo
+}>> {
+  // Get owned channels
+  const ownedChannels = await db.query.channels.findMany({
+    where: eq(channels.ownerId, userId),
+    columns: { id: true },
+  })
+
+  // Get shared channels with the invitedBy user info
+  const sharedChannels = await db.query.channelShares.findMany({
+    where: eq(channelShares.userId, userId),
+    columns: { channelId: true, role: true, invitedBy: true },
+  })
+
+  // Get the users who invited (sharedBy)
+  const inviterIds = sharedChannels
+    .map(s => s.invitedBy)
+    .filter((id): id is string => id !== null)
+
+  let invitersMap: Map<string, SharedByInfo> = new Map()
+  if (inviterIds.length > 0) {
+    const inviters = await db.query.users.findMany({
+      where: inArray(users.id, inviterIds),
+      columns: { id: true, name: true, email: true, image: true },
+    })
+    for (const u of inviters) {
+      invitersMap.set(u.id, {
+        id: u.id,
+        name: u.name,
+        email: u.email ?? '',
+        image: u.image,
+      })
+    }
+  }
+
+  // Get global help channels
+  let globalHelpChannels: { id: string }[] = []
+  try {
+    globalHelpChannels = await db.query.channels.findMany({
+      where: eq(channels.isGlobalHelp, true),
+      columns: { id: true },
+    })
+  } catch {
+    // Column may not exist yet
+  }
+
+  const result: Array<{ channelId: string; role: ChannelRole; sharedBy?: SharedByInfo }> = []
+
+  // Add owned channels
+  for (const channel of ownedChannels) {
+    result.push({ channelId: channel.id, role: 'owner' })
+  }
+
+  // Add shared channels with sharer info
+  const ownedIds = new Set(ownedChannels.map(c => c.id))
+  for (const share of sharedChannels) {
+    if (!ownedIds.has(share.channelId)) {
+      const sharedBy = share.invitedBy ? invitersMap.get(share.invitedBy) : undefined
+      result.push({
+        channelId: share.channelId,
+        role: share.role as ChannelRole,
+        sharedBy,
+      })
+    }
+  }
+
+  // Add global help channels with viewer role
   const existingIds = new Set(result.map(r => r.channelId))
   for (const channel of globalHelpChannels) {
     if (!existingIds.has(channel.id)) {

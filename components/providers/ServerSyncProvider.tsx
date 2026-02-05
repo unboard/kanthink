@@ -163,6 +163,8 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
           aiInstructions: channel.aiInstructions || '',
           includeBacksideInAI: channel.includeBacksideInAI ?? false,
           isGlobalHelp: channel.isGlobalHelp ?? false,
+          role: channel.role,
+          sharedBy: channel.sharedBy,
           columns: columnsWithCards.sort((a, b) => {
             const aCol = serverColumns.find((c) => c.id === a.id)
             const bCol = serverColumns.find((c) => c.id === b.id)

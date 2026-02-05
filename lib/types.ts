@@ -220,6 +220,13 @@ export interface ChannelMember {
   image: string | null;
 }
 
+export interface SharedByInfo {
+  id: string;
+  name: string | null;
+  email: string;
+  image: string | null;
+}
+
 export interface Channel {
   id: ID;
   name: string;
@@ -236,6 +243,8 @@ export interface Channel {
   tagDefinitions?: TagDefinition[];
   unlinkedTaskOrder?: ID[];  // Order of standalone tasks (no cardId)
   isGlobalHelp?: boolean;    // True if this is a global help resource (read-only for all users)
+  role?: ChannelRole;        // User's role in this channel (owner, editor, viewer)
+  sharedBy?: SharedByInfo;   // Person who shared this channel (if not owner)
   createdAt: string;
   updatedAt: string;
 }

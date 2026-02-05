@@ -6,7 +6,7 @@ import { useStore } from '@/lib/store'
 import { useServerSync } from '@/components/providers/ServerSyncProvider'
 import { ChannelCard } from './ChannelCard'
 // SporeBackground removed - provided by root layout's AmbientBackground
-import type { Task, ID } from '@/lib/types'
+import type { Task, ID, Channel, SharedByInfo } from '@/lib/types'
 import type { PresenceUser } from '@/lib/sync/pusherClient'
 import { getPresenceMembers, subscribeToPresence, setPresenceCallback } from '@/lib/sync/pusherClient'
 import { isServerMode } from '@/lib/api/sync'
@@ -99,6 +99,23 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     .map((id) => channels[id])
     .filter(Boolean)
 
+  // Split into owned and shared channels
+  const myChannels = channelList.filter((c) => !c.sharedBy)
+  const sharedChannels = channelList.filter((c) => c.sharedBy)
+
+  // Group shared channels by sharer
+  const sharedByPerson = sharedChannels.reduce((acc, ch) => {
+    const sharerId = ch.sharedBy?.id || 'unknown'
+    if (!acc[sharerId]) {
+      acc[sharerId] = {
+        sharer: ch.sharedBy!,
+        channels: [],
+      }
+    }
+    acc[sharerId].channels.push(ch)
+    return acc
+  }, {} as Record<string, { sharer: SharedByInfo; channels: Channel[] }>)
+
   if (channelList.length === 0) {
     return (
       <div className="relative flex h-full items-center justify-center">
@@ -129,7 +146,8 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
           <div>
             <h1 className="text-2xl font-bold text-white">Your Channels</h1>
             <p className="mt-1 text-white/50">
-              {channelList.length} channel{channelList.length !== 1 ? 's' : ''}
+              {myChannels.length} channel{myChannels.length !== 1 ? 's' : ''}
+              {sharedChannels.length > 0 && ` · ${sharedChannels.length} shared`}
             </p>
           </div>
           <button
@@ -143,22 +161,80 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
           </button>
         </div>
 
-        {/* Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {channelList.map((channel) => (
-            <ChannelCard
-              key={channel.id}
-              channel={channel}
-              tasks={tasksByChannel[channel.id] || []}
-              owner={session?.user ? {
-                id: session.user.id!,
-                name: session.user.name ?? null,
-                image: session.user.image ?? null,
-              } : undefined}
-              activeUsers={activeUsersMap[channel.id] || []}
-            />
-          ))}
-        </div>
+        {/* My Channels Grid */}
+        {myChannels.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {myChannels.map((channel) => (
+              <ChannelCard
+                key={channel.id}
+                channel={channel}
+                tasks={tasksByChannel[channel.id] || []}
+                owner={session?.user ? {
+                  id: session.user.id!,
+                  name: session.user.name ?? null,
+                  image: session.user.image ?? null,
+                } : undefined}
+                activeUsers={activeUsersMap[channel.id] || []}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Shared with me Section */}
+        {sharedChannels.length > 0 && (
+          <div className="mt-12">
+            <div className="mb-6 flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <h2 className="text-lg font-semibold text-white">Shared with me</h2>
+              </div>
+              <div className="h-px flex-1 bg-white/10" />
+            </div>
+
+            {/* Group by sharer */}
+            <div className="space-y-8">
+              {Object.values(sharedByPerson).map(({ sharer, channels: sharerChannels }) => (
+                <div key={sharer.id}>
+                  {/* Sharer header */}
+                  <div className="mb-3 flex items-center gap-2">
+                    {sharer.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={sharer.image}
+                        alt={sharer.name || 'Sharer'}
+                        className="h-6 w-6 rounded-full"
+                      />
+                    ) : (
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500/20">
+                        <span className="text-xs font-medium text-violet-300">
+                          {(sharer.name || sharer.email)?.[0]?.toUpperCase() || '?'}
+                        </span>
+                      </div>
+                    )}
+                    <span className="text-sm font-medium text-white/70">
+                      {sharer.name || sharer.email}
+                    </span>
+                  </div>
+
+                  {/* Sharer's channels */}
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {sharerChannels.map((channel) => (
+                      <ChannelCard
+                        key={channel.id}
+                        channel={channel}
+                        tasks={tasksByChannel[channel.id] || []}
+                        owner={sharer}
+                        activeUsers={activeUsersMap[channel.id] || []}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
