@@ -9,12 +9,14 @@ import {
   instructionCards,
   userChannelOrg,
   channelShares,
+  users,
 } from '@/lib/db/schema'
 import { eq, and, asc } from 'drizzle-orm'
 import {
   requirePermission,
   PermissionError,
   getChannelPermission,
+  SharedByInfo,
 } from '@/lib/api/permissions'
 
 interface RouteParams {
@@ -71,10 +73,28 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       orderBy: [asc(instructionCards.position)],
     })
 
+    // Get sharedBy info if user is not the owner
+    let sharedBy: SharedByInfo | undefined
+    if (!permission.isOwner && channel.ownerId) {
+      const owner = await db.query.users.findFirst({
+        where: eq(users.id, channel.ownerId),
+        columns: { id: true, name: true, email: true, image: true },
+      })
+      if (owner) {
+        sharedBy = {
+          id: owner.id,
+          name: owner.name,
+          email: owner.email ?? '',
+          image: owner.image,
+        }
+      }
+    }
+
     return NextResponse.json({
       channel: {
         ...channel,
         role: permission.role,
+        sharedBy,
         createdAt: channel.createdAt?.toISOString(),
         updatedAt: channel.updatedAt?.toISOString(),
       },
