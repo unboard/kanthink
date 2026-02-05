@@ -335,6 +335,18 @@ function getChannelIdFromEvent(event: BroadcastEvent): string | null {
     return (event as { run: { channelId: string } }).run.channelId
   }
 
+  // For any event with a cardId, look up the card's channelId from the store
+  if ('cardId' in event && event.cardId) {
+    try {
+      // Lazy import to avoid circular dependency
+      const { useStore } = require('../store')
+      const card = useStore.getState().cards[event.cardId as string]
+      if (card) return card.channelId
+    } catch {
+      // Store not available yet
+    }
+  }
+
   return null
 }
 
