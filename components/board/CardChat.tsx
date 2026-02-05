@@ -48,6 +48,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
     .filter(Boolean);
 
   // Fetch channel members for @mentions
+  const sessionUserId = session?.user?.id as string | undefined;
   useEffect(() => {
     let cancelled = false;
     fetchShares(card.channelId)
@@ -75,10 +76,19 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         setMembers(memberList);
       })
       .catch(() => {
-        // Silently fail - mentions just won't show
+        // On failure, fall back to just the current session user
+        if (!cancelled && session?.user?.id) {
+          setMembers([{
+            id: session.user.id as string,
+            name: (session.user.name ?? session.user.email ?? 'You') as string,
+            email: (session.user.email ?? '') as string,
+            image: (session.user.image as string) ?? null,
+          }]);
+        }
       });
     return () => { cancelled = true; };
-  }, [card.channelId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.channelId, sessionUserId]);
 
   // Safe access to messages array (handles legacy cards)
   const messages = card.messages ?? [];

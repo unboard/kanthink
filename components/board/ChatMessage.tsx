@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { Session } from 'next-auth';
 import type { CardMessage, StoredAction, TagDefinition } from '@/lib/types';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SmartSnippet } from './SmartSnippet';
@@ -48,6 +49,29 @@ function formatDate(dateString: string): string {
   });
 }
 
+function UserMessageHeader({ message, session }: { message: CardMessage; session: Session | null }) {
+  const isCurrentUser = message.authorId ? message.authorId === session?.user?.id : true;
+  const avatarUrl = message.authorImage ?? (isCurrentUser ? session?.user?.image : null);
+  const displayName = isCurrentUser ? 'You' : (message.authorName ?? 'Unknown');
+  const initials = message.authorName?.[0] ?? session?.user?.name?.[0] ?? session?.user?.email?.[0] ?? '?';
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatarUrl} alt="" className="w-3.5 h-3.5 rounded-full" />
+      ) : (
+        <div className="w-3.5 h-3.5 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center">
+          <span className="text-violet-600 dark:text-violet-300 font-medium" style={{ fontSize: '7px' }}>
+            {initials}
+          </span>
+        </div>
+      )}
+      {displayName}
+    </span>
+  );
+}
+
 export function ChatMessage({
   message,
   onDelete,
@@ -62,6 +86,7 @@ export function ChatMessage({
   const isAI = message.type === 'ai_response';
   const isQuestion = message.type === 'question';
   const isNote = message.type === 'note';
+  const isUserMessage = isQuestion || isNote;
   const canEdit = isNote && !!onEdit;
 
   const { data: session } = useSession();
@@ -127,28 +152,7 @@ export function ChatMessage({
               Kan
             </span>
           )}
-          {(isQuestion || isNote) && (() => {
-            const isCurrentUser = message.authorId ? message.authorId === session?.user?.id : true;
-            const avatarUrl = message.authorImage ?? (isCurrentUser ? session?.user?.image : null);
-            const displayName = isCurrentUser ? 'You' : (message.authorName ?? 'Unknown');
-            const initials = message.authorName?.[0] ?? session?.user?.name?.[0] ?? session?.user?.email?.[0] ?? '?';
-
-            return (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
-                {avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={avatarUrl} alt="" className="w-3.5 h-3.5 rounded-full" />
-                ) : (
-                  <div className="w-3.5 h-3.5 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center">
-                    <span className="text-violet-600 dark:text-violet-300 font-medium" style={{ fontSize: '7px' }}>
-                      {initials}
-                    </span>
-                  </div>
-                )}
-                {displayName}
-              </span>
-            );
-          })()}
+          {isUserMessage && <UserMessageHeader message={message} session={session} />}
           <span className="text-xs text-neutral-400 dark:text-neutral-500">
             {formatDate(message.createdAt)} at {formatTime(message.createdAt)}
           </span>
