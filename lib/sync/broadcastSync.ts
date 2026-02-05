@@ -335,16 +335,27 @@ function getChannelIdFromEvent(event: BroadcastEvent): string | null {
     return (event as { run: { channelId: string } }).run.channelId
   }
 
+  // Lazy import to avoid circular dependency - only load once
+  let store: { cards: Record<string, { channelId: string }>; tasks: Record<string, { channelId: string }> } | null = null
+  try {
+    const { useStore } = require('../store')
+    store = useStore.getState()
+  } catch {
+    // Store not available yet
+  }
+
+  if (!store) return null
+
   // For any event with a cardId, look up the card's channelId from the store
   if ('cardId' in event && event.cardId) {
-    try {
-      // Lazy import to avoid circular dependency
-      const { useStore } = require('../store')
-      const card = useStore.getState().cards[event.cardId as string]
-      if (card) return card.channelId
-    } catch {
-      // Store not available yet
-    }
+    const card = store.cards[event.cardId as string]
+    if (card) return card.channelId
+  }
+
+  // For any event with a task id, look up the task's channelId from the store
+  if ('id' in event && event.type.startsWith('task:')) {
+    const task = store.tasks[event.id as string]
+    if (task) return task.channelId
   }
 
   return null
