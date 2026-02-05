@@ -324,9 +324,12 @@ export function isConnected(): boolean {
 
 /**
  * Get the list of currently subscribed channel IDs.
+ * Also includes channels pending retry to prevent duplicate subscription attempts.
  */
 export function getSubscribedChannels(): string[] {
-  return Array.from(subscriptions.keys()).filter((k) => !k.startsWith('user-'))
+  const subscribed = Array.from(subscriptions.keys()).filter((k) => !k.startsWith('user-'))
+  const pending = Array.from(pendingRetries)
+  return [...new Set([...subscribed, ...pending])]
 }
 
 // ======== PRESENCE CHANNELS ========
