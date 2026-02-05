@@ -63,33 +63,37 @@ export async function GET() {
     }
   }
 
-  // Test 4: Try INSERT using regional URL
-  const regionalUrl = process.env.DATABASE_URL!
+  // Test 4: Try INSERT with REAL user ID
+  const realUserId = '8a42865c-80fc-49bc-8adf-5ee45cf6f44f'
   try {
-    const directClient = createClient({
-      url: regionalUrl,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    })
-
-    const testId = `test-${Date.now()}`
-    await directClient.execute({
-      sql: 'INSERT INTO folders (id, user_id, name, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-      args: [testId, 'test-user', 'test-folder', 0, Date.now(), Date.now()]
-    })
-    await directClient.execute({
-      sql: 'DELETE FROM folders WHERE id = ?',
-      args: [testId]
-    })
-    diagnostics.writeTestRegional = {
+    const testId = `test-folder-${Date.now()}`
+    await db.run(sql`INSERT INTO folders (id, user_id, name, position, created_at, updated_at) VALUES (${testId}, ${realUserId}, 'test-folder', 0, ${Date.now()}, ${Date.now()})`)
+    await db.run(sql`DELETE FROM folders WHERE id = ${testId}`)
+    diagnostics.writeTestRealUser = {
       success: true,
-      url: regionalUrl.slice(0, 40) + '...',
-      message: 'Write works with regional URL',
+      message: 'INSERT with real user ID WORKED!',
     }
   } catch (error: unknown) {
     const err = error as { message?: string; code?: string; cause?: unknown }
-    diagnostics.writeTestRegional = {
+    diagnostics.writeTestRealUser = {
       success: false,
-      url: regionalUrl.slice(0, 40) + '...',
+      error: err.message || 'Unknown error',
+    }
+  }
+
+  // Test 4b: Try INSERT into CHANNELS table with real user
+  try {
+    const testChannelId = `test-channel-${Date.now()}`
+    await db.run(sql`INSERT INTO channels (id, owner_id, name, description, status, ai_instructions, created_at, updated_at) VALUES (${testChannelId}, ${realUserId}, 'Test Channel', 'test', 'active', '', ${Date.now()}, ${Date.now()})`)
+    await db.run(sql`DELETE FROM channels WHERE id = ${testChannelId}`)
+    diagnostics.writeTestChannel = {
+      success: true,
+      message: 'INSERT into CHANNELS table WORKED!',
+    }
+  } catch (error: unknown) {
+    const err = error as { message?: string; code?: string; cause?: unknown }
+    diagnostics.writeTestChannel = {
+      success: false,
       error: err.message || 'Unknown error',
     }
   }
@@ -119,41 +123,6 @@ export async function GET() {
     diagnostics.usersCount = {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-    }
-  }
-
-  // Test 8: Try INSERT using PRIMARY URL (without region)
-  // Convert libsql://kanthink-unboard.aws-us-east-2.turso.io to libsql://kanthink-unboard.turso.io
-  const primaryUrl = regionalUrl.replace(/\.(aws|gcp|azure)-[^.]+\./, '.')
-  if (primaryUrl !== regionalUrl) {
-    try {
-      const primaryClient = createClient({
-        url: primaryUrl,
-        authToken: process.env.TURSO_AUTH_TOKEN,
-      })
-
-      const testId = `test-primary-${Date.now()}`
-      await primaryClient.execute({
-        sql: 'INSERT INTO folders (id, user_id, name, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-        args: [testId, 'test-user', 'test-folder', 0, Date.now(), Date.now()]
-      })
-      await primaryClient.execute({
-        sql: 'DELETE FROM folders WHERE id = ?',
-        args: [testId]
-      })
-      diagnostics.writeTestPrimary = {
-        success: true,
-        url: primaryUrl.slice(0, 40) + '...',
-        message: 'Write works with PRIMARY URL! Update DATABASE_URL in Vercel to this.',
-        recommendedUrl: primaryUrl,
-      }
-    } catch (error: unknown) {
-      const err = error as { message?: string; code?: string; cause?: unknown }
-      diagnostics.writeTestPrimary = {
-        success: false,
-        url: primaryUrl.slice(0, 40) + '...',
-        error: err.message || 'Unknown error',
-      }
     }
   }
 
