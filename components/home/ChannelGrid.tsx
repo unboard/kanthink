@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useStore } from '@/lib/store'
 import { useServerSync } from '@/components/providers/ServerSyncProvider'
 import { ChannelCard } from './ChannelCard'
-import { SporeBackground } from '@/components/ambient/SporeBackground'
+// SporeBackground removed - provided by root layout's AmbientBackground
 import type { Task, ID } from '@/lib/types'
 import type { PresenceUser } from '@/lib/sync/pusherClient'
 import { getPresenceMembers, subscribeToPresence, setPresenceCallback } from '@/lib/sync/pusherClient'
@@ -90,7 +90,6 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
   if (!isFullyLoaded) {
     return (
       <div className="relative flex h-full items-center justify-center">
-        <SporeBackground />
         <div className="animate-pulse text-white/50">Loading...</div>
       </div>
     )
@@ -103,7 +102,6 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
   if (channelList.length === 0) {
     return (
       <div className="relative flex h-full items-center justify-center">
-        <SporeBackground />
         <div className="relative z-10 text-center">
           <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500/20 to-violet-500/20 backdrop-blur-sm">
             <svg className="h-8 w-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,8 +123,6 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
 
   return (
     <div className="relative min-h-full">
-      <SporeBackground />
-
       <div className="relative z-10 p-6 md:p-8 lg:p-10">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
