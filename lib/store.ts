@@ -40,6 +40,7 @@ interface KanthinkState {
   folders: Record<ID, Folder>;
   folderOrder: ID[];
   channelOrder: ID[];  // Channels not in any folder
+  favoriteChannelIds: ID[];  // User's favorited channels
   aiOperation: AIOperation;
   generatingSkeletons: Record<ID, number>;  // columnId -> skeleton count
   instructionRuns: Record<ID, InstructionRun>;  // runId -> run info for undo
@@ -71,7 +72,9 @@ interface KanthinkState {
   }) => Channel;
   updateChannel: (id: ID, updates: Partial<Omit<Channel, 'id' | 'createdAt'>>) => void;
   deleteChannel: (id: ID) => void;
+  duplicateChannel: (id: ID) => Channel | null;
   reorderChannels: (fromIndex: number, toIndex: number) => void;
+  toggleFavorite: (channelId: ID) => void;
 
   // Column actions
   createColumn: (channelId: ID, name: string) => Column | null;
@@ -216,6 +219,7 @@ export const useStore = create<KanthinkState>()(
       folders: {},
       folderOrder: [],
       channelOrder: [],
+      favoriteChannelIds: [],
       aiOperation: { isActive: false, status: '', runningInstructionIds: [] },
       generatingSkeletons: {},
       instructionRuns: {},
@@ -249,6 +253,7 @@ export const useStore = create<KanthinkState>()(
           folders: {},
           folderOrder: [],
           channelOrder: [],
+          favoriteChannelIds: [],
           instructionRuns: {},
         });
 
@@ -632,6 +637,7 @@ export const useStore = create<KanthinkState>()(
             cards: remainingCards,
             instructionCards: remainingInstructionCards,
             channelOrder: state.channelOrder.filter((cid) => cid !== id),
+            favoriteChannelIds: state.favoriteChannelIds.filter((cid) => cid !== id),
           };
         });
 
@@ -640,6 +646,117 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs
         broadcastAndPublish({ type: 'channel:delete', id });
+      },
+
+      duplicateChannel: (id) => {
+        const state = get();
+        const original = state.channels[id];
+        if (!original) return null;
+
+        const newId = nanoid();
+        const timestamp = now();
+
+        // Deep copy columns with new IDs
+        const columnIdMap = new Map<ID, ID>();
+        const newColumns: Column[] = original.columns.map((col) => {
+          const newColId = nanoid();
+          columnIdMap.set(col.id, newColId);
+          return {
+            ...col,
+            id: newColId,
+            cardIds: [], // Start empty - we'll add cards below
+            backsideCardIds: [],
+          };
+        });
+
+        // Copy cards with new IDs
+        const newCards: Record<ID, Card> = {};
+        const cardIdMap = new Map<ID, ID>();
+        for (const col of original.columns) {
+          const newColId = columnIdMap.get(col.id)!;
+          const newCardIds: ID[] = [];
+
+          for (const cardId of col.cardIds) {
+            const card = state.cards[cardId];
+            if (card) {
+              const newCardId = nanoid();
+              cardIdMap.set(cardId, newCardId);
+              newCards[newCardId] = {
+                ...card,
+                id: newCardId,
+                channelId: newId,
+                taskIds: [], // Tasks not duplicated
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              };
+              newCardIds.push(newCardId);
+            }
+          }
+
+          // Update column's cardIds
+          const colIndex = newColumns.findIndex((c) => c.id === newColId);
+          if (colIndex >= 0) {
+            newColumns[colIndex].cardIds = newCardIds;
+          }
+        }
+
+        // Copy instruction cards with new IDs
+        const newInstructionCards: Record<ID, InstructionCard> = {};
+        for (const icId of original.instructionCardIds || []) {
+          const ic = state.instructionCards[icId];
+          if (ic) {
+            const newIcId = nanoid();
+            // Update target column references
+            let newTarget = ic.target;
+            if (ic.target.type === 'column' && columnIdMap.has(ic.target.columnId)) {
+              newTarget = { type: 'column', columnId: columnIdMap.get(ic.target.columnId)! };
+            } else if (ic.target.type === 'columns') {
+              newTarget = {
+                type: 'columns',
+                columnIds: ic.target.columnIds.map((cid) => columnIdMap.get(cid) || cid),
+              };
+            }
+            newInstructionCards[newIcId] = {
+              ...ic,
+              id: newIcId,
+              channelId: newId,
+              target: newTarget,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            };
+          }
+        }
+
+        const channel: Channel = {
+          ...original,
+          id: newId,
+          name: `${original.name} (copy)`,
+          columns: newColumns,
+          instructionCardIds: Object.keys(newInstructionCards),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+        set((state) => ({
+          channels: { ...state.channels, [newId]: channel },
+          cards: { ...state.cards, ...newCards },
+          instructionCards: { ...state.instructionCards, ...newInstructionCards },
+          channelOrder: [...state.channelOrder, newId],
+        }));
+
+        // Sync to server
+        sync.syncChannelCreate(newId, {
+          id: newId,
+          name: channel.name,
+          description: channel.description,
+          aiInstructions: channel.aiInstructions,
+          columns: newColumns,
+        });
+
+        // Broadcast to other tabs
+        broadcastAndPublish({ type: 'channel:create', channel });
+
+        return channel;
       },
 
       reorderChannels: (fromIndex, toIndex) => {
@@ -659,6 +776,20 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs
         broadcastAndPublish({ type: 'channel:reorder', fromIndex, toIndex });
+      },
+
+      toggleFavorite: (channelId) => {
+        set((state) => {
+          const isFavorite = state.favoriteChannelIds.includes(channelId);
+          return {
+            favoriteChannelIds: isFavorite
+              ? state.favoriteChannelIds.filter((id) => id !== channelId)
+              : [...state.favoriteChannelIds, channelId],
+          };
+        });
+
+        // Note: favorites are user-local, no server sync needed for now
+        // Could add sync.syncToggleFavorite(channelId) if we want server persistence
       },
 
       createColumn: (channelId, name) => {
@@ -3094,6 +3225,7 @@ export const useStore = create<KanthinkState>()(
         channelOrder: state.channelOrder,
         folders: state.folders,
         folderOrder: state.folderOrder,
+        favoriteChannelIds: state.favoriteChannelIds,
         instructionRuns: state.instructionRuns,
       }),
       onRehydrateStorage: () => (state) => {
