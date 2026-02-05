@@ -206,14 +206,15 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center md:p-4">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
 
       {/* Modal */}
-      <div className="relative z-10 w-full max-w-4xl h-[600px] rounded-2xl bg-zinc-900 border border-white/10 shadow-2xl overflow-hidden flex">
-        {/* Left Nav */}
-        <div className="w-56 flex-shrink-0 border-r border-white/10 flex flex-col">
+      <div className="relative z-10 w-full h-full md:max-w-4xl md:h-[600px] md:rounded-2xl bg-zinc-900 md:border md:border-white/10 md:shadow-2xl overflow-hidden flex flex-col md:flex-row">
+
+        {/* ===== Desktop Left Nav (hidden on mobile) ===== */}
+        <div className="hidden md:flex w-56 flex-shrink-0 border-r border-white/10 flex-col">
           {/* Header */}
           <div className="p-4 border-b border-white/10">
             <h2 className="text-lg font-semibold text-white">New Channel</h2>
@@ -295,10 +296,98 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
           </div>
         </div>
 
-        {/* Right Content */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Header with search */}
-          <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-white/10">
+        {/* ===== Mobile Header (hidden on desktop) ===== */}
+        <div className="md:hidden flex flex-col flex-shrink-0">
+          {/* Title + Close */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+            <h2 className="text-lg font-semibold text-white">New Channel</h2>
+            <button
+              onClick={handleClose}
+              className="p-2 -mr-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Quick Actions Row */}
+          <div className="flex gap-2 px-4 pt-3 pb-2">
+            <button
+              onClick={() => {
+                handleClose()
+                onKanHelp()
+              }}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg transition-all bg-gradient-to-r from-violet-500/20 to-cyan-500/20 border border-violet-500/30"
+            >
+              <KanthinkIcon size={16} className="text-violet-200" />
+              <span className="text-xs font-medium text-white">Kan help</span>
+            </button>
+            <button
+              onClick={handleQuickStart}
+              className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              <span className="text-sm">⚡</span>
+              <span className="text-xs text-white/70">Blank</span>
+            </button>
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <span className="text-xs text-white/70">Import</span>
+            </button>
+          </div>
+
+          {/* Category Chips - horizontal scroll */}
+          <div className="flex gap-1.5 px-4 pb-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <CategoryChip
+              label="All"
+              icon="📚"
+              active={selectedCategory === 'all'}
+              onClick={() => setSelectedCategory('all')}
+            />
+            {(Object.entries(TEMPLATE_CATEGORIES) as [TemplateCategory, { label: string; icon: string }][]).map(
+              ([key, { label, icon }]) => (
+                <CategoryChip
+                  key={key}
+                  label={label}
+                  icon={icon}
+                  active={selectedCategory === key}
+                  onClick={() => setSelectedCategory(key)}
+                />
+              )
+            )}
+          </div>
+
+          {/* Search */}
+          <div className="px-4 pb-3">
+            <div className="relative">
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search templates..."
+                className="w-full pl-10 pr-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm placeholder-white/40 focus:outline-none focus:border-white/30"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ===== Main Content Area ===== */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          {/* Desktop header with search (hidden on mobile) */}
+          <div className="hidden md:flex items-center justify-between gap-4 px-6 py-4 border-b border-white/10">
             <div className="flex-1 relative">
               <svg
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40"
@@ -327,7 +416,7 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
           </div>
 
           {/* Template Grid */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
             {showImport ? (
               <ImportView
                 importJson={importJson}
@@ -342,7 +431,7 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
                 onBack={() => setShowImport(false)}
               />
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-2 gap-2 md:gap-3 lg:grid-cols-3">
                 {searchedTemplates.map((template) => (
                   <TemplateCard
                     key={template.id}
@@ -366,7 +455,31 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
   )
 }
 
-// ============ Nav Item ============
+// ============ Category Chip (mobile) ============
+interface CategoryChipProps {
+  label: string
+  icon: string
+  active?: boolean
+  onClick: () => void
+}
+
+function CategoryChip({ label, icon, active, onClick }: CategoryChipProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors flex-shrink-0 ${
+        active
+          ? 'bg-white/15 text-white'
+          : 'bg-white/5 text-white/50 hover:text-white/70 hover:bg-white/10'
+      }`}
+    >
+      <span className="text-sm">{icon}</span>
+      <span>{label}</span>
+    </button>
+  )
+}
+
+// ============ Nav Item (desktop) ============
 interface NavItemProps {
   icon: string
   label: string
@@ -412,14 +525,14 @@ function TemplateCard({ template, onClick }: TemplateCardProps) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
+      className="flex flex-col p-3 md:p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
     >
-      <div className="flex items-start gap-3 mb-2">
-        <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center text-xl flex-shrink-0">
+      <div className="flex items-start gap-2 md:gap-3 mb-1.5 md:mb-2">
+        <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-white/10 flex items-center justify-center text-lg md:text-xl flex-shrink-0">
           {template.icon}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-white group-hover:text-cyan-100 transition-colors truncate">
+          <div className="font-medium text-sm md:text-base text-white group-hover:text-cyan-100 transition-colors truncate">
             {template.name}
           </div>
           <div className="text-[10px] text-white/40 mt-0.5">
@@ -427,7 +540,7 @@ function TemplateCard({ template, onClick }: TemplateCardProps) {
           </div>
         </div>
       </div>
-      <p className="text-xs text-white/50 line-clamp-2 mb-3">
+      <p className="text-xs text-white/50 line-clamp-2 mb-2 md:mb-3">
         {template.description}
       </p>
       <div className="flex items-center gap-3 text-[10px] text-white/40 mt-auto">
@@ -498,12 +611,12 @@ function ImportView({
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="w-full flex items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed border-white/20 hover:border-white/40 bg-white/5 hover:bg-white/10 transition-all text-white/60 hover:text-white"
+          className="w-full flex items-center justify-center gap-3 p-6 md:p-8 rounded-xl border-2 border-dashed border-white/20 hover:border-white/40 bg-white/5 hover:bg-white/10 transition-all text-white/60 hover:text-white"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
-          <span>Choose JSON file or drag and drop</span>
+          <span className="text-sm">Choose JSON file</span>
         </button>
       </div>
 
