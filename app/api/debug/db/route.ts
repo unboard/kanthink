@@ -15,7 +15,8 @@ export async function GET() {
       hasDatabaseUrl: !!process.env.DATABASE_URL,
       databaseUrlPrefix: process.env.DATABASE_URL?.slice(0, 30) + '...',
       hasAuthToken: !!process.env.TURSO_AUTH_TOKEN,
-      authTokenPrefix: process.env.TURSO_AUTH_TOKEN?.slice(0, 10) + '...',
+      authTokenLength: process.env.TURSO_AUTH_TOKEN?.length,
+      authTokenLast10: '...' + process.env.TURSO_AUTH_TOKEN?.slice(-10),
     },
   }
 
