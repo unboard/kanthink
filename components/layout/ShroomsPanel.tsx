@@ -134,6 +134,13 @@ export function ShroomsPanel() {
     }
   };
 
+  const handleCreateShroom = () => {
+    if (channelId) {
+      closePanel();
+      router.push(`/channel/${channelId}?shrooms=open&create=true`);
+    }
+  };
+
   if (!hasHydrated) {
     return (
       <NavPanel panelKey="shrooms" title="Shrooms" width="md">
@@ -189,8 +196,19 @@ export function ShroomsPanel() {
               No shrooms yet
             </p>
             <p className="text-xs text-neutral-500 mt-1">
-              Create a shroom in a channel to automate AI actions
+              {channelId ? 'Create your first shroom to automate AI actions' : 'Open a channel to create shrooms'}
             </p>
+            {channelId && (
+              <button
+                onClick={handleCreateShroom}
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New Shroom
+              </button>
+            )}
           </div>
         )}
 
@@ -269,6 +287,21 @@ export function ShroomsPanel() {
           </div>
         </div>
       </div>
+
+      {/* Bottom action - New Shroom button (only when viewing a channel) */}
+      {channelId && (
+        <div className="sticky bottom-0 bg-neutral-50 dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-2">
+          <button
+            onClick={handleCreateShroom}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Shroom
+          </button>
+        </div>
+      )}
     </NavPanel>
   );
 }
