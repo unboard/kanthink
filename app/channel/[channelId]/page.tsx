@@ -12,21 +12,34 @@ export default function ChannelPage() {
   const hasHydrated = useStore((s) => s._hasHydrated);
   const { isLoading: isServerLoading } = useServerSync();
 
-  if (!hasHydrated || isServerLoading) {
+  // Wait for store hydration first
+  if (!hasHydrated) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-neutral-400">Loading...</p>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500"></div>
       </div>
     );
   }
 
-  if (!channel) {
+  // If we have the channel, render it immediately (don't wait for server sync)
+  // This prevents flash when channel is already in localStorage
+  if (channel) {
+    return <Board channel={channel} />;
+  }
+
+  // No channel yet - if still loading from server, show spinner
+  if (isServerLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-neutral-500">Channel not found</p>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500"></div>
       </div>
     );
   }
 
-  return <Board channel={channel} />;
+  // Done loading and channel doesn't exist
+  return (
+    <div className="flex h-full items-center justify-center">
+      <p className="text-neutral-500">Channel not found</p>
+    </div>
+  );
 }

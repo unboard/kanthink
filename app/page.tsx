@@ -74,9 +74,13 @@ export default function Home() {
     router.push(`/channel/${channel.id}`);
   };
 
-  // Don't render until fully loaded and welcome status checked
+  // Show loading spinner while loading (instead of returning null which causes flash)
   if (!isFullyLoaded || !hasCheckedWelcome) {
-    return null;
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500"></div>
+      </div>
+    );
   }
 
   return (

@@ -105,16 +105,17 @@ export default function InvitePage() {
   // Auto-redirect when already a member
   useEffect(() => {
     if (userStatus?.hasAccess && invite?.channelId) {
-      router.replace(`/channel/${invite.channelId}`)
+      window.location.href = `/channel/${invite.channelId}`
     }
-  }, [userStatus?.hasAccess, invite?.channelId, router])
+  }, [userStatus?.hasAccess, invite?.channelId])
 
   // Auto-redirect after successful accept
+  // Use window.location to force a full page load so ServerSyncProvider refetches with the new channel
   useEffect(() => {
     if (acceptResult?.status === 'accepted' && acceptResult.channelId) {
-      router.replace(`/channel/${acceptResult.channelId}`)
+      window.location.href = `/channel/${acceptResult.channelId}`
     }
-  }, [acceptResult, router])
+  }, [acceptResult])
 
   const handleSignIn = () => {
     signIn('google', { callbackUrl: `/invite/${token}` })
