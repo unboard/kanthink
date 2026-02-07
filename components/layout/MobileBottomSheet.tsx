@@ -769,18 +769,28 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
                 key={shroom.id}
                 className="relative p-4 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700"
               >
-                {/* Edit button */}
-                <button
-                  onClick={() => handleEdit(shroom)}
-                  className="absolute top-3 right-3 p-2 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
+                {/* Action buttons - play + edit */}
+                <div className="absolute top-3 right-3 flex items-center gap-1">
+                  <button
+                    onClick={() => handleRun(shroom)}
+                    className="p-2 rounded-lg text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => handleEdit(shroom)}
+                    className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                </div>
 
                 {/* Title */}
-                <h3 className="text-base font-semibold text-neutral-900 dark:text-white pr-10 mb-1">
+                <h3 className="text-base font-semibold text-neutral-900 dark:text-white pr-20 mb-1">
                   {shroom.title}
                 </h3>
 
@@ -791,7 +801,7 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
 
                 {/* Target info */}
                 {targetInfo && (
-                  <div className="flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500 mb-3">
+                  <div className="flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500">
                     <span>→ {targetInfo}</span>
                     {shroom.cardCount && <span>• {shroom.cardCount} cards</span>}
                     {shroom.isGlobalResource && (
@@ -806,17 +816,6 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
                     )}
                   </div>
                 )}
-
-                {/* Run button */}
-                <button
-                  onClick={() => handleRun(shroom)}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white font-medium transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                  </svg>
-                  Run Now
-                </button>
               </div>
             );
           })
