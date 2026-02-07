@@ -160,6 +160,20 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
           {/* Spacer */}
           <div className="flex-1" />
 
+          {/* Run button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onRun(); }}
+            disabled={isRunning}
+            className={`p-1.5 rounded-lg transition-colors ${
+              isRunning
+                ? 'text-violet-400 cursor-not-allowed'
+                : 'text-neutral-500 hover:text-green-400 hover:bg-white/5'
+            }`}
+            title={isRunning ? 'Running...' : 'Run'}
+          >
+            {isRunning ? <Spinner /> : <PlayIcon />}
+          </button>
+
           {/* Edit button */}
           <button
             onClick={onClick}
@@ -207,30 +221,6 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
           )}
         </div>
 
-        {/* Run button */}
-        <button
-          onClick={onRun}
-          disabled={isRunning}
-          className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg font-medium text-sm transition-all duration-150 ${
-            isRunning
-              ? 'bg-neutral-700/50 text-neutral-400 cursor-not-allowed'
-              : isAutomatic
-                ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 hover:text-amber-200'
-                : 'bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 hover:text-violet-200'
-          }`}
-        >
-          {isRunning ? (
-            <>
-              <Spinner />
-              <span>Running...</span>
-            </>
-          ) : (
-            <>
-              <PlayIcon />
-              <span>Run Now</span>
-            </>
-          )}
-        </button>
       </div>
     </div>
   );
