@@ -33,6 +33,19 @@ function getRandomIdeas(count: number): string[] {
   return shuffled.slice(0, count);
 }
 
+function detectWebSearchIntent(instructions: string): boolean {
+  if (!instructions) return false;
+  const lower = instructions.toLowerCase();
+  const webKeywords = [
+    'youtube', 'video', 'link', 'url', 'website', 'webpage',
+    'search for', 'find online', 'look up', 'browse',
+    'article', 'blog post', 'podcast', 'episode',
+    'reddit', 'twitter', 'github', 'stack overflow',
+    'http', 'www', '.com', '.org', '.io',
+  ];
+  return webKeywords.some(kw => lower.includes(kw));
+}
+
 function buildColumnContext(
   channel: Channel,
   allCards: Record<string, Card>,
@@ -107,6 +120,7 @@ Content Guidelines:
 - Include context, rationale, implications, or examples as appropriate
 - Aim for 150-400 words per card - depth matters for planning/brainstorming
 - Each card should stand alone as a complete thought
+- If web research data is provided, use ONLY real URLs from that data — NEVER fabricate or guess URLs
 
 Respond with ONLY the JSON array:
 [{"title": "Card Title", "content": "## Overview\\n\\nDetailed explanation of the idea...\\n\\n## Key Points\\n\\n- First important point\\n- Second important point\\n\\nFurther elaboration and context."}]`;
@@ -267,6 +281,25 @@ export async function POST(request: Request) {
 
     // Build prompt with column context
     const messages = buildPrompt(channel, targetColumn, count || 5, cards || {}, systemInstructions);
+
+    // Web research: check channel instructions and column instructions for web intent
+    const allInstructions = [channel.aiInstructions, targetColumn.instructions].filter(Boolean).join(' ');
+    if (llm.webSearch && detectWebSearchIntent(allInstructions)) {
+      try {
+        const searchQuery = allInstructions.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+        const webResult = await llm.webSearch(
+          searchQuery,
+          `Search the web and return detailed, factual information including real URLs. The user needs real links and data for a Kanban board called "${channel.name}". Return specific URLs, titles, and descriptions.`
+        );
+        if (webResult.content) {
+          const userMsg = messages[messages.length - 1];
+          const currentContent = userMsg.content as string;
+          userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the real URLs below. Do NOT invent or hallucinate any URLs.\n\n${webResult.content}`;
+        }
+      } catch (e) {
+        console.warn('Web search failed, proceeding without:', e);
+      }
+    }
 
     // Build debug info
     const debug = {
