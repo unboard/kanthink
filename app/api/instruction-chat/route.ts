@@ -72,13 +72,14 @@ A shroom has these fields:
 - **title**: A short, descriptive name (e.g., "Generate article ideas", "Review and promote best idea")
 - **action**: The primary action — one of "generate" (create new cards), "modify" (update existing cards), or "move" (move cards between columns)
 - **instructions**: Detailed instructions for the AI to follow when running this shroom. This is the core of the shroom — the AI reads these instructions and acts accordingly.
-- **targetColumnName**: Which column to add cards to (generate) or which columns to work with (modify/move). Must be one of the available columns.
+- **targetColumnName**: The SOURCE column — where the AI looks for cards. For "generate", cards are added here. For "modify", cards in this column are updated. For "move", cards in this column are analyzed and may be moved elsewhere. The destination for move is determined by the instructions, not targetColumnName. Must be one of the available columns.
 - **cardCount**: Number of cards to generate (only for generate action, typically 3-5)
 
 **Multi-step shrooms**: A single shroom can combine multiple actions in sequence. For example, a user might want to "review all cards in Ideas, add feedback as a note, then move the best one to This Week." This is a multi-step shroom. For these:
 - Set the **action** to the primary/final action (e.g., "move" if the end goal is moving cards)
 - Put **all steps** in the **instructions** field — the AI will follow them in order
-- Optionally include a "steps" array to describe the sequence for the user's clarity
+- Include a "steps" array describing the sequence
+- IMPORTANT: Each step's **targetColumnName** is the SOURCE column where the AI finds cards — NOT the destination. For a move step, set targetColumnName to the column cards are moved FROM. The move destination goes in the instructions.
 
 Your approach:
 ${mode === 'create' ? `1. Ask what they'd like to automate — be concise and specific to their channel context (1-2 sentences)
@@ -94,10 +95,11 @@ For a simple single-action shroom:
 {"title": "...", "instructions": "...", "action": "generate|modify|move", "targetColumnName": "...", "cardCount": 5}
 [/SHROOM_CONFIG]
 
-For a multi-step shroom:
+For a multi-step shroom (e.g., review cards in Ideas, add a note, then move the best to This Week):
 [SHROOM_CONFIG]
-{"title": "...", "instructions": "Step 1: Review all cards in [column]...\\nStep 2: Add a note...\\nStep 3: Move the best card to...", "action": "move", "targetColumnName": "...", "steps": [{"action": "modify", "targetColumnName": "...", "description": "Review and annotate cards"}, {"action": "move", "targetColumnName": "...", "description": "Move the best card"}]}
+{"title": "Review and promote best idea", "instructions": "Step 1: Review all cards in the Ideas column and select the most compelling idea.\\nStep 2: Add a note to the selected card explaining why it stands out.\\nStep 3: Move that card to the This Week column.", "action": "move", "targetColumnName": "Ideas", "steps": [{"action": "modify", "targetColumnName": "Ideas", "description": "Review and add note to best card"}, {"action": "move", "targetColumnName": "Ideas", "description": "Move best card to This Week"}]}
 [/SHROOM_CONFIG]
+Note: Every step's targetColumnName is the SOURCE column (Ideas) — the column where the AI finds cards. The move destination (This Week) is in the instructions, not in targetColumnName.
 
 Important guidelines:
 - Be conversational, warm, and concise
