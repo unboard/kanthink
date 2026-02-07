@@ -3,12 +3,20 @@ import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 
+interface ShroomConfigStep {
+  action: 'generate' | 'modify' | 'move';
+  targetColumnName: string;
+  description: string;
+  cardCount?: number;
+}
+
 interface ShroomConfig {
   title: string;
   instructions: string;
   action: 'generate' | 'modify' | 'move';
   targetColumnName: string;
   cardCount?: number;
+  steps?: ShroomConfigStep[];
 }
 
 interface InstructionChatRequest {
@@ -51,7 +59,7 @@ function buildPrompt(
 ${existingShroomConfig.cardCount ? `- Card count: ${existingShroomConfig.cardCount}` : ''}`
     : '';
 
-  const systemPrompt = `You are Kan, a friendly AI assistant helping users create and configure "shrooms" — AI-powered automations for a Kanban board. Your mascot is a mushroom character.
+  const systemPrompt = `You are Kan, a helpful AI assistant for configuring "shrooms" — AI-powered automations for a Kanban board.
 
 Channel context:
 - Channel name: "${channelName}"
@@ -61,26 +69,38 @@ Channel context:
 - Existing shrooms: ${existingShroomList}${editContext}
 
 A shroom has these fields:
-- **title**: A short, descriptive name (e.g., "Generate article ideas", "Tag by priority")
-- **action**: One of "generate" (create new cards), "modify" (update existing cards), or "move" (move cards between columns)
-- **instructions**: Detailed instructions for the AI to follow when running this shroom
-- **targetColumnName**: Which column to add cards to (for generate) or which columns to read from (for modify/move). Must be one of the available columns.
+- **title**: A short, descriptive name (e.g., "Generate article ideas", "Review and promote best idea")
+- **action**: The primary action — one of "generate" (create new cards), "modify" (update existing cards), or "move" (move cards between columns)
+- **instructions**: Detailed instructions for the AI to follow when running this shroom. This is the core of the shroom — the AI reads these instructions and acts accordingly.
+- **targetColumnName**: Which column to add cards to (generate) or which columns to work with (modify/move). Must be one of the available columns.
 - **cardCount**: Number of cards to generate (only for generate action, typically 3-5)
 
+**Multi-step shrooms**: A single shroom can combine multiple actions in sequence. For example, a user might want to "review all cards in Ideas, add feedback as a note, then move the best one to This Week." This is a multi-step shroom. For these:
+- Set the **action** to the primary/final action (e.g., "move" if the end goal is moving cards)
+- Put **all steps** in the **instructions** field — the AI will follow them in order
+- Optionally include a "steps" array to describe the sequence for the user's clarity
+
 Your approach:
-${mode === 'create' ? `1. Greet warmly and ask what kind of automation they want (1-2 sentences)
+${mode === 'create' ? `1. Ask what they'd like to automate — be concise and specific to their channel context (1-2 sentences)
 2. Based on their response, ask 1-2 focused clarifying questions if needed
 3. When you have enough context (usually after 1-3 exchanges), assemble the shroom config` : `1. Summarize the current shroom config and ask what they'd like to change
 2. Based on their response, ask a clarifying question if needed
 3. Present the updated config`}
 
-When you're ready to propose a shroom configuration, include it in your response using this exact format:
+When you're ready to propose a configuration, include it in your response using this exact format:
+
+For a simple single-action shroom:
 [SHROOM_CONFIG]
 {"title": "...", "instructions": "...", "action": "generate|modify|move", "targetColumnName": "...", "cardCount": 5}
 [/SHROOM_CONFIG]
 
+For a multi-step shroom:
+[SHROOM_CONFIG]
+{"title": "...", "instructions": "Step 1: Review all cards in [column]...\\nStep 2: Add a note...\\nStep 3: Move the best card to...", "action": "move", "targetColumnName": "...", "steps": [{"action": "modify", "targetColumnName": "...", "description": "Review and annotate cards"}, {"action": "move", "targetColumnName": "...", "description": "Move the best card"}]}
+[/SHROOM_CONFIG]
+
 Important guidelines:
-- Be conversational, warm, and concise — you're Kan the mushroom!
+- Be conversational, warm, and concise
 - Don't ask more than 2 questions per message
 - 1-3 exchanges should be enough before proposing a config
 - If the user gives a clear description, propose the config right away
@@ -89,7 +109,9 @@ Important guidelines:
 - For "modify" or "move" actions, don't include cardCount
 - Don't duplicate existing shrooms — suggest variations if similar ones exist
 - Keep instructions specific and actionable
-- When proposing, also include a brief conversational message explaining the config`;
+- When proposing, also include a brief conversational message explaining what it does
+- If the user describes something that involves multiple steps (e.g., review then move, modify then reorganize), create a multi-step shroom with clear sequential instructions
+- Give a helpful nudge based on the channel context to help users articulate what they want`;
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -105,12 +127,12 @@ Important guidelines:
     if (mode === 'edit' && existingShroomConfig) {
       messages.push({
         role: 'user',
-        content: `I want to edit my existing shroom "${existingShroomConfig.title}". Start by summarizing what it currently does and ask what I'd like to change. Keep it brief and friendly.`,
+        content: `I want to edit my existing shroom "${existingShroomConfig.title}". Summarize what it currently does and ask what I'd like to change. Be brief.`,
       });
     } else {
       messages.push({
         role: 'user',
-        content: `Start the conversation by greeting me and asking about what kind of shroom (automation) I want to create for this "${channelName}" channel. Keep it brief and friendly.`,
+        content: `I'm creating a new shroom for my "${channelName}" channel. Based on the channel context, give me a brief greeting and a helpful nudge — maybe suggest a direction based on what this channel seems to be about, or ask what I'd like to automate. Don't introduce yourself or explain what shrooms are — I already know. Keep it to 2-3 sentences.`,
       });
     }
   } else {
@@ -141,6 +163,7 @@ function extractShroomConfig(response: string): ShroomConfig | null {
           action: parsed.action,
           targetColumnName: parsed.targetColumnName,
           cardCount: parsed.action === 'generate' ? (parsed.cardCount ?? 5) : undefined,
+          steps: Array.isArray(parsed.steps) ? parsed.steps : undefined,
         };
       }
     } catch {
@@ -216,7 +239,7 @@ export async function POST(request: Request) {
           .replace(/\[SHROOM_CONFIG\][\s\S]*?\[\/SHROOM_CONFIG\]/, '')
           .trim();
         if (!displayResponse) {
-          displayResponse = "Here's what I've put together based on our conversation:";
+          displayResponse = "Here's what I've put together:";
         }
       } else if (draftInstructions) {
         displayResponse = responseText

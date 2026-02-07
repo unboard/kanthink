@@ -6,12 +6,20 @@ import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
 import { ShroomPreview } from './ShroomPreview';
 
+interface ShroomConfigStep {
+  action: InstructionAction;
+  targetColumnName: string;
+  description: string;
+  cardCount?: number;
+}
+
 interface ShroomConfig {
   title: string;
   instructions: string;
   action: InstructionAction;
   targetColumnName: string;
   cardCount?: number;
+  steps?: ShroomConfigStep[];
 }
 
 interface ShroomChatDrawerProps {
@@ -47,8 +55,10 @@ export function ShroomChatDrawer({
   const [shroomConfig, setShroomConfig] = useState<ShroomConfig | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasGreeted = useRef(false);
+  const isInitialLoad = useRef(true);
 
   const isEditMode = !!existingShroom;
   const columnNames = channel.columns.map((c) => c.name);
@@ -102,6 +112,7 @@ export function ShroomChatDrawer({
       setShroomConfig(null);
       setInputValue('');
       hasGreeted.current = false;
+      isInitialLoad.current = true;
 
       // Load existing conversation history if editing
       if (existingShroom?.conversationHistory?.length) {
@@ -119,9 +130,17 @@ export function ShroomChatDrawer({
     fireGreeting();
   }, [isOpen, messages.length]);
 
-  // Scroll to bottom on new messages
+  // Scroll behavior: show greeting at top on initial load, scroll to bottom on subsequent messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length === 0) return;
+    if (isInitialLoad.current && messages.length === 1 && messages[0].role === 'assistant') {
+      // Initial greeting — scroll to top so it's visible
+      messagesContainerRef.current?.scrollTo({ top: 0 });
+      isInitialLoad.current = false;
+    } else {
+      // Subsequent messages — scroll to bottom
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, isLoading]);
 
   // Focus input when mode changes to chat
@@ -130,6 +149,27 @@ export function ShroomChatDrawer({
       inputRef.current?.focus();
     }
   }, [mode, isLoading]);
+
+  // Mobile keyboard handling: resize the drawer when virtual keyboard opens
+  // This keeps the input pinned above the keyboard
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+
+    const viewport = window.visualViewport;
+    const handleResize = () => {
+      // The difference between window height and viewport height is the keyboard
+      const offset = window.innerHeight - viewport.height;
+      setKeyboardOffset(offset > 50 ? offset : 0); // Only apply if keyboard-sized
+    };
+
+    viewport.addEventListener('resize', handleResize);
+    viewport.addEventListener('scroll', handleResize);
+    return () => {
+      viewport.removeEventListener('resize', handleResize);
+      viewport.removeEventListener('scroll', handleResize);
+    };
+  }, []);
 
   const fireGreeting = async () => {
     setIsLoading(true);
@@ -320,7 +360,10 @@ export function ShroomChatDrawer({
 
   return (
     <Drawer isOpen={isOpen} onClose={onClose} width="md" floating hideCloseButton>
-      <div className="flex flex-col h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]">
+      <div
+        className="flex flex-col sm:h-full sm:max-h-[calc(100vh-2rem)]"
+        style={{ height: keyboardOffset > 0 ? `calc(100dvh - ${keyboardOffset}px)` : '100dvh' }}
+      >
         {/* Header */}
         <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
           <img
@@ -347,7 +390,7 @@ export function ShroomChatDrawer({
         </div>
 
         {/* Chat messages area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((msg, i) => (
             <div
               key={i}

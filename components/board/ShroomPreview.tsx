@@ -3,12 +3,20 @@
 import { useState } from 'react';
 import type { InstructionAction } from '@/lib/types';
 
+interface ShroomConfigStep {
+  action: InstructionAction;
+  targetColumnName: string;
+  description: string;
+  cardCount?: number;
+}
+
 interface ShroomConfig {
   title: string;
   instructions: string;
   action: InstructionAction;
   targetColumnName: string;
   cardCount?: number;
+  steps?: ShroomConfigStep[];
 }
 
 interface ShroomPreviewProps {
@@ -95,68 +103,102 @@ export function ShroomPreview({
         </div>
 
         {/* Action type + target */}
-        <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
-          {/* Action badge */}
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${info.color}`}>
-            {info.icon}
-            {info.label}
-          </span>
+        {localConfig.steps && localConfig.steps.length > 0 ? (
+          /* Multi-step flow */
+          <div className="px-4 pb-3 space-y-1.5">
+            {localConfig.steps.map((step, i) => {
+              const stepInfo = actionInfo[step.action];
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  {/* Step number */}
+                  <span className="w-5 h-5 rounded-full bg-neutral-200 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 text-[10px] font-bold flex items-center justify-center flex-shrink-0">
+                    {i + 1}
+                  </span>
+                  {/* Action badge */}
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium flex-shrink-0 ${stepInfo.color}`}>
+                    {stepInfo.icon}
+                    {stepInfo.label}
+                  </span>
+                  {/* Arrow + target */}
+                  <svg className="w-3 h-3 text-neutral-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span className="text-xs text-neutral-600 dark:text-neutral-400 flex-shrink-0">
+                    {step.targetColumnName}
+                  </span>
+                  {/* Description */}
+                  <span className="text-xs text-neutral-500 dark:text-neutral-500 truncate">
+                    — {step.description}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* Single action */
+          <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
+            {/* Action badge */}
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${info.color}`}>
+              {info.icon}
+              {info.label}
+            </span>
 
-          {/* Arrow */}
-          <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
+            {/* Arrow */}
+            <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
 
-          {/* Target column chip */}
-          {editingField === 'targetColumnName' ? (
-            <div className="flex flex-wrap gap-1">
-              {columnNames.map((name) => (
+            {/* Target column chip */}
+            {editingField === 'targetColumnName' ? (
+              <div className="flex flex-wrap gap-1">
+                {columnNames.map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => {
+                      handleFieldChange('targetColumnName', name);
+                      setEditingField(null);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                      localConfig.targetColumnName === name
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-600'
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <button
+                onClick={() => setEditingField('targetColumnName')}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-neutral-100 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600 transition-colors"
+              >
+                {localConfig.targetColumnName}
+              </button>
+            )}
+
+            {/* Card count (generate only) */}
+            {localConfig.action === 'generate' && (
+              <div className="flex items-center gap-1 ml-auto">
                 <button
-                  key={name}
-                  onClick={() => {
-                    handleFieldChange('targetColumnName', name);
-                    setEditingField(null);
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                    localConfig.targetColumnName === name
-                      ? 'bg-violet-600 text-white'
-                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-600'
-                  }`}
+                  onClick={() => handleFieldChange('cardCount', Math.max(1, (localConfig.cardCount ?? 5) - 1))}
+                  className="w-5 h-5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 text-xs font-medium hover:bg-neutral-200 dark:hover:bg-neutral-600 flex items-center justify-center"
                 >
-                  {name}
+                  -
                 </button>
-              ))}
-            </div>
-          ) : (
-            <button
-              onClick={() => setEditingField('targetColumnName')}
-              className="px-2.5 py-1 rounded-lg text-xs font-medium bg-neutral-100 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600 transition-colors"
-            >
-              {localConfig.targetColumnName}
-            </button>
-          )}
-
-          {/* Card count (generate only) */}
-          {localConfig.action === 'generate' && (
-            <div className="flex items-center gap-1 ml-auto">
-              <button
-                onClick={() => handleFieldChange('cardCount', Math.max(1, (localConfig.cardCount ?? 5) - 1))}
-                className="w-5 h-5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 text-xs font-medium hover:bg-neutral-200 dark:hover:bg-neutral-600 flex items-center justify-center"
-              >
-                -
-              </button>
-              <span className="text-xs text-neutral-500 dark:text-neutral-400 w-14 text-center">
-                {localConfig.cardCount ?? 5} cards
-              </span>
-              <button
-                onClick={() => handleFieldChange('cardCount', Math.min(20, (localConfig.cardCount ?? 5) + 1))}
-                className="w-5 h-5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 text-xs font-medium hover:bg-neutral-200 dark:hover:bg-neutral-600 flex items-center justify-center"
-              >
-                +
-              </button>
-            </div>
-          )}
-        </div>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400 w-14 text-center">
+                  {localConfig.cardCount ?? 5} cards
+                </span>
+                <button
+                  onClick={() => handleFieldChange('cardCount', Math.min(20, (localConfig.cardCount ?? 5) + 1))}
+                  className="w-5 h-5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 text-xs font-medium hover:bg-neutral-200 dark:hover:bg-neutral-600 flex items-center justify-center"
+                >
+                  +
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Instructions */}
         <div className="px-4 pb-4">
