@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       safeguards,
     } = body
 
-    if (!title || !instructions || !action || !target) {
+    if (!title || instructions === undefined || instructions === null || !action || !target) {
       return NextResponse.json(
         { error: 'title, instructions, action, and target are required' },
         { status: 400 }
