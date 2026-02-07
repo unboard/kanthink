@@ -41,6 +41,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       isEnabled = false,
       triggers,
       safeguards,
+      conversationHistory,
     } = body
 
     if (!title || instructions === undefined || instructions === null || !action || !target) {
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       isEnabled,
       triggers,
       safeguards,
+      conversationHistory,
       position,
       createdAt: now,
       updatedAt: now,

@@ -58,6 +58,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       executionHistory,
       position,
       isGlobalResource,
+      conversationHistory,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -81,6 +82,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (dailyCountResetAt !== undefined) updates.dailyCountResetAt = dailyCountResetAt ? new Date(dailyCountResetAt) : null
     if (executionHistory !== undefined) updates.executionHistory = executionHistory
     if (position !== undefined) updates.position = position
+    if (conversationHistory !== undefined) updates.conversationHistory = conversationHistory
 
     // Handle isGlobalResource toggle (admin only)
     if (isGlobalResource !== undefined) {

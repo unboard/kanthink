@@ -257,10 +257,6 @@ export async function getUserChannelsWithSharerInfo(userId: string): Promise<Arr
   }
 
   // Add shared channels with sharer info (inviter or fallback to owner)
-  console.log('[permissions] sharedChannels from DB:', sharedChannels.length, sharedChannels)
-  console.log('[permissions] channelOwnerMap:', [...channelOwnerMap.entries()])
-  console.log('[permissions] usersMap:', [...usersMap.entries()])
-
   for (const share of sharedChannels) {
     if (!ownedIds.has(share.channelId)) {
       // Try invitedBy first, fall back to channel owner
@@ -270,10 +266,8 @@ export async function getUserChannelsWithSharerInfo(userId: string): Promise<Arr
       }
       if (!sharedBy) {
         const ownerId = channelOwnerMap.get(share.channelId)
-        console.log('[permissions] Looking up owner for', share.channelId, '-> ownerId:', ownerId)
         if (ownerId) {
           sharedBy = usersMap.get(ownerId)
-          console.log('[permissions] Found sharedBy from owner:', sharedBy)
         }
       }
       result.push({

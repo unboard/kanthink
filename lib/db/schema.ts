@@ -196,6 +196,9 @@ export const instructionCards = sqliteTable('instruction_cards', {
   // Global resource (available to all users, created by admin/Kanthink)
   isGlobalResource: integer('is_global_resource', { mode: 'boolean' }).default(false),
 
+  // Conversational creation/editing history
+  conversationHistory: text('conversation_history', { mode: 'json' }).$type<ShroomChatMessageJson[]>(),
+
   lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
   nextScheduledRun: integer('next_scheduled_run', { mode: 'timestamp' }),
   dailyExecutionCount: integer('daily_execution_count').default(0),
@@ -382,6 +385,12 @@ interface CardChangeJson {
   previousValue?: string
   messageId?: string
   tagName?: string
+}
+
+interface ShroomChatMessageJson {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string
 }
 
 // ===== TYPE EXPORTS =====

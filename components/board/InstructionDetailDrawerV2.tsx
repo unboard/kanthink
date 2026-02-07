@@ -13,6 +13,7 @@ interface InstructionDetailDrawerV2Props {
   isOpen: boolean;
   onClose: () => void;
   onRun: (card: InstructionCard) => Promise<void>;
+  onChatWithKan?: (card: InstructionCard) => void;
 }
 
 /**
@@ -31,6 +32,7 @@ export function InstructionDetailDrawerV2({
   isOpen,
   onClose,
   onRun,
+  onChatWithKan,
 }: InstructionDetailDrawerV2Props) {
   const { data: session } = useSession();
   const updateInstructionCard = useStore((s) => s.updateInstructionCard);
@@ -47,6 +49,7 @@ export function InstructionDetailDrawerV2({
   const [contextAllColumns, setContextAllColumns] = useState(true);
   const [contextColumnIds, setContextColumnIds] = useState<ID[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showConversationHistory, setShowConversationHistory] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
   // Automatic mode state (kept but hidden in advanced)
@@ -232,6 +235,20 @@ export function InstructionDetailDrawerV2({
               AI-powered actions for your board
             </p>
           </div>
+          {onChatWithKan && instructionCard && (
+            <button
+              onClick={() => onChatWithKan(instructionCard)}
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+              title="Chat with Kan"
+            >
+              <img
+                src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+                alt=""
+                className="w-4 h-4"
+              />
+              Chat
+            </button>
+          )}
           <button
             onClick={onClose}
             className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -400,6 +417,58 @@ export function InstructionDetailDrawerV2({
               )}
             </div>
           </div>
+
+          {/* Conversation History - Collapsible */}
+          {instructionCard.conversationHistory && instructionCard.conversationHistory.length > 0 && (
+            <div className="border-t border-neutral-100 dark:border-neutral-800 pt-4">
+              <button
+                onClick={() => setShowConversationHistory(!showConversationHistory)}
+                className="flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+              >
+                <svg
+                  className={`w-4 h-4 transition-transform ${showConversationHistory ? 'rotate-90' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <img
+                  src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+                  alt=""
+                  className="w-4 h-4"
+                />
+                Conversation history ({instructionCard.conversationHistory.length} messages)
+              </button>
+              {showConversationHistory && (
+                <div className="mt-3 space-y-2 pl-6">
+                  {instructionCard.conversationHistory.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      {msg.role === 'assistant' && (
+                        <img
+                          src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+                          alt="Kan"
+                          className="w-5 h-5 flex-shrink-0 mt-0.5"
+                        />
+                      )}
+                      <div
+                        className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
+                          msg.role === 'user'
+                            ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-200'
+                            : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400'
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Advanced Settings - Collapsible */}
           <div className="border-t border-neutral-100 dark:border-neutral-800 pt-4">

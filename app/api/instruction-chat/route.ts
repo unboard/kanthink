@@ -3,13 +3,25 @@ import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 
+interface ShroomConfig {
+  title: string;
+  instructions: string;
+  action: 'generate' | 'modify' | 'move';
+  targetColumnName: string;
+  cardCount?: number;
+}
+
 interface InstructionChatRequest {
   userMessage: string;
   isInitialGreeting?: boolean;
+  mode?: 'create' | 'edit';
   context: {
     channelName: string;
     channelDescription: string;
     currentInstructions: string;
+    columnNames: string[];
+    existingShrooms: string[];
+    existingShroomConfig?: ShroomConfig;
     conversationHistory: Array<{
       role: 'user' | 'assistant';
       content: string;
@@ -20,37 +32,64 @@ interface InstructionChatRequest {
 function buildPrompt(
   userMessage: string,
   isInitialGreeting: boolean,
+  mode: 'create' | 'edit',
   context: InstructionChatRequest['context']
 ): LLMMessage[] {
-  const { channelName, channelDescription, currentInstructions, conversationHistory } = context;
+  const { channelName, channelDescription, currentInstructions, conversationHistory, columnNames, existingShrooms, existingShroomConfig } = context;
 
-  const systemPrompt = `You are a clarity engine helping users develop clear, actionable instructions for an AI-powered Kanban channel. Your role is to have a brief conversation to understand what the user wants, then generate well-structured instructions.
+  const columnList = columnNames.length > 0 ? columnNames.join(', ') : 'No columns yet';
+  const existingShroomList = existingShrooms.length > 0
+    ? existingShrooms.map(s => `"${s}"`).join(', ')
+    : 'None';
+
+  const editContext = mode === 'edit' && existingShroomConfig
+    ? `\n\nCurrent shroom being edited:
+- Title: "${existingShroomConfig.title}"
+- Action: ${existingShroomConfig.action}
+- Instructions: "${existingShroomConfig.instructions}"
+- Target column: "${existingShroomConfig.targetColumnName}"
+${existingShroomConfig.cardCount ? `- Card count: ${existingShroomConfig.cardCount}` : ''}`
+    : '';
+
+  const systemPrompt = `You are Kan, a friendly AI assistant helping users create and configure "shrooms" — AI-powered automations for a Kanban board. Your mascot is a mushroom character.
 
 Channel context:
-- Name: "${channelName}"
+- Channel name: "${channelName}"
 - Description: "${channelDescription || 'No description set'}"
-- Current instructions: ${currentInstructions ? `"${currentInstructions}"` : 'None set yet'}
+- Channel instructions: ${currentInstructions ? `"${currentInstructions}"` : 'None set yet'}
+- Available columns: ${columnList}
+- Existing shrooms: ${existingShroomList}${editContext}
+
+A shroom has these fields:
+- **title**: A short, descriptive name (e.g., "Generate article ideas", "Tag by priority")
+- **action**: One of "generate" (create new cards), "modify" (update existing cards), or "move" (move cards between columns)
+- **instructions**: Detailed instructions for the AI to follow when running this shroom
+- **targetColumnName**: Which column to add cards to (for generate) or which columns to read from (for modify/move). Must be one of the available columns.
+- **cardCount**: Number of cards to generate (only for generate action, typically 3-5)
 
 Your approach:
-1. Ask 1-2 clarifying questions at a time to understand:
-   - What topics/content should the AI generate?
-   - What tone or style is preferred?
-   - What format should cards take?
-   - Any constraints or things to avoid?
+${mode === 'create' ? `1. Greet warmly and ask what kind of automation they want (1-2 sentences)
+2. Based on their response, ask 1-2 focused clarifying questions if needed
+3. When you have enough context (usually after 1-3 exchanges), assemble the shroom config` : `1. Summarize the current shroom config and ask what they'd like to change
+2. Based on their response, ask a clarifying question if needed
+3. Present the updated config`}
 
-2. When you have enough context (usually after 2-3 exchanges), generate structured instructions.
+When you're ready to propose a shroom configuration, include it in your response using this exact format:
+[SHROOM_CONFIG]
+{"title": "...", "instructions": "...", "action": "generate|modify|move", "targetColumnName": "...", "cardCount": 5}
+[/SHROOM_CONFIG]
 
-3. When generating instructions, wrap them in [INSTRUCTIONS] tags like this:
-[INSTRUCTIONS]
-Your clear, actionable instructions here...
-[/INSTRUCTIONS]
-
-Guidelines:
-- Be conversational but concise
-- Don't ask too many questions - 2-3 exchanges should be enough
-- Instructions should be specific and actionable
-- Focus on what the AI should generate, not how the user will use it
-- If the user provides a clear description, you can generate instructions quickly`;
+Important guidelines:
+- Be conversational, warm, and concise — you're Kan the mushroom!
+- Don't ask more than 2 questions per message
+- 1-3 exchanges should be enough before proposing a config
+- If the user gives a clear description, propose the config right away
+- The targetColumnName must match one of the available column names exactly
+- For "generate" action, always include cardCount (default 5)
+- For "modify" or "move" actions, don't include cardCount
+- Don't duplicate existing shrooms — suggest variations if similar ones exist
+- Keep instructions specific and actionable
+- When proposing, also include a brief conversational message explaining the config`;
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -63,10 +102,17 @@ Guidelines:
 
   // Add the current message (or initial greeting request)
   if (isInitialGreeting) {
-    messages.push({
-      role: 'user',
-      content: `Start the conversation by greeting me and asking about what I want this "${channelName}" channel to generate. Keep it brief and friendly.`,
-    });
+    if (mode === 'edit' && existingShroomConfig) {
+      messages.push({
+        role: 'user',
+        content: `I want to edit my existing shroom "${existingShroomConfig.title}". Start by summarizing what it currently does and ask what I'd like to change. Keep it brief and friendly.`,
+      });
+    } else {
+      messages.push({
+        role: 'user',
+        content: `Start the conversation by greeting me and asking about what kind of shroom (automation) I want to create for this "${channelName}" channel. Keep it brief and friendly.`,
+      });
+    }
   } else {
     messages.push({ role: 'user', content: userMessage });
   }
@@ -82,10 +128,32 @@ function extractInstructions(response: string): string | null {
   return null;
 }
 
+function extractShroomConfig(response: string): ShroomConfig | null {
+  const match = response.match(/\[SHROOM_CONFIG\]([\s\S]*?)\[\/SHROOM_CONFIG\]/);
+  if (match) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      // Validate required fields
+      if (parsed.title && parsed.instructions && parsed.action && parsed.targetColumnName) {
+        return {
+          title: parsed.title,
+          instructions: parsed.instructions,
+          action: parsed.action,
+          targetColumnName: parsed.targetColumnName,
+          cardCount: parsed.action === 'generate' ? (parsed.cardCount ?? 5) : undefined,
+        };
+      }
+    } catch {
+      // Invalid JSON — fall through
+    }
+  }
+  return null;
+}
+
 export async function POST(request: Request) {
   try {
     const body: InstructionChatRequest = await request.json();
-    const { userMessage, isInitialGreeting, context } = body;
+    const { userMessage, isInitialGreeting, mode = 'create', context } = body;
 
     // Validate required fields
     if (!context) {
@@ -125,7 +193,7 @@ export async function POST(request: Request) {
     const usingOwnerKey = result.source === 'owner';
 
     // Build prompt
-    const messages = buildPrompt(userMessage || '', isInitialGreeting ?? false, context);
+    const messages = buildPrompt(userMessage || '', isInitialGreeting ?? false, mode, context);
 
     try {
       const response = await llm.complete(messages);
@@ -135,17 +203,25 @@ export async function POST(request: Request) {
         await recordUsage(userId, 'instruction-chat');
       }
 
-      // Check if response contains instructions
-      const draftInstructions = extractInstructions(responseText);
+      // Check for structured shroom config first (new format)
+      const shroomConfig = extractShroomConfig(responseText);
 
-      // Clean the response text (remove instruction tags for display)
+      // Fall back to legacy instructions format
+      const draftInstructions = !shroomConfig ? extractInstructions(responseText) : null;
+
+      // Clean the response text (remove config/instruction tags for display)
       let displayResponse = responseText;
-      if (draftInstructions) {
+      if (shroomConfig) {
+        displayResponse = responseText
+          .replace(/\[SHROOM_CONFIG\][\s\S]*?\[\/SHROOM_CONFIG\]/, '')
+          .trim();
+        if (!displayResponse) {
+          displayResponse = "Here's what I've put together based on our conversation:";
+        }
+      } else if (draftInstructions) {
         displayResponse = responseText
           .replace(/\[INSTRUCTIONS\][\s\S]*?\[\/INSTRUCTIONS\]/, '')
           .trim();
-
-        // If there's text before or after, keep it. Otherwise, add a lead-in.
         if (!displayResponse) {
           displayResponse = "Here are the instructions I've drafted based on our conversation:";
         }
@@ -154,7 +230,8 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         response: displayResponse,
-        draftInstructions: draftInstructions,
+        draftInstructions,
+        shroomConfig,
       });
     } catch (llmError) {
       console.error('LLM error:', llmError);

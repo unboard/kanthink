@@ -23,6 +23,7 @@ import { Drawer } from '@/components/ui';
 import { SortableInstructionCard } from './SortableInstructionCard';
 import { InstructionDetailDrawer } from './InstructionDetailDrawer';
 import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
+import { ShroomChatDrawer } from './ShroomChatDrawer';
 
 interface PendingShroomAction {
   type: 'edit' | 'run' | 'create';
@@ -56,6 +57,10 @@ export function ShroomsDrawer({
   // Track if detail drawer was opened via pending action (for close-all behavior)
   const [openedViaPendingAction, setOpenedViaPendingAction] = useState(false);
 
+  // Chat drawer state
+  const [showChatDrawer, setShowChatDrawer] = useState(false);
+  const [chatEditShroom, setChatEditShroom] = useState<InstructionCardType | null>(null);
+
   // Load drawer version preference from localStorage
   useEffect(() => {
     const stored = localStorage.getItem('shroom-drawer-v2');
@@ -67,6 +72,8 @@ export function ShroomsDrawer({
     if (!isOpen) {
       setOpenedViaPendingAction(false);
       setSelectedCardId(null);
+      setShowChatDrawer(false);
+      setChatEditShroom(null);
     }
   }, [isOpen]);
 
@@ -83,7 +90,9 @@ export function ShroomsDrawer({
         handleRunInstruction(card);
       }
     } else if (pendingAction.type === 'create') {
-      handleAddInstruction();
+      // Open chat drawer for creation
+      setChatEditShroom(null);
+      setShowChatDrawer(true);
       setOpenedViaPendingAction(true);
     }
 
@@ -125,6 +134,13 @@ export function ShroomsDrawer({
   );
 
   const handleAddInstruction = () => {
+    // Open chat drawer for conversational creation
+    setChatEditShroom(null);
+    setShowChatDrawer(true);
+  };
+
+  const handleManualFallback = () => {
+    // Manual fallback: create with defaults and open form editor
     const newCard = createInstructionCard(channel.id, {
       title: 'New Action',
       instructions: '',
@@ -173,6 +189,13 @@ export function ShroomsDrawer({
     if (oldIndex !== -1 && newIndex !== -1) {
       reorderInstructionCards(channel.id, oldIndex, newIndex);
     }
+  };
+
+  // Called from InstructionDetailDrawerV2 "Chat with Kan" button
+  const handleOpenChatForEdit = (shroom: InstructionCardType) => {
+    setSelectedCardId(null); // Close detail drawer
+    setChatEditShroom(shroom);
+    setShowChatDrawer(true);
   };
 
   return (
@@ -302,6 +325,7 @@ export function ShroomsDrawer({
           isOpen={selectedCardId !== null}
           onClose={handleCloseDetailDrawer}
           onRun={handleRunInstruction}
+          onChatWithKan={handleOpenChatForEdit}
         />
       ) : (
         <InstructionDetailDrawer
@@ -312,6 +336,28 @@ export function ShroomsDrawer({
           onRun={handleRunInstruction}
         />
       )}
+
+      {/* Chat drawer for conversational creation/editing */}
+      <ShroomChatDrawer
+        channel={channel}
+        isOpen={showChatDrawer}
+        onClose={() => {
+          setShowChatDrawer(false);
+          setChatEditShroom(null);
+        }}
+        existingShroom={chatEditShroom}
+        onShroomCreated={(shroom) => {
+          setShowChatDrawer(false);
+          setChatEditShroom(null);
+          // Optionally open the detail drawer for the new shroom
+          setSelectedCardId(shroom.id);
+        }}
+        onShroomUpdated={() => {
+          setShowChatDrawer(false);
+          setChatEditShroom(null);
+        }}
+        onManualFallback={handleManualFallback}
+      />
     </>
   );
 }

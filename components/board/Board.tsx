@@ -35,6 +35,7 @@ import { AIDebugModal } from './AIDebugModal';
 // Commented out - question system disabled
 // import { QuestionsDrawer } from './QuestionsDrawer';
 import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
+import { ShroomChatDrawer } from './ShroomChatDrawer';
 import { TaskListView } from './TaskListView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
@@ -76,6 +77,7 @@ export function Board({ channel }: BoardProps) {
   const { isServerMode } = useServerSync();
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
   const [pendingShroomAction, setPendingShroomAction] = useState<{ type: 'edit' | 'run' | 'create'; id?: string } | null>(null);
+  const [showShroomChatDrawer, setShowShroomChatDrawer] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -762,19 +764,11 @@ export function Board({ channel }: BoardProps) {
         setPendingShroomAction(null);
       }
     } else if (pendingShroomAction.type === 'create') {
-      // Create a new shroom and open edit drawer
-      const newCard = createInstructionCard(channel.id, {
-        title: 'New Action',
-        instructions: '',
-        action: 'generate',
-        target: { type: 'column', columnId: channel.columns[0]?.id || '' },
-        runMode: 'manual',
-        cardCount: 5,
-      });
+      // Open chat drawer for conversational creation
       setPendingShroomAction(null);
-      setEditingShroomId(newCard.id);
+      setShowShroomChatDrawer(true);
     }
-  }, [pendingShroomAction, instructionCards, channel.id, channel.columns, createInstructionCard]);
+  }, [pendingShroomAction, instructionCards]);
 
   return (
     <div className="flex h-full flex-col">
@@ -1045,6 +1039,33 @@ export function Board({ channel }: BoardProps) {
         isOpen={editingShroomId !== null}
         onClose={() => setEditingShroomId(null)}
         onRun={handleRunInstruction}
+        onChatWithKan={(card) => {
+          setEditingShroomId(null);
+          setShowShroomChatDrawer(true);
+        }}
+      />
+
+      <ShroomChatDrawer
+        channel={channel}
+        isOpen={showShroomChatDrawer}
+        onClose={() => setShowShroomChatDrawer(false)}
+        onShroomCreated={(shroom) => {
+          setShowShroomChatDrawer(false);
+          setEditingShroomId(shroom.id);
+        }}
+        onShroomUpdated={() => setShowShroomChatDrawer(false)}
+        onManualFallback={() => {
+          setShowShroomChatDrawer(false);
+          const newCard = createInstructionCard(channel.id, {
+            title: 'New Action',
+            instructions: '',
+            action: 'generate',
+            target: { type: 'column', columnId: channel.columns[0]?.id || '' },
+            runMode: 'manual',
+            cardCount: 5,
+          });
+          setEditingShroomId(newCard.id);
+        }}
       />
     </div>
   );

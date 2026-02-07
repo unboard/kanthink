@@ -248,6 +248,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             dailyExecutionCount: ic.dailyExecutionCount ?? 0,
             dailyCountResetAt: ic.dailyCountResetAt,
             executionHistory: ic.executionHistory || [],
+            conversationHistory: ic.conversationHistory || [],
             createdAt: ic.createdAt,
             updatedAt: ic.updatedAt,
           }
@@ -279,6 +280,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
               dailyExecutionCount: ic.dailyExecutionCount ?? 0,
               dailyCountResetAt: ic.dailyCountResetAt,
               executionHistory: ic.executionHistory || [],
+              conversationHistory: ic.conversationHistory || [],
               isGlobalResource: true,
               createdAt: ic.createdAt,
               updatedAt: ic.updatedAt,

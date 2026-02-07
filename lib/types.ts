@@ -9,6 +9,13 @@ export type PropertyDisplayType = 'chip' | 'field';
 export type TaskStatus = 'not_started' | 'in_progress' | 'done';
 export type CardMessageType = 'note' | 'question' | 'ai_response';
 
+// Shroom chat message (for conversational creation/editing)
+export interface ShroomChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
 // Instruction Card types
 export type InstructionAction = 'generate' | 'modify' | 'move';
 export type InstructionRunMode = 'manual' | 'automatic';
@@ -152,6 +159,7 @@ export interface InstructionCard {
   dailyCountResetAt?: string;
   executionHistory?: ExecutionRecord[];   // Last N executions for tracking
   isGlobalResource?: boolean;             // True if this is a global resource (available to all, by Kanthink)
+  conversationHistory?: ShroomChatMessage[];  // Chat history from conversational creation/editing
 }
 
 export interface Task {
@@ -292,6 +300,7 @@ export interface InstructionCardInput {
   scope?: InstructionScope;
   cardCount?: number;
   interviewQuestions?: string[];
+  conversationHistory?: ShroomChatMessage[];
 }
 
 export interface TaskInput {
