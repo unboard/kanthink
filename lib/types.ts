@@ -19,6 +19,13 @@ export interface ShroomChatMessage {
 // Instruction Card types
 export type InstructionAction = 'generate' | 'modify' | 'move';
 export type InstructionRunMode = 'manual' | 'automatic';
+
+export interface ShroomStep {
+  action: InstructionAction;
+  targetColumnId: string;
+  description: string;
+  cardCount?: number;
+}
 export type InstructionScope = 'channel' | 'global' | 'public';
 
 // Automation trigger types
@@ -160,6 +167,7 @@ export interface InstructionCard {
   executionHistory?: ExecutionRecord[];   // Last N executions for tracking
   isGlobalResource?: boolean;             // True if this is a global resource (available to all, by Kanthink)
   conversationHistory?: ShroomChatMessage[];  // Chat history from conversational creation/editing
+  steps?: ShroomStep[];                   // Multi-step action sequence (e.g. modify then move)
 }
 
 export interface Task {
@@ -301,6 +309,7 @@ export interface InstructionCardInput {
   cardCount?: number;
   interviewQuestions?: string[];
   conversationHistory?: ShroomChatMessage[];
+  steps?: ShroomStep[];
 }
 
 export interface TaskInput {

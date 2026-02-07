@@ -249,6 +249,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             dailyCountResetAt: ic.dailyCountResetAt,
             executionHistory: ic.executionHistory || [],
             conversationHistory: ic.conversationHistory || [],
+            steps: ic.steps || undefined,
             createdAt: ic.createdAt,
             updatedAt: ic.updatedAt,
           }
@@ -281,6 +282,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
               dailyCountResetAt: ic.dailyCountResetAt,
               executionHistory: ic.executionHistory || [],
               conversationHistory: ic.conversationHistory || [],
+              steps: ic.steps || undefined,
               isGlobalResource: true,
               createdAt: ic.createdAt,
               updatedAt: ic.updatedAt,

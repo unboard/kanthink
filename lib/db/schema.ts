@@ -199,6 +199,9 @@ export const instructionCards = sqliteTable('instruction_cards', {
   // Conversational creation/editing history
   conversationHistory: text('conversation_history', { mode: 'json' }).$type<ShroomChatMessageJson[]>(),
 
+  // Multi-step action sequence
+  steps: text('steps', { mode: 'json' }).$type<{ action: string; targetColumnId: string; description: string; cardCount?: number }[]>(),
+
   lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
   nextScheduledRun: integer('next_scheduled_run', { mode: 'timestamp' }),
   dailyExecutionCount: integer('daily_execution_count').default(0),

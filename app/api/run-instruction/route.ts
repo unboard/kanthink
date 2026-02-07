@@ -568,6 +568,99 @@ export async function POST(request: Request) {
     const { llm, recordUsageAfterSuccess } = authResult.context;
     const effectiveSystemInstructions = systemInstructions;
 
+    // ==========================================
+    // MULTI-STEP EXECUTION
+    // ==========================================
+    if (instructionCard.steps && instructionCard.steps.length > 0) {
+      const stepResults: Array<{
+        action: string;
+        targetColumnIds: string[];
+        generatedCards?: CardInput[];
+        modifiedCards?: Array<{ id: string; title: string; content?: string; tags?: string[]; properties?: Array<{ key: string; value: string; displayType: 'chip' | 'field'; color?: string }>; tasks?: Array<{ title: string; description?: string }> }>;
+        movedCards?: Array<{ cardId: string; destinationColumnId: string; reason?: string }>;
+      }> = [];
+
+      for (const step of instructionCard.steps) {
+        const stepTargetColumnIds = [step.targetColumnId];
+
+        // Build a virtual instruction card for this step
+        const stepInstruction: InstructionCard = {
+          ...instructionCard,
+          action: step.action as 'generate' | 'modify' | 'move',
+          target: { type: 'column', columnId: step.targetColumnId },
+          cardCount: step.cardCount,
+          instructions: instructionCard.instructions, // Full instructions for context
+        };
+
+        try {
+          if (step.action === 'generate') {
+            const messages = buildGeneratePrompt(stepInstruction, channel, contextColumnIds, cards, effectiveSystemInstructions, stepTargetColumnIds);
+
+            // Web research if needed
+            if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
+              try {
+                const searchQuery = (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+                const webResult = await llm.webSearch(searchQuery, `Search the web and return detailed, factual information including real URLs. Return specific URLs, titles, and descriptions.`);
+                if (webResult.content) {
+                  const userMsg = messages[messages.length - 1];
+                  userMsg.content = (userMsg.content as string) + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the real URLs below. Do NOT invent or hallucinate any URLs.\n\n${webResult.content}`;
+                }
+              } catch (e) { console.warn('Web search failed:', e); }
+            }
+
+            const response = await llm.complete(messages);
+            const generatedCards = parseGenerateResponse(response.content);
+            stepResults.push({ action: 'generate', targetColumnIds: stepTargetColumnIds, generatedCards: generatedCards.slice(0, step.cardCount ?? 5) });
+          } else if (step.action === 'modify') {
+            const cardsToModify: Card[] = [];
+            for (const columnId of stepTargetColumnIds) {
+              const column = channel.columns.find((c) => c.id === columnId);
+              if (column) {
+                for (const cardId of column.cardIds) {
+                  if (cards[cardId]) cardsToModify.push(cards[cardId]);
+                }
+              }
+            }
+            if (cardsToModify.length > 0) {
+              const messages = buildModifyPrompt(stepInstruction, channel, cardsToModify, tasks, effectiveSystemInstructions);
+              const response = await llm.complete(messages);
+              const modifiedCards = parseModifyResponse(response.content);
+              stepResults.push({ action: 'modify', targetColumnIds: stepTargetColumnIds, modifiedCards });
+            }
+          } else if (step.action === 'move') {
+            const cardsToMove: Card[] = [];
+            for (const columnId of stepTargetColumnIds) {
+              const column = channel.columns.find((c) => c.id === columnId);
+              if (column) {
+                for (const cardId of column.cardIds) {
+                  if (cards[cardId]) cardsToMove.push(cards[cardId]);
+                }
+              }
+            }
+            if (cardsToMove.length > 0) {
+              const messages = buildMovePrompt(stepInstruction, channel, cardsToMove, effectiveSystemInstructions);
+              const response = await llm.complete(messages);
+              const moveDecisions = parseMoveResponse(response.content);
+              stepResults.push({ action: 'move', targetColumnIds: stepTargetColumnIds, movedCards: moveDecisions });
+            }
+          }
+        } catch (stepError) {
+          console.error(`Step ${step.action} failed:`, stepError);
+        }
+      }
+
+      await recordUsageAfterSuccess();
+
+      return NextResponse.json({
+        action: 'multi-step',
+        steps: stepResults,
+      });
+    }
+
+    // ==========================================
+    // SINGLE ACTION EXECUTION (existing flow)
+    // ==========================================
+
     // Build debug info
     const debug = {
       systemPrompt: '',

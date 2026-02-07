@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ShroomChatMessage } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ShroomChatMessage, ShroomStep } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
 import { ShroomPreview } from './ShroomPreview';
@@ -319,6 +319,14 @@ export function ShroomChatDrawer({
 
     const conversationHistory = [...messages];
 
+    // Resolve step column names to IDs
+    const resolvedSteps: ShroomStep[] | undefined = finalConfig.steps?.map((step) => ({
+      action: step.action,
+      targetColumnId: resolveColumnId(step.targetColumnName),
+      description: step.description,
+      cardCount: step.cardCount,
+    }));
+
     if (isEditMode && existingShroom) {
       // Update existing shroom
       updateInstructionCard(existingShroom.id, {
@@ -328,6 +336,7 @@ export function ShroomChatDrawer({
         target,
         cardCount: finalConfig.action === 'generate' ? (finalConfig.cardCount ?? 5) : undefined,
         conversationHistory,
+        steps: resolvedSteps,
       });
       onShroomUpdated?.();
     } else {
@@ -340,6 +349,7 @@ export function ShroomChatDrawer({
         runMode: 'manual',
         cardCount: finalConfig.action === 'generate' ? (finalConfig.cardCount ?? 5) : undefined,
         conversationHistory,
+        steps: resolvedSteps,
       });
       onShroomCreated?.(newCard);
     }

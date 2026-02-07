@@ -2526,6 +2526,7 @@ export const useStore = create<KanthinkState>()(
           cardCount: input.cardCount,
           interviewQuestions: input.interviewQuestions,
           conversationHistory: input.conversationHistory,
+          steps: input.steps,
           createdAt: timestamp,
           updatedAt: timestamp,
         };
@@ -2565,6 +2566,7 @@ export const useStore = create<KanthinkState>()(
           cardCount: input.cardCount,
           interviewQuestions: input.interviewQuestions,
           conversationHistory: input.conversationHistory,
+          steps: input.steps,
         });
 
         // Broadcast to other tabs
