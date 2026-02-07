@@ -653,45 +653,49 @@ export function Board({ channel }: BoardProps) {
           // Record that this instruction has processed this card
           recordInstructionRun(move.cardId, instructionCard.id);
         }
-      } else if (result.action === 'multi-step' && result.steps) {
-        // Process each step's results sequentially
-        for (const step of result.steps) {
-          if (step.action === 'generate' && step.generatedCards) {
-            const targetColumnId = step.targetColumnIds[0] || channel.columns[0]?.id;
-            if (targetColumnId) {
-              for (const cardInput of step.generatedCards) {
-                createCard(channel.id, targetColumnId, cardInput, 'ai');
-              }
+      } else if (result.action === 'multi-step') {
+        // Unified multi-step: process flat modifiedCards, movedCards, generatedCards
+        // Apply modifications first, then moves (order matters for coherence)
+
+        if (result.generatedCards) {
+          const targetColumnId = result.targetColumnIds?.[0] || channel.columns[0]?.id;
+          if (targetColumnId) {
+            for (const cardInput of result.generatedCards) {
+              createCard(channel.id, targetColumnId, cardInput, 'ai');
             }
-          } else if (step.action === 'modify' && step.modifiedCards) {
-            for (const modified of step.modifiedCards) {
-              updateCard(modified.id, { title: modified.title });
-              if (modified.content) {
-                addMessage(modified.id, 'ai_response', modified.content);
-              }
-              if (modified.tags) {
-                for (const tagName of modified.tags) {
-                  const existingTag = channel.tagDefinitions?.find(t => t.name.toLowerCase() === tagName.toLowerCase());
-                  if (!existingTag) {
-                    const defaultColors = ['blue', 'green', 'purple', 'orange', 'pink', 'cyan'];
-                    const colorIndex = (channel.tagDefinitions?.length || 0) % defaultColors.length;
-                    addTagDefinition(channel.id, tagName, defaultColors[colorIndex]);
-                  }
-                  addTagToCard(modified.id, existingTag?.name || tagName);
+          }
+        }
+
+        if (result.modifiedCards) {
+          for (const modified of result.modifiedCards) {
+            updateCard(modified.id, { title: modified.title });
+            if (modified.content) {
+              addMessage(modified.id, 'ai_response', modified.content);
+            }
+            if (modified.tags) {
+              for (const tagName of modified.tags) {
+                const existingTag = channel.tagDefinitions?.find(t => t.name.toLowerCase() === tagName.toLowerCase());
+                if (!existingTag) {
+                  const defaultColors = ['blue', 'green', 'purple', 'orange', 'pink', 'cyan'];
+                  const colorIndex = (channel.tagDefinitions?.length || 0) % defaultColors.length;
+                  addTagDefinition(channel.id, tagName, defaultColors[colorIndex]);
                 }
+                addTagToCard(modified.id, existingTag?.name || tagName);
               }
-              if (modified.properties) {
-                for (const prop of modified.properties) {
-                  setCardProperty(modified.id, prop.key, prop.value, prop.displayType, prop.color);
-                }
+            }
+            if (modified.properties) {
+              for (const prop of modified.properties) {
+                setCardProperty(modified.id, prop.key, prop.value, prop.displayType, prop.color);
               }
-              recordInstructionRun(modified.id, instructionCard.id);
             }
-          } else if (step.action === 'move' && step.movedCards) {
-            for (const move of step.movedCards) {
-              moveCard(move.cardId, move.destinationColumnId, 0);
-              recordInstructionRun(move.cardId, instructionCard.id);
-            }
+            recordInstructionRun(modified.id, instructionCard.id);
+          }
+        }
+
+        if (result.movedCards) {
+          for (const move of result.movedCards) {
+            moveCard(move.cardId, move.destinationColumnId, 0);
+            recordInstructionRun(move.cardId, instructionCard.id);
           }
         }
       }

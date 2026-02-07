@@ -19,21 +19,6 @@ export interface ModifiedCardTask {
   description?: string;
 }
 
-export interface StepResult {
-  action: string;
-  targetColumnIds: string[];
-  generatedCards?: CardInput[];
-  modifiedCards?: Array<{
-    id: string;
-    title: string;
-    content?: string;
-    tags?: string[];
-    properties?: ModifiedCardProperty[];
-    tasks?: ModifiedCardTask[];
-  }>;
-  movedCards?: Array<{ cardId: string; destinationColumnId: string; reason?: string }>;
-}
-
 export interface RunInstructionResult {
   action: 'generate' | 'modify' | 'move' | 'multi-step';
   targetColumnIds: string[];
@@ -47,7 +32,6 @@ export interface RunInstructionResult {
     tasks?: ModifiedCardTask[];
   }>;
   movedCards?: Array<{ cardId: string; destinationColumnId: string; reason?: string }>;
-  steps?: StepResult[];  // Multi-step execution results
   skippedCardIds?: string[];  // Cards skipped because they were already processed
   message?: string;
   error?: string;

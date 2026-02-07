@@ -520,6 +520,254 @@ function parseMoveResponse(content: string): Array<{ cardId: string; destination
   }
 }
 
+/**
+ * Build a UNIFIED prompt for multi-step shrooms.
+ * Instead of running each step as an independent LLM call,
+ * we send ONE prompt that asks the AI to perform ALL actions
+ * (modify + move, generate + move, etc.) in a single response.
+ * This ensures the AI's decisions are coherent across steps.
+ */
+function buildMultiStepPrompt(
+  instructionCard: InstructionCard,
+  channel: Channel,
+  allCards: Record<string, Card>,
+  allTasks: Record<string, Task>,
+  systemInstructions?: string
+): LLMMessage[] {
+  // Collect all unique source column IDs from steps
+  const sourceColumnIds = new Set<string>();
+  if (instructionCard.steps) {
+    for (const step of instructionCard.steps) {
+      sourceColumnIds.add(step.targetColumnId);
+    }
+  }
+  // Also add the main target
+  if (instructionCard.target.type === 'column') {
+    sourceColumnIds.add(instructionCard.target.columnId);
+  } else if (instructionCard.target.type === 'columns') {
+    for (const id of instructionCard.target.columnIds) {
+      sourceColumnIds.add(id);
+    }
+  }
+
+  // Parse instruction keywords for capabilities
+  const { allowTasks, allowProperties, allowTags } = parseInstructionKeywords(instructionCard.instructions || '');
+
+  // Determine which action types are involved
+  const hasGenerate = instructionCard.steps?.some(s => s.action === 'generate') ?? false;
+  const hasModify = instructionCard.steps?.some(s => s.action === 'modify') ?? false;
+  const hasMove = instructionCard.steps?.some(s => s.action === 'move') ?? false;
+
+  // Build available columns list
+  const columnsList = channel.columns.map((c) => {
+    let colInfo = `- "${c.name}" (ID: ${c.id})`;
+    if (c.instructions) {
+      colInfo += `\n  Rules: ${c.instructions}`;
+    }
+    return colInfo;
+  }).join('\n');
+
+  // Build response format dynamically based on what actions are needed
+  const responseFields: string[] = [];
+
+  if (hasGenerate) {
+    const generateStep = instructionCard.steps?.find(s => s.action === 'generate');
+    const count = generateStep?.cardCount ?? instructionCard.cardCount ?? 5;
+    responseFields.push(`"generatedCards": [{"title": "Card Title", "content": "Detailed markdown content", "targetColumnId": "column-id-where-card-goes"}]  // Generate ${count} cards`);
+  }
+
+  if (hasModify) {
+    const modifyFields: string[] = ['"id": "original-card-id"', '"title": "Updated Title"', '"content": "Updated content in markdown"'];
+    if (allowTags) modifyFields.push('"tags": ["TagName"]');
+    if (allowProperties) modifyFields.push('"properties": [{"key": "category", "value": "Example", "displayType": "chip", "color": "blue"}]');
+    if (allowTasks) modifyFields.push('"tasks": [{"title": "Action item", "description": "Details"}]');
+    responseFields.push(`"modifiedCards": [{${modifyFields.join(', ')}}]  // Cards you modified`);
+  }
+
+  if (hasMove) {
+    responseFields.push(`"movedCards": [{"cardId": "card-id", "destinationColumnId": "column-id", "reason": "brief explanation"}]  // Cards to move`);
+  }
+
+  // SYSTEM PROMPT
+  const systemPrompt = `You are performing a multi-step operation on a Kanban board. You will analyze cards and perform ALL requested actions in ONE response.
+
+Available columns:
+${columnsList}
+
+IMPORTANT: You must respond with a single JSON object containing the results of ALL actions:
+{
+  ${responseFields.join(',\n  ')}
+}
+
+Rules:
+- Perform the actions described in the instructions IN ORDER, but return everything in a single response
+- If a step says "select the best card" and then "modify it" and then "move it", the SAME card must appear in both modifiedCards and movedCards
+- For modifiedCards: only include cards that have actual changes. Use the original card ID.
+- For movedCards: only include cards that should actually move. Use the column ID (not name) for destinationColumnId.
+- For generatedCards: include the targetColumnId for where each card should go.
+${hasModify ? '- Content in modifiedCards will be added as a new note/message on the card' : ''}
+${!allowTags ? '- Do NOT add tags.' : ''}
+${!allowProperties ? '- Do NOT add properties.' : ''}
+${!allowTasks ? '- Do NOT create tasks.' : ''}
+
+Respond with ONLY the JSON object, no other text.`;
+
+  // USER PROMPT
+  const userParts: string[] = [];
+
+  // Context
+  let contextSection = `## Context\nChannel: ${channel.name}`;
+  if (channel.description) {
+    contextSection += `\n${channel.description}`;
+  }
+  if (systemInstructions?.trim()) {
+    contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
+  }
+  userParts.push(contextSection);
+
+  // Cards in source columns
+  let cardsSection = '## Cards to Work With';
+  for (const columnId of sourceColumnIds) {
+    const column = channel.columns.find((c) => c.id === columnId);
+    if (!column) continue;
+
+    cardsSection += `\n\n### Column: "${column.name}" (ID: ${column.id})`;
+    const columnCards = column.cardIds.map(id => allCards[id]).filter(Boolean);
+
+    if (columnCards.length === 0) {
+      cardsSection += '\n(empty)';
+      continue;
+    }
+
+    for (const card of columnCards) {
+      cardsSection += `\n\n**Card ID: ${card.id}**`;
+      cardsSection += `\n- Title: ${card.title}`;
+      if (card.summary) {
+        cardsSection += `\n- Summary: ${card.summary}`;
+      } else if (card.messages && card.messages.length > 0) {
+        const content = card.messages.map(m => m.content).join('\n').slice(0, 500);
+        cardsSection += `\n- Content: ${content}`;
+      }
+
+      // Include existing tasks if task creation is allowed
+      if (allowTasks && card.taskIds && card.taskIds.length > 0) {
+        const cardTasks = card.taskIds.map(id => allTasks[id]).filter(Boolean);
+        if (cardTasks.length > 0) {
+          cardsSection += `\n- Existing Tasks:`;
+          for (const task of cardTasks) {
+            const statusIcon = task.status === 'done' ? '[x]' : task.status === 'in_progress' ? '[-]' : '[ ]';
+            cardsSection += `\n  ${statusIcon} ${task.title}`;
+          }
+        }
+      }
+    }
+  }
+  userParts.push(cardsSection);
+
+  // Instructions - the full multi-step instructions
+  let taskSection = '## Your Task\nPerform the following operations:';
+  if (instructionCard.instructions?.trim()) {
+    taskSection += `\n\n${instructionCard.instructions.trim()}`;
+  }
+
+  // Add step descriptions for clarity
+  if (instructionCard.steps && instructionCard.steps.length > 0) {
+    taskSection += '\n\nExpected actions:';
+    for (let i = 0; i < instructionCard.steps.length; i++) {
+      const step = instructionCard.steps[i];
+      const colName = channel.columns.find(c => c.id === step.targetColumnId)?.name || 'Unknown';
+      taskSection += `\n${i + 1}. ${step.action.toUpperCase()} — ${step.description} (source column: "${colName}")`;
+    }
+  }
+
+  userParts.push(taskSection);
+
+  return [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userParts.join('\n\n') },
+  ];
+}
+
+/**
+ * Parse the unified multi-step response.
+ * Returns a flat object with modifiedCards, movedCards, and generatedCards.
+ */
+function parseMultiStepResponse(content: string): {
+  modifiedCards: ModifyResponseCard[];
+  movedCards: Array<{ cardId: string; destinationColumnId: string; reason?: string }>;
+  generatedCards: CardInput[];
+} {
+  const result = {
+    modifiedCards: [] as ModifyResponseCard[],
+    movedCards: [] as Array<{ cardId: string; destinationColumnId: string; reason?: string }>,
+    generatedCards: [] as CardInput[],
+  };
+
+  try {
+    // Find the JSON object in the response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('No JSON object found in multi-step response');
+      return result;
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Parse modifiedCards
+    if (Array.isArray(parsed.modifiedCards)) {
+      result.modifiedCards = parsed.modifiedCards
+        .filter((item: Record<string, unknown>) => item && typeof item.id === 'string' && typeof item.title === 'string')
+        .map((item: Record<string, unknown>) => ({
+          id: String(item.id),
+          title: String(item.title).trim(),
+          content: typeof item.content === 'string' ? item.content.trim() : undefined,
+          tags: Array.isArray(item.tags)
+            ? (item.tags as unknown[]).filter((t): t is string => typeof t === 'string' && t.trim().length > 0).map(t => t.trim())
+            : undefined,
+          properties: Array.isArray(item.properties)
+            ? (item.properties as Record<string, unknown>[]).filter(p => p && typeof p.key === 'string' && typeof p.value === 'string').map(p => ({
+                key: String(p.key),
+                value: String(p.value),
+                displayType: p.displayType === 'field' ? 'field' as const : 'chip' as const,
+                color: typeof p.color === 'string' ? p.color : undefined,
+              }))
+            : undefined,
+          tasks: Array.isArray(item.tasks)
+            ? (item.tasks as Record<string, unknown>[]).filter(t => t && typeof t.title === 'string').map(t => ({
+                title: String(t.title).trim(),
+                description: typeof t.description === 'string' ? t.description.trim() : undefined,
+              }))
+            : undefined,
+        }));
+    }
+
+    // Parse movedCards
+    if (Array.isArray(parsed.movedCards)) {
+      result.movedCards = parsed.movedCards
+        .filter((item: Record<string, unknown>) => item && typeof item.cardId === 'string' && typeof item.destinationColumnId === 'string')
+        .map((item: Record<string, unknown>) => ({
+          cardId: String(item.cardId),
+          destinationColumnId: String(item.destinationColumnId),
+          reason: typeof item.reason === 'string' ? String(item.reason) : undefined,
+        }));
+    }
+
+    // Parse generatedCards
+    if (Array.isArray(parsed.generatedCards)) {
+      result.generatedCards = parsed.generatedCards
+        .filter((item: Record<string, unknown>) => item && typeof item.title === 'string')
+        .map((item: Record<string, unknown>) => ({
+          title: String(item.title).trim(),
+          initialMessage: typeof item.content === 'string' ? String(item.content).trim() : undefined,
+        }));
+    }
+  } catch (error) {
+    console.warn('Failed to parse multi-step response:', error);
+  }
+
+  return result;
+}
+
 interface RunInstructionRequest {
   instructionCard: InstructionCard;
   channel: Channel;
@@ -569,92 +817,47 @@ export async function POST(request: Request) {
     const effectiveSystemInstructions = systemInstructions;
 
     // ==========================================
-    // MULTI-STEP EXECUTION
+    // MULTI-STEP EXECUTION (unified single-prompt)
     // ==========================================
     if (instructionCard.steps && instructionCard.steps.length > 0) {
-      const stepResults: Array<{
-        action: string;
-        targetColumnIds: string[];
-        generatedCards?: CardInput[];
-        modifiedCards?: Array<{ id: string; title: string; content?: string; tags?: string[]; properties?: Array<{ key: string; value: string; displayType: 'chip' | 'field'; color?: string }>; tasks?: Array<{ title: string; description?: string }> }>;
-        movedCards?: Array<{ cardId: string; destinationColumnId: string; reason?: string }>;
-      }> = [];
+      const messages = buildMultiStepPrompt(instructionCard, channel, cards, tasks, effectiveSystemInstructions);
 
-      for (const step of instructionCard.steps) {
-        const stepTargetColumnIds = [step.targetColumnId];
-
-        // Build a virtual instruction card for this step
-        const stepInstruction: InstructionCard = {
-          ...instructionCard,
-          action: step.action as 'generate' | 'modify' | 'move',
-          target: { type: 'column', columnId: step.targetColumnId },
-          cardCount: step.cardCount,
-          instructions: instructionCard.instructions, // Full instructions for context
-        };
-
+      // Web research if needed
+      if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
         try {
-          if (step.action === 'generate') {
-            const messages = buildGeneratePrompt(stepInstruction, channel, contextColumnIds, cards, effectiveSystemInstructions, stepTargetColumnIds);
-
-            // Web research if needed
-            if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
-              try {
-                const searchQuery = (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
-                const webResult = await llm.webSearch(searchQuery, `Search the web and return detailed, factual information including real URLs. Return specific URLs, titles, and descriptions.`);
-                if (webResult.content) {
-                  const userMsg = messages[messages.length - 1];
-                  userMsg.content = (userMsg.content as string) + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the real URLs below. Do NOT invent or hallucinate any URLs.\n\n${webResult.content}`;
-                }
-              } catch (e) { console.warn('Web search failed:', e); }
-            }
-
-            const response = await llm.complete(messages);
-            const generatedCards = parseGenerateResponse(response.content);
-            stepResults.push({ action: 'generate', targetColumnIds: stepTargetColumnIds, generatedCards: generatedCards.slice(0, step.cardCount ?? 5) });
-          } else if (step.action === 'modify') {
-            const cardsToModify: Card[] = [];
-            for (const columnId of stepTargetColumnIds) {
-              const column = channel.columns.find((c) => c.id === columnId);
-              if (column) {
-                for (const cardId of column.cardIds) {
-                  if (cards[cardId]) cardsToModify.push(cards[cardId]);
-                }
-              }
-            }
-            if (cardsToModify.length > 0) {
-              const messages = buildModifyPrompt(stepInstruction, channel, cardsToModify, tasks, effectiveSystemInstructions);
-              const response = await llm.complete(messages);
-              const modifiedCards = parseModifyResponse(response.content);
-              stepResults.push({ action: 'modify', targetColumnIds: stepTargetColumnIds, modifiedCards });
-            }
-          } else if (step.action === 'move') {
-            const cardsToMove: Card[] = [];
-            for (const columnId of stepTargetColumnIds) {
-              const column = channel.columns.find((c) => c.id === columnId);
-              if (column) {
-                for (const cardId of column.cardIds) {
-                  if (cards[cardId]) cardsToMove.push(cards[cardId]);
-                }
-              }
-            }
-            if (cardsToMove.length > 0) {
-              const messages = buildMovePrompt(stepInstruction, channel, cardsToMove, effectiveSystemInstructions);
-              const response = await llm.complete(messages);
-              const moveDecisions = parseMoveResponse(response.content);
-              stepResults.push({ action: 'move', targetColumnIds: stepTargetColumnIds, movedCards: moveDecisions });
-            }
+          const searchQuery = (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+          const webResult = await llm.webSearch(searchQuery, `Search the web and return detailed, factual information including real URLs. Return specific URLs, titles, and descriptions.`);
+          if (webResult.content) {
+            const userMsg = messages[messages.length - 1];
+            userMsg.content = (userMsg.content as string) + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the real URLs below. Do NOT invent or hallucinate any URLs.\n\n${webResult.content}`;
           }
-        } catch (stepError) {
-          console.error(`Step ${step.action} failed:`, stepError);
-        }
+        } catch (e) { console.warn('Web search failed:', e); }
       }
 
-      await recordUsageAfterSuccess();
+      try {
+        const response = await llm.complete(messages);
+        const multiStepResult = parseMultiStepResponse(response.content);
 
-      return NextResponse.json({
-        action: 'multi-step',
-        steps: stepResults,
-      });
+        await recordUsageAfterSuccess();
+
+        // Collect all target column IDs from steps
+        const allTargetColumnIds = [...new Set(instructionCard.steps.map(s => s.targetColumnId))];
+
+        return NextResponse.json({
+          action: 'multi-step',
+          targetColumnIds: allTargetColumnIds,
+          modifiedCards: multiStepResult.modifiedCards.length > 0 ? multiStepResult.modifiedCards : undefined,
+          movedCards: multiStepResult.movedCards.length > 0 ? multiStepResult.movedCards : undefined,
+          generatedCards: multiStepResult.generatedCards.length > 0 ? multiStepResult.generatedCards : undefined,
+        });
+      } catch (llmError) {
+        console.error('Multi-step LLM error:', llmError);
+        return NextResponse.json({
+          action: 'multi-step',
+          targetColumnIds: [],
+          error: `AI error: ${llmError instanceof Error ? llmError.message : 'Unknown error'}`,
+        });
+      }
     }
 
     // ==========================================
