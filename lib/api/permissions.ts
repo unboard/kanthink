@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
-import { channels, channelShares, users } from '@/lib/db/schema'
-import { eq, and, or, inArray } from 'drizzle-orm'
+import { channels, channelShares, users, userChannelOrg } from '@/lib/db/schema'
+import { eq, and, or, inArray, desc } from 'drizzle-orm'
 
 export type ChannelRole = 'owner' | 'editor' | 'viewer'
 
@@ -27,7 +27,8 @@ export interface ChannelPermission {
  */
 export async function getChannelPermission(
   channelId: string,
-  userId: string
+  userId: string,
+  userEmail?: string | null
 ): Promise<ChannelPermission | null> {
   // Check if user is the owner
   const channel = await db.query.channels.findFirst({
@@ -50,7 +51,7 @@ export async function getChannelPermission(
     }
   }
 
-  // Check if user has a share
+  // Check if user has a share (by userId)
   const share = await db.query.channelShares.findFirst({
     where: and(
       eq(channelShares.channelId, channelId),
@@ -68,6 +69,54 @@ export async function getChannelPermission(
       canEdit: role === 'editor' || role === 'owner',
       canDelete: false, // Only owner can delete
       canManageShares: role === 'owner', // Only owner can manage shares
+    }
+  }
+
+  // Fallback: check for pending email invites (userId is null but email matches)
+  // This handles the case where convertPendingInvites hasn't run yet
+  if (userEmail) {
+    const emailShare = await db.query.channelShares.findFirst({
+      where: and(
+        eq(channelShares.channelId, channelId),
+        eq(channelShares.email, userEmail.toLowerCase()),
+        eq(channelShares.userId, null as unknown as string)
+      ),
+    })
+
+    if (emailShare) {
+      // Auto-convert this pending invite now
+      await db
+        .update(channelShares)
+        .set({ userId, acceptedAt: new Date() })
+        .where(eq(channelShares.id, emailShare.id))
+
+      // Create userChannelOrg entry
+      try {
+        const existingOrg = await db.query.userChannelOrg.findMany({
+          where: eq(userChannelOrg.userId, userId),
+          orderBy: [desc(userChannelOrg.position)],
+          limit: 1,
+        })
+        const nextPosition = existingOrg.length > 0 ? existingOrg[0].position + 1 : 0
+        await db.insert(userChannelOrg).values({
+          userId,
+          channelId,
+          position: nextPosition,
+        })
+      } catch {
+        // Ignore if org entry already exists
+      }
+
+      const role = emailShare.role as ChannelRole
+      return {
+        channelId,
+        userId,
+        role,
+        isOwner: false,
+        canEdit: role === 'editor' || role === 'owner',
+        canDelete: false,
+        canManageShares: false,
+      }
     }
   }
 
@@ -123,18 +172,49 @@ export async function canManageShares(channelId: string, userId: string): Promis
  * Get all channels accessible to a user (owned + shared + global help).
  * Returns channel IDs with their roles.
  */
-export async function getUserChannels(userId: string): Promise<Array<{ channelId: string; role: ChannelRole }>> {
+export async function getUserChannels(userId: string, userEmail?: string | null): Promise<Array<{ channelId: string; role: ChannelRole }>> {
   // Get owned channels
   const ownedChannels = await db.query.channels.findMany({
     where: eq(channels.ownerId, userId),
     columns: { id: true },
   })
 
-  // Get shared channels
+  // Get shared channels (by userId)
   const sharedChannels = await db.query.channelShares.findMany({
     where: eq(channelShares.userId, userId),
     columns: { channelId: true, role: true },
   })
+
+  // Also find pending email invites and auto-convert them
+  if (userEmail) {
+    const pendingEmailShares = await db
+      .select()
+      .from(channelShares)
+      .where(
+        and(
+          eq(channelShares.email, userEmail.toLowerCase()),
+          eq(channelShares.userId, null as unknown as string)
+        )
+      )
+
+    for (const pending of pendingEmailShares) {
+      // Check no duplicate share exists
+      const exists = sharedChannels.some(s => s.channelId === pending.channelId)
+      if (!exists) {
+        await db.update(channelShares).set({ userId, acceptedAt: new Date() }).where(eq(channelShares.id, pending.id))
+        try {
+          const existingOrg = await db.query.userChannelOrg.findMany({
+            where: eq(userChannelOrg.userId, userId),
+            orderBy: [desc(userChannelOrg.position)],
+            limit: 1,
+          })
+          const nextPos = existingOrg.length > 0 ? existingOrg[0].position + 1 : 0
+          await db.insert(userChannelOrg).values({ userId, channelId: pending.channelId, position: nextPos })
+        } catch { /* ignore duplicate */ }
+        sharedChannels.push({ channelId: pending.channelId, role: pending.role })
+      }
+    }
+  }
 
   // Get global help channels (available to all users)
   // Wrapped in try-catch in case the column doesn't exist yet
@@ -178,7 +258,7 @@ export async function getUserChannels(userId: string): Promise<Array<{ channelId
  * Get all channels accessible to a user with extended info including sharer details.
  * Returns channel IDs with their roles and who shared it (if applicable).
  */
-export async function getUserChannelsWithSharerInfo(userId: string): Promise<Array<{
+export async function getUserChannelsWithSharerInfo(userId: string, userEmail?: string | null): Promise<Array<{
   channelId: string
   role: ChannelRole
   sharedBy?: SharedByInfo
@@ -189,11 +269,45 @@ export async function getUserChannelsWithSharerInfo(userId: string): Promise<Arr
     columns: { id: true },
   })
 
-  // Get shared channels with the invitedBy user info
+  // Get shared channels with the invitedBy user info (by userId)
   const sharedChannels = await db.query.channelShares.findMany({
     where: eq(channelShares.userId, userId),
     columns: { channelId: true, role: true, invitedBy: true },
   })
+
+  // Also find and auto-convert pending email invites
+  if (userEmail) {
+    const pendingEmailShares = await db
+      .select()
+      .from(channelShares)
+      .where(
+        and(
+          eq(channelShares.email, userEmail.toLowerCase()),
+          eq(channelShares.userId, null as unknown as string)
+        )
+      )
+
+    for (const pending of pendingEmailShares) {
+      const alreadyHasShare = sharedChannels.some(s => s.channelId === pending.channelId)
+      if (!alreadyHasShare) {
+        // Auto-convert this pending invite
+        await db.update(channelShares).set({ userId, acceptedAt: new Date() }).where(eq(channelShares.id, pending.id))
+        try {
+          const existingOrg = await db.query.userChannelOrg.findMany({
+            where: eq(userChannelOrg.userId, userId),
+            orderBy: [desc(userChannelOrg.position)],
+            limit: 1,
+          })
+          const nextPos = existingOrg.length > 0 ? existingOrg[0].position + 1 : 0
+          await db.insert(userChannelOrg).values({ userId, channelId: pending.channelId, position: nextPos })
+        } catch { /* ignore duplicate */ }
+        sharedChannels.push({ channelId: pending.channelId, role: pending.role, invitedBy: pending.invitedBy })
+      } else {
+        // Clean up orphaned pending share
+        await db.delete(channelShares).where(eq(channelShares.id, pending.id))
+      }
+    }
+  }
 
   // Get channel IDs that are shared (not owned) to fetch their owners
   const ownedIds = new Set(ownedChannels.map(c => c.id))
@@ -296,9 +410,10 @@ export async function getUserChannelsWithSharerInfo(userId: string): Promise<Arr
 export async function requirePermission(
   channelId: string,
   userId: string,
-  level: 'view' | 'edit' | 'delete' | 'manage_shares'
+  level: 'view' | 'edit' | 'delete' | 'manage_shares',
+  userEmail?: string | null
 ): Promise<ChannelPermission> {
-  const permission = await getChannelPermission(channelId, userId)
+  const permission = await getChannelPermission(channelId, userId, userEmail)
 
   if (!permission) {
     throw new PermissionError('Channel not found or access denied', 404)
@@ -346,7 +461,7 @@ export class PermissionError extends Error {
  * Call this after user authentication.
  */
 export async function convertPendingInvites(userId: string, email: string): Promise<number> {
-  // Find pending invites for this email
+  // Find pending invites for this email (shares with no userId assigned)
   const pendingInvites = await db
     .select()
     .from(channelShares)
@@ -361,8 +476,32 @@ export async function convertPendingInvites(userId: string, email: string): Prom
     return 0
   }
 
+  // Get current max org position for the user
+  const existingOrg = await db.query.userChannelOrg.findMany({
+    where: eq(userChannelOrg.userId, userId),
+    orderBy: [desc(userChannelOrg.position)],
+    limit: 1,
+  })
+  let nextPosition = existingOrg.length > 0 ? existingOrg[0].position + 1 : 0
+
   // Convert each pending invite
   for (const invite of pendingInvites) {
+    // Check there isn't already a share with this userId for the same channel
+    // (e.g. from an invite link that was accepted separately)
+    const existingShare = await db.query.channelShares.findFirst({
+      where: and(
+        eq(channelShares.channelId, invite.channelId),
+        eq(channelShares.userId, userId)
+      ),
+    })
+
+    if (existingShare) {
+      // Already has a proper share — delete the orphaned pending one
+      await db.delete(channelShares).where(eq(channelShares.id, invite.id))
+      continue
+    }
+
+    // Convert the pending share
     await db
       .update(channelShares)
       .set({
@@ -370,6 +509,17 @@ export async function convertPendingInvites(userId: string, email: string): Prom
         acceptedAt: new Date(),
       })
       .where(eq(channelShares.id, invite.id))
+
+    // Create userChannelOrg entry so the channel appears in sidebar
+    try {
+      await db.insert(userChannelOrg).values({
+        userId,
+        channelId: invite.channelId,
+        position: nextPosition++,
+      })
+    } catch {
+      // Ignore if org entry already exists (unique constraint)
+    }
   }
 
   return pendingInvites.length

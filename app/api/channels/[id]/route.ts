@@ -36,9 +36,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   const { id: channelId } = await params
   const userId = session.user.id
+  const userEmail = session.user.email
 
   try {
-    const permission = await requirePermission(channelId, userId, 'view')
+    const permission = await requirePermission(channelId, userId, 'view', userEmail)
 
     // Fetch channel
     const channel = await db.query.channels.findFirst({

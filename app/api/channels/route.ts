@@ -20,9 +20,10 @@ export async function GET() {
   }
 
   const userId = session.user.id
+  const userEmail = session.user.email
 
   // Get all channel IDs with roles and sharer info
-  const userChannelRoles = await getUserChannelsWithSharerInfo(userId)
+  const userChannelRoles = await getUserChannelsWithSharerInfo(userId, userEmail)
   const channelIds = userChannelRoles.map(c => c.channelId)
   const roleMap = new Map(userChannelRoles.map(c => [c.channelId, c.role]))
   const sharedByMap = new Map(userChannelRoles.map(c => [c.channelId, c.sharedBy]))
