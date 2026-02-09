@@ -29,6 +29,9 @@ export function CursorPresence({ channelId }: CursorPresenceProps) {
   const lastSentRef = useRef<number>(0)
   const throttleMs = 50 // Send cursor updates at most every 50ms
 
+  // Detect if this device has a fine pointer (mouse/trackpad) — touch-only devices should not send cursors
+  const hasFinePointer = typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches
+
   // Subscribe to presence when channel changes
   // Note: No cleanup to avoid React StrictMode double-render unsubscribing
   useEffect(() => {
@@ -74,9 +77,9 @@ export function CursorPresence({ channelId }: CursorPresenceProps) {
     [channelId]
   )
 
-  // Attach mouse move listener
+  // Attach mouse move listener (only on devices with a fine pointer — not mobile/touch-only)
   useEffect(() => {
-    if (!channelId || !isServerMode()) {
+    if (!channelId || !isServerMode() || !hasFinePointer) {
       return
     }
 
@@ -85,7 +88,7 @@ export function CursorPresence({ channelId }: CursorPresenceProps) {
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
     }
-  }, [channelId, handleMouseMove])
+  }, [channelId, handleMouseMove, hasFinePointer])
 
   // Don't render anything if no other cursors
   if (cursors.length === 0) {
