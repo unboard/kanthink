@@ -28,6 +28,7 @@ const USER_SCOPED_EVENTS = new Set([
   'channel:moveToFolder',
   'channel:reorderInFolder',
   'channel:reorder',
+  'channel:create',
 ])
 
 // Events that require write access to the channel
