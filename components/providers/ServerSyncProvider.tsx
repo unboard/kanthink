@@ -104,9 +104,19 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       }
 
       // Fetch full details for each channel
-      const channelDetails = await Promise.all(
+      // Use Promise.allSettled so one failing channel doesn't block the rest
+      const channelResults = await Promise.allSettled(
         channelsResponse.channels.map((ch) => fetchChannel(ch.id))
       )
+      const channelDetails = channelResults
+        .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchChannel>>> => r.status === 'fulfilled')
+        .map((r) => r.value)
+
+      // Log any channels that failed to load
+      const failedChannels = channelResults.filter((r) => r.status === 'rejected')
+      if (failedChannels.length > 0) {
+        console.warn(`Failed to load ${failedChannels.length} channel(s):`, failedChannels.map((r) => (r as PromiseRejectedResult).reason))
+      }
 
       // Build the data structure
       const channels: Record<string, Channel> = {}
