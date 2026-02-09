@@ -8,6 +8,7 @@ import { useStore } from '@/lib/store';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { TaskListOnCard } from './TaskListOnCard';
 import { TaskDrawer } from './TaskDrawer';
+import { Modal } from '@/components/ui';
 import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
 
@@ -20,6 +21,7 @@ export function Card({ card }: CardProps) {
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const deleteCard = useStore((s) => s.deleteCard);
   const archiveCard = useStore((s) => s.archiveCard);
   const tasks = useStore((s) => s.tasks);
@@ -51,7 +53,12 @@ export function Card({ card }: CardProps) {
 
   const handleQuickDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
     deleteCard(card.id);
+    setShowDeleteConfirm(false);
   };
 
   // Use summary for preview, fall back to first message content
@@ -219,6 +226,33 @@ export function Card({ card }: CardProps) {
           setIsCardDrawerOpen(true);
         }}
       />
+      <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} size="sm">
+        <div className="p-6 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+            <svg className="h-6 w-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </div>
+          <h3 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white">Delete card?</h3>
+          <p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
+            This will permanently delete &ldquo;{card.title}&rdquo;. This action cannot be undone.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="px-4 py-2 text-sm font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmDelete}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }
