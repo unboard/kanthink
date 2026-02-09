@@ -273,26 +273,52 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
         }
       }
 
-      // Include channels that failed to load with basic info from the list response
-      // so they still appear in the sidebar (user can click to retry loading)
+      // Include channels that failed to load - preserve existing store data if available,
+      // otherwise fall back to basic info from the list response
       if (failedChannelIds.length > 0) {
         const roleMap = new Map(channelsResponse.channels.map((c) => [c.id, (c as Channel & { role: string }).role]))
         const sharedByMap = new Map(channelsResponse.channels.map((c) => [c.id, (c as Channel & { sharedBy?: unknown }).sharedBy]))
+        const currentStore = useStore.getState()
 
         for (const ch of channelsResponse.channels) {
           if (failedChannelIds.includes(ch.id) && !channels[ch.id]) {
-            channels[ch.id] = {
-              id: ch.id,
-              name: ch.name || 'Unknown Channel',
-              description: ch.description || '',
-              status: ch.status || 'active',
-              aiInstructions: ch.aiInstructions || '',
-              role: (roleMap.get(ch.id) || 'viewer') as Channel['role'],
-              sharedBy: sharedByMap.get(ch.id) as Channel['sharedBy'],
-              columns: [],  // Empty - details failed to load
-              instructionCardIds: [],
-              createdAt: ch.createdAt,
-              updatedAt: ch.updatedAt,
+            // Preserve existing data from the store (localStorage) if available
+            const existingChannel = currentStore.channels[ch.id]
+            if (existingChannel && existingChannel.columns.length > 0) {
+              channels[ch.id] = existingChannel
+              // Also preserve cards, tasks, and instruction cards for this channel
+              for (const col of existingChannel.columns) {
+                for (const cardId of [...col.cardIds, ...(col.backsideCardIds || [])]) {
+                  if (currentStore.cards[cardId]) {
+                    cards[cardId] = currentStore.cards[cardId]
+                    // Preserve tasks for this card
+                    for (const taskId of (currentStore.cards[cardId].taskIds || [])) {
+                      if (currentStore.tasks[taskId]) {
+                        tasks[taskId] = currentStore.tasks[taskId]
+                      }
+                    }
+                  }
+                }
+              }
+              for (const icId of (existingChannel.instructionCardIds || [])) {
+                if (currentStore.instructionCards[icId]) {
+                  instructionCards[icId] = currentStore.instructionCards[icId]
+                }
+              }
+            } else {
+              channels[ch.id] = {
+                id: ch.id,
+                name: ch.name || 'Unknown Channel',
+                description: ch.description || '',
+                status: ch.status || 'active',
+                aiInstructions: ch.aiInstructions || '',
+                role: (roleMap.get(ch.id) || 'viewer') as Channel['role'],
+                sharedBy: sharedByMap.get(ch.id) as Channel['sharedBy'],
+                columns: [],
+                instructionCardIds: [],
+                createdAt: ch.createdAt,
+                updatedAt: ch.updatedAt,
+              }
             }
           }
         }

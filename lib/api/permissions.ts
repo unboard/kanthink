@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { channels, channelShares, users, userChannelOrg } from '@/lib/db/schema'
-import { eq, and, or, inArray, desc } from 'drizzle-orm'
+import { eq, and, or, inArray, desc, isNull } from 'drizzle-orm'
 
 export type ChannelRole = 'owner' | 'editor' | 'viewer'
 
@@ -75,48 +75,52 @@ export async function getChannelPermission(
   // Fallback: check for pending email invites (userId is null but email matches)
   // This handles the case where convertPendingInvites hasn't run yet
   if (userEmail) {
-    const emailShare = await db.query.channelShares.findFirst({
-      where: and(
-        eq(channelShares.channelId, channelId),
-        eq(channelShares.email, userEmail.toLowerCase()),
-        eq(channelShares.userId, null as unknown as string)
-      ),
-    })
+    try {
+      const emailShare = await db.query.channelShares.findFirst({
+        where: and(
+          eq(channelShares.channelId, channelId),
+          eq(channelShares.email, userEmail.toLowerCase()),
+          isNull(channelShares.userId)
+        ),
+      })
 
-    if (emailShare) {
-      // Auto-convert this pending invite now
-      await db
-        .update(channelShares)
-        .set({ userId, acceptedAt: new Date() })
-        .where(eq(channelShares.id, emailShare.id))
+      if (emailShare) {
+        // Auto-convert this pending invite now
+        await db
+          .update(channelShares)
+          .set({ userId, acceptedAt: new Date() })
+          .where(eq(channelShares.id, emailShare.id))
 
-      // Create userChannelOrg entry
-      try {
-        const existingOrg = await db.query.userChannelOrg.findMany({
-          where: eq(userChannelOrg.userId, userId),
-          orderBy: [desc(userChannelOrg.position)],
-          limit: 1,
-        })
-        const nextPosition = existingOrg.length > 0 ? existingOrg[0].position + 1 : 0
-        await db.insert(userChannelOrg).values({
-          userId,
+        // Create userChannelOrg entry
+        try {
+          const existingOrg = await db.query.userChannelOrg.findMany({
+            where: eq(userChannelOrg.userId, userId),
+            orderBy: [desc(userChannelOrg.position)],
+            limit: 1,
+          })
+          const nextPosition = existingOrg.length > 0 ? existingOrg[0].position + 1 : 0
+          await db.insert(userChannelOrg).values({
+            userId,
+            channelId,
+            position: nextPosition,
+          })
+        } catch {
+          // Ignore if org entry already exists
+        }
+
+        const role = emailShare.role as ChannelRole
+        return {
           channelId,
-          position: nextPosition,
-        })
-      } catch {
-        // Ignore if org entry already exists
+          userId,
+          role,
+          isOwner: false,
+          canEdit: role === 'editor' || role === 'owner',
+          canDelete: false,
+          canManageShares: false,
+        }
       }
-
-      const role = emailShare.role as ChannelRole
-      return {
-        channelId,
-        userId,
-        role,
-        isOwner: false,
-        canEdit: role === 'editor' || role === 'owner',
-        canDelete: false,
-        canManageShares: false,
-      }
+    } catch (err) {
+      console.error('Error checking pending email invites:', err)
     }
   }
 
@@ -193,7 +197,7 @@ export async function getUserChannels(userId: string, userEmail?: string | null)
       .where(
         and(
           eq(channelShares.email, userEmail.toLowerCase()),
-          eq(channelShares.userId, null as unknown as string)
+          isNull(channelShares.userId)
         )
       )
 
@@ -283,7 +287,7 @@ export async function getUserChannelsWithSharerInfo(userId: string, userEmail?: 
       .where(
         and(
           eq(channelShares.email, userEmail.toLowerCase()),
-          eq(channelShares.userId, null as unknown as string)
+          isNull(channelShares.userId)
         )
       )
 
@@ -468,7 +472,7 @@ export async function convertPendingInvites(userId: string, email: string): Prom
     .where(
       and(
         eq(channelShares.email, email.toLowerCase()),
-        eq(channelShares.userId, null as unknown as string)
+        isNull(channelShares.userId)
       )
     )
 
