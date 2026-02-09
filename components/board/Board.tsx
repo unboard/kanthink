@@ -42,6 +42,7 @@ import { ShareDrawer } from '@/components/sharing/ShareDrawer';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
 import { CursorPresence, PresenceIndicator } from '@/components/presence/CursorPresence';
+import { ChannelMembersBar } from './ChannelMembersBar';
 // Commented out - question system disabled
 // import { QuestionToast } from '@/components/ui/QuestionToast';
 // import { useQuestionTrigger } from '@/lib/hooks/useQuestionTrigger';
@@ -873,9 +874,9 @@ export function Board({ channel }: BoardProps) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Presence indicator - shows who else is viewing */}
+          {/* Channel members with online/offline status */}
           {isServerMode && (
-            <PresenceIndicator channelId={channel.id} />
+            <ChannelMembersBar channelId={channel.id} />
           )}
 {/* Shrooms button removed - now accessible from left nav */}
           {debugInfo && (

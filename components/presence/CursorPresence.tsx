@@ -7,7 +7,8 @@ import {
   unsubscribeFromPresence,
   sendCursorUpdate,
   setCursorCallback,
-  setPresenceCallback,
+  addPresenceListener,
+  removePresenceListener,
   getCurrentPresenceChannelId,
   type CursorPosition,
   type PresenceUser,
@@ -44,13 +45,14 @@ export function CursorPresence({ channelId }: CursorPresenceProps) {
       setCursors(Array.from(cursorMap.values()))
     })
 
-    setPresenceCallback((memberList) => {
+    const handlePresence = (memberList: PresenceUser[]) => {
       setMembers(memberList)
-    })
+    }
+    addPresenceListener(handlePresence)
 
     return () => {
       setCursorCallback(null)
-      setPresenceCallback(null)
+      removePresenceListener(handlePresence)
     }
   }, [])
 
@@ -178,12 +180,13 @@ export function PresenceIndicator({ channelId }: { channelId: string | null }) {
   const [members, setMembers] = useState<PresenceUser[]>([])
 
   useEffect(() => {
-    setPresenceCallback((memberList) => {
+    const handlePresence = (memberList: PresenceUser[]) => {
       setMembers(memberList)
-    })
+    }
+    addPresenceListener(handlePresence)
 
     return () => {
-      setPresenceCallback(null)
+      removePresenceListener(handlePresence)
     }
   }, [])
 

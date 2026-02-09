@@ -71,8 +71,8 @@ const cursorPositions = new Map<string, Map<string, CursorPosition>>()
 type EventCallback = (event: BroadcastEvent) => void
 let eventCallback: EventCallback | null = null
 
-// Presence callbacks
-let presenceCallback: PresenceCallback | null = null
+// Presence callbacks (supports multiple listeners)
+const presenceCallbacks = new Set<PresenceCallback>()
 let cursorCallback: CursorCallback | null = null
 
 // Current channel being viewed (for cursor tracking)
@@ -357,7 +357,21 @@ export function getSubscribedChannels(): string[] {
  * Set the callback for presence member changes.
  */
 export function setPresenceCallback(callback: PresenceCallback | null): void {
-  presenceCallback = callback
+  // Legacy single-callback API: adds or removes from the set
+  if (callback) {
+    presenceCallbacks.add(callback)
+  }
+  // null means "remove all callbacks set by this caller" — but since we don't
+  // know which, callers should use addPresenceListener/removePresenceListener instead.
+  // For backwards compat, null is a no-op (callers should clean up via removePresenceListener).
+}
+
+export function addPresenceListener(callback: PresenceCallback): void {
+  presenceCallbacks.add(callback)
+}
+
+export function removePresenceListener(callback: PresenceCallback): void {
+  presenceCallbacks.delete(callback)
 }
 
 /**
@@ -418,8 +432,8 @@ export function subscribeToPresence(channelId: string, retryCount = 0): void {
       }
     })
     presenceMembers.set(channelId, memberList)
-    if (presenceCallback && channelId === currentPresenceChannelId) {
-      presenceCallback(memberList)
+    if (presenceCallbacks.size > 0 && channelId === currentPresenceChannelId) {
+      for (const cb of presenceCallbacks) cb(memberList)
     }
   })
 
@@ -431,8 +445,8 @@ export function subscribeToPresence(channelId: string, retryCount = 0): void {
     const current = presenceMembers.get(channelId) || []
     const updated = [...current, { id: member.id, info: member.info }]
     presenceMembers.set(channelId, updated)
-    if (presenceCallback && channelId === currentPresenceChannelId) {
-      presenceCallback(updated)
+    if (presenceCallbacks.size > 0 && channelId === currentPresenceChannelId) {
+      for (const cb of presenceCallbacks) cb(updated)
     }
   })
 
@@ -448,8 +462,8 @@ export function subscribeToPresence(channelId: string, retryCount = 0): void {
         cursorCallback(cursors)
       }
     }
-    if (presenceCallback && channelId === currentPresenceChannelId) {
-      presenceCallback(updated)
+    if (presenceCallbacks.size > 0 && channelId === currentPresenceChannelId) {
+      for (const cb of presenceCallbacks) cb(updated)
     }
   })
 

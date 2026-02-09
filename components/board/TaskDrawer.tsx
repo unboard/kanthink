@@ -219,16 +219,41 @@ export function TaskDrawer({
               Assigned
             </label>
             {!isAssigneePickerOpen ? (
-              <div className="flex items-center gap-2">
-                <AssigneeAvatars
-                  userIds={freshTask?.assignedTo ?? task.assignedTo ?? []}
-                  members={members}
-                  size="md"
-                  onClick={() => setIsAssigneePickerOpen(true)}
-                />
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(freshTask?.assignedTo ?? task.assignedTo ?? []).map((userId) => {
+                  const member = members.find((m) => m.id === userId);
+                  if (!member) return null;
+                  return (
+                    <span
+                      key={userId}
+                      className="group inline-flex items-center gap-1.5 pl-1 pr-1 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-sm text-neutral-700 dark:text-neutral-300"
+                    >
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 overflow-hidden">
+                        {member.image ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={member.image} alt={member.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 text-[9px] font-medium flex items-center justify-center">
+                            {member.name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <span className="truncate max-w-[120px]">{member.name}</span>
+                      <button
+                        onClick={() => toggleTaskAssignee(task.id, userId)}
+                        className="ml-0.5 p-0.5 rounded-full opacity-60 hover:opacity-100 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                        title={`Remove ${member.name}`}
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </span>
+                  );
+                })}
                 <button
                   onClick={() => setIsAssigneePickerOpen(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-sm text-violet-600 hover:text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm text-violet-600 hover:text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />

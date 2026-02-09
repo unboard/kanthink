@@ -2,7 +2,9 @@
 
 import type { Task, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { TaskCheckbox } from './TaskCheckbox';
+import { AssigneeAvatars } from './AssigneeAvatars';
 
 interface TaskListOnCardProps {
   cardId: ID;
@@ -24,6 +26,7 @@ export function TaskListOnCard({
   onAddTaskClick,
 }: TaskListOnCardProps) {
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
+  const { members } = useChannelMembers(channelId);
 
   // Filter and limit tasks for display
   const visibleTasks = hideCompleted
@@ -73,6 +76,13 @@ export function TaskListOnCard({
           >
             {task.title}
           </span>
+          {(task.assignedTo ?? []).length > 0 && (
+            <AssigneeAvatars
+              userIds={task.assignedTo!}
+              members={members}
+              size="sm"
+            />
+          )}
         </div>
       ))}
 
