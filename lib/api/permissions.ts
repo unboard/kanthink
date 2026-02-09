@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { channels, channelShares, users } from '@/lib/db/schema'
-import { eq, and, or, inArray } from 'drizzle-orm'
+import { eq, and, or, inArray, isNull } from 'drizzle-orm'
 
 export type ChannelRole = 'owner' | 'editor' | 'viewer'
 
@@ -27,7 +27,8 @@ export interface ChannelPermission {
  */
 export async function getChannelPermission(
   channelId: string,
-  userId: string
+  userId: string,
+  userEmail?: string | null
 ): Promise<ChannelPermission | null> {
   // Check if user is the owner
   const channel = await db.query.channels.findFirst({
@@ -68,6 +69,40 @@ export async function getChannelPermission(
       canEdit: role === 'editor' || role === 'owner',
       canDelete: false, // Only owner can delete
       canManageShares: role === 'owner', // Only owner can manage shares
+    }
+  }
+
+  // Check for pending email-based invite and auto-convert
+  if (userEmail) {
+    try {
+      const emailShare = await db.query.channelShares.findFirst({
+        where: and(
+          eq(channelShares.channelId, channelId),
+          eq(channelShares.email, userEmail.toLowerCase()),
+          isNull(channelShares.userId)
+        ),
+      })
+
+      if (emailShare) {
+        // Auto-convert the pending invite
+        await db
+          .update(channelShares)
+          .set({ userId, acceptedAt: new Date() })
+          .where(eq(channelShares.id, emailShare.id))
+
+        const role = emailShare.role as ChannelRole
+        return {
+          channelId,
+          userId,
+          role,
+          isOwner: false,
+          canEdit: role === 'editor' || role === 'owner',
+          canDelete: false,
+          canManageShares: role === 'owner',
+        }
+      }
+    } catch (e) {
+      // Email fallback failed, continue to other checks
     }
   }
 
@@ -296,9 +331,10 @@ export async function getUserChannelsWithSharerInfo(userId: string): Promise<Arr
 export async function requirePermission(
   channelId: string,
   userId: string,
-  level: 'view' | 'edit' | 'delete' | 'manage_shares'
+  level: 'view' | 'edit' | 'delete' | 'manage_shares',
+  userEmail?: string | null
 ): Promise<ChannelPermission> {
-  const permission = await getChannelPermission(channelId, userId)
+  const permission = await getChannelPermission(channelId, userId, userEmail)
 
   if (!permission) {
     throw new PermissionError('Channel not found or access denied', 404)
@@ -353,7 +389,7 @@ export async function convertPendingInvites(userId: string, email: string): Prom
     .where(
       and(
         eq(channelShares.email, email.toLowerCase()),
-        eq(channelShares.userId, null as unknown as string)
+        isNull(channelShares.userId)
       )
     )
 

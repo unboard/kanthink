@@ -4,6 +4,7 @@ import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import { db } from './db'
 import { users, accounts, sessions, verificationTokens } from './db/schema'
 import { eq } from 'drizzle-orm'
+import { convertPendingInvites } from './api/permissions'
 
 /**
  * Check if the given email is an admin user.
@@ -55,6 +56,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       return session
+    },
+  },
+  events: {
+    async signIn({ user }) {
+      if (user.id && user.email) {
+        try {
+          await convertPendingInvites(user.id, user.email)
+        } catch (e) {
+          console.error('Failed to convert pending invites:', e)
+        }
+      }
     },
   },
   pages: {

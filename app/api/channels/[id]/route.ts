@@ -38,7 +38,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
-    const permission = await requirePermission(channelId, userId, 'view')
+    const userEmail = session.user.email
+    const permission = await requirePermission(channelId, userId, 'view', userEmail)
 
     // Fetch channel
     const channel = await db.query.channels.findFirst({
@@ -149,7 +150,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
-    const permission = await requirePermission(channelId, userId, 'edit')
+    const userEmail = session.user.email
+    const permission = await requirePermission(channelId, userId, 'edit', userEmail)
 
     const body = await req.json()
     const {
@@ -232,7 +234,8 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
-    await requirePermission(channelId, userId, 'delete')
+    const userEmail = session.user.email
+    await requirePermission(channelId, userId, 'delete', userEmail)
 
     // Delete in order to handle foreign key constraints
     // (Most of these cascade, but explicit is clearer)
