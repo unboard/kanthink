@@ -180,8 +180,8 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
-  // Future extensibility
-  assignedTo?: string;
+  // Assignment & scheduling
+  assignedTo?: string[];
   dueDate?: string;
 }
 
@@ -279,6 +279,7 @@ export interface Card {
   isProcessing?: boolean;  // True while AI is processing this card
   processingStatus?: string;  // Creative status message while processing
   spawnedChannelIds?: ID[];  // Channels created from this card
+  assignedTo?: string[];    // User IDs assigned to this card
   taskIds?: ID[];           // Tasks within this card
   hideCompletedTasks?: boolean;  // User preference to hide done tasks
   createdAt: string;
@@ -315,6 +316,7 @@ export interface InstructionCardInput {
 export interface TaskInput {
   title: string;
   description?: string;
+  assignedTo?: string[];
 }
 
 export interface BoardState {

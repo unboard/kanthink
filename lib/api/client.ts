@@ -398,6 +398,16 @@ export async function deleteInviteLink(channelId: string, linkId: string): Promi
   }
 }
 
+// ===== MEMBERS =====
+
+export async function fetchChannelMembers(channelId: string): Promise<{ members: Array<{ id: string; name: string; email: string; image: string | null }> }> {
+  const res = await fetch(`/api/channels/${channelId}/members`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch channel members')
+  }
+  return res.json()
+}
+
 // ===== TASKS =====
 
 export async function createTask(

@@ -128,6 +128,9 @@ export const cards = sqliteTable('cards', {
   properties: text('properties', { mode: 'json' }).$type<CardPropertyJson[]>(),
   tags: text('tags', { mode: 'json' }).$type<string[]>(),
 
+  // Assignment
+  assignedTo: text('assigned_to', { mode: 'json' }).$type<string[]>(),
+
   // Positioning: position for ordering within column, isArchived for backside
   position: integer('position').notNull().default(0),
   isArchived: integer('is_archived', { mode: 'boolean' }).default(false),
@@ -160,7 +163,7 @@ export const tasks = sqliteTable('tasks', {
   description: text('description').default(''),
   status: text('status').$type<'not_started' | 'in_progress' | 'done'>().default('not_started'),
 
-  assignedTo: text('assigned_to'),
+  assignedTo: text('assigned_to', { mode: 'json' }).$type<string[]>(),
   dueDate: integer('due_date', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 

@@ -15,6 +15,13 @@
       "when": 1770481473115,
       "tag": "0001_rapid_blonde_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1770663163492,
+      "tag": "0002_naive_bucky",
+      "breakpoints": true
     }
   ]
 }

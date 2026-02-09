@@ -5,9 +5,11 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Card as CardType, Task } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { TaskListOnCard } from './TaskListOnCard';
 import { TaskDrawer } from './TaskDrawer';
+import { AssigneeAvatars } from './AssigneeAvatars';
 import { Modal } from '@/components/ui';
 import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
@@ -26,6 +28,7 @@ export function Card({ card }: CardProps) {
   const archiveCard = useStore((s) => s.archiveCard);
   const tasks = useStore((s) => s.tasks);
   const channels = useStore((s) => s.channels);
+  const { members } = useChannelMembers(card.channelId);
 
   // Get tasks for this card
   const cardTasks = (card.taskIds ?? [])
@@ -166,6 +169,17 @@ export function Card({ card }: CardProps) {
             </p>
           )}
         </div>
+
+        {/* Assignee avatars */}
+        {(card.assignedTo ?? []).length > 0 && (
+          <div className="mt-2" onClick={() => setIsCardDrawerOpen(true)}>
+            <AssigneeAvatars
+              userIds={card.assignedTo!}
+              members={members}
+              size="sm"
+            />
+          </div>
+        )}
 
         {/* Task progress bar */}
         {cardTasks.length > 0 && (

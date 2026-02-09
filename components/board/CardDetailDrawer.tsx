@@ -30,6 +30,9 @@ import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
 import { CardChat } from './CardChat';
 import { TagPicker, getTagStyles } from './TagPicker';
+import { AssigneeAvatars } from './AssigneeAvatars';
+import { AssigneePicker } from './AssigneePicker';
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { useKeyboardOffset } from './ChatInput';
 
 interface SortableTaskItemProps {
@@ -130,6 +133,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
+  const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isInstructionHistoryOpen, setIsInstructionHistoryOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('thread');
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
@@ -152,12 +156,14 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   const removeTagDefinition = useStore((s) => s.removeTagDefinition);
   const addTagToCard = useStore((s) => s.addTagToCard);
   const removeTagFromCard = useStore((s) => s.removeTagFromCard);
+  const toggleCardAssignee = useStore((s) => s.toggleCardAssignee);
   const instructionCards = useStore((s) => s.instructionCards);
   const clearInstructionRun = useStore((s) => s.clearInstructionRun);
   const instructionRuns = useStore((s) => s.instructionRuns);
   const undoInstructionRun = useStore((s) => s.undoInstructionRun);
   const setCoverImage = useStore((s) => s.setCoverImage);
-  
+  const { members } = useChannelMembers(card?.channelId);
+
   const [activeDragTaskId, setActiveDragTaskId] = useState<ID | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
@@ -668,6 +674,39 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
                           onUpdateTag={(tagId, updates) => updateTagDefinition(card.channelId, tagId, updates)}
                           onDeleteTag={(tagId) => removeTagDefinition(card.channelId, tagId)}
                           onClose={() => setIsTagPickerOpen(false)}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Assigned */}
+                  <div className="flex items-start">
+                    <span className="w-24 text-sm text-neutral-500 pt-0.5">Assigned</span>
+                    <div className="flex-1">
+                      {!isAssigneePickerOpen ? (
+                        <div className="flex items-center gap-1.5">
+                          <AssigneeAvatars
+                            userIds={card.assignedTo ?? []}
+                            members={members}
+                            size="md"
+                            onClick={() => setIsAssigneePickerOpen(true)}
+                          />
+                          <button
+                            onClick={() => setIsAssigneePickerOpen(true)}
+                            className="inline-flex items-center justify-center gap-1 px-2 py-0.5 min-h-[22px] rounded text-xs font-medium text-violet-600 hover:text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            {(card.assignedTo ?? []).length === 0 ? 'Assign' : ''}
+                          </button>
+                        </div>
+                      ) : (
+                        <AssigneePicker
+                          channelId={card.channelId}
+                          selectedUserIds={card.assignedTo ?? []}
+                          onToggleUser={(userId) => toggleCardAssignee(card.id, userId)}
+                          onClose={() => setIsAssigneePickerOpen(false)}
                         />
                       )}
                     </div>

@@ -3,8 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Task, TaskStatus, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { Drawer, Button, Textarea } from '@/components/ui';
 import { TaskCheckbox } from './TaskCheckbox';
+import { AssigneeAvatars } from './AssigneeAvatars';
+import { AssigneePicker } from './AssigneePicker';
 
 interface TaskDrawerProps {
   // For editing an existing task
@@ -50,12 +53,19 @@ export function TaskDrawer({
   const [isDirty, setIsDirty] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
+
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
   const createTask = useStore((s) => s.createTask);
+  const toggleTaskAssignee = useStore((s) => s.toggleTaskAssignee);
+  const promoteTaskToCard = useStore((s) => s.promoteTaskToCard);
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
+
+  const channelId = task?.channelId ?? createForChannelId;
+  const { members } = useChannelMembers(channelId);
 
   const isCreateMode = !task && createForChannelId;
   const parentCard = task?.cardId ? cards[task.cardId] : createForCardId ? cards[createForCardId] : null;
@@ -202,6 +212,41 @@ export function TaskDrawer({
           </div>
         )}
 
+        {/* Assigned - only for existing tasks */}
+        {task && (
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              Assigned
+            </label>
+            {!isAssigneePickerOpen ? (
+              <div className="flex items-center gap-2">
+                <AssigneeAvatars
+                  userIds={freshTask?.assignedTo ?? task.assignedTo ?? []}
+                  members={members}
+                  size="md"
+                  onClick={() => setIsAssigneePickerOpen(true)}
+                />
+                <button
+                  onClick={() => setIsAssigneePickerOpen(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-sm text-violet-600 hover:text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  {(freshTask?.assignedTo ?? task.assignedTo ?? []).length === 0 ? 'Assign' : ''}
+                </button>
+              </div>
+            ) : (
+              <AssigneePicker
+                channelId={task.channelId}
+                selectedUserIds={freshTask?.assignedTo ?? task.assignedTo ?? []}
+                onToggleUser={(userId) => toggleTaskAssignee(task.id, userId)}
+                onClose={() => setIsAssigneePickerOpen(false)}
+              />
+            )}
+          </div>
+        )}
+
         {/* Description */}
         <div>
           <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
@@ -256,14 +301,27 @@ export function TaskDrawer({
         <div className="flex justify-between pt-4">
           {task ? (
             <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDelete}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-              >
-                Delete task
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDelete}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                  Delete
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    promoteTaskToCard(task.id);
+                    onClose();
+                  }}
+                  className="text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-900/20"
+                >
+                  Promote to card
+                </Button>
+              </div>
               <Button variant="ghost" size="sm" onClick={handleClose}>
                 Done
               </Button>

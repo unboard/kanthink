@@ -2,14 +2,16 @@
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { Task } from '@/lib/types';
+import type { Task, ChannelMember } from '@/lib/types';
 import { TaskCheckbox } from './TaskCheckbox';
+import { AssigneeAvatars } from './AssigneeAvatars';
 
 interface SortableTaskRowProps {
   task: Task;
   onToggle: () => void;
   onClick?: () => void;
   size?: 'sm' | 'md';
+  members?: ChannelMember[];
 }
 
 export function SortableTaskRow({
@@ -17,6 +19,7 @@ export function SortableTaskRow({
   onToggle,
   onClick,
   size = 'sm',
+  members = [],
 }: SortableTaskRowProps) {
   const {
     attributes,
@@ -72,6 +75,13 @@ export function SortableTaskRow({
       >
         {task.title}
       </span>
+      {(task.assignedTo ?? []).length > 0 && members.length > 0 && (
+        <AssigneeAvatars
+          userIds={task.assignedTo!}
+          members={members}
+          size="sm"
+        />
+      )}
     </div>
   );
 }

@@ -97,6 +97,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       summary,
       properties,
       tags,
+      assignedTo,
       hideCompletedTasks,
       processedByInstructions,
       spawnedChannelIds,
@@ -115,6 +116,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
     if (properties !== undefined) updates.properties = properties
     if (tags !== undefined) updates.tags = tags
+    if (assignedTo !== undefined) updates.assignedTo = assignedTo
     if (hideCompletedTasks !== undefined) updates.hideCompletedTasks = hideCompletedTasks
     if (processedByInstructions !== undefined) updates.processedByInstructions = processedByInstructions
     if (spawnedChannelIds !== undefined) updates.spawnedChannelIds = spawnedChannelIds

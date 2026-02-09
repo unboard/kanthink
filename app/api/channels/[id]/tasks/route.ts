@@ -34,6 +34,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       title,
       description = '',
       status = 'not_started',
+      assignedTo,
       position: requestedPosition,
       createdAt: clientCreatedAt,
     } = body
@@ -94,6 +95,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       title,
       description,
       status,
+      assignedTo: assignedTo || null,
       position,
       createdAt: createdAtDate,
       updatedAt: now,

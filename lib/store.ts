@@ -111,6 +111,13 @@ interface KanthinkState {
   reorderTasks: (cardId: ID, fromIndex: number, toIndex: number) => void;
   reorderUnlinkedTasks: (channelId: ID, fromIndex: number, toIndex: number) => void;
 
+  // Assignment actions
+  setCardAssignees: (cardId: ID, userIds: string[]) => void;
+  toggleCardAssignee: (cardId: ID, userId: string) => void;
+  setTaskAssignees: (taskId: ID, userIds: string[]) => void;
+  toggleTaskAssignee: (taskId: ID, userId: string) => void;
+  promoteTaskToCard: (taskId: ID) => Card | null;
+
   // Question actions
   addQuestion: (channelId: ID, question: Omit<ChannelQuestion, 'id' | 'createdAt'>) => void;
   answerQuestion: (channelId: ID, questionId: ID, answer: string) => void;
@@ -1891,6 +1898,167 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs and devices
         broadcastAndPublish({ type: 'task:reorderUnlinked', channelId, fromIndex, toIndex });
+      },
+
+      // ===== Assignment actions =====
+
+      setCardAssignees: (cardId, userIds) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
+        set((state) => {
+          const c = state.cards[cardId];
+          if (!c) return state;
+
+          return {
+            cards: {
+              ...state.cards,
+              [cardId]: { ...c, assignedTo: userIds, updatedAt: now() },
+            },
+          };
+        });
+
+        sync.syncCardUpdate(card.channelId, cardId, { assignedTo: userIds });
+        broadcastAndPublish({ type: 'card:update', id: cardId, updates: { assignedTo: userIds } });
+      },
+
+      toggleCardAssignee: (cardId, userId) => {
+        const card = get().cards[cardId];
+        if (!card) return;
+
+        const current = card.assignedTo ?? [];
+        const userIds = current.includes(userId)
+          ? current.filter((id) => id !== userId)
+          : [...current, userId];
+
+        get().setCardAssignees(cardId, userIds);
+      },
+
+      setTaskAssignees: (taskId, userIds) => {
+        const task = get().tasks[taskId];
+        if (!task) return;
+
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+
+          return {
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...t, assignedTo: userIds, updatedAt: now() },
+            },
+          };
+        });
+
+        sync.syncTaskUpdate(task.channelId, taskId, { assignedTo: userIds });
+        broadcastAndPublish({ type: 'task:update', id: taskId, updates: { assignedTo: userIds } });
+      },
+
+      toggleTaskAssignee: (taskId, userId) => {
+        const task = get().tasks[taskId];
+        if (!task) return;
+
+        const current = task.assignedTo ?? [];
+        const userIds = current.includes(userId)
+          ? current.filter((id) => id !== userId)
+          : [...current, userId];
+
+        get().setTaskAssignees(taskId, userIds);
+      },
+
+      promoteTaskToCard: (taskId) => {
+        const task = get().tasks[taskId];
+        if (!task) return null;
+
+        const channel = get().channels[task.channelId];
+        if (!channel) return null;
+
+        // Find the first column (Inbox) to place the new card
+        const targetColumn = channel.columns[0];
+        if (!targetColumn) return null;
+
+        // Create the card
+        const cardId = nanoid();
+        const timestamp = now();
+        const card: Card = {
+          id: cardId,
+          channelId: task.channelId,
+          title: task.title,
+          messages: task.description
+            ? [{
+                id: nanoid(),
+                type: 'note' as const,
+                content: task.description,
+                createdAt: timestamp,
+              }]
+            : [],
+          source: 'manual',
+          assignedTo: task.assignedTo ?? [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+        // Add card to the column and mark task as done
+        const columnId = targetColumn.id;
+        const position = targetColumn.cardIds.length;
+
+        set((state) => {
+          const ch = state.channels[task.channelId];
+          if (!ch) return state;
+
+          const t = state.tasks[taskId];
+          if (!t) return state;
+
+          const updatedColumns = ch.columns.map((col) => {
+            if (col.id === columnId) {
+              return { ...col, cardIds: [...col.cardIds, cardId] };
+            }
+            return col;
+          });
+
+          return {
+            cards: { ...state.cards, [cardId]: card },
+            channels: {
+              ...state.channels,
+              [task.channelId]: { ...ch, columns: updatedColumns, updatedAt: timestamp },
+            },
+            tasks: {
+              ...state.tasks,
+              [taskId]: {
+                ...t,
+                status: 'done' as const,
+                completedAt: timestamp,
+                updatedAt: timestamp,
+              },
+            },
+          };
+        });
+
+        // Sync card creation and task completion to server
+        sync.syncCardCreate(task.channelId, cardId, {
+          columnId,
+          title: task.title,
+          source: 'manual',
+          position,
+        });
+        // Sync assignedTo on the newly created card
+        if (card.assignedTo && card.assignedTo.length > 0) {
+          sync.syncCardUpdate(task.channelId, cardId, { assignedTo: card.assignedTo });
+        }
+        // Sync the description as initial message
+        if (task.description) {
+          sync.syncCardUpdate(task.channelId, cardId, { messages: card.messages });
+        }
+        sync.syncTaskUpdate(task.channelId, taskId, {
+          status: 'done',
+          completedAt: timestamp,
+        });
+
+        // Broadcast
+        broadcastAndPublish({ type: 'card:create', card, columnId, position });
+        broadcastAndPublish({ type: 'task:complete', id: taskId, completedAt: timestamp });
+
+        return card;
       },
 
       addQuestion: (channelId, questionData) => {

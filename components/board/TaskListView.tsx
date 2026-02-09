@@ -15,28 +15,32 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
+import { useSession } from 'next-auth/react';
 import type { Task, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { SortableTaskRow } from './SortableTaskRow';
 import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
+import { AssigneeAvatars } from './AssigneeAvatars';
 import { Button } from '@/components/ui';
 
 interface TaskListViewProps {
   channelId: ID;
 }
 
-type FilterMode = 'all' | 'active' | 'completed';
+type FilterMode = 'all' | 'active' | 'completed' | 'assigned_to_me';
 
 interface TaskGroupProps {
   group: { cardId: ID | null; cardTitle: string; tasks: Task[] };
   groupByCard: boolean;
+  members: Array<{ id: string; name: string; email: string; image: string | null }>;
   onTaskClick: (task: Task) => void;
   onReorder: (cardId: ID | null, oldIndex: number, newIndex: number) => void;
   onAddTask: (cardId: ID) => void;
 }
 
-function TaskGroup({ group, groupByCard, onTaskClick, onReorder, onAddTask }: TaskGroupProps) {
+function TaskGroup({ group, groupByCard, members, onTaskClick, onReorder, onAddTask }: TaskGroupProps) {
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
 
   const sensors = useSensors(
@@ -120,6 +124,7 @@ function TaskGroup({ group, groupByCard, onTaskClick, onReorder, onAddTask }: Ta
                     onToggle={() => toggleTaskStatus(task.id)}
                     onClick={() => onTaskClick(task)}
                     size="md"
+                    members={members}
                   />
                 </div>
               ))}
@@ -149,6 +154,13 @@ function TaskGroup({ group, groupByCard, onTaskClick, onReorder, onAddTask }: Ta
               >
                 {task.title}
               </span>
+              {(task.assignedTo ?? []).length > 0 && (
+                <AssigneeAvatars
+                  userIds={task.assignedTo!}
+                  members={members}
+                  size="sm"
+                />
+              )}
               {task.status === 'in_progress' && (
                 <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                   In Progress
@@ -191,11 +203,15 @@ export function TaskListView({ channelId }: TaskListViewProps) {
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [createForCardId, setCreateForCardId] = useState<ID | null>(null);
 
+  const { data: session } = useSession();
+  const currentUserId = session?.user?.id as string | undefined;
+
   const tasks = useStore((s) => s.tasks);
   const cards = useStore((s) => s.cards);
   const channels = useStore((s) => s.channels);
   const reorderTasks = useStore((s) => s.reorderTasks);
   const reorderUnlinkedTasks = useStore((s) => s.reorderUnlinkedTasks);
+  const { members } = useChannelMembers(channelId);
 
   // Get all tasks for this channel
   const channelTasks = useMemo(() => {
@@ -209,10 +225,14 @@ export function TaskListView({ channelId }: TaskListViewProps) {
         return channelTasks.filter((t) => t.status !== 'done');
       case 'completed':
         return channelTasks.filter((t) => t.status === 'done');
+      case 'assigned_to_me':
+        return currentUserId
+          ? channelTasks.filter((t) => (t.assignedTo ?? []).includes(currentUserId))
+          : channelTasks;
       default:
         return channelTasks;
     }
-  }, [channelTasks, filterMode]);
+  }, [channelTasks, filterMode, currentUserId]);
 
   // Group tasks by card
   const channel = channels[channelId];
@@ -363,6 +383,16 @@ export function TaskListView({ channelId }: TaskListViewProps) {
               >
                 Done ({completedCount})
               </button>
+              <button
+                onClick={() => setFilterMode('assigned_to_me')}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  filterMode === 'assigned_to_me'
+                    ? 'bg-white/90 dark:bg-neutral-700/70 text-neutral-900 dark:text-white shadow-sm'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                }`}
+              >
+                Mine
+              </button>
             </div>
 
             {/* Group by card toggle */}
@@ -415,6 +445,7 @@ export function TaskListView({ channelId }: TaskListViewProps) {
                 key={group.cardId ?? 'unlinked'}
                 group={group}
                 groupByCard={groupByCard}
+                members={members}
                 onTaskClick={handleTaskClick}
                 onReorder={handleReorder}
                 onAddTask={handleAddTaskToCard}

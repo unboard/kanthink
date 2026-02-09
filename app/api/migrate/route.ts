@@ -310,7 +310,9 @@ export async function POST(req: NextRequest) {
         title: task.title,
         description: task.description,
         status: task.status,
-        assignedTo: task.assignedTo,
+        assignedTo: task.assignedTo
+          ? (Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo])
+          : null,
         dueDate: task.dueDate ? new Date(task.dueDate) : null,
         completedAt: task.completedAt ? new Date(task.completedAt) : null,
         position: 0, // Will be determined by card's taskIds order
