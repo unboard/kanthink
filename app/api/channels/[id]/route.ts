@@ -36,10 +36,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   const { id: channelId } = await params
   const userId = session.user.id
-  const userEmail = session.user.email
 
   try {
-    const permission = await requirePermission(channelId, userId, 'view', userEmail)
+    const permission = await requirePermission(channelId, userId, 'view')
 
     // Fetch channel
     const channel = await db.query.channels.findFirst({
@@ -131,8 +130,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode })
     }
     console.error('Error fetching channel:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: 'Failed to fetch channel', details: errorMessage }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch channel' }, { status: 500 })
   }
 }
 
