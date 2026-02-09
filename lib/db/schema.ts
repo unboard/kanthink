@@ -255,6 +255,7 @@ export const channelShares = sqliteTable('channel_shares', {
   userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
   email: text('email'),
   role: text('role').$type<'owner' | 'editor' | 'viewer'>().notNull(),
+  roleDescription: text('role_description'),
 
   invitedBy: text('invited_by').references(() => users.id, { onDelete: 'set null' }),
   invitedAt: integer('invited_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),

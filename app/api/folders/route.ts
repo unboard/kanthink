@@ -5,6 +5,8 @@ import { folders, userChannelOrg, channels } from '@/lib/db/schema'
 import { eq, desc, asc } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 
+export const dynamic = 'force-dynamic'
+
 // Virtual folder ID for global help channels
 const HELP_FOLDER_ID = '__help__'
 

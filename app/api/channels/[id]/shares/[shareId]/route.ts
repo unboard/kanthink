@@ -27,9 +27,17 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     await requirePermission(channelId, userId, 'manage_shares')
 
     const body = await req.json()
-    const { role } = body
+    const { role, roleDescription } = body
 
-    if (!role || !['editor', 'viewer'].includes(role)) {
+    // At least one field must be provided
+    if (!role && roleDescription === undefined) {
+      return NextResponse.json(
+        { error: 'Must provide role or roleDescription' },
+        { status: 400 }
+      )
+    }
+
+    if (role && !['editor', 'viewer'].includes(role)) {
       return NextResponse.json(
         { error: 'Invalid role. Must be "editor" or "viewer"' },
         { status: 400 }
@@ -48,10 +56,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Share not found' }, { status: 404 })
     }
 
-    // Update the role
+    // Build update object with whichever fields are provided
+    const updateFields: Record<string, unknown> = {}
+    if (role) updateFields.role = role as ChannelRole
+    if (roleDescription !== undefined) updateFields.roleDescription = roleDescription
+
     await db
       .update(channelShares)
-      .set({ role: role as ChannelRole })
+      .set(updateFields)
       .where(eq(channelShares.id, shareId))
 
     const updatedShare = await db.query.channelShares.findFirst({

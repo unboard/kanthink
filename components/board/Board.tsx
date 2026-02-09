@@ -43,6 +43,7 @@ import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
 import { CursorPresence, PresenceIndicator } from '@/components/presence/CursorPresence';
 import { ChannelMembersBar } from './ChannelMembersBar';
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 // Commented out - question system disabled
 // import { QuestionToast } from '@/components/ui/QuestionToast';
 // import { useQuestionTrigger } from '@/lib/hooks/useQuestionTrigger';
@@ -76,6 +77,7 @@ export function Board({ channel }: BoardProps) {
   const [editingShroomId, setEditingShroomId] = useState<string | null>(null);
   const [shroomsButtonPulse, setShroomsButtonPulse] = useState(false);
   const { isServerMode } = useServerSync();
+  const { members: channelMembers } = useChannelMembers(channel.id);
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
   const [pendingShroomAction, setPendingShroomAction] = useState<{ type: 'edit' | 'run' | 'create'; id?: string } | null>(null);
   const [showShroomChatDrawer, setShowShroomChatDrawer] = useState(false);
@@ -147,6 +149,8 @@ export function Board({ channel }: BoardProps) {
   const createInstructionCard = useStore((s) => s.createInstructionCard);
   const addTagDefinition = useStore((s) => s.addTagDefinition);
   const addTagToCard = useStore((s) => s.addTagToCard);
+  const setCardAssignees = useStore((s) => s.setCardAssignees);
+  const setTaskAssignees = useStore((s) => s.setTaskAssignees);
 
   // ┌─────────────────────────────────────────────────────────────────────────┐
   // │ CRITICAL: Mobile Drag-and-Drop Configuration                           │
@@ -508,19 +512,28 @@ export function Board({ channel }: BoardProps) {
     }
 
     try {
-      const result = await runInstruction(instructionCard, channel, cards, tasks, getAIAbortSignal());
+      const result = await runInstruction(instructionCard, channel, cards, tasks, getAIAbortSignal(), undefined, undefined, channelMembers);
 
       // Store debug info for the modal
       if (result.debug) {
         setDebugInfo(result.debug);
       }
 
+      // Build a set of valid member IDs for filtering hallucinated IDs
+      const validMemberIds = new Set(channelMembers.map(m => m.id));
+      const filterAssignees = (ids?: string[]) =>
+        ids?.filter(id => validMemberIds.has(id));
+
       if (result.action === 'generate' && result.generatedCards) {
         // Get the first target column to add cards to
         const targetColumnId = result.targetColumnIds[0] || channel.columns[0]?.id;
         if (targetColumnId) {
           for (const cardInput of result.generatedCards) {
-            createCard(channel.id, targetColumnId, cardInput, 'ai');
+            const newCard = createCard(channel.id, targetColumnId, cardInput, 'ai');
+            const validAssignees = filterAssignees(cardInput.assignedTo);
+            if (validAssignees?.length && newCard) {
+              setCardAssignees(newCard.id, validAssignees);
+            }
           }
         }
       } else if (result.action === 'modify' && result.modifiedCards) {
@@ -608,6 +621,11 @@ export function Board({ channel }: BoardProps) {
                   title: task.title,
                   description: task.description,
                 });
+                // Apply task-level assignment if present
+                const validTaskAssignees = filterAssignees(task.assignedTo);
+                if (validTaskAssignees?.length) {
+                  setTaskAssignees(createdTask.id, validTaskAssignees);
+                }
                 // Track task creation for undo
                 changes.push({
                   cardId: modified.id,
@@ -618,6 +636,12 @@ export function Board({ channel }: BoardProps) {
                 existingTaskTitles.add(normalizedTitle);
               }
             }
+          }
+
+          // Apply card-level assignment if present
+          const validCardAssignees = filterAssignees(modified.assignedTo);
+          if (validCardAssignees?.length) {
+            setCardAssignees(modified.id, validCardAssignees);
           }
 
           // Add modified content as a new message if present
@@ -662,7 +686,11 @@ export function Board({ channel }: BoardProps) {
           const targetColumnId = result.targetColumnIds?.[0] || channel.columns[0]?.id;
           if (targetColumnId) {
             for (const cardInput of result.generatedCards) {
-              createCard(channel.id, targetColumnId, cardInput, 'ai');
+              const newCard = createCard(channel.id, targetColumnId, cardInput, 'ai');
+              const validAssignees = filterAssignees(cardInput.assignedTo);
+              if (validAssignees?.length && newCard) {
+                setCardAssignees(newCard.id, validAssignees);
+              }
             }
           }
         }
@@ -687,6 +715,34 @@ export function Board({ channel }: BoardProps) {
             if (modified.properties) {
               for (const prop of modified.properties) {
                 setCardProperty(modified.id, prop.key, prop.value, prop.displayType, prop.color);
+              }
+            }
+            // Apply card-level assignment
+            const validCardAssignees = filterAssignees(modified.assignedTo);
+            if (validCardAssignees?.length) {
+              setCardAssignees(modified.id, validCardAssignees);
+            }
+            // Apply task-level assignment for any tasks created
+            if (modified.tasks) {
+              const existingCard = cards[modified.id];
+              const existingTaskTitles = new Set(
+                (existingCard?.taskIds || [])
+                  .map(id => tasks[id]?.title?.toLowerCase().trim())
+                  .filter(Boolean)
+              );
+              for (const task of modified.tasks) {
+                const normalizedTitle = task.title?.toLowerCase().trim();
+                if (normalizedTitle && !existingTaskTitles.has(normalizedTitle)) {
+                  const createdTask = createTask(channel.id, modified.id, {
+                    title: task.title,
+                    description: task.description,
+                  });
+                  const validTaskAssignees = filterAssignees(task.assignedTo);
+                  if (validTaskAssignees?.length) {
+                    setTaskAssignees(createdTask.id, validTaskAssignees);
+                  }
+                  existingTaskTitles.add(normalizedTitle);
+                }
               }
             }
             recordInstructionRun(modified.id, instructionCard.id);

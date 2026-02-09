@@ -77,6 +77,8 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
 
   // Track channel IDs we've loaded for Pusher subscription
   const loadedChannelIdsRef = useRef<string[]>([])
+  // Track last fetch time for visibility-based refetch
+  const lastFetchTimeRef = useRef<number>(0)
 
   const fetchServerData = useCallback(async () => {
     try {
@@ -391,6 +393,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       enableServerMode()
       setIsServerMode(true)
       setHasFetched(true)
+      lastFetchTimeRef.current = Date.now()
 
       // Store channel IDs for Pusher subscription
       loadedChannelIdsRef.current = Object.keys(channels)
@@ -463,6 +466,27 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
     }
     // No cleanup - Pusher connection persists for the session
   }, [isServerMode, session?.user?.id, pusherInitialized, applyEventHandler])
+
+  // Refetch when tab regains visibility after being backgrounded
+  // Mobile browsers kill WebSocket connections when backgrounded, so Pusher
+  // misses events. This ensures fresh data when the user returns.
+  useEffect(() => {
+    if (!isServerMode) return
+
+    const STALE_THRESHOLD = 30_000 // 30 seconds
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const elapsed = Date.now() - lastFetchTimeRef.current
+        if (elapsed > STALE_THRESHOLD) {
+          fetchServerData()
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [isServerMode, fetchServerData])
 
   // Track channel changes for Pusher subscriptions
   useEffect(() => {

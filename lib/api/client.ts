@@ -36,7 +36,7 @@ interface FoldersResponse {
 // ===== CHANNELS =====
 
 export async function fetchChannels(): Promise<ChannelListResponse> {
-  const res = await fetch('/api/channels')
+  const res = await fetch('/api/channels', { cache: 'no-store' })
   if (!res.ok) {
     throw new Error('Failed to fetch channels')
   }
@@ -44,7 +44,7 @@ export async function fetchChannels(): Promise<ChannelListResponse> {
 }
 
 export async function fetchChannel(channelId: string): Promise<ChannelDetailResponse> {
-  const res = await fetch(`/api/channels/${channelId}`)
+  const res = await fetch(`/api/channels/${channelId}`, { cache: 'no-store' })
   if (!res.ok) {
     throw new Error('Failed to fetch channel')
   }
@@ -190,7 +190,7 @@ export async function reorderColumns(channelId: string, columnId: string, toPosi
 // ===== FOLDERS =====
 
 export async function fetchFolders(): Promise<FoldersResponse> {
-  const res = await fetch('/api/folders')
+  const res = await fetch('/api/folders', { cache: 'no-store' })
   if (!res.ok) {
     throw new Error('Failed to fetch folders')
   }
@@ -280,6 +280,7 @@ export interface ChannelShare {
   userId: string | null
   email: string
   role: ChannelRole
+  roleDescription?: string | null
   invitedBy: string
   invitedAt: string
   acceptedAt: string | null
@@ -317,7 +318,7 @@ export interface SharesResponse {
 }
 
 export async function fetchShares(channelId: string): Promise<SharesResponse> {
-  const res = await fetch(`/api/channels/${channelId}/shares`)
+  const res = await fetch(`/api/channels/${channelId}/shares`, { cache: 'no-store' })
   if (!res.ok) {
     throw new Error('Failed to fetch shares')
   }
@@ -344,12 +345,12 @@ export async function createShare(
 export async function updateShare(
   channelId: string,
   shareId: string,
-  role: ChannelRole
+  updates: { role?: ChannelRole; roleDescription?: string | null }
 ): Promise<{ share: ChannelShare }> {
   const res = await fetch(`/api/channels/${channelId}/shares/${shareId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role }),
+    body: JSON.stringify(updates),
   })
   if (!res.ok) {
     throw new Error('Failed to update share')
@@ -367,7 +368,7 @@ export async function deleteShare(channelId: string, shareId: string): Promise<v
 }
 
 export async function fetchInviteLinks(channelId: string): Promise<{ links: InviteLink[] }> {
-  const res = await fetch(`/api/channels/${channelId}/invite-links`)
+  const res = await fetch(`/api/channels/${channelId}/invite-links`, { cache: 'no-store' })
   if (!res.ok) {
     throw new Error('Failed to fetch invite links')
   }
@@ -400,8 +401,8 @@ export async function deleteInviteLink(channelId: string, linkId: string): Promi
 
 // ===== MEMBERS =====
 
-export async function fetchChannelMembers(channelId: string): Promise<{ members: Array<{ id: string; name: string; email: string; image: string | null }> }> {
-  const res = await fetch(`/api/channels/${channelId}/members`)
+export async function fetchChannelMembers(channelId: string): Promise<{ members: Array<{ id: string; name: string; email: string; image: string | null; role?: string; roleDescription?: string | null }> }> {
+  const res = await fetch(`/api/channels/${channelId}/members`, { cache: 'no-store' })
   if (!res.ok) {
     throw new Error('Failed to fetch channel members')
   }
@@ -505,7 +506,7 @@ export async function deleteInstructionCard(channelId: string, instructionId: st
 // ===== GLOBAL SHROOMS =====
 
 export async function fetchGlobalShrooms(): Promise<{ instructionCards: InstructionCard[] }> {
-  const res = await fetch('/api/global-shrooms')
+  const res = await fetch('/api/global-shrooms', { cache: 'no-store' })
   if (!res.ok) {
     // Don't throw - global shrooms are optional
     return { instructionCards: [] }

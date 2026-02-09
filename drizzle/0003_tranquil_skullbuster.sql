@@ -1,0 +1,1 @@
+ALTER TABLE `channel_shares` ADD `role_description` text;

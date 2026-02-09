@@ -34,6 +34,9 @@ export function SharePanel({ channelId }: SharePanelProps) {
   const [isInviting, setIsInviting] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
 
+  // Role description local edit state
+  const [roleDescriptions, setRoleDescriptions] = useState<Record<string, string>>({})
+
   // Link creation state
   const [isCreatingLink, setIsCreatingLink] = useState(false)
   const [showLinkCreator, setShowLinkCreator] = useState(false)
@@ -75,6 +78,17 @@ export function SharePanel({ channelId }: SharePanelProps) {
     loadData()
   }, [loadData])
 
+  // Initialize role description local state when shares data loads
+  useEffect(() => {
+    if (sharesData?.shares) {
+      const descs: Record<string, string> = {}
+      for (const share of sharesData.shares) {
+        descs[share.id] = share.roleDescription ?? ''
+      }
+      setRoleDescriptions(descs)
+    }
+  }, [sharesData?.shares])
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!inviteEmail.trim()) return
@@ -96,7 +110,7 @@ export function SharePanel({ channelId }: SharePanelProps) {
 
   const handleRoleChange = async (shareId: string, newRole: ChannelRole) => {
     try {
-      const { share } = await updateShare(channelId, shareId, newRole)
+      const { share } = await updateShare(channelId, shareId, { role: newRole })
       setSharesData((prev) =>
         prev
           ? { ...prev, shares: prev.shares.map((s) => (s.id === shareId ? share : s)) }
@@ -104,6 +118,19 @@ export function SharePanel({ channelId }: SharePanelProps) {
       )
     } catch (err) {
       setError('Failed to update role')
+    }
+  }
+
+  const handleRoleDescriptionChange = async (shareId: string, roleDescription: string) => {
+    try {
+      const { share } = await updateShare(channelId, shareId, { roleDescription: roleDescription || null })
+      setSharesData((prev) =>
+        prev
+          ? { ...prev, shares: prev.shares.map((s) => (s.id === shareId ? share : s)) }
+          : prev
+      )
+    } catch (err) {
+      setError('Failed to update role description')
     }
   }
 
@@ -395,56 +422,70 @@ export function SharePanel({ channelId }: SharePanelProps) {
           {otherShares.map((share) => (
             <div
               key={share.id}
-              className="flex items-center justify-between p-2 rounded-md bg-neutral-50 dark:bg-neutral-800/50"
+              className="p-2 rounded-md bg-neutral-50 dark:bg-neutral-800/50 space-y-1.5"
             >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                {share.user?.image ? (
-                  <img
-                    src={share.user.image}
-                    alt=""
-                    className="w-6 h-6 rounded-full"
-                  />
-                ) : (
-                  <div className="w-6 h-6 rounded-full bg-neutral-300 dark:bg-neutral-600 flex items-center justify-center text-xs font-medium">
-                    {(share.user?.name?.[0] || share.email[0]).toUpperCase()}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  {share.user?.image ? (
+                    <img
+                      src={share.user.image}
+                      alt=""
+                      className="w-6 h-6 rounded-full"
+                    />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-neutral-300 dark:bg-neutral-600 flex items-center justify-center text-xs font-medium">
+                      {(share.user?.name?.[0] || share.email[0]).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-neutral-900 dark:text-white truncate">
+                      {share.user?.name || share.email}
+                    </p>
+                    {share.user?.name && (
+                      <p className="text-xs text-neutral-500 truncate">{share.email}</p>
+                    )}
+                    {!share.acceptedAt && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">Pending</p>
+                    )}
                   </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-neutral-900 dark:text-white truncate">
-                    {share.user?.name || share.email}
-                  </p>
-                  {share.user?.name && (
-                    <p className="text-xs text-neutral-500 truncate">{share.email}</p>
-                  )}
-                  {!share.acceptedAt && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">Pending</p>
-                  )}
                 </div>
+
+                {canManageShares ? (
+                  <div className="flex items-center gap-1">
+                    <select
+                      value={share.role}
+                      onChange={(e) => handleRoleChange(share.id, e.target.value as ChannelRole)}
+                      className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs focus:border-neutral-400 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900"
+                    >
+                      <option value="editor">Editor</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemoveShare(share.id)}
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 px-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </Button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-neutral-500 capitalize">{share.role}</span>
+                )}
               </div>
 
-              {canManageShares ? (
-                <div className="flex items-center gap-1">
-                  <select
-                    value={share.role}
-                    onChange={(e) => handleRoleChange(share.id, e.target.value as ChannelRole)}
-                    className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs focus:border-neutral-400 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900"
-                  >
-                    <option value="editor">Editor</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRemoveShare(share.id)}
-                    className="text-red-600 hover:text-red-700 dark:text-red-400 px-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </Button>
-                </div>
-              ) : (
-                <span className="text-xs text-neutral-500 capitalize">{share.role}</span>
+              {/* Role description for AI context */}
+              {canManageShares && share.acceptedAt && (
+                <input
+                  type="text"
+                  value={roleDescriptions[share.id] ?? ''}
+                  onChange={(e) => setRoleDescriptions(prev => ({ ...prev, [share.id]: e.target.value }))}
+                  onBlur={() => handleRoleDescriptionChange(share.id, roleDescriptions[share.id] ?? '')}
+                  placeholder="Describe their role for AI (e.g., 'Frontend dev, React expert')"
+                  className="w-full text-xs px-2 py-1 rounded border border-neutral-200 bg-white placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900 dark:placeholder:text-neutral-600"
+                />
               )}
             </div>
           ))}

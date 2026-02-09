@@ -19,6 +19,8 @@ import {
   SharedByInfo,
 } from '@/lib/api/permissions'
 
+export const dynamic = 'force-dynamic'
+
 interface RouteParams {
   params: Promise<{ id: string }>
 }

@@ -78,18 +78,38 @@ function getContextColumnIds(contextColumns: ContextColumnSelection | null | und
  * Parse instruction text to determine which capabilities to enable.
  * STRICT mode: Only enable tasks/properties/tags if explicitly mentioned.
  */
-function parseInstructionKeywords(text: string): { allowTasks: boolean; allowProperties: boolean; allowTags: boolean } {
+function parseInstructionKeywords(text: string): { allowTasks: boolean; allowProperties: boolean; allowTags: boolean; allowAssignment: boolean } {
   const lowerText = text.toLowerCase();
 
   const taskKeywords = ['task', 'tasks', 'action item', 'action items', 'todo', 'to-do', 'checklist'];
   const propertyKeywords = ['property', 'properties', 'categorize', 'category', 'metadata'];
   const tagKeywords = ['tag', 'tags', 'label', 'labels'];
+  const assignmentKeywords = ['assign', 'assignee', 'assigned to', 'delegate', 'responsibility', 'responsible', 'who should', 'allocate', 'owner of', 'point person'];
 
   return {
     allowTasks: taskKeywords.some(kw => lowerText.includes(kw)),
     allowProperties: propertyKeywords.some(kw => lowerText.includes(kw)),
     allowTags: tagKeywords.some(kw => lowerText.includes(kw)),
+    allowAssignment: assignmentKeywords.some(kw => lowerText.includes(kw)),
   };
+}
+
+interface MemberInfo {
+  id: string;
+  name: string;
+  role?: string;
+  roleDescription?: string | null;
+}
+
+function buildMembersContext(members: MemberInfo[]): string {
+  if (!members || members.length === 0) return '';
+  const lines = members.map(m => {
+    let line = `- **${m.name}** (ID: "${m.id}")`;
+    if (m.role) line += ` — Role: ${m.role}`;
+    if (m.roleDescription) line += `\n  Context: ${m.roleDescription}`;
+    return line;
+  });
+  return `## Channel Members\n${lines.join('\n')}`;
 }
 
 function buildGeneratePrompt(
@@ -98,7 +118,9 @@ function buildGeneratePrompt(
   contextColumnIds: string[],
   allCards: Record<string, Card>,
   systemInstructions?: string,
-  targetColumnIds?: string[]
+  targetColumnIds?: string[],
+  members?: MemberInfo[],
+  allowAssignment?: boolean
 ): LLMMessage[] {
   const count = instructionCard.cardCount ?? 5;
 
@@ -115,11 +137,18 @@ function buildGeneratePrompt(
   }
 
   // SYSTEM PROMPT
+  const assignedToField = allowAssignment && members && members.length > 0
+    ? ', "assignedTo": ["user-id"]'
+    : '';
+  const assignmentNote = allowAssignment && members && members.length > 0
+    ? '\n- "assignedTo": optional array of member IDs to assign this card to (use IDs from the Channel Members list)'
+    : '';
+
   const systemPrompt = `Generate ${count} cards as a JSON array.
 
 Each card has:
 - "title": concise (1-8 words)
-- "content": detailed markdown-formatted content (2-4 paragraphs minimum)
+- "content": detailed markdown-formatted content (2-4 paragraphs minimum)${assignmentNote}
 
 Content Guidelines:
 - Write substantively - explain each idea thoroughly
@@ -131,7 +160,7 @@ Content Guidelines:
 ${targetColumnInfo ? '\n- IMPORTANT: All generated cards must fit the target column rules' : ''}
 
 Respond with ONLY the JSON array:
-[{"title": "Card Title", "content": "## Overview\\n\\nDetailed explanation..."}]`;
+[{"title": "Card Title", "content": "## Overview\\n\\nDetailed explanation..."${assignedToField}}]`;
 
   // USER PROMPT
   const userParts: string[] = [];
@@ -177,6 +206,11 @@ Respond with ONLY the JSON array:
     userParts.push(`## Learning from User Behavior\n${feedbackContext}\n\nUse this feedback to generate more relevant cards.`);
   }
 
+  // Members context for assignment
+  if (allowAssignment && members && members.length > 0) {
+    userParts.push(buildMembersContext(members));
+  }
+
   // TASK - instruction instructions LAST for maximum attention
   let taskSection = `## Your Task\nGenerate ${count} new cards.`;
   if (instructionCard.instructions?.trim()) {
@@ -195,7 +229,9 @@ function buildModifyPrompt(
   channel: Channel,
   cardsToModify: Card[],
   allTasks: Record<string, Task>,
-  systemInstructions?: string
+  systemInstructions?: string,
+  members?: MemberInfo[],
+  allowAssignment?: boolean
 ): LLMMessage[] {
   // Parse instruction text to determine allowed capabilities
   const { allowTasks, allowProperties, allowTags } = parseInstructionKeywords(instructionCard.instructions || '');
@@ -216,7 +252,14 @@ function buildModifyPrompt(
   }
 
   if (allowTasks) {
-    jsonFields.push('"tasks": [\n    { "title": "Action item extracted from content", "description": "Optional details" }\n  ]');
+    const taskFields = allowAssignment && members && members.length > 0
+      ? '"tasks": [\n    { "title": "Action item extracted from content", "description": "Optional details", "assignedTo": ["user-id"] }\n  ]'
+      : '"tasks": [\n    { "title": "Action item extracted from content", "description": "Optional details" }\n  ]';
+    jsonFields.push(taskFields);
+  }
+
+  if (allowAssignment && members && members.length > 0) {
+    jsonFields.push('"assignedTo": ["user-id"]');
   }
 
   const jsonExample = `[{\n  ${jsonFields.join(',\n  ')}\n}]`;
@@ -249,6 +292,13 @@ function buildModifyPrompt(
 - Tasks should be concrete, actionable items`);
   }
 
+  if (allowAssignment && members && members.length > 0) {
+    capabilityExplanations.push(`Assignment: You can assign channel members to cards and tasks.
+- Use the "assignedTo" field with an array of member IDs from the Channel Members list
+- Choose members based on their role descriptions and expertise
+- Only assign members whose skills match the card/task content`);
+  }
+
   // Build restrictions for disallowed capabilities
   const restrictions: string[] = [];
   if (!allowTags) {
@@ -259,6 +309,9 @@ function buildModifyPrompt(
   }
   if (!allowTasks) {
     restrictions.push('Do NOT create tasks or action items - this was not requested.');
+  }
+  if (!allowAssignment || !members || members.length === 0) {
+    restrictions.push('Do NOT add assignedTo - assignment was not requested.');
   }
 
   // SYSTEM PROMPT
@@ -308,6 +361,11 @@ ${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\
   }
   userParts.push(cardsSection);
 
+  // Members context for assignment
+  if (allowAssignment && members && members.length > 0) {
+    userParts.push(buildMembersContext(members));
+  }
+
   // TASK
   let taskSection = '## Your Task\nModify the cards according to these instructions:';
   if (instructionCard.instructions?.trim()) {
@@ -343,6 +401,9 @@ function parseGenerateResponse(content: string): CardInput[] {
         initialMessage: typeof item.content === 'string'
           ? item.content.trim()
           : undefined,
+        assignedTo: Array.isArray(item.assignedTo)
+          ? item.assignedTo.filter((id: unknown) => typeof id === 'string')
+          : undefined,
       }));
   } catch (error) {
     console.warn('Failed to parse LLM response:', error);
@@ -360,6 +421,7 @@ interface ModifyResponseProperty {
 interface ModifyResponseTask {
   title: string;
   description?: string;
+  assignedTo?: string[];
 }
 
 interface ModifyResponseCard {
@@ -369,6 +431,7 @@ interface ModifyResponseCard {
   tags?: string[];
   properties?: ModifyResponseProperty[];
   tasks?: ModifyResponseTask[];
+  assignedTo?: string[];
 }
 
 function parseModifyResponse(content: string): ModifyResponseCard[] {
@@ -414,7 +477,13 @@ function parseModifyResponse(content: string): ModifyResponseCard[] {
             ).map((t: Record<string, unknown>) => ({
               title: String(t.title).trim(),
               description: typeof t.description === 'string' ? t.description.trim() : undefined,
+              assignedTo: Array.isArray(t.assignedTo)
+                ? (t.assignedTo as unknown[]).filter((id): id is string => typeof id === 'string')
+                : undefined,
             }))
+          : undefined,
+        assignedTo: Array.isArray(item.assignedTo)
+          ? item.assignedTo.filter((id: unknown) => typeof id === 'string')
           : undefined,
       }));
   } catch (error) {
@@ -532,7 +601,9 @@ function buildMultiStepPrompt(
   channel: Channel,
   allCards: Record<string, Card>,
   allTasks: Record<string, Task>,
-  systemInstructions?: string
+  systemInstructions?: string,
+  members?: MemberInfo[],
+  allowAssignment?: boolean
 ): LLMMessage[] {
   // Collect all unique source column IDs from steps
   const sourceColumnIds = new Set<string>();
@@ -573,14 +644,19 @@ function buildMultiStepPrompt(
   if (hasGenerate) {
     const generateStep = instructionCard.steps?.find(s => s.action === 'generate');
     const count = generateStep?.cardCount ?? instructionCard.cardCount ?? 5;
-    responseFields.push(`"generatedCards": [{"title": "Card Title", "content": "Detailed markdown content", "targetColumnId": "column-id-where-card-goes"}]  // Generate ${count} cards`);
+    const genAssigned = allowAssignment && members && members.length > 0 ? ', "assignedTo": ["user-id"]' : '';
+    responseFields.push(`"generatedCards": [{"title": "Card Title", "content": "Detailed markdown content", "targetColumnId": "column-id-where-card-goes"${genAssigned}}]  // Generate ${count} cards`);
   }
 
   if (hasModify) {
     const modifyFields: string[] = ['"id": "original-card-id"', '"title": "Updated Title"', '"content": "Updated content in markdown"'];
     if (allowTags) modifyFields.push('"tags": ["TagName"]');
     if (allowProperties) modifyFields.push('"properties": [{"key": "category", "value": "Example", "displayType": "chip", "color": "blue"}]');
-    if (allowTasks) modifyFields.push('"tasks": [{"title": "Action item", "description": "Details"}]');
+    if (allowTasks) {
+      const taskAssigned = allowAssignment && members && members.length > 0 ? ', "assignedTo": ["user-id"]' : '';
+      modifyFields.push(`"tasks": [{"title": "Action item", "description": "Details"${taskAssigned}}]`);
+    }
+    if (allowAssignment && members && members.length > 0) modifyFields.push('"assignedTo": ["user-id"]');
     responseFields.push(`"modifiedCards": [{${modifyFields.join(', ')}}]  // Cards you modified`);
   }
 
@@ -609,6 +685,7 @@ ${hasModify ? '- Content in modifiedCards will be added as a new note/message on
 ${!allowTags ? '- Do NOT add tags.' : ''}
 ${!allowProperties ? '- Do NOT add properties.' : ''}
 ${!allowTasks ? '- Do NOT create tasks.' : ''}
+${(!allowAssignment || !members || members.length === 0) ? '- Do NOT add assignedTo.' : '- You may assign channel members using their IDs from the members list.'}
 
 Respond with ONLY the JSON object, no other text.`;
 
@@ -663,6 +740,11 @@ Respond with ONLY the JSON object, no other text.`;
     }
   }
   userParts.push(cardsSection);
+
+  // Members context for assignment
+  if (allowAssignment && members && members.length > 0) {
+    userParts.push(buildMembersContext(members));
+  }
 
   // Instructions - the full multi-step instructions
   let taskSection = '## Your Task\nPerform the following operations:';
@@ -736,7 +818,13 @@ function parseMultiStepResponse(content: string): {
             ? (item.tasks as Record<string, unknown>[]).filter(t => t && typeof t.title === 'string').map(t => ({
                 title: String(t.title).trim(),
                 description: typeof t.description === 'string' ? t.description.trim() : undefined,
+                assignedTo: Array.isArray(t.assignedTo)
+                  ? (t.assignedTo as unknown[]).filter((id): id is string => typeof id === 'string')
+                  : undefined,
               }))
+            : undefined,
+          assignedTo: Array.isArray(item.assignedTo)
+            ? (item.assignedTo as unknown[]).filter((id): id is string => typeof id === 'string')
             : undefined,
         }));
     }
@@ -759,6 +847,9 @@ function parseMultiStepResponse(content: string): {
         .map((item: Record<string, unknown>) => ({
           title: String(item.title).trim(),
           initialMessage: typeof item.content === 'string' ? String(item.content).trim() : undefined,
+          assignedTo: Array.isArray(item.assignedTo)
+            ? (item.assignedTo as unknown[]).filter((id): id is string => typeof id === 'string')
+            : undefined,
         }));
     }
   } catch (error) {
@@ -776,12 +867,13 @@ interface RunInstructionRequest {
   triggeringCardId?: string;
   skipAlreadyProcessed?: boolean;  // For automatic runs, skip cards already processed by this instruction
   systemInstructions?: string;
+  members?: MemberInfo[];
 }
 
 export async function POST(request: Request) {
   try {
     const body: RunInstructionRequest = await request.json();
-    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, skipAlreadyProcessed, systemInstructions } = body;
+    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, skipAlreadyProcessed, systemInstructions, members } = body;
 
     // Validate required fields
     if (!instructionCard || !channel) {
@@ -819,8 +911,11 @@ export async function POST(request: Request) {
     // ==========================================
     // MULTI-STEP EXECUTION (unified single-prompt)
     // ==========================================
+    // Parse assignment capability from instruction keywords (shared across all paths)
+    const { allowAssignment } = parseInstructionKeywords(instructionCard.instructions || '');
+
     if (instructionCard.steps && instructionCard.steps.length > 0) {
-      const messages = buildMultiStepPrompt(instructionCard, channel, cards, tasks, effectiveSystemInstructions);
+      const messages = buildMultiStepPrompt(instructionCard, channel, cards, tasks, effectiveSystemInstructions, members, allowAssignment);
 
       // Web research if needed
       if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
@@ -879,7 +974,9 @@ export async function POST(request: Request) {
         contextColumnIds,
         cards,
         effectiveSystemInstructions,
-        targetColumnIds
+        targetColumnIds,
+        members,
+        allowAssignment
       );
 
       // Web research: if instructions reference URLs, videos, articles etc.,
@@ -995,7 +1092,9 @@ export async function POST(request: Request) {
         channel,
         cardsToModify,
         tasks,
-        effectiveSystemInstructions
+        effectiveSystemInstructions,
+        members,
+        allowAssignment
       );
 
       // Web research for modify: if instructions reference web content, fetch real data

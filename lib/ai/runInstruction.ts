@@ -1,4 +1,4 @@
-import type { Channel, Card, CardInput, InstructionCard, Task } from '../types';
+import type { Channel, Card, CardInput, InstructionCard, Task, ChannelMember } from '../types';
 import { useSettingsStore } from '../settingsStore';
 
 export interface AIDebugInfo {
@@ -17,6 +17,7 @@ export interface ModifiedCardProperty {
 export interface ModifiedCardTask {
   title: string;
   description?: string;
+  assignedTo?: string[];
 }
 
 export interface RunInstructionResult {
@@ -30,6 +31,7 @@ export interface RunInstructionResult {
     tags?: string[];
     properties?: ModifiedCardProperty[];
     tasks?: ModifiedCardTask[];
+    assignedTo?: string[];
   }>;
   movedCards?: Array<{ cardId: string; destinationColumnId: string; reason?: string }>;
   skippedCardIds?: string[];  // Cards skipped because they were already processed
@@ -49,7 +51,8 @@ export async function runInstruction(
   allTasks: Record<string, Task> = {},
   signal?: AbortSignal,
   triggeringCardId?: string,
-  skipAlreadyProcessed?: boolean
+  skipAlreadyProcessed?: boolean,
+  members?: ChannelMember[]
 ): Promise<RunInstructionResult> {
   // Get system instructions from settings store (no API key)
   const { ai } = useSettingsStore.getState();
@@ -66,6 +69,12 @@ export async function runInstruction(
         triggeringCardId,
         skipAlreadyProcessed,
         systemInstructions: ai.systemInstructions,
+        members: members?.map(m => ({
+          id: m.id,
+          name: m.name,
+          role: m.role,
+          roleDescription: m.roleDescription,
+        })),
       }),
       signal,
     });

@@ -79,6 +79,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         userId: share.userId,
         email: share.email,
         role: share.role,
+        roleDescription: share.roleDescription ?? null,
         user: share.userId ? userMap.get(share.userId) : null,
         invitedBy: share.invitedBy ? inviterMap.get(share.invitedBy) : null,
         invitedAt: share.invitedAt?.toISOString(),

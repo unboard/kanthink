@@ -234,6 +234,8 @@ export interface ChannelMember {
   name: string;
   email: string;
   image: string | null;
+  role?: string;
+  roleDescription?: string | null;
 }
 
 export interface SharedByInfo {
@@ -297,6 +299,7 @@ export interface ChannelInput {
 export interface CardInput {
   title: string;
   initialMessage?: string;  // Optional first message content
+  assignedTo?: string[];    // User IDs to assign (from AI)
 }
 
 export interface InstructionCardInput {

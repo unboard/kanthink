@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { channels, columns, userChannelOrg, channelShares } from '@/lib/db/schema'
 import { eq, and, or, desc, asc } from 'drizzle-orm'
+
+export const dynamic = 'force-dynamic'
 import { getUserChannelsWithSharerInfo, ChannelRole, SharedByInfo } from '@/lib/api/permissions'
 import { nanoid } from 'nanoid'
 

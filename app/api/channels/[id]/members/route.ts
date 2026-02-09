@@ -58,6 +58,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         })
       : []
 
+    // Build a map of userId -> share for role/roleDescription lookup
+    const shareMap = new Map(
+      shares.filter(s => s.userId).map(s => [s.userId!, s])
+    )
+
     // Build members list: owner first, then accepted share users
     const members = []
 
@@ -67,17 +72,22 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         name: owner.name ?? owner.email,
         email: owner.email,
         image: owner.image,
+        role: 'owner' as const,
+        roleDescription: null,
       })
     }
 
     for (const user of shareUsers) {
       // Don't duplicate the owner
       if (user.id === channel.ownerId) continue
+      const share = shareMap.get(user.id)
       members.push({
         id: user.id,
         name: user.name ?? user.email,
         email: user.email,
         image: user.image,
+        role: share?.role ?? 'viewer',
+        roleDescription: share?.roleDescription ?? null,
       })
     }
 
