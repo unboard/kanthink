@@ -104,19 +104,26 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       }
 
       // Fetch full details for each channel
-      // Use Promise.allSettled so one failing channel doesn't block the rest
+      // Use Promise.allSettled so one failing channel doesn't block the rest.
+      // For channels that fail, include them with basic info from the list response
+      // so they still appear in the sidebar.
       const channelResults = await Promise.allSettled(
         channelsResponse.channels.map((ch) => fetchChannel(ch.id))
       )
-      const channelDetails = channelResults
-        .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchChannel>>> => r.status === 'fulfilled')
-        .map((r) => r.value)
 
-      // Log any channels that failed to load
-      const failedChannels = channelResults.filter((r) => r.status === 'rejected')
-      if (failedChannels.length > 0) {
-        console.warn(`Failed to load ${failedChannels.length} channel(s):`, failedChannels.map((r) => (r as PromiseRejectedResult).reason))
-      }
+      // Separate successful and failed fetches
+      const channelDetails: Awaited<ReturnType<typeof fetchChannel>>[] = []
+      const failedChannelIds: string[] = []
+
+      channelsResponse.channels.forEach((ch, i) => {
+        const result = channelResults[i]
+        if (result.status === 'fulfilled') {
+          channelDetails.push(result.value)
+        } else {
+          failedChannelIds.push(ch.id)
+          console.warn(`Failed to load channel ${ch.id} (${ch.name}):`, result.reason)
+        }
+      })
 
       // Build the data structure
       const channels: Record<string, Channel> = {}
@@ -262,6 +269,31 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             steps: ic.steps || undefined,
             createdAt: ic.createdAt,
             updatedAt: ic.updatedAt,
+          }
+        }
+      }
+
+      // Include channels that failed to load with basic info from the list response
+      // so they still appear in the sidebar (user can click to retry loading)
+      if (failedChannelIds.length > 0) {
+        const roleMap = new Map(channelsResponse.channels.map((c) => [c.id, (c as Channel & { role: string }).role]))
+        const sharedByMap = new Map(channelsResponse.channels.map((c) => [c.id, (c as Channel & { sharedBy?: unknown }).sharedBy]))
+
+        for (const ch of channelsResponse.channels) {
+          if (failedChannelIds.includes(ch.id) && !channels[ch.id]) {
+            channels[ch.id] = {
+              id: ch.id,
+              name: ch.name || 'Unknown Channel',
+              description: ch.description || '',
+              status: ch.status || 'active',
+              aiInstructions: ch.aiInstructions || '',
+              role: (roleMap.get(ch.id) || 'viewer') as Channel['role'],
+              sharedBy: sharedByMap.get(ch.id) as Channel['sharedBy'],
+              columns: [],  // Empty - details failed to load
+              instructionCardIds: [],
+              createdAt: ch.createdAt,
+              updatedAt: ch.updatedAt,
+            }
           }
         }
       }
