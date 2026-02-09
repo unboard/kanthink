@@ -119,7 +119,7 @@ function HelpFolderSection({ folder, channels, pathname, onNavigate }: HelpFolde
 
   const folderChannels = folder.channelIds
     .map((id) => channels[id])
-    .filter((c) => c && c.status !== 'archived');
+    .filter((c) => c && c.status !== 'archived' && !c.sharedBy);
 
   return (
     <div className="mb-2">
@@ -311,7 +311,7 @@ function DraggableFolder({
 
   const folderChannels = folder.channelIds
     .map((id) => channels[id])
-    .filter((c) => c && c.status !== 'archived');
+    .filter((c) => c && c.status !== 'archived' && !c.sharedBy);
 
   const handleRename = () => {
     if (editName.trim() && editName.trim() !== folder.name) {
@@ -476,7 +476,7 @@ export function ChannelsPanel() {
     .filter((id) => id !== HELP_FOLDER_ID)
     .map((id) => folders[id])
     .filter(Boolean);
-  const rootChannels = channelOrder.map((id) => channels[id]).filter((c) => c && c.status !== 'archived');
+  const rootChannels = channelOrder.map((id) => channels[id]).filter((c) => c && c.status !== 'archived' && !c.sharedBy);
 
   // Build all sortable IDs for the main context (excluding Help folder)
   const allSortableIds = [
