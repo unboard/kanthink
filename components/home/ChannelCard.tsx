@@ -306,7 +306,7 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
 
       {/* Header */}
       <div className="mb-3 flex items-start justify-between pr-8">
-        <h3 className="text-lg font-semibold text-white group-hover:text-cyan-100 transition-colors line-clamp-2">
+        <h3 className="text-lg font-semibold text-white group-hover:text-cyan-100 transition-colors truncate">
           {channel.name}
         </h3>
         {channel.status === 'paused' && (
@@ -324,22 +324,20 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
       )}
 
       {/* Task progress */}
-      {taskStats.total > 0 && (
-        <div className="mb-4">
-          <div className="flex items-center justify-between text-xs text-white/60 mb-1.5">
-            <span>
-              {taskStats.completed}/{taskStats.total} tasks
-            </span>
-            <span>{taskStats.percentage}%</span>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-green-500 transition-all duration-300"
-              style={{ width: `${taskStats.percentage}%` }}
-            />
-          </div>
+      <div className="mb-4">
+        <div className="flex items-center justify-between text-xs text-white/60 mb-1.5">
+          <span>
+            {taskStats.completed}/{taskStats.total} tasks
+          </span>
+          <span>{taskStats.percentage}%</span>
         </div>
-      )}
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-green-500 transition-all duration-300"
+            style={{ width: `${taskStats.percentage}%` }}
+          />
+        </div>
+      </div>
 
       {/* Footer */}
       <div className="mt-auto flex items-center justify-between pt-2">

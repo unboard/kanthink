@@ -103,6 +103,13 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
   const myChannels = channelList.filter((c) => !c.sharedBy)
   const sharedChannels = channelList.filter((c) => c.sharedBy)
 
+  // Sort channels by last modified (most recent first)
+  const sortByModified = (a: Channel, b: Channel) => {
+    const aTime = new Date(a.updatedAt).getTime()
+    const bTime = new Date(b.updatedAt).getTime()
+    return bTime - aTime
+  }
+
   // Build set of channel IDs that live in folders (owned only)
   const channelIdToFolder = new Map<string, string>()
   for (const folderId of folderOrder) {
@@ -114,10 +121,12 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     }
   }
 
-  // Root-level owned channels (not in any folder)
-  const rootMyChannels = myChannels.filter((c) => !channelIdToFolder.has(c.id))
+  // Root-level owned channels (not in any folder), sorted by last modified
+  const rootMyChannels = myChannels
+    .filter((c) => !channelIdToFolder.has(c.id))
+    .sort(sortByModified)
 
-  // Folder sections with their owned channels
+  // Folder sections with their owned channels, sorted by last modified
   const folderSections = folderOrder
     .map((folderId) => {
       const folder = folders[folderId]
@@ -125,12 +134,13 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
       const folderChannels = (folder.channelIds ?? [])
         .map((id) => channels[id])
         .filter((c): c is Channel => !!c && !c.sharedBy)
+        .sort(sortByModified)
       if (folderChannels.length === 0) return null
       return { folder, channels: folderChannels }
     })
     .filter(Boolean) as { folder: typeof folders[string]; channels: Channel[] }[]
 
-  // Group shared channels by sharer
+  // Group shared channels by sharer, sorted by last modified
   const sharedByPerson = sharedChannels.reduce((acc, ch) => {
     const sharerId = ch.sharedBy?.id || 'unknown'
     if (!acc[sharerId]) {
@@ -142,6 +152,11 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     acc[sharerId].channels.push(ch)
     return acc
   }, {} as Record<string, { sharer: SharedByInfo; channels: Channel[] }>)
+
+  // Sort each sharer's channels
+  for (const group of Object.values(sharedByPerson)) {
+    group.channels.sort(sortByModified)
+  }
 
   if (channelList.length === 0) {
     return (
@@ -190,20 +205,23 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
 
         {/* Root channels (not in any folder) */}
         {rootMyChannels.length > 0 && (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {rootMyChannels.map((channel) => (
-              <ChannelCard
-                key={channel.id}
-                channel={channel}
-                tasks={tasksByChannel[channel.id] || []}
-                owner={session?.user ? {
-                  id: session.user.id!,
-                  name: session.user.name ?? null,
-                  image: session.user.image ?? null,
-                } : undefined}
-                activeUsers={activeUsersMap[channel.id] || []}
-              />
-            ))}
+          <div className="-mx-6 px-6 md:-mx-8 md:px-8 lg:-mx-10 lg:px-10 overflow-x-auto scrollbar-none">
+            <div className="flex gap-4 pb-2" style={{ minWidth: 'min-content' }}>
+              {rootMyChannels.map((channel) => (
+                <div key={channel.id} className="w-72 flex-shrink-0">
+                  <ChannelCard
+                    channel={channel}
+                    tasks={tasksByChannel[channel.id] || []}
+                    owner={session?.user ? {
+                      id: session.user.id!,
+                      name: session.user.name ?? null,
+                      image: session.user.image ?? null,
+                    } : undefined}
+                    activeUsers={activeUsersMap[channel.id] || []}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -220,20 +238,23 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
               <span className="text-sm text-white/40">{folderChannels.length}</span>
               <div className="h-px flex-1 bg-white/10" />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {folderChannels.map((channel) => (
-                <ChannelCard
-                  key={channel.id}
-                  channel={channel}
-                  tasks={tasksByChannel[channel.id] || []}
-                  owner={session?.user ? {
-                    id: session.user.id!,
-                    name: session.user.name ?? null,
-                    image: session.user.image ?? null,
-                  } : undefined}
-                  activeUsers={activeUsersMap[channel.id] || []}
-                />
-              ))}
+            <div className="-mx-6 px-6 md:-mx-8 md:px-8 lg:-mx-10 lg:px-10 overflow-x-auto scrollbar-none">
+              <div className="flex gap-4 pb-2" style={{ minWidth: 'min-content' }}>
+                {folderChannels.map((channel) => (
+                  <div key={channel.id} className="w-72 flex-shrink-0">
+                    <ChannelCard
+                      channel={channel}
+                      tasks={tasksByChannel[channel.id] || []}
+                      owner={session?.user ? {
+                        id: session.user.id!,
+                        name: session.user.name ?? null,
+                        image: session.user.image ?? null,
+                      } : undefined}
+                      activeUsers={activeUsersMap[channel.id] || []}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         ))}
@@ -277,16 +298,19 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
                   </div>
 
                   {/* Sharer's channels */}
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {sharerChannels.map((channel) => (
-                      <ChannelCard
-                        key={channel.id}
-                        channel={channel}
-                        tasks={tasksByChannel[channel.id] || []}
-                        owner={sharer}
-                        activeUsers={activeUsersMap[channel.id] || []}
-                      />
-                    ))}
+                  <div className="-mx-6 px-6 md:-mx-8 md:px-8 lg:-mx-10 lg:px-10 overflow-x-auto scrollbar-none">
+                    <div className="flex gap-4 pb-2" style={{ minWidth: 'min-content' }}>
+                      {sharerChannels.map((channel) => (
+                        <div key={channel.id} className="w-72 flex-shrink-0">
+                          <ChannelCard
+                            channel={channel}
+                            tasks={tasksByChannel[channel.id] || []}
+                            owner={sharer}
+                            activeUsers={activeUsersMap[channel.id] || []}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ))}
