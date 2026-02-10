@@ -205,7 +205,7 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
   return (
     <div
       onClick={handleCardClick}
-      className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur-sm transition-all hover:border-white/20 hover:bg-white/10 hover:shadow-lg hover:shadow-cyan-500/5 cursor-pointer"
+      className="group relative flex h-52 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-5 text-left backdrop-blur-sm transition-all hover:border-white/20 hover:bg-white/10 hover:shadow-lg hover:shadow-cyan-500/5 cursor-pointer"
     >
       {/* Top right actions */}
       <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
@@ -318,7 +318,7 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
 
       {/* Description */}
       {channel.description && (
-        <p className="mb-4 text-sm text-white/50 line-clamp-2">
+        <p className="mb-4 text-sm text-white/50 truncate">
           {channel.description}
         </p>
       )}
