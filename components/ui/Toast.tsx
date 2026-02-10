@@ -37,6 +37,17 @@ export function ToastContainer() {
             </svg>
           )}
           <span className="flex-1">{toast.message}</span>
+          {toast.action && (
+            <button
+              onClick={() => {
+                toast.action!.onClick();
+                removeToast(toast.id);
+              }}
+              className="flex-shrink-0 px-2 py-0.5 text-xs font-medium rounded bg-white/20 hover:bg-white/30 transition-colors"
+            >
+              {toast.action.label}
+            </button>
+          )}
           <button
             onClick={() => removeToast(toast.id)}
             className="text-white/80 hover:text-white"

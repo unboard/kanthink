@@ -19,7 +19,7 @@ import {
 } from '@/lib/sync/pusherClient'
 import { useNotificationStore } from '@/lib/notificationStore'
 import { useToastStore } from '@/lib/toastStore'
-import { registerServiceWorker, showBrowserNotification } from '@/lib/notifications/serviceWorker'
+import { registerServiceWorker, requestNotificationPermission, showBrowserNotification } from '@/lib/notifications/serviceWorker'
 import type { NotificationData } from '@/lib/notifications/types'
 import { MigrationModal } from '@/components/MigrationModal'
 import { STORAGE_KEY } from '@/lib/constants'
@@ -476,6 +476,9 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       // Register service worker for browser notifications
       registerServiceWorker()
 
+      // Track whether we've already prompted for notification permission this session
+      let hasPromptedPermission = false
+
       // Set up notification event handler
       setNotificationCallback((data) => {
         const notification = data as unknown as NotificationData
@@ -492,6 +495,37 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
               ? `/channel/${(notification.data as Record<string, unknown>).channelId}`
               : '/',
           })
+        }
+
+        // Prompt for browser notification permission on first notification
+        if (
+          !hasPromptedPermission &&
+          'Notification' in window &&
+          Notification.permission === 'default'
+        ) {
+          hasPromptedPermission = true
+          // Show prompt after a short delay so the notification toast appears first
+          setTimeout(() => {
+            useToastStore.getState().addToast(
+              'Get notified even when this tab is in the background?',
+              'info',
+              0, // Don't auto-dismiss
+              {
+                label: 'Enable',
+                onClick: async () => {
+                  const result = await requestNotificationPermission()
+                  useNotificationStore.getState().setHasPermission(result === 'granted')
+                  if (result === 'granted') {
+                    fetch('/api/notifications/preferences', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ browserNotificationsEnabled: true }),
+                    }).catch(() => {})
+                  }
+                },
+              }
+            )
+          }, 1500)
         }
       })
     }
