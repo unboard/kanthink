@@ -200,8 +200,7 @@ export function TaskListView({ channelId }: TaskListViewProps) {
   const [groupByCard, setGroupByCard] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
-  const [isCreatingTask, setIsCreatingTask] = useState(false);
-  const [createForCardId, setCreateForCardId] = useState<ID | null>(null);
+  const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
 
   const { data: session } = useSession();
   const currentUserId = session?.user?.id as string | undefined;
@@ -209,6 +208,7 @@ export function TaskListView({ channelId }: TaskListViewProps) {
   const tasks = useStore((s) => s.tasks);
   const cards = useStore((s) => s.cards);
   const channels = useStore((s) => s.channels);
+  const createTask = useStore((s) => s.createTask);
   const reorderTasks = useStore((s) => s.reorderTasks);
   const reorderUnlinkedTasks = useStore((s) => s.reorderUnlinkedTasks);
   const { members } = useChannelMembers(channelId);
@@ -306,29 +306,28 @@ export function TaskListView({ channelId }: TaskListViewProps) {
 
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
-    setIsCreatingTask(false);
+    setAutoFocusTaskTitle(false);
     setIsTaskDrawerOpen(true);
   };
 
   const handleAddTaskClick = () => {
-    setSelectedTask(null);
-    setIsCreatingTask(true);
-    setCreateForCardId(null);
+    const newTask = createTask(channelId, null, { title: 'Untitled' });
+    setSelectedTask(newTask);
+    setAutoFocusTaskTitle(true);
     setIsTaskDrawerOpen(true);
   };
 
   const handleAddTaskToCard = (cardId: ID) => {
-    setSelectedTask(null);
-    setIsCreatingTask(true);
-    setCreateForCardId(cardId);
+    const newTask = createTask(channelId, cardId, { title: 'Untitled' });
+    setSelectedTask(newTask);
+    setAutoFocusTaskTitle(true);
     setIsTaskDrawerOpen(true);
   };
 
   const handleCloseDrawer = () => {
     setIsTaskDrawerOpen(false);
     setSelectedTask(null);
-    setIsCreatingTask(false);
-    setCreateForCardId(null);
+    setAutoFocusTaskTitle(false);
   };
 
   const handleReorder = (cardId: ID | null, oldIndex: number, newIndex: number) => {
@@ -467,9 +466,8 @@ export function TaskListView({ channelId }: TaskListViewProps) {
       </div>
 
       <TaskDrawer
-        task={isCreatingTask ? null : selectedTask}
-        createForChannelId={isCreatingTask ? channelId : undefined}
-        createForCardId={isCreatingTask ? createForCardId : undefined}
+        task={selectedTask}
+        autoFocusTitle={autoFocusTaskTitle}
         isOpen={isTaskDrawerOpen}
         onClose={handleCloseDrawer}
       />

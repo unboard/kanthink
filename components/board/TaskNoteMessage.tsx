@@ -151,6 +151,22 @@ export function TaskNoteMessage({ note, isOwnNote, onEdit, onDelete }: TaskNoteM
             {note.content}
           </p>
         )}
+
+        {/* Attached images */}
+        {(note.imageUrls ?? []).length > 0 && (
+          <div className={`flex flex-wrap gap-2 ${note.content ? 'mt-2' : ''}`}>
+            {note.imageUrls!.map((url, i) => (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                key={url + i}
+                src={url}
+                alt="Attached image"
+                className="max-h-48 rounded-md border border-neutral-200 dark:border-neutral-700 object-contain"
+                loading="lazy"
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

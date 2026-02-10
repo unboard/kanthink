@@ -131,7 +131,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   const [isPromoting, setIsPromoting] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
-  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
   const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isInstructionHistoryOpen, setIsInstructionHistoryOpen] = useState(false);
@@ -162,6 +162,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   const instructionRuns = useStore((s) => s.instructionRuns);
   const undoInstructionRun = useStore((s) => s.undoInstructionRun);
   const setCoverImage = useStore((s) => s.setCoverImage);
+  const createTask = useStore((s) => s.createTask);
   const { members } = useChannelMembers(card?.channelId);
 
   const [activeDragTaskId, setActiveDragTaskId] = useState<ID | null>(null);
@@ -221,7 +222,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
       setIsTitleDirty(false);
       setSelectedTask(null);
       setIsTaskDrawerOpen(false);
-      setIsCreatingTask(false);
+      setAutoFocusTaskTitle(false);
       setIsTagPickerOpen(false);
       setIsInstructionHistoryOpen(false);
       setActiveTab('thread');
@@ -335,13 +336,14 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
 
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
-    setIsCreatingTask(false);
+    setAutoFocusTaskTitle(false);
     setIsTaskDrawerOpen(true);
   };
 
   const handleAddTaskClick = () => {
-    setSelectedTask(null);
-    setIsCreatingTask(true);
+    const newTask = createTask(card!.channelId, card!.id, { title: 'Untitled' });
+    setSelectedTask(newTask);
+    setAutoFocusTaskTitle(true);
     setIsTaskDrawerOpen(true);
   };
 
@@ -895,14 +897,13 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
         </div>
       </div>
       <TaskDrawer
-        task={isCreatingTask ? null : selectedTask}
-        createForChannelId={isCreatingTask ? card.channelId : undefined}
-        createForCardId={isCreatingTask ? card.id : undefined}
+        task={selectedTask}
+        autoFocusTitle={autoFocusTaskTitle}
         isOpen={isTaskDrawerOpen}
         onClose={() => {
           setIsTaskDrawerOpen(false);
           setSelectedTask(null);
-          setIsCreatingTask(false);
+          setAutoFocusTaskTitle(false);
         }}
       />
 

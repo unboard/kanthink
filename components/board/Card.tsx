@@ -22,10 +22,11 @@ export function Card({ card }: CardProps) {
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const deleteCard = useStore((s) => s.deleteCard);
   const archiveCard = useStore((s) => s.archiveCard);
+  const createTask = useStore((s) => s.createTask);
   const tasks = useStore((s) => s.tasks);
   const channels = useStore((s) => s.channels);
   const { members } = useChannelMembers(card.channelId);
@@ -206,12 +207,13 @@ export function Card({ card }: CardProps) {
             hideCompleted={card.hideCompletedTasks}
             onTaskClick={(task) => {
               setSelectedTask(task);
-              setIsCreatingTask(false);
+              setAutoFocusTaskTitle(false);
               setIsTaskDrawerOpen(true);
             }}
             onAddTaskClick={() => {
-              setSelectedTask(null);
-              setIsCreatingTask(true);
+              const newTask = createTask(card.channelId, card.id, { title: 'Untitled' });
+              setSelectedTask(newTask);
+              setAutoFocusTaskTitle(true);
               setIsTaskDrawerOpen(true);
             }}
           />
@@ -224,19 +226,18 @@ export function Card({ card }: CardProps) {
         onClose={() => setIsCardDrawerOpen(false)}
       />
       <TaskDrawer
-        task={isCreatingTask ? null : selectedTask}
-        createForChannelId={isCreatingTask ? card.channelId : undefined}
-        createForCardId={isCreatingTask ? card.id : undefined}
+        task={selectedTask}
+        autoFocusTitle={autoFocusTaskTitle}
         isOpen={isTaskDrawerOpen}
         onClose={() => {
           setIsTaskDrawerOpen(false);
           setSelectedTask(null);
-          setIsCreatingTask(false);
+          setAutoFocusTaskTitle(false);
         }}
         onOpenCard={() => {
           setIsTaskDrawerOpen(false);
           setSelectedTask(null);
-          setIsCreatingTask(false);
+          setAutoFocusTaskTitle(false);
           setIsCardDrawerOpen(true);
         }}
       />

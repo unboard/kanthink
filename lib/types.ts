@@ -173,6 +173,7 @@ export interface InstructionCard {
 export interface TaskNote {
   id: ID;
   content: string;
+  imageUrls?: string[];
   authorId?: string;
   authorName?: string;
   authorImage?: string;

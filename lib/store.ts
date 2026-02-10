@@ -112,7 +112,7 @@ interface KanthinkState {
   reorderUnlinkedTasks: (channelId: ID, fromIndex: number, toIndex: number) => void;
 
   // Task note actions
-  addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }) => TaskNote | null;
+  addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }, imageUrls?: string[]) => TaskNote | null;
   editTaskNote: (taskId: ID, noteId: ID, content: string) => void;
   deleteTaskNote: (taskId: ID, noteId: ID) => void;
 
@@ -1906,7 +1906,7 @@ export const useStore = create<KanthinkState>()(
       },
 
       // Task note actions
-      addTaskNote: (taskId, content, author) => {
+      addTaskNote: (taskId, content, author, imageUrls) => {
         const task = get().tasks[taskId];
         if (!task) return null;
 
@@ -1916,6 +1916,7 @@ export const useStore = create<KanthinkState>()(
           id,
           content,
           createdAt: timestamp,
+          ...(imageUrls?.length ? { imageUrls } : {}),
           ...(author ? { authorId: author.id, authorName: author.name, authorImage: author.image } : {}),
         };
 
