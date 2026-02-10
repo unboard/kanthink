@@ -83,9 +83,14 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     }
   }, [orderedChannelIds])
 
-  // Show loading state until both local hydration and server sync complete
-  // For authenticated users, we need to wait for server data to prevent race conditions
-  const isFullyLoaded = hasHydrated && (sessionStatus !== 'authenticated' || !isServerLoading)
+  // Show content immediately if we have cached data from localStorage.
+  // Only block on server loading when the store is empty.
+  const hasData = Object.keys(channels).length > 0
+  const isFullyLoaded = hasHydrated && (
+    hasData ||
+    sessionStatus === 'unauthenticated' ||
+    (sessionStatus === 'authenticated' && !isServerLoading)
+  )
 
   if (!isFullyLoaded) {
     return (

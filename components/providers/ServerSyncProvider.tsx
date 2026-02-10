@@ -82,7 +82,11 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
 
   const fetchServerData = useCallback(async () => {
     try {
-      setIsLoading(true)
+      // Only show loading state on initial fetch, not background refetches.
+      // If we've fetched before (lastFetchTimeRef > 0), this is a background refresh.
+      if (lastFetchTimeRef.current === 0) {
+        setIsLoading(true)
+      }
       setError(null)
 
       // Fetch channels list and folders in parallel

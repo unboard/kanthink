@@ -26,8 +26,14 @@ export default function Home() {
   const channels = useStore((s) => s.channels);
   const hasHydrated = useStore((s) => s._hasHydrated);
 
-  // For authenticated users, wait for server data before showing welcome
-  const isFullyLoaded = hasHydrated && (sessionStatus !== 'authenticated' || !isServerLoading);
+  // Show content immediately if we have cached data from localStorage.
+  // Only block on server loading when the store is empty.
+  const hasData = Object.keys(channels).length > 0;
+  const isFullyLoaded = hasHydrated && (
+    hasData ||
+    sessionStatus === 'unauthenticated' ||
+    (sessionStatus === 'authenticated' && !isServerLoading)
+  );
 
   // Check if user has seen welcome on mount
   useEffect(() => {
