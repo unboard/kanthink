@@ -213,10 +213,10 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
 
   const activeDragTask = activeDragTaskId ? tasks[activeDragTaskId] : null;
 
-  // Only reset state when switching to a different card (by ID), not when the same card updates
+  // Reset state when switching cards or when the drawer opens (re-sync from store)
   const cardId = card?.id;
   useEffect(() => {
-    if (card) {
+    if (card && isOpen) {
       setTitle(card.title);
       setIsTitleDirty(false);
       setSelectedTask(null);
@@ -228,7 +228,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
       setShowTitleDrawer(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardId]);
+  }, [cardId, isOpen]);
 
   // Show title drawer when opening with autoFocusTitle (first time viewing new card)
   useEffect(() => {
