@@ -896,7 +896,11 @@ export function Board({ channel }: BoardProps) {
             alt="Kanthink"
             className="h-5 w-5 flex-shrink-0 md:hidden"
           />
-          <h2 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate">
+          <h2
+            className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            onClick={() => setIsSettingsOpen(true)}
+            title="Edit channel name"
+          >
             {channel.name}
           </h2>
           {/* View toggle */}
