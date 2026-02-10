@@ -103,6 +103,33 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
   const myChannels = channelList.filter((c) => !c.sharedBy)
   const sharedChannels = channelList.filter((c) => c.sharedBy)
 
+  // Build set of channel IDs that live in folders (owned only)
+  const channelIdToFolder = new Map<string, string>()
+  for (const folderId of folderOrder) {
+    const folder = folders[folderId]
+    if (folder && !folder.isVirtual) {
+      for (const chId of folder.channelIds) {
+        channelIdToFolder.set(chId, folderId)
+      }
+    }
+  }
+
+  // Root-level owned channels (not in any folder)
+  const rootMyChannels = myChannels.filter((c) => !channelIdToFolder.has(c.id))
+
+  // Folder sections with their owned channels
+  const folderSections = folderOrder
+    .map((folderId) => {
+      const folder = folders[folderId]
+      if (!folder || folder.isVirtual) return null
+      const folderChannels = (folder.channelIds ?? [])
+        .map((id) => channels[id])
+        .filter((c): c is Channel => !!c && !c.sharedBy)
+      if (folderChannels.length === 0) return null
+      return { folder, channels: folderChannels }
+    })
+    .filter(Boolean) as { folder: typeof folders[string]; channels: Channel[] }[]
+
   // Group shared channels by sharer
   const sharedByPerson = sharedChannels.reduce((acc, ch) => {
     const sharerId = ch.sharedBy?.id || 'unknown'
@@ -161,10 +188,10 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
           </button>
         </div>
 
-        {/* My Channels Grid */}
-        {myChannels.length > 0 && (
+        {/* Root channels (not in any folder) */}
+        {rootMyChannels.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {myChannels.map((channel) => (
+            {rootMyChannels.map((channel) => (
               <ChannelCard
                 key={channel.id}
                 channel={channel}
@@ -179,6 +206,37 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
             ))}
           </div>
         )}
+
+        {/* Folder sections */}
+        {folderSections.map(({ folder, channels: folderChannels }) => (
+          <div key={folder.id} className="mt-10">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                <h2 className="text-lg font-semibold text-white">{folder.name}</h2>
+              </div>
+              <span className="text-sm text-white/40">{folderChannels.length}</span>
+              <div className="h-px flex-1 bg-white/10" />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {folderChannels.map((channel) => (
+                <ChannelCard
+                  key={channel.id}
+                  channel={channel}
+                  tasks={tasksByChannel[channel.id] || []}
+                  owner={session?.user ? {
+                    id: session.user.id!,
+                    name: session.user.name ?? null,
+                    image: session.user.image ?? null,
+                  } : undefined}
+                  activeUsers={activeUsersMap[channel.id] || []}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
 
         {/* Shared with me Section */}
         {sharedChannels.length > 0 && (

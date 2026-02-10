@@ -4,6 +4,7 @@ import { useMemo, useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useStore } from '@/lib/store'
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers'
 import type { Channel, Task, ID } from '@/lib/types'
 
 // Simple relative time formatter without external dependencies
@@ -61,6 +62,7 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
   const [menuOpen, setMenuOpen] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const { members } = useChannelMembers(channel.id)
 
   const favoriteChannelIds = useStore((s) => s.favoriteChannelIds)
   const toggleFavorite = useStore((s) => s.toggleFavorite)
@@ -92,7 +94,7 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
     return { total, completed, inProgress, percentage }
   }, [tasks])
 
-  // Get people with access (owner + shares)
+  // Get people with access (from fetched members, fallback to owner + shares)
   const people = useMemo(() => {
     const result: Array<{
       id: string
@@ -101,32 +103,44 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
       isActive: boolean
     }> = []
 
-    // Add owner first
-    if (owner) {
-      const isActive = activeUsers.some((u) => u.id.startsWith(owner.id))
-      result.push({
-        id: owner.id,
-        name: owner.name || 'Owner',
-        image: owner.image,
-        isActive,
-      })
-    }
-
-    // Add shares
-    for (const share of shares) {
-      if (share.user) {
-        const isActive = activeUsers.some((u) => u.id.startsWith(share.user!.id))
+    if (members.length > 0) {
+      // Use fetched members (includes owner + all collaborators)
+      for (const member of members) {
+        const isActive = activeUsers.some((u) => u.id.startsWith(member.id))
         result.push({
-          id: share.user.id,
-          name: share.user.name || 'User',
-          image: share.user.image,
+          id: member.id,
+          name: member.name || 'User',
+          image: member.image,
           isActive,
         })
+      }
+    } else {
+      // Fallback to owner + shares props
+      if (owner) {
+        const isActive = activeUsers.some((u) => u.id.startsWith(owner.id))
+        result.push({
+          id: owner.id,
+          name: owner.name || 'Owner',
+          image: owner.image,
+          isActive,
+        })
+      }
+
+      for (const share of shares) {
+        if (share.user) {
+          const isActive = activeUsers.some((u) => u.id.startsWith(share.user!.id))
+          result.push({
+            id: share.user.id,
+            name: share.user.name || 'User',
+            image: share.user.image,
+            isActive,
+          })
+        }
       }
     }
 
     return result
-  }, [owner, shares, activeUsers])
+  }, [members, owner, shares, activeUsers])
 
   const createdAt = useMemo(() => {
     try {
