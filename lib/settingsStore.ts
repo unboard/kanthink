@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type LLMProvider = 'openai' | 'google';
-export type Theme = 'spores' | 'sand';
+export type Theme = 'spores'; // Only spores theme for now - others will be added back later
 export type QuestionFrequency = 'off' | 'light' | 'moderate';
 
 export interface AISettings {
@@ -97,9 +97,8 @@ export const useSettingsStore = create<SettingsState>()(
         shroomsButtonHighlighted: state.shroomsButtonHighlighted,
       }),
       onRehydrateStorage: () => (state) => {
-        // Migrate invalid theme values to 'spores'
-        const validThemes: Theme[] = ['spores', 'sand'];
-        if (state && !validThemes.includes(state.theme)) {
+        // Migrate invalid theme values to 'spores' (the only valid theme now)
+        if (state && state.theme !== 'spores') {
           state.setTheme('spores');
         }
         state?.setHasHydrated(true);
