@@ -30,8 +30,6 @@ function formatDate(dateString: string): string {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
   });
 }
 
@@ -55,9 +53,13 @@ export function TaskDrawer({
   const [status, setStatus] = useState<TaskStatus>('not_started');
   const [isDirty, setIsDirty] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const notesEndRef = useRef<HTMLDivElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
 
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
 
@@ -91,6 +93,8 @@ export function TaskDrawer({
         setIsDirty(false);
         setIsEditingDescription(false);
         setIsAssigneePickerOpen(false);
+        setIsMenuOpen(false);
+        setIsStatusOpen(false);
       } else if (isCreateMode) {
         setTitle('');
         setDescription('');
@@ -98,10 +102,36 @@ export function TaskDrawer({
         setIsDirty(false);
         setIsEditingDescription(false);
         setIsAssigneePickerOpen(false);
+        setIsMenuOpen(false);
+        setIsStatusOpen(false);
         setTimeout(() => titleInputRef.current?.focus(), 100);
       }
     }
   }, [isOpen, task, isCreateMode]);
+
+  // Click-outside handler for 3-dot menu
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMenuOpen]);
+
+  // Click-outside handler for status dropdown
+  useEffect(() => {
+    if (!isStatusOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (statusRef.current && !statusRef.current.contains(e.target as Node)) {
+        setIsStatusOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isStatusOpen]);
 
   // Auto-resize description textarea
   useEffect(() => {
@@ -244,25 +274,47 @@ export function TaskDrawer({
     );
   }
 
+  // Status dropdown colors
+  const statusColors: Record<TaskStatus, string> = {
+    not_started: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300',
+    in_progress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    done: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  };
+
   // ===== Existing task: conversation layout =====
   return (
     <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating hideCloseButton>
       <div className="flex flex-col h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]">
-        {/* Sticky header */}
-        <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
-          <input
-            ref={titleInputRef}
-            type="text"
-            value={title}
-            onChange={(e) => { setTitle(e.target.value); setIsDirty(true); }}
-            onBlur={handleSave}
-            className={`flex-1 font-medium bg-transparent border-none outline-none placeholder-neutral-400 truncate ${
-              currentStatus === 'done'
-                ? 'text-neutral-400 line-through'
-                : 'text-neutral-900 dark:text-white'
-            }`}
-            placeholder="Task title"
-          />
+        {/* Row 1: Breadcrumb title + Close + 3-dot menu */}
+        <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-2 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
+          <div className="flex-1 flex items-center gap-1 min-w-0">
+            {parentCard && (
+              <>
+                <button
+                  onClick={onOpenCard}
+                  className="flex-shrink-0 text-sm text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 hover:underline truncate max-w-[140px]"
+                >
+                  {parentCard.title}
+                </button>
+                <span className="flex-shrink-0 text-neutral-300 dark:text-neutral-600 text-sm">/</span>
+              </>
+            )}
+            <input
+              ref={titleInputRef}
+              type="text"
+              value={title}
+              onChange={(e) => { setTitle(e.target.value); setIsDirty(true); }}
+              onBlur={handleSave}
+              className={`flex-1 min-w-0 font-medium bg-transparent border-none outline-none placeholder-neutral-400 truncate ${
+                currentStatus === 'done'
+                  ? 'text-neutral-400 line-through'
+                  : 'text-neutral-900 dark:text-white'
+              }`}
+              placeholder="Task title"
+            />
+          </div>
+
+          {/* Close button */}
           <button
             onClick={handleClose}
             className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -271,29 +323,77 @@ export function TaskDrawer({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+
+          {/* 3-dot menu */}
+          <div className="relative flex-shrink-0" ref={menuRef}>
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+              </svg>
+            </button>
+            {isMenuOpen && (
+              <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
+                <button
+                  onClick={() => {
+                    promoteTaskToCard(task!.id);
+                    setIsMenuOpen(false);
+                    onClose();
+                  }}
+                  className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  Promote to card
+                </button>
+                <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
+                <button
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    handleDelete();
+                  }}
+                  className="block w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Compact metadata strip */}
-        <div className="flex-shrink-0 px-4 py-2.5 border-b border-neutral-100 dark:border-neutral-800 flex items-center gap-3 flex-wrap">
-          {/* Status pills */}
-          <div className="flex gap-1.5">
-            {(['not_started', 'in_progress', 'done'] as TaskStatus[]).map((s) => (
-              <button
-                key={s}
-                onClick={() => handleStatusChange(s)}
-                className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-                  currentStatus === s
-                    ? s === 'done'
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                      : s === 'in_progress'
-                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                      : 'bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300'
-                    : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700'
-                }`}
-              >
-                {statusLabels[s]}
-              </button>
-            ))}
+        {/* Row 2: Status dropdown + Assignees + Trash */}
+        <div className="flex-shrink-0 px-4 py-2 border-b border-neutral-100 dark:border-neutral-800 flex items-center gap-3">
+          {/* Status dropdown */}
+          <div className="relative" ref={statusRef}>
+            <button
+              onClick={() => setIsStatusOpen(!isStatusOpen)}
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${statusColors[currentStatus]}`}
+            >
+              {statusLabels[currentStatus]}
+              <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {isStatusOpen && (
+              <div className="absolute left-0 top-full z-20 mt-1 w-36 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
+                {(['not_started', 'in_progress', 'done'] as TaskStatus[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      handleStatusChange(s);
+                      setIsStatusOpen(false);
+                    }}
+                    className={`block w-full px-3 py-1.5 text-left text-sm transition-colors ${
+                      currentStatus === s
+                        ? 'bg-neutral-100 dark:bg-neutral-700 font-medium text-neutral-900 dark:text-white'
+                        : 'text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700'
+                    }`}
+                  >
+                    {statusLabels[s]}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Divider */}
@@ -319,6 +419,28 @@ export function TaskDrawer({
               {currentAssignees.length === 0 && 'Assign'}
             </button>
           </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Trash icon */}
+          <button
+            onClick={handleDelete}
+            className="w-7 h-7 flex items-center justify-center text-neutral-400 hover:text-red-500 dark:hover:text-red-400 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            title="Delete task"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Row 3: Dates */}
+        <div className="flex-shrink-0 px-4 py-1.5 text-xs text-neutral-400">
+          Created: {formatDate(task!.createdAt)}
+          {(freshTask?.completedAt ?? task?.completedAt) && (
+            <> &middot; Completed: {formatDate((freshTask?.completedAt ?? task?.completedAt)!)}</>
+          )}
         </div>
 
         {/* Assignee picker dropdown */}
@@ -333,9 +455,9 @@ export function TaskDrawer({
           </div>
         )}
 
-        {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="px-4 py-4 space-y-4">
+        {/* Scrollable thread body */}
+        <div className="relative flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-3">
             {/* Description — click to edit */}
             {(description || isEditingDescription) ? (
               <div className="relative">
@@ -418,81 +540,28 @@ export function TaskDrawer({
                 ))}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-neutral-400">
-                <svg className="w-8 h-8 mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                <span className="text-sm">No notes yet</span>
-              </div>
+              !description && !isEditingDescription && (
+                <div className="flex flex-col items-center justify-center py-8 text-neutral-400">
+                  <svg className="w-8 h-8 mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  <span className="text-sm">No notes yet</span>
+                </div>
+              )
             )}
 
-            {/* Footer: parent card, actions, metadata */}
-            <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 space-y-3">
-              {/* Parent card link */}
-              {parentCard && (
-                <button
-                  onClick={onOpenCard}
-                  className="flex items-center gap-2 px-3 py-2 rounded-md bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800/50 dark:hover:bg-neutral-800 transition-colors w-full text-left"
-                >
-                  <svg className="w-4 h-4 text-neutral-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400">Parent card:</span>
-                  <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">
-                    {parentCard.title}
-                  </span>
-                  <svg className="w-4 h-4 text-neutral-400 ml-auto flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              )}
-
-              {/* Action buttons */}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDelete}
-                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                >
-                  Delete
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    promoteTaskToCard(task!.id);
-                    onClose();
-                  }}
-                  className="text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-900/20"
-                >
-                  Promote to card
-                </Button>
-              </div>
-
-              {/* Metadata */}
-              <div className="text-xs text-neutral-400 space-y-0.5">
-                <div>Created: {formatDate(task!.createdAt)}</div>
-                {(freshTask?.completedAt ?? task?.completedAt) && (
-                  <div>Completed: {formatDate((freshTask?.completedAt ?? task?.completedAt)!)}</div>
-                )}
-              </div>
-            </div>
-
-            {/* Extra padding to clear fixed input */}
-            <div className="pb-20" />
             <div ref={notesEndRef} />
           </div>
-        </div>
 
-        {/* Fixed bottom input with gradient fade */}
-        <div
-          className="flex-shrink-0 absolute left-0 right-0 bottom-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
-          style={{ bottom: keyboardOffset > 0 ? `${Math.max(0, keyboardOffset - 60)}px` : 0 }}
-        >
-          <TaskNoteInput
-            onSubmit={handleAddNote}
-          />
+          {/* Fixed bottom input with gradient fade */}
+          <div
+            className="absolute left-0 right-0 bottom-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
+            style={{ bottom: keyboardOffset > 0 ? `${Math.max(0, keyboardOffset - 60)}px` : 0 }}
+          >
+            <TaskNoteInput
+              onSubmit={handleAddNote}
+            />
+          </div>
         </div>
       </div>
     </Drawer>
