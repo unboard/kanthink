@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { useNav } from '@/components/providers/NavProvider';
 
 type PanelWidth = 'sm' | 'md' | 'lg';
@@ -27,44 +27,17 @@ interface NavPanelProps {
 
 export function NavPanel({ panelKey, title, subtitle, width = 'sm', children }: NavPanelProps) {
   const { activePanel, closePanel, isMobile } = useNav();
-  const panelRef = useRef<HTMLDivElement>(null);
   const isOpen = activePanel === panelKey;
 
-  // Click outside to close (desktop only - mobile uses MobileBottomSheet)
-  useEffect(() => {
-    if (!isOpen || isMobile) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-
-      // Don't close if clicking on the mini nav or inside the panel
-      if (
-        panelRef.current?.contains(target) ||
-        target.closest('[data-mini-nav]')
-      ) {
-        return;
-      }
-
-      closePanel();
-    };
-
-    // Delay to avoid closing immediately on click that opened
-    const timeout = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
-    }, 0);
-
-    return () => {
-      clearTimeout(timeout);
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen, isMobile, closePanel]);
+  // Desktop: panel stays open until user clicks X or toggles via nav icon.
+  // No click-outside-to-close behavior on desktop.
+  // Mobile uses MobileBottomSheet which handles its own dismiss.
 
   // On mobile, panels are rendered inside MobileBottomSheet
   // Use CSS hidden class to avoid race conditions with isMobile state
   // (state can be briefly false during hydration, causing desktop panel to flash)
   return (
     <div
-      ref={panelRef}
       className={`
         hidden md:block
         fixed left-14 top-0 h-full z-40
