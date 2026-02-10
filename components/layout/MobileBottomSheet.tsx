@@ -965,7 +965,7 @@ const PANEL_CONFIG: Record<string, { title: string; subtitle?: string }> = {
 };
 
 export function MobileBottomSheet() {
-  const { activePanel, closePanel } = useNav();
+  const { activePanel, closePanel, isMobile } = useNav();
   const [isVisible, setIsVisible] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
   // Track when interaction is safe - prevents accidental taps during open animation
@@ -999,15 +999,15 @@ export function MobileBottomSheet() {
     }
   }, [activePanel]);
 
-  // Close on route change
+  // Close on route change (mobile only — desktop sidebar stays open)
   const pathname = usePathname();
   const prevPathname = useRef(pathname);
   useEffect(() => {
-    if (prevPathname.current !== pathname && activePanel) {
+    if (prevPathname.current !== pathname && activePanel && isMobile) {
       closePanel();
     }
     prevPathname.current = pathname;
-  }, [pathname, activePanel, closePanel]);
+  }, [pathname, activePanel, isMobile, closePanel]);
 
   // Don't render anything if not visible
   if (!isVisible) {
