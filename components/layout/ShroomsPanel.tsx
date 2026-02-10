@@ -100,7 +100,7 @@ function ShroomCard({ shroom, onRun, onEdit }: ShroomCardProps) {
 export function ShroomsPanel() {
   const pathname = usePathname();
   const router = useRouter();
-  const { closePanel } = useNav();
+  const { closePanel, isMobile } = useNav();
   const instructionCards = useStore((s) => s.instructionCards);
   const channels = useStore((s) => s.channels);
   const hasHydrated = useStore((s) => s._hasHydrated);
@@ -121,7 +121,7 @@ export function ShroomsPanel() {
   const handleRunShroom = (shroom: InstructionCard) => {
     const targetChannelId = shroom.channelId || channelId;
     if (targetChannelId) {
-      closePanel();
+      if (isMobile) closePanel();
       router.push(`/channel/${targetChannelId}?shrooms=open&run=${shroom.id}`);
     }
   };
@@ -129,14 +129,14 @@ export function ShroomsPanel() {
   const handleEditShroom = (shroom: InstructionCard) => {
     const targetChannelId = shroom.channelId || channelId;
     if (targetChannelId) {
-      closePanel();
+      if (isMobile) closePanel();
       router.push(`/channel/${targetChannelId}?shrooms=open&edit=${shroom.id}`);
     }
   };
 
   const handleCreateShroom = () => {
     if (channelId) {
-      closePanel();
+      if (isMobile) closePanel();
       router.push(`/channel/${channelId}?shrooms=open&create=true`);
     }
   };

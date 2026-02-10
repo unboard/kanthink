@@ -434,7 +434,8 @@ function DraggableFolder({
 
 export function ChannelsPanel() {
   const pathname = usePathname();
-  const { closePanel, openNewChannel } = useNav();
+  const { closePanel, openNewChannel, isMobile } = useNav();
+  const closePanelIfMobile = isMobile ? closePanel : undefined;
   const channels = useStore((s) => s.channels);
   const channelOrder = useStore((s) => s.channelOrder);
   const folders = useStore((s) => s.folders);
@@ -598,7 +599,7 @@ export function ChannelsPanel() {
                   folder={helpFolder}
                   channels={channels}
                   pathname={pathname}
-                  onNavigate={closePanel}
+                  onNavigate={closePanelIfMobile}
                 />
               )}
 
@@ -606,7 +607,7 @@ export function ChannelsPanel() {
               <SharedWithMeSection
                 channels={channels}
                 pathname={pathname}
-                onNavigate={closePanel}
+                onNavigate={closePanelIfMobile}
               />
 
               <SortableContext items={allSortableIds} strategy={verticalListSortingStrategy}>
@@ -622,7 +623,7 @@ export function ChannelsPanel() {
                       onRename={(name) => updateFolder(folder.id, { name })}
                       onDelete={() => deleteFolder(folder.id)}
                       isOver={hoveredFolderId === folder.id}
-                      onNavigate={closePanel}
+                      onNavigate={closePanelIfMobile}
                     />
                   ))}
 
@@ -632,7 +633,7 @@ export function ChannelsPanel() {
                       key={channel.id}
                       channel={channel}
                       isActive={pathname === `/channel/${channel.id}`}
-                      onNavigate={closePanel}
+                      onNavigate={closePanelIfMobile}
                     />
                   ))}
 
