@@ -1,9 +1,13 @@
 'use client';
 
+import { useSettingsStore } from '@/lib/settingsStore';
 import { SporeBackground } from './SporeBackground';
-// import { Starfield } from './Starfield'; // Disabled - only spores theme available for now
 
 export function AmbientBackground() {
-  // Only spores theme available for now
+  const theme = useSettingsStore((s) => s.theme);
+
+  // Sand theme has no ambient particles — clean, calm light background
+  if (theme === 'sand') return null;
+
   return <SporeBackground />;
 }
