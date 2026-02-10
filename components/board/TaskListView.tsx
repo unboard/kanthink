@@ -470,6 +470,7 @@ export function TaskListView({ channelId }: TaskListViewProps) {
         autoFocusTitle={autoFocusTaskTitle}
         isOpen={isTaskDrawerOpen}
         onClose={handleCloseDrawer}
+        onOpenCard={handleCloseDrawer}
       />
     </div>
   );

@@ -135,6 +135,9 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isInstructionHistoryOpen, setIsInstructionHistoryOpen] = useState(false);
+  const [cardDescription, setCardDescription] = useState('');
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('thread');
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const titleDrawerInputRef = useRef<HTMLInputElement>(null);
@@ -225,6 +228,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
       setAutoFocusTaskTitle(false);
       setIsTagPickerOpen(false);
       setIsInstructionHistoryOpen(false);
+      setIsEditingDescription(false);
+      setCardDescription(card.description ?? '');
       setActiveTab('thread');
       setShowTitleDrawer(false);
     }
@@ -258,6 +263,24 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);
     setIsTitleDirty(true);
+  };
+
+  // Auto-resize description textarea
+  useEffect(() => {
+    if (isEditingDescription && descriptionRef.current) {
+      const ta = descriptionRef.current;
+      ta.focus();
+      ta.selectionStart = ta.value.length;
+      ta.style.height = 'auto';
+      ta.style.height = `${ta.scrollHeight}px`;
+    }
+  }, [isEditingDescription]);
+
+  const handleDescriptionSave = () => {
+    if (card) {
+      updateCard(card.id, { description: cardDescription });
+    }
+    setIsEditingDescription(false);
   };
 
   const handleArchive = () => {
@@ -590,6 +613,73 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
                   </button>
                 )}
 
+                {/* Description — click to edit */}
+                {(cardDescription || isEditingDescription) ? (
+                  <div className="relative">
+                    {isEditingDescription ? (
+                      <div>
+                        <textarea
+                          ref={descriptionRef}
+                          value={cardDescription}
+                          onChange={(e) => {
+                            setCardDescription(e.target.value);
+                            e.target.style.height = 'auto';
+                            e.target.style.height = `${e.target.scrollHeight}px`;
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setCardDescription(card.description ?? '');
+                              setIsEditingDescription(false);
+                            }
+                          }}
+                          className="w-full resize-none rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                          placeholder="Add a description..."
+                          rows={3}
+                        />
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            onClick={handleDescriptionSave}
+                            className="px-2.5 py-1 text-xs rounded-md bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 hover:bg-neutral-700 dark:hover:bg-neutral-200 transition-colors"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCardDescription(card.description ?? '');
+                              setIsEditingDescription(false);
+                            }}
+                            className="px-2.5 py-1 text-xs rounded-md text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsEditingDescription(true)}
+                        className="group w-full text-left rounded-lg px-3 py-2.5 bg-neutral-50 dark:bg-neutral-800/50 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                      >
+                        <p className="text-sm text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-words">
+                          {cardDescription}
+                        </p>
+                        <span className="mt-1.5 inline-flex items-center gap-1 text-xs text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                          Edit
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setIsEditingDescription(true)}
+                    className="w-full text-left rounded-lg px-3 py-2.5 border border-dashed border-neutral-200 dark:border-neutral-700 text-sm text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-500 transition-colors"
+                  >
+                    Add a description...
+                  </button>
+                )}
+
                 {/* Metadata rows */}
                 <div className="space-y-3">
                   {/* Source */}
@@ -901,6 +991,11 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
         autoFocusTitle={autoFocusTaskTitle}
         isOpen={isTaskDrawerOpen}
         onClose={() => {
+          setIsTaskDrawerOpen(false);
+          setSelectedTask(null);
+          setAutoFocusTaskTitle(false);
+        }}
+        onOpenCard={() => {
           setIsTaskDrawerOpen(false);
           setSelectedTask(null);
           setAutoFocusTaskTitle(false);
