@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { tasks } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { createNotification } from '@/lib/notifications/createNotification'
 
 interface RouteParams {
   params: Promise<{ id: string; taskId: string }>
@@ -73,6 +74,22 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const updatedTask = await db.query.tasks.findFirst({
       where: eq(tasks.id, taskId),
     })
+
+    // Notify on task assignment changes
+    if (assignedTo !== undefined && updatedTask) {
+      const oldAssigned = (task.assignedTo as string[] | null) ?? []
+      const newAssigned = (assignedTo as string[]) ?? []
+      const newlyAssigned = newAssigned.filter(id => !oldAssigned.includes(id) && id !== userId)
+      for (const assigneeId of newlyAssigned) {
+        createNotification({
+          userId: assigneeId,
+          type: 'task_assigned',
+          title: 'Task assigned to you',
+          body: updatedTask.title,
+          data: { channelId, taskId },
+        }).catch(() => {})
+      }
+    }
 
     return NextResponse.json({
       task: {

@@ -5,6 +5,7 @@ import type { Channel, Card, CardInput, Column } from '@/lib/types';
 import { getLLMClientForUser, getLLMClient, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 const ANON_COOKIE_NAME = 'kanthink_anon_id';
 
@@ -330,6 +331,17 @@ export async function POST(request: Request) {
         } else if (anonId) {
           await recordAnonymousUsage(anonId, 'generate-cards');
         }
+      }
+
+      // Notify user
+      if (userId) {
+        createNotification({
+          userId,
+          type: 'ai_generation_completed',
+          title: 'Cards generated',
+          body: `${generatedCards.length} card(s) generated for "${channel.name}"`,
+          data: { channelId: channel.id },
+        }).catch(() => {});
       }
 
       // Build response

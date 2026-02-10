@@ -10,6 +10,7 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
+import { createNotification } from '@/lib/notifications/createNotification'
 
 interface RouteParams {
   params: Promise<{ token: string }>
@@ -241,6 +242,21 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     .update(channelInviteLinks)
     .set({ useCount: (link.useCount ?? 0) + 1 })
     .where(eq(channelInviteLinks.id, link.id))
+
+  // Notify channel owner that someone joined via invite link
+  if (channel.ownerId !== userId) {
+    const joiningUser = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { name: true, email: true },
+    })
+    createNotification({
+      userId: channel.ownerId,
+      type: 'channel_join_via_link',
+      title: 'New member joined',
+      body: `${joiningUser?.name || joiningUser?.email || 'Someone'} joined "${channel.name}" via invite link`,
+      data: { channelId: link.channelId },
+    }).catch(() => {})
+  }
 
   return NextResponse.json({
     status: 'accepted',

@@ -71,6 +71,10 @@ const cursorPositions = new Map<string, Map<string, CursorPosition>>()
 type EventCallback = (event: BroadcastEvent) => void
 let eventCallback: EventCallback | null = null
 
+// Notification callback
+type NotificationCallback = (notification: Record<string, unknown>) => void
+let notificationCallback: NotificationCallback | null = null
+
 // Presence callbacks (supports multiple listeners)
 const presenceCallbacks = new Set<PresenceCallback>()
 let cursorCallback: CursorCallback | null = null
@@ -86,6 +90,13 @@ let myPresenceUserId: string | null = null
  * Initialize the Pusher client connection.
  * Returns false if Pusher is not configured.
  */
+/**
+ * Set the callback for notification events received via Pusher.
+ */
+export function setNotificationCallback(callback: NotificationCallback | null): void {
+  notificationCallback = callback
+}
+
 export function initPusher(onEvent: EventCallback): boolean {
   const key = process.env.NEXT_PUBLIC_PUSHER_KEY
   const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER
@@ -263,6 +274,13 @@ export function subscribeToUser(userId: string): void {
 
     if (eventCallback) {
       eventCallback(data.event)
+    }
+  })
+
+  // Bind notification events on the user channel
+  channel.bind('notification', (data: Record<string, unknown>) => {
+    if (notificationCallback) {
+      notificationCallback(data)
     }
   })
 

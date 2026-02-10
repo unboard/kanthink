@@ -5,6 +5,7 @@ import { cards, columns } from '@/lib/db/schema'
 import { eq, and, asc, desc, gt, gte, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { nanoid } from 'nanoid'
+import { createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -114,6 +115,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const createdCard = await db.query.cards.findFirst({
       where: eq(cards.id, cardId),
     })
+
+    // Notify channel members about new card
+    if (createdCard) {
+      createNotificationForChannelMembers(channelId, userId, {
+        type: 'card_added_by_other',
+        title: 'New card added',
+        body: `"${title}" was added`,
+        data: { channelId, cardId },
+      }).catch(() => {})
+    }
 
     return NextResponse.json(
       {

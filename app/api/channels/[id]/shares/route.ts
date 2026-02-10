@@ -5,6 +5,7 @@ import { channelShares, channels, users, userChannelOrg } from '@/lib/db/schema'
 import { eq, and, or, desc } from 'drizzle-orm'
 import { requirePermission, PermissionError, ChannelRole } from '@/lib/api/permissions'
 import { nanoid } from 'nanoid'
+import { createNotification } from '@/lib/notifications/createNotification'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -201,6 +202,21 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const createdShare = await db.query.channelShares.findFirst({
       where: eq(channelShares.id, shareId),
     })
+
+    // Notify the shared user if they exist
+    if (existingUser) {
+      const channel = await db.query.channels.findFirst({
+        where: eq(channels.id, channelId),
+        columns: { name: true },
+      })
+      createNotification({
+        userId: existingUser.id,
+        type: 'channel_shared',
+        title: 'Channel shared with you',
+        body: `You've been invited to "${channel?.name || 'a channel'}"`,
+        data: { channelId },
+      }).catch(() => {})
+    }
 
     return NextResponse.json(
       {

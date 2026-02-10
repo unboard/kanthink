@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { cards, columns, tasks } from '@/lib/db/schema'
 import { eq, and, gt, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { createNotification, createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
 
 interface RouteParams {
   params: Promise<{ id: string; cardId: string }>
@@ -126,6 +127,32 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const updatedCard = await db.query.cards.findFirst({
       where: eq(cards.id, cardId),
     })
+
+    // Notify on card assignment changes
+    if (assignedTo !== undefined && updatedCard) {
+      const oldAssigned = (existingCard.assignedTo as string[] | null) ?? []
+      const newAssigned = (assignedTo as string[]) ?? []
+      const newlyAssigned = newAssigned.filter(id => !oldAssigned.includes(id) && id !== userId)
+      for (const assigneeId of newlyAssigned) {
+        createNotification({
+          userId: assigneeId,
+          type: 'card_assigned',
+          title: 'Card assigned to you',
+          body: updatedCard.title,
+          data: { channelId, cardId },
+        }).catch(() => {})
+      }
+    }
+
+    // Notify on card move (columnId change) in shared channels
+    if (body.columnId !== undefined && body.columnId !== existingCard.columnId && updatedCard) {
+      createNotificationForChannelMembers(channelId, userId, {
+        type: 'card_moved_by_other',
+        title: 'Card moved',
+        body: `"${updatedCard.title}" was moved`,
+        data: { channelId, cardId },
+      }).catch(() => {})
+    }
 
     return NextResponse.json({
       card: {

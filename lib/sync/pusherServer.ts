@@ -212,6 +212,28 @@ export function getUserColor(userId: string): string {
 }
 
 /**
+ * Publish a notification to a user's personal Pusher channel.
+ * Uses a separate 'notification' event (not 'sync') for user-facing alerts.
+ */
+export async function publishNotificationToUser(
+  userId: string,
+  notification: Record<string, unknown>
+): Promise<boolean> {
+  const pusher = getPusher()
+  if (!pusher) {
+    return false
+  }
+
+  try {
+    await pusher.trigger(`private-user-${userId}`, 'notification', notification)
+    return true
+  } catch (error) {
+    console.error('[Pusher] Failed to publish notification to user:', userId, error)
+    return false
+  }
+}
+
+/**
  * Check if Pusher is configured and available.
  */
 export function isPusherConfigured(): boolean {

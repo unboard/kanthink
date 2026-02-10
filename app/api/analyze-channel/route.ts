@@ -4,6 +4,7 @@ import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 import { detectDrift, buildFeedbackContext, type DriftInsight } from '@/lib/ai/feedbackAnalyzer';
+import { createNotification } from '@/lib/notifications/createNotification';
 
 interface InsightResult {
   question: string;  // Keep as "question" for backward compatibility with store
@@ -238,6 +239,27 @@ export async function POST(request: Request) {
 
       if (userId && usingOwnerKey) {
         await recordUsage(userId, 'analyze-channel');
+      }
+
+      // Notify about questions and drift
+      if (result.questions.length > 0) {
+        createNotification({
+          userId,
+          type: 'ai_clarifying_questions',
+          title: 'New insights from Kan',
+          body: `${result.questions.length} observation(s) for "${channel.name}"`,
+          data: { channelId: channel.id },
+        }).catch(() => {});
+      }
+
+      if (driftInsights.length > 0) {
+        createNotification({
+          userId,
+          type: 'drift_detected',
+          title: 'Channel drift detected',
+          body: `Kan noticed pattern changes in "${channel.name}"`,
+          data: { channelId: channel.id },
+        }).catch(() => {});
       }
 
       return NextResponse.json({

@@ -4,6 +4,7 @@ import { NavPanel } from './NavPanel';
 import { ThemeSection } from '@/components/settings/ThemeSection';
 import { AISettings } from '@/components/settings/AISettings';
 import { SystemInstructions } from '@/components/settings/SystemInstructions';
+import { NotificationSettings } from '@/components/settings/NotificationSettings';
 
 export function SettingsPanel() {
   return (
@@ -18,6 +19,10 @@ export function SettingsPanel() {
         <hr className="border-neutral-200 dark:border-neutral-800" />
 
         <SystemInstructions />
+
+        <hr className="border-neutral-200 dark:border-neutral-800" />
+
+        <NotificationSettings />
       </div>
     </NavPanel>
   );

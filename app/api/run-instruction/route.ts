@@ -4,6 +4,8 @@ import type { Channel, Card, CardInput, InstructionCard, InstructionTarget, Cont
 import { type LLMMessage } from '@/lib/ai/llm';
 import { buildFeedbackContext } from '@/lib/ai/feedbackAnalyzer';
 import { getAuthenticatedLLM } from '@/lib/ai/withAuth';
+import { createNotification } from '@/lib/notifications/createNotification';
+import { auth } from '@/lib/auth';
 
 // Configure marked for safe HTML output
 marked.setOptions({
@@ -872,6 +874,9 @@ interface RunInstructionRequest {
 
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    const userId = session?.user?.id;
+
     const body: RunInstructionRequest = await request.json();
     const { instructionCard, channel, cards, tasks = {}, triggeringCardId, skipAlreadyProcessed, systemInstructions, members } = body;
 
@@ -937,6 +942,17 @@ export async function POST(request: Request) {
 
         // Collect all target column IDs from steps
         const allTargetColumnIds = [...new Set(instructionCard.steps.map(s => s.targetColumnId))];
+
+        // Notify shroom completed
+        if (userId) {
+          createNotification({
+            userId,
+            type: 'shroom_completed',
+            title: 'Shroom finished running',
+            body: `"${instructionCard.title}" completed`,
+            data: { channelId: channel.id, instructionCardId: instructionCard.id },
+          }).catch(() => {});
+        }
 
         return NextResponse.json({
           action: 'multi-step',
@@ -1021,6 +1037,17 @@ export async function POST(request: Request) {
 
         // Record usage after successful generation
         await recordUsageAfterSuccess();
+
+        // Notify shroom completed
+        if (userId) {
+          createNotification({
+            userId,
+            type: 'shroom_completed',
+            title: 'Shroom finished running',
+            body: `"${instructionCard.title}" generated ${generatedCards.length} card(s)`,
+            data: { channelId: channel.id, instructionCardId: instructionCard.id },
+          }).catch(() => {});
+        }
 
         return NextResponse.json({
           action: 'generate',
@@ -1126,6 +1153,17 @@ export async function POST(request: Request) {
         // Record usage after successful modification
         await recordUsageAfterSuccess();
 
+        // Notify shroom completed
+        if (userId) {
+          createNotification({
+            userId,
+            type: 'shroom_completed',
+            title: 'Shroom finished running',
+            body: `"${instructionCard.title}" modified ${modifiedCards.length} card(s)`,
+            data: { channelId: channel.id, instructionCardId: instructionCard.id },
+          }).catch(() => {});
+        }
+
         return NextResponse.json({
           action: 'modify',
           modifiedCards,
@@ -1204,6 +1242,17 @@ export async function POST(request: Request) {
 
         // Record usage after successful move analysis
         await recordUsageAfterSuccess();
+
+        // Notify shroom completed
+        if (userId) {
+          createNotification({
+            userId,
+            type: 'shroom_completed',
+            title: 'Shroom finished running',
+            body: `"${instructionCard.title}" moved ${moveDecisions.length} card(s)`,
+            data: { channelId: channel.id, instructionCardId: instructionCard.id },
+          }).catch(() => {});
+        }
 
         return NextResponse.json({
           action: 'move',

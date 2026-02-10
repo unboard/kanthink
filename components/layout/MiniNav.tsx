@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useNav, type NavPanelType } from '@/components/providers/NavProvider';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 interface NavIconButtonProps {
   panel: NavPanelType;
@@ -100,6 +101,8 @@ function DesktopNav() {
 
       {/* Bottom icons */}
       <div className="flex flex-col items-center gap-2">
+        <NotificationBell />
+
         <NavIconButton
           panel="account"
           isActive={activePanel === 'account'}
@@ -181,6 +184,8 @@ function MobileNav() {
           />
         }
       />
+
+      <NotificationBell isMobile />
 
       <NavIconButton
         panel="account"

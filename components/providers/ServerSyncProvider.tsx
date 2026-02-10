@@ -15,7 +15,12 @@ import {
   unsubscribeFromChannel,
   disconnect as disconnectPusher,
   getSubscribedChannels,
+  setNotificationCallback,
 } from '@/lib/sync/pusherClient'
+import { useNotificationStore } from '@/lib/notificationStore'
+import { useToastStore } from '@/lib/toastStore'
+import { registerServiceWorker, showBrowserNotification } from '@/lib/notifications/serviceWorker'
+import type { NotificationData } from '@/lib/notifications/types'
 import { MigrationModal } from '@/components/MigrationModal'
 import { STORAGE_KEY } from '@/lib/constants'
 import type { Channel, Card, Task, InstructionCard, Folder, Column } from '@/lib/types'
@@ -467,9 +472,70 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       if (loadedChannelIdsRef.current.length > 0) {
         subscribeToChannels(loadedChannelIdsRef.current)
       }
+
+      // Register service worker for browser notifications
+      registerServiceWorker()
+
+      // Set up notification event handler
+      setNotificationCallback((data) => {
+        const notification = data as unknown as NotificationData
+        useNotificationStore.getState().addNotification(notification)
+        useToastStore.getState().addToast(notification.title, 'info')
+
+        // Show browser notification if tab is hidden
+        if (document.visibilityState === 'hidden') {
+          showBrowserNotification({
+            title: notification.title,
+            body: notification.body,
+            notificationId: notification.id,
+            url: (notification.data as Record<string, unknown>)?.channelId
+              ? `/channel/${(notification.data as Record<string, unknown>).channelId}`
+              : '/',
+          })
+        }
+      })
     }
     // No cleanup - Pusher connection persists for the session
   }, [isServerMode, session?.user?.id, pusherInitialized, applyEventHandler])
+
+  // Load initial notifications after data fetch
+  useEffect(() => {
+    if (!hasFetched || !session?.user?.id) return
+
+    fetch('/api/notifications?limit=50')
+      .then(res => res.json())
+      .then(data => {
+        if (data.notifications) {
+          useNotificationStore.getState().loadNotifications(data.notifications)
+        }
+      })
+      .catch(() => {})
+
+    // Check notification permission
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      useNotificationStore.getState().setHasPermission(Notification.permission === 'granted')
+    }
+  }, [hasFetched, session?.user?.id])
+
+  // Handle service worker notification clicks
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'NOTIFICATION_CLICKED') {
+        const { notificationId, url } = event.data
+        if (notificationId) {
+          useNotificationStore.getState().markAsRead(notificationId)
+        }
+        if (url && url !== window.location.pathname) {
+          window.location.href = url
+        }
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handler)
+    return () => navigator.serviceWorker.removeEventListener('message', handler)
+  }, [])
 
   // Refetch when tab regains visibility after being backgrounded
   // Mobile browsers kill WebSocket connections when backgrounded, so Pusher

@@ -288,6 +288,37 @@ export const channelInviteLinks = sqliteTable('channel_invite_links', {
   uniqueIndex('channel_invite_links_token').on(table.token),
 ])
 
+// Notifications
+export const notifications = sqliteTable('notifications', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  data: text('data', { mode: 'json' }).$type<Record<string, unknown>>(),
+  isRead: integer('is_read', { mode: 'boolean' }).default(false),
+  readAt: integer('read_at', { mode: 'timestamp' }),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('notifications_user_idx').on(table.userId),
+  index('notifications_user_read_idx').on(table.userId, table.isRead),
+  index('notifications_user_created_idx').on(table.userId, table.createdAt),
+])
+
+// Notification preferences
+export const notificationPreferences = sqliteTable('notification_preferences', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  disabledTypes: text('disabled_types', { mode: 'json' }).$type<string[]>().default([]),
+  browserNotificationsEnabled: integer('browser_notifications_enabled', { mode: 'boolean' }).default(false),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('notification_preferences_user_idx').on(table.userId),
+])
+
 // Instruction run history (for undo functionality)
 export const instructionRuns = sqliteTable('instruction_runs', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -425,3 +456,7 @@ export type DbChannelInviteLink = typeof channelInviteLinks.$inferSelect
 export type NewDbChannelInviteLink = typeof channelInviteLinks.$inferInsert
 export type DbInstructionRun = typeof instructionRuns.$inferSelect
 export type NewDbInstructionRun = typeof instructionRuns.$inferInsert
+export type DbNotification = typeof notifications.$inferSelect
+export type NewDbNotification = typeof notifications.$inferInsert
+export type DbNotificationPreferences = typeof notificationPreferences.$inferSelect
+export type NewDbNotificationPreferences = typeof notificationPreferences.$inferInsert
