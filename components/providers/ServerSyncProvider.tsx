@@ -248,6 +248,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             description: task.description || '',
             status: task.status || 'not_started',
             assignedTo: task.assignedTo,
+            notes: task.notes,
             dueDate: task.dueDate,
             completedAt: task.completedAt,
             createdAt: task.createdAt,

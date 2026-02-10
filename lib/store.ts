@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
-import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction } from './types';
+import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, TaskNote, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction } from './types';
 import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
 import { KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
 import { emitCardMoved, emitCardCreated, emitCardDeleted } from './automationEvents';
@@ -110,6 +110,11 @@ interface KanthinkState {
   toggleTaskStatus: (id: ID) => void;
   reorderTasks: (cardId: ID, fromIndex: number, toIndex: number) => void;
   reorderUnlinkedTasks: (channelId: ID, fromIndex: number, toIndex: number) => void;
+
+  // Task note actions
+  addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }) => TaskNote | null;
+  editTaskNote: (taskId: ID, noteId: ID, content: string) => void;
+  deleteTaskNote: (taskId: ID, noteId: ID) => void;
 
   // Assignment actions
   setCardAssignees: (cardId: ID, userIds: string[]) => void;
@@ -1898,6 +1903,91 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs and devices
         broadcastAndPublish({ type: 'task:reorderUnlinked', channelId, fromIndex, toIndex });
+      },
+
+      // Task note actions
+      addTaskNote: (taskId, content, author) => {
+        const task = get().tasks[taskId];
+        if (!task) return null;
+
+        const id = nanoid();
+        const timestamp = now();
+        const note: TaskNote = {
+          id,
+          content,
+          createdAt: timestamp,
+          ...(author ? { authorId: author.id, authorName: author.name, authorImage: author.image } : {}),
+        };
+
+        const updatedNotes = [...(task.notes ?? []), note];
+
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+
+          return {
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...t, notes: updatedNotes, updatedAt: timestamp },
+            },
+          };
+        });
+
+        // Sync to server
+        sync.syncTaskUpdate(task.channelId, taskId, { notes: updatedNotes });
+
+        // Broadcast to other tabs
+        broadcastAndPublish({ type: 'task:update', id: taskId, updates: { notes: updatedNotes } });
+
+        return note;
+      },
+
+      editTaskNote: (taskId, noteId, content) => {
+        const task = get().tasks[taskId];
+        if (!task) return;
+
+        const timestamp = now();
+        const updatedNotes = (task.notes ?? []).map((n) =>
+          n.id === noteId ? { ...n, content, editedAt: timestamp } : n
+        );
+
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+
+          return {
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...t, notes: updatedNotes, updatedAt: timestamp },
+            },
+          };
+        });
+
+        sync.syncTaskUpdate(task.channelId, taskId, { notes: updatedNotes });
+        broadcastAndPublish({ type: 'task:update', id: taskId, updates: { notes: updatedNotes } });
+      },
+
+      deleteTaskNote: (taskId, noteId) => {
+        const task = get().tasks[taskId];
+        if (!task) return;
+
+        const timestamp = now();
+        const updatedNotes = (task.notes ?? []).filter((n) => n.id !== noteId);
+
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+
+          return {
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...t, notes: updatedNotes, updatedAt: timestamp },
+            },
+          };
+        });
+
+        sync.syncTaskUpdate(task.channelId, taskId, { notes: updatedNotes });
+        broadcastAndPublish({ type: 'task:update', id: taskId, updates: { notes: updatedNotes } });
       },
 
       // ===== Assignment actions =====

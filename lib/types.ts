@@ -170,6 +170,16 @@ export interface InstructionCard {
   steps?: ShroomStep[];                   // Multi-step action sequence (e.g. modify then move)
 }
 
+export interface TaskNote {
+  id: ID;
+  content: string;
+  authorId?: string;
+  authorName?: string;
+  authorImage?: string;
+  createdAt: string;
+  editedAt?: string;
+}
+
 export interface Task {
   id: ID;
   cardId: ID | null;        // null = standalone task
@@ -177,6 +187,7 @@ export interface Task {
   title: string;
   description: string;
   status: TaskStatus;
+  notes?: TaskNote[];
   createdAt: string;
   updatedAt: string;
   completedAt?: string;

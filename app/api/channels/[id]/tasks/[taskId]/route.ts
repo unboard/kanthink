@@ -42,6 +42,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       description,
       status,
       assignedTo,
+      notes,
       dueDate,
       completedAt,
       cardId,
@@ -64,6 +65,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       }
     }
     if (assignedTo !== undefined) updates.assignedTo = assignedTo
+    if (notes !== undefined) updates.notes = notes
     if (dueDate !== undefined) updates.dueDate = dueDate ? new Date(dueDate) : null
     if (completedAt !== undefined) updates.completedAt = completedAt ? new Date(completedAt) : null
     if (cardId !== undefined) updates.cardId = cardId

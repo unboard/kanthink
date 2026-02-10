@@ -164,6 +164,7 @@ export const tasks = sqliteTable('tasks', {
   status: text('status').$type<'not_started' | 'in_progress' | 'done'>().default('not_started'),
 
   assignedTo: text('assigned_to', { mode: 'json' }).$type<string[]>(),
+  notes: text('notes', { mode: 'json' }).$type<TaskNoteJson[]>().default([]),
   dueDate: integer('due_date', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 
@@ -369,6 +370,16 @@ interface InstructionRevisionJson {
   instructions: string
   source: 'user' | 'ai-suggested' | 'ai-auto'
   appliedAt: string
+}
+
+interface TaskNoteJson {
+  id: string
+  content: string
+  authorId?: string
+  authorName?: string
+  authorImage?: string
+  createdAt: string
+  editedAt?: string
 }
 
 interface CardMessageJson {
