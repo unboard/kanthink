@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useNav, type NavPanelType } from '@/components/providers/NavProvider';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -109,12 +110,20 @@ function NotificationNavButton({ isMobile }: { isMobile?: boolean }) {
 // Desktop vertical nav (left side)
 function DesktopNav() {
   const { data: session } = useSession();
-  const { activePanel, togglePanel } = useNav();
+  const router = useRouter();
+  const { activePanel, togglePanel, closePanel } = useNav();
 
   const handleToggle = (panel: NavPanelType) => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     togglePanel(panel);
+  };
+
+  const handleNavigate = (href: string) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activePanel) closePanel();
+    router.push(href);
   };
 
   return (
@@ -166,8 +175,8 @@ function DesktopNav() {
 
         <NavIconButton
           panel="account"
-          isActive={activePanel === 'account'}
-          onPointerDown={handleToggle('account')}
+          isActive={false}
+          onPointerDown={handleNavigate('/settings')}
           label="Account"
           icon={
             session?.user?.image ? (
@@ -186,8 +195,8 @@ function DesktopNav() {
 
         <NavIconButton
           panel="settings"
-          isActive={activePanel === 'settings'}
-          onPointerDown={handleToggle('settings')}
+          isActive={false}
+          onPointerDown={handleNavigate('/settings')}
           label="Settings"
           icon={
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

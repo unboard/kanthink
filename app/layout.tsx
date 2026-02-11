@@ -4,8 +4,6 @@ import "./globals.css";
 import { MiniNav } from "@/components/layout/MiniNav";
 import { ChannelsPanel } from "@/components/layout/ChannelsPanel";
 import { ShroomsPanel } from "@/components/layout/ShroomsPanel";
-import { AccountPanel } from "@/components/layout/AccountPanel";
-import { SettingsPanel } from "@/components/layout/SettingsPanel";
 import { NotificationsPanel } from "@/components/layout/NotificationsPanel";
 import { MobileBottomSheet } from "@/components/layout/MobileBottomSheet";
 import { MobileHeader } from "@/components/layout/MobileHeader";
@@ -75,8 +73,6 @@ export default function RootLayout({
                     <ChannelsPanel />
                     <ShroomsPanel />
                     <NotificationsPanel />
-                    <AccountPanel />
-                    <SettingsPanel />
 
                     {/* Main content - margin adjusts when panel open */}
                     <MainContent>

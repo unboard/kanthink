@@ -18,7 +18,7 @@ const widthPixels: Record<PanelWidth, number> = {
 };
 
 interface NavPanelProps {
-  panelKey: 'channels' | 'shrooms' | 'notifications' | 'account' | 'settings';
+  panelKey: 'channels' | 'shrooms' | 'notifications';
   title: string;
   subtitle?: string;
   width?: PanelWidth;
@@ -89,9 +89,7 @@ export function getPanelWidth(panel: 'channels' | 'shrooms' | 'notifications' | 
     channels: 'sm',
     shrooms: 'md',
     notifications: 'md',
-    account: 'md',
-    settings: 'lg',
   };
 
-  return widthPixels[widths[panel]];
+  return widthPixels[widths[panel]] || 0;
 }
