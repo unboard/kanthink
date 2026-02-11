@@ -963,7 +963,7 @@ export function Board({ channel }: BoardProps) {
           )}
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            className="hidden md:block rounded-md p-2 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
             title="Channel settings"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

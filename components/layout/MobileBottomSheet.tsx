@@ -921,22 +921,105 @@ function AccountContent({ onClose }: { onClose: () => void }) {
 }
 
 function SettingsContent({ onClose }: { onClose: () => void }) {
-  // Theme selection temporarily disabled - only spores theme available
+  const pathname = usePathname();
+  const channels = useStore((s) => s.channels);
+  const updateChannel = useStore((s) => s.updateChannel);
+  const addInstructionRevision = useStore((s) => s.addInstructionRevision);
+
+  const currentChannelId = pathname.startsWith('/channel/') ? pathname.split('/')[2] : null;
+  const currentChannel = currentChannelId ? channels[currentChannelId] : null;
+
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [aiInstructions, setAiInstructions] = useState('');
+
+  // Sync form state when channel changes
+  useEffect(() => {
+    if (currentChannel) {
+      setName(currentChannel.name);
+      setDescription(currentChannel.description);
+      setAiInstructions(currentChannel.aiInstructions || '');
+    }
+  }, [currentChannel?.id]);
+
+  const handleSave = () => {
+    if (!currentChannel || !currentChannelId) return;
+
+    if (aiInstructions.trim() !== (currentChannel.aiInstructions || '')) {
+      addInstructionRevision(currentChannelId, aiInstructions.trim(), 'user');
+    }
+
+    updateChannel(currentChannelId, {
+      name: name.trim() || currentChannel.name,
+      description: description.trim(),
+    });
+  };
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 p-6">
-        {/* Theme info - selection disabled for now */}
-        <div className="mb-8">
-          <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Theme</p>
-          <div className="py-4 px-4 rounded-xl border-2 border-violet-500 bg-violet-50 dark:bg-violet-900/30">
-            <p className="text-sm font-medium text-violet-700 dark:text-violet-300">Spores</p>
-            <p className="text-xs text-neutral-500 mt-1">More themes coming soon</p>
+      <div className="flex-1 p-4 space-y-5">
+        {currentChannel ? (
+          <>
+            {/* Channel Name */}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Channel Name
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onBlur={handleSave}
+                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Description
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                onBlur={handleSave}
+                rows={2}
+                placeholder="What is this channel about?"
+                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
+              />
+            </div>
+
+            {/* AI Instructions */}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                AI Instructions
+              </label>
+              <textarea
+                value={aiInstructions}
+                onChange={(e) => setAiInstructions(e.target.value)}
+                onBlur={handleSave}
+                rows={4}
+                placeholder="Tell the AI what kind of content to generate..."
+                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
+              />
+              <p className="text-xs text-neutral-500 mt-1.5">
+                These instructions guide the AI when generating cards for this channel.
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12">
+            <svg className="w-10 h-10 mb-3 text-neutral-300 dark:text-neutral-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">No channel selected</p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Open a channel to edit its settings</p>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Sticky footer */}
+      {/* Sticky footer — link to account settings */}
       <div className="flex-shrink-0 sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-4">
         <Link
           href="/settings"
@@ -944,10 +1027,9 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
           className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-neutral-100 dark:bg-neutral-800 active:bg-neutral-200 dark:active:bg-neutral-700 font-medium text-neutral-900 dark:text-white"
         >
           <svg className="w-5 h-5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
-          All Settings
+          Account Settings
         </Link>
       </div>
     </div>

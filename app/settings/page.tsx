@@ -11,25 +11,28 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6 sm:py-8">
       <h1 className="text-lg font-semibold text-neutral-900 dark:text-white mb-6 sm:hidden">Settings</h1>
-      <AccountSection />
 
-      <hr className="my-8 border-neutral-200 dark:border-neutral-800" />
+      <div className="rounded-2xl bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 mb-6">
+        <AccountSection />
+      </div>
 
-      <ThemeSection />
+      <div className="rounded-2xl bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 mb-6">
+        <ThemeSection />
+      </div>
 
-      <hr className="my-8 border-neutral-200 dark:border-neutral-800" />
-
-      <AISettings />
+      <div className="rounded-2xl bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 mb-6">
+        <AISettings />
+      </div>
 
       {/* Commented out - question system disabled
-      <hr className="my-8 border-neutral-200 dark:border-neutral-800" />
-
-      <QuestionSettings />
+      <div className="rounded-2xl bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 mb-6">
+        <QuestionSettings />
+      </div>
       */}
 
-      <hr className="my-8 border-neutral-200 dark:border-neutral-800" />
-
-      <SystemInstructions />
+      <div className="rounded-2xl bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 mb-6">
+        <SystemInstructions />
+      </div>
     </div>
   );
 }
