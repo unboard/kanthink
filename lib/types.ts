@@ -283,7 +283,6 @@ export interface Card {
   id: ID;
   channelId: ID;
   title: string;
-  description?: string;      // User-editable description / notes
   messages: CardMessage[];   // Chat messages (replaces content)
   coverImageUrl?: string;    // Cover image URL (Trello-style banner)
   summary?: string;          // AI-generated preview text

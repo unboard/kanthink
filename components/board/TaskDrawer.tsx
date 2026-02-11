@@ -42,16 +42,13 @@ export function TaskDrawer({
   onOpenCard,
 }: TaskDrawerProps) {
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [isDirty, setIsDirty] = useState(false);
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const titleDrawerInputRef = useRef<HTMLInputElement>(null);
   const notesEndRef = useRef<HTMLDivElement>(null);
-  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
 
@@ -79,9 +76,7 @@ export function TaskDrawer({
   useEffect(() => {
     if (isOpen && task) {
       setTitle(task.title);
-      setDescription(task.description);
       setIsDirty(false);
-      setIsEditingDescription(false);
       setIsAssigneePickerOpen(false);
       setIsMenuOpen(false);
       setIsStatusOpen(false);
@@ -124,23 +119,9 @@ export function TaskDrawer({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isStatusOpen]);
 
-  // Auto-resize description textarea
-  useEffect(() => {
-    if (isEditingDescription && descriptionRef.current) {
-      const ta = descriptionRef.current;
-      ta.focus();
-      ta.selectionStart = ta.value.length;
-      ta.style.height = 'auto';
-      ta.style.height = `${ta.scrollHeight}px`;
-    }
-  }, [isEditingDescription]);
-
   const handleSave = () => {
     if (task && isDirty && title.trim()) {
-      updateTask(task.id, {
-        title: title.trim(),
-        description: description,
-      });
+      updateTask(task.id, { title: title.trim() });
       setIsDirty(false);
     }
   };
@@ -148,9 +129,6 @@ export function TaskDrawer({
   const handleClose = () => {
     if (task && isDirty && title.trim()) {
       handleSave();
-    }
-    if (isEditingDescription) {
-      setIsEditingDescription(false);
     }
     onClose();
   };
@@ -169,14 +147,6 @@ export function TaskDrawer({
       status: newStatus,
       completedAt: newStatus === 'done' ? new Date().toISOString() : undefined,
     });
-  };
-
-  const handleDescriptionSave = () => {
-    if (task && title.trim()) {
-      updateTask(task.id, { description });
-    }
-    setIsEditingDescription(false);
-    setIsDirty(false);
   };
 
   const handleAddNote = useCallback((content: string, imageUrls?: string[]) => {
@@ -388,74 +358,6 @@ export function TaskDrawer({
         {/* Scrollable thread body */}
         <div className="relative flex flex-col flex-1 min-h-0">
           <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-3">
-            {/* Description — click to edit */}
-            {(description || isEditingDescription) ? (
-              <div className="relative">
-                {isEditingDescription ? (
-                  <div>
-                    <textarea
-                      ref={descriptionRef}
-                      value={description}
-                      onChange={(e) => {
-                        setDescription(e.target.value);
-                        setIsDirty(true);
-                        e.target.style.height = 'auto';
-                        e.target.style.height = `${e.target.scrollHeight}px`;
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                          setDescription(freshTask?.description ?? task.description ?? '');
-                          setIsEditingDescription(false);
-                        }
-                      }}
-                      className="w-full resize-none rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-                      placeholder="Add a description..."
-                      rows={3}
-                    />
-                    <div className="flex items-center gap-2 mt-2">
-                      <button
-                        onClick={handleDescriptionSave}
-                        className="px-2.5 py-1 text-xs rounded-md bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 hover:bg-neutral-700 dark:hover:bg-neutral-200 transition-colors"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => {
-                          setDescription(freshTask?.description ?? task.description ?? '');
-                          setIsEditingDescription(false);
-                        }}
-                        className="px-2.5 py-1 text-xs rounded-md text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setIsEditingDescription(true)}
-                    className="group w-full text-left rounded-lg px-3 py-2.5 bg-neutral-50 dark:bg-neutral-800/50 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                  >
-                    <p className="text-sm text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-words">
-                      {description}
-                    </p>
-                    <span className="mt-1.5 inline-flex items-center gap-1 text-xs text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                      Edit
-                    </span>
-                  </button>
-                )}
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsEditingDescription(true)}
-                className="w-full text-left rounded-lg px-3 py-2.5 border border-dashed border-neutral-200 dark:border-neutral-700 text-sm text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 hover:text-neutral-500 transition-colors"
-              >
-                Add a description...
-              </button>
-            )}
-
             {/* Notes thread */}
             {currentNotes.length > 0 ? (
               <div className="space-y-3">
@@ -470,14 +372,12 @@ export function TaskDrawer({
                 ))}
               </div>
             ) : (
-              !description && !isEditingDescription && (
-                <div className="flex flex-col items-center justify-center py-8 text-neutral-400">
-                  <svg className="w-8 h-8 mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  <span className="text-sm">No notes yet</span>
-                </div>
-              )
+              <div className="flex flex-col items-center justify-center py-8 text-neutral-400">
+                <svg className="w-8 h-8 mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span className="text-sm">No notes yet</span>
+              </div>
             )}
 
             <div ref={notesEndRef} />
