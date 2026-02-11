@@ -16,6 +16,8 @@ import {
   disconnect as disconnectPusher,
   getSubscribedChannels,
   setNotificationCallback,
+  isConnected as isPusherConnected,
+  onConnectionStateChange,
 } from '@/lib/sync/pusherClient'
 import { useNotificationStore } from '@/lib/notificationStore'
 import { useToastStore } from '@/lib/toastStore'
@@ -583,7 +585,9 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         const elapsed = Date.now() - lastFetchTimeRef.current
-        if (elapsed > STALE_THRESHOLD) {
+        // Always refetch if Pusher is disconnected (mobile browsers suspend WebSocket
+        // when backgrounded, so events were missed even if the user returns quickly)
+        if (elapsed > STALE_THRESHOLD || !isPusherConnected()) {
           fetchServerData()
         }
       }
@@ -592,6 +596,22 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [isServerMode, fetchServerData])
+
+  // Refetch when Pusher reconnects after a disconnection
+  // This catches the case where the connection drops and recovers while the tab is visible
+  // (e.g. flaky mobile network), ensuring we don't miss events from the gap
+  useEffect(() => {
+    if (!isServerMode || !pusherInitialized) return
+
+    const cleanup = onConnectionStateChange((states) => {
+      if (states.current === 'connected' && states.previous !== 'initialized') {
+        // Pusher just reconnected after being disconnected — refetch to catch missed events
+        fetchServerData()
+      }
+    })
+
+    return cleanup
+  }, [isServerMode, pusherInitialized, fetchServerData])
 
   // Track channel changes for Pusher subscriptions
   useEffect(() => {

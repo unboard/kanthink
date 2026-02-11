@@ -360,6 +360,25 @@ export function isConnected(): boolean {
 }
 
 /**
+ * Register a callback for Pusher connection state changes.
+ * Returns a cleanup function to unbind the listener.
+ */
+export function onConnectionStateChange(callback: (state: { current: string; previous: string }) => void): () => void {
+  if (!pusherInstance) {
+    return () => {}
+  }
+
+  const handler = (states: { current: string; previous: string }) => {
+    callback(states)
+  }
+
+  pusherInstance.connection.bind('state_change', handler)
+  return () => {
+    pusherInstance?.connection.unbind('state_change', handler)
+  }
+}
+
+/**
  * Get the list of currently subscribed channel IDs.
  * Also includes channels pending retry to prevent duplicate subscription attempts.
  */
