@@ -299,15 +299,30 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
       }
     }
 
+    // Include all cards from the channel, even those with no tasks
+    if (channel) {
+      const cardIdsToShow = filterCardIds ?? Object.values(cards)
+        .filter((c) => c.channelId === channelId)
+        .map((c) => c.id);
+      for (const cardId of cardIdsToShow) {
+        if (!groups[cardId]) {
+          const card = cards[cardId];
+          if (card) {
+            groups[cardId] = { cardId, cardTitle: card.title, tasks: [] };
+          }
+        }
+      }
+    }
+
     // Convert to array and sort - unlinked first, then by card title
     return Object.values(groups)
-      .filter((g) => g.tasks.length > 0)
+      .filter((g) => g.tasks.length > 0 || g.cardId !== null)
       .sort((a, b) => {
         if (!a.cardId) return -1;
         if (!b.cardId) return 1;
         return a.cardTitle.localeCompare(b.cardTitle);
       });
-  }, [filteredTasks, groupByCard, cards, channel?.unlinkedTaskOrder]);
+  }, [filteredTasks, groupByCard, cards, channel?.unlinkedTaskOrder, channel, channelId, filterCardIds]);
 
   // Build a lookup: taskId -> group's cardId
   const taskToGroupCard = useMemo(() => {
@@ -511,12 +526,11 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
         {/* Task groups */}
         {groupedTasks.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-neutral-500 dark:text-neutral-400 mb-4">
-              No tasks {filterMode !== 'all' ? `${filterMode}` : 'yet'}
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              {filterMode !== 'all'
+                ? `No ${filterMode === 'assigned_to_me' ? 'assigned' : filterMode} tasks`
+                : 'No cards yet — add a card to the board to get started.'}
             </p>
-            <Button onClick={handleAddTaskClick}>
-              Create a task
-            </Button>
           </div>
         ) : groupByCard ? (
           <DndContext

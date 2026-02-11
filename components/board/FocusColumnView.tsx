@@ -16,7 +16,7 @@ import {
 import {
   SortableContext,
   sortableKeyboardCoordinates,
-  rectSortingStrategy,
+  verticalListSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -53,7 +53,7 @@ function SortableGridCard({ card }: { card: CardType }) {
       style={style}
       {...attributes}
       {...listeners}
-      className={`rounded-lg border border-neutral-700/50 ${isDragging ? 'opacity-50' : ''}`}
+      className={isDragging ? 'opacity-50' : ''}
     >
       <Card card={card} />
     </div>
@@ -158,8 +158,8 @@ export function FocusColumnView({ column, channelId }: FocusColumnViewProps) {
       </div>
 
       {showArchived ? (
-        /* Archived cards grid */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        /* Archived cards list */
+        <div className="max-w-xl mx-auto space-y-3">
           {backsideCards.map((card) => (
             <BacksideCard key={card.id} card={card} />
           ))}
@@ -174,16 +174,16 @@ export function FocusColumnView({ column, channelId }: FocusColumnViewProps) {
         >
           <SortableContext
             items={column.cardIds}
-            strategy={rectSortingStrategy}
+            strategy={verticalListSortingStrategy}
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="max-w-xl mx-auto space-y-3">
               {columnCards.map((card) => (
                 <SortableGridCard key={card.id} card={card} />
               ))}
               {/* Skeleton cards while AI is generating */}
               {skeletonCount > 0 &&
                 Array.from({ length: skeletonCount }).map((_, i) => (
-                  <SkeletonCard key={`skeleton-${i}`} className="h-32" />
+                  <SkeletonCard key={`skeleton-${i}`} className="h-20" />
                 ))}
             </div>
           </SortableContext>
