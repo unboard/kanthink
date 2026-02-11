@@ -41,6 +41,7 @@ interface KanthinkState {
   folderOrder: ID[];
   channelOrder: ID[];  // Channels not in any folder
   favoriteChannelIds: ID[];  // User's favorited channels
+  favoriteInstructionCardIds: ID[];  // User's favorited shrooms
   aiOperation: AIOperation;
   generatingSkeletons: Record<ID, number>;  // columnId -> skeleton count
   instructionRuns: Record<ID, InstructionRun>;  // runId -> run info for undo
@@ -75,6 +76,7 @@ interface KanthinkState {
   duplicateChannel: (id: ID) => Channel | null;
   reorderChannels: (fromIndex: number, toIndex: number) => void;
   toggleFavorite: (channelId: ID) => void;
+  toggleInstructionCardFavorite: (id: ID) => void;
 
   // Column actions
   createColumn: (channelId: ID, name: string) => Column | null;
@@ -231,6 +233,7 @@ export const useStore = create<KanthinkState>()(
       folderOrder: [],
       channelOrder: [],
       favoriteChannelIds: [],
+      favoriteInstructionCardIds: [],
       aiOperation: { isActive: false, status: '', runningInstructionIds: [] },
       generatingSkeletons: {},
       instructionRuns: {},
@@ -265,6 +268,7 @@ export const useStore = create<KanthinkState>()(
           folderOrder: [],
           channelOrder: [],
           favoriteChannelIds: [],
+          favoriteInstructionCardIds: [],
           instructionRuns: {},
         });
 
@@ -801,6 +805,17 @@ export const useStore = create<KanthinkState>()(
 
         // Note: favorites are user-local, no server sync needed for now
         // Could add sync.syncToggleFavorite(channelId) if we want server persistence
+      },
+
+      toggleInstructionCardFavorite: (id) => {
+        set((state) => {
+          const isFavorite = state.favoriteInstructionCardIds.includes(id);
+          return {
+            favoriteInstructionCardIds: isFavorite
+              ? state.favoriteInstructionCardIds.filter((fid) => fid !== id)
+              : [...state.favoriteInstructionCardIds, id],
+          };
+        });
       },
 
       createColumn: (channelId, name) => {
@@ -2881,6 +2896,7 @@ export const useStore = create<KanthinkState>()(
                 updatedAt: now(),
               },
             },
+            favoriteInstructionCardIds: state.favoriteInstructionCardIds.filter((fid) => fid !== id),
           };
         });
 
@@ -3425,6 +3441,7 @@ export const useStore = create<KanthinkState>()(
         folders: state.folders,
         folderOrder: state.folderOrder,
         favoriteChannelIds: state.favoriteChannelIds,
+        favoriteInstructionCardIds: state.favoriteInstructionCardIds,
         instructionRuns: state.instructionRuns,
       }),
       onRehydrateStorage: () => (state) => {
@@ -3445,4 +3462,10 @@ export function getChannelShrooms(state: KanthinkState, channelId: string): Inst
   return Object.values(state.instructionCards).filter(
     (ic) => ic.channelId === channelId && (ic.scope === 'channel' || !ic.scope)
   );
+}
+
+export function getFavoriteShrooms(state: KanthinkState): InstructionCard[] {
+  return state.favoriteInstructionCardIds
+    .map((id) => state.instructionCards[id])
+    .filter(Boolean);
 }
