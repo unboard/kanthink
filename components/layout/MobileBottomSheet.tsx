@@ -30,6 +30,7 @@ import { useStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { Button } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { signInWithGoogle } from '@/lib/actions/auth';
 import type { Channel, Folder } from '@/lib/types';
 
@@ -960,6 +961,7 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
 const PANEL_CONFIG: Record<string, { title: string; subtitle?: string }> = {
   channels: { title: 'Channels' },
   shrooms: { title: 'Shrooms', subtitle: 'AI-powered actions for your board' },
+  notifications: { title: 'Notifications' },
   account: { title: 'Account' },
   settings: { title: 'Settings' },
 };
@@ -1071,6 +1073,7 @@ export function MobileBottomSheet() {
         >
           {isAnimating && activePanel === 'channels' && <ChannelsList onClose={closePanel} />}
           {isAnimating && activePanel === 'shrooms' && <ShroomsList onClose={closePanel} />}
+          {isAnimating && activePanel === 'notifications' && <NotificationCenter onClose={closePanel} />}
           {isAnimating && activePanel === 'account' && <AccountContent onClose={closePanel} />}
           {isAnimating && activePanel === 'settings' && <SettingsContent onClose={closePanel} />}
         </div>

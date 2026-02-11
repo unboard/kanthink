@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 
-export type NavPanelType = 'channels' | 'shrooms' | 'account' | 'settings' | null;
+export type NavPanelType = 'channels' | 'shrooms' | 'notifications' | 'account' | 'settings' | null;
 
 interface NavContextValue {
   activePanel: NavPanelType;

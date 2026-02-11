@@ -73,31 +73,19 @@ export function NotificationCenter({ onClose }: NotificationCenterProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-4 pt-4 pb-0">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-white">
-            Notifications
-          </h2>
-          <div className="flex items-center gap-2">
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllAsRead}
-                className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
-              >
-                Mark all read
-              </button>
-            )}
+      {/* Tabs + Mark all read */}
+      <div className="px-4 pt-3 pb-0">
+        {/* Mark all read */}
+        {unreadCount > 0 && (
+          <div className="flex justify-end mb-2">
             <button
-              onClick={onClose}
-              className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              onClick={markAllAsRead}
+              className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              Mark all read
             </button>
           </div>
-        </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 p-1 bg-neutral-100 dark:bg-neutral-800 rounded-lg">

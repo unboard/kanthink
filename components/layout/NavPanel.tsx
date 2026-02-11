@@ -18,7 +18,7 @@ const widthPixels: Record<PanelWidth, number> = {
 };
 
 interface NavPanelProps {
-  panelKey: 'channels' | 'shrooms' | 'account' | 'settings';
+  panelKey: 'channels' | 'shrooms' | 'notifications' | 'account' | 'settings';
   title: string;
   subtitle?: string;
   width?: PanelWidth;
@@ -82,12 +82,13 @@ export function NavPanel({ panelKey, title, subtitle, width = 'sm', children }: 
 }
 
 // Helper to get panel width for layout margin calculation
-export function getPanelWidth(panel: 'channels' | 'shrooms' | 'account' | 'settings' | null): number {
+export function getPanelWidth(panel: 'channels' | 'shrooms' | 'notifications' | 'account' | 'settings' | null): number {
   if (!panel) return 0;
 
   const widths: Record<string, PanelWidth> = {
     channels: 'sm',
     shrooms: 'md',
+    notifications: 'md',
     account: 'md',
     settings: 'lg',
   };

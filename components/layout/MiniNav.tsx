@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useNav, type NavPanelType } from '@/components/providers/NavProvider';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 interface NavIconButtonProps {
   panel: NavPanelType;
@@ -41,6 +41,67 @@ function NavIconButton({ icon, label, isActive, onPointerDown, isMobile }: NavIc
           </span>
         )}
       </div>
+    </button>
+  );
+}
+
+function NotificationNavButton({ isMobile }: { isMobile?: boolean }) {
+  const { activePanel, togglePanel } = useNav();
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const isActive = activePanel === 'notifications';
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    togglePanel('notifications');
+  };
+
+  const bellIcon = (
+    <div className="relative">
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+      </svg>
+      {unreadCount > 0 && (
+        <span className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center text-[10px] font-bold text-white bg-violet-500 rounded-full">
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </span>
+      )}
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <button
+        type="button"
+        onPointerDown={handlePointerDown}
+        className={`flex-1 h-12 flex flex-col items-center justify-center transition-colors ${
+          isActive ? 'text-violet-600 dark:text-violet-400' : 'text-neutral-500 dark:text-neutral-400'
+        }`}
+        aria-label="Notifications"
+      >
+        <div className="flex flex-col items-center gap-0.5">
+          {bellIcon}
+          <span className={`text-[10px] font-medium ${isActive ? 'text-violet-600 dark:text-violet-400' : 'text-neutral-500 dark:text-neutral-400'}`}>
+            Alerts
+          </span>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onPointerDown={handlePointerDown}
+      className={`flex items-center justify-center w-10 h-10 rounded-lg transition-colors ${
+        isActive
+          ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-white'
+          : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-700 dark:hover:text-neutral-200'
+      }`}
+      title="Notifications"
+      aria-label="Notifications"
+    >
+      {bellIcon}
     </button>
   );
 }
@@ -101,7 +162,7 @@ function DesktopNav() {
 
       {/* Bottom icons */}
       <div className="flex flex-col items-center gap-2">
-        <NotificationBell />
+        <NotificationNavButton isMobile={false} />
 
         <NavIconButton
           panel="account"
@@ -185,7 +246,7 @@ function MobileNav() {
         }
       />
 
-      <NotificationBell isMobile />
+      <NotificationNavButton isMobile />
 
       <NavIconButton
         panel="account"

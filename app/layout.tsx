@@ -6,6 +6,7 @@ import { ChannelsPanel } from "@/components/layout/ChannelsPanel";
 import { ShroomsPanel } from "@/components/layout/ShroomsPanel";
 import { AccountPanel } from "@/components/layout/AccountPanel";
 import { SettingsPanel } from "@/components/layout/SettingsPanel";
+import { NotificationsPanel } from "@/components/layout/NotificationsPanel";
 import { MobileBottomSheet } from "@/components/layout/MobileBottomSheet";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { MainContent } from "@/components/layout/MainContent";
@@ -73,6 +74,7 @@ export default function RootLayout({
                     {/* Panels - render based on activePanel */}
                     <ChannelsPanel />
                     <ShroomsPanel />
+                    <NotificationsPanel />
                     <AccountPanel />
                     <SettingsPanel />
 

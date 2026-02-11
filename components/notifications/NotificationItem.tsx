@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { type NotificationData, getCategoryForType } from '@/lib/notifications/types'
-import { useNotificationStore } from '@/lib/notificationStore'
+import { useNav } from '@/components/providers/NavProvider'
 
 interface NotificationItemProps {
   notification: NotificationData
@@ -99,7 +99,7 @@ function getTypeLabel(notification: NotificationData): string | null {
 
 export function NotificationItem({ notification, onRead }: NotificationItemProps) {
   const router = useRouter()
-  const setOpen = useNotificationStore((s) => s.setOpen)
+  const { closePanel } = useNav()
 
   const handleClick = () => {
     if (!notification.isRead) {
@@ -108,7 +108,7 @@ export function NotificationItem({ notification, onRead }: NotificationItemProps
 
     const url = getNavigationUrl(notification)
     if (url) {
-      setOpen(false)
+      closePanel()
       router.push(url)
     }
   }
