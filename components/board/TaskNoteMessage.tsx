@@ -26,27 +26,42 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-const URL_REGEX = /(https?:\/\/[^\s<]+)/g;
-
 function linkifyContent(text: string): React.ReactNode {
-  const parts = text.split(URL_REGEX);
-  if (parts.length === 1) return text;
+  const urlRegex = /https?:\/\/[^\s<]+/g;
+  const result: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
 
-  return parts.map((part, i) =>
-    /^https?:\/\//.test(part) ? (
+  while ((match = urlRegex.exec(text)) !== null) {
+    // Add text before the URL
+    if (match.index > lastIndex) {
+      result.push(text.slice(lastIndex, match.index));
+    }
+    // Add the URL as a link
+    const url = match[0];
+    result.push(
       <a
-        key={i}
-        href={part}
+        key={match.index}
+        href={url}
         target="_blank"
         rel="noopener noreferrer"
         className="text-blue-600 dark:text-blue-400 hover:underline break-all"
       >
-        {part}
+        {url}
       </a>
-    ) : (
-      part
-    )
-  );
+    );
+    lastIndex = match.index + url.length;
+  }
+
+  // If no URLs found, return plain text
+  if (result.length === 0) return text;
+
+  // Add remaining text after last URL
+  if (lastIndex < text.length) {
+    result.push(text.slice(lastIndex));
+  }
+
+  return result;
 }
 
 export function TaskNoteMessage({ note, isOwnNote, onEdit, onDelete }: TaskNoteMessageProps) {
