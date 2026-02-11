@@ -26,6 +26,29 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+const URL_REGEX = /(https?:\/\/[^\s<]+)/g;
+
+function linkifyContent(text: string): React.ReactNode {
+  const parts = text.split(URL_REGEX);
+  if (parts.length === 1) return text;
+
+  return parts.map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a
+        key={i}
+        href={part}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 dark:text-blue-400 hover:underline break-all"
+      >
+        {part}
+      </a>
+    ) : (
+      part
+    )
+  );
+}
+
 export function TaskNoteMessage({ note, isOwnNote, onEdit, onDelete }: TaskNoteMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(note.content);
@@ -148,7 +171,7 @@ export function TaskNoteMessage({ note, isOwnNote, onEdit, onDelete }: TaskNoteM
           </div>
         ) : (
           <p className="text-sm text-neutral-800 dark:text-neutral-200 whitespace-pre-wrap break-words">
-            {note.content}
+            {linkifyContent(note.content)}
           </p>
         )}
 
