@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
+  DragOverlay,
+  useDroppable,
   useSensor,
   useSensors,
+  type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core';
 import {
@@ -36,48 +40,36 @@ interface TaskGroupProps {
   groupByCard: boolean;
   members: Array<{ id: string; name: string; email: string; image: string | null }>;
   onTaskClick: (task: Task) => void;
-  onReorder: (cardId: ID | null, oldIndex: number, newIndex: number) => void;
   onAddTask: (cardId: ID) => void;
+  isDragActive?: boolean;
 }
 
-function TaskGroup({ group, groupByCard, members, onTaskClick, onReorder, onAddTask }: TaskGroupProps) {
+function TaskGroup({ group, groupByCard, members, onTaskClick, onAddTask, isDragActive }: TaskGroupProps) {
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const activeId = active.id as string;
-    const overId = over.id as string;
-
-    const taskIds = group.tasks.map((t) => t.id);
-    const oldIndex = taskIds.indexOf(activeId);
-    const newIndex = taskIds.indexOf(overId);
-
-    if (oldIndex !== -1 && newIndex !== -1) {
-      onReorder(group.cardId, oldIndex, newIndex);
-    }
-  };
-
   const sortableIds = group.tasks.map((t) => t.id);
-  const canDrag = groupByCard; // Can drag when grouped by card (both linked and unlinked)
+  const canDrag = groupByCard;
+
+  // Make the group header a drop target for cross-group moves
+  const droppableId = `group:${group.cardId ?? 'unlinked'}`;
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: droppableId });
 
   return (
-    <div className="bg-white/80 dark:bg-neutral-900/50 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden backdrop-blur-sm">
+    <div
+      className={`bg-white/80 dark:bg-neutral-900/50 rounded-lg border overflow-hidden backdrop-blur-sm transition-colors ${
+        isOver && isDragActive
+          ? 'border-violet-400 dark:border-violet-600 ring-1 ring-violet-400/30'
+          : 'border-neutral-200 dark:border-neutral-800'
+      }`}
+    >
       {/* Group header */}
       {groupByCard && (
-        <div className="px-4 py-3 bg-neutral-50/80 dark:bg-neutral-800/30 border-b border-neutral-200 dark:border-neutral-800">
+        <div
+          ref={setDropRef}
+          className={`px-4 py-3 bg-neutral-50/80 dark:bg-neutral-800/30 border-b border-neutral-200 dark:border-neutral-800 transition-colors ${
+            isOver && isDragActive ? 'bg-violet-50/80 dark:bg-violet-900/20' : ''
+          }`}
+        >
           <div className="flex items-center gap-2">
             {group.cardId ? (
               <>
@@ -108,28 +100,22 @@ function TaskGroup({ group, groupByCard, members, onTaskClick, onReorder, onAddT
       {/* Task list */}
       <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
         {canDrag ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
+          <SortableContext
+            items={sortableIds}
+            strategy={verticalListSortingStrategy}
           >
-            <SortableContext
-              items={sortableIds}
-              strategy={verticalListSortingStrategy}
-            >
-              {group.tasks.map((task) => (
-                <div key={task.id} className="px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
-                  <SortableTaskRow
-                    task={task}
-                    onToggle={() => toggleTaskStatus(task.id)}
-                    onClick={() => onTaskClick(task)}
-                    size="md"
-                    members={members}
-                  />
-                </div>
-              ))}
-            </SortableContext>
-          </DndContext>
+            {group.tasks.map((task) => (
+              <div key={task.id} className="px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
+                <SortableTaskRow
+                  task={task}
+                  onToggle={() => toggleTaskStatus(task.id)}
+                  onClick={() => onTaskClick(task)}
+                  size="md"
+                  members={members}
+                />
+              </div>
+            ))}
+          </SortableContext>
         ) : (
           // Non-draggable list for standalone tasks
           group.tasks.map((task) => (
@@ -201,6 +187,7 @@ export function TaskListView({ channelId }: TaskListViewProps) {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const { data: session } = useSession();
   const currentUserId = session?.user?.id as string | undefined;
@@ -211,7 +198,21 @@ export function TaskListView({ channelId }: TaskListViewProps) {
   const createTask = useStore((s) => s.createTask);
   const reorderTasks = useStore((s) => s.reorderTasks);
   const reorderUnlinkedTasks = useStore((s) => s.reorderUnlinkedTasks);
+  const moveTaskToCard = useStore((s) => s.moveTaskToCard);
   const { members } = useChannelMembers(channelId);
+
+  // Sensors per CLAUDE.md: MouseSensor + TouchSensor (NOT PointerSensor)
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Get all tasks for this channel
   const channelTasks = useMemo(() => {
@@ -263,7 +264,7 @@ export function TaskListView({ channelId }: TaskListViewProps) {
     }
 
     // Sort card-linked tasks by their position in card.taskIds
-    for (const [groupKey, group] of Object.entries(groups)) {
+    for (const [, group] of Object.entries(groups)) {
       if (group.cardId) {
         const card = cards[group.cardId];
         if (card?.taskIds) {
@@ -304,6 +305,17 @@ export function TaskListView({ channelId }: TaskListViewProps) {
       });
   }, [filteredTasks, groupByCard, cards, channel?.unlinkedTaskOrder]);
 
+  // Build a lookup: taskId -> group's cardId
+  const taskToGroupCard = useMemo(() => {
+    const map = new Map<string, ID | null>();
+    for (const group of groupedTasks) {
+      for (const task of group.tasks) {
+        map.set(task.id, group.cardId);
+      }
+    }
+    return map;
+  }, [groupedTasks]);
+
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
     setAutoFocusTaskTitle(false);
@@ -338,8 +350,73 @@ export function TaskListView({ channelId }: TaskListViewProps) {
     }
   };
 
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeTaskId = active.id as string;
+    const overId = over.id as string;
+
+    // Check if dropped on a group header (droppable id like "group:cardId" or "group:unlinked")
+    if (overId.startsWith('group:')) {
+      const targetCardId = overId === 'group:unlinked' ? null : overId.slice('group:'.length);
+      const sourceCardId = taskToGroupCard.get(activeTaskId) ?? null;
+      if (sourceCardId !== targetCardId) {
+        moveTaskToCard(activeTaskId, targetCardId);
+      }
+      return;
+    }
+
+    // Dropped on another task — check if same group or different group
+    const sourceCardId = taskToGroupCard.get(activeTaskId) ?? null;
+    const targetCardId = taskToGroupCard.get(overId) ?? null;
+
+    if (sourceCardId === targetCardId) {
+      // Same group — reorder
+      if (activeTaskId === overId) return;
+      const group = groupedTasks.find((g) => g.cardId === sourceCardId);
+      if (!group) return;
+      const taskIds = group.tasks.map((t) => t.id);
+      const oldIndex = taskIds.indexOf(activeTaskId);
+      const newIndex = taskIds.indexOf(overId);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        handleReorder(sourceCardId, oldIndex, newIndex);
+      }
+    } else {
+      // Different group — move task to new card
+      moveTaskToCard(activeTaskId, targetCardId);
+    }
+  }, [groupedTasks, taskToGroupCard, moveTaskToCard, handleReorder]);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+  }, []);
+
+  const activeTask = activeId ? tasks[activeId] : null;
+
   const activeCount = channelTasks.filter((t) => t.status !== 'done').length;
   const completedCount = channelTasks.filter((t) => t.status === 'done').length;
+
+  const groupContent = (
+    <div className="space-y-6">
+      {groupedTasks.map((group) => (
+        <TaskGroup
+          key={group.cardId ?? 'unlinked'}
+          group={group}
+          groupByCard={groupByCard}
+          members={members}
+          onTaskClick={handleTaskClick}
+          onAddTask={handleAddTaskToCard}
+          isDragActive={!!activeId}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div className="flex-1 overflow-auto">
@@ -437,20 +514,34 @@ export function TaskListView({ channelId }: TaskListViewProps) {
               Create a task
             </Button>
           </div>
+        ) : groupByCard ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            {groupContent}
+            <DragOverlay>
+              {activeTask ? (
+                <div className="px-4 py-3 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 opacity-90">
+                  <div className="flex items-center gap-2">
+                    <TaskCheckbox status={activeTask.status} onToggle={() => {}} size="md" />
+                    <span className={`text-sm ${
+                      activeTask.status === 'done'
+                        ? 'text-neutral-400 line-through'
+                        : 'text-neutral-800 dark:text-neutral-200'
+                    }`}>
+                      {activeTask.title}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         ) : (
-          <div className="space-y-6">
-            {groupedTasks.map((group) => (
-              <TaskGroup
-                key={group.cardId ?? 'unlinked'}
-                group={group}
-                groupByCard={groupByCard}
-                members={members}
-                onTaskClick={handleTaskClick}
-                onReorder={handleReorder}
-                onAddTask={handleAddTaskToCard}
-              />
-            ))}
-          </div>
+          groupContent
         )}
 
         {/* Add standalone task button */}

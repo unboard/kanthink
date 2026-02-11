@@ -63,6 +63,7 @@ export type BroadcastEvent =
   | { type: 'task:toggleStatus'; id: ID; status: string; completedAt: string | undefined }
   | { type: 'task:reorder'; cardId: ID; fromIndex: number; toIndex: number }
   | { type: 'task:reorderUnlinked'; channelId: ID; fromIndex: number; toIndex: number }
+  | { type: 'task:move'; taskId: ID; oldCardId: ID | null; newCardId: ID | null }
 
   // Property events
   | { type: 'property:addDefinition'; channelId: ID; definition: PropertyDefinition }

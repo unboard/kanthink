@@ -112,6 +112,7 @@ interface KanthinkState {
   toggleTaskStatus: (id: ID) => void;
   reorderTasks: (cardId: ID, fromIndex: number, toIndex: number) => void;
   reorderUnlinkedTasks: (channelId: ID, fromIndex: number, toIndex: number) => void;
+  moveTaskToCard: (taskId: ID, newCardId: ID | null) => void;
 
   // Task note actions
   addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }, imageUrls?: string[]) => TaskNote | null;
@@ -1918,6 +1919,106 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs and devices
         broadcastAndPublish({ type: 'task:reorderUnlinked', channelId, fromIndex, toIndex });
+      },
+
+      moveTaskToCard: (taskId, newCardId) => {
+        const task = get().tasks[taskId];
+        if (!task) return;
+        const oldCardId = task.cardId;
+        if (oldCardId === newCardId) return;
+
+        const timestamp = now();
+
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+
+          const updates: Partial<typeof state> = {
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...t, cardId: newCardId, updatedAt: timestamp },
+            },
+          };
+
+          // Remove from old card's taskIds
+          if (oldCardId) {
+            const oldCard = state.cards[oldCardId];
+            if (oldCard) {
+              updates.cards = {
+                ...state.cards,
+                [oldCardId]: {
+                  ...oldCard,
+                  taskIds: (oldCard.taskIds ?? []).filter((id) => id !== taskId),
+                  updatedAt: timestamp,
+                },
+              };
+            }
+          }
+
+          // Remove from channel's unlinkedTaskOrder if was unlinked
+          if (!oldCardId) {
+            const ch = state.channels[t.channelId];
+            if (ch?.unlinkedTaskOrder) {
+              updates.channels = {
+                ...state.channels,
+                [t.channelId]: {
+                  ...ch,
+                  unlinkedTaskOrder: ch.unlinkedTaskOrder.filter((id) => id !== taskId),
+                  updatedAt: timestamp,
+                },
+              };
+            }
+          }
+
+          // Add to new card's taskIds
+          if (newCardId) {
+            const newCard = (updates.cards ?? state.cards)[newCardId];
+            if (newCard) {
+              updates.cards = {
+                ...(updates.cards ?? state.cards),
+                [newCardId]: {
+                  ...newCard,
+                  taskIds: [...(newCard.taskIds ?? []), taskId],
+                  updatedAt: timestamp,
+                },
+              };
+            }
+          }
+
+          // Add to channel's unlinkedTaskOrder if becoming unlinked
+          if (!newCardId) {
+            const ch = (updates.channels ?? state.channels)[t.channelId];
+            if (ch) {
+              updates.channels = {
+                ...(updates.channels ?? state.channels),
+                [t.channelId]: {
+                  ...ch,
+                  unlinkedTaskOrder: [...(ch.unlinkedTaskOrder ?? []), taskId],
+                  updatedAt: timestamp,
+                },
+              };
+            }
+          }
+
+          return updates;
+        });
+
+        // Sync task cardId update to server
+        sync.syncTaskUpdate(task.channelId, taskId, { cardId: newCardId });
+
+        // Sync reorder: place at end of new card/unlinked list
+        if (newCardId) {
+          const newCard = get().cards[newCardId];
+          const position = (newCard?.taskIds ?? []).length - 1;
+          sync.syncTaskReorder(task.channelId, taskId, newCardId, Math.max(0, position));
+        } else {
+          const ch = get().channels[task.channelId];
+          const position = (ch?.unlinkedTaskOrder ?? []).length - 1;
+          sync.syncChannelUpdate(task.channelId, { unlinkedTaskOrder: ch?.unlinkedTaskOrder });
+        }
+
+        // Broadcast to other tabs
+        broadcastAndPublish({ type: 'task:move', taskId, oldCardId, newCardId });
       },
 
       // Task note actions

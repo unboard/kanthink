@@ -683,6 +683,82 @@ export function applyBroadcastEvent(
       })
       break
 
+    case 'task:move':
+      set((state) => {
+        const task = state.tasks[event.taskId]
+        if (!task) return state
+
+        const updates: Partial<typeof state> = {
+          tasks: {
+            ...state.tasks,
+            [event.taskId]: { ...task, cardId: event.newCardId, updatedAt: now() },
+          },
+        }
+
+        // Remove from old card
+        if (event.oldCardId) {
+          const oldCard = state.cards[event.oldCardId]
+          if (oldCard) {
+            updates.cards = {
+              ...state.cards,
+              [event.oldCardId]: {
+                ...oldCard,
+                taskIds: (oldCard.taskIds ?? []).filter((id) => id !== event.taskId),
+                updatedAt: now(),
+              },
+            }
+          }
+        }
+
+        // Remove from unlinked order if was unlinked
+        if (!event.oldCardId) {
+          const ch = state.channels[task.channelId]
+          if (ch?.unlinkedTaskOrder) {
+            updates.channels = {
+              ...state.channels,
+              [task.channelId]: {
+                ...ch,
+                unlinkedTaskOrder: ch.unlinkedTaskOrder.filter((id) => id !== event.taskId),
+                updatedAt: now(),
+              },
+            }
+          }
+        }
+
+        // Add to new card
+        if (event.newCardId) {
+          const newCard = (updates.cards ?? state.cards)[event.newCardId]
+          if (newCard) {
+            updates.cards = {
+              ...(updates.cards ?? state.cards),
+              [event.newCardId]: {
+                ...newCard,
+                taskIds: [...(newCard.taskIds ?? []), event.taskId],
+                updatedAt: now(),
+              },
+            }
+          }
+        }
+
+        // Add to unlinked order if becoming unlinked
+        if (!event.newCardId) {
+          const ch = (updates.channels ?? state.channels)[task.channelId]
+          if (ch) {
+            updates.channels = {
+              ...(updates.channels ?? state.channels),
+              [task.channelId]: {
+                ...ch,
+                unlinkedTaskOrder: [...(ch.unlinkedTaskOrder ?? []), event.taskId],
+                updatedAt: now(),
+              },
+            }
+          }
+        }
+
+        return updates
+      })
+      break
+
     // ===== INSTRUCTION CARD EVENTS =====
     case 'instructionCard:create':
       set((state) => {
