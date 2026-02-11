@@ -153,8 +153,8 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
   const newCard = newCardId ? cards[newCardId] : null;
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 sm:py-4">
-      <div className="max-w-xl mx-auto rounded-lg bg-neutral-100 dark:bg-neutral-800/50">
+    <div className="flex-1 flex flex-col overflow-hidden px-4 sm:px-6 py-3 sm:py-4">
+      <div className="max-w-xl mx-auto w-full flex flex-col flex-1 min-h-0 rounded-lg bg-neutral-100 dark:bg-neutral-800/50">
         {/* Column header */}
         <div className="flex items-center justify-between px-3 py-2">
           <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -221,8 +221,8 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
           </div>
         </div>
 
-        {/* Content area */}
-        <div className="space-y-2 px-2 pb-4">
+        {/* Content area - scrollable */}
+        <div className="flex-1 overflow-y-auto space-y-2 px-2 pb-4">
           {showArchived ? (
             /* Archived cards list */
             backsideCards.map((card) => (
