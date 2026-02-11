@@ -11,7 +11,7 @@ import {
   channelShares,
   users,
 } from '@/lib/db/schema'
-import { eq, and, asc } from 'drizzle-orm'
+import { eq, and, asc, sql } from 'drizzle-orm'
 import {
   requirePermission,
   PermissionError,
@@ -63,6 +63,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       where: eq(cards.channelId, channelId),
       orderBy: [asc(cards.position)],
     })
+
+    // Fix any corrupt JSON in notes/assignedTo columns before querying
+    // (prevents Drizzle's JSON.parse from crashing on invalid data)
+    await db.run(sql`UPDATE tasks SET notes = '[]' WHERE channel_id = ${channelId} AND notes IS NOT NULL AND notes != '' AND notes NOT LIKE '[%'`)
+    await db.run(sql`UPDATE tasks SET assigned_to = NULL WHERE channel_id = ${channelId} AND assigned_to IS NOT NULL AND assigned_to != '' AND assigned_to NOT LIKE '[%'`)
 
     // Fetch tasks
     const channelTasks = await db.query.tasks.findMany({

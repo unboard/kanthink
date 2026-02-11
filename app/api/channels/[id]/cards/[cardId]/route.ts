@@ -35,6 +35,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Card not found' }, { status: 404 })
     }
 
+    // Fix corrupt JSON before querying
+    await db.run(sql`UPDATE tasks SET notes = '[]' WHERE card_id = ${cardId} AND notes IS NOT NULL AND notes != '' AND notes NOT LIKE '[%'`)
+
     // Also fetch tasks for this card
     const cardTasks = await db.query.tasks.findMany({
       where: eq(tasks.cardId, cardId),

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { tasks } from '@/lib/db/schema'
-import { eq, and, ne } from 'drizzle-orm'
+import { eq, and, ne, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 
 interface RouteParams {
@@ -35,6 +35,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         { status: 400 }
       )
     }
+
+    // Fix corrupt JSON before querying
+    await db.run(sql`UPDATE tasks SET notes = '[]' WHERE channel_id = ${channelId} AND notes IS NOT NULL AND notes != '' AND notes NOT LIKE '[%'`)
 
     // Verify task belongs to this channel
     const task = await db.query.tasks.findFirst({

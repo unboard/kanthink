@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { tasks } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { createNotification } from '@/lib/notifications/createNotification'
 
@@ -26,6 +26,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   try {
     await requirePermission(channelId, userId, 'edit')
+
+    // Fix corrupt JSON before querying
+    await db.run(sql`UPDATE tasks SET notes = '[]' WHERE id = ${taskId} AND notes IS NOT NULL AND notes != '' AND notes NOT LIKE '[%'`)
 
     // Verify task belongs to this channel
     const task = await db.query.tasks.findFirst({
@@ -127,6 +130,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
   try {
     await requirePermission(channelId, userId, 'edit')
+
+    // Fix corrupt JSON before querying
+    await db.run(sql`UPDATE tasks SET notes = '[]' WHERE id = ${taskId} AND notes IS NOT NULL AND notes != '' AND notes NOT LIKE '[%'`)
 
     // Verify task belongs to this channel
     const task = await db.query.tasks.findFirst({
