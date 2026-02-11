@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { notifications } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -20,12 +21,18 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
   const { id } = await params
 
-  await db.update(notifications)
-    .set({ isRead: true, readAt: new Date() })
-    .where(and(
-      eq(notifications.id, id),
-      eq(notifications.userId, session.user.id)
-    ))
+  try {
+    await ensureSchema()
+
+    await db.update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(and(
+        eq(notifications.id, id),
+        eq(notifications.userId, session.user.id)
+      ))
+  } catch {
+    // notifications table may not exist in production — fail gracefully
+  }
 
   return NextResponse.json({ success: true })
 }

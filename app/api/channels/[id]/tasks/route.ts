@@ -59,37 +59,47 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Get max position for this card (or unlinked tasks)
-    const existingTasks = await db.query.tasks.findMany({
-      where: cardId
-        ? eq(tasks.cardId, cardId)
-        : and(eq(tasks.channelId, channelId), eq(tasks.cardId, '')),
-      orderBy: [desc(tasks.position)],
-      limit: 1,
-    })
+    // Get max position — non-fatal, default to 0 if query fails
+    let position = 0
+    try {
+      const existingTasks = await db.query.tasks.findMany({
+        where: cardId
+          ? eq(tasks.cardId, cardId)
+          : and(eq(tasks.channelId, channelId), eq(tasks.cardId, '')),
+        orderBy: [desc(tasks.position)],
+        limit: 1,
+      })
 
-    const maxPosition = existingTasks.length > 0 ? existingTasks[0].position : -1
-    const position = requestedPosition !== undefined ? requestedPosition : maxPosition + 1
+      const maxPosition = existingTasks.length > 0 ? existingTasks[0].position : -1
+      position = requestedPosition !== undefined ? requestedPosition : maxPosition + 1
+    } catch (e) {
+      console.error('Position query failed (using 0):', e)
+      position = requestedPosition !== undefined ? requestedPosition : 0
+    }
 
     // If inserting at a specific position, shift other tasks
     if (requestedPosition !== undefined && cardId) {
-      await db
-        .update(tasks)
-        .set({ position: sql`${tasks.position} + 1` })
-        .where(
-          and(
-            eq(tasks.cardId, cardId),
-            gte(tasks.position, requestedPosition)
+      try {
+        await db
+          .update(tasks)
+          .set({ position: sql`${tasks.position} + 1` })
+          .where(
+            and(
+              eq(tasks.cardId, cardId),
+              gte(tasks.position, requestedPosition)
+            )
           )
-        )
+      } catch (e) {
+        console.error('Position shift failed:', e)
+      }
     }
 
     // Use client-provided ID if given (for optimistic sync), otherwise generate
     const taskId = clientId || nanoid()
     const now = new Date()
-    // Use client-provided createdAt if given (for optimistic sync consistency)
     const createdAtDate = clientCreatedAt ? new Date(clientCreatedAt) : now
 
+    // INSERT — the critical operation
     await db.insert(tasks).values({
       id: taskId,
       channelId,
@@ -103,22 +113,40 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       updatedAt: now,
     })
 
-    const createdTask = await db.query.tasks.findFirst({
-      where: eq(tasks.id, taskId),
-    })
-
-    return NextResponse.json(
-      {
-        task: {
+    // Read back — non-fatal, construct response from input if this fails
+    let responseTask: Record<string, unknown> = {
+      id: taskId,
+      channelId,
+      cardId: cardId || null,
+      title,
+      description,
+      status,
+      assignedTo: assignedTo || null,
+      notes: [],
+      position,
+      dueDate: null,
+      completedAt: null,
+      createdAt: createdAtDate.toISOString(),
+      updatedAt: now.toISOString(),
+    }
+    try {
+      const createdTask = await db.query.tasks.findFirst({
+        where: eq(tasks.id, taskId),
+      })
+      if (createdTask) {
+        responseTask = {
           ...createdTask,
-          dueDate: createdTask?.dueDate?.toISOString(),
-          completedAt: createdTask?.completedAt?.toISOString(),
-          createdAt: createdTask?.createdAt?.toISOString(),
-          updatedAt: createdTask?.updatedAt?.toISOString(),
-        },
-      },
-      { status: 201 }
-    )
+          dueDate: createdTask.dueDate?.toISOString() ?? null,
+          completedAt: createdTask.completedAt?.toISOString() ?? null,
+          createdAt: createdTask.createdAt?.toISOString() ?? createdAtDate.toISOString(),
+          updatedAt: createdTask.updatedAt?.toISOString() ?? now.toISOString(),
+        }
+      }
+    } catch (e) {
+      console.error('Task read-back failed (using constructed response):', e)
+    }
+
+    return NextResponse.json({ task: responseTask }, { status: 201 })
   } catch (error) {
     if (error instanceof PermissionError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode })

@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { tasks } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 import { createNotification } from '@/lib/notifications/createNotification'
 
 interface RouteParams {
@@ -25,6 +26,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'edit')
 
     // Verify task belongs to this channel

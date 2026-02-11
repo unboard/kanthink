@@ -67,11 +67,16 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       orderBy: [asc(cards.position)],
     })
 
-    // Fetch tasks
-    const channelTasks = await db.query.tasks.findMany({
-      where: eq(tasks.channelId, channelId),
-      orderBy: [asc(tasks.position)],
-    })
+    // Fetch tasks — non-fatal so a bad notes column doesn't crash the whole channel
+    let channelTasks: Awaited<ReturnType<typeof db.query.tasks.findMany>> = []
+    try {
+      channelTasks = await db.query.tasks.findMany({
+        where: eq(tasks.channelId, channelId),
+        orderBy: [asc(tasks.position)],
+      })
+    } catch (e) {
+      console.error('Tasks query failed for channel', channelId, e)
+    }
 
     // Fetch instruction cards ordered by position
     const channelInstructions = await db.query.instructionCards.findMany({

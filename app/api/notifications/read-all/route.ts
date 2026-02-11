@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { notifications } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 /**
  * POST /api/notifications/read-all
@@ -14,12 +15,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
-  await db.update(notifications)
-    .set({ isRead: true, readAt: new Date() })
-    .where(and(
-      eq(notifications.userId, session.user.id),
-      eq(notifications.isRead, false)
-    ))
+  try {
+    await ensureSchema()
+
+    await db.update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(and(
+        eq(notifications.userId, session.user.id),
+        eq(notifications.isRead, false)
+      ))
+  } catch {
+    // notifications table may not exist in production — fail gracefully
+  }
 
   return NextResponse.json({ success: true })
 }

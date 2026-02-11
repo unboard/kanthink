@@ -180,7 +180,7 @@ export const tasks = sqliteTable('tasks', {
   status: text('status').$type<'not_started' | 'in_progress' | 'done'>().default('not_started'),
 
   assignedTo: text('assigned_to', { mode: 'json' }).$type<string[]>(),
-  notes: safeJsonText<TaskNoteJson[]>([])('notes'),
+  notes: safeJsonText<TaskNoteJson[]>([])('notes').default([]),
   dueDate: integer('due_date', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 
