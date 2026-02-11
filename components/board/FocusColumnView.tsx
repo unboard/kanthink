@@ -128,7 +128,7 @@ export function FocusColumnView({ column, channelId }: FocusColumnViewProps) {
   const newCard = newCardId ? cards[newCardId] : null;
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 sm:py-4">
+    <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 sm:py-4 bg-neutral-100 dark:bg-neutral-800/30">
       {/* Top bar with add card + archive toggle */}
       <div className="flex items-center gap-3 mb-4">
         <button

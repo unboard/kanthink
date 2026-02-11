@@ -31,6 +31,7 @@ import { Button } from '@/components/ui';
 
 interface TaskListViewProps {
   channelId: ID;
+  filterCardIds?: ID[];
 }
 
 type FilterMode = 'all' | 'active' | 'completed' | 'assigned_to_me';
@@ -181,7 +182,7 @@ function TaskGroup({ group, groupByCard, members, onTaskClick, onAddTask, isDrag
   );
 }
 
-export function TaskListView({ channelId }: TaskListViewProps) {
+export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [groupByCard, setGroupByCard] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -214,10 +215,13 @@ export function TaskListView({ channelId }: TaskListViewProps) {
     })
   );
 
-  // Get all tasks for this channel
+  // Get all tasks for this channel (optionally scoped to specific cards)
   const channelTasks = useMemo(() => {
-    return Object.values(tasks).filter((task) => task.channelId === channelId);
-  }, [tasks, channelId]);
+    const all = Object.values(tasks).filter((task) => task.channelId === channelId);
+    if (!filterCardIds) return all;
+    const cardIdSet = new Set(filterCardIds);
+    return all.filter((task) => task.cardId && cardIdSet.has(task.cardId));
+  }, [tasks, channelId, filterCardIds]);
 
   // Apply filter
   const filteredTasks = useMemo(() => {
