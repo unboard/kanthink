@@ -91,15 +91,6 @@ function SortableTaskItem({ task, onTaskClick, onToggleStatus }: SortableTaskIte
       >
         {task.title}
       </button>
-      <svg
-        className="w-4 h-4 text-neutral-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity cursor-pointer"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-        onClick={() => onTaskClick(task)}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-      </svg>
     </div>
   );
 }
