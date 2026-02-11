@@ -17,10 +17,8 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  useSortable,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import type { Column as ColumnType, ID, Card as CardType } from '@/lib/types';
+import type { Column as ColumnType, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Card } from './Card';
 import { BacksideCard } from './BacksideCard';
@@ -33,34 +31,6 @@ interface FocusColumnViewProps {
   column: ColumnType;
   channelId: ID;
   onExitFocus: () => void;
-}
-
-function SortableGridCard({ card }: { card: CardType }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: card.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className={isDragging ? 'opacity-50' : ''}
-    >
-      <Card card={card} />
-    </div>
-  );
 }
 
 export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnViewProps) {
@@ -252,7 +222,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
                   strategy={verticalListSortingStrategy}
                 >
                   {columnCards.map((card) => (
-                    <SortableGridCard key={card.id} card={card} />
+                    <Card key={card.id} card={card} />
                   ))}
                 </SortableContext>
                 <DragOverlay>
