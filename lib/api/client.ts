@@ -33,10 +33,22 @@ interface FoldersResponse {
   rootChannelIds: string[]
 }
 
+// Cache-busting: Mobile Safari aggressively caches GET responses even with
+// { cache: 'no-store' }. Adding a timestamp query param ensures every request
+// hits the server and never serves stale cached data.
+function noCacheHeaders(): HeadersInit {
+  return { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+}
+
+function noCacheUrl(url: string): string {
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}_t=${Date.now()}`
+}
+
 // ===== CHANNELS =====
 
 export async function fetchChannels(): Promise<ChannelListResponse> {
-  const res = await fetch('/api/channels', { cache: 'no-store' })
+  const res = await fetch(noCacheUrl('/api/channels'), { cache: 'no-store', headers: noCacheHeaders() })
   if (!res.ok) {
     throw new Error('Failed to fetch channels')
   }
@@ -44,7 +56,7 @@ export async function fetchChannels(): Promise<ChannelListResponse> {
 }
 
 export async function fetchChannel(channelId: string): Promise<ChannelDetailResponse> {
-  const res = await fetch(`/api/channels/${channelId}`, { cache: 'no-store' })
+  const res = await fetch(noCacheUrl(`/api/channels/${channelId}`), { cache: 'no-store', headers: noCacheHeaders() })
   if (!res.ok) {
     throw new Error('Failed to fetch channel')
   }
@@ -190,7 +202,7 @@ export async function reorderColumns(channelId: string, columnId: string, toPosi
 // ===== FOLDERS =====
 
 export async function fetchFolders(): Promise<FoldersResponse> {
-  const res = await fetch('/api/folders', { cache: 'no-store' })
+  const res = await fetch(noCacheUrl('/api/folders'), { cache: 'no-store', headers: noCacheHeaders() })
   if (!res.ok) {
     throw new Error('Failed to fetch folders')
   }
@@ -318,7 +330,7 @@ export interface SharesResponse {
 }
 
 export async function fetchShares(channelId: string): Promise<SharesResponse> {
-  const res = await fetch(`/api/channels/${channelId}/shares`, { cache: 'no-store' })
+  const res = await fetch(noCacheUrl(`/api/channels/${channelId}/shares`), { cache: 'no-store', headers: noCacheHeaders() })
   if (!res.ok) {
     throw new Error('Failed to fetch shares')
   }
@@ -368,7 +380,7 @@ export async function deleteShare(channelId: string, shareId: string): Promise<v
 }
 
 export async function fetchInviteLinks(channelId: string): Promise<{ links: InviteLink[] }> {
-  const res = await fetch(`/api/channels/${channelId}/invite-links`, { cache: 'no-store' })
+  const res = await fetch(noCacheUrl(`/api/channels/${channelId}/invite-links`), { cache: 'no-store', headers: noCacheHeaders() })
   if (!res.ok) {
     throw new Error('Failed to fetch invite links')
   }
@@ -402,7 +414,7 @@ export async function deleteInviteLink(channelId: string, linkId: string): Promi
 // ===== MEMBERS =====
 
 export async function fetchChannelMembers(channelId: string): Promise<{ members: Array<{ id: string; name: string; email: string; image: string | null; role?: string; roleDescription?: string | null }> }> {
-  const res = await fetch(`/api/channels/${channelId}/members`, { cache: 'no-store' })
+  const res = await fetch(noCacheUrl(`/api/channels/${channelId}/members`), { cache: 'no-store', headers: noCacheHeaders() })
   if (!res.ok) {
     throw new Error('Failed to fetch channel members')
   }
@@ -506,7 +518,7 @@ export async function deleteInstructionCard(channelId: string, instructionId: st
 // ===== GLOBAL SHROOMS =====
 
 export async function fetchGlobalShrooms(): Promise<{ instructionCards: InstructionCard[] }> {
-  const res = await fetch('/api/global-shrooms', { cache: 'no-store' })
+  const res = await fetch(noCacheUrl('/api/global-shrooms'), { cache: 'no-store', headers: noCacheHeaders() })
   if (!res.ok) {
     // Don't throw - global shrooms are optional
     return { instructionCards: [] }
