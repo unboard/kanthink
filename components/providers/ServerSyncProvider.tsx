@@ -613,6 +613,25 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
     return cleanup
   }, [isServerMode, pusherInitialized, fetchServerData])
 
+  // Periodic background poll as a safety net for missed Pusher events.
+  // Mobile WebSocket connections are unreliable — events can be silently dropped
+  // during network transitions, browser throttling, or brief disconnections that
+  // don't trigger a state_change event. This ensures data stays fresh.
+  useEffect(() => {
+    if (!isServerMode || !hasFetched) return
+
+    const POLL_INTERVAL = 60_000 // 60 seconds
+
+    const interval = setInterval(() => {
+      // Only poll when the tab is visible to avoid wasting resources
+      if (document.visibilityState === 'visible') {
+        fetchServerData()
+      }
+    }, POLL_INTERVAL)
+
+    return () => clearInterval(interval)
+  }, [isServerMode, hasFetched, fetchServerData])
+
   // Track channel changes for Pusher subscriptions
   useEffect(() => {
     if (!pusherInitialized) {
