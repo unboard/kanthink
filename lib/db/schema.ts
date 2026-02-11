@@ -1,4 +1,20 @@
-import { sqliteTable, text, integer, primaryKey, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, primaryKey, index, uniqueIndex, customType } from 'drizzle-orm/sqlite-core'
+
+/**
+ * Like text({ mode: 'json' }) but catches JSON.parse errors instead of crashing.
+ * Returns the provided fallback value when the stored text is not valid JSON.
+ */
+const safeJsonText = <T>(fallback: T) => customType<{ data: T; driverData: string }>({
+  dataType() { return 'text' },
+  toDriver(value: T): string {
+    return JSON.stringify(value)
+  },
+  fromDriver(value: string): T {
+    if (value == null || value === '') return fallback
+    try { return JSON.parse(value) as T }
+    catch { return fallback }
+  },
+})
 
 // NextAuth required tables
 export const users = sqliteTable('users', {
@@ -164,7 +180,7 @@ export const tasks = sqliteTable('tasks', {
   status: text('status').$type<'not_started' | 'in_progress' | 'done'>().default('not_started'),
 
   assignedTo: text('assigned_to', { mode: 'json' }).$type<string[]>(),
-  notes: text('notes', { mode: 'json' }).$type<TaskNoteJson[]>().default([]),
+  notes: safeJsonText<TaskNoteJson[]>([])('notes'),
   dueDate: integer('due_date', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 
