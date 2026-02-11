@@ -1024,7 +1024,7 @@ export function Board({ channel }: BoardProps) {
         focusSubView === 'tasks' ? (
           <TaskListView channelId={channel.id} filterCardIds={focusColumn.cardIds} />
         ) : (
-          <FocusColumnView column={focusColumn} channelId={channel.id} />
+          <FocusColumnView column={focusColumn} channelId={channel.id} onExitFocus={handleExitFocus} />
         )
       ) : (
         <>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -26,10 +26,13 @@ import { Card } from './Card';
 import { BacksideCard } from './BacksideCard';
 import { SkeletonCard } from './SkeletonCard';
 import { CardDetailDrawer } from './CardDetailDrawer';
+import { ColumnMenu } from './ColumnMenu';
+import { ColumnDetailDrawer } from './ColumnDetailDrawer';
 
 interface FocusColumnViewProps {
   column: ColumnType;
   channelId: ID;
+  onExitFocus: () => void;
 }
 
 function SortableGridCard({ card }: { card: CardType }) {
@@ -60,20 +63,42 @@ function SortableGridCard({ card }: { card: CardType }) {
   );
 }
 
-export function FocusColumnView({ column, channelId }: FocusColumnViewProps) {
+export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnViewProps) {
   const cards = useStore((s) => s.cards);
   const moveCard = useStore((s) => s.moveCard);
   const createCard = useStore((s) => s.createCard);
+  const updateColumn = useStore((s) => s.updateColumn);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
 
   const [activeId, setActiveId] = useState<ID | null>(null);
   const [newCardId, setNewCardId] = useState<ID | null>(null);
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(column.name);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const columnCards = column.cardIds.map((id) => cards[id]).filter(Boolean);
   const backsideCards = (column.backsideCardIds ?? []).map((id) => cards[id]).filter(Boolean);
   const activeCard = activeId ? cards[activeId] : null;
+
+  useEffect(() => {
+    if (isRenaming && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isRenaming]);
+
+  const handleRenameSubmit = () => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== column.name) {
+      updateColumn(channelId, column.id, { name: trimmed });
+    } else {
+      setRenameValue(column.name);
+    }
+    setIsRenaming(false);
+  };
 
   // ┌─────────────────────────────────────────────────────────────────────────┐
   // │ CRITICAL: Mobile Drag-and-Drop Configuration                           │
@@ -130,27 +155,74 @@ export function FocusColumnView({ column, channelId }: FocusColumnViewProps) {
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 sm:py-4">
       <div className="max-w-xl mx-auto rounded-lg bg-neutral-100 dark:bg-neutral-800/50">
-        {/* Archive toggle - top right of column container */}
-        {backsideCards.length > 0 && (
-          <div className="flex justify-end px-3 pt-2">
+        {/* Column header */}
+        <div className="flex items-center justify-between px-3 py-2">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            {/* Exit focus button (collapse icon) */}
             <button
-              onClick={() => setShowArchived(!showArchived)}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
-                showArchived
-                  ? 'text-amber-700 dark:text-amber-400'
-                  : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
-              }`}
+              onClick={onExitFocus}
+              className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 flex-shrink-0"
+              title="Exit focus mode"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
               </svg>
-              Archived ({backsideCards.length})
             </button>
+            {isRenaming ? (
+              <input
+                ref={inputRef}
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={handleRenameSubmit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRenameSubmit();
+                  if (e.key === 'Escape') { setRenameValue(column.name); setIsRenaming(false); }
+                }}
+                className="flex-1 rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-sm font-medium focus:border-neutral-400 focus:outline-none dark:border-neutral-600 dark:bg-neutral-800"
+              />
+            ) : (
+              <h3
+                onClick={() => setIsRenaming(true)}
+                className="flex-1 truncate text-sm font-medium cursor-pointer text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
+                title="Click to rename"
+              >
+                {column.name}
+              </h3>
+            )}
           </div>
-        )}
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-neutral-400">{showArchived ? backsideCards.length : columnCards.length}</span>
+            {backsideCards.length > 0 && (
+              <button
+                onClick={() => setShowArchived(!showArchived)}
+                className={`rounded p-1 transition-colors ${
+                  showArchived
+                    ? 'text-amber-500 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+                    : 'text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300'
+                }`}
+                title={showArchived ? 'Show active cards' : `${backsideCards.length} archived`}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+              </button>
+            )}
+            <ColumnMenu
+              channelId={channelId}
+              columnId={column.id}
+              columnCount={1}
+              cardCount={columnCards.length}
+              onRename={() => setIsRenaming(true)}
+              onOpenSettings={() => setIsDetailOpen(true)}
+              onFocus={onExitFocus}
+              hasInstructions={!!column.instructions}
+            />
+          </div>
+        </div>
 
         {/* Content area */}
-        <div className="space-y-2 px-2 pb-4 pt-2">
+        <div className="space-y-2 px-2 pb-4">
           {showArchived ? (
             /* Archived cards list */
             backsideCards.map((card) => (
@@ -222,6 +294,14 @@ export function FocusColumnView({ column, channelId }: FocusColumnViewProps) {
         isOpen={isCardDrawerOpen}
         onClose={handleCardDrawerClose}
         autoFocusTitle
+      />
+
+      {/* Column Detail Drawer */}
+      <ColumnDetailDrawer
+        column={column}
+        channelId={channelId}
+        isOpen={isDetailOpen}
+        onClose={() => setIsDetailOpen(false)}
       />
     </div>
   );
