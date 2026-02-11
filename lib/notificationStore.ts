@@ -3,11 +3,14 @@ import type { NotificationData } from '@/lib/notifications/types'
 
 const MAX_NOTIFICATIONS = 100
 
+export type NotificationTab = 'all' | 'unread'
+
 interface NotificationState {
   notifications: NotificationData[]
   unreadCount: number
   isOpen: boolean
   hasPermission: boolean | null // null = not yet checked
+  activeTab: NotificationTab
 
   addNotification: (notification: NotificationData) => void
   markAsRead: (id: string) => void
@@ -16,6 +19,7 @@ interface NotificationState {
   loadNotifications: (notifications: NotificationData[]) => void
   setOpen: (open: boolean) => void
   setHasPermission: (has: boolean) => void
+  setActiveTab: (tab: NotificationTab) => void
 }
 
 export const useNotificationStore = create<NotificationState>((set, get) => ({
@@ -23,6 +27,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   unreadCount: 0,
   isOpen: false,
   hasPermission: null,
+  activeTab: 'all' as NotificationTab,
 
   addNotification: (notification) => {
     set((state) => {
@@ -88,4 +93,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   setOpen: (open) => set({ isOpen: open }),
 
   setHasPermission: (has) => set({ hasPermission: has }),
+
+  setActiveTab: (tab) => set({ activeTab: tab }),
 }))

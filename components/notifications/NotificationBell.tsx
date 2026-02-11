@@ -14,9 +14,9 @@ export function NotificationBell({ isMobile }: NotificationBellProps) {
   const setOpen = useNotificationStore((s) => s.setOpen)
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // Close on click outside
+  // Close on click outside (desktop only)
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || isMobile) return
 
     const handleClickOutside = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
@@ -26,7 +26,7 @@ export function NotificationBell({ isMobile }: NotificationBellProps) {
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen, setOpen])
+  }, [isOpen, setOpen, isMobile])
 
   // Close on Escape
   useEffect(() => {
@@ -48,7 +48,7 @@ export function NotificationBell({ isMobile }: NotificationBellProps) {
 
   if (isMobile) {
     return (
-      <div className="relative" ref={panelRef}>
+      <>
         <button
           type="button"
           onClick={() => setOpen(!isOpen)}
@@ -70,13 +70,25 @@ export function NotificationBell({ isMobile }: NotificationBellProps) {
           </span>
         </button>
 
-        {/* Mobile dropdown — slides up from bottom */}
+        {/* Mobile full-screen sheet */}
         {isOpen && (
-          <div className="fixed bottom-16 left-0 right-0 z-50 mx-2 mb-2 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden safe-area-bottom">
-            <NotificationCenter onClose={() => setOpen(false)} />
+          <div className="fixed inset-0 z-50 flex flex-col">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/30 dark:bg-black/50"
+              onClick={() => setOpen(false)}
+            />
+            {/* Sheet — slides up from bottom, takes most of screen */}
+            <div className="relative mt-auto max-h-[85vh] bg-white dark:bg-neutral-900 rounded-t-2xl shadow-xl overflow-hidden flex flex-col safe-area-bottom">
+              {/* Handle bar */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+              </div>
+              <NotificationCenter onClose={() => setOpen(false)} />
+            </div>
           </div>
         )}
-      </div>
+      </>
     )
   }
 
@@ -105,7 +117,7 @@ export function NotificationBell({ isMobile }: NotificationBellProps) {
 
       {/* Desktop dropdown */}
       {isOpen && (
-        <div className="absolute left-full top-0 ml-2 w-80 bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50">
+        <div className="absolute left-full top-0 ml-2 w-80 max-h-[500px] bg-white dark:bg-neutral-900 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50 flex flex-col">
           <NotificationCenter onClose={() => setOpen(false)} />
         </div>
       )}
