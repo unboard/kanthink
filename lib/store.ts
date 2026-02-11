@@ -3533,6 +3533,9 @@ export const useStore = create<KanthinkState>()(
     {
       name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
+      // Bump version to invalidate stale localStorage caches across all devices.
+      // This forces a fresh server fetch instead of using potentially stale persisted data.
+      version: 1,
       partialize: (state) => ({
         channels: state.channels,
         cards: state.cards,
