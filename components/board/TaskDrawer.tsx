@@ -300,15 +300,28 @@ export function TaskDrawer({
           <div className="w-px h-5 bg-neutral-200 dark:bg-neutral-700" />
 
           {/* Assignees */}
-          <div className="flex items-center gap-1.5">
-            {currentAssignees.length > 0 && (
-              <AssigneeAvatars
-                userIds={currentAssignees}
-                members={members}
-                size="sm"
-                onClick={() => setIsAssigneePickerOpen(!isAssigneePickerOpen)}
-              />
-            )}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {currentAssignees.map((userId) => {
+              const member = members.find((m) => m.id === userId);
+              const name = member?.name || 'Unknown';
+              return (
+                <span
+                  key={userId}
+                  className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300"
+                >
+                  {name}
+                  <button
+                    onClick={() => toggleTaskAssignee(task.id, userId)}
+                    className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-violet-200 dark:hover:bg-violet-800 transition-colors"
+                    title={`Remove ${name}`}
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              );
+            })}
             <button
               onClick={() => setIsAssigneePickerOpen(!isAssigneePickerOpen)}
               className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
