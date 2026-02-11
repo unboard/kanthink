@@ -1023,10 +1023,10 @@ export function MobileBottomSheet() {
       className="md:hidden fixed inset-0"
       style={{ zIndex: 9999 }} // Maximum z-index to be above everything
     >
-      {/* Full-screen panel - slides in from right like card detail drawer */}
+      {/* Full-screen panel - slides up from bottom */}
       <div
         className={`absolute inset-0 bg-white dark:bg-neutral-900 flex flex-col transition-transform duration-200 ease-out ${
-          isAnimating ? 'translate-x-0' : 'translate-x-full'
+          isAnimating ? 'translate-y-0' : 'translate-y-full'
         }`}
         style={{
           pointerEvents: isAnimating ? 'auto' : 'none',
