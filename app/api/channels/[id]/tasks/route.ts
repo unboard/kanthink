@@ -57,9 +57,6 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Fix corrupt JSON before querying
-    await db.run(sql`UPDATE tasks SET notes = '[]' WHERE channel_id = ${channelId} AND notes IS NOT NULL AND notes != '' AND notes NOT LIKE '[%'`)
-
     // Get max position for this card (or unlinked tasks)
     const existingTasks = await db.query.tasks.findMany({
       where: cardId

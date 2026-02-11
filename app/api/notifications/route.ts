@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { notifications } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 /**
  * GET /api/notifications
@@ -13,6 +14,8 @@ export async function GET(req: NextRequest) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
+
+  await ensureSchema()
 
   const { searchParams } = new URL(req.url)
   const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100)
