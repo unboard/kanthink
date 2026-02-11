@@ -187,6 +187,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
               onOpenSettings={() => setIsDetailOpen(true)}
               onFocus={onExitFocus}
               hasInstructions={!!column.instructions}
+              isFocused
             />
           </div>
         </div>
