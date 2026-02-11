@@ -363,7 +363,7 @@ export function TaskDrawer({
 
         {/* Row 3: Dates */}
         <div className="flex-shrink-0 px-4 py-1.5 text-xs text-neutral-400">
-          Created by {session?.user?.name ?? 'Unknown'} {formatDate(task.createdAt)}
+          Created {formatDate(task.createdAt)}
           {(freshTask?.completedAt ?? task.completedAt) && (
             <> &middot; Completed: {formatDate((freshTask?.completedAt ?? task.completedAt)!)}</>
           )}
