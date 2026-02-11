@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { Column as ColumnType, ID } from '@/lib/types';
@@ -20,6 +21,7 @@ interface ColumnProps {
 }
 
 export function Column({ column, channelId, columnCount, dragHandleProps }: ColumnProps) {
+  const router = useRouter();
   const cards = useStore((s) => s.cards);
   const updateColumn = useStore((s) => s.updateColumn);
   const createCard = useStore((s) => s.createCard);
@@ -132,6 +134,15 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
       </div>
       <div className="flex items-center gap-1">
         <span className="text-xs text-neutral-400">{isFlipped ? backsideCount : columnCards.length}</span>
+        <button
+          onClick={() => router.push(`/channel/${channelId}?focus=${column.id}`)}
+          className="rounded p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300"
+          title="Focus on column"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+        </button>
         <ColumnMenu
           channelId={channelId}
           columnId={column.id}
@@ -139,6 +150,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           cardCount={columnCards.length}
           onRename={() => setIsRenaming(true)}
           onOpenSettings={() => setIsDetailOpen(true)}
+          onFocus={() => router.push(`/channel/${channelId}?focus=${column.id}`)}
           hasInstructions={!!column.instructions}
         />
       </div>

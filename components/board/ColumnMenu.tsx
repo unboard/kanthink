@@ -11,6 +11,7 @@ interface ColumnMenuProps {
   cardCount: number;
   onRename: () => void;
   onOpenSettings: () => void;
+  onFocus: () => void;
   hasInstructions?: boolean;
 }
 
@@ -21,6 +22,7 @@ export function ColumnMenu({
   cardCount,
   onRename,
   onOpenSettings,
+  onFocus,
   hasInstructions,
 }: ColumnMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -90,6 +92,18 @@ export function ColumnMenu({
             {hasInstructions && (
               <span className="w-2 h-2 bg-violet-500 rounded-full" />
             )}
+          </button>
+          <button
+            onClick={() => {
+              onFocus();
+              setIsOpen(false);
+            }}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+            Focus on column
           </button>
           <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
           <button

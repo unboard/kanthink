@@ -37,6 +37,7 @@ import { AIDebugModal } from './AIDebugModal';
 import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
 import { ShroomChatDrawer } from './ShroomChatDrawer';
 import { TaskListView } from './TaskListView';
+import { FocusColumnView } from './FocusColumnView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
@@ -56,14 +57,14 @@ interface PreflightResult {
   unprocessed: string[];       // Card IDs
 }
 
-type ViewMode = 'board' | 'tasks';
+type ViewMode = 'board' | 'tasks' | 'focus';
 
 interface BoardProps {
   channel: Channel;
 }
 
 export function Board({ channel }: BoardProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('board');
+  const [manualViewMode, setManualViewMode] = useState<ViewMode>('board');
   const [activeId, setActiveId] = useState<ID | null>(null);
   const [activeType, setActiveType] = useState<'card' | 'column' | null>(null);
   const [dragSourceColumnId, setDragSourceColumnId] = useState<ID | null>(null);
@@ -83,6 +84,30 @@ export function Board({ channel }: BoardProps) {
   const [showShroomChatDrawer, setShowShroomChatDrawer] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  // Focus column mode: read ?focus= param
+  const focusParam = searchParams.get('focus');
+  const focusColumn = focusParam ? channel.columns.find((c) => c.id === focusParam) ?? null : null;
+  const viewMode: ViewMode = focusColumn ? 'focus' : manualViewMode;
+
+  const setViewMode = (mode: ViewMode) => {
+    if (mode !== 'focus' && focusColumn) {
+      // Exiting focus mode - clear the param
+      router.push(`/channel/${channel.id}`, { scroll: false });
+    }
+    setManualViewMode(mode);
+  };
+
+  const handleExitFocus = () => {
+    router.push(`/channel/${channel.id}`, { scroll: false });
+  };
+
+  // If focus param is set but invalid, clear it
+  useEffect(() => {
+    if (focusParam && !focusColumn) {
+      router.replace(`/channel/${channel.id}`, { scroll: false });
+    }
+  }, [focusParam, focusColumn, router, channel.id]);
 
   // Settings store for first-time highlight
   const shroomsButtonHighlighted = useSettingsStore((s) => s.shroomsButtonHighlighted);
@@ -896,14 +921,31 @@ export function Board({ channel }: BoardProps) {
             alt="Kanthink"
             className="h-5 w-5 flex-shrink-0 md:hidden"
           />
-          <h2
-            className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-            onClick={() => setIsSettingsOpen(true)}
-            title="Edit channel name"
-          >
-            {channel.name}
-          </h2>
-          {/* View toggle */}
+          {viewMode === 'focus' && focusColumn ? (
+            /* Breadcrumb header for focus mode */
+            <div className="flex items-center gap-1.5 min-w-0">
+              <button
+                onClick={handleExitFocus}
+                className="text-base sm:text-lg font-medium text-neutral-500 dark:text-neutral-400 truncate hover:text-neutral-900 dark:hover:text-white hover:underline transition-colors"
+              >
+                {channel.name}
+              </button>
+              <span className="text-neutral-400 dark:text-neutral-500 flex-shrink-0">/</span>
+              <h2 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate">
+                {focusColumn.name}
+              </h2>
+            </div>
+          ) : (
+            <h2
+              className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+              onClick={() => setIsSettingsOpen(true)}
+              title="Edit channel name"
+            >
+              {channel.name}
+            </h2>
+          )}
+          {/* View toggle - hidden in focus mode */}
+          {viewMode !== 'focus' && (
           <div className="flex items-center bg-neutral-100 dark:bg-neutral-800 rounded-lg p-0.5 sm:p-1 flex-shrink-0">
             <button
               onClick={() => setViewMode('board')}
@@ -932,6 +974,7 @@ export function Board({ channel }: BoardProps) {
               <span className="hidden xs:inline">Tasks</span>
             </button>
           </div>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Channel members with online/offline status */}
@@ -978,6 +1021,8 @@ export function Board({ channel }: BoardProps) {
 
       {viewMode === 'tasks' ? (
         <TaskListView channelId={channel.id} />
+      ) : viewMode === 'focus' && focusColumn ? (
+        <FocusColumnView column={focusColumn} channelId={channel.id} />
       ) : (
         <>
           <DndContext
