@@ -21,17 +21,27 @@ export function isServerMode() {
   return serverModeEnabled
 }
 
-// Helper to run sync in background without blocking UI
+// Helper to run sync in background with retry logic
 function syncInBackground(fn: () => Promise<void>, label?: string) {
   if (!serverModeEnabled) {
     console.warn(`[Sync] Skipping ${label || 'sync'} - server mode not enabled`)
     return
   }
 
-  fn().catch((err) => {
-    console.error(`[Sync] ${label || 'Background sync'} failed:`, err)
-    // TODO: Could add retry logic or show toast notification
-  })
+  const attempt = async (retries: number, delay: number) => {
+    try {
+      await fn()
+    } catch (err) {
+      if (retries > 0) {
+        console.warn(`[Sync] ${label || 'Background sync'} failed, retrying in ${delay}ms (${retries} left)`)
+        await new Promise(r => setTimeout(r, delay))
+        return attempt(retries - 1, delay * 2)
+      }
+      console.error(`[Sync] ${label || 'Background sync'} failed after all retries:`, err)
+    }
+  }
+
+  attempt(3, 1000)
 }
 
 // ===== CHANNEL SYNC =====

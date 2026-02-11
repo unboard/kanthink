@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { tasks, cards } from '@/lib/db/schema'
 import { eq, and, desc, gte, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 import { nanoid } from 'nanoid'
 
 interface RouteParams {
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'edit')
 
     const body = await req.json()
