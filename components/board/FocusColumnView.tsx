@@ -129,96 +129,92 @@ export function FocusColumnView({ column, channelId }: FocusColumnViewProps) {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 sm:py-4">
-      {/* Top bar with add card + archive toggle */}
-      <div className="flex items-center gap-3 mb-4">
-        <button
-          onClick={handleAddCard}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700 shadow-sm transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          Add card
-        </button>
+      <div className="max-w-xl mx-auto rounded-lg bg-neutral-100 dark:bg-neutral-800/50">
+        {/* Archive toggle - top right of column container */}
         {backsideCards.length > 0 && (
-          <button
-            onClick={() => setShowArchived(!showArchived)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-              showArchived
-                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                : 'bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700 shadow-sm'
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-            </svg>
-            Archived ({backsideCards.length})
-          </button>
+          <div className="flex justify-end px-3 pt-2">
+            <button
+              onClick={() => setShowArchived(!showArchived)}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
+                showArchived
+                  ? 'text-amber-700 dark:text-amber-400'
+                  : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
+              }`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+              Archived ({backsideCards.length})
+            </button>
+          </div>
         )}
-      </div>
 
-      {showArchived ? (
-        /* Archived cards list */
-        <div className="max-w-xl mx-auto space-y-3">
-          {backsideCards.map((card) => (
-            <BacksideCard key={card.id} card={card} />
-          ))}
-        </div>
-      ) : (
-        /* Active cards grid with DnD */
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={column.cardIds}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="max-w-xl mx-auto space-y-3">
-              {columnCards.map((card) => (
-                <SortableGridCard key={card.id} card={card} />
-              ))}
+        {/* Content area */}
+        <div className="space-y-2 px-2 pb-4 pt-2">
+          {showArchived ? (
+            /* Archived cards list */
+            backsideCards.map((card) => (
+              <BacksideCard key={card.id} card={card} />
+            ))
+          ) : (
+            <>
+              {/* Add card button - matches Column.tsx style */}
+              <button
+                onClick={handleAddCard}
+                className="w-full flex items-center justify-center py-2.5 rounded-md transition-colors bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+
+              {/* Cards with DnD */}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={column.cardIds}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {columnCards.map((card) => (
+                    <SortableGridCard key={card.id} card={card} />
+                  ))}
+                </SortableContext>
+                <DragOverlay>
+                  {activeCard && (
+                    <div className="w-72 cursor-grabbing rounded-md bg-white p-3 shadow-lg dark:bg-neutral-900">
+                      <h4 className="text-sm font-medium text-neutral-900 dark:text-white">
+                        {activeCard.title}
+                      </h4>
+                      {(activeCard.summary || (activeCard.messages ?? []).length > 0) && (
+                        <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
+                          {activeCard.summary || (activeCard.messages ?? [])[0]?.content?.slice(0, 100)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </DragOverlay>
+              </DndContext>
+
               {/* Skeleton cards while AI is generating */}
               {skeletonCount > 0 &&
                 Array.from({ length: skeletonCount }).map((_, i) => (
                   <SkeletonCard key={`skeleton-${i}`} className="h-20" />
                 ))}
-            </div>
-          </SortableContext>
-          <DragOverlay>
-            {activeCard && (
-              <div className="w-72 cursor-grabbing rounded-md bg-white p-3 shadow-lg dark:bg-neutral-900">
-                <h4 className="text-sm font-medium text-neutral-900 dark:text-white">
-                  {activeCard.title}
-                </h4>
-                {(activeCard.summary || (activeCard.messages ?? []).length > 0) && (
-                  <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
-                    {activeCard.summary || (activeCard.messages ?? [])[0]?.content?.slice(0, 100)}
-                  </p>
-                )}
-              </div>
-            )}
-          </DragOverlay>
-        </DndContext>
-      )}
 
-      {/* Empty state */}
-      {columnCards.length === 0 && skeletonCount === 0 && !showArchived && (
-        <div className="flex flex-col items-center justify-center py-16 text-neutral-400">
-          <svg className="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-          <p className="text-sm">No cards in this column</p>
-          <button
-            onClick={handleAddCard}
-            className="mt-3 text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 underline"
-          >
-            Add the first card
-          </button>
+              {/* Empty state */}
+              {columnCards.length === 0 && skeletonCount === 0 && (
+                <p className="text-center text-sm text-neutral-400 py-8">
+                  No cards in this column
+                </p>
+              )}
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Card Detail Drawer for new cards */}
       <CardDetailDrawer
