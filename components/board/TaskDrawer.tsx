@@ -214,16 +214,6 @@ export function TaskDrawer({
             />
           </div>
 
-          {/* Close button */}
-          <button
-            onClick={handleClose}
-            className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-
           {/* 3-dot menu */}
           <div className="relative flex-shrink-0" ref={menuRef}>
             <button
@@ -259,6 +249,16 @@ export function TaskDrawer({
               </div>
             )}
           </div>
+
+          {/* Close button */}
+          <button
+            onClick={handleClose}
+            className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {/* Row 2: Status dropdown + Assignees + Trash */}
