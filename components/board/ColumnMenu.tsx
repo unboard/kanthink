@@ -1,15 +1,18 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import type { ID } from '@/lib/types';
+import type { ID, Card } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Modal } from '@/components/ui';
+
+type SortOption = 'created_newest' | 'created_oldest' | 'updated_newest' | 'updated_oldest';
 
 interface ColumnMenuProps {
   channelId: ID;
   columnId: ID;
   columnCount: number;
   cardCount: number;
+  columnCardIds: ID[];
   onRename: () => void;
   onOpenSettings: () => void;
   onFocus: () => void;
@@ -22,6 +25,7 @@ export function ColumnMenu({
   columnId,
   columnCount,
   cardCount,
+  columnCardIds,
   onRename,
   onOpenSettings,
   onFocus,
@@ -29,17 +33,21 @@ export function ColumnMenu({
   isFocused,
 }: ColumnMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showSortSubmenu, setShowSortSubmenu] = useState(false);
   const [showDeleteCardsConfirm, setShowDeleteCardsConfirm] = useState(false);
   const [showDeleteColumnConfirm, setShowDeleteColumnConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const deleteColumn = useStore((s) => s.deleteColumn);
   const deleteAllCardsInColumn = useStore((s) => s.deleteAllCardsInColumn);
+  const sortColumnCards = useStore((s) => s.sortColumnCards);
+  const allCards = useStore((s) => s.cards);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setIsOpen(false);
+        setShowSortSubmenu(false);
       }
     };
 
@@ -48,6 +56,25 @@ export function ColumnMenu({
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [isOpen]);
+
+  const handleSort = (option: SortOption) => {
+    const cards: Card[] = columnCardIds.map((id) => allCards[id]).filter(Boolean);
+    const sorted = [...cards].sort((a, b) => {
+      switch (option) {
+        case 'created_newest':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        case 'created_oldest':
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case 'updated_newest':
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        case 'updated_oldest':
+          return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+      }
+    });
+    sortColumnCards(channelId, columnId, sorted.map((c) => c.id));
+    setIsOpen(false);
+    setShowSortSubmenu(false);
+  };
 
   const handleDeleteAllCards = () => {
     if (cardCount === 0) return;
@@ -142,6 +169,52 @@ export function ColumnMenu({
                 </>
               )}
             </button>
+            {/* Sort submenu */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSortSubmenu(!showSortSubmenu)}
+                disabled={cardCount < 2}
+                className="flex items-center justify-between w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                  </svg>
+                  Sort cards
+                </span>
+                <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              {showSortSubmenu && (
+                <div className="absolute left-full top-0 ml-1 w-48 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
+                  <button
+                    onClick={() => handleSort('created_newest')}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    Created date (newest)
+                  </button>
+                  <button
+                    onClick={() => handleSort('created_oldest')}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    Created date (oldest)
+                  </button>
+                  <button
+                    onClick={() => handleSort('updated_newest')}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    Modified date (newest)
+                  </button>
+                  <button
+                    onClick={() => handleSort('updated_oldest')}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    Modified date (oldest)
+                  </button>
+                </div>
+              )}
+            </div>
             <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
             <button
               onClick={handleDeleteAllCards}

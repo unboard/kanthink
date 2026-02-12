@@ -440,7 +440,10 @@ export function TaskDrawer({
 
         {/* Row 3: Dates */}
         <div className="flex-shrink-0 px-4 py-1.5 text-xs text-neutral-400">
-          Created {formatDate(task.createdAt)}
+          Created{task.createdBy ? (() => {
+            const creator = members.find((m) => m.id === task.createdBy);
+            return creator ? ` by ${creator.name}` : '';
+          })() : ''} {formatDate(task.createdAt)}
           {(freshTask?.completedAt ?? task.completedAt) && (
             <> &middot; Completed: {formatDate((freshTask?.completedAt ?? task.completedAt)!)}</>
           )}

@@ -175,12 +175,20 @@ export function syncReorderFolders(folderId: string, fromIndex: number, toIndex:
   })
 }
 
+// ===== CARD ORDER SYNC =====
+
+export function syncColumnCardOrder(channelId: string, columnId: string, cardIds: string[]) {
+  syncInBackground(async () => {
+    await api.sortColumnCards(channelId, columnId, cardIds)
+  }, `columnCardOrder:${columnId}`)
+}
+
 // ===== TASK SYNC =====
 
 export function syncTaskCreate(
   channelId: string,
   taskId: string,
-  data: { cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number; createdAt?: string }
+  data: { cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number; createdAt?: string; createdBy?: string }
 ) {
   syncInBackground(async () => {
     // Pass the client-generated ID so server uses the same ID

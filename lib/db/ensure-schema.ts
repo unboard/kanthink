@@ -25,6 +25,8 @@ export async function ensureSchema() {
     `ALTER TABLE channel_shares ADD role_description text`,
     // Migration 0005
     `ALTER TABLE tasks ADD notes text DEFAULT '[]'`,
+    // Migration 0006
+    `ALTER TABLE tasks ADD created_by text`,
   ]
 
   for (const stmt of alterStatements) {
@@ -64,12 +66,40 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0006 — folder_shares table
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS folder_shares (
+      id text PRIMARY KEY NOT NULL,
+      folder_id text NOT NULL,
+      user_id text,
+      email text,
+      role text NOT NULL,
+      invited_by text,
+      invited_at integer,
+      accepted_at integer,
+      created_at integer,
+      FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE cascade,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade,
+      FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE set null
+    )`))
+  } catch {}
+
+  // Migration 0006 — add folder_share_id to channel_shares
+  try {
+    await db.run(sql.raw(`ALTER TABLE channel_shares ADD folder_share_id text REFERENCES folder_shares(id)`))
+  } catch {}
+
   // Indexes — IF NOT EXISTS works for these
   const indexes = [
     `CREATE UNIQUE INDEX IF NOT EXISTS notification_preferences_user_idx ON notification_preferences (user_id)`,
     `CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications (user_id)`,
     `CREATE INDEX IF NOT EXISTS notifications_user_read_idx ON notifications (user_id, is_read)`,
     `CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications (user_id, created_at)`,
+    // Migration 0006 indexes
+    `CREATE INDEX IF NOT EXISTS folder_shares_folder_idx ON folder_shares (folder_id)`,
+    `CREATE INDEX IF NOT EXISTS folder_shares_user_idx ON folder_shares (user_id)`,
+    `CREATE INDEX IF NOT EXISTS folder_shares_email_idx ON folder_shares (email)`,
+    `CREATE INDEX IF NOT EXISTS channel_shares_folder_share_idx ON channel_shares (folder_share_id)`,
   ]
 
   for (const idx of indexes) {

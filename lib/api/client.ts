@@ -152,6 +152,21 @@ export async function moveCard(
   return res.json()
 }
 
+export async function sortColumnCards(
+  channelId: string,
+  columnId: string,
+  cardIds: string[]
+): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/cards/sort`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ columnId, cardIds }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to sort column cards')
+  }
+}
+
 // ===== COLUMNS =====
 
 export async function createColumn(channelId: string, name: string, id?: string): Promise<{ column: Column }> {
@@ -408,6 +423,88 @@ export async function deleteInviteLink(channelId: string, linkId: string): Promi
   })
   if (!res.ok) {
     throw new Error('Failed to delete invite link')
+  }
+}
+
+// ===== FOLDER SHARES =====
+
+export interface FolderShareData {
+  id: string
+  folderId: string
+  userId: string | null
+  email: string
+  role: 'editor' | 'viewer'
+  invitedBy: string
+  invitedAt: string
+  acceptedAt: string | null
+  isPending: boolean
+  user?: {
+    id: string
+    name: string | null
+    email: string
+    image: string | null
+  }
+}
+
+export interface FolderSharesResponse {
+  canManage: boolean
+  owner: {
+    id: string
+    name: string | null
+    email: string
+    image: string | null
+    role: 'owner'
+  } | null
+  shares: FolderShareData[]
+}
+
+export async function fetchFolderShares(folderId: string): Promise<FolderSharesResponse> {
+  const res = await fetch(noCacheUrl(`/api/folders/${folderId}/shares`), { cache: 'no-store', headers: noCacheHeaders() })
+  if (!res.ok) {
+    throw new Error('Failed to fetch folder shares')
+  }
+  return res.json()
+}
+
+export async function createFolderShare(
+  folderId: string,
+  email: string,
+  role: 'editor' | 'viewer'
+): Promise<{ share: FolderShareData }> {
+  const res = await fetch(`/api/folders/${folderId}/shares`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, role }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to create folder share')
+  }
+  return res.json()
+}
+
+export async function updateFolderShare(
+  folderId: string,
+  shareId: string,
+  updates: { role?: 'editor' | 'viewer' }
+): Promise<{ share: FolderShareData }> {
+  const res = await fetch(`/api/folders/${folderId}/shares/${shareId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to update folder share')
+  }
+  return res.json()
+}
+
+export async function deleteFolderShare(folderId: string, shareId: string): Promise<void> {
+  const res = await fetch(`/api/folders/${folderId}/shares/${shareId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    throw new Error('Failed to delete folder share')
   }
 }
 

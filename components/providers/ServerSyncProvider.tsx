@@ -45,6 +45,8 @@ interface ServerTask extends Task {
 interface ServerFolder extends Folder {
   channelIds: string[]
   position?: number
+  isReadOnly?: boolean
+  sharedBy?: { id: string; name: string | null; email: string; image: string | null }
 }
 
 interface ServerSyncContextValue {
@@ -154,6 +156,23 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
           isCollapsed: folder.isCollapsed ?? false,
           isVirtual: (folder as ServerFolder & { isVirtual?: boolean }).isVirtual,
           isLocked: (folder as ServerFolder & { isLocked?: boolean }).isLocked,
+          isReadOnly: folder.isReadOnly,
+          sharedBy: folder.sharedBy,
+          createdAt: folder.createdAt,
+          updatedAt: folder.updatedAt,
+        }
+      }
+
+      // Process shared folders
+      const sharedFoldersList = (foldersResponse as { sharedFolders?: ServerFolder[] }).sharedFolders || []
+      for (const folder of sharedFoldersList) {
+        folders[folder.id] = {
+          id: folder.id,
+          name: folder.name,
+          channelIds: folder.channelIds || [],
+          isCollapsed: folder.isCollapsed ?? false,
+          isReadOnly: true,
+          sharedBy: folder.sharedBy,
           createdAt: folder.createdAt,
           updatedAt: folder.updatedAt,
         }
@@ -384,9 +403,14 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
         .filter((f) => f.id !== '__help__')
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
 
-      const folderOrder = helpFolder
-        ? ['__help__', ...userFolders.map((f) => f.id)]
-        : userFolders.map((f) => f.id)
+      // Shared folders come after user folders
+      const sharedFolderIds = sharedFoldersList.map((f) => f.id)
+
+      const folderOrder = [
+        ...(helpFolder ? ['__help__'] : []),
+        ...userFolders.map((f) => f.id),
+        ...sharedFolderIds,
+      ]
 
       const channelOrder = foldersResponse.rootChannelIds
 

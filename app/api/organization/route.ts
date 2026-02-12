@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { folders, userChannelOrg } from '@/lib/db/schema'
-import { eq, and, gte, lte, gt, lt, sql, asc, isNull } from 'drizzle-orm'
+import { folders, userChannelOrg, folderShares, channelShares } from '@/lib/db/schema'
+import { eq, and, gte, lte, gt, lt, sql, asc, isNull, desc } from 'drizzle-orm'
+import { nanoid } from 'nanoid'
 
 /**
  * POST /api/organization
@@ -93,6 +94,9 @@ async function moveChannelToFolder(
     ? Math.max(...targetEntries.map(e => e.position))
     : -1
 
+  // Track source folder for cascade cleanup
+  const sourceFolderId = orgEntry.folderId
+
   // Update the channel's folder and position
   await db
     .update(userChannelOrg)
@@ -102,7 +106,106 @@ async function moveChannelToFolder(
     })
     .where(eq(userChannelOrg.id, orgEntry.id))
 
+  // Cascade: handle folder share implications
+  try {
+    // If moving OUT of a shared folder: remove channel shares that came from folder shares
+    if (sourceFolderId) {
+      const sourceShares = await db.query.folderShares.findMany({
+        where: eq(folderShares.folderId, sourceFolderId),
+      })
+
+      for (const fs of sourceShares) {
+        // Delete channel shares for this channel that came from this folder share
+        await db
+          .delete(channelShares)
+          .where(
+            and(
+              eq(channelShares.channelId, channelId),
+              eq(channelShares.folderShareId, fs.id)
+            )
+          )
+
+        // Also remove userChannelOrg for the shared user
+        if (fs.userId) {
+          await db
+            .delete(userChannelOrg)
+            .where(
+              and(
+                eq(userChannelOrg.userId, fs.userId),
+                eq(userChannelOrg.channelId, channelId)
+              )
+            )
+        }
+      }
+    }
+
+    // If moving INTO a shared folder: create channel shares for each folder share recipient
+    if (targetFolderId) {
+      const targetShares = await db.query.folderShares.findMany({
+        where: eq(folderShares.folderId, targetFolderId),
+      })
+
+      for (const fs of targetShares) {
+        // Check if share already exists
+        const existing = fs.userId
+          ? await db.query.channelShares.findFirst({
+              where: and(
+                eq(channelShares.channelId, channelId),
+                eq(channelShares.userId, fs.userId)
+              ),
+            })
+          : await db.query.channelShares.findFirst({
+              where: and(
+                eq(channelShares.channelId, channelId),
+                eq(channelShares.email, fs.email!)
+              ),
+            })
+
+        if (existing) continue
+
+        const now = new Date()
+        await db.insert(channelShares).values({
+          id: nanoid(),
+          channelId,
+          userId: fs.userId,
+          email: fs.email,
+          role: fs.role,
+          folderShareId: fs.id,
+          invitedBy: fs.invitedBy,
+          invitedAt: now,
+          acceptedAt: fs.acceptedAt ? now : null,
+        })
+
+        // Create userChannelOrg entry if user exists
+        if (fs.userId) {
+          const maxPos = await getMaxOrgPositionForUser(fs.userId)
+          try {
+            await db.insert(userChannelOrg).values({
+              userId: fs.userId,
+              channelId,
+              position: maxPos + 1,
+            })
+          } catch {
+            // Ignore duplicate entry
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Log but don't fail the move operation
+    console.warn('Error cascading folder shares on channel move:', e)
+  }
+
   return NextResponse.json({ success: true })
+}
+
+async function getMaxOrgPositionForUser(userId: string): Promise<number> {
+  const entries = await db.query.userChannelOrg.findMany({
+    where: eq(userChannelOrg.userId, userId),
+    orderBy: [desc(userChannelOrg.position)],
+    limit: 1,
+  })
+  return entries.length > 0 ? entries[0].position : -1
 }
 
 async function reorderChannelInFolder(

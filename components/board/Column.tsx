@@ -148,6 +148,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           columnId={column.id}
           columnCount={columnCount}
           cardCount={columnCards.length}
+          columnCardIds={column.cardIds}
           onRename={() => setIsRenaming(true)}
           onOpenSettings={() => setIsDetailOpen(true)}
           onFocus={() => router.push(`/channel/${channelId}?focus=${column.id}`)}

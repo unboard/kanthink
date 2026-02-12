@@ -27,6 +27,7 @@ import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui';
 import { NavPanel } from './NavPanel';
 import { useNav } from '@/components/providers/NavProvider';
+import { FolderShareDrawer } from '@/components/sharing/FolderShareDrawer';
 import type { Channel, Folder } from '@/lib/types';
 
 // Prefixes to distinguish item types in dnd-kit
@@ -101,6 +102,7 @@ interface DraggableFolderProps {
   onToggle: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  onShare?: () => void;
   isOver?: boolean;
   isOverlay?: boolean;
   onNavigate?: () => void;
@@ -286,6 +288,7 @@ function DraggableFolder({
   onToggle,
   onRename,
   onDelete,
+  onShare,
   isOver,
   isOverlay,
   onNavigate,
@@ -370,13 +373,23 @@ function DraggableFolder({
             autoFocus
           />
         ) : (
-          <span
+          <Link
+            href={`/folder/${folder.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigate?.();
+            }}
             {...attributes}
             {...listeners}
-            className="flex-1 text-sm text-neutral-500 dark:text-neutral-400 py-1 cursor-grab active:cursor-grabbing"
+            className={`
+              flex-1 text-sm py-1 cursor-grab active:cursor-grabbing transition-colors truncate
+              ${pathname === `/folder/${folder.id}`
+                ? 'text-neutral-900 dark:text-white font-medium'
+                : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'}
+            `}
           >
             {folder.name}
-          </span>
+          </Link>
         )}
 
         <div className="relative">
@@ -397,6 +410,12 @@ function DraggableFolder({
                   className="w-full px-3 py-1.5 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700"
                 >
                   Rename
+                </button>
+                <button
+                  onClick={() => { onShare?.(); setShowMenu(false); }}
+                  className="w-full px-3 py-1.5 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                >
+                  Share
                 </button>
                 <button
                   onClick={() => { onDelete(); setShowMenu(false); }}
@@ -432,6 +451,120 @@ function DraggableFolder({
   );
 }
 
+// Non-draggable shared folder section
+interface SharedFolderItemProps {
+  folder: Folder;
+  channels: Record<string, Channel>;
+  pathname: string;
+  onNavigate?: () => void;
+}
+
+function SharedFolderItem({ folder, channels, pathname, onNavigate }: SharedFolderItemProps) {
+  const [isCollapsed, setIsCollapsed] = useState(folder.isCollapsed ?? false);
+
+  const folderChannels = folder.channelIds
+    .map((id) => channels[id])
+    .filter((c) => c && c.status !== 'archived');
+
+  const isFolderActive = pathname === `/folder/${folder.id}`;
+
+  return (
+    <div className="mb-1">
+      <div
+        className={`
+          group flex items-center rounded-md transition-colors
+          ${isFolderActive ? 'bg-violet-100 dark:bg-violet-900/30' : 'hover:bg-violet-50 dark:hover:bg-violet-900/20'}
+        `}
+      >
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-1 text-violet-400 hover:text-violet-600 dark:hover:text-violet-300"
+        >
+          <svg
+            className={`w-3 h-3 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+          </svg>
+        </button>
+
+        {/* Sharer's avatar */}
+        {folder.sharedBy && (
+          <div className="flex-shrink-0 mr-1">
+            {folder.sharedBy.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={folder.sharedBy.image}
+                alt={folder.sharedBy.name || 'Sharer'}
+                className="w-3.5 h-3.5 rounded-full"
+                title={`Shared by ${folder.sharedBy.name || folder.sharedBy.email}`}
+              />
+            ) : (
+              <div
+                className="w-3.5 h-3.5 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center"
+                title={`Shared by ${folder.sharedBy.name || folder.sharedBy.email}`}
+              >
+                <span className="text-violet-600 dark:text-violet-300 font-medium" style={{ fontSize: '7px' }}>
+                  {(folder.sharedBy.name || folder.sharedBy.email)?.[0]?.toUpperCase() || '?'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <Link
+          href={`/folder/${folder.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate?.();
+          }}
+          className={`
+            flex-1 text-sm py-1 transition-colors truncate
+            ${isFolderActive
+              ? 'text-violet-900 dark:text-violet-100 font-medium'
+              : 'text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300'}
+          `}
+        >
+          {folder.name}
+        </Link>
+      </div>
+
+      {!isCollapsed && (
+        <div className="ml-4 mt-0.5 space-y-0.5">
+          {folderChannels.length === 0 ? (
+            <div className="px-2 py-1 text-xs text-neutral-400 italic">No channels</div>
+          ) : (
+            folderChannels.map((channel) => (
+              <div
+                key={channel.id}
+                className={`
+                  group relative flex items-center rounded-md transition-colors
+                  ${pathname === `/channel/${channel.id}` ? 'bg-neutral-200 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}
+                `}
+              >
+                <Link
+                  href={`/channel/${channel.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigate?.();
+                  }}
+                  className={`
+                    flex-1 block py-1.5 px-2 text-sm transition-colors truncate
+                    ${pathname === `/channel/${channel.id}` ? 'text-neutral-900 dark:text-white' : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'}
+                  `}
+                >
+                  {channel.name}
+                </Link>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChannelsPanel() {
   const pathname = usePathname();
   const { closePanel, openNewChannel, isMobile } = useNav();
@@ -454,6 +587,7 @@ export function ChannelsPanel() {
   const [newFolderName, setNewFolderName] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [sharingFolderId, setSharingFolderId] = useState<string | null>(null);
 
   // CRITICAL: Use MouseSensor + TouchSensor, NOT PointerSensor
   // PointerSensor breaks mobile scroll (see CLAUDE.md)
@@ -471,17 +605,20 @@ export function ChannelsPanel() {
     }
   };
 
-  // Separate Help folder from user folders
+  // Separate Help folder, shared folders, and user folders
   const helpFolder = folders[HELP_FOLDER_ID];
   const orderedFolders = folderOrder
     .filter((id) => id !== HELP_FOLDER_ID)
     .map((id) => folders[id])
-    .filter(Boolean);
+    .filter((f) => f && !f.isReadOnly);
+  const sharedFolders = folderOrder
+    .map((id) => folders[id])
+    .filter((f) => f && f.isReadOnly && f.sharedBy);
   const rootChannels = channelOrder.map((id) => channels[id]).filter((c) => c && c.status !== 'archived' && !c.sharedBy);
 
-  // Build all sortable IDs for the main context (excluding Help folder)
+  // Build all sortable IDs for the main context (excluding Help folder and shared folders)
   const allSortableIds = [
-    ...folderOrder.filter((id) => id !== HELP_FOLDER_ID).map((id) => `${FOLDER_PREFIX}${id}`),
+    ...folderOrder.filter((id) => id !== HELP_FOLDER_ID && folders[id] && !folders[id].isReadOnly).map((id) => `${FOLDER_PREFIX}${id}`),
     ...channelOrder.map((id) => `${CHANNEL_PREFIX}${id}`),
   ];
 
@@ -603,7 +740,22 @@ export function ChannelsPanel() {
                 />
               )}
 
-              {/* Shared with me - virtual folder for channels shared by others */}
+              {/* Shared folders - folders shared with this user */}
+              {sharedFolders.length > 0 && (
+                <div className="mb-2">
+                  {sharedFolders.map((folder) => (
+                    <SharedFolderItem
+                      key={folder.id}
+                      folder={folder}
+                      channels={channels}
+                      pathname={pathname}
+                      onNavigate={closePanelIfMobile}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Shared with me - virtual folder for channels shared by others (not in folders) */}
               <SharedWithMeSection
                 channels={channels}
                 pathname={pathname}
@@ -622,6 +774,7 @@ export function ChannelsPanel() {
                       onToggle={() => toggleFolderCollapse(folder.id)}
                       onRename={(name) => updateFolder(folder.id, { name })}
                       onDelete={() => deleteFolder(folder.id)}
+                      onShare={() => setSharingFolderId(folder.id)}
                       isOver={hoveredFolderId === folder.id}
                       onNavigate={closePanelIfMobile}
                     />
@@ -706,6 +859,16 @@ export function ChannelsPanel() {
           </div>
         </div>
       </NavPanel>
+
+      {/* Folder share drawer */}
+      {sharingFolderId && folders[sharingFolderId] && (
+        <FolderShareDrawer
+          folderId={sharingFolderId}
+          folderName={folders[sharingFolderId].name}
+          isOpen={!!sharingFolderId}
+          onClose={() => setSharingFolderId(null)}
+        />
+      )}
     </>
   );
 }

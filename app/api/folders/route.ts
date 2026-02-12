@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { folders, userChannelOrg, channels } from '@/lib/db/schema'
-import { eq, desc, asc } from 'drizzle-orm'
+import { folders, userChannelOrg, channels, folderShares, users } from '@/lib/db/schema'
+import { eq, and, desc, asc, inArray, isNotNull } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 
 export const dynamic = 'force-dynamic'
@@ -84,8 +84,79 @@ export async function GET() {
     console.warn('Could not fetch global help channels:', e)
   }
 
+  // Fetch folders shared with this user
+  let sharedFolders: Array<Record<string, unknown>> = []
+  try {
+    const acceptedShares = await db.query.folderShares.findMany({
+      where: and(
+        eq(folderShares.userId, userId),
+        isNotNull(folderShares.acceptedAt)
+      ),
+    })
+
+    if (acceptedShares.length > 0) {
+      const sharedFolderIds = acceptedShares.map(s => s.folderId)
+      const sharedFolderData = await db.query.folders.findMany({
+        where: inArray(folders.id, sharedFolderIds),
+      })
+
+      // Get sharer info for each shared folder
+      const inviterIds = [...new Set(acceptedShares.map(s => s.invitedBy).filter((id): id is string => !!id))]
+      const ownerIds = [...new Set(sharedFolderData.map(f => f.userId))]
+      const allUserIds = [...new Set([...inviterIds, ...ownerIds])]
+
+      let usersMap = new Map<string, { id: string; name: string | null; email: string; image: string | null }>()
+      if (allUserIds.length > 0) {
+        const usersList = await db.query.users.findMany({
+          where: inArray(users.id, allUserIds),
+          columns: { id: true, name: true, email: true, image: true },
+        })
+        for (const u of usersList) {
+          usersMap.set(u.id, { id: u.id, name: u.name, email: u.email ?? '', image: u.image })
+        }
+      }
+
+      for (const share of acceptedShares) {
+        const folderData = sharedFolderData.find(f => f.id === share.folderId)
+        if (!folderData) continue
+
+        // Get channels in this folder (from the owner's perspective)
+        const ownerOrgEntries = await db.query.userChannelOrg.findMany({
+          where: and(
+            eq(userChannelOrg.userId, folderData.userId),
+            eq(userChannelOrg.folderId, folderData.id)
+          ),
+          orderBy: [asc(userChannelOrg.position)],
+        })
+
+        const channelIds = ownerOrgEntries.map(e => e.channelId)
+
+        // Sharer: try invitedBy, fallback to folder owner
+        let sharedBy = share.invitedBy ? usersMap.get(share.invitedBy) : undefined
+        if (!sharedBy) {
+          sharedBy = usersMap.get(folderData.userId)
+        }
+
+        sharedFolders.push({
+          id: folderData.id,
+          name: folderData.name,
+          channelIds,
+          isCollapsed: false,
+          isReadOnly: true,
+          sharedBy,
+          position: folderData.position,
+          createdAt: folderData.createdAt?.toISOString(),
+          updatedAt: folderData.updatedAt?.toISOString(),
+        })
+      }
+    }
+  } catch (e) {
+    console.warn('Could not fetch shared folders:', e)
+  }
+
   return NextResponse.json({
     folders: helpFolder ? [helpFolder, ...foldersWithChannels] : foldersWithChannels,
+    sharedFolders,
     rootChannelIds,
   })
 }

@@ -109,6 +109,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       status,
       assignedTo: assignedTo || null,
       position,
+      createdBy: body.createdBy || userId,
       createdAt: createdAtDate,
       updatedAt: now,
     })
@@ -126,6 +127,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       position,
       dueDate: null,
       completedAt: null,
+      createdBy: body.createdBy || userId,
       createdAt: createdAtDate.toISOString(),
       updatedAt: now.toISOString(),
     }

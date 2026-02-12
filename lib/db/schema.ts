@@ -184,6 +184,7 @@ export const tasks = sqliteTable('tasks', {
   dueDate: integer('due_date', { mode: 'timestamp' }),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 
+  createdBy: text('created_by'),
   position: integer('position').notNull().default(0),
 
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -265,6 +266,25 @@ export const userChannelOrg = sqliteTable('user_channel_org', {
   index('user_channel_org_folder_idx').on(table.folderId),
 ])
 
+// Folder sharing (share an entire folder + all its channels)
+export const folderShares = sqliteTable('folder_shares', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  folderId: text('folder_id').notNull().references(() => folders.id, { onDelete: 'cascade' }),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  email: text('email'),
+  role: text('role').$type<'editor' | 'viewer'>().notNull(),
+
+  invitedBy: text('invited_by').references(() => users.id, { onDelete: 'set null' }),
+  invitedAt: integer('invited_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  acceptedAt: integer('accepted_at', { mode: 'timestamp' }),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('folder_shares_folder_idx').on(table.folderId),
+  index('folder_shares_user_idx').on(table.userId),
+  index('folder_shares_email_idx').on(table.email),
+])
+
 // Channel sharing (email invites and active shares)
 export const channelShares = sqliteTable('channel_shares', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -273,6 +293,9 @@ export const channelShares = sqliteTable('channel_shares', {
   email: text('email'),
   role: text('role').$type<'owner' | 'editor' | 'viewer'>().notNull(),
   roleDescription: text('role_description'),
+
+  // Back-reference to folder share (for cascade create/delete)
+  folderShareId: text('folder_share_id').references(() => folderShares.id, { onDelete: 'set null' }),
 
   invitedBy: text('invited_by').references(() => users.id, { onDelete: 'set null' }),
   invitedAt: integer('invited_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -284,6 +307,7 @@ export const channelShares = sqliteTable('channel_shares', {
   index('channel_shares_user_idx').on(table.userId),
   index('channel_shares_email_idx').on(table.email),
   uniqueIndex('channel_shares_channel_user').on(table.channelId, table.userId),
+  index('channel_shares_folder_share_idx').on(table.folderShareId),
 ])
 
 // Shareable invite links
@@ -477,6 +501,8 @@ export type DbFolder = typeof folders.$inferSelect
 export type NewDbFolder = typeof folders.$inferInsert
 export type DbUserChannelOrg = typeof userChannelOrg.$inferSelect
 export type NewDbUserChannelOrg = typeof userChannelOrg.$inferInsert
+export type DbFolderShare = typeof folderShares.$inferSelect
+export type NewDbFolderShare = typeof folderShares.$inferInsert
 export type DbChannelShare = typeof channelShares.$inferSelect
 export type NewDbChannelShare = typeof channelShares.$inferInsert
 export type DbChannelInviteLink = typeof channelInviteLinks.$inferSelect

@@ -22,6 +22,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { useSession } from 'next-auth/react';
 import type { Card, Task, ID } from '@/lib/types';
 import { useStore, type PromoteConfig } from '@/lib/store';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
@@ -117,6 +118,7 @@ type ActiveTab = 'thread' | 'tasks' | 'info';
 
 export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: CardDetailDrawerProps) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [title, setTitle] = useState('');
   const [isTitleDirty, setIsTitleDirty] = useState(false);
   const [isPromoting, setIsPromoting] = useState(false);
@@ -334,7 +336,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
   };
 
   const handleAddTaskClick = () => {
-    const newTask = createTask(card!.channelId, card!.id, { title: 'Untitled' });
+    const newTask = createTask(card!.channelId, card!.id, { title: 'Untitled', createdBy: session?.user?.id ?? undefined });
     setSelectedTask(newTask);
     setAutoFocusTaskTitle(true);
     setIsTaskDrawerOpen(true);

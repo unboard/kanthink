@@ -90,6 +90,7 @@ interface KanthinkState {
   updateCard: (id: ID, updates: Partial<Omit<Card, 'id' | 'channelId' | 'createdAt' | 'source'>>) => void;
   deleteCard: (id: ID) => void;
   deleteAllCardsInColumn: (channelId: ID, columnId: ID) => void;
+  sortColumnCards: (channelId: ID, columnId: ID, sortedCardIds: ID[]) => void;
   moveCard: (cardId: ID, toColumnId: ID, toIndex: number) => void;
   archiveCard: (cardId: ID) => void;
   unarchiveCard: (cardId: ID) => void;
@@ -1017,11 +1018,8 @@ export const useStore = create<KanthinkState>()(
           createdByInstructionId,
         };
 
-        // Get current column length for position
-        const state = get();
-        const channel = state.channels[channelId];
-        const column = channel?.columns.find(c => c.id === columnId);
-        const position = column?.cardIds.length ?? 0;
+        // Insert at position 0 (first/top of column) so new cards always appear first
+        const position = 0;
 
         set((state) => {
           const channel = state.channels[channelId];
@@ -1029,7 +1027,7 @@ export const useStore = create<KanthinkState>()(
 
           const updatedColumns = channel.columns.map((col) => {
             if (col.id === columnId) {
-              return { ...col, cardIds: [...col.cardIds, id] };
+              return { ...col, cardIds: [id, ...col.cardIds] };
             }
             return col;
           });
@@ -1177,6 +1175,30 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs
         broadcastAndPublish({ type: 'card:deleteAllInColumn', channelId, columnId, cardIds: cardIdsToDelete });
+      },
+
+      sortColumnCards: (channelId, columnId, sortedCardIds) => {
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          const updatedColumns = ch.columns.map((col) => {
+            if (col.id === columnId) {
+              return { ...col, cardIds: sortedCardIds };
+            }
+            return col;
+          });
+
+          return {
+            channels: {
+              ...state.channels,
+              [channelId]: { ...ch, columns: updatedColumns, updatedAt: now() },
+            },
+          };
+        });
+
+        // Sync to server
+        sync.syncColumnCardOrder(channelId, columnId, sortedCardIds);
       },
 
       moveCard: (cardId, toColumnId, toIndex) => {
@@ -1662,6 +1684,7 @@ export const useStore = create<KanthinkState>()(
           title: input.title,
           description: input.description ?? '',
           status: 'not_started',
+          createdBy: input.createdBy,
           createdAt: timestamp,
           updatedAt: timestamp,
         };
@@ -1694,6 +1717,7 @@ export const useStore = create<KanthinkState>()(
           cardId: cardId ?? undefined,
           title: input.title,
           description: input.description ?? '',
+          createdBy: input.createdBy,
           createdAt: timestamp,
         });
 

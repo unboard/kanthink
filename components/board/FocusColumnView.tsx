@@ -183,6 +183,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
               columnId={column.id}
               columnCount={1}
               cardCount={columnCards.length}
+              columnCardIds={column.cardIds}
               onRename={() => setIsRenaming(true)}
               onOpenSettings={() => setIsDetailOpen(true)}
               onFocus={onExitFocus}

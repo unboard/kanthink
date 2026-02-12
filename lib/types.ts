@@ -109,6 +109,8 @@ export interface Folder {
   isCollapsed?: boolean;         // UI state - collapsed in sidebar
   isVirtual?: boolean;           // True for system folders like Help
   isLocked?: boolean;            // Cannot be modified by user
+  isReadOnly?: boolean;          // True for folders shared with this user
+  sharedBy?: SharedByInfo;       // Person who shared this folder (if shared)
   createdAt: string;
   updatedAt: string;
 }
@@ -189,6 +191,7 @@ export interface Task {
   description: string;
   status: TaskStatus;
   notes?: TaskNote[];
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -332,6 +335,7 @@ export interface TaskInput {
   title: string;
   description?: string;
   assignedTo?: string[];
+  createdBy?: string;
 }
 
 export interface BoardState {
@@ -404,6 +408,27 @@ export interface ChannelShare {
   userId: ID | null;
   email: string | null;
   role: ChannelRole;
+  folderShareId?: ID | null;
+  invitedBy: ID | null;
+  invitedAt: string;
+  acceptedAt: string | null;
+  isPending: boolean;
+  user?: {
+    id: ID;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+  };
+}
+
+export type FolderShareRole = 'editor' | 'viewer';
+
+export interface FolderShare {
+  id: ID;
+  folderId: ID;
+  userId: ID | null;
+  email: string | null;
+  role: FolderShareRole;
   invitedBy: ID | null;
   invitedAt: string;
   acceptedAt: string | null;

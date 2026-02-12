@@ -5,6 +5,7 @@ export type NotificationType =
   | 'task_assigned'
   | 'mentioned_in_card'
   | 'channel_shared'
+  | 'folder_shared'
   | 'channel_join_via_link'
   // AI / Shrooms
   | 'shroom_completed'
@@ -25,7 +26,7 @@ export type NotificationCategory = 'collaboration' | 'ai' | 'automation' | 'boar
 export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, { label: string; types: NotificationType[] }> = {
   collaboration: {
     label: 'Collaboration',
-    types: ['card_assigned', 'task_assigned', 'mentioned_in_card', 'channel_shared', 'channel_join_via_link'],
+    types: ['card_assigned', 'task_assigned', 'mentioned_in_card', 'channel_shared', 'folder_shared', 'channel_join_via_link'],
   },
   ai: {
     label: 'AI & Shrooms',

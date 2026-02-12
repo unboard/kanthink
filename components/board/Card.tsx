@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Card as CardType, Task } from '@/lib/types';
@@ -24,6 +25,7 @@ export function Card({ card }: CardProps) {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { data: session } = useSession();
   const deleteCard = useStore((s) => s.deleteCard);
   const archiveCard = useStore((s) => s.archiveCard);
   const createTask = useStore((s) => s.createTask);
@@ -211,7 +213,7 @@ export function Card({ card }: CardProps) {
               setIsTaskDrawerOpen(true);
             }}
             onAddTaskClick={() => {
-              const newTask = createTask(card.channelId, card.id, { title: 'Untitled' });
+              const newTask = createTask(card.channelId, card.id, { title: 'Untitled', createdBy: session?.user?.id ?? undefined });
               setSelectedTask(newTask);
               setAutoFocusTaskTitle(true);
               setIsTaskDrawerOpen(true);

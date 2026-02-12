@@ -341,14 +341,14 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
   };
 
   const handleAddTaskClick = () => {
-    const newTask = createTask(channelId, null, { title: 'Untitled' });
+    const newTask = createTask(channelId, null, { title: 'Untitled', createdBy: session?.user?.id ?? undefined });
     setSelectedTask(newTask);
     setAutoFocusTaskTitle(true);
     setIsTaskDrawerOpen(true);
   };
 
   const handleAddTaskToCard = (cardId: ID) => {
-    const newTask = createTask(channelId, cardId, { title: 'Untitled' });
+    const newTask = createTask(channelId, cardId, { title: 'Untitled', createdBy: session?.user?.id ?? undefined });
     setSelectedTask(newTask);
     setAutoFocusTaskTitle(true);
     setIsTaskDrawerOpen(true);
