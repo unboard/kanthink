@@ -523,16 +523,18 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
           </div>
         )}
 
-        {/* Delete channel */}
-        <div className="pt-4">
-          <Button
-            variant="ghost"
-            onClick={handleDelete}
-            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-          >
-            Delete channel
-          </Button>
-        </div>
+        {/* Delete channel — owner only */}
+        {channel.role === 'owner' && (
+          <div className="pt-4">
+            <Button
+              variant="ghost"
+              onClick={handleDelete}
+              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+            >
+              Delete channel
+            </Button>
+          </div>
+        )}
       </div>
     </Drawer>
   );
