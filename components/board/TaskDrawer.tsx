@@ -2,15 +2,30 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import type { Task, TaskStatus, CardMessageType } from '@/lib/types';
+import type { Task, TaskStatus, TaskNote, CardMessage, CardMessageType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
+import { ChatMessage } from './ChatMessage';
 import { Drawer } from '@/components/ui';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
-import { TaskNoteMessage } from './TaskNoteMessage';
+
+/** Convert a TaskNote into the CardMessage format so we can reuse ChatMessage */
+function taskNoteToCardMessage(note: TaskNote): CardMessage {
+  const isKan = note.authorId === 'kan' || note.authorName === 'Kan';
+  return {
+    id: note.id,
+    type: isKan ? 'ai_response' : 'note',
+    content: note.content,
+    imageUrls: note.imageUrls,
+    authorId: note.authorId,
+    authorName: note.authorName,
+    authorImage: isKan ? undefined : note.authorImage, // let ChatMessage use KanthinkIcon for Kan
+    createdAt: note.createdAt,
+  };
+}
 
 interface TaskDrawerProps {
   task?: Task | null;
@@ -502,18 +517,21 @@ export function TaskDrawer({
         {/* Scrollable thread body */}
         <div className="relative flex flex-col flex-1 min-h-0">
           <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-3">
-            {/* Notes thread */}
+            {/* Notes thread — reuses ChatMessage from card detail */}
             {currentNotes.length > 0 ? (
               <div className="space-y-3">
-                {currentNotes.map((note) => (
-                  <TaskNoteMessage
-                    key={note.id}
-                    note={note}
-                    isOwnNote={note.authorId === session?.user?.id}
-                    onEdit={(noteId, content) => editTaskNote(task.id, noteId, content)}
-                    onDelete={(noteId) => deleteTaskNote(task.id, noteId)}
-                  />
-                ))}
+                {currentNotes.map((note) => {
+                  const msg = taskNoteToCardMessage(note);
+                  const isOwn = note.authorId === session?.user?.id;
+                  return (
+                    <ChatMessage
+                      key={note.id}
+                      message={msg}
+                      onDelete={() => deleteTaskNote(task.id, note.id)}
+                      onEdit={isOwn ? (content) => editTaskNote(task.id, note.id, content) : undefined}
+                    />
+                  );
+                })}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-neutral-400">

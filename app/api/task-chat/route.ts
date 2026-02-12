@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import type { TaskNote } from '@/lib/types';
-import { getLLMClientForUser, getLLMClient, type LLMMessage } from '@/lib/ai/llm';
+import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
 
@@ -26,6 +26,7 @@ interface TaskChatRequest {
 function buildPrompt(
   questionContent: string,
   context: TaskChatRequest['context'],
+  imageUrls?: string[],
 ): LLMMessage[] {
   const { taskTitle, taskStatus, parentCardTitle, channelName, channelDescription, previousNotes } = context;
 
@@ -53,12 +54,26 @@ Guidelines:
     if (note.authorName === 'Kan') {
       messages.push({ role: 'assistant', content: note.content });
     } else {
-      messages.push({ role: 'user', content: note.content });
+      const imageRef = note.imageUrls?.length
+        ? `\n[Attached images: ${note.imageUrls.join(', ')}]`
+        : '';
+      messages.push({ role: 'user', content: `${note.content}${imageRef}` });
     }
   }
 
-  // Add the current question
-  messages.push({ role: 'user', content: questionContent });
+  // Add the current question — with images if present
+  if (imageUrls && imageUrls.length > 0) {
+    const parts: LLMContentPart[] = [];
+    if (questionContent) {
+      parts.push({ type: 'text', text: questionContent });
+    }
+    for (const url of imageUrls) {
+      parts.push({ type: 'image_url', image_url: { url } });
+    }
+    messages.push({ role: 'user', content: parts });
+  } else {
+    messages.push({ role: 'user', content: questionContent });
+  }
 
   return messages;
 }
@@ -66,9 +81,9 @@ Guidelines:
 export async function POST(request: Request) {
   try {
     const body: TaskChatRequest = await request.json();
-    const { questionContent, context } = body;
+    const { questionContent, imageUrls, context } = body;
 
-    if (!questionContent || !context) {
+    if ((!questionContent && (!imageUrls || imageUrls.length === 0)) || !context) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -122,7 +137,7 @@ export async function POST(request: Request) {
       usingOwnerKey = true;
     }
 
-    const messages = buildPrompt(questionContent, context);
+    const messages = buildPrompt(questionContent, context, imageUrls);
 
     try {
       const llmResponse = await llm.complete(messages);
