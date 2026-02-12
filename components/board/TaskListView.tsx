@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -34,7 +34,8 @@ interface TaskListViewProps {
   filterCardIds?: ID[];
 }
 
-type FilterMode = 'all' | 'active' | 'completed' | 'assigned_to_me';
+type StatusFilter = 'all' | 'not_started' | 'in_progress' | 'done';
+type AssigneeFilter = 'anyone' | 'me' | string; // string = specific member ID
 
 interface TaskGroupProps {
   group: { cardId: ID | null; cardTitle: string; tasks: Task[] };
@@ -183,7 +184,9 @@ function TaskGroup({ group, groupByCard, members, onTaskClick, onAddTask, isDrag
 }
 
 export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
-  const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilter>('anyone');
+  const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
   const [groupByCard, setGroupByCard] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
@@ -223,21 +226,24 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
     return all.filter((task) => task.cardId && cardIdSet.has(task.cardId));
   }, [tasks, channelId, filterCardIds]);
 
-  // Apply filter
+  // Apply filters (status + assignee are independent)
   const filteredTasks = useMemo(() => {
-    switch (filterMode) {
-      case 'active':
-        return channelTasks.filter((t) => t.status !== 'done');
-      case 'completed':
-        return channelTasks.filter((t) => t.status === 'done');
-      case 'assigned_to_me':
-        return currentUserId
-          ? channelTasks.filter((t) => (t.assignedTo ?? []).includes(currentUserId))
-          : channelTasks;
-      default:
-        return channelTasks;
+    let result = channelTasks;
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      result = result.filter((t) => t.status === statusFilter);
     }
-  }, [channelTasks, filterMode, currentUserId]);
+
+    // Assignee filter
+    if (assigneeFilter === 'me' && currentUserId) {
+      result = result.filter((t) => (t.assignedTo ?? []).includes(currentUserId));
+    } else if (assigneeFilter !== 'anyone' && assigneeFilter !== 'me') {
+      result = result.filter((t) => (t.assignedTo ?? []).includes(assigneeFilter));
+    }
+
+    return result;
+  }, [channelTasks, statusFilter, assigneeFilter, currentUserId]);
 
   // Group tasks by card
   const channel = channels[channelId];
@@ -418,8 +424,29 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
 
   const activeTask = activeId ? tasks[activeId] : null;
 
-  const activeCount = channelTasks.filter((t) => t.status !== 'done').length;
+  const notStartedCount = channelTasks.filter((t) => t.status === 'not_started').length;
+  const inProgressCount = channelTasks.filter((t) => t.status === 'in_progress').length;
   const completedCount = channelTasks.filter((t) => t.status === 'done').length;
+
+  // Get assignee filter display label
+  const assigneeFilterLabel = useMemo(() => {
+    if (assigneeFilter === 'anyone') return 'Anyone';
+    if (assigneeFilter === 'me') return 'Me';
+    const member = members.find((m) => m.id === assigneeFilter);
+    return member?.name?.split(' ')[0] ?? 'Unknown';
+  }, [assigneeFilter, members]);
+
+  const assigneeDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showAssigneeDropdown) return;
+    const handleClick = (e: MouseEvent) => {
+      if (assigneeDropdownRef.current && !assigneeDropdownRef.current.contains(e.target as Node)) {
+        setShowAssigneeDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showAssigneeDropdown]);
 
   const groupContent = (
     <div className="space-y-6">
@@ -445,64 +472,107 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
             Tasks
           </h2>
-          <div className="flex items-center gap-4">
-            {/* Filter buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Status filter */}
             <div className="flex items-center gap-1 bg-neutral-100/80 dark:bg-neutral-800/50 rounded-lg p-1 backdrop-blur-sm">
+              {([
+                { key: 'all' as StatusFilter, label: 'All', count: channelTasks.length },
+                { key: 'not_started' as StatusFilter, label: 'To Do', count: notStartedCount },
+                { key: 'in_progress' as StatusFilter, label: 'In Progress', count: inProgressCount },
+                { key: 'done' as StatusFilter, label: 'Done', count: completedCount },
+              ] as const).map(({ key, label, count }) => (
+                <button
+                  key={key}
+                  onClick={() => setStatusFilter(key)}
+                  className={`px-2.5 py-1 text-xs sm:text-sm rounded-md transition-colors whitespace-nowrap ${
+                    statusFilter === key
+                      ? 'bg-white/90 dark:bg-neutral-700/70 text-neutral-900 dark:text-white shadow-sm'
+                      : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                  }`}
+                >
+                  {label} ({count})
+                </button>
+              ))}
+            </div>
+
+            {/* Assignee filter */}
+            <div className="relative" ref={assigneeDropdownRef}>
               <button
-                onClick={() => setFilterMode('all')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  filterMode === 'all'
-                    ? 'bg-white/90 dark:bg-neutral-700/70 text-neutral-900 dark:text-white shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm rounded-md border transition-colors ${
+                  assigneeFilter !== 'anyone'
+                    ? 'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-400'
+                    : 'border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400'
                 }`}
               >
-                All ({channelTasks.length})
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                {assigneeFilterLabel}
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
-              <button
-                onClick={() => setFilterMode('active')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  filterMode === 'active'
-                    ? 'bg-white/90 dark:bg-neutral-700/70 text-neutral-900 dark:text-white shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-                }`}
-              >
-                Active ({activeCount})
-              </button>
-              <button
-                onClick={() => setFilterMode('completed')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  filterMode === 'completed'
-                    ? 'bg-white/90 dark:bg-neutral-700/70 text-neutral-900 dark:text-white shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-                }`}
-              >
-                Done ({completedCount})
-              </button>
-              <button
-                onClick={() => setFilterMode('assigned_to_me')}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  filterMode === 'assigned_to_me'
-                    ? 'bg-white/90 dark:bg-neutral-700/70 text-neutral-900 dark:text-white shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-                }`}
-              >
-                Mine
-              </button>
+              {showAssigneeDropdown && (
+                <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
+                  <button
+                    onClick={() => { setAssigneeFilter('anyone'); setShowAssigneeDropdown(false); }}
+                    className={`block w-full px-3 py-1.5 text-left text-sm transition-colors ${
+                      assigneeFilter === 'anyone'
+                        ? 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-950'
+                        : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
+                    }`}
+                  >
+                    Anyone
+                  </button>
+                  {currentUserId && (
+                    <button
+                      onClick={() => { setAssigneeFilter('me'); setShowAssigneeDropdown(false); }}
+                      className={`block w-full px-3 py-1.5 text-left text-sm transition-colors ${
+                        assigneeFilter === 'me'
+                          ? 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-950'
+                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
+                      }`}
+                    >
+                      Me
+                    </button>
+                  )}
+                  {members.filter((m) => m.id !== currentUserId).map((member) => (
+                    <button
+                      key={member.id}
+                      onClick={() => { setAssigneeFilter(member.id); setShowAssigneeDropdown(false); }}
+                      className={`flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm transition-colors ${
+                        assigneeFilter === member.id
+                          ? 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-950'
+                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
+                      }`}
+                    >
+                      {member.image ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={member.image} alt="" className="w-4 h-4 rounded-full" />
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+                      )}
+                      {member.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Group by card toggle */}
             <button
               onClick={() => setGroupByCard(!groupByCard)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm rounded-md border transition-colors ${
                 groupByCard
                   ? 'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-400'
                   : 'border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400'
               }`}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
-              Group by card
+              <span className="hidden sm:inline">Group by card</span>
             </button>
           </div>
         </div>
@@ -527,8 +597,8 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
         {groupedTasks.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-sm text-neutral-500 dark:text-neutral-400">
-              {filterMode !== 'all'
-                ? `No ${filterMode === 'assigned_to_me' ? 'assigned' : filterMode} tasks`
+              {statusFilter !== 'all' || assigneeFilter !== 'anyone'
+                ? 'No tasks match the current filters.'
                 : 'No cards yet — add a card to the board to get started.'}
             </p>
           </div>
