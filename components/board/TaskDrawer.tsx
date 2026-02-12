@@ -182,6 +182,9 @@ export function TaskDrawer({
         const channel = channels[task.channelId];
         const parentCard = task.cardId ? cards[task.cardId] : null;
 
+        // Read latest notes from store (not stale prop) so the AI sees full conversation
+        const liveNotes = useStore.getState().tasks[task.id]?.notes ?? [];
+
         const response = await fetch('/api/task-chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -195,7 +198,7 @@ export function TaskDrawer({
               parentCardTitle: parentCard?.title,
               channelName: channel?.name ?? '',
               channelDescription: channel?.description ?? '',
-              previousNotes: (task.notes ?? []).slice(-10),
+              previousNotes: liveNotes.slice(-10),
             },
           }),
         });

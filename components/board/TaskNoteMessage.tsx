@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { TaskNote } from '@/lib/types';
+import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
 interface TaskNoteMessageProps {
   note: TaskNote;
@@ -102,17 +103,25 @@ export function TaskNoteMessage({ note, isOwnNote, onEdit, onDelete }: TaskNoteM
     }
   };
 
+  const isKan = note.authorId === 'kan' || note.authorName === 'Kan';
+
   const initials = note.authorName
     ? note.authorName.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
     : '?';
 
   return (
     <div className="group relative">
-      <div className="rounded-xl px-4 py-3 bg-neutral-100 dark:bg-neutral-800">
+      <div className={`rounded-xl px-4 py-3 ${
+        isKan
+          ? 'bg-neutral-50 dark:bg-neutral-800/50'
+          : 'bg-neutral-100 dark:bg-neutral-800'
+      }`}>
         {/* Header */}
         <div className="flex items-center gap-2 mb-1.5">
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
-            {note.authorImage ? (
+            {isKan ? (
+              <KanthinkIcon size={14} className="text-violet-500 dark:text-violet-400" />
+            ) : note.authorImage ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img src={note.authorImage} alt="" className="w-3.5 h-3.5 rounded-full" />
             ) : (
@@ -131,24 +140,30 @@ export function TaskNoteMessage({ note, isOwnNote, onEdit, onDelete }: TaskNoteM
             <span className="text-xs text-neutral-400 dark:text-neutral-500 italic">(edited)</span>
           )}
 
-          {/* Action buttons — only for own notes */}
-          {isOwnNote && !isEditing && (
+          {/* Action buttons */}
+          {!isEditing && (
             <div className="ml-auto flex items-center gap-1">
-              <button
-                onClick={() => { setEditContent(note.content); setIsEditing(true); }}
-                className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => onDelete(note.id)}
-                className="p-1 text-neutral-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Delete note"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+              {/* Edit — own notes only */}
+              {isOwnNote && (
+                <button
+                  onClick={() => { setEditContent(note.content); setIsEditing(true); }}
+                  className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                >
+                  Edit
+                </button>
+              )}
+              {/* Delete — own notes + Kan messages */}
+              {(isOwnNote || isKan) && (
+                <button
+                  onClick={() => onDelete(note.id)}
+                  className="p-1 text-neutral-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Delete message"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
             </div>
           )}
         </div>
