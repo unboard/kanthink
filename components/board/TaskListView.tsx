@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -20,22 +20,19 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { useSession } from 'next-auth/react';
-import type { Task, ID } from '@/lib/types';
+import type { Task, TaskStatus, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { SortableTaskRow } from './SortableTaskRow';
 import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
+import { TaskFilterDrawer } from './TaskFilterDrawer';
 import { AssigneeAvatars } from './AssigneeAvatars';
-import { Button } from '@/components/ui';
 
 interface TaskListViewProps {
   channelId: ID;
   filterCardIds?: ID[];
 }
-
-type StatusFilter = 'all' | 'not_started' | 'in_progress' | 'done';
-type AssigneeFilter = 'anyone' | 'me' | string; // string = specific member ID
 
 interface TaskGroupProps {
   group: { cardId: ID | null; cardTitle: string; tasks: Task[] };
@@ -184,9 +181,9 @@ function TaskGroup({ group, groupByCard, members, onTaskClick, onAddTask, isDrag
 }
 
 export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilter>('anyone');
-  const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
+  const [statusFilters, setStatusFilters] = useState<Set<TaskStatus>>(new Set());
+  const [assigneeFilters, setAssigneeFilters] = useState<Set<string>>(new Set());
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [groupByCard, setGroupByCard] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
@@ -226,24 +223,20 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
     return all.filter((task) => task.cardId && cardIdSet.has(task.cardId));
   }, [tasks, channelId, filterCardIds]);
 
-  // Apply filters (status + assignee are independent)
+  // Apply filters (status + assignee are independent, empty Set = show all)
   const filteredTasks = useMemo(() => {
     let result = channelTasks;
 
-    // Status filter
-    if (statusFilter !== 'all') {
-      result = result.filter((t) => t.status === statusFilter);
+    if (statusFilters.size > 0) {
+      result = result.filter((t) => statusFilters.has(t.status));
     }
 
-    // Assignee filter
-    if (assigneeFilter === 'me' && currentUserId) {
-      result = result.filter((t) => (t.assignedTo ?? []).includes(currentUserId));
-    } else if (assigneeFilter !== 'anyone' && assigneeFilter !== 'me') {
-      result = result.filter((t) => (t.assignedTo ?? []).includes(assigneeFilter));
+    if (assigneeFilters.size > 0) {
+      result = result.filter((t) => (t.assignedTo ?? []).some((id) => assigneeFilters.has(id)));
     }
 
     return result;
-  }, [channelTasks, statusFilter, assigneeFilter, currentUserId]);
+  }, [channelTasks, statusFilters, assigneeFilters]);
 
   // Group tasks by card
   const channel = channels[channelId];
@@ -428,25 +421,47 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
   const inProgressCount = channelTasks.filter((t) => t.status === 'in_progress').length;
   const completedCount = channelTasks.filter((t) => t.status === 'done').length;
 
-  // Get assignee filter display label
-  const assigneeFilterLabel = useMemo(() => {
-    if (assigneeFilter === 'anyone') return 'Anyone';
-    if (assigneeFilter === 'me') return 'Me';
-    const member = members.find((m) => m.id === assigneeFilter);
-    return member?.name?.split(' ')[0] ?? 'Unknown';
-  }, [assigneeFilter, members]);
+  // Count active filter categories for badge (0, 1, or 2)
+  const activeFilterCount = (statusFilters.size > 0 ? 1 : 0) + (assigneeFilters.size > 0 ? 1 : 0);
+  const hasActiveFilters = activeFilterCount > 0;
 
-  const assigneeDropdownRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showAssigneeDropdown) return;
-    const handleClick = (e: MouseEvent) => {
-      if (assigneeDropdownRef.current && !assigneeDropdownRef.current.contains(e.target as Node)) {
-        setShowAssigneeDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showAssigneeDropdown]);
+  const statusCounts: Record<TaskStatus, number> = {
+    not_started: notStartedCount,
+    in_progress: inProgressCount,
+    done: completedCount,
+  };
+
+  // Build assignee chip labels
+  const assigneeChips = useMemo(() => {
+    return Array.from(assigneeFilters).map((id) => {
+      if (id === currentUserId) return { id, label: 'Me' };
+      const member = members.find((m) => m.id === id);
+      return { id, label: member?.name?.split(' ')[0] ?? 'Unknown' };
+    });
+  }, [assigneeFilters, currentUserId, members]);
+
+  const removeStatusFilter = (status: TaskStatus) => {
+    const next = new Set(statusFilters);
+    next.delete(status);
+    setStatusFilters(next);
+  };
+
+  const removeAssigneeFilter = (id: string) => {
+    const next = new Set(assigneeFilters);
+    next.delete(id);
+    setAssigneeFilters(next);
+  };
+
+  const clearAllFilters = () => {
+    setStatusFilters(new Set());
+    setAssigneeFilters(new Set());
+  };
+
+  const statusLabelMap: Record<TaskStatus, string> = {
+    not_started: 'To Do',
+    in_progress: 'In Progress',
+    done: 'Done',
+  };
 
   const groupContent = (
     <div className="space-y-6">
@@ -468,97 +483,30 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
     <div className="flex-1 overflow-auto">
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
             Tasks
           </h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Status filter */}
-            <div className="flex items-center gap-1 bg-neutral-100/80 dark:bg-neutral-800/50 rounded-lg p-1 backdrop-blur-sm">
-              {([
-                { key: 'all' as StatusFilter, label: 'All', count: channelTasks.length },
-                { key: 'not_started' as StatusFilter, label: 'To Do', count: notStartedCount },
-                { key: 'in_progress' as StatusFilter, label: 'In Progress', count: inProgressCount },
-                { key: 'done' as StatusFilter, label: 'Done', count: completedCount },
-              ] as const).map(({ key, label, count }) => (
-                <button
-                  key={key}
-                  onClick={() => setStatusFilter(key)}
-                  className={`px-2.5 py-1 text-xs sm:text-sm rounded-md transition-colors whitespace-nowrap ${
-                    statusFilter === key
-                      ? 'bg-white/90 dark:bg-neutral-700/70 text-neutral-900 dark:text-white shadow-sm'
-                      : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-                  }`}
-                >
-                  {label} ({count})
-                </button>
-              ))}
-            </div>
-
-            {/* Assignee filter */}
-            <div className="relative" ref={assigneeDropdownRef}>
-              <button
-                onClick={() => setShowAssigneeDropdown(!showAssigneeDropdown)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm rounded-md border transition-colors ${
-                  assigneeFilter !== 'anyone'
-                    ? 'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-400'
-                    : 'border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400'
-                }`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                {assigneeFilterLabel}
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showAssigneeDropdown && (
-                <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
-                  <button
-                    onClick={() => { setAssigneeFilter('anyone'); setShowAssigneeDropdown(false); }}
-                    className={`block w-full px-3 py-1.5 text-left text-sm transition-colors ${
-                      assigneeFilter === 'anyone'
-                        ? 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-950'
-                        : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
-                    }`}
-                  >
-                    Anyone
-                  </button>
-                  {currentUserId && (
-                    <button
-                      onClick={() => { setAssigneeFilter('me'); setShowAssigneeDropdown(false); }}
-                      className={`block w-full px-3 py-1.5 text-left text-sm transition-colors ${
-                        assigneeFilter === 'me'
-                          ? 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-950'
-                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
-                      }`}
-                    >
-                      Me
-                    </button>
-                  )}
-                  {members.filter((m) => m.id !== currentUserId).map((member) => (
-                    <button
-                      key={member.id}
-                      onClick={() => { setAssigneeFilter(member.id); setShowAssigneeDropdown(false); }}
-                      className={`flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm transition-colors ${
-                        assigneeFilter === member.id
-                          ? 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-950'
-                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
-                      }`}
-                    >
-                      {member.image ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={member.image} alt="" className="w-4 h-4 rounded-full" />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-                      )}
-                      {member.name}
-                    </button>
-                  ))}
-                </div>
+          <div className="flex items-center gap-2">
+            {/* Filter button */}
+            <button
+              onClick={() => setIsFilterDrawerOpen(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm rounded-md border transition-colors ${
+                hasActiveFilters
+                  ? 'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-400'
+                  : 'border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400'
+              }`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <span className="hidden sm:inline">Filter</span>
+              {activeFilterCount > 0 && (
+                <span className="ml-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-violet-600 text-white text-[10px] font-bold leading-none">
+                  {activeFilterCount}
+                </span>
               )}
-            </div>
+            </button>
 
             {/* Group by card toggle */}
             <button
@@ -576,6 +524,51 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
             </button>
           </div>
         </div>
+
+        {/* Active filter chips */}
+        {hasActiveFilters && (
+          <div className="flex items-center gap-2 flex-wrap mb-4">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">Filtered by:</span>
+            {Array.from(statusFilters).map((status) => (
+              <span
+                key={status}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+              >
+                {statusLabelMap[status]}
+                <button
+                  onClick={() => removeStatusFilter(status)}
+                  className="ml-0.5 hover:text-neutral-900 dark:hover:text-white"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+            {assigneeChips.map((chip) => (
+              <span
+                key={chip.id}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+              >
+                {chip.label}
+                <button
+                  onClick={() => removeAssigneeFilter(chip.id)}
+                  className="ml-0.5 hover:text-violet-900 dark:hover:text-violet-200"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+            <button
+              onClick={clearAllFilters}
+              className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
 
         {/* Task progress bar */}
         {channelTasks.length > 0 && (
@@ -597,7 +590,7 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
         {groupedTasks.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-sm text-neutral-500 dark:text-neutral-400">
-              {statusFilter !== 'all' || assigneeFilter !== 'anyone'
+              {hasActiveFilters
                 ? 'No tasks match the current filters.'
                 : 'No cards yet — add a card to the board to get started.'}
             </p>
@@ -650,6 +643,18 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
         isOpen={isTaskDrawerOpen}
         onClose={handleCloseDrawer}
         onOpenCard={handleCloseDrawer}
+      />
+
+      <TaskFilterDrawer
+        isOpen={isFilterDrawerOpen}
+        onClose={() => setIsFilterDrawerOpen(false)}
+        statusFilters={statusFilters}
+        onStatusFiltersChange={setStatusFilters}
+        statusCounts={statusCounts}
+        assigneeFilters={assigneeFilters}
+        onAssigneeFiltersChange={setAssigneeFilters}
+        members={members}
+        currentUserId={currentUserId}
       />
     </div>
   );
