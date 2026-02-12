@@ -113,7 +113,7 @@ export function SharePanel({ channelId }: SharePanelProps) {
       const { share } = await updateShare(channelId, shareId, { role: newRole })
       setSharesData((prev) =>
         prev
-          ? { ...prev, shares: prev.shares.map((s) => (s.id === shareId ? share : s)) }
+          ? { ...prev, shares: prev.shares.map((s) => (s.id === shareId ? { ...s, ...share } : s)) }
           : prev
       )
     } catch (err) {
@@ -126,7 +126,7 @@ export function SharePanel({ channelId }: SharePanelProps) {
       const { share } = await updateShare(channelId, shareId, { roleDescription: roleDescription || null })
       setSharesData((prev) =>
         prev
-          ? { ...prev, shares: prev.shares.map((s) => (s.id === shareId ? share : s)) }
+          ? { ...prev, shares: prev.shares.map((s) => (s.id === shareId ? { ...s, ...share } : s)) }
           : prev
       )
     } catch (err) {

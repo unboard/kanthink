@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import type { Task, TaskStatus } from '@/lib/types';
+import type { Task, TaskStatus, CardMessageType } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { requireSignInForAI } from '@/lib/settingsStore';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
 import { Drawer } from '@/components/ui';
@@ -54,6 +55,8 @@ export function TaskDrawer({
 
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isMovingTask, setIsMovingTask] = useState(false);
+  const [isAILoading, setIsAILoading] = useState(false);
+  const [aiError, setAIError] = useState<string | null>(null);
 
   const { data: session } = useSession();
   const { keyboardOffset, onFocus: handleKeyboardFocus, onBlur: handleKeyboardBlur } = useKeyboardOffset();
@@ -85,6 +88,8 @@ export function TaskDrawer({
       setIsMenuOpen(false);
       setIsStatusOpen(false);
       setShowTitleDrawer(false);
+      setIsAILoading(false);
+      setAIError(null);
     }
   }, [isOpen, task]);
 
@@ -153,15 +158,69 @@ export function TaskDrawer({
     });
   };
 
-  const handleAddNote = useCallback((content: string, imageUrls?: string[]) => {
+  const handleAddNote = useCallback(async (content: string, type: CardMessageType, imageUrls?: string[]) => {
     if (!task) return;
     const author = session?.user
       ? { id: session.user.id!, name: session.user.name ?? 'Unknown', image: session.user.image ?? undefined }
       : undefined;
+
+    // If it's a question, check auth first
+    if (type === 'question' && !requireSignInForAI()) {
+      return;
+    }
+
+    // Add the user's note
     addTaskNote(task.id, content, author, imageUrls);
-    // Scroll to bottom after adding
     setTimeout(() => notesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  }, [task, session, addTaskNote]);
+
+    // If it's a question, send to AI
+    if (type === 'question') {
+      setIsAILoading(true);
+      setAIError(null);
+
+      try {
+        const channel = channels[task.channelId];
+        const parentCard = task.cardId ? cards[task.cardId] : null;
+
+        const response = await fetch('/api/task-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            taskId: task.id,
+            questionContent: content,
+            imageUrls,
+            context: {
+              taskTitle: task.title,
+              taskStatus: task.status,
+              parentCardTitle: parentCard?.title,
+              channelName: channel?.name ?? '',
+              channelDescription: channel?.description ?? '',
+              previousNotes: (task.notes ?? []).slice(-10),
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to get AI response');
+        }
+
+        const data = await response.json();
+
+        // Add AI response as a note from "Kan"
+        addTaskNote(task.id, data.response, {
+          id: 'kan',
+          name: 'Kan',
+          image: 'https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg',
+        });
+        setTimeout(() => notesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      } catch (error) {
+        setAIError(error instanceof Error ? error.message : 'Failed to get AI response');
+      } finally {
+        setIsAILoading(false);
+      }
+    }
+  }, [task, session, addTaskNote, channels, cards]);
 
   const handleTitleDrawerSave = () => {
     if (task && title.trim()) {
@@ -462,6 +521,42 @@ export function TaskDrawer({
               </div>
             )}
 
+            {/* AI Loading indicator */}
+            {isAILoading && (
+              <div className="pl-3 relative">
+                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-violet-400 dark:bg-violet-500 rounded-full" />
+                <div className="rounded-lg px-3 py-2 bg-violet-50 dark:bg-violet-950/30">
+                  <div className="flex items-center gap-2 text-sm text-violet-600 dark:text-violet-400">
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Kan is thinking...
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* AI Error */}
+            {aiError && (
+              <div className="rounded-lg px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+                <div className="flex items-start gap-2">
+                  <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <div className="text-sm text-red-700 dark:text-red-300">{aiError}</div>
+                    <button
+                      onClick={() => setAIError(null)}
+                      className="text-xs text-red-600 dark:text-red-400 underline mt-1"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div ref={notesEndRef} />
           </div>
 
@@ -471,7 +566,8 @@ export function TaskDrawer({
             style={{ bottom: keyboardOffset > 0 ? `${Math.max(0, keyboardOffset - 60)}px` : 0 }}
           >
             <ChatInput
-              onSubmit={(content, _type, imageUrls) => handleAddNote(content, imageUrls)}
+              onSubmit={(content, type, imageUrls) => handleAddNote(content, type, imageUrls)}
+              isLoading={isAILoading}
               cardId={task.id}
               members={members}
               onKeyboardFocus={handleKeyboardFocus}

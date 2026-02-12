@@ -152,6 +152,7 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
   const createCard = useStore((s) => s.createCard);
   const addMessage = useStore((s) => s.addMessage);
   const createTask = useStore((s) => s.createTask);
+  const addTaskNote = useStore((s) => s.addTaskNote);
   const updateTask = useStore((s) => s.updateTask);
 
   // Sync form state when drawer opens or channel changes
@@ -255,8 +256,11 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
             for (const task of importedCard.tasks) {
               const createdTask = createTask(newChannel.id, card.id, {
                 title: task.title,
-                description: task.description || '',
               });
+              // Add description as first note if present
+              if (task.description) {
+                addTaskNote(createdTask.id, task.description);
+              }
               if (task.status !== 'not_started') {
                 updateTask(createdTask.id, {
                   status: task.status,

@@ -37,6 +37,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const setCardSummary = useStore((s) => s.setCardSummary);
   const updateMessageAction = useStore((s) => s.updateMessageAction);
   const createTask = useStore((s) => s.createTask);
+  const addTaskNote = useStore((s) => s.addTaskNote);
   const addTagDefinition = useStore((s) => s.addTagDefinition);
   const addTagToCard = useStore((s) => s.addTagToCard);
   const removeTagFromCard = useStore((s) => s.removeTagFromCard);
@@ -230,8 +231,11 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         const taskData = dataToUse as CreateTaskActionData;
         const task = createTask(card.channelId, card.id, {
           title: taskData.title,
-          description: taskData.description,
         });
+        // Add description as first note if present
+        if (taskData.description) {
+          addTaskNote(task.id, taskData.description);
+        }
         resultId = task.id;
       } else if (action.type === 'add_tag') {
         const tagData = dataToUse as AddTagActionData;

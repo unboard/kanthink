@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   DndContext,
   DragOverlay,
@@ -166,6 +167,7 @@ export function Board({ channel }: BoardProps) {
   const addQuestion = useStore((s) => s.addQuestion);
   const addMessage = useStore((s) => s.addMessage);
   const createTask = useStore((s) => s.createTask);
+  const addTaskNote = useStore((s) => s.addTaskNote);
   const startAIOperation = useStore((s) => s.startAIOperation);
   const completeAIOperation = useStore((s) => s.completeAIOperation);
   const setGeneratingSkeletons = useStore((s) => s.setGeneratingSkeletons);
@@ -645,8 +647,11 @@ export function Board({ channel }: BoardProps) {
               if (normalizedTitle && !existingTaskTitles.has(normalizedTitle)) {
                 const createdTask = createTask(channel.id, modified.id, {
                   title: task.title,
-                  description: task.description,
                 });
+                // Add description as first note if present
+                if (task.description) {
+                  addTaskNote(createdTask.id, task.description);
+                }
                 // Apply task-level assignment if present
                 const validTaskAssignees = filterAssignees(task.assignedTo);
                 if (validTaskAssignees?.length) {
@@ -761,8 +766,11 @@ export function Board({ channel }: BoardProps) {
                 if (normalizedTitle && !existingTaskTitles.has(normalizedTitle)) {
                   const createdTask = createTask(channel.id, modified.id, {
                     title: task.title,
-                    description: task.description,
                   });
+                  // Add description as first note if present
+                  if (task.description) {
+                    addTaskNote(createdTask.id, task.description);
+                  }
                   const validTaskAssignees = filterAssignees(task.assignedTo);
                   if (validTaskAssignees?.length) {
                     setTaskAssignees(createdTask.id, validTaskAssignees);
@@ -916,12 +924,14 @@ export function Board({ channel }: BoardProps) {
       `}</style>
       <header className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4">
         <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-          {/* Kanthink icon - mobile only */}
-          <img
-            src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
-            alt="Kanthink"
-            className="h-5 w-5 flex-shrink-0 md:hidden"
-          />
+          {/* Kanthink icon - mobile only, navigates to dashboard */}
+          <Link href="/" className="flex-shrink-0 md:hidden">
+            <img
+              src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+              alt="Kanthink"
+              className="h-5 w-5"
+            />
+          </Link>
           {viewMode === 'focus' && focusColumn ? (
             /* Breadcrumb header for focus mode */
             <div className="flex items-center gap-1.5 min-w-0">
