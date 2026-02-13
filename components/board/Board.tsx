@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -156,6 +156,8 @@ export function Board({ channel }: BoardProps) {
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
   const instructionCards = useStore((s) => s.instructionCards);
+  const folders = useStore((s) => s.folders);
+  const folderOrder = useStore((s) => s.folderOrder);
   const moveCard = useStore((s) => s.moveCard);
   const createCard = useStore((s) => s.createCard);
   const updateCard = useStore((s) => s.updateCard);
@@ -179,6 +181,17 @@ export function Board({ channel }: BoardProps) {
   const addTagToCard = useStore((s) => s.addTagToCard);
   const setCardAssignees = useStore((s) => s.setCardAssignees);
   const setTaskAssignees = useStore((s) => s.setTaskAssignees);
+
+  // Find the folder this channel belongs to (if any)
+  const parentFolder = useMemo(() => {
+    for (const folderId of folderOrder) {
+      const folder = folders[folderId];
+      if (folder && folder.channelIds.includes(channel.id)) {
+        return folder;
+      }
+    }
+    return null;
+  }, [folderOrder, folders, channel.id]);
 
   // ┌─────────────────────────────────────────────────────────────────────────┐
   // │ CRITICAL: Mobile Drag-and-Drop Configuration                           │
@@ -933,8 +946,19 @@ export function Board({ channel }: BoardProps) {
             />
           </Link>
           {viewMode === 'focus' && focusColumn ? (
-            /* Breadcrumb header for focus mode */
+            /* Breadcrumb header for focus mode: Folder / Channel / Column */
             <div className="flex items-center gap-1.5 min-w-0">
+              {parentFolder && (
+                <>
+                  <Link
+                    href={`/folder/${parentFolder.id}`}
+                    className="flex-shrink-0 text-sm text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:underline transition-colors truncate max-w-[120px]"
+                  >
+                    {parentFolder.name}
+                  </Link>
+                  <span className="text-neutral-300 dark:text-neutral-600 flex-shrink-0">/</span>
+                </>
+              )}
               <button
                 onClick={handleExitFocus}
                 className="text-base sm:text-lg font-medium text-neutral-500 dark:text-neutral-400 truncate hover:text-neutral-900 dark:hover:text-white hover:underline transition-colors"
@@ -947,13 +971,27 @@ export function Board({ channel }: BoardProps) {
               </h2>
             </div>
           ) : (
-            <h2
-              className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
-              onClick={() => setIsSettingsOpen(true)}
-              title="Edit channel name"
-            >
-              {channel.name}
-            </h2>
+            /* Normal header: Folder / Channel */
+            <div className="flex items-center gap-1.5 min-w-0">
+              {parentFolder && (
+                <>
+                  <Link
+                    href={`/folder/${parentFolder.id}`}
+                    className="flex-shrink-0 text-sm text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:underline transition-colors truncate max-w-[120px]"
+                  >
+                    {parentFolder.name}
+                  </Link>
+                  <span className="text-neutral-300 dark:text-neutral-600 flex-shrink-0">/</span>
+                </>
+              )}
+              <h2
+                className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate cursor-pointer hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                onClick={() => setIsSettingsOpen(true)}
+                title="Edit channel name"
+              >
+                {channel.name}
+              </h2>
+            </div>
           )}
           {/* View toggle */}
           <div className="flex items-center bg-neutral-100 dark:bg-neutral-800 rounded-lg p-0.5 sm:p-1 flex-shrink-0">
