@@ -142,13 +142,13 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
     return result
   }, [members, owner, shares, activeUsers])
 
-  const createdAt = useMemo(() => {
+  const modifiedAt = useMemo(() => {
     try {
-      return formatRelativeTime(new Date(channel.createdAt))
+      return formatRelativeTime(new Date(channel.updatedAt))
     } catch {
       return ''
     }
-  }, [channel.createdAt])
+  }, [channel.updatedAt])
 
   const handleCardClick = () => {
     router.push(`/channel/${channel.id}`)
@@ -379,10 +379,10 @@ export function ChannelCard({ channel, tasks, shares = [], owner, activeUsers = 
           )}
         </div>
 
-        {/* Created date */}
-        {createdAt && (
+        {/* Last modified */}
+        {modifiedAt && (
           <span className="text-xs text-white/40">
-            {createdAt}
+            {modifiedAt}
           </span>
         )}
       </div>

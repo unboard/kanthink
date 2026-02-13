@@ -19,6 +19,7 @@ export function FolderView({ folder }: FolderViewProps) {
     return folder.channelIds
       .map((id) => channels[id])
       .filter((c) => c && c.status !== 'archived')
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   }, [folder.channelIds, channels])
 
   // Get tasks by channel
