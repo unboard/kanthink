@@ -961,11 +961,11 @@ export function Board({ channel }: BoardProps) {
               )}
               <button
                 onClick={handleExitFocus}
-                className="text-base sm:text-lg font-medium text-neutral-500 dark:text-neutral-400 truncate hover:text-neutral-900 dark:hover:text-white hover:underline transition-colors"
+                className="text-sm text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:underline transition-colors truncate max-w-[200px]"
               >
                 {channel.name}
               </button>
-              <span className="text-neutral-400 dark:text-neutral-500 flex-shrink-0">/</span>
+              <span className="text-neutral-300 dark:text-neutral-600 flex-shrink-0">/</span>
               <h2 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-white truncate">
                 {focusColumn.name}
               </h2>
