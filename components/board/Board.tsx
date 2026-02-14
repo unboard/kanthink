@@ -952,9 +952,10 @@ export function Board({ channel }: BoardProps) {
                 <>
                   <Link
                     href={`/folder/${parentFolder.id}`}
-                    className="flex-shrink-0 text-sm text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:underline transition-colors truncate max-w-[120px]"
+                    className="flex-shrink-0 text-sm text-neutral-400 dark:text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:underline transition-colors"
+                    title={parentFolder.name}
                   >
-                    {parentFolder.name}
+                    ...
                   </Link>
                   <span className="text-neutral-300 dark:text-neutral-600 flex-shrink-0">/</span>
                 </>
