@@ -425,14 +425,6 @@ export function TaskDrawer({
 
           {/* Spacer */}
           <div className="flex-1" />
-
-          {/* Delete text button */}
-          <button
-            onClick={handleDelete}
-            className="px-2 py-1 text-xs text-neutral-400 hover:text-red-500 dark:hover:text-red-400 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-          >
-            Delete
-          </button>
         </div>
 
         {/* Row 3: Dates */}
