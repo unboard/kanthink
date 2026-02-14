@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
-import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, TaskNote, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction } from './types';
+import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, TaskNote, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction, ReviewQueueState, ReviewQueueCard, CardRejection, RejectionReason } from './types';
 import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
 import { KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
 import { emitCardMoved, emitCardCreated, emitCardDeleted } from './automationEvents';
@@ -45,6 +45,9 @@ interface KanthinkState {
   aiOperation: AIOperation;
   generatingSkeletons: Record<ID, number>;  // columnId -> skeleton count
   instructionRuns: Record<ID, InstructionRun>;  // runId -> run info for undo
+  pendingReviews: Record<ID, ReviewQueueState>;  // instructionCardId -> review queue
+  activeReviewId: ID | null;                     // which review drawer is open
+  rejections: CardRejection[];                   // rejection feedback history
   _hasHydrated: boolean;
 
   // Folder actions
@@ -177,6 +180,18 @@ interface KanthinkState {
   undoInstructionRun: (runId: ID) => void;
   getInstructionRuns: (instructionId: ID) => InstructionRun[];
 
+  // Review queue actions
+  openReviewQueue: (state: ReviewQueueState) => void;
+  closeReviewQueue: () => void;
+  discardReview: (instructionCardId: ID) => void;
+  toggleReviewCard: (instructionCardId: ID, cardIndex: number) => void;
+  acceptAllReviewCards: (instructionCardId: ID) => void;
+  setRejectionReason: (instructionCardId: ID, cardIndex: number, reason?: RejectionReason) => void;
+  setRejectionFeedback: (instructionCardId: ID, cardIndex: number, feedback: string) => void;
+  toggleReviewCardExpanded: (instructionCardId: ID, cardIndex: number) => void;
+  commitReviewQueue: (instructionCardId: ID) => void;
+  pruneOldRejections: () => void;
+
   // Skeleton loading actions
   setGeneratingSkeletons: (columnId: ID, count: number) => void;
   clearGeneratingSkeletons: (columnId: ID) => void;
@@ -239,6 +254,9 @@ export const useStore = create<KanthinkState>()(
       aiOperation: { isActive: false, status: '', runningInstructionIds: [] },
       generatingSkeletons: {},
       instructionRuns: {},
+      pendingReviews: {},
+      activeReviewId: null,
+      rejections: [],
       _hasHydrated: false,
 
       setHasHydrated: (state) => set({ _hasHydrated: state }),
@@ -3540,6 +3558,177 @@ export const useStore = create<KanthinkState>()(
           .sort((a, b) => b.timestamp.localeCompare(a.timestamp)); // newest first
       },
 
+      // Review queue actions
+      openReviewQueue: (reviewState) => {
+        set((state) => ({
+          pendingReviews: { ...state.pendingReviews, [reviewState.instructionCardId]: reviewState },
+          activeReviewId: reviewState.instructionCardId,
+        }));
+      },
+
+      closeReviewQueue: () => {
+        set({ activeReviewId: null });
+      },
+
+      discardReview: (instructionCardId) => {
+        set((state) => {
+          const { [instructionCardId]: _, ...rest } = state.pendingReviews;
+          return {
+            pendingReviews: rest,
+            activeReviewId: state.activeReviewId === instructionCardId ? null : state.activeReviewId,
+          };
+        });
+      },
+
+      toggleReviewCard: (instructionCardId, cardIndex) => {
+        set((state) => {
+          const review = state.pendingReviews[instructionCardId];
+          if (!review) return state;
+          const updatedCards = [...review.cards];
+          const card = { ...updatedCards[cardIndex] };
+          card.accepted = !card.accepted;
+          if (card.accepted) {
+            card.rejectionReason = undefined;
+            card.rejectionFeedback = undefined;
+          }
+          updatedCards[cardIndex] = card;
+          return {
+            pendingReviews: {
+              ...state.pendingReviews,
+              [instructionCardId]: { ...review, cards: updatedCards },
+            },
+          };
+        });
+      },
+
+      acceptAllReviewCards: (instructionCardId) => {
+        set((state) => {
+          const review = state.pendingReviews[instructionCardId];
+          if (!review) return state;
+          const updatedCards = review.cards.map(c => ({
+            ...c,
+            accepted: true,
+            rejectionReason: undefined,
+            rejectionFeedback: undefined,
+          }));
+          return {
+            pendingReviews: {
+              ...state.pendingReviews,
+              [instructionCardId]: { ...review, cards: updatedCards },
+            },
+          };
+        });
+      },
+
+      setRejectionReason: (instructionCardId, cardIndex, reason) => {
+        set((state) => {
+          const review = state.pendingReviews[instructionCardId];
+          if (!review) return state;
+          const updatedCards = [...review.cards];
+          updatedCards[cardIndex] = { ...updatedCards[cardIndex], rejectionReason: reason };
+          return {
+            pendingReviews: {
+              ...state.pendingReviews,
+              [instructionCardId]: { ...review, cards: updatedCards },
+            },
+          };
+        });
+      },
+
+      setRejectionFeedback: (instructionCardId, cardIndex, feedback) => {
+        set((state) => {
+          const review = state.pendingReviews[instructionCardId];
+          if (!review) return state;
+          const updatedCards = [...review.cards];
+          updatedCards[cardIndex] = { ...updatedCards[cardIndex], rejectionFeedback: feedback.slice(0, 200) };
+          return {
+            pendingReviews: {
+              ...state.pendingReviews,
+              [instructionCardId]: { ...review, cards: updatedCards },
+            },
+          };
+        });
+      },
+
+      toggleReviewCardExpanded: (instructionCardId, cardIndex) => {
+        set((state) => {
+          const review = state.pendingReviews[instructionCardId];
+          if (!review) return state;
+          const updatedCards = [...review.cards];
+          updatedCards[cardIndex] = { ...updatedCards[cardIndex], expanded: !updatedCards[cardIndex].expanded };
+          return {
+            pendingReviews: {
+              ...state.pendingReviews,
+              [instructionCardId]: { ...review, cards: updatedCards },
+            },
+          };
+        });
+      },
+
+      commitReviewQueue: (instructionCardId) => {
+        const state = get();
+        const review = state.pendingReviews[instructionCardId];
+        if (!review) return;
+
+        const { createCard: storeCreateCard, setCardAssignees: storeSetCardAssignees } = state;
+
+        // Create accepted cards
+        for (const card of review.cards) {
+          if (card.accepted) {
+            const newCard = storeCreateCard(review.channelId, review.targetColumnId, {
+              title: card.title,
+              initialMessage: card.content,
+              assignedTo: card.assignedTo,
+            }, 'ai', review.instructionCardId);
+            if (card.assignedTo?.length && newCard) {
+              storeSetCardAssignees(newCard.id, card.assignedTo);
+            }
+          }
+        }
+
+        // Store rejections with feedback
+        const newRejections: CardRejection[] = review.cards
+          .filter(c => !c.accepted)
+          .map(c => ({
+            channelId: review.channelId,
+            instructionCardId: review.instructionCardId,
+            rejectedCardTitle: c.title,
+            reason: c.rejectionReason,
+            feedback: c.rejectionFeedback,
+            timestamp: new Date().toISOString(),
+          }));
+
+        // Remove from pending reviews
+        const { [instructionCardId]: _, ...restReviews } = state.pendingReviews;
+
+        set({
+          pendingReviews: restReviews,
+          activeReviewId: state.activeReviewId === instructionCardId ? null : state.activeReviewId,
+          rejections: [...state.rejections, ...newRejections],
+        });
+      },
+
+      pruneOldRejections: () => {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        set((state) => {
+          // Remove old rejections and cap at 50 per channel
+          const fresh = state.rejections.filter(r => r.timestamp > thirtyDaysAgo);
+          // Group by channel and cap
+          const byChannel = new Map<string, CardRejection[]>();
+          for (const r of fresh) {
+            const list = byChannel.get(r.channelId) || [];
+            list.push(r);
+            byChannel.set(r.channelId, list);
+          }
+          const capped: CardRejection[] = [];
+          for (const list of byChannel.values()) {
+            // Keep most recent 50
+            capped.push(...list.slice(-50));
+          }
+          return { rejections: capped };
+        });
+      },
+
       // Skeleton loading actions
       setGeneratingSkeletons: (columnId, count) => {
         set((state) => ({
@@ -3571,6 +3760,8 @@ export const useStore = create<KanthinkState>()(
         favoriteChannelIds: state.favoriteChannelIds,
         favoriteInstructionCardIds: state.favoriteInstructionCardIds,
         instructionRuns: state.instructionRuns,
+        pendingReviews: state.pendingReviews,
+        rejections: state.rejections,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

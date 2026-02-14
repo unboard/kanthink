@@ -305,6 +305,39 @@ export interface Card {
   processedByInstructions?: Record<ID, string>;  // instructionId -> ISO timestamp of last run
 }
 
+// ===== REVIEW QUEUE TYPES =====
+
+export type RejectionReason = 'too_similar' | 'not_relevant' | 'too_vague' | 'not_for_me' | 'already_know';
+
+export interface CardRejection {
+  channelId: ID;
+  instructionCardId: ID;
+  rejectedCardTitle: string;
+  reason?: RejectionReason;
+  feedback?: string;
+  timestamp: string;
+}
+
+export interface ReviewQueueCard {
+  title: string;
+  content?: string;
+  assignedTo?: string[];
+  accepted: boolean;
+  rejectionReason?: RejectionReason;
+  rejectionFeedback?: string;
+  expanded?: boolean;
+}
+
+export interface ReviewQueueState {
+  instructionCardId: ID;
+  instructionTitle: string;
+  channelId: ID;
+  targetColumnId: ID;
+  targetColumnName: string;
+  cards: ReviewQueueCard[];
+  createdAt: string;
+}
+
 export interface ChannelInput {
   name: string;
   description?: string;

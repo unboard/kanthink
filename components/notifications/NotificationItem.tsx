@@ -71,7 +71,11 @@ function getNavigationUrl(notification: NotificationData): string | null {
   const channelId = data.channelId as string | undefined
   if (!channelId) return null
 
-  // Navigate to channel - the most we can do currently
+  // For shroom_completed notifications, link to review drawer if available
+  if (notification.type === 'shroom_completed' && data.instructionCardId) {
+    return `/channel/${channelId}?review=${data.instructionCardId}`
+  }
+
   return `/channel/${channelId}`
 }
 

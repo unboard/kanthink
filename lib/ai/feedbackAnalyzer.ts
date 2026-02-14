@@ -8,7 +8,7 @@
  * No movement history or deletion tracking - just current state analysis.
  */
 
-import type { Channel, Card, ID } from '../types';
+import type { Channel, Card, ID, CardRejection } from '../types';
 
 // Column sentiment keywords (lowercase for matching)
 const POSITIVE_KEYWORDS = ['like', 'liked', 'love', 'favorite', 'favorites', 'keep', 'good', 'yes', 'approved', 'accept', 'accepted', 'interesting', 'useful', 'important', 'priority', 'high', 'best', 'top', 'starred', 'saved'];
@@ -607,4 +607,76 @@ export function detectDrift(
   }
 
   return insights;
+}
+
+// ============================================================================
+// Rejection Context for AI Prompts
+// ============================================================================
+
+const REJECTION_REASON_LABELS: Record<string, string> = {
+  too_similar: 'Too similar',
+  not_relevant: 'Not relevant',
+  too_vague: 'Too vague',
+  not_for_me: 'Not for me',
+  already_know: 'Already know this',
+};
+
+/**
+ * Build a concise rejection context block for AI generation prompts.
+ * Takes the most recent rejections for a channel and groups by reason.
+ */
+export function buildRejectionContext(
+  rejections: CardRejection[],
+  channelId: ID
+): string | null {
+  // Filter to this channel, most recent 20
+  const channelRejections = rejections
+    .filter(r => r.channelId === channelId)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, 20);
+
+  if (channelRejections.length === 0) return null;
+
+  const lines: string[] = ['## Card Rejection History (avoid these patterns)'];
+  lines.push('Recent rejections from this channel:');
+
+  // Group by reason
+  const byReason = new Map<string, string[]>();
+  const noReason: string[] = [];
+  const userNotes: string[] = [];
+
+  for (const r of channelRejections) {
+    if (r.reason) {
+      const list = byReason.get(r.reason) || [];
+      list.push(r.rejectedCardTitle);
+      byReason.set(r.reason, list);
+    } else {
+      noReason.push(r.rejectedCardTitle);
+    }
+    if (r.feedback) {
+      userNotes.push(r.feedback);
+    }
+  }
+
+  for (const [reason, titles] of byReason.entries()) {
+    const label = REJECTION_REASON_LABELS[reason] || reason;
+    const titleList = titles.slice(0, 3).map(t => `"${t}"`).join(', ');
+    const extra = titles.length > 3 ? ` (+${titles.length - 3} more)` : '';
+    lines.push(`- "${label}" (${titles.length}): ${titleList}${extra}`);
+  }
+
+  if (noReason.length > 0) {
+    const titleList = noReason.slice(0, 3).map(t => `"${t}"`).join(', ');
+    lines.push(`- Rejected without reason (${noReason.length}): ${titleList}`);
+  }
+
+  if (userNotes.length > 0) {
+    // Include up to 3 unique user notes
+    const uniqueNotes = [...new Set(userNotes)].slice(0, 3);
+    for (const note of uniqueNotes) {
+      lines.push(`User note: "${note}"`);
+    }
+  }
+
+  return lines.join('\n');
 }

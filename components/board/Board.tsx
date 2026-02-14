@@ -37,6 +37,7 @@ import { AIDebugModal } from './AIDebugModal';
 // import { QuestionsDrawer } from './QuestionsDrawer';
 import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
 import { ShroomChatDrawer } from './ShroomChatDrawer';
+import { ReviewDrawer } from './ReviewDrawer';
 import { TaskListView } from './TaskListView';
 import { FocusColumnView } from './FocusColumnView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
@@ -153,6 +154,25 @@ export function Board({ channel }: BoardProps) {
     }
   }, [searchParams, router, channel.id]);
 
+  // Prune old rejections on mount
+  useEffect(() => {
+    pruneOldRejections();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle ?review= param for notification linkage
+  useEffect(() => {
+    const reviewParam = searchParams.get('review');
+    if (reviewParam) {
+      const state = useStore.getState();
+      if (state.pendingReviews[reviewParam]) {
+        // Open the review drawer for this pending review
+        useStore.setState({ activeReviewId: reviewParam });
+      }
+      // Clear the param
+      router.replace(`/channel/${channel.id}`, { scroll: false });
+    }
+  }, [searchParams, router, channel.id]);
+
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
   const instructionCards = useStore((s) => s.instructionCards);
@@ -181,6 +201,12 @@ export function Board({ channel }: BoardProps) {
   const addTagToCard = useStore((s) => s.addTagToCard);
   const setCardAssignees = useStore((s) => s.setCardAssignees);
   const setTaskAssignees = useStore((s) => s.setTaskAssignees);
+  const openReviewQueue = useStore((s) => s.openReviewQueue);
+  const activeReviewId = useStore((s) => s.activeReviewId);
+  const pendingReviews = useStore((s) => s.pendingReviews);
+  const closeReviewQueue = useStore((s) => s.closeReviewQueue);
+  const rejections = useStore((s) => s.rejections);
+  const pruneOldRejections = useStore((s) => s.pruneOldRejections);
 
   // Find the folder this channel belongs to (if any)
   const parentFolder = useMemo(() => {
@@ -553,7 +579,7 @@ export function Board({ channel }: BoardProps) {
     }
 
     try {
-      const result = await runInstruction(instructionCard, channel, cards, tasks, getAIAbortSignal(), undefined, undefined, channelMembers);
+      const result = await runInstruction(instructionCard, channel, cards, tasks, getAIAbortSignal(), undefined, undefined, channelMembers, rejections);
 
       // Store debug info for the modal
       if (result.debug) {
@@ -566,16 +592,24 @@ export function Board({ channel }: BoardProps) {
         ids?.filter(id => validMemberIds.has(id));
 
       if (result.action === 'generate' && result.generatedCards) {
-        // Get the first target column to add cards to
-        const targetColumnId = result.targetColumnIds[0] || channel.columns[0]?.id;
-        if (targetColumnId) {
-          for (const cardInput of result.generatedCards) {
-            const newCard = createCard(channel.id, targetColumnId, cardInput, 'ai');
-            const validAssignees = filterAssignees(cardInput.assignedTo);
-            if (validAssignees?.length && newCard) {
-              setCardAssignees(newCard.id, validAssignees);
-            }
-          }
+        // Route generated cards to review queue instead of creating directly
+        const targetColId = result.targetColumnIds[0] || channel.columns[0]?.id;
+        const targetCol = targetColId ? channel.columns.find(c => c.id === targetColId) : null;
+        if (targetColId && targetCol) {
+          openReviewQueue({
+            instructionCardId: instructionCard.id,
+            instructionTitle: instructionCard.title,
+            channelId: channel.id,
+            targetColumnId: targetColId,
+            targetColumnName: targetCol.name,
+            cards: result.generatedCards.map(cardInput => ({
+              title: cardInput.title,
+              content: cardInput.initialMessage,
+              assignedTo: filterAssignees(cardInput.assignedTo),
+              accepted: true,
+            })),
+            createdAt: new Date().toISOString(),
+          });
         }
       } else if (result.action === 'modify' && result.modifiedCards) {
         // Track all changes for undo capability
@@ -727,15 +761,23 @@ export function Board({ channel }: BoardProps) {
         // Apply modifications first, then moves (order matters for coherence)
 
         if (result.generatedCards) {
-          const targetColumnId = result.targetColumnIds?.[0] || channel.columns[0]?.id;
-          if (targetColumnId) {
-            for (const cardInput of result.generatedCards) {
-              const newCard = createCard(channel.id, targetColumnId, cardInput, 'ai');
-              const validAssignees = filterAssignees(cardInput.assignedTo);
-              if (validAssignees?.length && newCard) {
-                setCardAssignees(newCard.id, validAssignees);
-              }
-            }
+          const targetColId = result.targetColumnIds?.[0] || channel.columns[0]?.id;
+          const targetCol = targetColId ? channel.columns.find(c => c.id === targetColId) : null;
+          if (targetColId && targetCol) {
+            openReviewQueue({
+              instructionCardId: instructionCard.id,
+              instructionTitle: instructionCard.title,
+              channelId: channel.id,
+              targetColumnId: targetColId,
+              targetColumnName: targetCol.name,
+              cards: result.generatedCards.map(cardInput => ({
+                title: cardInput.title,
+                content: cardInput.initialMessage,
+                assignedTo: filterAssignees(cardInput.assignedTo),
+                accepted: true,
+              })),
+              createdAt: new Date().toISOString(),
+            });
           }
         }
 
@@ -1269,6 +1311,11 @@ export function Board({ channel }: BoardProps) {
           });
           setEditingShroomId(newCard.id);
         }}
+      />
+
+      <ReviewDrawer
+        isOpen={activeReviewId !== null}
+        onClose={() => closeReviewQueue()}
       />
     </div>
   );

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { marked } from 'marked';
-import type { Channel, Card, CardInput, InstructionCard, InstructionTarget, ContextColumnSelection, Task } from '@/lib/types';
+import type { Channel, Card, CardInput, InstructionCard, InstructionTarget, ContextColumnSelection, Task, CardRejection } from '@/lib/types';
 import { type LLMMessage } from '@/lib/ai/llm';
-import { buildFeedbackContext } from '@/lib/ai/feedbackAnalyzer';
+import { buildFeedbackContext, buildRejectionContext } from '@/lib/ai/feedbackAnalyzer';
 import { getAuthenticatedLLM } from '@/lib/ai/withAuth';
 import { createNotification } from '@/lib/notifications/createNotification';
 import { auth } from '@/lib/auth';
@@ -870,6 +870,7 @@ interface RunInstructionRequest {
   skipAlreadyProcessed?: boolean;  // For automatic runs, skip cards already processed by this instruction
   systemInstructions?: string;
   members?: MemberInfo[];
+  rejections?: CardRejection[];
 }
 
 export async function POST(request: Request) {
@@ -878,7 +879,7 @@ export async function POST(request: Request) {
     const userId = session?.user?.id;
 
     const body: RunInstructionRequest = await request.json();
-    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, skipAlreadyProcessed, systemInstructions, members } = body;
+    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, skipAlreadyProcessed, systemInstructions, members, rejections } = body;
 
     // Validate required fields
     if (!instructionCard || !channel) {
@@ -1015,6 +1016,16 @@ export async function POST(request: Request) {
         }
       }
 
+      // Append rejection context if available
+      if (rejections && rejections.length > 0) {
+        const rejectionContext = buildRejectionContext(rejections, channel.id);
+        if (rejectionContext) {
+          const userMsg = messages[messages.length - 1];
+          const currentContent = userMsg.content as string;
+          userMsg.content = currentContent + `\n\n${rejectionContext}\n\nUse this rejection history to avoid generating similar cards.`;
+        }
+      }
+
       debug.systemPrompt = messages[0].content as string;
       debug.userPrompt = messages[1].content as string;
 
@@ -1044,7 +1055,7 @@ export async function POST(request: Request) {
             userId,
             type: 'shroom_completed',
             title: 'Shroom finished running',
-            body: `"${instructionCard.title}" generated ${generatedCards.length} card(s)`,
+            body: `"${instructionCard.title}" generated ${generatedCards.length} card(s) — tap to review`,
             data: { channelId: channel.id, instructionCardId: instructionCard.id },
           }).catch(() => {});
         }
