@@ -20,13 +20,13 @@
       "purpose": "any"
     },
     {
-      "src": "https://res.cloudinary.com/dcht3dytz/image/upload/w_192,h_192,f_png,b_rgb:000000/v1769532115/kanthink-icon_pbne7q",
+      "src": "https://res.cloudinary.com/dcht3dytz/image/upload/c_fit,w_115,h_115/c_pad,w_192,h_192,b_rgb:000000,f_png/v1769532115/kanthink-icon_pbne7q",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "https://res.cloudinary.com/dcht3dytz/image/upload/w_512,h_512,f_png,b_rgb:000000/v1769532115/kanthink-icon_pbne7q",
+      "src": "https://res.cloudinary.com/dcht3dytz/image/upload/c_fit,w_307,h_307/c_pad,w_512,h_512,b_rgb:000000,f_png/v1769532115/kanthink-icon_pbne7q",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
