@@ -31,6 +31,7 @@ import { runInstruction } from '@/lib/ai/runInstruction';
 import { generateProcessingStatus } from '@/lib/processingStatus';
 import { Button, Input, Modal } from '@/components/ui';
 import { useSettingsStore, requireSignInForAI } from '@/lib/settingsStore';
+import { useToastStore } from '@/lib/toastStore';
 import { SortableColumn } from './SortableColumn';
 import { AIDebugModal } from './AIDebugModal';
 // Commented out - question system disabled
@@ -207,6 +208,7 @@ export function Board({ channel }: BoardProps) {
   const closeReviewQueue = useStore((s) => s.closeReviewQueue);
   const rejections = useStore((s) => s.rejections);
   const pruneOldRejections = useStore((s) => s.pruneOldRejections);
+  const addToast = useToastStore((s) => s.addToast);
 
   // Find the folder this channel belongs to (if any)
   const parentFolder = useMemo(() => {
@@ -846,11 +848,48 @@ export function Board({ channel }: BoardProps) {
         }
       }
 
+      // Toast feedback for shroom completion
       if (result.error && result.error !== 'cancelled') {
         console.error('Instruction run error:', result.error);
+        addToast(`Shroom failed: ${result.error}`, 'warning', 5000);
+      } else if (result.error === 'cancelled') {
+        // No toast for user-initiated cancel
+      } else if (result.action === 'generate' && result.generatedCards) {
+        addToast(`Generated ${result.generatedCards.length} card(s) for review`, 'success');
+      } else if (result.action === 'modify') {
+        const modCount = result.modifiedCards?.length ?? 0;
+        if (modCount > 0) {
+          addToast(`Updated ${modCount} card(s)`, 'success');
+        } else if (result.message) {
+          addToast(result.message, 'info');
+        } else {
+          addToast('No cards were modified', 'info');
+        }
+      } else if (result.action === 'move') {
+        const moveCount = result.movedCards?.length ?? 0;
+        if (moveCount > 0) {
+          addToast(`Moved ${moveCount} card(s)`, 'success');
+        } else if (result.message) {
+          addToast(result.message, 'info');
+        } else {
+          addToast('No cards were moved', 'info');
+        }
+      } else if (result.action === 'multi-step') {
+        const parts: string[] = [];
+        if (result.modifiedCards?.length) parts.push(`updated ${result.modifiedCards.length}`);
+        if (result.movedCards?.length) parts.push(`moved ${result.movedCards.length}`);
+        if (result.generatedCards?.length) parts.push(`generated ${result.generatedCards.length}`);
+        if (parts.length > 0) {
+          addToast(`Completed: ${parts.join(', ')}`, 'success');
+        } else if (result.message) {
+          addToast(result.message, 'info');
+        }
       }
     } catch (error) {
       console.error('Failed to run instruction:', error);
+      if (error instanceof Error && error.name !== 'AbortError') {
+        addToast(`Shroom failed: ${error.message}`, 'warning', 5000);
+      }
     } finally {
       // Clear processing state on all target cards
       for (const cardId of targetCardIds) {

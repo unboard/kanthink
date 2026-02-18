@@ -231,6 +231,8 @@ function buildModifyPrompt(
   channel: Channel,
   cardsToModify: Card[],
   allTasks: Record<string, Task>,
+  contextColumnIds: string[],
+  allCards: Record<string, Card>,
   systemInstructions?: string,
   members?: MemberInfo[],
   allowAssignment?: boolean
@@ -362,6 +364,35 @@ ${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\
     }
   }
   userParts.push(cardsSection);
+
+  // Board context - show cards in context columns (excluding cards already in "Cards to Modify")
+  const modifyCardIds = new Set(cardsToModify.map(c => c.id));
+  const targetColumnIds = getTargetColumnIds(instructionCard.target, channel);
+  const contextColumns = channel.columns.filter(
+    (c) => contextColumnIds.includes(c.id) && !targetColumnIds.includes(c.id)
+  );
+  if (contextColumns.length > 0) {
+    let boardContext = '## Board Context';
+    for (const column of contextColumns) {
+      const columnCards = column.cardIds
+        .map((id) => allCards[id])
+        .filter((c): c is Card => Boolean(c) && !modifyCardIds.has(c.id));
+      boardContext += `\n\n### ${column.name}`;
+      if (columnCards.length > 0) {
+        for (const card of columnCards) {
+          boardContext += `\n- ${card.title}`;
+          if (card.summary) {
+            boardContext += `: ${card.summary.slice(0, 150)}`;
+          } else if (card.messages && card.messages.length > 0) {
+            boardContext += `: ${card.messages[0].content.slice(0, 150)}`;
+          }
+        }
+      } else {
+        boardContext += '\n(empty)';
+      }
+    }
+    userParts.push(boardContext);
+  }
 
   // Members context for assignment
   if (allowAssignment && members && members.length > 0) {
@@ -1130,6 +1161,8 @@ export async function POST(request: Request) {
         channel,
         cardsToModify,
         tasks,
+        contextColumnIds,
+        cards,
         effectiveSystemInstructions,
         members,
         allowAssignment
