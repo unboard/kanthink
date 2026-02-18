@@ -1,14 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useNav, type NavPanelType } from '@/components/providers/NavProvider';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { useNotificationStore } from '@/lib/notificationStore';
 
 interface NavIconButtonProps {
-  panel: NavPanelType;
+  panel?: NavPanelType;
   icon: React.ReactNode;
   label: string;
   isActive: boolean;
@@ -111,6 +111,7 @@ function NotificationNavButton({ isMobile }: { isMobile?: boolean }) {
 function DesktopNav() {
   const { data: session } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
   const { activePanel, togglePanel, closePanel } = useNav();
 
   const handleToggle = (panel: NavPanelType) => (e: React.PointerEvent) => {
@@ -167,6 +168,17 @@ function DesktopNav() {
             />
           }
         />
+
+        <NavIconButton
+          isActive={pathname === '/feed'}
+          onPointerDown={handleNavigate('/feed')}
+          label="Feed"
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+            </svg>
+          }
+        />
       </div>
 
       {/* Bottom icons */}
@@ -213,13 +225,22 @@ function DesktopNav() {
 // Mobile horizontal nav (bottom)
 function MobileNav() {
   const { data: session } = useSession();
-  const { activePanel, togglePanel } = useNav();
+  const router = useRouter();
+  const pathname = usePathname();
+  const { activePanel, togglePanel, closePanel } = useNav();
 
   // Use onPointerDown + preventDefault to prevent synthesized click from closing sheet
   const handleToggle = (panel: NavPanelType) => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     togglePanel(panel);
+  };
+
+  const handleNavigate = (href: string) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activePanel) closePanel();
+    router.push(href);
   };
 
   return (
@@ -252,6 +273,18 @@ function MobileNav() {
             alt=""
             className="w-5 h-5"
           />
+        }
+      />
+
+      <NavIconButton
+        isActive={pathname === '/feed'}
+        onPointerDown={handleNavigate('/feed')}
+        label="Feed"
+        isMobile
+        icon={
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+          </svg>
         }
       />
 
