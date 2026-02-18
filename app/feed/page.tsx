@@ -3,29 +3,35 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useStore } from '@/lib/store';
 import { useFeedStore } from '@/lib/feedStore';
+import { useToastStore } from '@/lib/toastStore';
 import { FeedFilterTabs } from '@/components/feed/FeedFilterTabs';
 import { FeedCardList } from '@/components/feed/FeedCardList';
 import { FeedCardDetailDrawer } from '@/components/feed/FeedCardDetailDrawer';
 import { SaveToChannelSheet } from '@/components/feed/SaveToChannelSheet';
 
+const FETCH_TIMEOUT_MS = 55000; // 55s — just under Vercel's 60s max
+
 async function generateFeed(
   channels: { id: string; name: string; description: string; aiInstructions: string }[],
   channelFilter: string | undefined,
   count: number,
-  excludeTitles: string[]
+  excludeTitles: string[],
+  signal?: AbortSignal
 ) {
   const response = await fetch('/api/feed/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channels, channelFilter, count, excludeTitles }),
+    signal,
   });
 
+  const data = await response.json().catch(() => ({}));
+
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to generate feed');
   }
 
-  return response.json();
+  return data;
 }
 
 export default function FeedPage() {
@@ -35,16 +41,11 @@ export default function FeedPage() {
   const activeFilter = useFeedStore((s) => s.activeFilter);
   const isGenerating = useFeedStore((s) => s.isGenerating);
   const isLoadingMore = useFeedStore((s) => s.isLoadingMore);
-  const setFeedCards = useFeedStore((s) => s.setFeedCards);
-  const appendFeedCards = useFeedStore((s) => s.appendFeedCards);
-  const setIsGenerating = useFeedStore((s) => s.setIsGenerating);
-  const setIsLoadingMore = useFeedStore((s) => s.setIsLoadingMore);
-  const shownCardIds = useFeedStore((s) => s.shownCardIds);
-  const feedCardOrder = useFeedStore((s) => s.feedCardOrder);
 
-  // Track filter changes to avoid stale closures
-  const filterRef = useRef(activeFilter);
-  filterRef.current = activeFilter;
+  const addToast = useToastStore((s) => s.addToast);
+
+  // Use refs for callbacks to avoid stale closures
+  const abortRef = useRef<AbortController | null>(null);
 
   const getChannelInfos = useCallback(() => {
     return channelOrder
@@ -60,48 +61,65 @@ export default function FeedPage() {
 
   const hasChannels = channelOrder.some((id) => channels[id]?.status !== 'archived');
 
-  // Initial load
+  // Initial load + re-load on filter change
   useEffect(() => {
     if (!hasChannels) return;
 
     const channelInfos = getChannelInfos();
     if (channelInfos.length === 0) return;
 
+    // Abort any in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Timeout: abort if the request takes too long
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    const { setIsGenerating, setFeedCards } = useFeedStore.getState();
     setIsGenerating(true);
+
     const channelFilter = activeFilter === 'all' ? undefined : activeFilter;
 
-    generateFeed(channelInfos, channelFilter, 15, [])
+    generateFeed(channelInfos, channelFilter, 8, [], controller.signal)
       .then((data) => {
-        // Only apply if filter hasn't changed
-        if (filterRef.current === activeFilter) {
+        if (!controller.signal.aborted) {
           setFeedCards(data.cards || []);
         }
       })
       .catch((err) => {
+        if (controller.signal.aborted) return; // Ignore aborted requests
         console.error('Feed generation error:', err);
-        if (filterRef.current === activeFilter) {
-          setFeedCards([]);
-        }
+        setFeedCards([]);
+        addToast('Feed generation failed. Try again.', 'warning');
       })
       .finally(() => {
-        if (filterRef.current === activeFilter) {
+        clearTimeout(timeout);
+        if (!controller.signal.aborted) {
           setIsGenerating(false);
         }
       });
-  }, [activeFilter, hasChannels]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    return () => {
+      controller.abort();
+      clearTimeout(timeout);
+    };
+  }, [activeFilter, hasChannels, getChannelInfos, addToast]);
 
   // Load more (infinite scroll)
   const handleLoadMore = useCallback(() => {
-    if (isGenerating || isLoadingMore || !hasChannels) return;
+    const state = useFeedStore.getState();
+    if (state.isGenerating || state.isLoadingMore || !hasChannels) return;
 
     const channelInfos = getChannelInfos();
     if (channelInfos.length === 0) return;
 
+    const { setIsLoadingMore, appendFeedCards } = useFeedStore.getState();
     setIsLoadingMore(true);
-    const channelFilter = filterRef.current === 'all' ? undefined : filterRef.current;
-    const currentShownCardIds = useFeedStore.getState().shownCardIds;
 
-    generateFeed(channelInfos, channelFilter, 10, currentShownCardIds)
+    const channelFilter = state.activeFilter === 'all' ? undefined : state.activeFilter;
+
+    generateFeed(channelInfos, channelFilter, 6, state.shownCardIds)
       .then((data) => {
         appendFeedCards(data.cards || []);
       })
@@ -111,7 +129,7 @@ export default function FeedPage() {
       .finally(() => {
         setIsLoadingMore(false);
       });
-  }, [isGenerating, isLoadingMore, hasChannels, getChannelInfos, setIsLoadingMore, appendFeedCards]);
+  }, [hasChannels, getChannelInfos]);
 
   return (
     <main className="h-full overflow-y-auto">

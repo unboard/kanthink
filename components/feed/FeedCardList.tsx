@@ -49,6 +49,14 @@ export function FeedCardList({ onLoadMore, hasChannels }: FeedCardListProps) {
     enabled: !isGenerating && !isLoadingMore && feedCardOrder.length > 0,
   });
 
+  // Retry: clear feed and toggle filter to re-trigger the useEffect
+  const handleRetry = () => {
+    const { activeFilter, setActiveFilter } = useFeedStore.getState();
+    // Toggle away and back to force a re-fetch
+    setActiveFilter(activeFilter === 'all' ? '__retry__' as string : 'all');
+    setTimeout(() => setActiveFilter(activeFilter), 50);
+  };
+
   // Empty state: no channels
   if (!hasChannels) {
     return (
@@ -83,7 +91,18 @@ export function FeedCardList({ onLoadMore, hasChannels }: FeedCardListProps) {
   if (!isGenerating && feedCardOrder.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-        <p className="text-sm text-neutral-500">No feed cards generated. Try again?</p>
+        <div className="w-12 h-12 mb-3 rounded-xl bg-neutral-800 flex items-center justify-center">
+          <svg className="w-6 h-6 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+        </div>
+        <p className="text-sm text-neutral-400 mb-3">Couldn&apos;t generate feed cards this time.</p>
+        <button
+          onClick={handleRetry}
+          className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+        >
+          Try Again
+        </button>
       </div>
     );
   }

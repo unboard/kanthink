@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import { marked } from 'marked';
 import { auth } from '@/lib/auth';
-import { getLLMClientForUser, getLLMClient, type LLMMessage } from '@/lib/ai/llm';
-import { recordUsage, checkUsageLimit } from '@/lib/usage';
+import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
+import { recordUsage } from '@/lib/usage';
 import type { FeedCard, FeedCardType } from '@/lib/types';
+
+// Allow up to 60s for web search + LLM generation
+export const maxDuration = 60;
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -17,7 +20,7 @@ interface ChannelInfo {
 
 interface GenerateFeedRequest {
   channels: ChannelInfo[];
-  channelFilter?: string;      // channelId or omitted for "For You"
+  channelFilter?: string;
   count: number;
   excludeTitles: string[];
 }
@@ -42,26 +45,16 @@ function markdownToHtml(markdown: string): string {
   }
 }
 
-function buildSearchQueries(channels: ChannelInfo[], channelFilter?: string): string[] {
+function buildSearchQuery(channels: ChannelInfo[], channelFilter?: string): string {
   if (channelFilter) {
     const ch = channels.find((c) => c.id === channelFilter);
     if (ch) {
-      const topic = [ch.name, ch.description, ch.aiInstructions].filter(Boolean).join(' ').slice(0, 200);
-      return [topic];
+      return [ch.name, ch.description].filter(Boolean).join(': ').slice(0, 200);
     }
   }
-  // For You: pick up to 3 most descriptive channels
-  const sorted = [...channels]
-    .filter((c) => c.description || c.aiInstructions)
-    .sort((a, b) => {
-      const aLen = (a.description?.length || 0) + (a.aiInstructions?.length || 0);
-      const bLen = (b.description?.length || 0) + (b.aiInstructions?.length || 0);
-      return bLen - aLen;
-    })
-    .slice(0, 3);
-  return sorted.map((ch) =>
-    [ch.name, ch.description, ch.aiInstructions].filter(Boolean).join(' ').slice(0, 200)
-  );
+  // For You: combine top channel names into one query
+  const topChannels = channels.slice(0, 4).map((ch) => ch.name);
+  return `Latest insights about: ${topChannels.join(', ')}`;
 }
 
 function buildFeedPrompt(
@@ -74,56 +67,48 @@ function buildFeedPrompt(
   const channelContext = channels
     .map((ch) => {
       const parts = [`- **${ch.name}**`];
-      if (ch.description) parts.push(`  Description: ${ch.description}`);
-      if (ch.aiInstructions) parts.push(`  Focus: ${ch.aiInstructions}`);
-      return parts.join('\n');
+      if (ch.description) parts.push(`: ${ch.description}`);
+      if (ch.aiInstructions) parts.push(` (Focus: ${ch.aiInstructions.slice(0, 100)})`);
+      return parts.join('');
     })
     .join('\n');
 
-  const systemPrompt = `You are Kan, an AI learning assistant that generates personalized feed content. You create three types of content cards:
+  const systemPrompt = `You are Kan, an AI that generates a personalized learning feed. Output a JSON array of ${count} cards.
 
-**appetizer** (30% of cards): Quick bites - 1-2 paragraphs. A single insight, fact, or tip. Think "TIL" or "Quick tip". Titles are catchy and short (3-6 words).
+3 card types (mix them):
+- "appetizer" (~30%): 1-2 short paragraphs. A single insight/fact/tip. Short catchy title.
+- "main_course" (~50%): 3-5 paragraphs with ## headers and examples. Include sources when available.
+- "dessert" (~20%): 2-3 paragraphs connecting ideas across different topics. Sparks curiosity.
 
-**main_course** (50% of cards): Deep dives - 3-6 paragraphs with markdown headers (##), examples, and practical application. Substantial enough to learn something real. Include source URLs when available. Titles are descriptive (5-10 words).
+Each card object:
+{"title":"...","content":"markdown text","type":"appetizer|main_course|dessert","sourceChannelId":"...","sourceChannelName":"...","sources":[{"url":"...","title":"..."}],"suggestedCoverImageQuery":"2-3 words"}
 
-**dessert** (20% of cards): Cross-topic connections - 2-3 paragraphs connecting ideas from different channel topics unexpectedly. "Did you know X from [Channel A] relates to Y from [Channel B]?" Sparks curiosity. Titles hint at the connection.
-
-Each card MUST include:
-- "title": concise, engaging title
-- "content": markdown-formatted content (appropriate depth for the type)
-- "type": one of "appetizer", "main_course", "dessert"
-- "sourceChannelId": the channel ID that inspired this card
-- "sourceChannelName": that channel's name
-- "sources": array of {"url": "...", "title": "..."} from web research (can be empty for appetizers)
-- "suggestedCoverImageQuery": 2-3 word search query for a cover photo (only for main_course cards)
-
-Use ONLY real URLs from the web research data. NEVER fabricate URLs.
-Content should be factual, current, and genuinely interesting.
-Write in a warm, engaging tone — informative but not academic.
-
-Respond with ONLY a JSON array:
-[{"title": "...", "content": "...", "type": "...", "sourceChannelId": "...", "sourceChannelName": "...", "sources": [...], "suggestedCoverImageQuery": "..."}]`;
+Rules:
+- sources array can be empty if no real URL available
+- suggestedCoverImageQuery only needed for main_course
+- ONLY use real URLs from the web research section — never fabricate URLs
+- Keep content concise but substantive
+- Respond with ONLY the JSON array, no other text`;
 
   const userParts: string[] = [];
-
-  userParts.push(`## User's Channels\n${channelContext}`);
+  userParts.push(`## Channels\n${channelContext}`);
 
   if (channelFilter) {
     const ch = channels.find((c) => c.id === channelFilter);
-    if (ch) {
-      userParts.push(`## Focus: Generate content specifically about "${ch.name}"`);
-    }
+    if (ch) userParts.push(`Focus on "${ch.name}" content.`);
   }
 
   if (webResearch) {
-    userParts.push(`## Web Research (real, current data)\nIMPORTANT: Use ONLY real URLs below. Never invent URLs.\n\n${webResearch}`);
+    // Trim web research to avoid blowing up the prompt
+    const trimmed = webResearch.slice(0, 3000);
+    userParts.push(`## Web Research\n${trimmed}`);
   }
 
   if (excludeTitles.length > 0) {
-    userParts.push(`## Already Shown (avoid similar topics)\n${excludeTitles.slice(-30).join(', ')}`);
+    userParts.push(`Avoid these topics: ${excludeTitles.slice(-15).join(', ')}`);
   }
 
-  userParts.push(`## Task\nGenerate exactly ${count} feed cards. Mix: ~30% appetizer, ~50% main_course, ~20% dessert. Make them genuinely interesting and varied.`);
+  userParts.push(`Generate ${count} cards as a JSON array.`);
 
   return [
     { role: 'system', content: systemPrompt },
@@ -134,17 +119,29 @@ Respond with ONLY a JSON array:
 function parseResponse(content: string): RawFeedCard[] {
   try {
     const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return [];
+    if (!jsonMatch) {
+      console.warn('Feed: No JSON array found in response');
+      return [];
+    }
     const parsed = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (item) =>
-        item &&
-        typeof item.title === 'string' &&
-        typeof item.content === 'string' &&
-        typeof item.type === 'string'
-    );
-  } catch {
+
+    const validTypes = new Set(['appetizer', 'main_course', 'dessert']);
+    return parsed
+      .filter(
+        (item) =>
+          item &&
+          typeof item.title === 'string' &&
+          typeof item.content === 'string' &&
+          typeof item.type === 'string'
+      )
+      .map((item) => ({
+        ...item,
+        type: validTypes.has(item.type) ? item.type : 'appetizer',
+        sources: Array.isArray(item.sources) ? item.sources : [],
+      }));
+  } catch (e) {
+    console.warn('Feed: Failed to parse response:', e);
     return [];
   }
 }
@@ -153,6 +150,20 @@ function buildCoverImageUrl(query?: string): string | undefined {
   if (!query) return undefined;
   const encoded = encodeURIComponent(query.trim());
   return `https://source.unsplash.com/800x400/?${encoded}`;
+}
+
+function toFeedCards(rawCards: RawFeedCard[], channels: ChannelInfo[]): FeedCard[] {
+  return rawCards.map((raw) => ({
+    id: nanoid(),
+    title: raw.title,
+    content: markdownToHtml(raw.content),
+    type: raw.type as FeedCardType,
+    sourceChannelId: raw.sourceChannelId || channels[0]?.id || '',
+    sourceChannelName: raw.sourceChannelName || channels[0]?.name || '',
+    sources: raw.sources.filter((s) => s && s.url && s.title),
+    coverImageUrl: raw.type === 'main_course' ? buildCoverImageUrl(raw.suggestedCoverImageQuery) : undefined,
+    createdAt: new Date().toISOString(),
+  }));
 }
 
 export async function POST(request: Request) {
@@ -165,11 +176,14 @@ export async function POST(request: Request) {
     }
 
     const body: GenerateFeedRequest = await request.json();
-    const { channels, channelFilter, count = 15, excludeTitles = [] } = body;
+    const { channels, channelFilter, count = 8, excludeTitles = [] } = body;
 
     if (!channels || channels.length === 0) {
       return NextResponse.json({ error: 'No channels provided' }, { status: 400 });
     }
+
+    // Cap count to avoid token overflow (4096 output tokens ≈ 8-10 cards max)
+    const safeCount = Math.min(count, 10);
 
     // Get LLM client
     const result = await getLLMClientForUser(userId);
@@ -182,90 +196,48 @@ export async function POST(request: Request) {
     const llm = result.client;
     const usingOwnerKey = result.source === 'owner';
 
-    // Web search phase
+    // Web search phase: single search with a timeout to avoid blocking
     let webResearch = '';
     if (llm.webSearch) {
-      const queries = buildSearchQueries(channels, channelFilter);
-      const searchResults: string[] = [];
-
-      for (const query of queries) {
-        try {
-          const searchResult = await llm.webSearch(
-            `Latest interesting facts, insights, and developments about: ${query}`,
-            'Search for current, factual information. Return URLs, titles, key facts, and interesting insights. Focus on recent developments and practical knowledge.'
-          );
-          if (searchResult.content) {
-            searchResults.push(searchResult.content);
-          }
-        } catch (e) {
-          console.warn('Feed web search failed for query:', e);
+      const query = buildSearchQuery(channels, channelFilter);
+      try {
+        const searchPromise = llm.webSearch(
+          query,
+          'Return factual information with real URLs. Be concise.'
+        );
+        // Race with a 10-second timeout — don't let web search block generation
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000));
+        const searchResult = await Promise.race([searchPromise, timeoutPromise]);
+        if (searchResult && searchResult.content) {
+          webResearch = searchResult.content;
         }
+      } catch (e) {
+        console.warn('Feed web search failed, proceeding without:', e);
       }
-
-      webResearch = searchResults.join('\n\n---\n\n');
     }
 
     // Build prompt and generate
-    const messages = buildFeedPrompt(channels, webResearch, count, excludeTitles, channelFilter);
+    const messages = buildFeedPrompt(channels, webResearch, safeCount, excludeTitles, channelFilter);
 
     try {
       const llmResponse = await llm.complete(messages);
       const rawCards = parseResponse(llmResponse.content);
 
       if (rawCards.length === 0) {
+        console.warn('Feed: LLM returned 0 parseable cards');
         return NextResponse.json({ cards: [] });
       }
 
-      // Convert to FeedCard objects
-      const feedCards: FeedCard[] = rawCards.map((raw) => ({
-        id: nanoid(),
-        title: raw.title,
-        content: markdownToHtml(raw.content),
-        type: raw.type as FeedCardType,
-        sourceChannelId: raw.sourceChannelId || channels[0].id,
-        sourceChannelName: raw.sourceChannelName || channels[0].name,
-        sources: Array.isArray(raw.sources) ? raw.sources.filter((s) => s.url && s.title) : [],
-        coverImageUrl: raw.type === 'main_course' ? buildCoverImageUrl(raw.suggestedCoverImageQuery) : undefined,
-        createdAt: new Date().toISOString(),
-      }));
+      const feedCards = toFeedCards(rawCards, channels);
 
-      // Record usage
       if (usingOwnerKey) {
-        await recordUsage(userId, 'feed-generate');
+        recordUsage(userId, 'feed-generate').catch(() => {});
       }
 
       return NextResponse.json({ cards: feedCards });
     } catch (llmError) {
       console.error('Feed LLM error:', llmError);
-
-      // Retry once
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        const retryResponse = await llm.complete(messages);
-        const rawCards = parseResponse(retryResponse.content);
-
-        const feedCards: FeedCard[] = rawCards.map((raw) => ({
-          id: nanoid(),
-          title: raw.title,
-          content: markdownToHtml(raw.content),
-          type: raw.type as FeedCardType,
-          sourceChannelId: raw.sourceChannelId || channels[0].id,
-          sourceChannelName: raw.sourceChannelName || channels[0].name,
-          sources: Array.isArray(raw.sources) ? raw.sources.filter((s) => s.url && s.title) : [],
-          coverImageUrl: raw.type === 'main_course' ? buildCoverImageUrl(raw.suggestedCoverImageQuery) : undefined,
-          createdAt: new Date().toISOString(),
-        }));
-
-        if (usingOwnerKey) {
-          await recordUsage(userId, 'feed-generate');
-        }
-
-        return NextResponse.json({ cards: feedCards });
-      } catch (retryError) {
-        console.error('Feed LLM retry failed:', retryError);
-      }
-
-      return NextResponse.json({ cards: [] });
+      return NextResponse.json({ cards: [], error: 'Generation failed' });
     }
   } catch (error) {
     console.error('Feed generate error:', error);
