@@ -52,7 +52,6 @@ export function createOpenAIProvider(apiKey: string, model?: string): LLMProvide
      */
     async webSearch(query: string, systemPrompt?: string): Promise<LLMResponse> {
       try {
-        // OpenAI Responses API with web_search tool
         const response = await client.responses.create({
           model: modelId,
           input: query,
@@ -60,14 +59,36 @@ export function createOpenAIProvider(apiKey: string, model?: string): LLMProvide
           tools: [{ type: 'web_search' }],
         });
 
-        // The response has output_text for the final text response
         const content = response.output_text || '';
+
+        // Extract verified URLs from url_citation annotations in response.output
+        const webSearchResults: { url: string; title: string; snippet: string }[] = [];
+        const seenUrls = new Set<string>();
+
+        for (const item of response.output) {
+          if (item.type === 'message' && item.content) {
+            for (const block of item.content) {
+              if (block.type === 'output_text' && block.annotations) {
+                for (const ann of block.annotations) {
+                  if (ann.type === 'url_citation' && ann.url && !seenUrls.has(ann.url)) {
+                    seenUrls.add(ann.url);
+                    webSearchResults.push({
+                      url: ann.url,
+                      title: ann.title || '',
+                      snippet: '',
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
 
         return {
           content: content || 'I searched the web but could not find relevant information.',
+          webSearchResults: webSearchResults.length > 0 ? webSearchResults : undefined,
         };
       } catch (error) {
-        // If Responses API fails, fall back to regular completion
         console.error('Web search error (falling back to regular completion):', error);
 
         const fallbackMessages: LLMMessage[] = [

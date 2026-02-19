@@ -961,7 +961,12 @@ export async function POST(request: Request) {
           const webResult = await llm.webSearch(searchQuery, `Search the web and return detailed, factual information including real URLs. Return specific URLs, titles, and descriptions.`);
           if (webResult.content) {
             const userMsg = messages[messages.length - 1];
-            userMsg.content = (userMsg.content as string) + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the real URLs below. Do NOT invent or hallucinate any URLs.\n\n${webResult.content}`;
+            let verifiedUrlSection = '';
+            if (webResult.webSearchResults && webResult.webSearchResults.length > 0) {
+              const urlList = webResult.webSearchResults.map((r) => `- ${r.title}: ${r.url}`).join('\n');
+              verifiedUrlSection = `\n\n### Verified URLs (use ONLY these)\n${urlList}`;
+            }
+            userMsg.content = (userMsg.content as string) + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the verified URLs listed below. Do NOT invent or hallucinate any URLs. If no verified URLs are listed, do not include any URLs.\n\n${webResult.content}${verifiedUrlSection}`;
           }
         } catch (e) { console.warn('Web search failed:', e); }
       }
@@ -1037,10 +1042,14 @@ export async function POST(request: Request) {
             `Search the web and return detailed, factual information including real URLs. The user needs real links and data for a Kanban board called "${channel.name}". Return specific URLs, titles, and descriptions.`
           );
           if (webResult.content) {
-            // Append web research to the user prompt
             const userMsg = messages[messages.length - 1];
             const currentContent = userMsg.content as string;
-            userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the real URLs below. Do NOT invent or hallucinate any URLs.\n\n${webResult.content}`;
+            let verifiedUrlSection = '';
+            if (webResult.webSearchResults && webResult.webSearchResults.length > 0) {
+              const urlList = webResult.webSearchResults.map((r) => `- ${r.title}: ${r.url}`).join('\n');
+              verifiedUrlSection = `\n\n### Verified URLs (use ONLY these)\n${urlList}`;
+            }
+            userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the verified URLs listed below. Do NOT invent or hallucinate any URLs. If no verified URLs are listed, do not include any URLs.\n\n${webResult.content}${verifiedUrlSection}`;
           }
         } catch (e) {
           console.warn('Web search failed, proceeding without:', e);
@@ -1179,7 +1188,12 @@ export async function POST(request: Request) {
           if (webResult.content) {
             const userMsg = messages[messages.length - 1];
             const currentContent = userMsg.content as string;
-            userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the real URLs below. Do NOT invent or hallucinate any URLs.\n\n${webResult.content}`;
+            let verifiedUrlSection = '';
+            if (webResult.webSearchResults && webResult.webSearchResults.length > 0) {
+              const urlList = webResult.webSearchResults.map((r) => `- ${r.title}: ${r.url}`).join('\n');
+              verifiedUrlSection = `\n\n### Verified URLs (use ONLY these)\n${urlList}`;
+            }
+            userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the verified URLs listed below. Do NOT invent or hallucinate any URLs. If no verified URLs are listed, do not include any URLs.\n\n${webResult.content}${verifiedUrlSection}`;
           }
         } catch (e) {
           console.warn('Web search failed, proceeding without:', e);
