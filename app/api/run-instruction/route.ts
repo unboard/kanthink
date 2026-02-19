@@ -236,15 +236,22 @@ function buildModifyPrompt(
   systemInstructions?: string,
   members?: MemberInfo[],
   allowAssignment?: boolean
-): LLMMessage[] {
+): { messages: LLMMessage[]; cardIdMap: Record<string, string> } {
+  // Build a mapping from simple numeric IDs to real card IDs
+  // This prevents LLMs from mangling complex nanoid strings
+  const cardIdMap: Record<string, string> = {};
+  for (let i = 0; i < cardsToModify.length; i++) {
+    cardIdMap[`card_${i + 1}`] = cardsToModify[i].id;
+  }
+
   // Parse instruction text to determine allowed capabilities
   const { allowTasks, allowProperties, allowTags } = parseInstructionKeywords(instructionCard.instructions || '');
 
   // Build the JSON example dynamically based on allowed capabilities
   const jsonFields: string[] = [
-    '"id": "original-card-id"',
+    '"id": "card_1"',
     '"title": "Updated Title"',
-    '"content": "Optional updated content in markdown"',
+    '"content": "Updated content in markdown"',
   ];
 
   if (allowTags) {
@@ -326,7 +333,7 @@ For each card, analyze its content and apply the requested modifications.
 Respond with a JSON array of modified cards, maintaining the original card ID:
 ${jsonExample}
 
-${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\n' : ''}${restrictions.length > 0 ? 'IMPORTANT: ' + restrictions.join(' ') + '\n\n' : ''}Only include cards that have actual changes. If a card doesn't need modification, omit it.`;
+${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\n' : ''}${restrictions.length > 0 ? 'IMPORTANT: ' + restrictions.join(' ') + '\n\n' : ''}IMPORTANT: You MUST return a modification for EVERY card. The "content" field is REQUIRED — always provide updated or enriched content based on the instructions. The "id" field must exactly match the card ID shown (e.g. "card_1", "card_2").`;
 
   // USER PROMPT
   const userParts: string[] = [];
@@ -338,14 +345,16 @@ ${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\
   }
   userParts.push(contextSection);
 
-  // Cards to modify
+  // Cards to modify (using simple numeric IDs for reliable LLM echo-back)
   let cardsSection = '## Cards to Modify';
-  for (const card of cardsToModify) {
+  for (let i = 0; i < cardsToModify.length; i++) {
+    const card = cardsToModify[i];
+    const simpleId = `card_${i + 1}`;
     // Get content from messages
     const cardContent = card.messages && card.messages.length > 0
       ? card.messages.map(m => m.content).join('\n')
       : '(no content)';
-    cardsSection += `\n\n### Card ID: ${card.id}`;
+    cardsSection += `\n\n### Card ID: ${simpleId}`;
     cardsSection += `\n**Title:** ${card.title}`;
     cardsSection += `\n**Content:**\n${cardContent}`;
 
@@ -406,10 +415,13 @@ ${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\
   }
   userParts.push(taskSection);
 
-  return [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userParts.join('\n\n') },
-  ];
+  return {
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userParts.join('\n\n') },
+    ],
+    cardIdMap,
+  };
 }
 
 function parseGenerateResponse(content: string): CardInput[] {
@@ -1165,7 +1177,7 @@ export async function POST(request: Request) {
         });
       }
 
-      const messages = buildModifyPrompt(
+      const { messages, cardIdMap } = buildModifyPrompt(
         instructionCard,
         channel,
         cardsToModify,
@@ -1207,6 +1219,29 @@ export async function POST(request: Request) {
         const response = await llm.complete(messages);
         debug.rawResponse = response.content;
         const modifiedCards = parseModifyResponse(response.content);
+
+        // Remap simple IDs (card_1, card_2) back to real card IDs
+        // Also try title-based fallback matching for robustness
+        const titleToIdMap = new Map(cardsToModify.map(c => [c.title.toLowerCase().trim(), c.id]));
+        for (const modified of modifiedCards) {
+          if (cardIdMap[modified.id]) {
+            // Direct mapping from simple ID to real ID
+            modified.id = cardIdMap[modified.id];
+          } else if (!cardsToModify.some(c => c.id === modified.id)) {
+            // ID doesn't match any real card — try title-based fallback
+            const matchByTitle = titleToIdMap.get(modified.title.toLowerCase().trim());
+            if (matchByTitle) {
+              modified.id = matchByTitle;
+            }
+          }
+        }
+
+        // Convert markdown content to HTML for each modified card
+        for (const modified of modifiedCards) {
+          if (modified.content) {
+            modified.content = markdownToHtml(modified.content);
+          }
+        }
 
         // Record usage after successful modification
         await recordUsageAfterSuccess();
