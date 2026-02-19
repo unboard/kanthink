@@ -43,6 +43,8 @@ import { TaskListView } from './TaskListView';
 import { FocusColumnView } from './FocusColumnView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
+import { ChannelChatDrawer } from './ChannelChatDrawer';
+import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
 import { CursorPresence, PresenceIndicator } from '@/components/presence/CursorPresence';
@@ -86,6 +88,7 @@ export function Board({ channel }: BoardProps) {
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
   const [pendingShroomAction, setPendingShroomAction] = useState<{ type: 'edit' | 'run' | 'create'; id?: string } | null>(null);
   const [showShroomChatDrawer, setShowShroomChatDrawer] = useState(false);
+  const [isChannelChatOpen, setIsChannelChatOpen] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -1146,6 +1149,15 @@ export function Board({ channel }: BoardProps) {
         </div>
       </header>
 
+      {/* Floating Ask Kan button */}
+      <button
+        onClick={() => setIsChannelChatOpen(true)}
+        className="fixed bottom-6 right-6 z-40 flex items-center justify-center w-12 h-12 rounded-full bg-violet-600 hover:bg-violet-700 text-white shadow-lg hover:shadow-xl transition-all active:scale-95"
+        title="Ask Kan"
+      >
+        <KanthinkIcon size={24} className="text-white" />
+      </button>
+
       <AnonymousUpgradeBanner />
 
       {viewMode === 'tasks' ? (
@@ -1355,6 +1367,12 @@ export function Board({ channel }: BoardProps) {
       <ReviewDrawer
         isOpen={activeReviewId !== null}
         onClose={() => closeReviewQueue()}
+      />
+
+      <ChannelChatDrawer
+        channel={channel}
+        isOpen={isChannelChatOpen}
+        onClose={() => setIsChannelChatOpen(false)}
       />
     </div>
   );

@@ -376,6 +376,22 @@ export const instructionRuns = sqliteTable('instruction_runs', {
   index('instruction_runs_instruction_idx').on(table.instructionId),
 ])
 
+// Channel chat threads (server-stored conversations with Kan at channel level)
+export const channelChatThreads = sqliteTable('channel_chat_threads', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text('title').default('New conversation'),
+  messages: safeJsonText<ChannelChatMessageJson[]>([])('messages').default([]),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('channel_chat_threads_channel_idx').on(table.channelId),
+  index('channel_chat_threads_user_idx').on(table.userId),
+  index('channel_chat_threads_channel_user_updated_idx').on(table.channelId, table.userId, table.updatedAt),
+])
+
 // ===== JSON TYPE DEFINITIONS =====
 // These match the types in lib/types.ts but are for JSON storage
 
@@ -476,6 +492,19 @@ interface CardChangeJson {
   tagName?: string
 }
 
+interface ChannelChatMessageJson {
+  id: string
+  type: 'question' | 'ai_response'
+  content: string
+  imageUrls?: string[]
+  authorId?: string
+  authorName?: string
+  authorImage?: string
+  createdAt: string
+  replyToMessageId?: string
+  proposedActions?: unknown[]
+}
+
 interface ShroomChatMessageJson {
   role: 'user' | 'assistant'
   content: string
@@ -513,3 +542,5 @@ export type DbNotification = typeof notifications.$inferSelect
 export type NewDbNotification = typeof notifications.$inferInsert
 export type DbNotificationPreferences = typeof notificationPreferences.$inferSelect
 export type NewDbNotificationPreferences = typeof notificationPreferences.$inferInsert
+export type DbChannelChatThread = typeof channelChatThreads.$inferSelect
+export type NewDbChannelChatThread = typeof channelChatThreads.$inferInsert

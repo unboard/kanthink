@@ -89,6 +89,21 @@ export async function ensureSchema() {
     await db.run(sql.raw(`ALTER TABLE channel_shares ADD folder_share_id text REFERENCES folder_shares(id)`))
   } catch {}
 
+  // Migration 0007 — channel_chat_threads table
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS channel_chat_threads (
+      id text PRIMARY KEY NOT NULL,
+      channel_id text NOT NULL,
+      user_id text NOT NULL,
+      title text DEFAULT 'New conversation',
+      messages text DEFAULT '[]',
+      created_at integer,
+      updated_at integer,
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE cascade,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
+    )`))
+  } catch {}
+
   // Indexes — IF NOT EXISTS works for these
   const indexes = [
     `CREATE UNIQUE INDEX IF NOT EXISTS notification_preferences_user_idx ON notification_preferences (user_id)`,
@@ -100,6 +115,10 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS folder_shares_user_idx ON folder_shares (user_id)`,
     `CREATE INDEX IF NOT EXISTS folder_shares_email_idx ON folder_shares (email)`,
     `CREATE INDEX IF NOT EXISTS channel_shares_folder_share_idx ON channel_shares (folder_share_id)`,
+    // Migration 0007 indexes
+    `CREATE INDEX IF NOT EXISTS channel_chat_threads_channel_idx ON channel_chat_threads (channel_id)`,
+    `CREATE INDEX IF NOT EXISTS channel_chat_threads_user_idx ON channel_chat_threads (user_id)`,
+    `CREATE INDEX IF NOT EXISTS channel_chat_threads_channel_user_updated_idx ON channel_chat_threads (channel_id, user_id, updated_at)`,
   ]
 
   for (const idx of indexes) {

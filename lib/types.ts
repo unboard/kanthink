@@ -509,6 +509,58 @@ export interface RealtimeEvent {
   timestamp: string;
 }
 
+// ===== CHANNEL CHAT TYPES =====
+
+export type ChannelChatMessageType = 'question' | 'ai_response';
+export type ChannelProposedActionType = 'create_card' | 'create_task';
+
+export interface CreateCardActionData {
+  title: string;
+  columnName: string;
+  columnId?: string;
+}
+
+export interface ChannelCreateTaskActionData {
+  title: string;
+  description?: string;
+  cardId?: string;
+  cardTitle?: string;
+}
+
+export type ChannelActionData = CreateCardActionData | ChannelCreateTaskActionData;
+
+export interface ChannelStoredAction {
+  id: string;
+  type: ChannelProposedActionType;
+  data: ChannelActionData;
+  status: ActionStatus;
+  editedData?: ChannelActionData;
+  executedAt?: string;
+  resultId?: string;
+}
+
+export interface ChannelChatMessage {
+  id: string;
+  type: ChannelChatMessageType;
+  content: string;
+  imageUrls?: string[];
+  authorId?: string;
+  authorName?: string;
+  authorImage?: string;
+  createdAt: string;
+  replyToMessageId?: string;
+  proposedActions?: ChannelStoredAction[];
+}
+
+export interface ChannelChatThread {
+  id: string;
+  channelId: string;
+  title: string;
+  messages: ChannelChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ===== FEED TYPES =====
 
 export type FeedCardType = 'appetizer' | 'main_course' | 'dessert';

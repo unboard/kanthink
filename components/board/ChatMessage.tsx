@@ -21,6 +21,8 @@ interface ChatMessageProps {
   onActionReject?: (messageId: string, actionId: string) => void;
   onApproveAll?: (messageId: string) => void;
   onRejectAll?: (messageId: string) => void;
+  // Custom action renderer for channel-level actions
+  renderAction?: (action: StoredAction) => React.ReactNode;
 }
 
 function formatTime(dateString: string): string {
@@ -163,6 +165,7 @@ export function ChatMessage({
   onActionReject,
   onApproveAll,
   onRejectAll,
+  renderAction,
 }: ChatMessageProps) {
   const isAI = message.type === 'ai_response';
   const isQuestion = message.type === 'question';
@@ -366,14 +369,16 @@ export function ChatMessage({
               {/* Action items */}
               <div className="space-y-2">
                 {message.proposedActions!.map((action) => (
-                  <SmartSnippet
-                    key={action.id}
-                    action={action}
-                    tagDefinitions={tagDefinitions}
-                    cardTags={cardTags}
-                    onApprove={(actionId, editedData) => onActionApprove(message.id, actionId, editedData)}
-                    onReject={(actionId) => onActionReject(message.id, actionId)}
-                  />
+                  renderAction ? renderAction(action) : (
+                    <SmartSnippet
+                      key={action.id}
+                      action={action}
+                      tagDefinitions={tagDefinitions}
+                      cardTags={cardTags}
+                      onApprove={(actionId, editedData) => onActionApprove(message.id, actionId, editedData)}
+                      onReject={(actionId) => onActionReject(message.id, actionId)}
+                    />
+                  )
                 ))}
               </div>
 
