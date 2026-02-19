@@ -81,7 +81,7 @@ export default function FeedPage() {
 
     const channelFilter = activeFilter === 'all' ? undefined : activeFilter;
 
-    generateFeed(channelInfos, channelFilter, 8, [], controller.signal)
+    generateFeed(channelInfos, channelFilter, 5, [], controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) {
           setFeedCards(data.cards || []);
@@ -119,7 +119,7 @@ export default function FeedPage() {
 
     const channelFilter = state.activeFilter === 'all' ? undefined : state.activeFilter;
 
-    generateFeed(channelInfos, channelFilter, 6, state.shownCardIds)
+    generateFeed(channelInfos, channelFilter, 4, state.shownCardIds)
       .then((data) => {
         appendFeedCards(data.cards || []);
       })

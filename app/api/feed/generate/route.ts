@@ -6,8 +6,7 @@ import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { recordUsage } from '@/lib/usage';
 import type { FeedCard, FeedCardType } from '@/lib/types';
 
-// Allow up to 60s for web search + LLM generation
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -45,76 +44,54 @@ function markdownToHtml(markdown: string): string {
   }
 }
 
-function buildSearchQuery(channels: ChannelInfo[], channelFilter?: string): string {
-  if (channelFilter) {
-    const ch = channels.find((c) => c.id === channelFilter);
-    if (ch) {
-      // Search for NEW things in this interest area
-      return `new breakthroughs trends research 2025 2026 ${ch.name} ${ch.description || ''}`.slice(0, 200);
-    }
-  }
-  // For You: pick a random channel to search — variety over breadth
-  const pick = channels[Math.floor(Math.random() * Math.min(channels.length, 4))];
-  return `surprising facts trends new research 2025 2026 ${pick.name} ${pick.description || ''}`.slice(0, 200);
-}
-
 function buildFeedPrompt(
   channels: ChannelInfo[],
-  webResearch: string,
   count: number,
   excludeTitles: string[],
   channelFilter?: string
 ): LLMMessage[] {
-  // Extract just the interest topics — NOT channel metadata
   const interests = channels.map((ch) => {
     return { id: ch.id, name: ch.name, topic: [ch.name, ch.description].filter(Boolean).join(' — ') };
   });
 
   const interestList = interests.map((i) => `- ${i.topic} [id:${i.id}, name:${i.name}]`).join('\n');
 
-  const systemPrompt = `You generate a personalized discovery feed. The user has these interests:
+  const systemPrompt = `You generate a discovery feed. The user's interests:
 
 ${interestList}
 
-Your job: find things they DON'T already know. Teach them something new. Surprise them.
+Your job: teach them something NEW they don't already know. Surprise them with specific facts, techniques, stories, tools, or research related to their interests.
 
-CRITICAL RULES:
-- NEVER describe or summarize the user's interests back to them ("Did you know mini apps are great?" = BAD)
-- NEVER generate generic observations about their topics ("Business ideas are trending" = BAD)
-- DO find specific facts, stories, techniques, research, people, tools, or events related to their interests
-- Every card should make someone say "oh, I didn't know that" or "that's useful"
-- Use the web research data for real, specific, current information
-- If no web research available, draw from your knowledge but be SPECIFIC (names, numbers, dates, examples)
+RULES:
+- NEVER summarize their interests back ("Did you know X is great?" = BAD)
+- NEVER generate generic observations ("X is trending" = BAD)
+- BE SPECIFIC: names, numbers, dates, real examples
+- Every card = "oh, I didn't know that" or "that's useful"
+- sources array should be [] (no web data available)
+- suggestedCoverImageQuery only for main_course type
 
 Card types:
-- "appetizer" (~30%): One specific surprising fact or practical tip. 1-2 sentences of content. Title is punchy (3-6 words).
-- "main_course" (~50%): A specific topic explored with real examples. 2-4 short paragraphs. Use ## headers. Include source URLs when available.
-- "dessert" (~20%): An unexpected connection between TWO of the user's interest areas. Specific, not vague.
+- "appetizer" (~30%): One surprising fact or tip. 1-2 sentences. Punchy title.
+- "main_course" (~50%): Specific topic with examples. 2-3 short paragraphs. Use ## headers.
+- "dessert" (~20%): Unexpected connection between TWO of their interests. Specific.
 
-JSON format — respond with ONLY this array:
-[{"title":"...","content":"markdown","type":"appetizer|main_course|dessert","sourceChannelId":"id","sourceChannelName":"name","sources":[{"url":"...","title":"..."}],"suggestedCoverImageQuery":"2-3 words"}]
-
-sources can be [] if no real URL. suggestedCoverImageQuery only for main_course. NEVER fabricate URLs.`;
+Respond ONLY with a JSON array:
+[{"title":"...","content":"markdown","type":"appetizer|main_course|dessert","sourceChannelId":"id","sourceChannelName":"name","sources":[],"suggestedCoverImageQuery":"2-3 words"}]`;
 
   const userParts: string[] = [];
 
   if (channelFilter) {
     const ch = channels.find((c) => c.id === channelFilter);
     if (ch) {
-      userParts.push(`Focus on discoveries related to: ${ch.name}${ch.description ? ' — ' + ch.description : ''}`);
+      userParts.push(`Focus on: ${ch.name}${ch.description ? ' — ' + ch.description : ''}`);
     }
   }
 
-  if (webResearch) {
-    const trimmed = webResearch.slice(0, 3000);
-    userParts.push(`## Recent web findings (use these for real facts + URLs)\n${trimmed}`);
-  }
-
   if (excludeTitles.length > 0) {
-    userParts.push(`Already shown (skip similar): ${excludeTitles.slice(-15).join(', ')}`);
+    userParts.push(`Skip similar to: ${excludeTitles.slice(-10).join(', ')}`);
   }
 
-  userParts.push(`Generate ${count} cards. Be specific and surprising.`);
+  userParts.push(`Generate ${count} cards.`);
 
   return [
     { role: 'system', content: systemPrompt },
@@ -182,14 +159,13 @@ export async function POST(request: Request) {
     }
 
     const body: GenerateFeedRequest = await request.json();
-    const { channels, channelFilter, count = 8, excludeTitles = [] } = body;
+    const { channels, channelFilter, count = 5, excludeTitles = [] } = body;
 
     if (!channels || channels.length === 0) {
       return NextResponse.json({ error: 'No channels provided' }, { status: 400 });
     }
 
-    // Cap count to avoid token overflow (4096 output tokens ≈ 8-10 cards max)
-    const safeCount = Math.min(count, 10);
+    const safeCount = Math.min(count, 8);
 
     // Get LLM client
     const result = await getLLMClientForUser(userId);
@@ -202,28 +178,8 @@ export async function POST(request: Request) {
     const llm = result.client;
     const usingOwnerKey = result.source === 'owner';
 
-    // Web search phase: single search with a timeout to avoid blocking
-    let webResearch = '';
-    if (llm.webSearch) {
-      const query = buildSearchQuery(channels, channelFilter);
-      try {
-        const searchPromise = llm.webSearch(
-          query,
-          'Find specific recent news, research, tools, techniques, or stories. Include real URLs. Be specific — names, numbers, examples. Skip generic overviews.'
-        );
-        // Race with a 10-second timeout — don't let web search block generation
-        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000));
-        const searchResult = await Promise.race([searchPromise, timeoutPromise]);
-        if (searchResult && searchResult.content) {
-          webResearch = searchResult.content;
-        }
-      } catch (e) {
-        console.warn('Feed web search failed, proceeding without:', e);
-      }
-    }
-
-    // Build prompt and generate
-    const messages = buildFeedPrompt(channels, webResearch, safeCount, excludeTitles, channelFilter);
+    // Single LLM call — no web search (too expensive for a feed)
+    const messages = buildFeedPrompt(channels, safeCount, excludeTitles, channelFilter);
 
     try {
       const llmResponse = await llm.complete(messages);
