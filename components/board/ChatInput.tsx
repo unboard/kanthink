@@ -118,10 +118,12 @@ interface ChatInputProps {
   // Optional keyboard handlers from parent - when provided, parent controls keyboard offset
   onKeyboardFocus?: () => void;
   onKeyboardBlur?: () => void;
+  // Force question mode and hide the Note/Ask Kan toggle (for dedicated AI chat UIs)
+  forceQuestionMode?: boolean;
 }
 
-export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, members = [], onKeyboardFocus, onKeyboardBlur }: ChatInputProps) {
-  const [mode, setMode] = useState<InputMode>('note');
+export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false }: ChatInputProps) {
+  const [mode, setMode] = useState<InputMode>(forceQuestionMode ? 'question' : 'note');
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
@@ -632,52 +634,54 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
           </button>
         </div>
 
-        {/* Mode toggle at bottom */}
-        <div className="flex items-center mt-1.5 ml-8">
-          <div className="inline-flex items-center gap-1 rounded-md p-0.5">
-            <button
-              data-mode="note"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                setMode('note');
-                // Activate input when mode is clicked
-                if (!inputActivated) {
-                  setInputActivated(true);
-                  setTimeout(() => textareaRef.current?.focus(), 50);
-                }
-              }}
-              disabled={isLoading}
-              className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                mode === 'note'
-                  ? 'bg-neutral-100 dark:bg-neutral-700 text-neutral-900 dark:text-white'
-                  : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
-              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              Note
-            </button>
-            <button
-              data-mode="question"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                setMode('question');
-                // Activate input when mode is clicked
-                if (!inputActivated) {
-                  setInputActivated(true);
-                  setTimeout(() => textareaRef.current?.focus(), 50);
-                }
-              }}
-              disabled={isLoading}
-              className={`px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1 ${
-                mode === 'question'
-                  ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                  : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
-              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <KanthinkIcon size={12} />
-              Ask Kan
-            </button>
+        {/* Mode toggle at bottom — hidden when forceQuestionMode */}
+        {!forceQuestionMode && (
+          <div className="flex items-center mt-1.5 ml-8">
+            <div className="inline-flex items-center gap-1 rounded-md p-0.5">
+              <button
+                data-mode="note"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setMode('note');
+                  // Activate input when mode is clicked
+                  if (!inputActivated) {
+                    setInputActivated(true);
+                    setTimeout(() => textareaRef.current?.focus(), 50);
+                  }
+                }}
+                disabled={isLoading}
+                className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                  mode === 'note'
+                    ? 'bg-neutral-100 dark:bg-neutral-700 text-neutral-900 dark:text-white'
+                    : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
+                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                Note
+              </button>
+              <button
+                data-mode="question"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setMode('question');
+                  // Activate input when mode is clicked
+                  if (!inputActivated) {
+                    setInputActivated(true);
+                    setTimeout(() => textareaRef.current?.focus(), 50);
+                  }
+                }}
+                disabled={isLoading}
+                className={`px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1 ${
+                  mode === 'question'
+                    ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+                    : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
+                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <KanthinkIcon size={12} />
+                Ask Kan
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

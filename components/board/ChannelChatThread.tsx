@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
 import type {
   Channel,
@@ -18,12 +18,15 @@ import { requireSignInForAI } from '@/lib/settingsStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
 import { ChannelActionSnippet, resolveColumnId, resolveCardId } from './ChannelActionSnippet';
+import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
 interface ChannelChatThreadProps {
   thread: ThreadType;
   channel: Channel;
   onBack?: () => void;
   onThreadUpdate: (thread: ThreadType) => void;
+  /** Slot for action buttons rendered in the header (e.g. history, close) */
+  headerActions?: ReactNode;
 }
 
 // Convert ChannelChatMessage to CardMessage shape for ChatMessage component
@@ -42,7 +45,7 @@ function toCardMessage(msg: ChannelChatMessage): CardMessage {
   };
 }
 
-export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate }: ChannelChatThreadProps) {
+export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, headerActions }: ChannelChatThreadProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -281,9 +284,15 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate }: C
             </svg>
           </button>
         )}
-        <h3 className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate">
+        <KanthinkIcon size={18} className="text-violet-500 flex-shrink-0" />
+        <h3 className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate flex-1">
           {thread.title}
         </h3>
+        {headerActions && (
+          <div className="flex-shrink-0">
+            {headerActions}
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -337,6 +346,7 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate }: C
           placeholder="Ask Kan about this channel..."
           onKeyboardFocus={handleKeyboardFocus}
           onKeyboardBlur={handleKeyboardBlur}
+          forceQuestionMode
         />
       </div>
     </div>

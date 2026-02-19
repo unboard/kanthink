@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Channel, ChannelChatThread as ThreadType } from '@/lib/types';
 import { Drawer } from '@/components/ui/Drawer';
-import { useNav } from '@/components/providers/NavProvider';
 import { ChannelChatSidebar } from './ChannelChatSidebar';
 import { ChannelChatThread } from './ChannelChatThread';
 
@@ -16,6 +15,8 @@ interface ThreadSummary {
   updatedAt: string;
 }
 
+type DrawerView = 'chat' | 'history';
+
 interface ChannelChatDrawerProps {
   channel: Channel;
   isOpen: boolean;
@@ -23,18 +24,21 @@ interface ChannelChatDrawerProps {
 }
 
 export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawerProps) {
-  const { isMobile } = useNav();
+  const [view, setView] = useState<DrawerView>('chat');
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [activeThread, setActiveThread] = useState<ThreadType | null>(null);
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [isLoadingThread, setIsLoadingThread] = useState(false);
-  const [showChat, setShowChat] = useState(false); // mobile: sidebar vs chat toggle
+  const creatingThread = useRef(false);
 
-  // Fetch thread list when drawer opens
+  // When drawer opens: create a fresh thread and show chat immediately
   useEffect(() => {
     if (!isOpen) return;
+    // Fetch history in background
     fetchThreads();
+    // Start a new chat
+    createAndSelectThread();
   }, [isOpen, channel.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchThreads = async () => {
@@ -52,11 +56,45 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
     }
   };
 
-  // Fetch full thread when selected
+  // Create a new thread and select it
+  const createAndSelectThread = async () => {
+    if (creatingThread.current) return;
+    creatingThread.current = true;
+
+    try {
+      const res = await fetch('/api/channel-chat/threads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId: channel.id }),
+      });
+
+      if (res.ok) {
+        const newThread = await res.json();
+        const summary: ThreadSummary = {
+          id: newThread.id,
+          channelId: newThread.channelId,
+          title: newThread.title,
+          messageCount: 0,
+          createdAt: newThread.createdAt,
+          updatedAt: newThread.updatedAt,
+        };
+        setThreads((prev) => [summary, ...prev]);
+        setActiveThreadId(newThread.id);
+        setActiveThread(newThread);
+        setView('chat');
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      creatingThread.current = false;
+    }
+  };
+
+  // Fetch full thread when selected from history
   const selectThread = useCallback(async (threadId: string) => {
     setActiveThreadId(threadId);
     setIsLoadingThread(true);
-    if (isMobile) setShowChat(true);
+    setView('chat');
 
     try {
       const res = await fetch(`/api/channel-chat/threads?threadId=${threadId}`);
@@ -69,36 +107,7 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
     } finally {
       setIsLoadingThread(false);
     }
-  }, [isMobile]);
-
-  // Create new thread
-  const handleNewThread = async () => {
-    try {
-      const res = await fetch('/api/channel-chat/threads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelId: channel.id }),
-      });
-
-      if (res.ok) {
-        const newThread = await res.json();
-        setThreads((prev) => [
-          {
-            id: newThread.id,
-            channelId: newThread.channelId,
-            title: newThread.title,
-            messageCount: 0,
-            createdAt: newThread.createdAt,
-            updatedAt: newThread.updatedAt,
-          },
-          ...prev,
-        ]);
-        selectThread(newThread.id);
-      }
-    } catch {
-      // Silently fail
-    }
-  };
+  }, []);
 
   // Delete thread
   const handleDeleteThread = async (threadId: string) => {
@@ -106,19 +115,24 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
       await fetch(`/api/channel-chat/threads?threadId=${threadId}`, { method: 'DELETE' });
       setThreads((prev) => prev.filter((t) => t.id !== threadId));
       if (activeThreadId === threadId) {
+        // If we deleted the active thread, create a new one
         setActiveThreadId(null);
         setActiveThread(null);
-        if (isMobile) setShowChat(false);
+        createAndSelectThread();
       }
     } catch {
       // Silently fail
     }
   };
 
+  // Handle new conversation from history view
+  const handleNewThread = () => {
+    createAndSelectThread();
+  };
+
   // Handle thread updates from the chat component
   const handleThreadUpdate = useCallback((updated: ThreadType) => {
     setActiveThread(updated);
-    // Update the thread list with new title/message count
     setThreads((prev) =>
       prev.map((t) =>
         t.id === updated.id
@@ -133,31 +147,79 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
     );
   }, []);
 
-  // Handle mobile back
-  const handleBack = () => {
-    setShowChat(false);
-  };
-
   // Reset state when drawer closes
   useEffect(() => {
     if (!isOpen) {
       setActiveThreadId(null);
       setActiveThread(null);
-      setShowChat(false);
+      setView('chat');
     }
   }, [isOpen]);
 
   return (
-    <Drawer isOpen={isOpen} onClose={onClose} width="xl" hideCloseButton>
-      <div className="flex h-full">
-        {/* Sidebar - hidden on mobile when chat is shown */}
-        {(!isMobile || !showChat) && (
-          <div className={`${isMobile ? 'w-full' : 'w-64 border-r border-neutral-200 dark:border-neutral-700'} flex-shrink-0`}>
-            {/* Drawer header */}
+    <Drawer isOpen={isOpen} onClose={onClose} width="lg" hideCloseButton>
+      <div className="flex flex-col h-full">
+        {view === 'chat' ? (
+          /* ── Chat view ── */
+          <>
+            {isLoadingThread ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            ) : activeThread ? (
+              <ChannelChatThread
+                thread={activeThread}
+                channel={channel}
+                onThreadUpdate={handleThreadUpdate}
+                headerActions={
+                  <div className="flex items-center gap-1">
+                    {/* History button */}
+                    <button
+                      onClick={() => setView('history')}
+                      className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-800 transition-colors"
+                      title="Conversation history"
+                    >
+                      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                    {/* Close button */}
+                    <button
+                      onClick={onClose}
+                      className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-800 transition-colors"
+                      title="Close"
+                    >
+                      <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                }
+              />
+            ) : null}
+          </>
+        ) : (
+          /* ── History view ── */
+          <>
             <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
-              <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-                Ask Kan
-              </h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setView('chat')}
+                  className="p-1 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+                  title="Back to chat"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+                  Conversations
+                </h2>
+              </div>
               <button
                 onClick={onClose}
                 className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-800 transition-colors"
@@ -175,35 +237,7 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
               onDeleteThread={handleDeleteThread}
               isLoading={isLoadingThreads}
             />
-          </div>
-        )}
-
-        {/* Chat area - hidden on mobile when sidebar is shown */}
-        {(!isMobile || showChat) && (
-          <div className="flex-1 min-w-0">
-            {isLoadingThread ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              </div>
-            ) : activeThread ? (
-              <ChannelChatThread
-                thread={activeThread}
-                channel={channel}
-                onBack={isMobile ? handleBack : undefined}
-                onThreadUpdate={handleThreadUpdate}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full text-neutral-400 dark:text-neutral-500">
-                <div className="text-center">
-                  <p className="text-sm">Select a conversation or start a new one</p>
-                </div>
-              </div>
-            )}
-          </div>
+          </>
         )}
       </div>
     </Drawer>
