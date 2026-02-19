@@ -49,12 +49,13 @@ function buildSearchQuery(channels: ChannelInfo[], channelFilter?: string): stri
   if (channelFilter) {
     const ch = channels.find((c) => c.id === channelFilter);
     if (ch) {
-      return [ch.name, ch.description].filter(Boolean).join(': ').slice(0, 200);
+      // Search for NEW things in this interest area
+      return `new breakthroughs trends research 2025 2026 ${ch.name} ${ch.description || ''}`.slice(0, 200);
     }
   }
-  // For You: combine top channel names into one query
-  const topChannels = channels.slice(0, 4).map((ch) => ch.name);
-  return `Latest insights about: ${topChannels.join(', ')}`;
+  // For You: pick a random channel to search — variety over breadth
+  const pick = channels[Math.floor(Math.random() * Math.min(channels.length, 4))];
+  return `surprising facts trends new research 2025 2026 ${pick.name} ${pick.description || ''}`.slice(0, 200);
 }
 
 function buildFeedPrompt(
@@ -64,51 +65,56 @@ function buildFeedPrompt(
   excludeTitles: string[],
   channelFilter?: string
 ): LLMMessage[] {
-  const channelContext = channels
-    .map((ch) => {
-      const parts = [`- **${ch.name}**`];
-      if (ch.description) parts.push(`: ${ch.description}`);
-      if (ch.aiInstructions) parts.push(` (Focus: ${ch.aiInstructions.slice(0, 100)})`);
-      return parts.join('');
-    })
-    .join('\n');
+  // Extract just the interest topics — NOT channel metadata
+  const interests = channels.map((ch) => {
+    return { id: ch.id, name: ch.name, topic: [ch.name, ch.description].filter(Boolean).join(' — ') };
+  });
 
-  const systemPrompt = `You are Kan, an AI that generates a personalized learning feed. Output a JSON array of ${count} cards.
+  const interestList = interests.map((i) => `- ${i.topic} [id:${i.id}, name:${i.name}]`).join('\n');
 
-3 card types (mix them):
-- "appetizer" (~30%): 1-2 short paragraphs. A single insight/fact/tip. Short catchy title.
-- "main_course" (~50%): 3-5 paragraphs with ## headers and examples. Include sources when available.
-- "dessert" (~20%): 2-3 paragraphs connecting ideas across different topics. Sparks curiosity.
+  const systemPrompt = `You generate a personalized discovery feed. The user has these interests:
 
-Each card object:
-{"title":"...","content":"markdown text","type":"appetizer|main_course|dessert","sourceChannelId":"...","sourceChannelName":"...","sources":[{"url":"...","title":"..."}],"suggestedCoverImageQuery":"2-3 words"}
+${interestList}
 
-Rules:
-- sources array can be empty if no real URL available
-- suggestedCoverImageQuery only needed for main_course
-- ONLY use real URLs from the web research section — never fabricate URLs
-- Keep content concise but substantive
-- Respond with ONLY the JSON array, no other text`;
+Your job: find things they DON'T already know. Teach them something new. Surprise them.
+
+CRITICAL RULES:
+- NEVER describe or summarize the user's interests back to them ("Did you know mini apps are great?" = BAD)
+- NEVER generate generic observations about their topics ("Business ideas are trending" = BAD)
+- DO find specific facts, stories, techniques, research, people, tools, or events related to their interests
+- Every card should make someone say "oh, I didn't know that" or "that's useful"
+- Use the web research data for real, specific, current information
+- If no web research available, draw from your knowledge but be SPECIFIC (names, numbers, dates, examples)
+
+Card types:
+- "appetizer" (~30%): One specific surprising fact or practical tip. 1-2 sentences of content. Title is punchy (3-6 words).
+- "main_course" (~50%): A specific topic explored with real examples. 2-4 short paragraphs. Use ## headers. Include source URLs when available.
+- "dessert" (~20%): An unexpected connection between TWO of the user's interest areas. Specific, not vague.
+
+JSON format — respond with ONLY this array:
+[{"title":"...","content":"markdown","type":"appetizer|main_course|dessert","sourceChannelId":"id","sourceChannelName":"name","sources":[{"url":"...","title":"..."}],"suggestedCoverImageQuery":"2-3 words"}]
+
+sources can be [] if no real URL. suggestedCoverImageQuery only for main_course. NEVER fabricate URLs.`;
 
   const userParts: string[] = [];
-  userParts.push(`## Channels\n${channelContext}`);
 
   if (channelFilter) {
     const ch = channels.find((c) => c.id === channelFilter);
-    if (ch) userParts.push(`Focus on "${ch.name}" content.`);
+    if (ch) {
+      userParts.push(`Focus on discoveries related to: ${ch.name}${ch.description ? ' — ' + ch.description : ''}`);
+    }
   }
 
   if (webResearch) {
-    // Trim web research to avoid blowing up the prompt
     const trimmed = webResearch.slice(0, 3000);
-    userParts.push(`## Web Research\n${trimmed}`);
+    userParts.push(`## Recent web findings (use these for real facts + URLs)\n${trimmed}`);
   }
 
   if (excludeTitles.length > 0) {
-    userParts.push(`Avoid these topics: ${excludeTitles.slice(-15).join(', ')}`);
+    userParts.push(`Already shown (skip similar): ${excludeTitles.slice(-15).join(', ')}`);
   }
 
-  userParts.push(`Generate ${count} cards as a JSON array.`);
+  userParts.push(`Generate ${count} cards. Be specific and surprising.`);
 
   return [
     { role: 'system', content: systemPrompt },
@@ -203,7 +209,7 @@ export async function POST(request: Request) {
       try {
         const searchPromise = llm.webSearch(
           query,
-          'Return factual information with real URLs. Be concise.'
+          'Find specific recent news, research, tools, techniques, or stories. Include real URLs. Be specific — names, numbers, examples. Skip generic overviews.'
         );
         // Race with a 10-second timeout — don't let web search block generation
         const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000));
