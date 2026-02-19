@@ -1048,20 +1048,78 @@ export async function POST(request: Request) {
       // do a real web search first so the AI has factual data to work with
       if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
         try {
-          const searchQuery = (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
-          const webResult = await llm.webSearch(
-            searchQuery,
-            `Search the web and return detailed, factual information including real URLs. The user needs real links and data for a Kanban board called "${channel.name}". Return specific URLs, titles, and descriptions.`
+          const instructionLower = (instructionCard.instructions || '').toLowerCase();
+
+          // Detect content type for focused searching
+          let contentType = '';
+          if (instructionLower.includes('youtube') || instructionLower.includes('video')) contentType = 'YouTube video';
+          else if (instructionLower.includes('article') || instructionLower.includes('blog')) contentType = 'article';
+          else if (instructionLower.includes('podcast')) contentType = 'podcast';
+
+          // Extract topics from context columns (other cards on the board)
+          const topicTitles: string[] = [];
+          for (const column of channel.columns) {
+            for (const cardId of column.cardIds) {
+              const card = cards[cardId];
+              if (card) topicTitles.push(card.title);
+            }
+          }
+
+          // Build search queries — per-topic if we have topics + content type
+          const searchQueries: string[] = [];
+          if (topicTitles.length > 0 && contentType) {
+            for (const topic of topicTitles.slice(0, 4)) {
+              searchQueries.push(`best ${contentType} ${topic} 2025`);
+            }
+          } else {
+            // Fall back to instruction-based query
+            searchQueries.push(
+              (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+            );
+          }
+
+          const searchSystemPrompt = contentType.includes('YouTube')
+            ? `Find real ${contentType}s about this topic. Return ONLY actual YouTube video URLs (youtube.com/watch?v=...) with exact video titles. Focus on highly-rated, recent, educational content.`
+            : `Search the web and return detailed, factual information including real URLs. The user needs real links and data for a Kanban board called "${channel.name}". Return specific URLs, titles, and descriptions.`;
+
+          // Run searches in parallel
+          const searchPromises = searchQueries.map(query =>
+            llm.webSearch!(query, searchSystemPrompt).catch(err => {
+              console.warn(`Web search failed for "${query}":`, err);
+              return null;
+            })
           );
-          if (webResult.content) {
+          const searchResults = await Promise.all(searchPromises);
+
+          // Aggregate results
+          const allContent: string[] = [];
+          const allVerifiedUrls: { url: string; title: string; topic: string }[] = [];
+          const seenUrls = new Set<string>();
+
+          for (let i = 0; i < searchResults.length; i++) {
+            const result = searchResults[i];
+            if (!result) continue;
+            const topic = topicTitles[i] || searchQueries[i];
+            if (result.content) allContent.push(`### Results for: ${topic}\n${result.content}`);
+            if (result.webSearchResults) {
+              for (const r of result.webSearchResults) {
+                if (r.url && !seenUrls.has(r.url)) {
+                  seenUrls.add(r.url);
+                  allVerifiedUrls.push({ url: r.url, title: r.title || '', topic });
+                }
+              }
+            }
+          }
+
+          if (allContent.length > 0 || allVerifiedUrls.length > 0) {
             const userMsg = messages[messages.length - 1];
             const currentContent = userMsg.content as string;
             let verifiedUrlSection = '';
-            if (webResult.webSearchResults && webResult.webSearchResults.length > 0) {
-              const urlList = webResult.webSearchResults.map((r) => `- ${r.title}: ${r.url}`).join('\n');
-              verifiedUrlSection = `\n\n### Verified URLs (use ONLY these)\n${urlList}`;
+            if (allVerifiedUrls.length > 0) {
+              const urlList = allVerifiedUrls.map(r => `- [${r.topic}] ${r.title}: ${r.url}`).join('\n');
+              verifiedUrlSection = `\n\n### Verified URLs (use ONLY these — grouped by topic)\n${urlList}`;
             }
-            userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the verified URLs listed below. Do NOT invent or hallucinate any URLs. If no verified URLs are listed, do not include any URLs.\n\n${webResult.content}${verifiedUrlSection}`;
+            userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nCRITICAL: You may ONLY use URLs from the "Verified URLs" list below. Do NOT invent, guess, or fabricate ANY URLs. If a topic has no verified URL, say "no link found" — do NOT make one up.\n\n${allContent.join('\n\n')}${verifiedUrlSection}`;
           }
         } catch (e) {
           console.warn('Web search failed, proceeding without:', e);
@@ -1189,23 +1247,103 @@ export async function POST(request: Request) {
         allowAssignment
       );
 
-      // Web research for modify: if instructions reference web content, fetch real data
+      // Web research for modify: run targeted per-topic searches using card context
       if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
         try {
-          const searchQuery = (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
-          const webResult = await llm.webSearch(
-            searchQuery,
-            `Search the web and return detailed, factual information including real URLs. Return specific URLs, titles, and descriptions.`
+          const instructionLower = (instructionCard.instructions || '').toLowerCase();
+
+          // Detect the content type the user wants
+          let contentType = '';
+          if (instructionLower.includes('youtube') || instructionLower.includes('video')) contentType = 'YouTube video';
+          else if (instructionLower.includes('article') || instructionLower.includes('blog')) contentType = 'article';
+          else if (instructionLower.includes('podcast')) contentType = 'podcast';
+          else if (instructionLower.includes('tutorial')) contentType = 'tutorial';
+
+          // Extract topics from context columns (cards NOT being modified)
+          // These are the actual subjects to search for
+          const modifyCardIdSet = new Set(cardsToModify.map(c => c.id));
+          const topicTitles: string[] = [];
+          for (const column of channel.columns) {
+            for (const cardId of column.cardIds) {
+              const card = cards[cardId];
+              if (card && !modifyCardIdSet.has(card.id)) {
+                topicTitles.push(card.title);
+              }
+            }
+          }
+
+          // Build targeted search queries per topic (cap at 5 to control cost)
+          const searchQueries: string[] = [];
+          const topics = topicTitles.slice(0, 5);
+          if (topics.length > 0 && contentType) {
+            for (const topic of topics) {
+              searchQueries.push(`best ${contentType} ${topic} 2025`);
+            }
+          } else if (topics.length > 0) {
+            // Batch topics into 1-2 searches
+            const mid = Math.ceil(topics.length / 2);
+            searchQueries.push(topics.slice(0, mid).join(', '));
+            if (topics.length > mid) {
+              searchQueries.push(topics.slice(mid).join(', '));
+            }
+          } else {
+            // No topic cards found — fall back to instruction-based query
+            searchQueries.push(
+              (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+            );
+          }
+
+          // Run all searches in parallel (cap at 5)
+          const searchPromises = searchQueries.slice(0, 5).map(query =>
+            llm.webSearch!(
+              query,
+              contentType.includes('YouTube')
+                ? `Find real ${contentType}s about this topic. Return ONLY actual YouTube video URLs (youtube.com/watch?v=...) with exact video titles. Focus on highly-rated, recent, educational content.`
+                : `Search the web and return detailed, factual information with real URLs. Return specific URLs, titles, and descriptions.`
+            ).catch(err => {
+              console.warn(`Web search failed for "${query}":`, err);
+              return null;
+            })
           );
-          if (webResult.content) {
+
+          const searchResults = await Promise.all(searchPromises);
+
+          // Aggregate all verified URLs and content from all searches
+          const allContent: string[] = [];
+          const allVerifiedUrls: { url: string; title: string; topic: string }[] = [];
+          const seenUrls = new Set<string>();
+
+          for (let i = 0; i < searchResults.length; i++) {
+            const result = searchResults[i];
+            if (!result) continue;
+            const topic = topics[i] || searchQueries[i];
+
+            if (result.content) {
+              allContent.push(`### Results for: ${topic}\n${result.content}`);
+            }
+            if (result.webSearchResults) {
+              for (const r of result.webSearchResults) {
+                if (r.url && !seenUrls.has(r.url)) {
+                  seenUrls.add(r.url);
+                  allVerifiedUrls.push({ url: r.url, title: r.title || '', topic });
+                }
+              }
+            }
+          }
+
+          if (allContent.length > 0 || allVerifiedUrls.length > 0) {
             const userMsg = messages[messages.length - 1];
             const currentContent = userMsg.content as string;
+
             let verifiedUrlSection = '';
-            if (webResult.webSearchResults && webResult.webSearchResults.length > 0) {
-              const urlList = webResult.webSearchResults.map((r) => `- ${r.title}: ${r.url}`).join('\n');
-              verifiedUrlSection = `\n\n### Verified URLs (use ONLY these)\n${urlList}`;
+            if (allVerifiedUrls.length > 0) {
+              const urlList = allVerifiedUrls
+                .map(r => `- [${r.topic}] ${r.title}: ${r.url}`)
+                .join('\n');
+              verifiedUrlSection = `\n\n### Verified URLs (use ONLY these — grouped by topic)\n${urlList}`;
             }
-            userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nIMPORTANT: Use ONLY the verified URLs listed below. Do NOT invent or hallucinate any URLs. If no verified URLs are listed, do not include any URLs.\n\n${webResult.content}${verifiedUrlSection}`;
+
+            userMsg.content = currentContent + `\n\n## Web Research (real data from the internet)\nCRITICAL: You may ONLY use URLs from the "Verified URLs" list below. Do NOT invent, guess, or fabricate ANY URLs. If a topic has no verified URL, say "no link found" for that topic — do NOT make one up.\n\n${allContent.join('\n\n')}${verifiedUrlSection}`;
           }
         } catch (e) {
           console.warn('Web search failed, proceeding without:', e);
