@@ -55,6 +55,7 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
   const createCard = useStore((s) => s.createCard);
   const createTask = useStore((s) => s.createTask);
   const cards = useStore((s) => s.cards);
+  const tasks = useStore((s) => s.tasks);
 
   const messages = useMemo(() => thread.messages ?? [], [thread.messages]);
 
@@ -73,21 +74,31 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
         .map((card) => ({
           title: card.title,
           tags: card.tags,
-          taskCount: card.taskIds?.length,
+          summary: card.summary,
+          tasks: (card.taskIds ?? [])
+            .map((tid) => tasks[tid])
+            .filter(Boolean)
+            .map((t) => ({ title: t.title, status: t.status })),
         }));
       return { name: col.name, cards: colCards };
     });
+
+    // Gather standalone tasks (not linked to any card) for this channel
+    const standaloneTasks = Object.values(tasks)
+      .filter((t) => t.channelId === channel.id && !t.cardId)
+      .map((t) => ({ title: t.title, status: t.status }));
 
     return {
       channelName: channel.name,
       channelDescription: channel.description,
       aiInstructions: channel.aiInstructions,
       columns,
+      standaloneTasks: standaloneTasks.length > 0 ? standaloneTasks : undefined,
       tagDefinitions: channel.tagDefinitions?.map((t) => ({ name: t.name, color: t.color })),
       threadMessages: messages,
       threadTitle: thread.title !== 'New conversation' ? thread.title : undefined,
     };
-  }, [channel, cards, messages, thread.title]);
+  }, [channel, cards, tasks, messages, thread.title]);
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSubmit = async (content: string, _type: CardMessageType) => {

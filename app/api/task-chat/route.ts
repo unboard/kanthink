@@ -32,10 +32,14 @@ function buildPrompt(
 
   const cardContext = parentCardTitle ? `\n- Parent card: "${parentCardTitle}"` : '';
 
-  const systemPrompt = `You are Kan, an AI assistant helping with a task on a Kanban board. Respond helpfully and concisely.
+  const statusLabel = taskStatus === 'done' ? 'done (complete)' : taskStatus === 'in_progress' ? 'in_progress (actively being worked on)' : 'not_started (hasn\'t begun)';
+
+  const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app.
+
+Task statuses: not_started (hasn't begun), in_progress (being worked on), done (complete).
 
 Context:
-- Task: "${taskTitle}" (status: ${taskStatus})${cardContext}
+- Task: "${taskTitle}" (status: ${statusLabel})${cardContext}
 - Channel: "${channelName}"${channelDescription ? ` - ${channelDescription}` : ''}
 
 Guidelines:

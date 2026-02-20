@@ -18,7 +18,12 @@ async function getWebTools() {
 
 interface ColumnContext {
   name: string;
-  cards: { title: string; tags?: string[]; taskCount?: number }[];
+  cards: {
+    title: string;
+    tags?: string[];
+    summary?: string;
+    tasks?: { title: string; status: string }[];
+  }[];
 }
 
 interface ChannelChatRequest {
@@ -31,6 +36,7 @@ interface ChannelChatRequest {
     channelDescription: string;
     aiInstructions: string;
     columns: ColumnContext[];
+    standaloneTasks?: { title: string; status: string }[];
     tagDefinitions?: { name: string; color: string }[];
     threadMessages: ChannelChatMessage[];
     threadTitle?: string;
@@ -59,22 +65,62 @@ function buildPrompt(
   imageUrls?: string[],
   webContext?: string,
 ): LLMMessage[] {
-  const { channelName, channelDescription, aiInstructions, columns, tagDefinitions, threadMessages, threadTitle } = context;
+  const { channelName, channelDescription, aiInstructions, columns, standaloneTasks, tagDefinitions, threadMessages, threadTitle } = context;
 
-  // Build column/card context
+  // Build column/card context (concise — task details go in separate section)
   const columnContext = columns
     .map((col) => {
       const cardList = col.cards.length > 0
         ? col.cards.map((c) => {
           let desc = `  - ${c.title}`;
           if (c.tags?.length) desc += ` [${c.tags.join(', ')}]`;
-          if (c.taskCount) desc += ` (${c.taskCount} tasks)`;
+          if (c.summary) desc += ` — ${c.summary}`;
           return desc;
         }).join('\n')
         : '  (empty)';
       return `${col.name}:\n${cardList}`;
     })
     .join('\n\n');
+
+  // Build a flat, pre-computed task inventory — the single source of truth
+  interface TaskEntry { title: string; status: string; cardTitle: string; columnName: string }
+  const allTasks: TaskEntry[] = [];
+  for (const col of columns) {
+    for (const card of col.cards) {
+      if (card.tasks?.length) {
+        for (const t of card.tasks) {
+          allTasks.push({ title: t.title, status: t.status, cardTitle: card.title, columnName: col.name });
+        }
+      }
+    }
+  }
+  if (standaloneTasks?.length) {
+    for (const t of standaloneTasks) {
+      allTasks.push({ title: t.title, status: t.status, cardTitle: '(standalone)', columnName: '—' });
+    }
+  }
+
+  let taskSection = '';
+  if (allTasks.length > 0) {
+    const done = allTasks.filter((t) => t.status === 'done');
+    const notDone = allTasks.filter((t) => t.status !== 'done');
+
+    taskSection = `\n\nTASK INVENTORY (${allTasks.length} total — ${done.length} completed, ${notDone.length} not completed):`;
+
+    if (notDone.length > 0) {
+      taskSection += `\n\nNot completed (${notDone.length}):`;
+      for (const t of notDone) {
+        taskSection += `\n  - "${t.title}" [${t.status}] — card: ${t.cardTitle}, column: ${t.columnName}`;
+      }
+    }
+
+    if (done.length > 0) {
+      taskSection += `\n\nCompleted (${done.length}):`;
+      for (const t of done) {
+        taskSection += `\n  - "${t.title}" [done] — card: ${t.cardTitle}, column: ${t.columnName}`;
+      }
+    }
+  }
 
   const tagContext = tagDefinitions?.length
     ? `\nAvailable tags: ${tagDefinitions.map((t) => t.name).join(', ')}`
@@ -87,33 +133,56 @@ function buildPrompt(
     ? `\n- "threadTitle": A short (3-6 word) title summarizing the conversation topic. Only include this field in your FIRST response.`
     : '';
 
-  const systemPrompt = `You are Kan, an AI assistant for a Kanban channel. You help users organize, plan, and manage work at the channel level. Respond helpfully and concisely.
+  const systemPrompt = `You are Kan, the AI assistant inside Kanthink.
+
+## KANTHINK DATA MODEL
+
+Kanthink is a Kanban board app. Here is how data is structured and what it means:
+
+CHANNEL — A workspace or project. Contains columns. You are currently in one channel.
+COLUMN — A workflow stage (e.g. "Inbox", "In Progress", "Done"). Contains cards. A card's column represents where it is in the workflow.
+CARD — A unit of work. Lives in one column. Can have tasks, tags, a summary, and messages.
+TASK — A checklist item, either on a card or standalone (not on any card). Every task has a status:
+  - not_started = has not been started yet (incomplete)
+  - in_progress = actively being worked on (incomplete)
+  - done = completed/finished
+TAG — A label or category on a card (e.g. "Urgent", "Design").
+
+How to interpret user questions:
+- "complete", "done", "finished" → tasks with status = done
+- "incomplete", "remaining", "left", "not done", "outstanding", "to do" → tasks with status = not_started OR in_progress
+- "in progress", "started", "underway", "active" → tasks with status = in_progress
+- "not started", "backlog", "waiting" → tasks with status = not_started
+- "progress on [card]" → report that card's task statuses (X of Y done, list each)
+- "what should I work on" → highlight not_started or in_progress tasks
+- "what's in [column name]" → list the cards in that column
+When answering, always cite specific names and statuses from the data below. Never guess — if the data doesn't contain it, say so.
+
+## CURRENT CHANNEL
 
 Channel: "${channelName}"${channelDescription ? ` — ${channelDescription}` : ''}
 ${aiInstructions ? `Channel instructions: ${aiInstructions}\n` : ''}
-Board structure:
-${columnContext}${tagContext}${webContextSection}
+Board columns and cards:
+${columnContext}${tagContext}
+${taskSection}${webContextSection}
 
-You can propose actions when relevant. Available actions:
-- create_card: Create a new card in a specific column
-- create_task: Create a task (optionally linked to a card by title)
+## RESPONSE FORMAT
 
-IMPORTANT: Your response MUST be valid JSON in this exact format:
+You can propose actions: create_card (new card in a column) or create_task (optionally linked to a card).
+
+Your response MUST be valid JSON:
 {
-  "response": "Your helpful message here (supports markdown)"${titleInstruction},
+  "response": "Your message (markdown supported)"${titleInstruction},
   "actions": [
-    { "type": "create_card", "data": { "title": "Card title", "columnName": "Column Name" } },
+    { "type": "create_card", "data": { "title": "Card title", "columnName": "Exact Column Name" } },
     { "type": "create_task", "data": { "title": "Task title", "description": "Optional", "cardTitle": "Optional parent card" } }
   ]
 }
 
-Guidelines:
-- Always respond with valid JSON
-- The "actions" array is optional — only include when proposing actionable items
-- For create_card: use the exact column name from the board structure above
-- For create_task: cardTitle is optional; omit to create a standalone task
-- Keep responses concise and helpful
-- You have full awareness of the board structure — reference cards and columns by name when relevant`;
+Rules:
+- Always respond with valid JSON. The "actions" array is optional.
+- For create_card: use exact column names from above. For create_task: omit cardTitle for standalone tasks.
+- Be concise. Reference cards, tasks, and columns by name.`;
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },

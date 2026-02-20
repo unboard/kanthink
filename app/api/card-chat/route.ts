@@ -71,35 +71,52 @@ function buildPrompt(
     ? `\n\n${webContext}`
     : '';
 
-  const systemPrompt = `You are Kan, an AI assistant helping with a Kanban card. Respond helpfully and concisely.
+  // Build task section with status breakdown
+  let taskSection = '';
+  if (tasks.length > 0) {
+    const done = tasks.filter(t => t.status === 'done');
+    const inProgress = tasks.filter(t => t.status === 'in_progress');
+    const notStarted = tasks.filter(t => t.status === 'not_started');
+    const incomplete = tasks.filter(t => t.status !== 'done');
 
-Context:
-- Card: "${cardTitle}"
-- Channel: "${channelName}"${channelDescription ? ` - ${channelDescription}` : ''}
-${tasks.length > 0 ? `- Tasks: ${tasks.map(t => `${t.title} (${t.status})`).join(', ')}` : ''}${tagContext}${currentTagsContext}${webContextSection}
+    taskSection = `\nTasks (${done.length}/${tasks.length} done, ${incomplete.length} remaining):`;
+    for (const t of tasks) {
+      const icon = t.status === 'done' ? '[DONE]' : t.status === 'in_progress' ? '[IN PROGRESS]' : '[NOT STARTED]';
+      taskSection += `\n  ${icon} ${t.title}`;
+    }
+    if (notStarted.length > 0) taskSection += `\n  → ${notStarted.length} not started`;
+    if (inProgress.length > 0) taskSection += `\n  → ${inProgress.length} in progress`;
+    if (done.length > 0) taskSection += `\n  → ${done.length} done`;
+  }
 
-You can propose actionable items when relevant. When the user mentions creating tasks, adding tags, or removing tags, you should include them in your response.
+  const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app.
 
-IMPORTANT: Your response MUST be valid JSON in this exact format:
+Task statuses: not_started (hasn't begun), in_progress (being worked on), done (complete).
+"Complete"/"done" = status is done. "Incomplete"/"remaining"/"left" = status is not_started or in_progress.
+When answering about tasks, always cite specific task names and their statuses.
+
+Card: "${cardTitle}"
+Channel: "${channelName}"${channelDescription ? ` - ${channelDescription}` : ''}
+${taskSection}${tagContext}${currentTagsContext}${webContextSection}
+
+You can propose actions when relevant: create tasks, add/remove tags.
+
+Your response MUST be valid JSON:
 {
-  "response": "Your helpful text response here",
+  "response": "Your message (markdown supported)",
   "actions": [
-    { "type": "create_task", "data": { "title": "Task title", "description": "Optional description" } },
+    { "type": "create_task", "data": { "title": "Task title", "description": "Optional" } },
     { "type": "add_tag", "data": { "tagName": "tag-name", "createDefinition": true, "suggestedColor": "blue" } },
     { "type": "remove_tag", "data": { "tagName": "tag-name" } }
   ]
 }
 
-Guidelines:
-- Always respond with valid JSON
-- The "response" field contains your helpful message to the user (can include markdown)
-- The "actions" array is optional - only include it when proposing actionable items
-- For create_task: use when user explicitly asks to create a task, or when you identify clear action items
-- For add_tag: use when user asks to tag the card. Set createDefinition to true if the tag doesn't exist in available tags
-- For remove_tag: use when user asks to remove a tag
-- suggestedColor can be: "red", "orange", "yellow", "green", "blue", "purple", "pink", "neutral"
-- Keep responses concise and to the point
-- Don't repeat context unnecessarily`;
+Rules:
+- Always valid JSON. "actions" is optional.
+- create_task: when user asks to create a task or you identify action items
+- add_tag: set createDefinition true if tag doesn't exist. Colors: red, orange, yellow, green, blue, purple, pink, neutral
+- remove_tag: when user asks to remove a tag
+- Be concise. Don't repeat context.`;
 
   // Build conversation history
   const messages: LLMMessage[] = [
