@@ -80,7 +80,7 @@ interface LocalTask {
   channelId: string
   title: string
   description: string
-  status: 'not_started' | 'in_progress' | 'done'
+  status: 'not_started' | 'in_progress' | 'on_hold' | 'done'
   createdAt: string
   updatedAt: string
   completedAt?: string

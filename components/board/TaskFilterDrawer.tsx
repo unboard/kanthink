@@ -18,6 +18,7 @@ interface StatusOption {
 const STATUS_OPTIONS: StatusOption[] = [
   { key: 'not_started', label: 'To Do' },
   { key: 'in_progress', label: 'In Progress' },
+  { key: 'on_hold', label: 'On Hold' },
   { key: 'done', label: 'Done' },
 ];
 

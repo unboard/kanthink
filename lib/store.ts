@@ -1844,10 +1844,12 @@ export const useStore = create<KanthinkState>()(
         if (!task) return;
 
         // Cycle: not_started -> in_progress -> done -> not_started
+        // on_hold resumes to in_progress when toggled
         const statusCycle: Record<TaskStatus, TaskStatus> = {
           not_started: 'in_progress',
           in_progress: 'done',
           done: 'not_started',
+          on_hold: 'in_progress',
         };
 
         const newStatus = statusCycle[task.status];

@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import type { Session } from 'next-auth';
 import type { CardMessage, StoredAction, TagDefinition } from '@/lib/types';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -83,6 +85,7 @@ function renderContentWithMentions(content: string) {
     return (
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw, rehypeSanitize]}
         components={{
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
@@ -114,6 +117,7 @@ function renderContentWithMentions(content: string) {
           <ReactMarkdown
             key={i}
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw, rehypeSanitize]}
             components={{
               // Unwrap <p> tags so inline mentions don't break layout
               p: ({ children }) => <>{children}</>,
@@ -256,7 +260,7 @@ export function ChatMessage({
             {onDelete && !isEditing && (
               <button
                 onClick={onDelete}
-                className="p-1 text-neutral-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="p-1 text-neutral-400 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                 title="Delete message"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

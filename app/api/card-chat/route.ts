@@ -76,22 +76,25 @@ function buildPrompt(
   if (tasks.length > 0) {
     const done = tasks.filter(t => t.status === 'done');
     const inProgress = tasks.filter(t => t.status === 'in_progress');
+    const onHold = tasks.filter(t => t.status === 'on_hold');
     const notStarted = tasks.filter(t => t.status === 'not_started');
     const incomplete = tasks.filter(t => t.status !== 'done');
 
+    const statusIcon: Record<string, string> = { done: '[DONE]', in_progress: '[IN PROGRESS]', on_hold: '[ON HOLD]', not_started: '[NOT STARTED]' };
+
     taskSection = `\nTasks (${done.length}/${tasks.length} done, ${incomplete.length} remaining):`;
     for (const t of tasks) {
-      const icon = t.status === 'done' ? '[DONE]' : t.status === 'in_progress' ? '[IN PROGRESS]' : '[NOT STARTED]';
-      taskSection += `\n  ${icon} ${t.title}`;
+      taskSection += `\n  ${statusIcon[t.status] ?? t.status} ${t.title}`;
     }
     if (notStarted.length > 0) taskSection += `\n  → ${notStarted.length} not started`;
     if (inProgress.length > 0) taskSection += `\n  → ${inProgress.length} in progress`;
+    if (onHold.length > 0) taskSection += `\n  → ${onHold.length} on hold`;
     if (done.length > 0) taskSection += `\n  → ${done.length} done`;
   }
 
   const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app.
 
-Task statuses: not_started (hasn't begun), in_progress (being worked on), done (complete).
+Task statuses: not_started (hasn't begun), in_progress (being worked on), on_hold (paused/blocked), done (complete).
 "Complete"/"done" = status is done. "Incomplete"/"remaining"/"left" = status is not_started or in_progress.
 When answering about tasks, always cite specific task names and their statuses.
 

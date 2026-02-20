@@ -145,14 +145,16 @@ CARD — A unit of work. Lives in one column. Can have tasks, tags, a summary, a
 TASK — A checklist item, either on a card or standalone (not on any card). Every task has a status:
   - not_started = has not been started yet (incomplete)
   - in_progress = actively being worked on (incomplete)
+  - on_hold = paused or blocked, cannot proceed currently (incomplete)
   - done = completed/finished
 TAG — A label or category on a card (e.g. "Urgent", "Design").
 
 How to interpret user questions:
 - "complete", "done", "finished" → tasks with status = done
-- "incomplete", "remaining", "left", "not done", "outstanding", "to do" → tasks with status = not_started OR in_progress
+- "incomplete", "remaining", "left", "not done", "outstanding", "to do" → tasks with status = not_started, in_progress, or on_hold
 - "in progress", "started", "underway", "active" → tasks with status = in_progress
 - "not started", "backlog", "waiting" → tasks with status = not_started
+- "on hold", "blocked", "paused", "stalled" → tasks with status = on_hold
 - "progress on [card]" → report that card's task statuses (X of Y done, list each)
 - "what should I work on" → highlight not_started or in_progress tasks
 - "what's in [column name]" → list the cards in that column

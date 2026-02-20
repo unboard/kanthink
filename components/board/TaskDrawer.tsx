@@ -47,6 +47,7 @@ function formatDate(dateString: string): string {
 const statusLabels: Record<TaskStatus, string> = {
   not_started: 'Not Started',
   in_progress: 'In Progress',
+  on_hold: 'On Hold',
   done: 'Done',
 };
 
@@ -260,6 +261,7 @@ export function TaskDrawer({
   const statusColors: Record<TaskStatus, string> = {
     not_started: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300',
     in_progress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    on_hold: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
     done: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   };
 
@@ -366,7 +368,7 @@ export function TaskDrawer({
             </button>
             {isStatusOpen && (
               <div className="absolute left-0 top-full z-20 mt-1 w-36 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
-                {(['not_started', 'in_progress', 'done'] as TaskStatus[]).map((s) => (
+                {(['not_started', 'in_progress', 'on_hold', 'done'] as TaskStatus[]).map((s) => (
                   <button
                     key={s}
                     onClick={() => {

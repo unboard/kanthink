@@ -52,6 +52,23 @@ export function TaskCheckbox({ status, onToggle, size = 'md' }: TaskCheckboxProp
     );
   }
 
+  // On hold: circle with pause icon
+  if (status === 'on_hold') {
+    return (
+      <button
+        ref={buttonRef}
+        onClick={handleClick}
+        className={`${sizeClasses} rounded-full border-2 border-amber-500 bg-amber-50 hover:bg-amber-100 dark:border-amber-400 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 transition-colors flex items-center justify-center flex-shrink-0`}
+        title="Resume (mark in progress)"
+      >
+        <svg className={`${iconSize} text-amber-500 dark:text-amber-400`} fill="currentColor" viewBox="0 0 24 24">
+          <rect x="6" y="5" width="4" height="14" rx="1" />
+          <rect x="14" y="5" width="4" height="14" rx="1" />
+        </svg>
+      </button>
+    );
+  }
+
   // Done: checked circle
   return (
     <button

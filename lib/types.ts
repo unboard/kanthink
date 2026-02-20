@@ -6,7 +6,7 @@ export type QuestionStatus = 'pending' | 'answered' | 'dismissed';
 export type SuggestionMode = 'off' | 'manual' | 'daily';
 export type InstructionSource = 'user' | 'ai-suggested' | 'ai-auto';
 export type PropertyDisplayType = 'chip' | 'field';
-export type TaskStatus = 'not_started' | 'in_progress' | 'done';
+export type TaskStatus = 'not_started' | 'in_progress' | 'on_hold' | 'done';
 export type CardMessageType = 'note' | 'question' | 'ai_response';
 
 // Shroom chat message (for conversational creation/editing)

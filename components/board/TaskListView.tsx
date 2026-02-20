@@ -419,6 +419,7 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
 
   const notStartedCount = channelTasks.filter((t) => t.status === 'not_started').length;
   const inProgressCount = channelTasks.filter((t) => t.status === 'in_progress').length;
+  const onHoldCount = channelTasks.filter((t) => t.status === 'on_hold').length;
   const completedCount = channelTasks.filter((t) => t.status === 'done').length;
 
   // Count active filter categories for badge (0, 1, or 2)
@@ -428,6 +429,7 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
   const statusCounts: Record<TaskStatus, number> = {
     not_started: notStartedCount,
     in_progress: inProgressCount,
+    on_hold: onHoldCount,
     done: completedCount,
   };
 
@@ -460,6 +462,7 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
   const statusLabelMap: Record<TaskStatus, string> = {
     not_started: 'To Do',
     in_progress: 'In Progress',
+    on_hold: 'On Hold',
     done: 'Done',
   };
 

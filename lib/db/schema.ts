@@ -177,7 +177,7 @@ export const tasks = sqliteTable('tasks', {
 
   title: text('title').notNull(),
   description: text('description').default(''),
-  status: text('status').$type<'not_started' | 'in_progress' | 'done'>().default('not_started'),
+  status: text('status').$type<'not_started' | 'in_progress' | 'on_hold' | 'done'>().default('not_started'),
 
   assignedTo: text('assigned_to', { mode: 'json' }).$type<string[]>(),
   notes: safeJsonText<TaskNoteJson[]>([])('notes').default([]),
