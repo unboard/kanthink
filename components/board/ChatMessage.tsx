@@ -245,22 +245,25 @@ export function ChatMessage({
             {formatDate(message.createdAt)} at {formatTime(message.createdAt)}
           </span>
 
-          {/* Action buttons */}
-          <div className="ml-auto flex items-center gap-1">
-            {/* Edit button - always visible for notes */}
+          {/* Action buttons - always visible on mobile, hover-reveal on desktop */}
+          <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+            {/* Edit button */}
             {canEdit && !isEditing && (
               <button
                 onClick={() => { setEditContent(message.content); setIsEditing(true); }}
-                className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                title="Edit message"
               >
-                Edit
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
               </button>
             )}
-            {/* Delete button - show on hover */}
+            {/* Delete button */}
             {onDelete && !isEditing && (
               <button
                 onClick={onDelete}
-                className="p-1 text-neutral-400 hover:text-red-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                className="p-1 text-neutral-400 hover:text-red-500 transition-colors"
                 title="Delete message"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

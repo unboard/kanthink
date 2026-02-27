@@ -32,7 +32,7 @@ import { Button } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { signInWithGoogle } from '@/lib/actions/auth';
-import type { Channel, Folder } from '@/lib/types';
+import type { Channel, ChannelStatus, Folder } from '@/lib/types';
 
 // Prefixes to distinguish item types in dnd-kit
 const CHANNEL_PREFIX = 'channel:';
@@ -922,9 +922,14 @@ function AccountContent({ onClose }: { onClose: () => void }) {
 
 function SettingsContent({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { data: session } = useSession();
   const channels = useStore((s) => s.channels);
   const updateChannel = useStore((s) => s.updateChannel);
+  const deleteChannel = useStore((s) => s.deleteChannel);
   const addInstructionRevision = useStore((s) => s.addInstructionRevision);
+
+  const isAdminUser = session?.user?.isAdmin ?? false;
 
   const currentChannelId = pathname.startsWith('/channel/') ? pathname.split('/')[2] : null;
   const currentChannel = currentChannelId ? channels[currentChannelId] : null;
@@ -932,6 +937,9 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [aiInstructions, setAiInstructions] = useState('');
+  const [status, setStatus] = useState<ChannelStatus>('active');
+  const [includeBacksideInAI, setIncludeBacksideInAI] = useState(false);
+  const [isGlobalHelp, setIsGlobalHelp] = useState(false);
 
   // Sync form state when channel changes
   useEffect(() => {
@@ -939,6 +947,9 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
       setName(currentChannel.name);
       setDescription(currentChannel.description);
       setAiInstructions(currentChannel.aiInstructions || '');
+      setStatus(currentChannel.status);
+      setIncludeBacksideInAI(currentChannel.includeBacksideInAI ?? false);
+      setIsGlobalHelp(currentChannel.isGlobalHelp ?? false);
     }
   }, [currentChannel?.id]);
 
@@ -952,12 +963,25 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
     updateChannel(currentChannelId, {
       name: name.trim() || currentChannel.name,
       description: description.trim(),
+      status,
+      includeBacksideInAI,
     });
   };
 
+  const handleDelete = () => {
+    if (!currentChannel || !currentChannelId) return;
+    if (confirm('Are you sure you want to delete this channel?')) {
+      deleteChannel(currentChannelId);
+      onClose();
+      router.push('/');
+    }
+  };
+
+  const inputClass = "w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent";
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 p-4 space-y-5">
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {currentChannel ? (
           <>
             {/* Channel Name */}
@@ -970,7 +994,7 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onBlur={handleSave}
-                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                className={inputClass}
               />
             </div>
 
@@ -985,8 +1009,54 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
                 onBlur={handleSave}
                 rows={2}
                 placeholder="What is this channel about?"
-                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
+                className={`${inputClass} resize-none`}
               />
+            </div>
+
+            {/* Status */}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value as ChannelStatus);
+                  if (currentChannelId) {
+                    updateChannel(currentChannelId, { status: e.target.value as ChannelStatus });
+                  }
+                }}
+                className={inputClass}
+              >
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+
+            {/* Include archived cards in AI */}
+            <div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeBacksideInAI}
+                  onChange={(e) => {
+                    setIncludeBacksideInAI(e.target.checked);
+                    if (currentChannelId) {
+                      updateChannel(currentChannelId, { includeBacksideInAI: e.target.checked });
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
+                />
+                <div>
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                    Include archived cards in AI context
+                  </span>
+                  <p className="text-xs text-neutral-500">
+                    Archived cards will be included in the AI prompt for better context.
+                  </p>
+                </div>
+              </label>
             </div>
 
             {/* AI Instructions */}
@@ -1000,12 +1070,51 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
                 onBlur={handleSave}
                 rows={4}
                 placeholder="Tell the AI what kind of content to generate..."
-                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
+                className={`${inputClass} resize-none`}
               />
               <p className="text-xs text-neutral-500 mt-1.5">
                 These instructions guide the AI when generating cards for this channel.
               </p>
             </div>
+
+            {/* Admin: Global Help Toggle */}
+            {isAdminUser && (
+              <div className="border-t border-neutral-200 dark:border-neutral-800 pt-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isGlobalHelp}
+                    onChange={(e) => {
+                      setIsGlobalHelp(e.target.checked);
+                      if (currentChannelId) {
+                        updateChannel(currentChannelId, { isGlobalHelp: e.target.checked });
+                      }
+                    }}
+                    className="mt-1 w-4 h-4 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 dark:border-neutral-600 dark:bg-neutral-800"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                      Share as Help Resource
+                    </span>
+                    <p className="text-xs text-neutral-500 mt-0.5">
+                      This channel will appear in everyone&apos;s Help folder (read-only)
+                    </p>
+                  </div>
+                </label>
+              </div>
+            )}
+
+            {/* Delete channel — owner only */}
+            {currentChannel.role === 'owner' && (
+              <div className="border-t border-neutral-200 dark:border-neutral-800 pt-4">
+                <button
+                  onClick={handleDelete}
+                  className="w-full py-2.5 rounded-xl text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 active:bg-red-100 dark:active:bg-red-950/50 transition-colors"
+                >
+                  Delete channel
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center py-12">

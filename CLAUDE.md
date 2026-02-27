@@ -151,3 +151,7 @@ MouseSensor + TouchSensor + touch-manipulation = works (proper long-press to dra
 - Active channel board view with default columns
 - Add/move/delete cards
 - Channel settings with AI instructions + "Generate cards" button (stubbed data OK)
+
+## Bug/Feature Workflow
+
+The user logs bugs and features as cards in a Kanthink channel from their phone. Use the `/bugs` slash command to read and implement them. See `.claude/commands/bugs.md` for the full workflow.
