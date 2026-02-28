@@ -1152,7 +1152,7 @@ export function Board({ channel }: BoardProps) {
       {/* Floating Ask Kan button */}
       <button
         onClick={() => setIsChannelChatOpen(true)}
-        className="fixed bottom-24 right-6 md:bottom-6 z-40 flex items-center justify-center w-12 h-12 rounded-full bg-violet-600 hover:bg-violet-700 text-white shadow-lg hover:shadow-xl transition-all active:scale-95"
+        className="fixed bottom-24 right-6 md:bottom-6 z-40 flex items-center justify-center w-12 h-12 rounded-full bg-neutral-900 dark:bg-neutral-800 hover:bg-neutral-800 dark:hover:bg-neutral-700 text-white border border-neutral-700 dark:border-neutral-600 shadow-[0_4px_14px_rgba(139,92,246,0.3)] hover:shadow-[0_4px_20px_rgba(139,92,246,0.45)] transition-all active:scale-95"
         title="Ask Kan"
       >
         <KanthinkIcon size={24} className="text-white" />

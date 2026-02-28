@@ -27,6 +27,9 @@ interface ChannelChatThreadProps {
   onThreadUpdate: (thread: ThreadType) => void;
   /** Slot for action buttons rendered in the header (e.g. history, close) */
   headerActions?: ReactNode;
+  /** Navigation callbacks for kanthink:// links in AI responses */
+  onOpenCard?: (cardId: string) => void;
+  onOpenTask?: (taskId: string) => void;
 }
 
 // Convert ChannelChatMessage to CardMessage shape for ChatMessage component
@@ -45,7 +48,7 @@ function toCardMessage(msg: ChannelChatMessage): CardMessage {
   };
 }
 
-export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, headerActions }: ChannelChatThreadProps) {
+export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, headerActions, onOpenCard, onOpenTask }: ChannelChatThreadProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,13 +75,14 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
         .filter(Boolean)
         .slice(0, 15)
         .map((card) => ({
+          id: card.id,
           title: card.title,
           tags: card.tags,
           summary: card.summary,
           tasks: (card.taskIds ?? [])
             .map((tid) => tasks[tid])
             .filter(Boolean)
-            .map((t) => ({ title: t.title, status: t.status })),
+            .map((t) => ({ id: t.id, title: t.title, status: t.status })),
         }));
       return { name: col.name, cards: colCards };
     });
@@ -86,7 +90,7 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
     // Gather standalone tasks (not linked to any card) for this channel
     const standaloneTasks = Object.values(tasks)
       .filter((t) => t.channelId === channel.id && !t.cardId)
-      .map((t) => ({ title: t.title, status: t.status }));
+      .map((t) => ({ id: t.id, title: t.title, status: t.status }));
 
     return {
       channelName: channel.name,
@@ -326,6 +330,8 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
             onActionApprove={handleActionApprove}
             onActionReject={handleActionReject}
             renderAction={renderChannelAction}
+            onOpenCard={onOpenCard}
+            onOpenTask={onOpenTask}
           />
         ))}
 

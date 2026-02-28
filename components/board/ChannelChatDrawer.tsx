@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Channel, ChannelChatThread as ThreadType } from '@/lib/types';
+import type { Channel, ChannelChatThread as ThreadType, Task } from '@/lib/types';
+import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
 import { ChannelChatSidebar } from './ChannelChatSidebar';
 import { ChannelChatThread } from './ChannelChatThread';
+import { CardDetailDrawer } from './CardDetailDrawer';
+import { TaskDrawer } from './TaskDrawer';
 
 interface ThreadSummary {
   id: string;
@@ -31,6 +34,25 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
   const [isLoadingThread, setIsLoadingThread] = useState(false);
   const creatingThread = useRef(false);
+
+  // Overlay drawer state for card/task detail opened from chat links
+  const [overlayCardId, setOverlayCardId] = useState<string | null>(null);
+  const [overlayTask, setOverlayTask] = useState<Task | null>(null);
+  const cards = useStore((s) => s.cards);
+  const tasks = useStore((s) => s.tasks);
+
+  const handleOpenCard = useCallback((cardId: string) => {
+    setOverlayCardId(cardId);
+    setOverlayTask(null);
+  }, []);
+
+  const handleOpenTask = useCallback((taskId: string) => {
+    const task = useStore.getState().tasks[taskId];
+    if (task) {
+      setOverlayTask(task);
+      setOverlayCardId(null);
+    }
+  }, []);
 
   // When drawer opens: create a fresh thread and show chat immediately
   useEffect(() => {
@@ -153,10 +175,13 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
       setActiveThreadId(null);
       setActiveThread(null);
       setView('chat');
+      setOverlayCardId(null);
+      setOverlayTask(null);
     }
   }, [isOpen]);
 
   return (
+    <>
     <Drawer isOpen={isOpen} onClose={onClose} width="lg" hideCloseButton>
       <div className="flex flex-col h-full">
         {view === 'chat' ? (
@@ -175,6 +200,8 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
                 thread={activeThread}
                 channel={channel}
                 onThreadUpdate={handleThreadUpdate}
+                onOpenCard={handleOpenCard}
+                onOpenTask={handleOpenTask}
                 headerActions={
                   <div className="flex items-center gap-1">
                     {/* History button */}
@@ -241,5 +268,25 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
         )}
       </div>
     </Drawer>
+
+      {/* Overlay: Card detail opened from chat link */}
+      <CardDetailDrawer
+        card={overlayCardId ? cards[overlayCardId] ?? null : null}
+        isOpen={!!overlayCardId}
+        onClose={() => setOverlayCardId(null)}
+      />
+
+      {/* Overlay: Task detail opened from chat link */}
+      <TaskDrawer
+        task={overlayTask ? tasks[overlayTask.id] ?? overlayTask : null}
+        isOpen={!!overlayTask}
+        onClose={() => setOverlayTask(null)}
+        onOpenCard={overlayTask?.cardId ? () => {
+          const cardId = overlayTask.cardId;
+          setOverlayTask(null);
+          if (cardId) setOverlayCardId(cardId);
+        } : undefined}
+      />
+    </>
   );
 }

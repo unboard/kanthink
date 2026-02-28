@@ -139,6 +139,22 @@ function TaskGroup({ group, groupByCard, members, onTaskClick, onAddTask, isDrag
               >
                 {task.title}
               </span>
+              {task.dueDate && task.status !== 'done' && (
+                <span className={`flex-shrink-0 text-xs ${
+                  (() => {
+                    const due = new Date(task.dueDate);
+                    const today = new Date();
+                    due.setHours(0, 0, 0, 0);
+                    today.setHours(0, 0, 0, 0);
+                    const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    if (diffDays < 0) return 'text-red-500 dark:text-red-400';
+                    if (diffDays <= 2) return 'text-amber-500 dark:text-amber-400';
+                    return 'text-neutral-400 dark:text-neutral-500';
+                  })()
+                }`}>
+                  {new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              )}
               {(task.assignedTo ?? []).length > 0 && (
                 <AssigneeAvatars
                   userIds={task.assignedTo!}

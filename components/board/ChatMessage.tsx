@@ -5,11 +5,13 @@ import { useSession } from 'next-auth/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import rehypeSanitize from 'rehype-sanitize';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import type { Session } from 'next-auth';
-import type { CardMessage, StoredAction, TagDefinition } from '@/lib/types';
+import type { CardMessage, StoredAction, TagDefinition, TaskStatus } from '@/lib/types';
+import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SmartSnippet } from './SmartSnippet';
+import { TaskCheckbox } from './TaskCheckbox';
 import { ImageTheater } from '@/components/ui/ImageTheater';
 
 interface ChatMessageProps {
@@ -25,6 +27,9 @@ interface ChatMessageProps {
   onRejectAll?: (messageId: string) => void;
   // Custom action renderer for channel-level actions
   renderAction?: (action: StoredAction) => React.ReactNode;
+  // Navigation callbacks for kanthink:// links
+  onOpenCard?: (cardId: string) => void;
+  onOpenTask?: (taskId: string) => void;
 }
 
 function formatTime(dateString: string): string {
@@ -53,6 +58,15 @@ function formatDate(dateString: string): string {
   });
 }
 
+// Allow kanthink:// protocol in sanitized markdown links
+const sanitizeSchema = {
+  ...defaultSchema,
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href ?? []), 'kanthink'],
+  },
+};
+
 // Regex to match @[Name](userId) mention format
 const MENTION_REGEX = /@\[([^\]]+)\]\(([^)]+)\)/g;
 
@@ -61,8 +75,98 @@ export function stripMentionMarkup(text: string): string {
   return text.replace(MENTION_REGEX, '@$1');
 }
 
+/** Parse a kanthink:// URL, returning { type, id } or null */
+function parseKanthinkUrl(href: string | undefined): { type: 'card' | 'task'; id: string } | null {
+  if (!href) return null;
+  const match = href.match(/^kanthink:\/\/(card|task)\/(.+)$/);
+  if (!match) return null;
+  return { type: match[1] as 'card' | 'task', id: match[2] };
+}
+
+/** Inline link for kanthink:// card/task references */
+function KanthinkLink({
+  href,
+  children,
+  onOpenCard,
+  onOpenTask,
+}: {
+  href?: string;
+  children: React.ReactNode;
+  onOpenCard?: (cardId: string) => void;
+  onOpenTask?: (taskId: string) => void;
+}) {
+  const parsed = parseKanthinkUrl(href);
+  const tasks = useStore((s) => s.tasks);
+  const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
+
+  if (!parsed) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+        {children}
+      </a>
+    );
+  }
+
+  if (parsed.type === 'task') {
+    const task = tasks[parsed.id];
+    const status: TaskStatus = task?.status ?? 'not_started';
+    return (
+      <span className="inline-flex items-center gap-1.5 align-middle">
+        <TaskCheckbox
+          status={status}
+          onToggle={() => toggleTaskStatus(parsed.id)}
+          size="sm"
+        />
+        <button
+          onClick={() => onOpenTask?.(parsed.id)}
+          className="text-violet-600 dark:text-violet-400 hover:underline font-medium cursor-pointer"
+        >
+          {children}
+        </button>
+      </span>
+    );
+  }
+
+  // Card link
+  return (
+    <button
+      onClick={() => onOpenCard?.(parsed.id)}
+      className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400 hover:underline font-medium cursor-pointer align-middle"
+    >
+      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+      {children}
+    </button>
+  );
+}
+
+interface LinkHandlers {
+  onOpenCard?: (cardId: string) => void;
+  onOpenTask?: (taskId: string) => void;
+}
+
+/** Build the ReactMarkdown `components` prop with kanthink link support */
+function buildMarkdownComponents(linkHandlers?: LinkHandlers, unwrapP?: boolean) {
+  const components: Record<string, React.ComponentType<Record<string, unknown>>> = {};
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  components.a = ({ href, children }: any) => (
+    <KanthinkLink href={href} onOpenCard={linkHandlers?.onOpenCard} onOpenTask={linkHandlers?.onOpenTask}>
+      {children}
+    </KanthinkLink>
+  );
+
+  if (unwrapP) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    components.p = ({ children }: any) => <>{children}</>;
+  }
+
+  return components;
+}
+
 /** Render message content with mentions as styled spans, rest through ReactMarkdown */
-function renderContentWithMentions(content: string) {
+function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers) {
   // Split content by mention patterns
   const parts: Array<{ type: 'text' | 'mention'; value: string; name?: string }> = [];
   let lastIndex = 0;
@@ -85,14 +189,8 @@ function renderContentWithMentions(content: string) {
     return (
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, rehypeSanitize]}
-        components={{
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-              {children}
-            </a>
-          ),
-        }}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+        components={buildMarkdownComponents(linkHandlers)}
       >
         {content}
       </ReactMarkdown>
@@ -117,16 +215,8 @@ function renderContentWithMentions(content: string) {
           <ReactMarkdown
             key={i}
             remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeRaw, rehypeSanitize]}
-            components={{
-              // Unwrap <p> tags so inline mentions don't break layout
-              p: ({ children }) => <>{children}</>,
-              a: ({ href, children }) => (
-                <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                  {children}
-                </a>
-              ),
-            }}
+            rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+            components={buildMarkdownComponents(linkHandlers, true)}
           >
             {part.value}
           </ReactMarkdown>
@@ -170,6 +260,8 @@ export function ChatMessage({
   onApproveAll,
   onRejectAll,
   renderAction,
+  onOpenCard,
+  onOpenTask,
 }: ChatMessageProps) {
   const isAI = message.type === 'ai_response';
   const isQuestion = message.type === 'question';
@@ -246,7 +338,7 @@ export function ChatMessage({
           </span>
 
           {/* Action buttons - always visible on mobile, hover-reveal on desktop */}
-          <div className="ml-auto flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+          <div className="ml-auto flex items-center gap-0.5">
             {/* Edit button */}
             {canEdit && !isEditing && (
               <button
@@ -321,7 +413,7 @@ export function ChatMessage({
             prose-pre:bg-neutral-100 dark:prose-pre:bg-neutral-800 prose-pre:text-xs"
             onDoubleClick={canEdit ? () => { setEditContent(message.content); setIsEditing(true); } : undefined}
           >
-            {renderContentWithMentions(message.content)}
+            {renderContentWithMentions(message.content, { onOpenCard, onOpenTask })}
           </div>
         ) : null}
 

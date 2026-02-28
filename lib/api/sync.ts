@@ -188,7 +188,7 @@ export function syncColumnCardOrder(channelId: string, columnId: string, cardIds
 export function syncTaskCreate(
   channelId: string,
   taskId: string,
-  data: { cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number; createdAt?: string; createdBy?: string }
+  data: { cardId?: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; position?: number; dueDate?: string; createdAt?: string; createdBy?: string }
 ) {
   syncInBackground(async () => {
     // Pass the client-generated ID so server uses the same ID

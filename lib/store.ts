@@ -1702,6 +1702,7 @@ export const useStore = create<KanthinkState>()(
           title: input.title,
           description: input.description ?? '',
           status: 'not_started',
+          dueDate: input.dueDate,
           createdBy: input.createdBy,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -1735,6 +1736,7 @@ export const useStore = create<KanthinkState>()(
           cardId: cardId ?? undefined,
           title: input.title,
           description: input.description ?? '',
+          dueDate: input.dueDate,
           createdBy: input.createdBy,
           createdAt: timestamp,
         });

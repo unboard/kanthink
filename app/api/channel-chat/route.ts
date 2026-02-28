@@ -19,10 +19,11 @@ async function getWebTools() {
 interface ColumnContext {
   name: string;
   cards: {
+    id?: string;
     title: string;
     tags?: string[];
     summary?: string;
-    tasks?: { title: string; status: string }[];
+    tasks?: { id?: string; title: string; status: string }[];
   }[];
 }
 
@@ -36,7 +37,7 @@ interface ChannelChatRequest {
     channelDescription: string;
     aiInstructions: string;
     columns: ColumnContext[];
-    standaloneTasks?: { title: string; status: string }[];
+    standaloneTasks?: { id?: string; title: string; status: string }[];
     tagDefinitions?: { name: string; color: string }[];
     threadMessages: ChannelChatMessage[];
     threadTitle?: string;
@@ -73,6 +74,7 @@ function buildPrompt(
       const cardList = col.cards.length > 0
         ? col.cards.map((c) => {
           let desc = `  - ${c.title}`;
+          if (c.id) desc += ` (id:${c.id})`;
           if (c.tags?.length) desc += ` [${c.tags.join(', ')}]`;
           if (c.summary) desc += ` — ${c.summary}`;
           return desc;
@@ -83,20 +85,20 @@ function buildPrompt(
     .join('\n\n');
 
   // Build a flat, pre-computed task inventory — the single source of truth
-  interface TaskEntry { title: string; status: string; cardTitle: string; columnName: string }
+  interface TaskEntry { id?: string; title: string; status: string; cardTitle: string; cardId?: string; columnName: string }
   const allTasks: TaskEntry[] = [];
   for (const col of columns) {
     for (const card of col.cards) {
       if (card.tasks?.length) {
         for (const t of card.tasks) {
-          allTasks.push({ title: t.title, status: t.status, cardTitle: card.title, columnName: col.name });
+          allTasks.push({ id: t.id, title: t.title, status: t.status, cardTitle: card.title, cardId: card.id, columnName: col.name });
         }
       }
     }
   }
   if (standaloneTasks?.length) {
     for (const t of standaloneTasks) {
-      allTasks.push({ title: t.title, status: t.status, cardTitle: '(standalone)', columnName: '—' });
+      allTasks.push({ id: t.id, title: t.title, status: t.status, cardTitle: '(standalone)', columnName: '—' });
     }
   }
 
@@ -110,14 +112,18 @@ function buildPrompt(
     if (notDone.length > 0) {
       taskSection += `\n\nNot completed (${notDone.length}):`;
       for (const t of notDone) {
-        taskSection += `\n  - "${t.title}" [${t.status}] — card: ${t.cardTitle}, column: ${t.columnName}`;
+        const idPart = t.id ? ` (id:${t.id})` : '';
+        const cardRef = t.cardId ? ` card: ${t.cardTitle} (id:${t.cardId})` : ` card: ${t.cardTitle}`;
+        taskSection += `\n  - "${t.title}"${idPart} [${t.status}] —${cardRef}, column: ${t.columnName}`;
       }
     }
 
     if (done.length > 0) {
       taskSection += `\n\nCompleted (${done.length}):`;
       for (const t of done) {
-        taskSection += `\n  - "${t.title}" [done] — card: ${t.cardTitle}, column: ${t.columnName}`;
+        const idPart = t.id ? ` (id:${t.id})` : '';
+        const cardRef = t.cardId ? ` card: ${t.cardTitle} (id:${t.cardId})` : ` card: ${t.cardTitle}`;
+        taskSection += `\n  - "${t.title}"${idPart} [done] —${cardRef}, column: ${t.columnName}`;
       }
     }
   }
@@ -184,7 +190,11 @@ Your response MUST be valid JSON:
 Rules:
 - Always respond with valid JSON. The "actions" array is optional.
 - For create_card: use exact column names from above. For create_task: omit cardTitle for standalone tasks.
-- Be concise. Reference cards, tasks, and columns by name.`;
+- Be concise. Reference cards, tasks, and columns by name.
+- IMPORTANT: When referencing existing cards or tasks, use clickable links with the kanthink:// scheme so users can navigate to them:
+  - For cards: [Card Title](kanthink://card/CARD_ID)
+  - For tasks: [Task Title](kanthink://task/TASK_ID)
+  Use the IDs from the data above (shown as "id:XXX"). Always link cards and tasks when mentioning them.`;
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },

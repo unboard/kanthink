@@ -368,6 +368,7 @@ export interface TaskInput {
   title: string;
   description?: string;
   assignedTo?: string[];
+  dueDate?: string;
   createdBy?: string;
 }
 
