@@ -69,6 +69,7 @@ export function TaskDrawer({
   const menuRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
 
+  const dueDateRef = useRef<HTMLInputElement>(null);
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isMovingTask, setIsMovingTask] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
@@ -468,20 +469,26 @@ export function TaskDrawer({
                 </button>
               </span>
             ) : (
-              <label className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                Due date
+              <div className="relative inline-flex items-center">
+                <button
+                  onClick={() => dueDateRef.current?.showPicker()}
+                  className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Due date
+                </button>
                 <input
+                  ref={dueDateRef}
                   type="date"
-                  className="absolute opacity-0 w-0 h-0"
+                  className="absolute opacity-0 w-0 h-0 pointer-events-none"
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val) updateTask(task.id, { dueDate: new Date(val + 'T00:00:00').toISOString() });
                   }}
                 />
-              </label>
+              </div>
             )}
           </div>
 
