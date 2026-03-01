@@ -91,32 +91,37 @@ async function listCards() {
 }
 
 async function moveCard(cardId: string) {
-  const secret = env.INTERNAL_API_SECRET
-  if (!secret) {
-    console.error('Error: INTERNAL_API_SECRET not set in .env.local')
-    console.error('Add INTERNAL_API_SECRET=<your-secret> to .env.local and Vercel env vars.')
+  // Get the card
+  const cardRes = await db.execute({ sql: 'SELECT column_id, position FROM cards WHERE id = ?', args: [cardId] })
+  if (cardRes.rows.length === 0) {
+    console.error(`Card not found: ${cardId}`)
     process.exit(1)
   }
+  const fromColumnId = cardRes.rows[0].column_id as string
+  const fromPosition = cardRes.rows[0].position as number
 
-  // Call the production API so it uses the same DB and broadcasts via Pusher
-  const res = await fetch(`${PRODUCTION_URL}/api/internal/move-card`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-internal-secret': secret,
-    },
-    body: JSON.stringify({ cardId, toColumnId: COMPLETED_COLUMN_ID }),
+  // Get next position in Completed column
+  const maxRes = await db.execute({
+    sql: 'SELECT COALESCE(MAX(position), -1) as max_pos FROM cards WHERE column_id = ? AND is_archived = 0',
+    args: [COMPLETED_COLUMN_ID],
+  })
+  const toPosition = Number(maxRes.rows[0].max_pos) + 1
+  const nowEpoch = Math.floor(Date.now() / 1000)
+
+  // Shift positions in the source column
+  await db.execute({
+    sql: 'UPDATE cards SET position = position - 1 WHERE column_id = ? AND is_archived = 0 AND position > ?',
+    args: [fromColumnId, fromPosition],
   })
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: res.statusText }))
-    console.error(`Failed to move card: ${error.error || res.statusText}`)
-    process.exit(1)
-  }
+  // Move the card (updated_at as epoch integer to match Drizzle's format)
+  await db.execute({
+    sql: 'UPDATE cards SET column_id = ?, position = ?, updated_at = ? WHERE id = ?',
+    args: [COMPLETED_COLUMN_ID, toPosition, nowEpoch, cardId],
+  })
 
-  const data = await res.json()
   console.log(`Moved card ${cardId} to "Completed" column.`)
-  console.log(`  From: ${data.card.fromColumnId} → To: ${data.card.toColumnId}`)
+  console.log(`  From: ${fromColumnId} → To: ${COMPLETED_COLUMN_ID}`)
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────
