@@ -68,6 +68,7 @@ export function TaskDrawer({
   const notesEndRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
+  const dueDateRef = useRef<HTMLInputElement>(null);
 
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isMovingTask, setIsMovingTask] = useState(false);
@@ -430,60 +431,64 @@ export function TaskDrawer({
           <div className="w-px h-5 bg-neutral-200 dark:bg-neutral-700" />
 
           {/* Due date */}
-          <div className="flex items-center gap-1.5">
-            {currentDueDate ? (
-              <span className={`inline-flex items-center gap-1 text-xs font-medium ${
-                (() => {
-                  const due = new Date(currentDueDate);
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-                  due.setHours(0, 0, 0, 0);
-                  const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  if (currentStatus === 'done') return 'text-neutral-400 dark:text-neutral-500';
-                  if (diffDays < 0) return 'text-red-600 dark:text-red-400';
-                  if (diffDays <= 2) return 'text-amber-600 dark:text-amber-400';
-                  return 'text-neutral-500 dark:text-neutral-400';
-                })()
-              }`}>
+          <div className="flex items-center">
+            <input
+              ref={dueDateRef}
+              type="date"
+              value={currentDueDate ? new Date(currentDueDate).toISOString().split('T')[0] : ''}
+              className="sr-only"
+              tabIndex={-1}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val) updateTask(task.id, { dueDate: new Date(val + 'T00:00:00').toISOString() });
+              }}
+            />
+            {currentDueDate ? (() => {
+              const due = new Date(currentDueDate);
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              due.setHours(0, 0, 0, 0);
+              const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+              const colorClass = currentStatus === 'done'
+                ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-500'
+                : diffDays < 0
+                ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
+                : diffDays <= 2
+                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400';
+              const label = due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              return (
+                <span className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium ${colorClass}`}>
+                  <button
+                    onClick={() => dueDateRef.current?.showPicker()}
+                    className="inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    {label}
+                  </button>
+                  <button
+                    onClick={() => updateTask(task.id, { dueDate: undefined })}
+                    className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                    title="Remove due date"
+                  >
+                    <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              );
+            })() : (
+              <button
+                onClick={() => dueDateRef.current?.showPicker()}
+                className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <input
-                  type="date"
-                  value={currentDueDate ? new Date(currentDueDate).toISOString().split('T')[0] : ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    updateTask(task.id, { dueDate: val ? new Date(val + 'T00:00:00').toISOString() : undefined });
-                  }}
-                  className="bg-transparent border-none p-0 text-xs font-medium cursor-pointer focus:outline-none [color-scheme:dark] dark:[color-scheme:dark] w-24"
-                />
-                <button
-                  onClick={() => updateTask(task.id, { dueDate: undefined })}
-                  className="w-4 h-4 flex items-center justify-center rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                  title="Remove due date"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </span>
-            ) : (
-              <div className="relative inline-flex items-center">
-                <span className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Due date
-                </span>
-                <input
-                  type="date"
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val) updateTask(task.id, { dueDate: new Date(val + 'T00:00:00').toISOString() });
-                  }}
-                />
-              </div>
+                Due date
+              </button>
             )}
           </div>
 
