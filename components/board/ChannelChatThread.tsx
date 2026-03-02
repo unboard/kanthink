@@ -260,6 +260,22 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
     }
   };
 
+  // Edit a message in the thread
+  const handleEditMessage = useCallback((messageId: string, newContent: string) => {
+    const updatedMessages = messages.map((m) =>
+      m.id === messageId ? { ...m, content: newContent } : m,
+    );
+    onThreadUpdate({ ...thread, messages: updatedMessages });
+    persistActionUpdate(thread.id, updatedMessages);
+  }, [messages, thread, onThreadUpdate]);
+
+  // Delete a message from the thread
+  const handleDeleteMessage = useCallback((messageId: string) => {
+    const updatedMessages = messages.filter((m) => m.id !== messageId);
+    onThreadUpdate({ ...thread, messages: updatedMessages });
+    persistActionUpdate(thread.id, updatedMessages);
+  }, [messages, thread, onThreadUpdate]);
+
   // Render channel-level action snippet
   const renderChannelAction = useCallback(
     (action: StoredAction) => (
@@ -331,6 +347,8 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
           <ChatMessage
             key={msg.id}
             message={toCardMessage(msg)}
+            onEdit={(content) => handleEditMessage(msg.id, content)}
+            onDelete={() => handleDeleteMessage(msg.id)}
             onActionApprove={handleActionApprove}
             onActionReject={handleActionReject}
             renderAction={renderChannelAction}

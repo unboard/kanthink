@@ -583,13 +583,12 @@ export function TaskDrawer({
               <div className="space-y-3">
                 {currentNotes.map((note) => {
                   const msg = taskNoteToCardMessage(note);
-                  const isOwn = note.authorId === session?.user?.id;
                   return (
                     <ChatMessage
                       key={note.id}
                       message={msg}
                       onDelete={() => deleteTaskNote(task.id, note.id)}
-                      onEdit={isOwn ? (content) => editTaskNote(task.id, note.id, content) : undefined}
+                      onEdit={(content) => editTaskNote(task.id, note.id, content)}
                     />
                   );
                 })}
