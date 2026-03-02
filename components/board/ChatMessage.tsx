@@ -267,7 +267,7 @@ export function ChatMessage({
   const isQuestion = message.type === 'question';
   const isNote = message.type === 'note';
   const isUserMessage = isQuestion || isNote;
-  const canEdit = isNote && !!onEdit;
+  const canEdit = !!onEdit;
 
   const { data: session } = useSession();
   const [isEditing, setIsEditing] = useState(false);

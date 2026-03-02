@@ -97,9 +97,13 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   // Get card tags
   const cardTags = card.tags ?? [];
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom only on initial load
+  const hasScrolledToBottom = useRef(false);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!hasScrolledToBottom.current && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      hasScrolledToBottom.current = true;
+    }
   }, [messages]);
 
   // Handle Escape key to exit fullscreen

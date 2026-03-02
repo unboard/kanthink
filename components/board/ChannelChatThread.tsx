@@ -62,9 +62,13 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
 
   const messages = useMemo(() => thread.messages ?? [], [thread.messages]);
 
-  // Scroll to bottom when messages change
+  // Scroll to bottom only on initial load
+  const hasScrolledToBottom = useRef(false);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!hasScrolledToBottom.current && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      hasScrolledToBottom.current = true;
+    }
   }, [messages.length]);
 
   // Build context for the API
