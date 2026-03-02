@@ -101,6 +101,8 @@ interface CardDetailDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   autoFocusTitle?: boolean;
+  fullPage?: boolean;
+  onNavigateBack?: () => void;
 }
 
 function formatDate(dateString: string): string {
@@ -116,7 +118,7 @@ function formatDate(dateString: string): string {
 
 type ActiveTab = 'thread' | 'tasks' | 'info';
 
-export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: CardDetailDrawerProps) {
+export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack }: CardDetailDrawerProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const [title, setTitle] = useState('');
@@ -358,11 +360,21 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
     .map((id) => channels[id])
     .filter(Boolean);
 
-  return (
-    <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating hideCloseButton>
-      <div className="flex flex-col h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]">
+  const content = (
+    <>
+      <div className={`flex flex-col ${fullPage ? 'h-[100dvh]' : 'h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]'}`}>
         {/* Compact Header - sticky on mobile */}
         <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3">
+          {fullPage && onNavigateBack && (
+            <button
+              onClick={onNavigateBack}
+              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
           <input
             ref={titleInputRef}
             type="text"
@@ -371,14 +383,27 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
             className="flex-1 font-medium text-neutral-900 dark:text-white bg-transparent border-none outline-none placeholder-neutral-400 truncate"
             placeholder="Card title"
           />
-          <button
-            onClick={handleClose}
-            className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          {!fullPage && card && (
+            <button
+              onClick={() => router.push(`/channel/${card.channelId}/card/${card.id}`)}
+              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              title="Open full page"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+              </svg>
+            </button>
+          )}
+          {!fullPage && (
+            <button
+              onClick={handleClose}
+              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Hidden file input for cover image */}
@@ -964,6 +989,20 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle }: Card
           </div>
         </div>
       )}
+    </>
+  );
+
+  if (fullPage) {
+    return (
+      <div className="h-full bg-white dark:bg-neutral-900">
+        <div className="max-w-2xl mx-auto h-full">{content}</div>
+      </div>
+    );
+  }
+
+  return (
+    <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating hideCloseButton>
+      {content}
     </Drawer>
   );
 }
