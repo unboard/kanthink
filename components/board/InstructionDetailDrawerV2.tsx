@@ -105,7 +105,8 @@ export function InstructionDetailDrawerV2({
 
       setTimeout(() => { isSyncingRef.current = false; }, 0);
     }
-  }, [instructionCardId, channel.columns, instructionCard]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instructionCardId]);
 
   // Auto-save on changes
   useEffect(() => {
