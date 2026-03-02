@@ -562,24 +562,4 @@ export interface ChannelChatThread {
   updatedAt: string;
 }
 
-// ===== FEED TYPES =====
-
-export type FeedCardType = 'appetizer' | 'main_course' | 'dessert';
-
-export interface FeedCardSource {
-  url: string;
-  title: string;
-}
-
-export interface FeedCard {
-  id: ID;
-  title: string;
-  content: string;              // HTML (converted from markdown)
-  type: FeedCardType;
-  sourceChannelId: ID;
-  sourceChannelName: string;
-  sources: FeedCardSource[];
-  coverImageUrl?: string;
-  createdAt: string;
-}
 
