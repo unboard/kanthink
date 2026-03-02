@@ -112,6 +112,7 @@ export default function Home() {
         signInAction={signInWithGoogle}
         signInRedirectTo="/"
         isWelcome={false}
+        existingChannelNames={Object.values(channels).map(c => c.name)}
       />
 
       {/* First-time Welcome - Full conversational welcome for new users */}
@@ -122,6 +123,7 @@ export default function Home() {
         isSignedIn={!!session}
         signInAction={signInWithGoogle}
         signInRedirectTo="/"
+        existingChannelNames={Object.values(channels).map(c => c.name)}
       />
     </div>
   );

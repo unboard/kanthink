@@ -15,6 +15,8 @@ export function GlobalNewChannelOverlay() {
   const [mounted, setMounted] = useState(false);
   const createChannel = useStore((s) => s.createChannel);
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
+  const channels = useStore((s) => s.channels);
+  const existingChannelNames = Object.values(channels).map(c => c.name);
 
   useEffect(() => {
     setMounted(true);
@@ -58,6 +60,7 @@ export function GlobalNewChannelOverlay() {
         onClose={() => setShowKanHelp(false)}
         onCreate={handleKanHelpCreate}
         isWelcome={false}
+        existingChannelNames={existingChannelNames}
       />
     </>
   );
