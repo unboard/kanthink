@@ -212,12 +212,15 @@ function DesktopNav() {
   );
 }
 
-// Mobile horizontal nav (bottom)
+// Mobile horizontal nav (bottom) - hidden on full-page card views
 function MobileNav() {
   const { data: session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const { activePanel, togglePanel, closePanel } = useNav();
+
+  // Hide mobile nav on card detail pages (they have their own bottom tabs)
+  if (/\/channel\/[^/]+\/card\//.test(pathname)) return null;
 
   // Use onPointerDown + preventDefault to prevent synthesized click from closing sheet
   const handleToggle = (panel: NavPanelType) => (e: React.PointerEvent) => {
