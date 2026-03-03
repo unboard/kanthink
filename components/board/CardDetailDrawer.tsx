@@ -1028,8 +1028,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
   if (fullPage) {
     return (
-      <div className="h-full overflow-hidden bg-white dark:bg-neutral-900">
-        <div className="max-w-2xl mx-auto h-full overflow-hidden">{content}</div>
+      <div className="fixed inset-0 z-30 bg-white dark:bg-neutral-900">
+        <div className="max-w-2xl mx-auto h-full">{content}</div>
       </div>
     );
   }
