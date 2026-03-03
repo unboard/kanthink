@@ -451,20 +451,20 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           }}
         />
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Cover image - full page only, inside scroll area */}
-          {fullPage && card.coverImageUrl && (
-            <div className="flex-shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={card.coverImageUrl}
-                alt=""
-                className="w-full h-48 object-cover"
-              />
-            </div>
-          )}
+        {/* Cover image - full page only */}
+        {fullPage && card.coverImageUrl && (
+          <div className="flex-shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={card.coverImageUrl}
+              alt=""
+              className="w-full h-48 object-cover"
+            />
+          </div>
+        )}
 
+        {/* Content Area */}
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           {/* Thread Tab */}
           {activeTab === 'thread' && (
             <div className="flex-1 min-h-0 flex flex-col">
@@ -1028,8 +1028,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
   if (fullPage) {
     return (
-      <div className="h-full bg-white dark:bg-neutral-900">
-        <div className="max-w-2xl mx-auto h-full">{content}</div>
+      <div className="h-full overflow-hidden bg-white dark:bg-neutral-900">
+        <div className="max-w-2xl mx-auto h-full overflow-hidden">{content}</div>
       </div>
     );
   }
