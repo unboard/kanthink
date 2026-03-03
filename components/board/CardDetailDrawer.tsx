@@ -132,6 +132,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [isInstructionHistoryOpen, setIsInstructionHistoryOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('thread');
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const titleDrawerInputRef = useRef<HTMLInputElement>(null);
 
   // Track keyboard height for mobile title drawer positioning
@@ -383,6 +384,28 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
             className="flex-1 font-medium text-neutral-900 dark:text-white bg-transparent border-none outline-none placeholder-neutral-400 truncate"
             placeholder="Card title"
           />
+          {fullPage && card && (
+            <button
+              onClick={() => {
+                const url = `${window.location.origin}/channel/${card.channelId}/card/${card.id}`;
+                navigator.clipboard.writeText(url);
+                setCopiedLink(true);
+                setTimeout(() => setCopiedLink(false), 2000);
+              }}
+              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              title="Copy link"
+            >
+              {copiedLink ? (
+                <svg className="w-4.5 h-4.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+              )}
+            </button>
+          )}
           {!fullPage && card && (
             <button
               onClick={() => router.push(`/channel/${card.channelId}/card/${card.id}`)}
@@ -427,6 +450,18 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
             if (coverFileInputRef.current) coverFileInputRef.current.value = '';
           }}
         />
+
+        {/* Cover image - full page only */}
+        {fullPage && card.coverImageUrl && (
+          <div className="flex-shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={card.coverImageUrl}
+              alt=""
+              className="w-full h-48 object-cover"
+            />
+          </div>
+        )}
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col">
