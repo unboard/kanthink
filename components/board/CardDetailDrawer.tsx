@@ -363,7 +363,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
   const content = (
     <>
-      <div className={`flex flex-col ${fullPage ? 'h-[100dvh]' : 'h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]'}`}>
+      <div className={`flex flex-col ${fullPage ? 'h-full' : 'h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]'}`}>
         {/* Compact Header - sticky on mobile */}
         <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3">
           {fullPage && onNavigateBack && (
@@ -451,20 +451,19 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           }}
         />
 
-        {/* Cover image - full page only */}
-        {fullPage && card.coverImageUrl && (
-          <div className="flex-shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={card.coverImageUrl}
-              alt=""
-              className="w-full h-48 object-cover"
-            />
-          </div>
-        )}
-
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col">
+          {/* Cover image - full page only, inside scroll area */}
+          {fullPage && card.coverImageUrl && (
+            <div className="flex-shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={card.coverImageUrl}
+                alt=""
+                className="w-full h-48 object-cover"
+              />
+            </div>
+          )}
 
           {/* Thread Tab */}
           {activeTab === 'thread' && (
