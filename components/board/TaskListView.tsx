@@ -256,9 +256,23 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
 
   // Group tasks by card
   const channel = channels[channelId];
+  // Build set of archived card IDs (cards on column backsides)
+  const archivedCardIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (channel) {
+      for (const col of channel.columns) {
+        for (const cid of col.backsideCardIds ?? []) {
+          ids.add(cid);
+        }
+      }
+    }
+    return ids;
+  }, [channel]);
+
   const groupedTasks = useMemo(() => {
     if (!groupByCard) {
-      return [{ cardId: null, cardTitle: 'All Tasks', tasks: filteredTasks }];
+      const nonArchivedTasks = filteredTasks.filter((t) => !t.cardId || !archivedCardIds.has(t.cardId));
+      return [{ cardId: null, cardTitle: 'All Tasks', tasks: nonArchivedTasks }];
     }
 
     const groups: Record<string, { cardId: ID | null; cardTitle: string; tasks: Task[] }> = {};
@@ -267,6 +281,9 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
     groups['unlinked'] = { cardId: null, cardTitle: 'Unlinked Tasks', tasks: [] };
 
     for (const task of filteredTasks) {
+      // Skip tasks belonging to archived cards
+      if (task.cardId && archivedCardIds.has(task.cardId)) continue;
+
       if (!task.cardId) {
         // Column tasks: group by column name
         if (task.columnId && channel) {
@@ -324,12 +341,13 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
       }
     }
 
-    // Include all cards from the channel, even those with no tasks
+    // Include all non-archived cards from the channel, even those with no tasks
     if (channel) {
       const cardIdsToShow = filterCardIds ?? Object.values(cards)
         .filter((c) => c.channelId === channelId)
         .map((c) => c.id);
       for (const cardId of cardIdsToShow) {
+        if (archivedCardIds.has(cardId)) continue;
         if (!groups[cardId]) {
           const card = cards[cardId];
           if (card) {
@@ -347,7 +365,7 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
         if (!b.cardId) return 1;
         return a.cardTitle.localeCompare(b.cardTitle);
       });
-  }, [filteredTasks, groupByCard, cards, channel?.unlinkedTaskOrder, channel, channelId, filterCardIds]);
+  }, [filteredTasks, groupByCard, cards, channel?.unlinkedTaskOrder, channel, channelId, filterCardIds, archivedCardIds]);
 
   // Build a lookup: taskId -> group's cardId
   const taskToGroupCard = useMemo(() => {
