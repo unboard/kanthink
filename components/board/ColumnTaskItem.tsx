@@ -5,7 +5,9 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Task } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { TaskCheckbox } from './TaskCheckbox';
+import { AssigneeAvatars } from './AssigneeAvatars';
 import { TaskDrawer } from './TaskDrawer';
 
 interface ColumnTaskItemProps {
@@ -15,6 +17,7 @@ interface ColumnTaskItemProps {
 export function ColumnTaskItem({ task }: ColumnTaskItemProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
+  const { members } = useChannelMembers(task.channelId);
 
   const {
     attributes,
@@ -68,6 +71,13 @@ export function ColumnTaskItem({ task }: ColumnTaskItemProps) {
         >
           {task.title}
         </button>
+        {(task.assignedTo ?? []).length > 0 && (
+          <AssigneeAvatars
+            userIds={task.assignedTo!}
+            members={members}
+            size="sm"
+          />
+        )}
         {task.dueDate && (
           <span className={`text-xs flex-shrink-0 ${
             new Date(task.dueDate) < new Date() && !isDone
