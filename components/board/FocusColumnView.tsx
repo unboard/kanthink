@@ -284,7 +284,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
                     </div>
                   )}
                   {activeTaskItem && (
-                    <div className="w-72 cursor-grabbing rounded-md bg-neutral-50 dark:bg-neutral-800 px-2.5 py-1.5 shadow-lg flex items-center gap-2">
+                    <div className="w-72 cursor-grabbing rounded-md bg-white dark:bg-neutral-900 p-3 shadow-lg flex items-center gap-2">
                       <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${
                         activeTaskItem.status === 'done' ? 'bg-green-500 border-green-500' :
                         activeTaskItem.status === 'in_progress' ? 'border-blue-500 bg-blue-50' :

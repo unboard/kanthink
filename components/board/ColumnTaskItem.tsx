@@ -44,11 +44,11 @@ export function ColumnTaskItem({ task }: ColumnTaskItemProps) {
         {...attributes}
         {...listeners}
         className={`
-          group/task flex items-center gap-2 px-2.5 py-1.5 rounded-md cursor-grab select-none
+          group/task flex items-center gap-2 p-3 rounded-md cursor-grab select-none
           ${isDragging ? 'touch-none' : 'touch-manipulation'}
-          bg-neutral-50 dark:bg-neutral-800/50 hover:bg-neutral-100 dark:hover:bg-neutral-800
-          ${isDragging ? 'opacity-50 shadow-md' : ''}
-          transition-colors
+          bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md
+          ${isDragging ? 'opacity-50 shadow-lg' : ''}
+          transition-shadow
         `}
       >
         <TaskCheckbox
