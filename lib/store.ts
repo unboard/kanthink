@@ -2124,10 +2124,15 @@ export const useStore = create<KanthinkState>()(
           };
         });
 
-        // Sync card order to server (itemOrder is derived from card+task positions)
+        // Sync both card and task positions to server
         const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === columnId);
         if (updatedCol) {
           sync.syncColumnCardOrder(channelId, columnId, updatedCol.cardIds);
+          // Sync each column task's position directly
+          const colTaskIds = updatedCol.taskIds ?? [];
+          for (let i = 0; i < colTaskIds.length; i++) {
+            sync.syncTaskUpdate(channelId, colTaskIds[i], { position: i });
+          }
         }
 
         // Broadcast
@@ -2194,11 +2199,15 @@ export const useStore = create<KanthinkState>()(
           };
         });
 
-        // Sync task update + column order
+        // Sync task update + column order + task positions
         sync.syncTaskUpdate(channelId, taskId, { columnId: toColumnId });
         const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === toColumnId);
         if (updatedCol) {
           sync.syncColumnCardOrder(channelId, toColumnId, updatedCol.cardIds);
+          const colTaskIds = updatedCol.taskIds ?? [];
+          for (let i = 0; i < colTaskIds.length; i++) {
+            sync.syncTaskUpdate(channelId, colTaskIds[i], { position: i });
+          }
         }
 
         // Broadcast
