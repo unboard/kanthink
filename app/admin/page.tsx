@@ -3,7 +3,7 @@ import Link from 'next/link';
 const tools = [
   {
     label: 'Email Templates',
-    description: 'Preview and test transactional email templates',
+    description: 'Manage email catalog, previews, and design',
     href: '/admin/emails',
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
