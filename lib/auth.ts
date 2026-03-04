@@ -5,6 +5,8 @@ import { db } from './db'
 import { users, accounts, sessions, verificationTokens } from './db/schema'
 import { eq } from 'drizzle-orm'
 import { convertPendingInvites } from './api/permissions'
+import { identifyUser } from './customerio'
+import { sendWelcomeEmail } from './emails/send'
 
 /**
  * Check if the given email is an admin user.
@@ -59,12 +61,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   events: {
-    async signIn({ user }) {
+    async signIn({ user, isNewUser }) {
       if (user.id && user.email) {
         try {
           await convertPendingInvites(user.id, user.email)
         } catch (e) {
           console.error('Failed to convert pending invites:', e)
+        }
+
+        // Identify user in Customer.IO on every sign-in
+        identifyUser({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        }).catch(() => {})
+
+        // Send welcome email for new users
+        if (isNewUser) {
+          sendWelcomeEmail(user.email, {
+            userName: user.name || '',
+          }).catch(() => {})
         }
       }
     },

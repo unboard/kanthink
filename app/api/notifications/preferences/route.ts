@@ -8,6 +8,7 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 const DEFAULT_PREFERENCES = {
   disabledTypes: [],
   browserNotificationsEnabled: false,
+  emailNotificationsEnabled: true,
 }
 
 /**
@@ -31,6 +32,7 @@ export async function GET(req: NextRequest) {
       preferences: prefs ? {
         disabledTypes: prefs.disabledTypes ?? [],
         browserNotificationsEnabled: prefs.browserNotificationsEnabled ?? false,
+        emailNotificationsEnabled: prefs.emailNotificationsEnabled ?? true,
       } : DEFAULT_PREFERENCES,
     })
   } catch {
@@ -50,7 +52,7 @@ export async function PUT(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { disabledTypes, browserNotificationsEnabled } = body
+  const { disabledTypes, browserNotificationsEnabled, emailNotificationsEnabled } = body
 
   try {
     await ensureSchema()
@@ -63,6 +65,7 @@ export async function PUT(req: NextRequest) {
       const updates: Record<string, unknown> = { updatedAt: new Date() }
       if (disabledTypes !== undefined) updates.disabledTypes = disabledTypes
       if (browserNotificationsEnabled !== undefined) updates.browserNotificationsEnabled = browserNotificationsEnabled
+      if (emailNotificationsEnabled !== undefined) updates.emailNotificationsEnabled = emailNotificationsEnabled
 
       await db.update(notificationPreferences)
         .set(updates)
@@ -72,6 +75,7 @@ export async function PUT(req: NextRequest) {
         userId: session.user.id,
         disabledTypes: disabledTypes ?? [],
         browserNotificationsEnabled: browserNotificationsEnabled ?? false,
+        emailNotificationsEnabled: emailNotificationsEnabled ?? true,
       })
     }
   } catch {

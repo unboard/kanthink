@@ -355,6 +355,7 @@ export const notificationPreferences = sqliteTable('notification_preferences', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   disabledTypes: text('disabled_types', { mode: 'json' }).$type<string[]>().default([]),
   browserNotificationsEnabled: integer('browser_notifications_enabled', { mode: 'boolean' }).default(false),
+  emailNotificationsEnabled: integer('email_notifications_enabled', { mode: 'boolean' }).default(true),
 
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),

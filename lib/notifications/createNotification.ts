@@ -1,8 +1,9 @@
 import { db } from '@/lib/db'
-import { notifications, notificationPreferences, channelShares, channels } from '@/lib/db/schema'
+import { notifications, notificationPreferences, channelShares, channels, users } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { publishNotificationToUser } from '@/lib/sync/pusherServer'
 import type { NotificationType } from './types'
+import { sendTaskAssignedEmail, sendCardAssignedEmail } from '@/lib/emails/send'
 
 interface CreateNotificationInput {
   userId: string
@@ -56,6 +57,11 @@ export async function createNotification(input: CreateNotificationInput): Promis
       readAt: null,
     })
 
+    // Dispatch email for assignment notifications (respects email preference)
+    if (input.type === 'task_assigned' || input.type === 'card_assigned') {
+      maybeDispatchEmail(input).catch(() => {})
+    }
+
     return true
   } catch (error) {
     console.error('[Notifications] Failed to create notification:', error)
@@ -104,5 +110,54 @@ export async function createNotificationForChannelMembers(
     )
   } catch (error) {
     console.error('[Notifications] Failed to create channel member notifications:', error)
+  }
+}
+
+/**
+ * Send an email for assignment notifications if user has email enabled.
+ */
+async function maybeDispatchEmail(input: CreateNotificationInput): Promise<void> {
+  // Check email preference
+  const prefs = await db.query.notificationPreferences.findFirst({
+    where: eq(notificationPreferences.userId, input.userId),
+  })
+
+  // Default is enabled (true), so only skip if explicitly disabled
+  if (prefs && prefs.emailNotificationsEnabled === false) return
+
+  // Also respect disabledTypes
+  if (prefs?.disabledTypes && Array.isArray(prefs.disabledTypes)) {
+    if (prefs.disabledTypes.includes(input.type)) return
+  }
+
+  // Get user email
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, input.userId),
+    columns: { email: true },
+  })
+  if (!user?.email) return
+
+  const data = input.data || {}
+  const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com'
+  const assignerName = (data.assignerName as string) || 'Someone'
+  const channelName = (data.channelName as string) || 'a channel'
+  const channelId = data.channelId as string
+
+  if (input.type === 'task_assigned') {
+    const taskId = data.taskId as string
+    sendTaskAssignedEmail(user.email, {
+      assignerName,
+      taskTitle: input.body,
+      channelName,
+      taskUrl: `${baseUrl}/channel/${channelId}`,
+    }).catch(() => {})
+  } else if (input.type === 'card_assigned') {
+    const cardId = data.cardId as string
+    sendCardAssignedEmail(user.email, {
+      assignerName,
+      cardTitle: input.body,
+      channelName,
+      cardUrl: `${baseUrl}/channel/${channelId}`,
+    }).catch(() => {})
   }
 }

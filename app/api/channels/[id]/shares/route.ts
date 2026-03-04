@@ -6,6 +6,7 @@ import { eq, and, or, desc } from 'drizzle-orm'
 import { requirePermission, PermissionError, ChannelRole } from '@/lib/api/permissions'
 import { nanoid } from 'nanoid'
 import { createNotification } from '@/lib/notifications/createNotification'
+import { sendChannelInviteEmail } from '@/lib/emails/send'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -203,18 +204,34 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       where: eq(channelShares.id, shareId),
     })
 
+    // Get channel name for notifications/emails
+    const channelForNotify = await db.query.channels.findFirst({
+      where: eq(channels.id, channelId),
+      columns: { name: true },
+    })
+    const channelName = channelForNotify?.name || 'a channel'
+
     // Notify the shared user if they exist
     if (existingUser) {
-      const channel = await db.query.channels.findFirst({
-        where: eq(channels.id, channelId),
-        columns: { name: true },
-      })
       createNotification({
         userId: existingUser.id,
         type: 'channel_shared',
         title: 'Channel shared with you',
-        body: `You've been invited to "${channel?.name || 'a channel'}"`,
+        body: `You've been invited to "${channelName}"`,
         data: { channelId },
+      }).catch(() => {})
+    }
+
+    // Send invite email for pending invites (user doesn't exist yet)
+    if (!existingUser) {
+      const inviter = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { name: true },
+      })
+      sendChannelInviteEmail(normalizedEmail, {
+        inviterName: inviter?.name || 'Someone',
+        channelName,
+        signUpUrl: `${process.env.NEXTAUTH_URL || 'https://kanthink.com'}`,
       }).catch(() => {})
     }
 

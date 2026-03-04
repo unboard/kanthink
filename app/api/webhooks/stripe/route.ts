@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { stripe, handleSubscriptionUpdate, handleSubscriptionDeleted } from '@/lib/stripe'
+import { db } from '@/lib/db'
+import { users } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import {
+  sendSubscriptionConfirmedEmail,
+  sendSubscriptionCanceledEmail,
+  sendPaymentFailedEmail,
+} from '@/lib/emails/send'
 
 export async function POST(request: Request) {
   if (!stripe) {
@@ -46,9 +54,21 @@ export async function POST(request: Request) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
         if (session.subscription) {
-          // Retrieve the full subscription object
           const subscription = await stripe.subscriptions.retrieve(session.subscription as string)
           await handleSubscriptionUpdate(subscription)
+
+          // Send subscription confirmed email
+          const customerId = subscription.customer as string
+          const user = await db.query.users.findFirst({
+            where: eq(users.stripeCustomerId, customerId),
+            columns: { email: true, name: true, tier: true },
+          })
+          if (user?.email) {
+            sendSubscriptionConfirmedEmail(user.email, {
+              userName: user.name || '',
+              tier: user.tier || 'premium',
+            }).catch(() => {})
+          }
         }
         break
       }
@@ -61,14 +81,44 @@ export async function POST(request: Request) {
 
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription
+
+        // Send cancellation email before resetting tier
+        const cancelCustomerId = subscription.customer as string
+        const cancelUser = await db.query.users.findFirst({
+          where: eq(users.stripeCustomerId, cancelCustomerId),
+          columns: { email: true, name: true, currentPeriodEnd: true },
+        })
+        if (cancelUser?.email) {
+          const endDate = cancelUser.currentPeriodEnd
+            ? cancelUser.currentPeriodEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+            : 'your current billing period'
+          sendSubscriptionCanceledEmail(cancelUser.email, {
+            userName: cancelUser.name || '',
+            endDate,
+          }).catch(() => {})
+        }
+
         await handleSubscriptionDeleted(subscription)
         break
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice
-        // Could send email notification here
         console.warn(`Payment failed for invoice: ${invoice.id}`)
+
+        const failedCustomerId = invoice.customer as string
+        if (failedCustomerId) {
+          const failedUser = await db.query.users.findFirst({
+            where: eq(users.stripeCustomerId, failedCustomerId),
+            columns: { email: true, name: true },
+          })
+          if (failedUser?.email) {
+            sendPaymentFailedEmail(failedUser.email, {
+              userName: failedUser.name || '',
+              settingsUrl: `${process.env.NEXTAUTH_URL || 'https://kanthink.com'}/settings`,
+            }).catch(() => {})
+          }
+        }
         break
       }
 

@@ -5,6 +5,7 @@ import { folderShares, channelShares, folders, users, userChannelOrg, channels }
 import { eq, and, or, desc, asc } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { createNotification } from '@/lib/notifications/createNotification'
+import { sendChannelInviteEmail } from '@/lib/emails/send'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -237,6 +238,19 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         title: 'Folder shared with you',
         body: `You've been invited to folder "${folder.name}" with ${channelIds.length} channel${channelIds.length !== 1 ? 's' : ''}`,
         data: { folderId },
+      }).catch(() => {})
+    }
+
+    // Send invite email for pending invites (user doesn't exist yet)
+    if (!existingUser) {
+      const inviter = await db.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { name: true },
+      })
+      sendChannelInviteEmail(normalizedEmail, {
+        inviterName: inviter?.name || 'Someone',
+        channelName: folder.name,
+        signUpUrl: `${process.env.NEXTAUTH_URL || 'https://kanthink.com'}`,
       }).catch(() => {})
     }
 

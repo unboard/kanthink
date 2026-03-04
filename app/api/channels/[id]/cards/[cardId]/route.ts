@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { cards, columns, tasks } from '@/lib/db/schema'
+import { cards, columns, tasks, channels, users } from '@/lib/db/schema'
 import { eq, and, gt, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { createNotification, createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
@@ -135,14 +135,25 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       const oldAssigned = (existingCard.assignedTo as string[] | null) ?? []
       const newAssigned = (assignedTo as string[]) ?? []
       const newlyAssigned = newAssigned.filter(id => !oldAssigned.includes(id) && id !== userId)
-      for (const assigneeId of newlyAssigned) {
-        createNotification({
-          userId: assigneeId,
-          type: 'card_assigned',
-          title: 'Card assigned to you',
-          body: updatedCard.title,
-          data: { channelId, cardId },
-        }).catch(() => {})
+      if (newlyAssigned.length > 0) {
+        const [assigner, channel] = await Promise.all([
+          db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),
+          db.query.channels.findFirst({ where: eq(channels.id, channelId), columns: { name: true } }),
+        ])
+        for (const assigneeId of newlyAssigned) {
+          createNotification({
+            userId: assigneeId,
+            type: 'card_assigned',
+            title: 'Card assigned to you',
+            body: updatedCard.title,
+            data: {
+              channelId,
+              cardId,
+              assignerName: assigner?.name || 'Someone',
+              channelName: channel?.name || 'a channel',
+            },
+          }).catch(() => {})
+        }
       }
     }
 

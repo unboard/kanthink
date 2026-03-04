@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { tasks } from '@/lib/db/schema'
+import { tasks, channels, users } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { ensureSchema } from '@/lib/db/ensure-schema'
@@ -86,14 +86,25 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       const oldAssigned = (task.assignedTo as string[] | null) ?? []
       const newAssigned = (assignedTo as string[]) ?? []
       const newlyAssigned = newAssigned.filter(id => !oldAssigned.includes(id) && id !== userId)
-      for (const assigneeId of newlyAssigned) {
-        createNotification({
-          userId: assigneeId,
-          type: 'task_assigned',
-          title: 'Task assigned to you',
-          body: updatedTask.title,
-          data: { channelId, taskId },
-        }).catch(() => {})
+      if (newlyAssigned.length > 0) {
+        const [assigner, channel] = await Promise.all([
+          db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),
+          db.query.channels.findFirst({ where: eq(channels.id, channelId), columns: { name: true } }),
+        ])
+        for (const assigneeId of newlyAssigned) {
+          createNotification({
+            userId: assigneeId,
+            type: 'task_assigned',
+            title: 'Task assigned to you',
+            body: updatedTask.title,
+            data: {
+              channelId,
+              taskId,
+              assignerName: assigner?.name || 'Someone',
+              channelName: channel?.name || 'a channel',
+            },
+          }).catch(() => {})
+        }
       }
     }
 

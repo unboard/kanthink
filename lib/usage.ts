@@ -2,6 +2,7 @@ import { db } from './db'
 import { usageRecords, users } from './db/schema'
 import { eq, and, gte, like } from 'drizzle-orm'
 import { encrypt, decryptIfNeeded, isEncrypted } from './crypto'
+import { sendUsageLimitWarningEmail, sendUsageLimitReachedEmail } from './emails/send'
 
 const FREE_MONTHLY_LIMIT = parseInt(process.env.FREE_MONTHLY_LIMIT || '10')
 const PREMIUM_MONTHLY_LIMIT = parseInt(process.env.PREMIUM_MONTHLY_LIMIT || '200')
@@ -112,6 +113,47 @@ export async function recordUsage(userId: string, requestType: string): Promise<
     userId,
     requestType,
   })
+
+  // Check usage thresholds for email alerts (fire-and-forget)
+  checkUsageThresholdsForEmail(userId, user).catch(() => {})
+}
+
+async function checkUsageThresholdsForEmail(
+  userId: string,
+  user: { email: string; name: string | null; tier: string | null } | null | undefined
+): Promise<void> {
+  if (!user?.email) return
+
+  const status = await getUsageStatus(userId)
+  if (status.hasByok || status.limit === Infinity) return
+
+  const pct = status.used / status.limit
+  const prevPct = (status.used - 1) / status.limit
+
+  const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com'
+  const tier = user.tier || 'free'
+
+  // Send exactly once at 80% threshold
+  if (pct >= 0.8 && prevPct < 0.8) {
+    sendUsageLimitWarningEmail(user.email, {
+      userName: user.name || '',
+      used: status.used,
+      limit: status.limit,
+      tier,
+      upgradeUrl: `${baseUrl}/settings`,
+    }).catch(() => {})
+  }
+
+  // Send exactly once at 100% threshold
+  if (pct >= 1 && prevPct < 1) {
+    sendUsageLimitReachedEmail(user.email, {
+      userName: user.name || '',
+      limit: status.limit,
+      tier,
+      upgradeUrl: `${baseUrl}/settings`,
+      resetDate: status.resetAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+    }).catch(() => {})
+  }
 }
 
 export interface ByokConfig {
