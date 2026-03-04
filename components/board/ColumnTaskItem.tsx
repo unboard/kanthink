@@ -62,8 +62,8 @@ export function ColumnTaskItem({ task }: ColumnTaskItemProps) {
             setIsDrawerOpen(true);
           }}
           className={`
-            flex-1 text-left text-sm truncate
-            ${isDone ? 'line-through text-neutral-400 dark:text-neutral-500' : 'text-neutral-700 dark:text-neutral-200'}
+            flex-1 text-left text-xs truncate
+            ${isDone ? 'line-through text-neutral-400' : 'text-neutral-600 dark:text-neutral-400 group-hover/task:text-neutral-900 dark:group-hover/task:text-white'}
           `}
         >
           {task.title}
