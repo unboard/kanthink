@@ -2124,14 +2124,18 @@ export const useStore = create<KanthinkState>()(
           };
         });
 
-        // Sync both card and task positions to server
+        // Sync all item positions using itemOrder index so cards and tasks
+        // share the same position namespace (hydration sorts by position)
         const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === columnId);
         if (updatedCol) {
-          sync.syncColumnCardOrder(channelId, columnId, updatedCol.cardIds);
-          // Sync each column task's position directly
-          const colTaskIds = updatedCol.taskIds ?? [];
-          for (let i = 0; i < colTaskIds.length; i++) {
-            sync.syncTaskUpdate(channelId, colTaskIds[i], { position: i });
+          const order = updatedCol.itemOrder ?? updatedCol.cardIds;
+          for (let i = 0; i < order.length; i++) {
+            const id = order[i];
+            if (get().cards[id]) {
+              sync.syncCardUpdate(channelId, id, { position: i });
+            } else if (get().tasks[id]) {
+              sync.syncTaskUpdate(channelId, id, { position: i });
+            }
           }
         }
 
@@ -2199,14 +2203,18 @@ export const useStore = create<KanthinkState>()(
           };
         });
 
-        // Sync task update + column order + task positions
+        // Sync task column change + all item positions using itemOrder index
         sync.syncTaskUpdate(channelId, taskId, { columnId: toColumnId });
         const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === toColumnId);
         if (updatedCol) {
-          sync.syncColumnCardOrder(channelId, toColumnId, updatedCol.cardIds);
-          const colTaskIds = updatedCol.taskIds ?? [];
-          for (let i = 0; i < colTaskIds.length; i++) {
-            sync.syncTaskUpdate(channelId, colTaskIds[i], { position: i });
+          const order = updatedCol.itemOrder ?? updatedCol.cardIds;
+          for (let i = 0; i < order.length; i++) {
+            const id = order[i];
+            if (get().cards[id]) {
+              sync.syncCardUpdate(channelId, id, { position: i });
+            } else if (get().tasks[id]) {
+              sync.syncTaskUpdate(channelId, id, { position: i });
+            }
           }
         }
 

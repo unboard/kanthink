@@ -102,6 +102,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       hideCompletedTasks,
       processedByInstructions,
       spawnedChannelIds,
+      position,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -109,6 +110,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     if (title !== undefined) updates.title = title
+    if (position !== undefined) updates.position = position
     if (messages !== undefined) updates.messages = messages
     if (coverImageUrl !== undefined) updates.coverImageUrl = coverImageUrl
     if (summary !== undefined) {
