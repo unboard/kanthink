@@ -27,6 +27,8 @@ export async function ensureSchema() {
     `ALTER TABLE tasks ADD notes text DEFAULT '[]'`,
     // Migration 0006
     `ALTER TABLE tasks ADD created_by text`,
+    // Migration 0008
+    `ALTER TABLE tasks ADD column_id text`,
   ]
 
   for (const stmt of alterStatements) {
@@ -119,6 +121,8 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS channel_chat_threads_channel_idx ON channel_chat_threads (channel_id)`,
     `CREATE INDEX IF NOT EXISTS channel_chat_threads_user_idx ON channel_chat_threads (user_id)`,
     `CREATE INDEX IF NOT EXISTS channel_chat_threads_channel_user_updated_idx ON channel_chat_threads (channel_id, user_id, updated_at)`,
+    // Migration 0008 indexes
+    `CREATE INDEX IF NOT EXISTS tasks_column_idx ON tasks (column_id)`,
   ]
 
   for (const idx of indexes) {

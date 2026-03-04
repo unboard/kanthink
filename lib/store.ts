@@ -110,13 +110,16 @@ interface KanthinkState {
 
   // Task actions
   createTask: (channelId: ID, cardId: ID | null, input: TaskInput) => Task;
+  createColumnTask: (channelId: ID, columnId: ID, input: TaskInput) => Task;
   updateTask: (id: ID, updates: Partial<Omit<Task, 'id' | 'channelId' | 'cardId' | 'createdAt'>>) => void;
   deleteTask: (id: ID) => void;
   completeTask: (id: ID) => void;
   toggleTaskStatus: (id: ID) => void;
   reorderTasks: (cardId: ID, fromIndex: number, toIndex: number) => void;
   reorderUnlinkedTasks: (channelId: ID, fromIndex: number, toIndex: number) => void;
+  reorderColumnItems: (channelId: ID, columnId: ID, fromIndex: number, toIndex: number) => void;
   moveTaskToCard: (taskId: ID, newCardId: ID | null) => void;
+  moveTaskToColumn: (taskId: ID, channelId: ID, toColumnId: ID, toIndex: number) => void;
 
   // Task note actions
   addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }, imageUrls?: string[]) => TaskNote | null;
@@ -231,6 +234,8 @@ function createDefaultColumns(): Column[] {
     id: nanoid(),
     name,
     cardIds: [],
+    taskIds: [],
+    itemOrder: [],
     isAiTarget: index === 0, // First column (Inbox) is AI target by default
   }));
 }
@@ -923,20 +928,41 @@ export const useStore = create<KanthinkState>()(
           // If deleting AI target column, transfer to target column
           const wasAiTarget = columnToDelete.isAiTarget;
 
+          // Also move tasks from deleted column to target
+          const movedTaskIds = columnToDelete.taskIds ?? [];
+
           const updatedColumns = channel.columns
             .filter((col) => col.id !== columnId)
             .map((col) => {
               if (col.id === targetColumn.id) {
+                const mergedCardIds = [...col.cardIds, ...columnToDelete.cardIds];
+                const mergedTaskIds = [...(col.taskIds ?? []), ...movedTaskIds];
+                const mergedItemOrder = [
+                  ...(col.itemOrder ?? col.cardIds),
+                  ...columnToDelete.cardIds,
+                  ...movedTaskIds,
+                ];
                 return {
                   ...col,
-                  cardIds: [...col.cardIds, ...columnToDelete.cardIds],
+                  cardIds: mergedCardIds,
+                  taskIds: mergedTaskIds,
+                  itemOrder: mergedItemOrder,
                   isAiTarget: wasAiTarget ? true : col.isAiTarget,
                 };
               }
               return col;
             });
 
+          // Update moved tasks' columnId
+          const updatedTasks = { ...state.tasks };
+          for (const tid of movedTaskIds) {
+            if (updatedTasks[tid]) {
+              updatedTasks[tid] = { ...updatedTasks[tid], columnId: targetColumn.id, updatedAt: now() };
+            }
+          }
+
           return {
+            tasks: updatedTasks,
             channels: {
               ...state.channels,
               [channelId]: { ...channel, columns: updatedColumns, updatedAt: now() },
@@ -1045,7 +1071,11 @@ export const useStore = create<KanthinkState>()(
 
           const updatedColumns = channel.columns.map((col) => {
             if (col.id === columnId) {
-              return { ...col, cardIds: [id, ...col.cardIds] };
+              return {
+                ...col,
+                cardIds: [id, ...col.cardIds],
+                itemOrder: [id, ...(col.itemOrder ?? col.cardIds)],
+              };
             }
             return col;
           });
@@ -1243,7 +1273,11 @@ export const useStore = create<KanthinkState>()(
           // Remove card from current column
           const updatedColumns = channel.columns.map((col) => {
             if (col.id === fromColumn.id) {
-              return { ...col, cardIds: col.cardIds.filter((id) => id !== cardId) };
+              return {
+                ...col,
+                cardIds: col.cardIds.filter((id) => id !== cardId),
+                itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== cardId),
+              };
             }
             return col;
           });
@@ -1253,7 +1287,9 @@ export const useStore = create<KanthinkState>()(
             if (col.id === toColumnId) {
               const newCardIds = [...col.cardIds];
               newCardIds.splice(toIndex, 0, cardId);
-              return { ...col, cardIds: newCardIds };
+              const newItemOrder = [...(col.itemOrder ?? col.cardIds)];
+              newItemOrder.splice(toIndex, 0, cardId);
+              return { ...col, cardIds: newCardIds, itemOrder: newItemOrder };
             }
             return col;
           });
@@ -1747,6 +1783,63 @@ export const useStore = create<KanthinkState>()(
         return task;
       },
 
+      createColumnTask: (channelId, columnId, input) => {
+        const id = nanoid();
+        const timestamp = now();
+        const task: Task = {
+          id,
+          cardId: null,
+          channelId,
+          columnId,
+          title: input.title,
+          description: input.description ?? '',
+          status: 'not_started',
+          dueDate: input.dueDate,
+          createdBy: input.createdBy,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+        set((state) => {
+          const channel = state.channels[channelId];
+          if (!channel) return { tasks: { ...state.tasks, [id]: task } };
+
+          const updatedColumns = channel.columns.map((col) => {
+            if (col.id === columnId) {
+              return {
+                ...col,
+                taskIds: [id, ...(col.taskIds ?? [])],
+                itemOrder: [id, ...(col.itemOrder ?? col.cardIds)],
+              };
+            }
+            return col;
+          });
+
+          return {
+            tasks: { ...state.tasks, [id]: task },
+            channels: {
+              ...state.channels,
+              [channelId]: { ...channel, columns: updatedColumns, updatedAt: timestamp },
+            },
+          };
+        });
+
+        // Sync to server
+        sync.syncTaskCreate(channelId, id, {
+          columnId,
+          title: input.title,
+          description: input.description ?? '',
+          dueDate: input.dueDate,
+          createdBy: input.createdBy,
+          createdAt: timestamp,
+        });
+
+        // Broadcast to other tabs
+        broadcastAndPublish({ type: 'task:create', task, cardId: null });
+
+        return task;
+      },
+
       updateTask: (id, updates) => {
         const task = get().tasks[id];
         if (!task) return;
@@ -1791,6 +1884,32 @@ export const useStore = create<KanthinkState>()(
                   [t.cardId]: {
                     ...card,
                     taskIds: (card.taskIds ?? []).filter((tid) => tid !== id),
+                    updatedAt: now(),
+                  },
+                },
+              };
+            }
+          }
+
+          // If task belongs to a column, remove from column's taskIds and itemOrder
+          if (t.columnId) {
+            const ch = state.channels[t.channelId];
+            if (ch) {
+              return {
+                tasks: remainingTasks,
+                channels: {
+                  ...state.channels,
+                  [t.channelId]: {
+                    ...ch,
+                    columns: ch.columns.map((col) =>
+                      col.id === t.columnId
+                        ? {
+                            ...col,
+                            taskIds: (col.taskIds ?? []).filter((tid) => tid !== id),
+                            itemOrder: (col.itemOrder ?? col.cardIds).filter((iid) => iid !== id),
+                          }
+                        : col
+                    ),
                     updatedAt: now(),
                   },
                 },
@@ -1965,6 +2084,125 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs and devices
         broadcastAndPublish({ type: 'task:reorderUnlinked', channelId, fromIndex, toIndex });
+      },
+
+      reorderColumnItems: (channelId, columnId, fromIndex, toIndex) => {
+        const channel = get().channels[channelId];
+        if (!channel) return;
+
+        const col = channel.columns.find((c) => c.id === columnId);
+        if (!col) return;
+
+        const currentOrder = col.itemOrder ?? col.cardIds;
+        const movedId = currentOrder[fromIndex];
+        if (!movedId) return;
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          return {
+            channels: {
+              ...state.channels,
+              [channelId]: {
+                ...ch,
+                columns: ch.columns.map((c) => {
+                  if (c.id !== columnId) return c;
+                  const newItemOrder = [...(c.itemOrder ?? c.cardIds)];
+                  const [removed] = newItemOrder.splice(fromIndex, 1);
+                  newItemOrder.splice(toIndex, 0, removed);
+
+                  // Also reorder cardIds to keep in sync
+                  const newCardIds = newItemOrder.filter((id) => state.cards[id]);
+                  const newTaskIds = newItemOrder.filter((id) => state.tasks[id] && !state.tasks[id].cardId);
+
+                  return { ...c, itemOrder: newItemOrder, cardIds: newCardIds, taskIds: newTaskIds };
+                }),
+                updatedAt: now(),
+              },
+            },
+          };
+        });
+
+        // Sync card order to server (itemOrder is derived from card+task positions)
+        const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === columnId);
+        if (updatedCol) {
+          sync.syncColumnCardOrder(channelId, columnId, updatedCol.cardIds);
+        }
+
+        // Broadcast
+        broadcastAndPublish({ type: 'column:reorderItems', channelId, columnId, fromIndex, toIndex });
+      },
+
+      moveTaskToColumn: (taskId, channelId, toColumnId, toIndex) => {
+        const task = get().tasks[taskId];
+        if (!task) return;
+
+        const channel = get().channels[channelId];
+        if (!channel) return;
+
+        // Find current column this task is in
+        const fromColumn = channel.columns.find((col) => (col.taskIds ?? []).includes(taskId));
+        const fromColumnId = fromColumn?.id ?? null;
+        if (fromColumnId === toColumnId) {
+          // Same column — this is a reorder, not a move
+          if (fromColumn) {
+            const currentOrder = fromColumn.itemOrder ?? fromColumn.cardIds;
+            const fromIdx = currentOrder.indexOf(taskId);
+            if (fromIdx !== -1 && fromIdx !== toIndex) {
+              get().reorderColumnItems(channelId, toColumnId, fromIdx, toIndex);
+            }
+          }
+          return;
+        }
+
+        const timestamp = now();
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          const updatedColumns = ch.columns.map((col) => {
+            // Remove from source column
+            if (col.id === fromColumnId) {
+              return {
+                ...col,
+                taskIds: (col.taskIds ?? []).filter((id) => id !== taskId),
+                itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== taskId),
+              };
+            }
+            // Add to target column
+            if (col.id === toColumnId) {
+              const newTaskIds = [...(col.taskIds ?? [])];
+              newTaskIds.push(taskId);
+              const newItemOrder = [...(col.itemOrder ?? col.cardIds)];
+              newItemOrder.splice(toIndex, 0, taskId);
+              return { ...col, taskIds: newTaskIds, itemOrder: newItemOrder };
+            }
+            return col;
+          });
+
+          return {
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...state.tasks[taskId], columnId: toColumnId, updatedAt: timestamp },
+            },
+            channels: {
+              ...state.channels,
+              [channelId]: { ...ch, columns: updatedColumns, updatedAt: timestamp },
+            },
+          };
+        });
+
+        // Sync task update + column order
+        sync.syncTaskUpdate(channelId, taskId, { columnId: toColumnId });
+        const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === toColumnId);
+        if (updatedCol) {
+          sync.syncColumnCardOrder(channelId, toColumnId, updatedCol.cardIds);
+        }
+
+        // Broadcast
+        broadcastAndPublish({ type: 'task:moveToColumn', taskId, channelId, fromColumnId, toColumnId, toIndex });
       },
 
       moveTaskToCard: (taskId, newCardId) => {

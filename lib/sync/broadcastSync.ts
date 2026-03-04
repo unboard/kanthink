@@ -64,6 +64,8 @@ export type BroadcastEvent =
   | { type: 'task:reorder'; cardId: ID; fromIndex: number; toIndex: number }
   | { type: 'task:reorderUnlinked'; channelId: ID; fromIndex: number; toIndex: number }
   | { type: 'task:move'; taskId: ID; oldCardId: ID | null; newCardId: ID | null }
+  | { type: 'task:moveToColumn'; taskId: ID; channelId: ID; fromColumnId: ID | null; toColumnId: ID; toIndex: number }
+  | { type: 'column:reorderItems'; channelId: ID; columnId: ID; fromIndex: number; toIndex: number }
 
   // Property events
   | { type: 'property:addDefinition'; channelId: ID; definition: PropertyDefinition }

@@ -26,6 +26,8 @@ import { SkeletonCard } from './SkeletonCard';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { ColumnMenu } from './ColumnMenu';
 import { ColumnDetailDrawer } from './ColumnDetailDrawer';
+import { ColumnTaskItem } from './ColumnTaskItem';
+import { TaskDrawer } from './TaskDrawer';
 
 interface FocusColumnViewProps {
   column: ColumnType;
@@ -35,14 +37,20 @@ interface FocusColumnViewProps {
 
 export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnViewProps) {
   const cards = useStore((s) => s.cards);
+  const tasks = useStore((s) => s.tasks);
   const moveCard = useStore((s) => s.moveCard);
   const createCard = useStore((s) => s.createCard);
+  const createColumnTask = useStore((s) => s.createColumnTask);
+  const reorderColumnItems = useStore((s) => s.reorderColumnItems);
   const updateColumn = useStore((s) => s.updateColumn);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
 
   const [activeId, setActiveId] = useState<ID | null>(null);
+  const [activeType, setActiveType] = useState<'card' | 'task' | null>(null);
   const [newCardId, setNewCardId] = useState<ID | null>(null);
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
+  const [newTaskId, setNewTaskId] = useState<ID | null>(null);
+  const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
@@ -51,7 +59,9 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
 
   const columnCards = column.cardIds.map((id) => cards[id]).filter(Boolean);
   const backsideCards = (column.backsideCardIds ?? []).map((id) => cards[id]).filter(Boolean);
-  const activeCard = activeId ? cards[activeId] : null;
+  const itemOrder = column.itemOrder ?? column.cardIds;
+  const activeCard = activeType === 'card' && activeId ? cards[activeId] : null;
+  const activeTaskItem = activeType === 'task' && activeId ? tasks[activeId] : null;
 
   useEffect(() => {
     if (isRenaming && inputRef.current) {
@@ -92,20 +102,24 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
   );
 
   const handleDragStart = (event: DragStartEvent) => {
+    const activeData = event.active.data?.current;
     setActiveId(event.active.id as ID);
+    setActiveType(activeData?.type === 'column-task' ? 'task' : 'card');
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+    setActiveType(null);
 
     if (!over || active.id === over.id) return;
 
-    const activeIndex = column.cardIds.indexOf(active.id as ID);
-    const overIndex = column.cardIds.indexOf(over.id as ID);
+    // Use itemOrder for reordering (supports interleaved cards and tasks)
+    const activeIndex = itemOrder.indexOf(active.id as ID);
+    const overIndex = itemOrder.indexOf(over.id as ID);
 
     if (activeIndex >= 0 && overIndex >= 0) {
-      moveCard(active.id as ID, column.id, overIndex);
+      reorderColumnItems(channelId, column.id, activeIndex, overIndex);
     }
   };
 
@@ -115,12 +129,24 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
     setIsCardDrawerOpen(true);
   };
 
+  const handleAddTask = () => {
+    const task = createColumnTask(channelId, column.id, { title: 'Untitled' });
+    setNewTaskId(task.id);
+    setIsTaskDrawerOpen(true);
+  };
+
   const handleCardDrawerClose = () => {
     setIsCardDrawerOpen(false);
     setNewCardId(null);
   };
 
+  const handleTaskDrawerClose = () => {
+    setIsTaskDrawerOpen(false);
+    setNewTaskId(null);
+  };
+
   const newCard = newCardId ? cards[newCardId] : null;
+  const newTask = newTaskId ? tasks[newTaskId] : null;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden px-4 sm:px-6 py-3 sm:py-4">
@@ -162,7 +188,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
             )}
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-xs text-neutral-400">{showArchived ? backsideCards.length : columnCards.length}</span>
+            <span className="text-xs text-neutral-400">{showArchived ? backsideCards.length : itemOrder.length}</span>
             {backsideCards.length > 0 && (
               <button
                 onClick={() => setShowArchived(!showArchived)}
@@ -202,17 +228,30 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
             ))
           ) : (
             <>
-              {/* Add card button - matches Column.tsx style */}
-              <button
-                onClick={handleAddCard}
-                className="w-full flex items-center justify-center py-2.5 rounded-md transition-colors bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
+              {/* Add card + task buttons */}
+              <div className="flex gap-1.5">
+                <button
+                  onClick={handleAddCard}
+                  className="flex-1 flex items-center justify-center py-2.5 rounded-md transition-colors bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                  title="Add card"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleAddTask}
+                  className="flex items-center justify-center px-3 py-2.5 rounded-md transition-colors bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                  title="Add task"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+                  </svg>
+                </button>
+              </div>
 
-              {/* Cards with DnD */}
+              {/* Cards and tasks interleaved with DnD */}
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -220,12 +259,16 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext
-                  items={column.cardIds}
+                  items={itemOrder}
                   strategy={verticalListSortingStrategy}
                 >
-                  {columnCards.map((card) => (
-                    <Card key={card.id} card={card} />
-                  ))}
+                  {itemOrder.map((id) => {
+                    const card = cards[id];
+                    if (card) return <Card key={id} card={card} />;
+                    const task = tasks[id];
+                    if (task) return <ColumnTaskItem key={id} task={task} />;
+                    return null;
+                  })}
                 </SortableContext>
                 <DragOverlay>
                   {activeCard && (
@@ -240,6 +283,18 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
                       )}
                     </div>
                   )}
+                  {activeTaskItem && (
+                    <div className="w-72 cursor-grabbing rounded-md bg-neutral-50 dark:bg-neutral-800 px-2.5 py-1.5 shadow-lg flex items-center gap-2">
+                      <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${
+                        activeTaskItem.status === 'done' ? 'bg-green-500 border-green-500' :
+                        activeTaskItem.status === 'in_progress' ? 'border-blue-500 bg-blue-50' :
+                        'border-neutral-300'
+                      }`} />
+                      <span className="text-sm truncate text-neutral-700 dark:text-neutral-200">
+                        {activeTaskItem.title}
+                      </span>
+                    </div>
+                  )}
                 </DragOverlay>
               </DndContext>
 
@@ -250,9 +305,9 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
                 ))}
 
               {/* Empty state */}
-              {columnCards.length === 0 && skeletonCount === 0 && (
+              {itemOrder.length === 0 && skeletonCount === 0 && (
                 <p className="text-center text-sm text-neutral-400 py-8">
-                  No cards in this column
+                  No items in this column
                 </p>
               )}
             </>
@@ -265,6 +320,14 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
         card={newCard}
         isOpen={isCardDrawerOpen}
         onClose={handleCardDrawerClose}
+        autoFocusTitle
+      />
+
+      {/* Task Drawer for new tasks */}
+      <TaskDrawer
+        task={newTask}
+        isOpen={isTaskDrawerOpen}
+        onClose={handleTaskDrawerClose}
         autoFocusTitle
       />
 

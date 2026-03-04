@@ -268,7 +268,17 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
 
     for (const task of filteredTasks) {
       if (!task.cardId) {
-        groups['unlinked'].tasks.push(task);
+        // Column tasks: group by column name
+        if (task.columnId && channel) {
+          const col = channel.columns.find((c) => c.id === task.columnId);
+          const colKey = `column:${task.columnId}`;
+          if (!groups[colKey]) {
+            groups[colKey] = { cardId: null, cardTitle: col ? `Column: ${col.name}` : 'Column Tasks', tasks: [] };
+          }
+          groups[colKey].tasks.push(task);
+        } else {
+          groups['unlinked'].tasks.push(task);
+        }
       } else {
         const card = cards[task.cardId];
         if (card) {

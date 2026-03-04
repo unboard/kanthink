@@ -48,6 +48,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       dueDate,
       completedAt,
       cardId,
+      columnId,
       position,
     } = body
 
@@ -71,6 +72,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (dueDate !== undefined) updates.dueDate = dueDate ? new Date(dueDate) : null
     if (completedAt !== undefined) updates.completedAt = completedAt ? new Date(completedAt) : null
     if (cardId !== undefined) updates.cardId = cardId
+    if (columnId !== undefined) updates.columnId = columnId
     if (position !== undefined) updates.position = position
 
     await db.update(tasks).set(updates).where(eq(tasks.id, taskId))

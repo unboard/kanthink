@@ -759,6 +759,70 @@ export function applyBroadcastEvent(
       })
       break
 
+    case 'task:moveToColumn':
+      set((state) => {
+        const task = state.tasks[event.taskId]
+        if (!task) return state
+
+        const ch = state.channels[event.channelId]
+        if (!ch) return state
+
+        const updatedColumns = ch.columns.map((col) => {
+          if (col.id === event.fromColumnId) {
+            return {
+              ...col,
+              taskIds: (col.taskIds ?? []).filter((id) => id !== event.taskId),
+              itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== event.taskId),
+            }
+          }
+          if (col.id === event.toColumnId) {
+            const newTaskIds = [...(col.taskIds ?? []), event.taskId]
+            const newItemOrder = [...(col.itemOrder ?? col.cardIds)]
+            newItemOrder.splice(event.toIndex, 0, event.taskId)
+            return { ...col, taskIds: newTaskIds, itemOrder: newItemOrder }
+          }
+          return col
+        })
+
+        return {
+          tasks: {
+            ...state.tasks,
+            [event.taskId]: { ...task, columnId: event.toColumnId, updatedAt: now() },
+          },
+          channels: {
+            ...state.channels,
+            [event.channelId]: { ...ch, columns: updatedColumns, updatedAt: now() },
+          },
+        }
+      })
+      break
+
+    case 'column:reorderItems':
+      set((state) => {
+        const ch = state.channels[event.channelId]
+        if (!ch) return state
+
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...ch,
+              columns: ch.columns.map((col) => {
+                if (col.id !== event.columnId) return col
+                const newItemOrder = [...(col.itemOrder ?? col.cardIds)]
+                const [removed] = newItemOrder.splice(event.fromIndex, 1)
+                newItemOrder.splice(event.toIndex, 0, removed)
+                const newCardIds = newItemOrder.filter((id) => state.cards[id])
+                const newTaskIds = newItemOrder.filter((id) => state.tasks[id] && !state.tasks[id].cardId)
+                return { ...col, itemOrder: newItemOrder, cardIds: newCardIds, taskIds: newTaskIds }
+              }),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
     // ===== INSTRUCTION CARD EVENTS =====
     case 'instructionCard:create':
       set((state) => {

@@ -72,7 +72,7 @@ export function Board({ channel }: BoardProps) {
   const [manualViewMode, setManualViewMode] = useState<ViewMode>('board');
   const [focusSubView, setFocusSubView] = useState<'cards' | 'tasks'>('cards');
   const [activeId, setActiveId] = useState<ID | null>(null);
-  const [activeType, setActiveType] = useState<'card' | 'column' | null>(null);
+  const [activeType, setActiveType] = useState<'card' | 'column' | 'task' | null>(null);
   const [dragSourceColumnId, setDragSourceColumnId] = useState<ID | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnName, setNewColumnName] = useState('');
@@ -183,6 +183,8 @@ export function Board({ channel }: BoardProps) {
   const folders = useStore((s) => s.folders);
   const folderOrder = useStore((s) => s.folderOrder);
   const moveCard = useStore((s) => s.moveCard);
+  const moveTaskToColumn = useStore((s) => s.moveTaskToColumn);
+  const reorderColumnItems = useStore((s) => s.reorderColumnItems);
   const createCard = useStore((s) => s.createCard);
   const updateCard = useStore((s) => s.updateCard);
   const createColumn = useStore((s) => s.createColumn);
@@ -289,6 +291,7 @@ export function Board({ channel }: BoardProps) {
   }, []);
 
   const activeCard = activeType === 'card' && activeId ? cards[activeId] : null;
+  const activeTask = activeType === 'task' && activeId ? tasks[activeId] : null;
   const activeColumn = activeType === 'column' && activeId
     ? channel.columns.find((c) => c.id === activeId) ?? null
     : null;
@@ -305,6 +308,26 @@ export function Board({ channel }: BoardProps) {
     [channel.columns]
   );
 
+  const findColumnByTaskId = useCallback(
+    (taskId: ID): ID | null => {
+      for (const col of channel.columns) {
+        if ((col.taskIds ?? []).includes(taskId)) {
+          return col.id;
+        }
+      }
+      return null;
+    },
+    [channel.columns]
+  );
+
+  // Determine column for any item (card or task)
+  const findColumnByItemId = useCallback(
+    (itemId: ID): ID | null => {
+      return findColumnByCardId(itemId) ?? findColumnByTaskId(itemId);
+    },
+    [findColumnByCardId, findColumnByTaskId]
+  );
+
   const getColumnIdFromDroppableId = (droppableId: string): ID | null => {
     if (droppableId.startsWith('column-')) {
       return droppableId.replace('column-', '');
@@ -315,6 +338,7 @@ export function Board({ channel }: BoardProps) {
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     const activeIdStr = active.id as string;
+    const activeData = active.data?.current;
 
     // Check if dragging a column
     if (activeIdStr.startsWith('sortable-column-')) {
@@ -322,6 +346,11 @@ export function Board({ channel }: BoardProps) {
       setActiveId(columnId);
       setActiveType('column');
       setDragSourceColumnId(null);
+    } else if (activeData?.type === 'column-task') {
+      // Dragging a column task
+      setActiveId(activeIdStr);
+      setActiveType('task');
+      setDragSourceColumnId(findColumnByTaskId(activeIdStr));
     } else {
       // Dragging a card - track source column for auto-process
       setActiveId(activeIdStr);
@@ -338,34 +367,52 @@ export function Board({ channel }: BoardProps) {
     const activeIdStr = active.id as string;
     if (activeIdStr.startsWith('sortable-column-')) return;
 
-    const activeCardId = active.id as ID;
     const overId = over.id as string;
-
-    // Skip if over a column sortable (not a droppable column or card)
+    // Skip if over a column sortable (not a droppable column or card/task)
     if (overId.startsWith('sortable-column-')) return;
 
-    const activeColumnId = findColumnByCardId(activeCardId);
-    if (!activeColumnId) return;
+    const activeItemId = active.id as ID;
 
+    // Determine the column of the target
     const overColumnId = getColumnIdFromDroppableId(overId);
-    const overCardColumnId = findColumnByCardId(overId as ID);
-
-    const targetColumnId = overColumnId || overCardColumnId;
+    const overItemColumnId = findColumnByItemId(overId as ID);
+    const targetColumnId = overColumnId || overItemColumnId;
     if (!targetColumnId) return;
 
-    if (activeColumnId !== targetColumnId) {
+    if (activeType === 'task') {
+      // Task drag: move task between columns
+      const activeColumnId = findColumnByTaskId(activeItemId);
+      if (!activeColumnId || activeColumnId === targetColumnId) return;
+
       const targetColumn = channel.columns.find((c) => c.id === targetColumnId);
       if (!targetColumn) return;
 
-      let newIndex = targetColumn.cardIds.length;
-      if (!overColumnId && overCardColumnId) {
-        const overIndex = targetColumn.cardIds.indexOf(overId as ID);
-        if (overIndex >= 0) {
-          newIndex = overIndex;
-        }
+      const itemOrder = targetColumn.itemOrder ?? targetColumn.cardIds;
+      let newIndex = itemOrder.length;
+      if (!overColumnId && overItemColumnId) {
+        const overIndex = itemOrder.indexOf(overId as ID);
+        if (overIndex >= 0) newIndex = overIndex;
       }
 
-      moveCard(activeCardId, targetColumnId, newIndex);
+      moveTaskToColumn(activeItemId, channel.id, targetColumnId, newIndex);
+    } else {
+      // Card drag: existing logic
+      const activeColumnId = findColumnByCardId(activeItemId);
+      if (!activeColumnId) return;
+
+      if (activeColumnId !== targetColumnId) {
+        const targetColumn = channel.columns.find((c) => c.id === targetColumnId);
+        if (!targetColumn) return;
+
+        const itemOrder = targetColumn.itemOrder ?? targetColumn.cardIds;
+        let newIndex = itemOrder.length;
+        if (!overColumnId && overItemColumnId) {
+          const overIndex = itemOrder.indexOf(overId as ID);
+          if (overIndex >= 0) newIndex = overIndex;
+        }
+
+        moveCard(activeItemId, targetColumnId, newIndex);
+      }
     }
   };
 
@@ -453,39 +500,64 @@ export function Board({ channel }: BoardProps) {
       return;
     }
 
-    // Handle card reordering
-    const activeCardId = active.id as ID;
+    // Handle item (card or task) reordering
+    const activeItemId = active.id as ID;
     const overId = over.id as string;
 
     // Skip if over a column sortable
     if (overId.startsWith('sortable-column-')) return;
 
-    const activeColumnId = findColumnByCardId(activeCardId);
+    // Handle task same-column reordering
+    if (activeType === 'task') {
+      const activeColumnId = findColumnByTaskId(activeItemId);
+      if (!activeColumnId) return;
+
+      const overColumnId = getColumnIdFromDroppableId(overId);
+      const overItemColumnId = findColumnByItemId(overId as ID);
+      const targetColumnId = overColumnId || overItemColumnId;
+      if (!targetColumnId || activeColumnId !== targetColumnId) return;
+
+      const column = channel.columns.find((c) => c.id === targetColumnId);
+      if (!column) return;
+
+      const itemOrder = column.itemOrder ?? column.cardIds;
+      const activeIndex = itemOrder.indexOf(activeItemId);
+      const overIndex = itemOrder.indexOf(overId as ID);
+
+      if (overIndex >= 0 && activeIndex !== overIndex) {
+        reorderColumnItems(channel.id, targetColumnId, activeIndex, overIndex);
+      }
+      return;
+    }
+
+    // Handle card reordering
+    const activeColumnId = findColumnByCardId(activeItemId);
     if (!activeColumnId) return;
 
     const overColumnId = getColumnIdFromDroppableId(overId);
-    const overCardColumnId = findColumnByCardId(overId as ID);
+    const overItemColumnId = findColumnByItemId(overId as ID);
 
-    const targetColumnId = overColumnId || overCardColumnId;
+    const targetColumnId = overColumnId || overItemColumnId;
     if (!targetColumnId) return;
 
-    // Handle same-column reordering
+    // Handle same-column reordering using itemOrder
     if (activeColumnId === targetColumnId) {
       const column = channel.columns.find((c) => c.id === targetColumnId);
       if (!column) return;
 
-      const activeIndex = column.cardIds.indexOf(activeCardId);
+      const itemOrder = column.itemOrder ?? column.cardIds;
+      const activeIndex = itemOrder.indexOf(activeItemId);
 
-      if (overColumnId && !overCardColumnId) {
+      if (overColumnId && !overItemColumnId) {
         // Dropped in empty column space - move to end
-        if (activeIndex !== column.cardIds.length - 1) {
-          moveCard(activeCardId, targetColumnId, column.cardIds.length);
+        if (activeIndex !== itemOrder.length - 1) {
+          moveCard(activeItemId, targetColumnId, itemOrder.length);
         }
-      } else if (overCardColumnId) {
-        // Dropped on a specific card - reorder to that position
-        const overIndex = column.cardIds.indexOf(overId as ID);
+      } else if (overItemColumnId) {
+        // Dropped on a specific item - reorder to that position
+        const overIndex = itemOrder.indexOf(overId as ID);
         if (overIndex >= 0 && activeIndex !== overIndex) {
-          moveCard(activeCardId, targetColumnId, overIndex);
+          moveCard(activeItemId, targetColumnId, overIndex);
         }
       }
     }
@@ -499,7 +571,7 @@ export function Board({ channel }: BoardProps) {
       if (targetColumn?.autoProcess && targetColumn?.processingPrompt) {
         // Defer to next frame to ensure drag cleanup completes and React renders
         requestAnimationFrame(() => {
-          triggerAutoProcess(activeCardId, targetColumn);
+          triggerAutoProcess(activeItemId, targetColumn);
         });
       }
     }
@@ -1249,6 +1321,20 @@ export function Board({ channel }: BoardProps) {
                   {activeCard.summary || (activeCard.messages ?? [])[0]?.content?.slice(0, 100)}
                 </p>
               )}
+            </div>
+          )}
+          {activeTask && (
+            <div className="w-72 cursor-grabbing rounded-md bg-neutral-50 dark:bg-neutral-800 px-2.5 py-1.5 shadow-lg flex items-center gap-2">
+              <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${
+                activeTask.status === 'done' ? 'bg-green-500 border-green-500' :
+                activeTask.status === 'in_progress' ? 'border-blue-500 bg-blue-50' :
+                'border-neutral-300'
+              }`} />
+              <span className={`text-sm truncate ${
+                activeTask.status === 'done' ? 'line-through text-neutral-400' : 'text-neutral-700 dark:text-neutral-200'
+              }`}>
+                {activeTask.title}
+              </span>
             </div>
           )}
           {activeColumn && (

@@ -123,6 +123,8 @@ export interface Column {
   autoProcess?: boolean;         // Auto-run vs manual trigger (default: false)
   cardIds: ID[];
   backsideCardIds?: ID[];
+  taskIds?: ID[];                // Standalone tasks in this column (cardId=null)
+  itemOrder?: ID[];              // Interleaved display order of cards + tasks. Falls back to cardIds if absent.
   isAiTarget?: boolean;
 }
 
@@ -187,6 +189,7 @@ export interface Task {
   id: ID;
   cardId: ID | null;        // null = standalone task
   channelId: ID;
+  columnId?: ID | null;     // Which column this standalone task lives in (null/undefined = card-owned or legacy unlinked)
   title: string;
   description: string;
   status: TaskStatus;

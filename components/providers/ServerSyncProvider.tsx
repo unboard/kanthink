@@ -186,11 +186,26 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
         const channelTasks = detail.tasks as unknown as ServerTask[]
         const channelInstructions = detail.instructionCards
 
-        // Build column structure with card IDs
+        // Build column structure with card IDs and task IDs
         const columnsWithCards: Column[] = serverColumns.map((col) => {
           const colCards = channelCards.filter((c) => c.columnId === col.id)
           const frontCards = colCards.filter((c) => !c.isArchived).sort((a, b) => a.position - b.position)
           const backCards = colCards.filter((c) => c.isArchived).sort((a, b) => a.position - b.position)
+
+          // Build taskIds for standalone column tasks
+          const colTasks = channelTasks
+            .filter((t) => t.columnId === col.id && !t.cardId)
+            .sort((a, b) => a.position - b.position)
+
+          const cardIds = frontCards.map((c) => c.id)
+          const taskIds = colTasks.map((t) => t.id)
+
+          // Build interleaved itemOrder from card + task positions
+          // Tasks have higher position values by convention, so interleave by position
+          const allItems = [
+            ...frontCards.map((c) => ({ id: c.id, position: c.position })),
+            ...colTasks.map((t) => ({ id: t.id, position: t.position })),
+          ].sort((a, b) => a.position - b.position)
 
           return {
             id: col.id,
@@ -199,8 +214,10 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             processingPrompt: col.processingPrompt,
             autoProcess: col.autoProcess,
             isAiTarget: col.isAiTarget,
-            cardIds: frontCards.map((c) => c.id),
+            cardIds,
             backsideCardIds: backCards.map((c) => c.id),
+            taskIds,
+            itemOrder: allItems.length > 0 ? allItems.map((i) => i.id) : cardIds,
           }
         })
 

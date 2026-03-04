@@ -33,6 +33,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const {
       id: clientId,
       cardId,
+      columnId,
       title,
       description = '',
       status = 'not_started',
@@ -105,6 +106,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       id: taskId,
       channelId,
       cardId: cardId || null,
+      columnId: columnId || null,
       title,
       description,
       status,
@@ -121,6 +123,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       id: taskId,
       channelId,
       cardId: cardId || null,
+      columnId: columnId || null,
       title,
       description,
       status,

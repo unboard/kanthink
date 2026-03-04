@@ -174,6 +174,7 @@ export const tasks = sqliteTable('tasks', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
   cardId: text('card_id').references(() => cards.id, { onDelete: 'cascade' }),
+  columnId: text('column_id'),        // Which column this standalone task lives in (null = card-owned)
 
   title: text('title').notNull(),
   description: text('description').default(''),
@@ -192,6 +193,7 @@ export const tasks = sqliteTable('tasks', {
 }, (table) => [
   index('tasks_channel_idx').on(table.channelId),
   index('tasks_card_idx').on(table.cardId),
+  index('tasks_column_idx').on(table.columnId),
 ])
 
 // Instruction cards for AI automation
