@@ -120,6 +120,8 @@ interface KanthinkState {
   reorderColumnItems: (channelId: ID, columnId: ID, fromIndex: number, toIndex: number) => void;
   moveTaskToCard: (taskId: ID, newCardId: ID | null) => void;
   moveTaskToColumn: (taskId: ID, channelId: ID, toColumnId: ID, toIndex: number) => void;
+  hideCompletedTasks: (channelId: ID, columnId: ID) => void;
+  unhideTask: (channelId: ID, columnId: ID, taskId: ID) => void;
 
   // Task note actions
   addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }, imageUrls?: string[]) => TaskNote | null;
@@ -1907,6 +1909,7 @@ export const useStore = create<KanthinkState>()(
                             ...col,
                             taskIds: (col.taskIds ?? []).filter((tid) => tid !== id),
                             itemOrder: (col.itemOrder ?? col.cardIds).filter((iid) => iid !== id),
+                            backsideTaskIds: (col.backsideTaskIds ?? []).filter((tid) => tid !== id),
                           }
                         : col
                     ),
@@ -2220,6 +2223,98 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast
         broadcastAndPublish({ type: 'task:moveToColumn', taskId, channelId, fromColumnId, toColumnId, toIndex });
+      },
+
+      hideCompletedTasks: (channelId, columnId) => {
+        const channel = get().channels[channelId];
+        if (!channel) return;
+        const column = channel.columns.find((c) => c.id === columnId);
+        if (!column) return;
+
+        const doneTasks = (column.taskIds ?? []).filter((id) => {
+          const t = get().tasks[id];
+          return t && t.status === 'done';
+        });
+        if (doneTasks.length === 0) return;
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          const updatedColumns = ch.columns.map((col) => {
+            if (col.id !== columnId) return col;
+            return {
+              ...col,
+              taskIds: (col.taskIds ?? []).filter((id) => !doneTasks.includes(id)),
+              itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => !doneTasks.includes(id)),
+              backsideTaskIds: [...(col.backsideTaskIds ?? []), ...doneTasks],
+            };
+          });
+
+          return {
+            channels: {
+              ...state.channels,
+              [channelId]: { ...ch, columns: updatedColumns, updatedAt: now() },
+            },
+          };
+        });
+
+        // Sync remaining item positions
+        const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === columnId);
+        if (updatedCol) {
+          const order = updatedCol.itemOrder ?? updatedCol.cardIds;
+          for (let i = 0; i < order.length; i++) {
+            const id = order[i];
+            if (get().cards[id]) {
+              sync.syncCardUpdate(channelId, id, { position: i });
+            } else if (get().tasks[id]) {
+              sync.syncTaskUpdate(channelId, id, { position: i });
+            }
+          }
+          // Set hidden tasks to position -1 so hydration excludes them from itemOrder
+          for (const taskId of doneTasks) {
+            sync.syncTaskUpdate(channelId, taskId, { position: -1 });
+          }
+        }
+
+        broadcastAndPublish({ type: 'column:hideCompletedTasks', channelId, columnId, taskIds: doneTasks });
+      },
+
+      unhideTask: (channelId, columnId, taskId) => {
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          const updatedColumns = ch.columns.map((col) => {
+            if (col.id !== columnId) return col;
+            const newItemOrder = [...(col.itemOrder ?? col.cardIds), taskId];
+            return {
+              ...col,
+              taskIds: [...(col.taskIds ?? []), taskId],
+              itemOrder: newItemOrder,
+              backsideTaskIds: (col.backsideTaskIds ?? []).filter((id) => id !== taskId),
+            };
+          });
+
+          return {
+            channels: {
+              ...state.channels,
+              [channelId]: { ...ch, columns: updatedColumns, updatedAt: now() },
+            },
+          };
+        });
+
+        // Sync task position (append to end)
+        const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === columnId);
+        if (updatedCol) {
+          const order = updatedCol.itemOrder ?? updatedCol.cardIds;
+          const idx = order.indexOf(taskId);
+          if (idx >= 0) {
+            sync.syncTaskUpdate(channelId, taskId, { position: idx });
+          }
+        }
+
+        broadcastAndPublish({ type: 'column:unhideTask', channelId, columnId, taskId });
       },
 
       moveTaskToCard: (taskId, newCardId) => {

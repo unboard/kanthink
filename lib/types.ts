@@ -123,6 +123,7 @@ export interface Column {
   autoProcess?: boolean;         // Auto-run vs manual trigger (default: false)
   cardIds: ID[];
   backsideCardIds?: ID[];
+  backsideTaskIds?: ID[];        // Completed tasks hidden from column view
   taskIds?: ID[];                // Standalone tasks in this column (cardId=null)
   itemOrder?: ID[];              // Interleaved display order of cards + tasks. Falls back to cardIds if absent.
   isAiTarget?: boolean;

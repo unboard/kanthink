@@ -22,6 +22,7 @@ import type { Column as ColumnType, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Card } from './Card';
 import { BacksideCard } from './BacksideCard';
+import { BacksideTask } from './BacksideTask';
 import { SkeletonCard } from './SkeletonCard';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { ColumnMenu } from './ColumnMenu';
@@ -42,6 +43,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
   const createCard = useStore((s) => s.createCard);
   const createColumnTask = useStore((s) => s.createColumnTask);
   const reorderColumnItems = useStore((s) => s.reorderColumnItems);
+  const hideCompletedTasks = useStore((s) => s.hideCompletedTasks);
   const updateColumn = useStore((s) => s.updateColumn);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
 
@@ -59,9 +61,19 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
 
   const columnCards = column.cardIds.map((id) => cards[id]).filter(Boolean);
   const backsideCards = (column.backsideCardIds ?? []).map((id) => cards[id]).filter(Boolean);
+  const backsideTasks = (column.backsideTaskIds ?? []).map((id) => tasks[id]).filter(Boolean);
+  const backsideCount = backsideCards.length + backsideTasks.length;
+  const completedTaskCount = (column.taskIds ?? []).filter((id) => tasks[id]?.status === 'done').length;
   const itemOrder = column.itemOrder ?? column.cardIds;
   const activeCard = activeType === 'card' && activeId ? cards[activeId] : null;
   const activeTaskItem = activeType === 'task' && activeId ? tasks[activeId] : null;
+
+  // Auto-flip back when all backside items are gone
+  useEffect(() => {
+    if (showArchived && backsideCount === 0) {
+      setShowArchived(false);
+    }
+  }, [showArchived, backsideCount]);
 
   useEffect(() => {
     if (isRenaming && inputRef.current) {
@@ -188,8 +200,8 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
             )}
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-xs text-neutral-400">{showArchived ? backsideCards.length : itemOrder.length}</span>
-            {backsideCards.length > 0 && (
+            <span className="text-xs text-neutral-400">{showArchived ? backsideCount : itemOrder.length}</span>
+            {backsideCount > 0 && (
               <button
                 onClick={() => setShowArchived(!showArchived)}
                 className={`rounded p-1 transition-colors ${
@@ -197,7 +209,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
                     ? 'text-amber-500 hover:bg-neutral-200 dark:hover:bg-neutral-700'
                     : 'text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300'
                 }`}
-                title={showArchived ? 'Show active cards' : `${backsideCards.length} archived`}
+                title={showArchived ? 'Show active items' : `${backsideCount} archived`}
               >
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
@@ -210,9 +222,11 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
               columnCount={1}
               cardCount={columnCards.length}
               columnCardIds={column.cardIds}
+              completedTaskCount={completedTaskCount}
               onRename={() => setIsRenaming(true)}
               onOpenSettings={() => setIsDetailOpen(true)}
               onFocus={onExitFocus}
+              onHideCompletedTasks={() => hideCompletedTasks(channelId, column.id)}
               hasInstructions={!!column.instructions}
               isFocused
             />
@@ -222,10 +236,18 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
         {/* Content area - scrollable */}
         <div className="flex-1 overflow-y-auto space-y-2 px-2 pb-4">
           {showArchived ? (
-            /* Archived cards list */
-            backsideCards.map((card) => (
-              <BacksideCard key={card.id} card={card} />
-            ))
+            /* Archived cards + hidden tasks */
+            <>
+              {backsideCards.map((card) => (
+                <BacksideCard key={card.id} card={card} />
+              ))}
+              {backsideTasks.map((task) => (
+                <BacksideTask key={task.id} task={task} channelId={channelId} columnId={column.id} />
+              ))}
+              {backsideCount === 0 && (
+                <p className="text-center text-sm text-neutral-400 py-8">No archived items</p>
+              )}
+            </>
           ) : (
             <>
               {/* Add card + task buttons */}

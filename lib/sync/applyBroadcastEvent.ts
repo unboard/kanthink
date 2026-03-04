@@ -823,6 +823,58 @@ export function applyBroadcastEvent(
       })
       break
 
+    case 'column:hideCompletedTasks':
+      set((state) => {
+        const ch = state.channels[event.channelId]
+        if (!ch) return state
+
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...ch,
+              columns: ch.columns.map((col) => {
+                if (col.id !== event.columnId) return col
+                return {
+                  ...col,
+                  taskIds: (col.taskIds ?? []).filter((id) => !event.taskIds.includes(id)),
+                  itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => !event.taskIds.includes(id)),
+                  backsideTaskIds: [...(col.backsideTaskIds ?? []), ...event.taskIds],
+                }
+              }),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'column:unhideTask':
+      set((state) => {
+        const ch = state.channels[event.channelId]
+        if (!ch) return state
+
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: {
+              ...ch,
+              columns: ch.columns.map((col) => {
+                if (col.id !== event.columnId) return col
+                return {
+                  ...col,
+                  taskIds: [...(col.taskIds ?? []), event.taskId],
+                  itemOrder: [...(col.itemOrder ?? col.cardIds), event.taskId],
+                  backsideTaskIds: (col.backsideTaskIds ?? []).filter((id) => id !== event.taskId),
+                }
+              }),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
     // ===== INSTRUCTION CARD EVENTS =====
     case 'instructionCard:create':
       set((state) => {

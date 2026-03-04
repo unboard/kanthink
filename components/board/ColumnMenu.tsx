@@ -13,9 +13,11 @@ interface ColumnMenuProps {
   columnCount: number;
   cardCount: number;
   columnCardIds: ID[];
+  completedTaskCount?: number;
   onRename: () => void;
   onOpenSettings: () => void;
   onFocus: () => void;
+  onHideCompletedTasks?: () => void;
   hasInstructions?: boolean;
   isFocused?: boolean;
 }
@@ -26,9 +28,11 @@ export function ColumnMenu({
   columnCount,
   cardCount,
   columnCardIds,
+  completedTaskCount = 0,
   onRename,
   onOpenSettings,
   onFocus,
+  onHideCompletedTasks,
   hasInstructions,
   isFocused,
 }: ColumnMenuProps) {
@@ -215,6 +219,19 @@ export function ColumnMenu({
                 </div>
               )}
             </div>
+            <button
+              onClick={() => {
+                onHideCompletedTasks?.();
+                setIsOpen(false);
+              }}
+              disabled={completedTaskCount === 0}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Hide completed tasks{completedTaskCount > 0 ? ` (${completedTaskCount})` : ''}
+            </button>
             <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
             <button
               onClick={handleDeleteAllCards}

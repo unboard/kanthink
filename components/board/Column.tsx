@@ -8,6 +8,7 @@ import type { Column as ColumnType, ID, Task } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Card } from './Card';
 import { BacksideCard } from './BacksideCard';
+import { BacksideTask } from './BacksideTask';
 import { ColumnMenu } from './ColumnMenu';
 import { ColumnDetailDrawer } from './ColumnDetailDrawer';
 import { SkeletonCard } from './SkeletonCard';
@@ -29,11 +30,14 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const updateColumn = useStore((s) => s.updateColumn);
   const createCard = useStore((s) => s.createCard);
   const createColumnTask = useStore((s) => s.createColumnTask);
+  const hideCompletedTasks = useStore((s) => s.hideCompletedTasks);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
 
   const columnCards = column.cardIds.map((id) => cards[id]).filter(Boolean);
   const backsideCards = (column.backsideCardIds ?? []).map((id) => cards[id]).filter(Boolean);
-  const backsideCount = backsideCards.length;
+  const backsideTasks = (column.backsideTaskIds ?? []).map((id) => tasks[id]).filter(Boolean);
+  const backsideCount = backsideCards.length + backsideTasks.length;
+  const completedTaskCount = (column.taskIds ?? []).filter((id) => tasks[id]?.status === 'done').length;
 
   // Build interleaved item list from itemOrder
   const itemOrder = column.itemOrder ?? column.cardIds;
@@ -171,9 +175,11 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           columnCount={columnCount}
           cardCount={columnCards.length}
           columnCardIds={column.cardIds}
+          completedTaskCount={completedTaskCount}
           onRename={() => setIsRenaming(true)}
           onOpenSettings={() => setIsDetailOpen(true)}
           onFocus={() => router.push(`/channel/${channelId}?focus=${column.id}`)}
+          onHideCompletedTasks={() => hideCompletedTasks(channelId, column.id)}
           hasInstructions={!!column.instructions}
         />
       </div>
@@ -204,14 +210,19 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         }`}
       >
         {isFlipped ? (
-          // Back side - show archived cards
-          backsideCards.length > 0 ? (
-            backsideCards.map((card) => (
-              <BacksideCard key={card.id} card={card} />
-            ))
+          // Back side - show archived cards and hidden tasks
+          backsideCount > 0 ? (
+            <>
+              {backsideCards.map((card) => (
+                <BacksideCard key={card.id} card={card} />
+              ))}
+              {backsideTasks.map((task) => (
+                <BacksideTask key={task.id} task={task} channelId={channelId} columnId={column.id} />
+              ))}
+            </>
           ) : (
             <div className="flex items-center justify-center h-24 text-sm text-neutral-400">
-              No archived cards
+              No archived items
             </div>
           )
         ) : (

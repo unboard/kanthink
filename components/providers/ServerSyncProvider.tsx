@@ -193,18 +193,22 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
           const backCards = colCards.filter((c) => c.isArchived).sort((a, b) => a.position - b.position)
 
           // Build taskIds for standalone column tasks
-          const colTasks = channelTasks
+          const allColTasks = channelTasks
             .filter((t) => t.columnId === col.id && !t.cardId)
             .sort((a, b) => a.position - b.position)
 
+          // Tasks with position -1 are hidden (completed + hidden by user)
+          const visibleTasks = allColTasks.filter((t) => t.position >= 0)
+          const hiddenTasks = allColTasks.filter((t) => t.position < 0)
+
           const cardIds = frontCards.map((c) => c.id)
-          const taskIds = colTasks.map((t) => t.id)
+          const taskIds = visibleTasks.map((t) => t.id)
+          const backsideTaskIds = hiddenTasks.map((t) => t.id)
 
           // Build interleaved itemOrder from card + task positions
-          // Tasks have higher position values by convention, so interleave by position
           const allItems = [
             ...frontCards.map((c) => ({ id: c.id, position: c.position })),
-            ...colTasks.map((t) => ({ id: t.id, position: t.position })),
+            ...visibleTasks.map((t) => ({ id: t.id, position: t.position })),
           ].sort((a, b) => a.position - b.position)
 
           return {
@@ -216,6 +220,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             isAiTarget: col.isAiTarget,
             cardIds,
             backsideCardIds: backCards.map((c) => c.id),
+            backsideTaskIds,
             taskIds,
             itemOrder: allItems.length > 0 ? allItems.map((i) => i.id) : cardIds,
           }
