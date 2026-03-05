@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import type { EmailContentConfig } from '@/lib/emails/dynamicRenderer'
+import type { EmailConfig } from '@/lib/emails/dynamicRenderer'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -13,7 +13,7 @@ export default function EmailBuilderPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [emailConfig, setEmailConfig] = useState<EmailContentConfig | null>(null)
+  const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null)
   const [previewHtml, setPreviewHtml] = useState<string | null>(null)
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop')
   const [copied, setCopied] = useState(false)

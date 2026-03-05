@@ -14,7 +14,7 @@ import { UsageLimitWarning } from '@/lib/emails/UsageLimitWarning'
 import { UsageLimitReached } from '@/lib/emails/UsageLimitReached'
 import { BaseLayout } from '@/lib/emails/components/BaseLayout'
 import { emailRegistry } from '@/lib/emails/registry'
-import { DynamicEmail, type EmailContentConfig } from '@/lib/emails/dynamicRenderer'
+import { DynamicEmail, type EmailConfig } from '@/lib/emails/dynamicRenderer'
 
 const components: Record<string, { component: React.FC<any>; previewProps: Record<string, any> }> = {
   'welcome': { component: Welcome, previewProps: Welcome.PreviewProps },
@@ -104,9 +104,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const config: EmailContentConfig = await request.json()
+    const config: EmailConfig = await request.json()
 
-    if (!config.sections || !Array.isArray(config.sections) || config.sections.length === 0) {
+    if (!config.body || !Array.isArray(config.body) || config.body.length === 0) {
       return NextResponse.json({ error: 'Invalid email config' }, { status: 400 })
     }
 
