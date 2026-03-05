@@ -212,15 +212,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         {isFlipped ? (
           // Back side - show archived cards and hidden tasks
           <>
-            <button
-              onClick={handleFlipColumn}
-              className="flex items-center gap-1.5 w-full px-2 py-2 rounded-md text-xs text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back to active
-            </button>
             {backsideCards.map((card) => (
               <BacksideCard key={card.id} card={card} />
             ))}
@@ -271,6 +262,19 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           </>
         )}
       </div>
+
+      {/* Back to active - pinned at bottom of archive view */}
+      {isFlipped && (
+        <button
+          onClick={handleFlipColumn}
+          className="flex items-center justify-center gap-1.5 mx-2 mb-2 px-2 py-2 rounded-md text-xs text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to active
+        </button>
+      )}
 
       {/* Archive entry button - only shown on front side */}
       {backsideCount > 0 && !isFlipped && (
