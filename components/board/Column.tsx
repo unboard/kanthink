@@ -211,20 +211,23 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
       >
         {isFlipped ? (
           // Back side - show archived cards and hidden tasks
-          backsideCount > 0 ? (
-            <>
-              {backsideCards.map((card) => (
-                <BacksideCard key={card.id} card={card} />
-              ))}
-              {backsideTasks.map((task) => (
-                <BacksideTask key={task.id} task={task} channelId={channelId} columnId={column.id} />
-              ))}
-            </>
-          ) : (
-            <div className="flex items-center justify-center h-24 text-sm text-neutral-400">
-              No archived items
-            </div>
-          )
+          <>
+            <button
+              onClick={handleFlipColumn}
+              className="flex items-center gap-1.5 w-full px-2 py-2 rounded-md text-xs text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to active
+            </button>
+            {backsideCards.map((card) => (
+              <BacksideCard key={card.id} card={card} />
+            ))}
+            {backsideTasks.map((task) => (
+              <BacksideTask key={task.id} task={task} channelId={channelId} columnId={column.id} />
+            ))}
+          </>
         ) : (
           // Front side - show cards and tasks interleaved
           <>
@@ -269,24 +272,17 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         )}
       </div>
 
-      {/* Flip button - bottom right corner */}
-      {backsideCount > 0 && (
+      {/* Archive entry button - only shown on front side */}
+      {backsideCount > 0 && !isFlipped && (
         <button
           onClick={handleFlipColumn}
-          className={`
-            absolute bottom-2 right-2 z-10
-            flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors
-            ${isFlipped
-              ? 'text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-700'
-              : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-200 dark:hover:text-neutral-300 dark:hover:bg-neutral-700'
-            }
-          `}
-          title={isFlipped ? 'Show active items' : `${backsideCount} archived`}
+          className="absolute bottom-2 right-2 z-10 flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors text-neutral-400 hover:text-neutral-600 hover:bg-neutral-200 dark:hover:text-neutral-300 dark:hover:bg-neutral-700"
+          title={`${backsideCount} archived`}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
           </svg>
-          {!isFlipped && <span>{backsideCount}</span>}
+          <span>{backsideCount}</span>
         </button>
       )}
 
