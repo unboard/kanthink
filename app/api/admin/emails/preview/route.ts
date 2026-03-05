@@ -14,6 +14,7 @@ import { UsageLimitWarning } from '@/lib/emails/UsageLimitWarning'
 import { UsageLimitReached } from '@/lib/emails/UsageLimitReached'
 import { BaseLayout } from '@/lib/emails/components/BaseLayout'
 import { emailRegistry } from '@/lib/emails/registry'
+import { DynamicEmail, type EmailContentConfig } from '@/lib/emails/dynamicRenderer'
 
 const components: Record<string, { component: React.FC<any>; previewProps: Record<string, any> }> = {
   'welcome': { component: Welcome, previewProps: Welcome.PreviewProps },
@@ -94,4 +95,28 @@ export async function GET(request: NextRequest) {
   return new NextResponse(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
+}
+
+export async function POST(request: NextRequest) {
+  const session = await auth()
+  if (!session?.user?.email || !isAdmin(session.user.email)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  try {
+    const config: EmailContentConfig = await request.json()
+
+    if (!config.sections || !Array.isArray(config.sections) || config.sections.length === 0) {
+      return NextResponse.json({ error: 'Invalid email config' }, { status: 400 })
+    }
+
+    const html = await render(React.createElement(DynamicEmail, { config }))
+
+    return new NextResponse(html, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
+  } catch (error) {
+    console.error('Dynamic email preview error:', error)
+    return NextResponse.json({ error: 'Failed to render preview' }, { status: 500 })
+  }
 }
