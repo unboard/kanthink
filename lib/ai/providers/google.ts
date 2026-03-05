@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart } from './types';
+import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
@@ -23,7 +23,7 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
   return {
     name: 'google',
 
-    async complete(messages: LLMMessage[]): Promise<LLMResponse> {
+    async complete(messages: LLMMessage[], options?: LLMCompleteOptions): Promise<LLMResponse> {
       // Extract system message if present
       const systemMessage = messages.find((m) => m.role === 'system');
       const nonSystemMessages = messages.filter((m) => m.role !== 'system');
@@ -40,7 +40,7 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
         model: modelId,
         contents,
         config: {
-          maxOutputTokens: 4096,
+          maxOutputTokens: options?.maxTokens || 4096,
           systemInstruction: typeof systemMessage?.content === 'string'
             ? systemMessage.content
             : undefined,

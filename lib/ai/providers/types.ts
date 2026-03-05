@@ -21,9 +21,13 @@ export interface LLMResponse {
   }[];
 }
 
+export interface LLMCompleteOptions {
+  maxTokens?: number;
+}
+
 export interface LLMProvider {
   name: string;
-  complete(messages: LLMMessage[]): Promise<LLMResponse>;
+  complete(messages: LLMMessage[], options?: LLMCompleteOptions): Promise<LLMResponse>;
   // Optional web search capability (OpenAI only for now)
   webSearch?(query: string, systemPrompt?: string): Promise<LLMResponse>;
 }

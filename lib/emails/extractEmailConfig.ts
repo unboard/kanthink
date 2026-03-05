@@ -13,41 +13,78 @@ function isValidNode(node: unknown): node is EmailNode {
 }
 
 /**
+ * Try to repair truncated JSON by closing open brackets/braces.
+ * Works for the common case where the LLM output gets cut off mid-array/object.
+ */
+function repairTruncatedJson(json: string): string {
+  // Find the last valid-ish position: trim trailing commas and whitespace
+  let s = json.trimEnd()
+  // Remove trailing comma if any
+  if (s.endsWith(',')) s = s.slice(0, -1)
+
+  // Count unclosed brackets/braces
+  const stack: string[] = []
+  let inString = false
+  let escape = false
+  for (const ch of s) {
+    if (escape) { escape = false; continue }
+    if (ch === '\\' && inString) { escape = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') stack.push('}')
+    else if (ch === '[') stack.push(']')
+    else if (ch === '}' || ch === ']') stack.pop()
+  }
+
+  // Close everything that's still open
+  return s + stack.reverse().join('')
+}
+
+/**
  * Extract an [EMAIL_TEMPLATE]...[/EMAIL_TEMPLATE] block from AI response text.
  * Handles truncated responses where the closing tag may be missing.
  * Returns null if no valid config found.
  */
 export function extractEmailConfig(response: string): EmailConfig | null {
   // Try complete match first
-  let match = response.match(/\[EMAIL_TEMPLATE\]([\s\S]*?)\[\/EMAIL_TEMPLATE\]/)
+  const completeMatch = response.match(/\[EMAIL_TEMPLATE\]([\s\S]*?)\[\/EMAIL_TEMPLATE\]/)
 
-  // Fallback: opening tag exists but no closing tag (truncated response)
-  if (!match) {
+  let jsonText: string | null = null
+
+  if (completeMatch) {
+    jsonText = completeMatch[1].trim()
+  } else {
+    // Fallback: opening tag exists but no closing tag (truncated response)
     const openIdx = response.indexOf('[EMAIL_TEMPLATE]')
     if (openIdx === -1) return null
-    const jsonContent = response.slice(openIdx + '[EMAIL_TEMPLATE]'.length).trim()
-    if (!jsonContent) return null
-    match = [response, jsonContent] as unknown as RegExpMatchArray
+    const content = response.slice(openIdx + '[EMAIL_TEMPLATE]'.length).trim()
+    if (!content) return null
+    jsonText = content
   }
 
-  try {
-    const parsed = JSON.parse(match[1].trim())
+  // Try parsing as-is first, then try repairing truncated JSON
+  for (const attempt of [jsonText, repairTruncatedJson(jsonText)]) {
+    try {
+      const parsed = JSON.parse(attempt)
 
-    if (!parsed.subject || !parsed.body || !Array.isArray(parsed.body) || parsed.body.length === 0) {
-      return null
+      if (!parsed.subject || !parsed.body || !Array.isArray(parsed.body) || parsed.body.length === 0) {
+        continue
+      }
+
+      const body: EmailNode[] = parsed.body.filter((n: unknown) => isValidNode(n))
+      if (body.length === 0) continue
+
+      return {
+        previewText: parsed.previewText || parsed.subject,
+        subject: parsed.subject,
+        body,
+      }
+    } catch {
+      // Try next attempt
     }
-
-    const body: EmailNode[] = parsed.body.filter((n: unknown) => isValidNode(n))
-    if (body.length === 0) return null
-
-    return {
-      previewText: parsed.previewText || parsed.subject,
-      subject: parsed.subject,
-      body,
-    }
-  } catch {
-    return null
   }
+
+  return null
 }
 
 /**

@@ -3,7 +3,7 @@ import { createOpenAIProvider } from './providers/openai';
 import { createGoogleProvider } from './providers/google';
 import { getUserByokConfigWithError, checkUsageLimit } from '../usage';
 
-export type { LLMProvider, LLMMessage, LLMResponse, LLMConfig, LLMContentPart } from './providers/types';
+export type { LLMProvider, LLMMessage, LLMResponse, LLMConfig, LLMContentPart, LLMCompleteOptions } from './providers/types';
 
 /**
  * Create an LLM client with explicit configuration

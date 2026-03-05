@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart } from './types';
+import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
 
 const DEFAULT_MODEL = 'gpt-4.1';
 
@@ -23,10 +23,10 @@ export function createOpenAIProvider(apiKey: string, model?: string): LLMProvide
   return {
     name: 'openai',
 
-    async complete(messages: LLMMessage[]): Promise<LLMResponse> {
+    async complete(messages: LLMMessage[], options?: LLMCompleteOptions): Promise<LLMResponse> {
       const response = await client.chat.completions.create({
         model: modelId,
-        max_completion_tokens: 4096,
+        max_completion_tokens: options?.maxTokens || 4096,
         messages: messages.map((m) => ({
           role: m.role,
           content: toOpenAIContent(m.content),

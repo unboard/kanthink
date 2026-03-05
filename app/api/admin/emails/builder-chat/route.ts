@@ -193,7 +193,7 @@ export async function POST(request: Request) {
     )
 
     try {
-      const response = await llm.complete(messages)
+      const response = await llm.complete(messages, { maxTokens: 16384 })
       const responseText = response.content
 
       if (usingOwnerKey) {
@@ -201,9 +201,8 @@ export async function POST(request: Request) {
       }
 
       const emailConfig: EmailConfig | null = extractEmailConfig(responseText)
-      const displayResponse = emailConfig
-        ? cleanDisplayResponse(responseText)
-        : responseText
+      // ALWAYS strip the template block from display, even if extraction failed
+      const displayResponse = cleanDisplayResponse(responseText)
 
       return NextResponse.json({
         success: true,
