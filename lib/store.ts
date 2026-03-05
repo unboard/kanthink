@@ -1356,6 +1356,7 @@ export const useStore = create<KanthinkState>()(
               return {
                 ...col,
                 cardIds: col.cardIds.filter((id) => id !== cardId),
+                itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== cardId),
                 backsideCardIds: [...(col.backsideCardIds ?? []), cardId],
               };
             }
@@ -1405,6 +1406,7 @@ export const useStore = create<KanthinkState>()(
               return {
                 ...col,
                 cardIds: [...col.cardIds, cardId],
+                itemOrder: [...(col.itemOrder ?? col.cardIds), cardId],
                 backsideCardIds: (col.backsideCardIds ?? []).filter((id) => id !== cardId),
               };
             }

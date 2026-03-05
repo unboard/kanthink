@@ -413,6 +413,7 @@ export function applyBroadcastEvent(
             return {
               ...col,
               cardIds: col.cardIds.filter((id) => id !== event.cardId),
+              itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== event.cardId),
               backsideCardIds: [...(col.backsideCardIds ?? []), event.cardId],
             }
           }
@@ -438,6 +439,7 @@ export function applyBroadcastEvent(
             return {
               ...col,
               cardIds: [...col.cardIds, event.cardId],
+              itemOrder: [...(col.itemOrder ?? col.cardIds), event.cardId],
               backsideCardIds: (col.backsideCardIds ?? []).filter((id) => id !== event.cardId),
             }
           }
