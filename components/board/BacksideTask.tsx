@@ -14,7 +14,7 @@ export function BacksideTask({ task, channelId, columnId }: BacksideTaskProps) {
   const deleteTask = useStore((s) => s.deleteTask);
 
   return (
-    <div className="group relative rounded-md bg-neutral-200/50 dark:bg-neutral-700/30 p-2.5 border border-dashed border-neutral-300 dark:border-neutral-600">
+    <div className="group relative rounded-md bg-neutral-200/50 dark:bg-neutral-700/30 p-2.5">
       {/* Quick action buttons - always visible on mobile, hover on desktop */}
       <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
         <button
@@ -41,7 +41,7 @@ export function BacksideTask({ task, channelId, columnId }: BacksideTaskProps) {
         <svg className="w-3.5 h-3.5 mt-0.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <h4 className="text-xs font-medium text-neutral-500 dark:text-neutral-400 pr-12 line-through decoration-neutral-400">
+        <h4 className="text-xs font-medium text-neutral-500 dark:text-neutral-400 pr-12">
           {task.title}
         </h4>
       </div>

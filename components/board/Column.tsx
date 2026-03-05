@@ -194,7 +194,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         relative w-[280px] sm:w-72 flex-shrink-0 h-full
         flex flex-col rounded-lg transition-colors
         ${isFlipped
-          ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
+          ? 'bg-neutral-100 dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-700'
           : 'bg-neutral-100 dark:bg-neutral-800/50'
         }
       `}
@@ -275,17 +275,18 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           onClick={handleFlipColumn}
           className={`
             absolute bottom-2 right-2 z-10
-            p-2 rounded-full transition-all duration-200
+            flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors
             ${isFlipped
-              ? 'bg-neutral-600 text-white hover:bg-neutral-700'
-              : 'bg-amber-500 text-white hover:bg-amber-600'
+              ? 'text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-700'
+              : 'text-neutral-400 hover:text-neutral-600 hover:bg-neutral-200 dark:hover:text-neutral-300 dark:hover:bg-neutral-700'
             }
           `}
-          title={isFlipped ? 'Flip to front' : `${backsideCount} archived - click to view`}
+          title={isFlipped ? 'Show active items' : `${backsideCount} archived`}
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
           </svg>
+          {!isFlipped && <span>{backsideCount}</span>}
         </button>
       )}
 

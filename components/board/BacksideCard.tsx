@@ -25,7 +25,7 @@ export function BacksideCard({ card }: BacksideCardProps) {
     || (messages.length > 0 ? messages[0].content.slice(0, 100) : '');
 
   return (
-    <div className="group relative rounded-md bg-neutral-200/50 dark:bg-neutral-700/30 p-2.5 border border-dashed border-neutral-300 dark:border-neutral-600">
+    <div className="group relative rounded-md bg-neutral-200/50 dark:bg-neutral-700/30 p-2.5">
       {/* Quick action buttons - always visible on mobile, hover on desktop */}
       <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
         <button
@@ -53,7 +53,7 @@ export function BacksideCard({ card }: BacksideCardProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
         </svg>
         <div className="min-w-0">
-          <h4 className="text-xs font-medium text-neutral-500 dark:text-neutral-400 pr-12 line-through decoration-neutral-400">
+          <h4 className="text-xs font-medium text-neutral-500 dark:text-neutral-400 pr-12">
             {card.title}
           </h4>
           {contentPreview && (
