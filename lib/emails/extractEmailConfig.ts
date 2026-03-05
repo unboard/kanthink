@@ -14,11 +14,21 @@ function isValidNode(node: unknown): node is EmailNode {
 
 /**
  * Extract an [EMAIL_TEMPLATE]...[/EMAIL_TEMPLATE] block from AI response text.
+ * Handles truncated responses where the closing tag may be missing.
  * Returns null if no valid config found.
  */
 export function extractEmailConfig(response: string): EmailConfig | null {
-  const match = response.match(/\[EMAIL_TEMPLATE\]([\s\S]*?)\[\/EMAIL_TEMPLATE\]/)
-  if (!match) return null
+  // Try complete match first
+  let match = response.match(/\[EMAIL_TEMPLATE\]([\s\S]*?)\[\/EMAIL_TEMPLATE\]/)
+
+  // Fallback: opening tag exists but no closing tag (truncated response)
+  if (!match) {
+    const openIdx = response.indexOf('[EMAIL_TEMPLATE]')
+    if (openIdx === -1) return null
+    const jsonContent = response.slice(openIdx + '[EMAIL_TEMPLATE]'.length).trim()
+    if (!jsonContent) return null
+    match = [response, jsonContent] as unknown as RegExpMatchArray
+  }
 
   try {
     const parsed = JSON.parse(match[1].trim())
@@ -42,10 +52,16 @@ export function extractEmailConfig(response: string): EmailConfig | null {
 
 /**
  * Strip the [EMAIL_TEMPLATE] block from response text for display.
+ * Handles both complete and truncated (missing closing tag) blocks.
  */
 export function cleanDisplayResponse(rawText: string): string {
-  const cleaned = rawText
-    .replace(/\[EMAIL_TEMPLATE\][\s\S]*?\[\/EMAIL_TEMPLATE\]/, '')
-    .trim()
+  // First try complete block
+  let cleaned = rawText.replace(/\[EMAIL_TEMPLATE\][\s\S]*?\[\/EMAIL_TEMPLATE\]/, '').trim()
+
+  // If opening tag still present (no closing tag — truncated), strip to end of string
+  if (cleaned.includes('[EMAIL_TEMPLATE]')) {
+    cleaned = cleaned.replace(/\[EMAIL_TEMPLATE\][\s\S]*$/, '').trim()
+  }
+
   return cleaned || "Here's the email template I've put together:"
 }

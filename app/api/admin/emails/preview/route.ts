@@ -12,7 +12,7 @@ import { SubscriptionConfirmed } from '@/lib/emails/SubscriptionConfirmed'
 import { SubscriptionCanceled } from '@/lib/emails/SubscriptionCanceled'
 import { UsageLimitWarning } from '@/lib/emails/UsageLimitWarning'
 import { UsageLimitReached } from '@/lib/emails/UsageLimitReached'
-import { BaseLayout } from '@/lib/emails/components/BaseLayout'
+import { BaseLayout, type DesignTokens } from '@/lib/emails/components/BaseLayout'
 import { emailRegistry } from '@/lib/emails/registry'
 import { DynamicEmail, type EmailConfig } from '@/lib/emails/dynamicRenderer'
 
@@ -28,17 +28,65 @@ const components: Record<string, { component: React.FC<any>; previewProps: Recor
   'usage-limit-reached': { component: UsageLimitReached, previewProps: UsageLimitReached.PreviewProps },
 }
 
-function BaseLayoutPreview() {
+function BaseLayoutPreview({ tokens }: { tokens?: Partial<DesignTokens> }) {
+  const t = tokens
+  const textColor = t?.textColor ?? '#3f3f46'
+  const mutedColor = t?.mutedColor ?? '#71717a'
+  const headingColor = t?.headerBg ?? '#18181b'
+  const accentColor = t?.accentColor ?? '#7c3aed'
+  const borderColor = t?.borderColor ?? '#e4e4e7'
+
   const children = React.createElement(React.Fragment, null,
-    React.createElement('h1', {
-      style: { fontSize: '22px', fontWeight: '700', color: '#18181b', margin: '0 0 12px' }
-    }, 'Heading goes here'),
+    React.createElement('h2', {
+      style: { fontSize: '22px', fontWeight: '700', color: headingColor, margin: '0 0 12px' }
+    }, 'Sample Heading'),
     React.createElement('p', {
-      style: { fontSize: '15px', color: '#3f3f46', lineHeight: '1.6', margin: '0 0 16px' }
-    }, 'This is a preview of the base template that all Kanthink emails inherit. The violet accent bar, dark header with logo, content area, and footer with CTA button are all shared across every email.'),
-    React.createElement('p', {
-      style: { fontSize: '15px', color: '#3f3f46', lineHeight: '1.6', margin: '0 0 24px' }
-    }, 'Use this view to evaluate the shared design system — colors, spacing, typography, and overall feel.'),
+      style: { fontSize: '15px', color: textColor, lineHeight: '1.6', margin: '0 0 16px' }
+    }, 'This is body text showing paragraph styling. The base template wraps all Kanthink emails with a consistent header, footer, and design tokens.'),
+    // Stat cards row
+    React.createElement('table', {
+      cellPadding: '0', cellSpacing: '0', style: { width: '100%', margin: '0 0 16px' }
+    },
+      React.createElement('tr', null,
+        React.createElement('td', {
+          style: { backgroundColor: t?.footerBg ?? '#fafafa', borderRadius: '8px', padding: '16px', textAlign: 'center' as const, width: '48%' }
+        },
+          React.createElement('p', { style: { fontSize: '24px', fontWeight: '700', color: headingColor, margin: '0' } }, '42'),
+          React.createElement('p', { style: { fontSize: '12px', color: mutedColor, margin: '4px 0 0' } }, 'Tasks Done')
+        ),
+        React.createElement('td', { style: { width: '4%' } }),
+        React.createElement('td', {
+          style: { backgroundColor: t?.footerBg ?? '#fafafa', borderRadius: '8px', padding: '16px', textAlign: 'center' as const, width: '48%' }
+        },
+          React.createElement('p', { style: { fontSize: '24px', fontWeight: '700', color: headingColor, margin: '0' } }, '5'),
+          React.createElement('p', { style: { fontSize: '12px', color: mutedColor, margin: '4px 0 0' } }, 'Channels')
+        )
+      )
+    ),
+    // Divider
+    React.createElement('hr', { style: { border: 'none', borderTop: `1px solid ${borderColor}`, margin: '16px 0' } }),
+    // Sample table
+    React.createElement('table', {
+      cellPadding: '0', cellSpacing: '0', style: { width: '100%', borderCollapse: 'collapse' as const, margin: '0 0 16px' }
+    },
+      React.createElement('thead', null,
+        React.createElement('tr', null,
+          React.createElement('th', { style: { textAlign: 'left' as const, fontSize: '12px', fontWeight: '600', color: mutedColor, textTransform: 'uppercase' as const, letterSpacing: '0.05em', padding: '8px 12px', borderBottom: `2px solid ${borderColor}` } }, 'Task'),
+          React.createElement('th', { style: { textAlign: 'left' as const, fontSize: '12px', fontWeight: '600', color: mutedColor, textTransform: 'uppercase' as const, letterSpacing: '0.05em', padding: '8px 12px', borderBottom: `2px solid ${borderColor}` } }, 'Status')
+        )
+      ),
+      React.createElement('tbody', null,
+        React.createElement('tr', null,
+          React.createElement('td', { style: { fontSize: '14px', color: textColor, padding: '8px 12px', borderBottom: '1px solid #f4f4f5' } }, 'Review design tokens'),
+          React.createElement('td', { style: { fontSize: '14px', color: textColor, padding: '8px 12px', borderBottom: '1px solid #f4f4f5' } }, 'In Progress')
+        ),
+        React.createElement('tr', null,
+          React.createElement('td', { style: { fontSize: '14px', color: textColor, padding: '8px 12px', borderBottom: '1px solid #f4f4f5' } }, 'Ship email builder'),
+          React.createElement('td', { style: { fontSize: '14px', color: textColor, padding: '8px 12px', borderBottom: '1px solid #f4f4f5' } }, 'Done')
+        )
+      )
+    ),
+    // CTA button
     React.createElement('table', {
       cellPadding: '0', cellSpacing: '0', style: { width: '100%' }
     },
@@ -47,7 +95,7 @@ function BaseLayoutPreview() {
           React.createElement('a', {
             href: '#',
             style: {
-              backgroundColor: '#7c3aed',
+              backgroundColor: accentColor,
               borderRadius: '6px',
               color: '#ffffff',
               display: 'inline-block',
@@ -61,7 +109,7 @@ function BaseLayoutPreview() {
       )
     )
   )
-  return React.createElement(BaseLayout, { previewText: 'Base template design preview', children })
+  return React.createElement(BaseLayout, { previewText: 'Base template design preview', tokens, children })
 }
 
 export async function GET(request: NextRequest) {
@@ -74,7 +122,7 @@ export async function GET(request: NextRequest) {
 
   // Handle base-layout pseudo-template
   if (template === 'base-layout') {
-    const html = await render(React.createElement(BaseLayoutPreview))
+    const html = await render(React.createElement(BaseLayoutPreview, {}))
     return new NextResponse(html, {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
@@ -104,8 +152,18 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const config: EmailConfig = await request.json()
+    const body = await request.json()
 
+    // Base-layout preview with design tokens
+    if (body.template === 'base-layout' && body.designTokens) {
+      const html = await render(React.createElement(BaseLayoutPreview, { tokens: body.designTokens }))
+      return new NextResponse(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
+    }
+
+    // Dynamic email config preview
+    const config: EmailConfig = body
     if (!config.body || !Array.isArray(config.body) || config.body.length === 0) {
       return NextResponse.json({ error: 'Invalid email config' }, { status: 400 })
     }

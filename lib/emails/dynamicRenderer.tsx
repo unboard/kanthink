@@ -50,6 +50,19 @@ const COMPONENT_MAP: Record<string, React.ElementType> = {
   a: 'a',
 }
 
+// --- Default styles (Kanthink design tokens) ---
+// AI only needs to specify type + children; these styles are applied automatically.
+// AI-provided styles override defaults via spread.
+
+const DEFAULT_STYLES: Record<string, Record<string, unknown>> = {
+  Heading: { fontSize: '22px', fontWeight: 700, color: '#18181b', margin: '0 0 12px' },
+  Text: { fontSize: '15px', color: '#3f3f46', lineHeight: '1.6', margin: '0 0 16px' },
+  Button: { backgroundColor: '#7c3aed', borderRadius: '6px', color: '#fff', fontSize: '14px', fontWeight: 600, padding: '10px 24px', textDecoration: 'none' },
+  Hr: { borderColor: '#e4e4e7', margin: '16px 0' },
+  th: { textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '8px 12px', borderBottom: '2px solid #e4e4e7' },
+  td: { fontSize: '14px', color: '#3f3f46', padding: '8px 12px', borderBottom: '1px solid #f4f4f5' },
+}
+
 // --- Props sanitization ---
 
 const BLOCKED_PROPS = new Set(['dangerouslySetInnerHTML', 'ref', 'key', 'children'])
@@ -85,7 +98,12 @@ function renderNode(node: EmailNode, key?: number): React.ReactNode {
   const component = COMPONENT_MAP[node.type]
   if (!component) return null
 
-  const props: Record<string, unknown> = node.props ? sanitizeProps(node.props) : {}
+  const userProps = node.props ? sanitizeProps(node.props) : {}
+  const defaultStyle = DEFAULT_STYLES[node.type]
+  if (defaultStyle) {
+    userProps.style = { ...defaultStyle, ...(userProps.style as Record<string, unknown> | undefined) }
+  }
+  const props = userProps
   if (key !== undefined) props.key = key
 
   const children = node.children !== undefined ? renderNode(node.children) : undefined

@@ -1,24 +1,104 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 
-const designTokens = [
-  { token: 'Accent bar', value: '#7c3aed', description: 'Violet, 4px tall', preview: '#7c3aed' },
-  { token: 'Header background', value: '#18181b', description: 'Near-black', preview: '#18181b' },
-  { token: 'Logo', value: 'Cloudinary PNG', description: '32×32, Kan mushroom', preview: null },
-  { token: 'Container', value: '#ffffff', description: 'Max-width 480px, border-radius 8px', preview: '#ffffff' },
-  { token: 'Body background', value: '#f4f4f5', description: 'Light gray page bg', preview: '#f4f4f5' },
-  { token: 'Footer background', value: '#fafafa', description: 'Top border #e4e4e7', preview: '#fafafa' },
-  { token: 'CTA button', value: '#7c3aed', description: 'Violet, border-radius 6px', preview: '#7c3aed' },
-  { token: 'Font stack', value: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', description: 'System font stack', preview: null },
-  { token: 'Content padding', value: '32px', description: 'Inner content area', preview: null },
-  { token: 'Header padding', value: '24px 32px', description: 'Logo section', preview: null },
-  { token: 'Footer padding', value: '24px 32px', description: 'CTA + tagline section', preview: null },
+interface DesignTokens {
+  accentColor: string
+  headerBg: string
+  bodyBg: string
+  containerBg: string
+  footerBg: string
+  ctaColor: string
+  textColor: string
+  mutedColor: string
+  borderColor: string
+  contentPadding: string
+  fontStack: string
+}
+
+const DEFAULTS: DesignTokens = {
+  accentColor: '#7c3aed',
+  headerBg: '#18181b',
+  bodyBg: '#f4f4f5',
+  containerBg: '#ffffff',
+  footerBg: '#fafafa',
+  ctaColor: '#7c3aed',
+  textColor: '#3f3f46',
+  mutedColor: '#71717a',
+  borderColor: '#e4e4e7',
+  contentPadding: '32px',
+  fontStack: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+}
+
+const COLOR_TOKENS: { key: keyof DesignTokens; label: string }[] = [
+  { key: 'accentColor', label: 'Accent' },
+  { key: 'headerBg', label: 'Header' },
+  { key: 'bodyBg', label: 'Body bg' },
+  { key: 'containerBg', label: 'Container bg' },
+  { key: 'footerBg', label: 'Footer bg' },
+  { key: 'ctaColor', label: 'CTA button' },
+  { key: 'textColor', label: 'Text' },
+  { key: 'mutedColor', label: 'Muted text' },
+  { key: 'borderColor', label: 'Border' },
 ]
 
 export default function BaseTemplateDesignPage() {
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop')
+  const [tokens, setTokens] = useState<DesignTokens>({ ...DEFAULTS })
+  const [previewHtml, setPreviewHtml] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  const fetchPreview = useCallback(async (t: DesignTokens) => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/admin/emails/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template: 'base-layout', designTokens: t }),
+      })
+      if (res.ok) {
+        const html = await res.text()
+        setPreviewHtml(html)
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Initial load
+  useEffect(() => {
+    fetchPreview(tokens)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Debounced preview update on token change
+  const updateToken = useCallback((key: keyof DesignTokens, value: string) => {
+    setTokens(prev => {
+      const next = { ...prev, [key]: value }
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => fetchPreview(next), 300)
+      return next
+    })
+  }, [fetchPreview])
+
+  // Write HTML to iframe via srcdoc
+  useEffect(() => {
+    if (iframeRef.current && previewHtml) {
+      iframeRef.current.srcdoc = previewHtml
+    }
+  }, [previewHtml])
+
+  const isModified = JSON.stringify(tokens) !== JSON.stringify(DEFAULTS)
+
+  const reset = () => {
+    setTokens({ ...DEFAULTS })
+    fetchPreview(DEFAULTS)
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -38,33 +118,95 @@ export default function BaseTemplateDesignPage() {
 
       {/* Content */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Left: Design tokens */}
+        {/* Left: Token editor */}
         <div className="w-full lg:w-96 shrink-0 border-b lg:border-b-0 lg:border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 overflow-y-auto p-5">
-          <h3 className="text-sm font-semibold text-neutral-900 dark:text-white mb-1">Design Tokens</h3>
-          <p className="text-xs text-neutral-500 mb-4">Every email inherits these values from BaseLayout.</p>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Design Tokens</h3>
+              <p className="text-xs text-neutral-500 mt-0.5">Tweak values and see the preview update live.</p>
+            </div>
+            {isModified && (
+              <button
+                onClick={reset}
+                className="text-xs px-2.5 py-1 rounded-md border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
+              >
+                Reset
+              </button>
+            )}
+          </div>
 
-          <div className="space-y-0 divide-y divide-neutral-100 dark:divide-neutral-800">
-            {designTokens.map((t) => (
-              <div key={t.token} className="py-3 first:pt-0">
-                <div className="flex items-center gap-2">
-                  {t.preview && (
-                    <span
-                      className="inline-block h-4 w-4 rounded border border-neutral-200 dark:border-neutral-700 shrink-0"
-                      style={{ backgroundColor: t.preview }}
+          {/* Colors */}
+          <div className="mb-5">
+            <p className="text-[11px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Colors</p>
+            <div className="space-y-2">
+              {COLOR_TOKENS.map(({ key, label }) => (
+                <div key={key} className="flex items-center gap-3">
+                  <label
+                    htmlFor={key}
+                    className="relative shrink-0 cursor-pointer"
+                  >
+                    <input
+                      id={key}
+                      type="color"
+                      value={tokens[key]}
+                      onChange={(e) => updateToken(key, e.target.value)}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                     />
-                  )}
-                  <span className="text-xs font-medium text-neutral-900 dark:text-white">{t.token}</span>
+                    <span
+                      className="block h-7 w-7 rounded-md border border-neutral-200 dark:border-neutral-700 shadow-sm"
+                      style={{ backgroundColor: tokens[key] }}
+                    />
+                  </label>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{label}</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={tokens[key]}
+                    onChange={(e) => updateToken(key, e.target.value)}
+                    className="w-20 text-[11px] font-mono px-2 py-1 rounded border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                  />
                 </div>
-                <p className="text-[11px] font-mono text-neutral-500 mt-0.5 break-all">{t.value}</p>
-                <p className="text-[11px] text-neutral-400 mt-0.5">{t.description}</p>
-              </div>
-            ))}
+              ))}
+            </div>
+          </div>
+
+          {/* Typography */}
+          <div className="mb-5">
+            <p className="text-[11px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Typography</p>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Font stack</span>
+              <input
+                type="text"
+                value={tokens.fontStack}
+                onChange={(e) => updateToken('fontStack', e.target.value)}
+                className="mt-1 w-full text-[11px] font-mono px-2 py-1.5 rounded border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+              />
+            </label>
+          </div>
+
+          {/* Spacing */}
+          <div>
+            <p className="text-[11px] font-semibold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Spacing</p>
+            <label className="block">
+              <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">Content padding</span>
+              <input
+                type="text"
+                value={tokens.contentPadding}
+                onChange={(e) => updateToken('contentPadding', e.target.value)}
+                className="mt-1 w-28 text-[11px] font-mono px-2 py-1.5 rounded border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+              />
+            </label>
           </div>
         </div>
 
         {/* Right: Preview */}
         <div className="flex-1 flex flex-col bg-neutral-50 dark:bg-neutral-900 min-h-0">
-          <div className="flex items-center justify-end px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
+            {loading && (
+              <span className="text-[11px] text-neutral-400 animate-pulse">Rendering...</span>
+            )}
+            {!loading && <span />}
             <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800 rounded-md p-0.5">
               <button
                 onClick={() => setViewport('desktop')}
@@ -91,7 +233,7 @@ export default function BaseTemplateDesignPage() {
 
           <div className="flex-1 flex items-start justify-center p-6 overflow-auto">
             <iframe
-              src="/api/admin/emails/preview?template=base-layout"
+              ref={iframeRef}
               className="bg-white rounded-lg shadow-md border border-neutral-200 dark:border-neutral-700 transition-all duration-200"
               style={{
                 width: viewport === 'desktop' ? 480 : 320,
