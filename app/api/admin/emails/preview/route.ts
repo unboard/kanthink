@@ -15,6 +15,10 @@ import { UsageLimitReached } from '@/lib/emails/UsageLimitReached'
 import { BaseLayout, type DesignTokens } from '@/lib/emails/components/BaseLayout'
 import { emailRegistry } from '@/lib/emails/registry'
 import { DynamicEmail, type EmailConfig } from '@/lib/emails/dynamicRenderer'
+import { db } from '@/lib/db'
+import { emailTemplates } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 const components: Record<string, { component: React.FC<any>; previewProps: Record<string, any> }> = {
   'welcome': { component: Welcome, previewProps: Welcome.PreviewProps },
@@ -128,21 +132,42 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  // Validate against registry
-  const validSlugs = emailRegistry.map((e) => e.slug)
-  if (!template || !components[template]) {
-    return NextResponse.json(
-      { error: 'Invalid template', valid: [...validSlugs, 'base-layout'] },
-      { status: 400 }
-    )
+  // Check hardcoded templates
+  if (template && components[template]) {
+    const { component, previewProps } = components[template]
+    const html = await render(React.createElement(component, previewProps))
+    return new NextResponse(html, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
   }
 
-  const { component, previewProps } = components[template]
-  const html = await render(React.createElement(component, previewProps))
+  // Fall back to DB lookup by slug
+  if (template) {
+    await ensureSchema()
+    const [saved] = await db
+      .select()
+      .from(emailTemplates)
+      .where(eq(emailTemplates.slug, template))
+      .limit(1)
 
-  return new NextResponse(html, {
-    headers: { 'Content-Type': 'text/html; charset=utf-8' },
-  })
+    if (saved && saved.body) {
+      const config: EmailConfig = {
+        subject: saved.subject,
+        previewText: saved.previewText || saved.subject,
+        body: saved.body as EmailConfig['body'],
+      }
+      const html = await render(React.createElement(DynamicEmail, { config }))
+      return new NextResponse(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
+    }
+  }
+
+  const validSlugs = emailRegistry.map((e) => e.slug)
+  return NextResponse.json(
+    { error: 'Invalid template', valid: [...validSlugs, 'base-layout'] },
+    { status: 400 }
+  )
 }
 
 export async function POST(request: NextRequest) {

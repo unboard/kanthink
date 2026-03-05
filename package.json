@@ -48,6 +48,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@react-email/preview-server": "^5.2.9",
     "@tailwindcss/postcss": "^4",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",

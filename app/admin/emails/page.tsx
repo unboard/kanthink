@@ -1,5 +1,17 @@
+'use client'
+
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { emailRegistry, type EmailDefinition } from '@/lib/emails/registry'
+
+interface SavedTemplate {
+  id: string
+  name: string
+  slug: string
+  subject: string
+  status: 'draft' | 'active'
+  updatedAt: string | number
+}
 
 const categoryColors: Record<EmailDefinition['category'], string> = {
   onboarding: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
@@ -8,7 +20,7 @@ const categoryColors: Record<EmailDefinition['category'], string> = {
   usage: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400',
 }
 
-function StatusDot({ status }: { status: EmailDefinition['status'] }) {
+function StatusDot({ status }: { status: string }) {
   return (
     <span
       className={`inline-block h-2 w-2 rounded-full ${
@@ -20,12 +32,33 @@ function StatusDot({ status }: { status: EmailDefinition['status'] }) {
 }
 
 export default function AdminEmailsPage() {
+  const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([])
+  const [loadingTemplates, setLoadingTemplates] = useState(true)
+
+  useEffect(() => {
+    async function fetchTemplates() {
+      try {
+        const res = await fetch('/api/admin/emails/templates')
+        if (res.ok) {
+          setSavedTemplates(await res.json())
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setLoadingTemplates(false)
+      }
+    }
+    fetchTemplates()
+  }, [])
+
+  const totalCount = emailRegistry.length + savedTemplates.length
+
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">Email Catalog</h2>
-          <p className="text-sm text-neutral-500 mt-1">{emailRegistry.length} templates</p>
+          <p className="text-sm text-neutral-500 mt-1">{totalCount} templates</p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -49,27 +82,70 @@ export default function AdminEmailsPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {emailRegistry.map((email) => (
-          <Link
-            key={email.slug}
-            href={`/admin/emails/${email.slug}`}
-            className="group rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${categoryColors[email.category]}`}>
-                {email.category}
-              </span>
-              <StatusDot status={email.status} />
+      {/* Custom Templates */}
+      {(savedTemplates.length > 0 || loadingTemplates) && (
+        <div className="mb-8">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-3">
+            Custom Templates
+          </h3>
+          {loadingTemplates ? (
+            <div className="text-sm text-neutral-400">Loading...</div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {savedTemplates.map((t) => (
+                <Link
+                  key={t.id}
+                  href={`/admin/emails/create?id=${t.id}`}
+                  className="group rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400">
+                      custom
+                    </span>
+                    <StatusDot status={t.status} />
+                  </div>
+                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors truncate">
+                    {t.name}
+                  </h3>
+                  <p className="text-xs text-neutral-500 mt-1 truncate">
+                    {t.subject}
+                  </p>
+                </Link>
+              ))}
             </div>
-            <h3 className="text-sm font-semibold text-neutral-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
-              {email.name}
-            </h3>
-            <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
-              {email.trigger.description}
-            </p>
-          </Link>
-        ))}
+          )}
+        </div>
+      )}
+
+      {/* System Emails */}
+      <div>
+        {savedTemplates.length > 0 && (
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-3">
+            System Emails
+          </h3>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {emailRegistry.map((email) => (
+            <Link
+              key={email.slug}
+              href={`/admin/emails/${email.slug}`}
+              className="group rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${categoryColors[email.category]}`}>
+                  {email.category}
+                </span>
+                <StatusDot status={email.status} />
+              </div>
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                {email.name}
+              </h3>
+              <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
+                {email.trigger.description}
+              </p>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   )

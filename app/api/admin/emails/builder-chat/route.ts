@@ -208,6 +208,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         response: displayResponse,
+        rawResponse: responseText,
         emailConfig,
       })
     } catch (llmError) {

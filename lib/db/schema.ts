@@ -395,6 +395,24 @@ export const channelChatThreads = sqliteTable('channel_chat_threads', {
   index('channel_chat_threads_channel_user_updated_idx').on(table.channelId, table.userId, table.updatedAt),
 ])
 
+// Email templates (AI-built, saveable)
+export const emailTemplates = sqliteTable('email_templates', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  subject: text('subject').notNull(),
+  previewText: text('preview_text'),
+  body: text('body', { mode: 'json' }).$type<EmailNodeJson[]>(),
+  status: text('status').$type<'draft' | 'active'>().default('draft'),
+  conversationHistory: text('conversation_history', { mode: 'json' }).$type<EmailBuilderMessageJson[]>(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('email_templates_user_idx').on(table.userId),
+  uniqueIndex('email_templates_slug_idx').on(table.slug),
+])
+
 // ===== JSON TYPE DEFINITIONS =====
 // These match the types in lib/types.ts but are for JSON storage
 
@@ -514,6 +532,20 @@ interface ShroomChatMessageJson {
   timestamp: string
 }
 
+interface EmailBuilderMessageJson {
+  role: 'user' | 'assistant'
+  content: string
+  rawContent?: string
+}
+
+// Re-export-friendly type for EmailNode JSON (matches dynamicRenderer's EmailNode)
+export type EmailNodeJson = string | EmailElementJson | EmailNodeJson[]
+interface EmailElementJson {
+  type: string
+  props?: Record<string, unknown>
+  children?: EmailNodeJson
+}
+
 // ===== TYPE EXPORTS =====
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
@@ -547,3 +579,5 @@ export type DbNotificationPreferences = typeof notificationPreferences.$inferSel
 export type NewDbNotificationPreferences = typeof notificationPreferences.$inferInsert
 export type DbChannelChatThread = typeof channelChatThreads.$inferSelect
 export type NewDbChannelChatThread = typeof channelChatThreads.$inferInsert
+export type DbEmailTemplate = typeof emailTemplates.$inferSelect
+export type NewDbEmailTemplate = typeof emailTemplates.$inferInsert

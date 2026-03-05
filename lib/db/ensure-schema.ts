@@ -108,6 +108,24 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0010 — email_templates table
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS email_templates (
+      id text PRIMARY KEY NOT NULL,
+      user_id text NOT NULL,
+      name text NOT NULL,
+      slug text NOT NULL UNIQUE,
+      subject text NOT NULL,
+      preview_text text,
+      body text,
+      status text DEFAULT 'draft',
+      conversation_history text,
+      created_at integer,
+      updated_at integer,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
+    )`))
+  } catch {}
+
   // Indexes — IF NOT EXISTS works for these
   const indexes = [
     `CREATE UNIQUE INDEX IF NOT EXISTS notification_preferences_user_idx ON notification_preferences (user_id)`,
@@ -125,6 +143,9 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS channel_chat_threads_channel_user_updated_idx ON channel_chat_threads (channel_id, user_id, updated_at)`,
     // Migration 0008 indexes
     `CREATE INDEX IF NOT EXISTS tasks_column_idx ON tasks (column_id)`,
+    // Migration 0010 indexes
+    `CREATE INDEX IF NOT EXISTS email_templates_user_idx ON email_templates (user_id)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS email_templates_slug_idx ON email_templates (slug)`,
   ]
 
   for (const idx of indexes) {

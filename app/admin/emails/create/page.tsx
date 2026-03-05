@@ -1,25 +1,42 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { EmailConfig } from '@/lib/emails/dynamicRenderer'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  rawContent?: string // Full LLM output including [EMAIL_TEMPLATE] block
+  hasTemplate?: boolean
 }
 
+type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+
 export default function EmailBuilderPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const templateId = searchParams.get('id')
+
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null)
   const [previewHtml, setPreviewHtml] = useState<string | null>(null)
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop')
-  const [copied, setCopied] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const greetingSent = useRef(false)
+  const templateLoaded = useRef(false)
+
+  // Template save state
+  const [currentTemplateId, setCurrentTemplateId] = useState<string | null>(templateId)
+  const [templateName, setTemplateName] = useState('')
+  const [templateStatus, setTemplateStatus] = useState<'draft' | 'active'>('draft')
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [editingName, setEditingName] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -28,6 +45,40 @@ export default function EmailBuilderPage() {
   useEffect(() => {
     scrollToBottom()
   }, [messages, loading, scrollToBottom])
+
+  // Load existing template on mount
+  useEffect(() => {
+    if (!templateId || templateLoaded.current) return
+    templateLoaded.current = true
+
+    async function loadTemplate() {
+      try {
+        const res = await fetch(`/api/admin/emails/templates/${templateId}`)
+        if (!res.ok) return
+        const template = await res.json()
+
+        setTemplateName(template.name)
+        setTemplateStatus(template.status || 'draft')
+        setCurrentTemplateId(template.id)
+
+        if (template.body) {
+          setEmailConfig({
+            subject: template.subject,
+            previewText: template.previewText || template.subject,
+            body: template.body,
+          })
+        }
+
+        if (template.conversationHistory && Array.isArray(template.conversationHistory)) {
+          setMessages(template.conversationHistory)
+          greetingSent.current = true
+        }
+      } catch {
+        // Failed to load, start fresh
+      }
+    }
+    loadTemplate()
+  }, [templateId])
 
   // Fetch preview HTML when emailConfig changes
   useEffect(() => {
@@ -55,9 +106,10 @@ export default function EmailBuilderPage() {
   const sendMessage = useCallback(async (userMessage: string, isInitialGreeting = false) => {
     if (loading) return
 
+    // Build conversation history using rawContent so the LLM sees its previous templates
     const conversationHistory = messages.map(m => ({
       role: m.role,
-      content: m.content,
+      content: m.rawContent || m.content,
     }))
 
     if (!isInitialGreeting) {
@@ -86,10 +138,21 @@ export default function EmailBuilderPage() {
         return
       }
 
-      setMessages(prev => [...prev, { role: 'assistant', content: data.response }])
+      const hasTemplate = data.rawResponse ? data.rawResponse.includes('[EMAIL_TEMPLATE]') : false
+
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.response,
+        rawContent: data.rawResponse || data.response,
+        hasTemplate,
+      }])
 
       if (data.emailConfig) {
         setEmailConfig(data.emailConfig)
+        // Default template name to subject if not set
+        if (!templateName) {
+          setTemplateName(data.emailConfig.subject)
+        }
       }
     } catch {
       setMessages(prev => [
@@ -99,9 +162,9 @@ export default function EmailBuilderPage() {
     } finally {
       setLoading(false)
     }
-  }, [loading, messages])
+  }, [loading, messages, templateName])
 
-  // Initial greeting on mount
+  // Initial greeting on mount (only for new templates)
   useEffect(() => {
     if (greetingSent.current) return
     greetingSent.current = true
@@ -123,27 +186,158 @@ export default function EmailBuilderPage() {
     }
   }
 
-  async function handleCopyConfig() {
+  async function saveTemplate(status: 'draft' | 'active') {
     if (!emailConfig) return
-    await navigator.clipboard.writeText(JSON.stringify(emailConfig, null, 2))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setSaveState('saving')
+
+    const name = templateName || emailConfig.subject
+    const conversationHistory = messages.map(m => ({
+      role: m.role,
+      content: m.content,
+      rawContent: m.rawContent,
+    }))
+
+    const payload = {
+      name,
+      subject: emailConfig.subject,
+      previewText: emailConfig.previewText,
+      body: emailConfig.body,
+      status,
+      conversationHistory,
+    }
+
+    try {
+      if (currentTemplateId) {
+        // Update existing
+        const res = await fetch(`/api/admin/emails/templates/${currentTemplateId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) throw new Error('Failed to save')
+      } else {
+        // Create new
+        const res = await fetch('/api/admin/emails/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) throw new Error('Failed to create')
+        const data = await res.json()
+        setCurrentTemplateId(data.id)
+        // Update URL without full navigation
+        router.replace(`/admin/emails/create?id=${data.id}`, { scroll: false })
+      }
+
+      setTemplateStatus(status)
+      setTemplateName(name)
+      setSaveState('saved')
+      setTimeout(() => setSaveState('idle'), 2000)
+    } catch {
+      setSaveState('error')
+      setTimeout(() => setSaveState('idle'), 3000)
+    }
   }
 
   return (
     <div className="flex h-full flex-col">
       {/* Top bar */}
-      <div className="flex items-center gap-3 border-b border-neutral-200 dark:border-neutral-800 px-4 sm:px-6 py-3 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
+      <div className="flex items-center gap-3 border-b border-neutral-200 dark:border-neutral-800 px-4 sm:px-6 py-2.5 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm">
         <Link
           href="/admin/emails"
-          className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+          className="flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 shrink-0"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
           Catalog
         </Link>
-        <span className="text-sm font-medium text-neutral-900 dark:text-white">Create with AI</span>
+
+        <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-700" />
+
+        {/* Template name */}
+        {editingName ? (
+          <input
+            ref={nameInputRef}
+            value={templateName}
+            onChange={e => setTemplateName(e.target.value)}
+            onBlur={() => setEditingName(false)}
+            onKeyDown={e => { if (e.key === 'Enter') setEditingName(false) }}
+            className="text-sm font-medium text-neutral-900 dark:text-white bg-transparent border-b border-violet-500 outline-none px-0 py-0 min-w-[120px]"
+            autoFocus
+          />
+        ) : (
+          <button
+            onClick={() => { setEditingName(true); setTimeout(() => nameInputRef.current?.focus(), 0) }}
+            className="text-sm font-medium text-neutral-900 dark:text-white hover:text-violet-600 dark:hover:text-violet-400 transition-colors truncate max-w-[200px]"
+            title="Click to rename"
+          >
+            {templateName || 'New Template'}
+          </button>
+        )}
+
+        {/* Status badge */}
+        {currentTemplateId && (
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
+            templateStatus === 'active'
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+              : 'bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400'
+          }`}>
+            {templateStatus}
+          </span>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Save buttons */}
+        {emailConfig && (
+          <div className="flex items-center gap-2 shrink-0">
+            {saveState === 'saved' && (
+              <span className="text-xs text-emerald-600 dark:text-emerald-400">Saved</span>
+            )}
+            {saveState === 'error' && (
+              <span className="text-xs text-red-500">Failed to save</span>
+            )}
+            <button
+              onClick={() => saveTemplate('draft')}
+              disabled={saveState === 'saving'}
+              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors disabled:opacity-50"
+            >
+              Save Draft
+            </button>
+            <button
+              onClick={() => saveTemplate('active')}
+              disabled={saveState === 'saving'}
+              className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-700 transition-colors disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        )}
+
+        {/* Viewport toggle */}
+        <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800 rounded-md p-0.5 shrink-0">
+          <button
+            onClick={() => setViewport('desktop')}
+            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+              viewport === 'desktop'
+                ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
+                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+            }`}
+          >
+            Desktop
+          </button>
+          <button
+            onClick={() => setViewport('mobile')}
+            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+              viewport === 'mobile'
+                ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
+                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+            }`}
+          >
+            Mobile
+          </button>
+        </div>
       </div>
 
       {/* Split pane */}
@@ -153,19 +347,29 @@ export default function EmailBuilderPage() {
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'bg-violet-600 text-white'
-                      : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200'
-                  }`}
-                >
-                  <MessageContent content={msg.content} />
+              <div key={i}>
+                <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200'
+                    }`}
+                  >
+                    <MessageContent content={msg.content} />
+                  </div>
                 </div>
+                {/* Template updated indicator */}
+                {msg.hasTemplate && msg.role === 'assistant' && (
+                  <div className="flex justify-start mt-1 ml-1">
+                    <span className="inline-flex items-center gap-1 text-[10px] text-violet-500 dark:text-violet-400">
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Template updated
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
 
@@ -212,63 +416,15 @@ export default function EmailBuilderPage() {
         {/* Right: Preview */}
         <div className="flex-1 flex flex-col bg-neutral-50 dark:bg-neutral-900 min-h-0">
           {/* Preview toolbar */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
-            <div className="flex items-center gap-3">
-              {emailConfig && (
-                <>
-                  <span className="text-xs font-medium text-neutral-500">Subject:</span>
-                  <span className="text-xs text-neutral-700 dark:text-neutral-300 font-mono bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded">
-                    {emailConfig.subject}
-                  </span>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {emailConfig && (
-                <button
-                  onClick={handleCopyConfig}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1 text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors"
-                >
-                  {copied ? (
-                    <>
-                      <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Copied
-                    </>
-                  ) : (
-                    <>
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                      Copy Config
-                    </>
-                  )}
-                </button>
-              )}
-              <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800 rounded-md p-0.5">
-                <button
-                  onClick={() => setViewport('desktop')}
-                  className={`px-3 py-1 text-xs rounded transition-colors ${
-                    viewport === 'desktop'
-                      ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
-                      : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
-                  }`}
-                >
-                  Desktop
-                </button>
-                <button
-                  onClick={() => setViewport('mobile')}
-                  className={`px-3 py-1 text-xs rounded transition-colors ${
-                    viewport === 'mobile'
-                      ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
-                      : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
-                  }`}
-                >
-                  Mobile
-                </button>
+          <div className="flex items-center px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
+            {emailConfig && (
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-neutral-500">Subject:</span>
+                <span className="text-xs text-neutral-700 dark:text-neutral-300 font-mono bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded">
+                  {emailConfig.subject}
+                </span>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Preview area */}

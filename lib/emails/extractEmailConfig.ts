@@ -65,3 +65,11 @@ export function cleanDisplayResponse(rawText: string): string {
 
   return cleaned || "Here's the email template I've put together:"
 }
+
+/**
+ * Check if a response string contains an [EMAIL_TEMPLATE] block.
+ * Used by the UI to show a "template updated" indicator on messages.
+ */
+export function containsEmailTemplate(text: string): boolean {
+  return text.includes('[EMAIL_TEMPLATE]')
+}
