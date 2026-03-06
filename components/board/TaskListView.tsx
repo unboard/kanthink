@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -34,20 +34,29 @@ interface TaskListViewProps {
   filterCardIds?: ID[];
 }
 
+type GroupByMode = 'card' | 'column' | 'status' | 'assignee';
+
+const groupByLabels: Record<GroupByMode, string> = {
+  card: 'Card',
+  column: 'Column',
+  status: 'Status',
+  assignee: 'Assignee',
+};
+
 interface TaskGroupProps {
   group: { cardId: ID | null; cardTitle: string; tasks: Task[] };
-  groupByCard: boolean;
+  showGroupHeader: boolean;
   members: Array<{ id: string; name: string; email: string; image: string | null }>;
   onTaskClick: (task: Task) => void;
   onAddTask: (cardId: ID) => void;
   isDragActive?: boolean;
 }
 
-function TaskGroup({ group, groupByCard, members, onTaskClick, onAddTask, isDragActive }: TaskGroupProps) {
+function TaskGroup({ group, showGroupHeader, members, onTaskClick, onAddTask, isDragActive }: TaskGroupProps) {
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
 
   const sortableIds = group.tasks.map((t) => t.id);
-  const canDrag = groupByCard;
+  const canDrag = showGroupHeader && !!group.cardId;
 
   // Make the group header a drop target for cross-group moves
   const droppableId = `group:${group.cardId ?? 'unlinked'}`;
@@ -62,7 +71,7 @@ function TaskGroup({ group, groupByCard, members, onTaskClick, onAddTask, isDrag
       }`}
     >
       {/* Group header */}
-      {groupByCard && (
+      {showGroupHeader && (
         <div
           ref={setDropRef}
           className={`px-4 py-3 bg-neutral-50/80 dark:bg-neutral-800/30 border-b border-neutral-200 dark:border-neutral-800 transition-colors ${
@@ -200,7 +209,9 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
   const [statusFilters, setStatusFilters] = useState<Set<TaskStatus>>(new Set());
   const [assigneeFilters, setAssigneeFilters] = useState<Set<string>>(new Set());
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
-  const [groupByCard, setGroupByCard] = useState(true);
+  const [groupBy, setGroupBy] = useState<GroupByMode>('card');
+  const [isGroupByOpen, setIsGroupByOpen] = useState(false);
+  const groupByRef = useRef<HTMLDivElement>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
@@ -230,6 +241,20 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  // Close group-by dropdown on outside click
+  useEffect(() => {
+    if (!isGroupByOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (groupByRef.current && !groupByRef.current.contains(e.target as Node)) {
+        setIsGroupByOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isGroupByOpen]);
+
+  const groupByCard = groupBy === 'card';
 
   // Get all tasks for this channel (optionally scoped to specific cards)
   const channelTasks = useMemo(() => {
@@ -269,23 +294,116 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
     return ids;
   }, [channel]);
 
+  // Helper: find which column a card belongs to
+  const cardToColumnMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (channel) {
+      for (const col of channel.columns) {
+        for (const cid of col.cardIds) {
+          map.set(cid, col.id);
+        }
+      }
+    }
+    return map;
+  }, [channel]);
+
+  const statusLabelMap: Record<string, string> = {
+    not_started: 'To Do',
+    in_progress: 'In Progress',
+    on_hold: 'On Hold',
+    done: 'Done',
+  };
+
   const groupedTasks = useMemo(() => {
-    if (!groupByCard) {
-      const nonArchivedTasks = filteredTasks.filter((t) => !t.cardId || !archivedCardIds.has(t.cardId));
-      return [{ cardId: null, cardTitle: 'All Tasks', tasks: nonArchivedTasks }];
+    const nonArchivedTasks = filteredTasks.filter((t) => !t.cardId || !archivedCardIds.has(t.cardId));
+
+    if (groupBy === 'column') {
+      const groups: Record<string, { cardId: ID | null; cardTitle: string; tasks: Task[] }> = {};
+      groups['no-column'] = { cardId: null, cardTitle: 'No Column', tasks: [] };
+
+      for (const task of nonArchivedTasks) {
+        let colId: string | undefined;
+        if (task.cardId) {
+          colId = cardToColumnMap.get(task.cardId);
+        } else {
+          colId = task.columnId ?? undefined;
+        }
+
+        if (colId && channel) {
+          const col = channel.columns.find((c) => c.id === colId);
+          if (!groups[colId]) {
+            groups[colId] = { cardId: null, cardTitle: col?.name ?? 'Unknown Column', tasks: [] };
+          }
+          groups[colId].tasks.push(task);
+        } else {
+          groups['no-column'].tasks.push(task);
+        }
+      }
+
+      // Sort groups by column order
+      const colOrder = channel?.columns.map((c) => c.id) ?? [];
+      return Object.entries(groups)
+        .filter(([, g]) => g.tasks.length > 0)
+        .sort(([keyA], [keyB]) => {
+          if (keyA === 'no-column') return 1;
+          if (keyB === 'no-column') return -1;
+          return colOrder.indexOf(keyA) - colOrder.indexOf(keyB);
+        })
+        .map(([, g]) => g);
     }
 
-    const groups: Record<string, { cardId: ID | null; cardTitle: string; tasks: Task[] }> = {};
+    if (groupBy === 'status') {
+      const statusOrder: string[] = ['not_started', 'in_progress', 'on_hold', 'done'];
+      const groups: Record<string, { cardId: ID | null; cardTitle: string; tasks: Task[] }> = {};
+      for (const s of statusOrder) {
+        groups[s] = { cardId: null, cardTitle: statusLabelMap[s], tasks: [] };
+      }
+      for (const task of nonArchivedTasks) {
+        groups[task.status]?.tasks.push(task);
+      }
+      return statusOrder
+        .filter((s) => groups[s].tasks.length > 0)
+        .map((s) => groups[s]);
+    }
 
-    // Unlinked group first
+    if (groupBy === 'assignee') {
+      const groups: Record<string, { cardId: ID | null; cardTitle: string; tasks: Task[] }> = {};
+      groups['unassigned'] = { cardId: null, cardTitle: 'Unassigned', tasks: [] };
+
+      for (const task of nonArchivedTasks) {
+        const assignees = task.assignedTo ?? [];
+        if (assignees.length === 0) {
+          groups['unassigned'].tasks.push(task);
+        } else {
+          for (const userId of assignees) {
+            if (!groups[userId]) {
+              const member = members.find((m) => m.id === userId);
+              groups[userId] = { cardId: null, cardTitle: member?.name ?? 'Unknown', tasks: [] };
+            }
+            groups[userId].tasks.push(task);
+          }
+        }
+      }
+
+      // Sort: named assignees alphabetically, unassigned last
+      return Object.entries(groups)
+        .filter(([, g]) => g.tasks.length > 0)
+        .sort(([keyA, a], [keyB, b]) => {
+          if (keyA === 'unassigned') return 1;
+          if (keyB === 'unassigned') return -1;
+          return a.cardTitle.localeCompare(b.cardTitle);
+        })
+        .map(([, g]) => g);
+    }
+
+    // groupBy === 'card' (default — existing logic)
+    const groups: Record<string, { cardId: ID | null; cardTitle: string; tasks: Task[] }> = {};
     groups['unlinked'] = { cardId: null, cardTitle: 'Unlinked Tasks', tasks: [] };
 
     for (const task of filteredTasks) {
-      // Skip tasks belonging to archived cards
       if (task.cardId && archivedCardIds.has(task.cardId)) continue;
 
       if (!task.cardId) {
-        // Column tasks: group by column name
         if (task.columnId && channel) {
           const col = channel.columns.find((c) => c.id === task.columnId);
           const colKey = `column:${task.columnId}`;
@@ -324,7 +442,7 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
       }
     }
 
-    // Sort unlinked tasks by channel's unlinkedTaskOrder (or by createdAt as fallback)
+    // Sort unlinked tasks by channel's unlinkedTaskOrder
     if (groups['unlinked'].tasks.length > 0) {
       if (channel?.unlinkedTaskOrder && channel.unlinkedTaskOrder.length > 0) {
         const orderMap = new Map(channel.unlinkedTaskOrder.map((id, idx) => [id, idx]));
@@ -334,14 +452,13 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
           return aIdx - bIdx;
         });
       } else {
-        // Sort by createdAt as fallback (same as store does when building order)
         groups['unlinked'].tasks.sort((a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         );
       }
     }
 
-    // Include all non-archived cards from the channel, even those with no tasks
+    // Include all non-archived cards, even with no tasks
     if (channel) {
       const cardIdsToShow = filterCardIds ?? Object.values(cards)
         .filter((c) => c.channelId === channelId)
@@ -357,7 +474,6 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
       }
     }
 
-    // Convert to array and sort - unlinked first, then by card title
     return Object.values(groups)
       .filter((g) => g.tasks.length > 0 || g.cardId !== null)
       .sort((a, b) => {
@@ -365,7 +481,7 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
         if (!b.cardId) return 1;
         return a.cardTitle.localeCompare(b.cardTitle);
       });
-  }, [filteredTasks, groupByCard, cards, channel?.unlinkedTaskOrder, channel, channelId, filterCardIds, archivedCardIds]);
+  }, [filteredTasks, groupBy, cards, channel?.unlinkedTaskOrder, channel, channelId, filterCardIds, archivedCardIds, cardToColumnMap, members]);
 
   // Build a lookup: taskId -> group's cardId
   const taskToGroupCard = useMemo(() => {
@@ -503,20 +619,14 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
     setAssigneeFilters(new Set());
   };
 
-  const statusLabelMap: Record<TaskStatus, string> = {
-    not_started: 'To Do',
-    in_progress: 'In Progress',
-    on_hold: 'On Hold',
-    done: 'Done',
-  };
 
   const groupContent = (
     <div className="space-y-6">
-      {groupedTasks.map((group) => (
+      {groupedTasks.map((group, idx) => (
         <TaskGroup
-          key={group.cardId ?? 'unlinked'}
+          key={group.cardId ?? `group-${idx}`}
           group={group}
-          groupByCard={groupByCard}
+          showGroupHeader={true}
           members={members}
           onTaskClick={handleTaskClick}
           onAddTask={handleAddTaskToCard}
@@ -555,20 +665,38 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
               )}
             </button>
 
-            {/* Group by card toggle */}
-            <button
-              onClick={() => setGroupByCard(!groupByCard)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm rounded-md border transition-colors ${
-                groupByCard
-                  ? 'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-950 dark:text-violet-400'
-                  : 'border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400'
-              }`}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              <span className="hidden sm:inline">Group by card</span>
-            </button>
+            {/* Group by dropdown */}
+            <div className="relative" ref={groupByRef}>
+              <button
+                onClick={() => setIsGroupByOpen(!isGroupByOpen)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm rounded-md border transition-colors border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:border-neutral-400"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <span className="hidden sm:inline">Group by {groupByLabels[groupBy].toLowerCase()}</span>
+                <svg className="w-3 h-3 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {isGroupByOpen && (
+                <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
+                  {(['card', 'column', 'status', 'assignee'] as GroupByMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => { setGroupBy(mode); setIsGroupByOpen(false); }}
+                      className={`block w-full px-3 py-1.5 text-left text-sm transition-colors ${
+                        groupBy === mode
+                          ? 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-400'
+                          : 'text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700'
+                      }`}
+                    >
+                      {groupByLabels[mode]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

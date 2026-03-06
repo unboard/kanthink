@@ -120,6 +120,7 @@ interface KanthinkState {
   reorderColumnItems: (channelId: ID, columnId: ID, fromIndex: number, toIndex: number) => void;
   moveTaskToCard: (taskId: ID, newCardId: ID | null) => void;
   moveTaskToColumn: (taskId: ID, channelId: ID, toColumnId: ID, toIndex: number) => void;
+  removeTaskFromColumn: (taskId: ID) => void;
   hideCompletedTasks: (channelId: ID, columnId: ID) => void;
   unhideTask: (channelId: ID, columnId: ID, taskId: ID) => void;
 
@@ -2227,6 +2228,43 @@ export const useStore = create<KanthinkState>()(
         broadcastAndPublish({ type: 'task:moveToColumn', taskId, channelId, fromColumnId, toColumnId, toIndex });
       },
 
+      removeTaskFromColumn: (taskId) => {
+        const task = get().tasks[taskId];
+        if (!task || !task.columnId) return;
+
+        const channelId = task.channelId;
+        const columnId = task.columnId;
+        const timestamp = now();
+
+        set((state) => {
+          const ch = state.channels[channelId];
+          if (!ch) return state;
+
+          const updatedColumns = ch.columns.map((col) => {
+            if (col.id !== columnId) return col;
+            return {
+              ...col,
+              taskIds: (col.taskIds ?? []).filter((id) => id !== taskId),
+              itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== taskId),
+            };
+          });
+
+          return {
+            tasks: {
+              ...state.tasks,
+              [taskId]: { ...state.tasks[taskId], columnId: null, updatedAt: timestamp },
+            },
+            channels: {
+              ...state.channels,
+              [channelId]: { ...ch, columns: updatedColumns, updatedAt: timestamp },
+            },
+          };
+        });
+
+        sync.syncTaskUpdate(channelId, taskId, { columnId: null });
+        broadcastAndPublish({ type: 'task:update', id: taskId, updates: { columnId: null } });
+      },
+
       hideCompletedTasks: (channelId, columnId) => {
         const channel = get().channels[channelId];
         if (!channel) return;
@@ -2383,32 +2421,75 @@ export const useStore = create<KanthinkState>()(
             }
           }
 
-          // Add to channel's unlinkedTaskOrder if becoming unlinked
-          if (!newCardId) {
+          // When moving to standalone, place into the column where the old card lived
+          if (!newCardId && oldCardId) {
             const ch = (updates.channels ?? state.channels)[t.channelId];
             if (ch) {
-              updates.channels = {
-                ...(updates.channels ?? state.channels),
-                [t.channelId]: {
-                  ...ch,
-                  unlinkedTaskOrder: [...(ch.unlinkedTaskOrder ?? []), taskId],
-                  updatedAt: timestamp,
-                },
-              };
+              // Find which column the old card belongs to
+              const targetCol = ch.columns.find((col) => col.cardIds.includes(oldCardId));
+              if (targetCol) {
+                // Add task to column's taskIds and itemOrder, set columnId
+                const updatedColumns = ch.columns.map((col) => {
+                  if (col.id !== targetCol.id) return col;
+                  const oldCardIndex = (col.itemOrder ?? col.cardIds).indexOf(oldCardId);
+                  const insertIndex = oldCardIndex >= 0 ? oldCardIndex + 1 : (col.itemOrder ?? col.cardIds).length;
+                  const newItemOrder = [...(col.itemOrder ?? col.cardIds)];
+                  newItemOrder.splice(insertIndex, 0, taskId);
+                  return {
+                    ...col,
+                    taskIds: [...(col.taskIds ?? []), taskId],
+                    itemOrder: newItemOrder,
+                  };
+                });
+                updates.channels = {
+                  ...(updates.channels ?? state.channels),
+                  [t.channelId]: {
+                    ...ch,
+                    columns: updatedColumns,
+                    updatedAt: timestamp,
+                  },
+                };
+                // Set columnId on the task
+                updates.tasks = {
+                  ...updates.tasks,
+                  [taskId]: { ...updates.tasks![taskId], columnId: targetCol.id },
+                };
+              } else {
+                // Card not found in any column — fall back to unlinkedTaskOrder
+                updates.channels = {
+                  ...(updates.channels ?? state.channels),
+                  [t.channelId]: {
+                    ...ch,
+                    unlinkedTaskOrder: [...(ch.unlinkedTaskOrder ?? []), taskId],
+                    updatedAt: timestamp,
+                  },
+                };
+              }
             }
+          } else if (!newCardId && !oldCardId) {
+            // Already standalone, no-op (shouldn't reach here due to early return)
           }
 
           return updates;
         });
 
-        // Sync task cardId update to server
-        sync.syncTaskUpdate(task.channelId, taskId, { cardId: newCardId });
+        // Sync task update to server (cardId + columnId)
+        const updatedTask = get().tasks[taskId];
+        sync.syncTaskUpdate(task.channelId, taskId, { cardId: newCardId, columnId: updatedTask?.columnId ?? null });
 
-        // Sync reorder: place at end of new card/unlinked list
+        // Sync reorder: place at end of new card or column
         if (newCardId) {
           const newCard = get().cards[newCardId];
           const position = (newCard?.taskIds ?? []).length - 1;
           sync.syncTaskReorder(task.channelId, taskId, newCardId, Math.max(0, position));
+        } else if (updatedTask?.columnId) {
+          // Sync column itemOrder for the column the task was placed into
+          const ch = get().channels[task.channelId];
+          const col = ch?.columns.find((c) => c.id === updatedTask.columnId);
+          if (col) {
+            const position = (col.itemOrder ?? col.cardIds).indexOf(taskId);
+            sync.syncTaskUpdate(task.channelId, taskId, { position: position >= 0 ? position : (col.itemOrder ?? col.cardIds).length - 1 });
+          }
         } else {
           const ch = get().channels[task.channelId];
           const position = (ch?.unlinkedTaskOrder ?? []).length - 1;

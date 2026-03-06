@@ -72,6 +72,7 @@ export function TaskDrawer({
 
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isMovingTask, setIsMovingTask] = useState(false);
+  const [isMovingToColumn, setIsMovingToColumn] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
 
@@ -83,6 +84,8 @@ export function TaskDrawer({
   const toggleTaskAssignee = useStore((s) => s.toggleTaskAssignee);
   const promoteTaskToCard = useStore((s) => s.promoteTaskToCard);
   const moveTaskToCard = useStore((s) => s.moveTaskToCard);
+  const moveTaskToColumn = useStore((s) => s.moveTaskToColumn);
+  const removeTaskFromColumn = useStore((s) => s.removeTaskFromColumn);
   const addTaskNote = useStore((s) => s.addTaskNote);
   const editTaskNote = useStore((s) => s.editTaskNote);
   const deleteTaskNote = useStore((s) => s.deleteTaskNote);
@@ -102,6 +105,7 @@ export function TaskDrawer({
       setIsDirty(false);
       setIsAssigneePickerOpen(false);
       setIsMovingTask(false);
+      setIsMovingToColumn(false);
       setIsMenuOpen(false);
       setIsStatusOpen(false);
       setShowTitleDrawer(false);
@@ -330,6 +334,15 @@ export function TaskDrawer({
                 >
                   Move to card
                 </button>
+                <button
+                  onClick={() => {
+                    setIsMovingToColumn(true);
+                    setIsMenuOpen(false);
+                  }}
+                  className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  Move to column
+                </button>
                 <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
                 <button
                   onClick={() => {
@@ -555,6 +568,61 @@ export function TaskDrawer({
                     }`}
                   >
                     {card.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Column picker for moving task to column */}
+        {isMovingToColumn && task && (() => {
+          const channel = channels[task.channelId];
+          const columns = channel?.columns ?? [];
+          return (
+            <div className="flex-shrink-0 px-4 py-2 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Move to column</span>
+                <button
+                  onClick={() => setIsMovingToColumn(false)}
+                  className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="max-h-48 overflow-y-auto space-y-0.5">
+                <button
+                  onClick={() => {
+                    if (task.columnId) {
+                      removeTaskFromColumn(task.id);
+                    }
+                    setIsMovingToColumn(false);
+                  }}
+                  disabled={!task.columnId}
+                  className={`block w-full px-3 py-2 text-left text-sm rounded-md transition-colors ${
+                    !task.columnId
+                      ? 'bg-violet-50 dark:bg-violet-950 text-violet-700 dark:text-violet-400 cursor-default'
+                      : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                  }`}
+                >
+                  No column
+                </button>
+                {columns.map((col) => (
+                  <button
+                    key={col.id}
+                    onClick={() => {
+                      const colItemCount = (col.itemOrder ?? col.cardIds).length;
+                      moveTaskToColumn(task.id, task.channelId, col.id, colItemCount);
+                      setIsMovingToColumn(false);
+                    }}
+                    disabled={task.columnId === col.id}
+                    className={`block w-full px-3 py-2 text-left text-sm rounded-md transition-colors truncate ${
+                      task.columnId === col.id
+                        ? 'bg-violet-50 dark:bg-violet-950 text-violet-700 dark:text-violet-400 cursor-default'
+                        : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                    }`}
+                  >
+                    {col.name}
                   </button>
                 ))}
               </div>
