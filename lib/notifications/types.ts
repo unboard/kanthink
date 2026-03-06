@@ -23,21 +23,25 @@ export type NotificationType =
 
 export type NotificationCategory = 'collaboration' | 'ai' | 'automation' | 'board_activity'
 
-export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, { label: string; types: NotificationType[] }> = {
+export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, { label: string; description: string; types: NotificationType[] }> = {
   collaboration: {
     label: 'Collaboration',
+    description: 'Assignments, mentions, shares, and invites from other users',
     types: ['card_assigned', 'task_assigned', 'mentioned_in_card', 'channel_shared', 'folder_shared', 'channel_join_via_link'],
   },
   ai: {
     label: 'AI & Shrooms',
+    description: 'Card generation, instruction suggestions, and channel analysis from Kan',
     types: ['shroom_completed', 'ai_generation_completed', 'ai_instruction_refinement', 'ai_clarifying_questions', 'drift_detected'],
   },
   automation: {
     label: 'Automation',
+    description: 'Triggered actions, threshold alerts, and safeguard warnings',
     types: ['automation_completed', 'threshold_fired', 'safeguard_tripped'],
   },
   board_activity: {
     label: 'Board Activity',
+    description: 'Cards added or moved by collaborators in shared channels',
     types: ['card_added_by_other', 'card_moved_by_other'],
   },
 }

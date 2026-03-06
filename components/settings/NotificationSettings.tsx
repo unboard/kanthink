@@ -11,6 +11,25 @@ interface Preferences {
   emailNotificationsEnabled: boolean
 }
 
+function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      disabled={disabled}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+        enabled ? 'bg-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+          enabled ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
+  )
+}
+
 export function NotificationSettings() {
   const hasPermission = useNotificationStore((s) => s.hasPermission)
   const setHasPermission = useNotificationStore((s) => s.setHasPermission)
@@ -18,7 +37,6 @@ export function NotificationSettings() {
   const [prefs, setPrefs] = useState<Preferences | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // Load preferences
   useEffect(() => {
     fetch('/api/notifications/preferences')
       .then(r => r.json())
@@ -67,10 +85,8 @@ export function NotificationSettings() {
 
     let newDisabled: string[]
     if (allDisabled) {
-      // Enable all types in this category
       newDisabled = prefs.disabledTypes.filter(t => !types.includes(t as NotificationType))
     } else {
-      // Disable all types in this category
       const toAdd = types.filter(t => !prefs.disabledTypes.includes(t))
       newDisabled = [...prefs.disabledTypes, ...toAdd]
     }
@@ -80,9 +96,15 @@ export function NotificationSettings() {
 
   if (!prefs) {
     return (
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Notifications</h3>
-        <p className="text-xs text-neutral-500">Loading...</p>
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-medium text-neutral-900 dark:text-white">Notifications</h2>
+          <p className="mt-1 text-sm text-neutral-500">Loading preferences...</p>
+        </div>
+        <div className="animate-pulse space-y-3">
+          <div className="h-14 bg-neutral-200 dark:bg-neutral-800 rounded-lg" />
+          <div className="h-14 bg-neutral-200 dark:bg-neutral-800 rounded-lg" />
+        </div>
       </div>
     )
   }
@@ -91,102 +113,130 @@ export function NotificationSettings() {
   const permissionDenied = browserNotifAvailable && Notification.permission === 'denied'
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Notifications</h3>
-
-      {/* Browser notifications toggle */}
-      {browserNotifAvailable && (
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-neutral-700 dark:text-neutral-300">Browser notifications</p>
-            <p className="text-xs text-neutral-500">
-              {permissionDenied
-                ? 'Blocked in browser settings'
-                : 'Show system notifications when tab is hidden'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleBrowserToggle}
-            disabled={permissionDenied}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              prefs.browserNotificationsEnabled && hasPermission
-                ? 'bg-violet-500'
-                : 'bg-neutral-300 dark:bg-neutral-600'
-            } ${permissionDenied ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                prefs.browserNotificationsEnabled && hasPermission ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-      )}
-
-      {/* Email notifications toggle */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-neutral-700 dark:text-neutral-300">Email notifications</p>
-          <p className="text-xs text-neutral-500">
-            Receive emails for task and card assignments
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            if (prefs) {
-              savePrefs({ ...prefs, emailNotificationsEnabled: !prefs.emailNotificationsEnabled })
-            }
-          }}
-          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-            prefs.emailNotificationsEnabled
-              ? 'bg-violet-500'
-              : 'bg-neutral-300 dark:bg-neutral-600'
-          }`}
-        >
-          <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-              prefs.emailNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'
-            }`}
-          />
-        </button>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-medium text-neutral-900 dark:text-white">Notifications</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          Control how and when Kanthink reaches you
+        </p>
       </div>
 
+      {/* Delivery methods */}
+      <div className="space-y-1">
+        <h3 className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-3">
+          Delivery
+        </h3>
+
+        <div className="space-y-4">
+          {/* Email */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-900/40">
+                <svg className="h-4 w-4 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-neutral-900 dark:text-white">Email</p>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Assignments, invitations, and digest summaries sent to your inbox
+                </p>
+              </div>
+            </div>
+            <Toggle
+              enabled={prefs.emailNotificationsEnabled}
+              onChange={() => savePrefs({ ...prefs, emailNotificationsEnabled: !prefs.emailNotificationsEnabled })}
+            />
+          </div>
+
+          {!prefs.emailNotificationsEnabled && (
+            <div className="ml-11 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 px-3 py-2">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Email is off. You won&apos;t receive assignment emails or channel digests.
+              </p>
+            </div>
+          )}
+
+          {/* Browser */}
+          {browserNotifAvailable && (
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
+                  <svg className="h-4 w-4 text-neutral-600 dark:text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-neutral-900 dark:text-white">Browser push</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    {permissionDenied
+                      ? 'Blocked by your browser. Update your browser notification permissions to enable.'
+                      : 'Desktop notifications when this tab is in the background'}
+                  </p>
+                </div>
+              </div>
+              <Toggle
+                enabled={!!(prefs.browserNotificationsEnabled && hasPermission)}
+                onChange={handleBrowserToggle}
+                disabled={permissionDenied}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-neutral-200 dark:border-neutral-800" />
+
       {/* Category toggles */}
-      <div className="space-y-3">
-        <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-          Notification categories
+      <div className="space-y-1">
+        <h3 className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-3">
+          What to notify
+        </h3>
+        <p className="text-xs text-neutral-500 mb-4">
+          Turn off categories you don&apos;t need. This applies to both email and browser notifications.
         </p>
-        {(Object.entries(NOTIFICATION_CATEGORIES) as [NotificationCategory, typeof NOTIFICATION_CATEGORIES[NotificationCategory]][]).map(
-          ([key, config]) => {
-            const disabled = isCategoryDisabled(key)
-            return (
-              <div key={key} className="flex items-center justify-between">
-                <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                  {config.label}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => toggleCategory(key)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
-                    !disabled ? 'bg-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'
+
+        <div className="space-y-3">
+          {(Object.entries(NOTIFICATION_CATEGORIES) as [NotificationCategory, typeof NOTIFICATION_CATEGORIES[NotificationCategory]][]).map(
+            ([key, config]) => {
+              const disabled = isCategoryDisabled(key)
+              return (
+                <div
+                  key={key}
+                  className={`flex items-start justify-between gap-4 rounded-lg border px-4 py-3 transition-colors ${
+                    disabled
+                      ? 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50'
+                      : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900'
                   }`}
                 >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      !disabled ? 'translate-x-6' : 'translate-x-1'
-                    }`}
+                  <div className="min-w-0">
+                    <p className={`text-sm font-medium ${
+                      disabled
+                        ? 'text-neutral-400 dark:text-neutral-500'
+                        : 'text-neutral-900 dark:text-white'
+                    }`}>
+                      {config.label}
+                    </p>
+                    <p className={`text-xs mt-0.5 ${
+                      disabled ? 'text-neutral-400 dark:text-neutral-600' : 'text-neutral-500'
+                    }`}>
+                      {config.description}
+                    </p>
+                  </div>
+                  <Toggle
+                    enabled={!disabled}
+                    onChange={() => toggleCategory(key)}
                   />
-                </button>
-              </div>
-            )
-          }
-        )}
+                </div>
+              )
+            }
+          )}
+        </div>
       </div>
 
       {saving && (
-        <p className="text-xs text-neutral-400">Saving...</p>
+        <p className="text-xs text-neutral-400 animate-pulse">Saving...</p>
       )}
     </div>
   )

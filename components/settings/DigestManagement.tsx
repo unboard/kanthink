@@ -23,7 +23,6 @@ export function DigestManagement() {
   }, [])
 
   const updateFrequency = useCallback(async (channelId: string, frequency: string) => {
-    // Optimistic update
     if (frequency === 'off') {
       setDigests(prev => prev.filter(d => d.channelId !== channelId))
     } else {
@@ -39,7 +38,6 @@ export function DigestManagement() {
         body: JSON.stringify({ frequency }),
       })
     } catch {
-      // Refetch on error
       fetch('/api/notifications/digests')
         .then(r => r.json())
         .then(data => setDigests(data.digests || []))
@@ -49,9 +47,14 @@ export function DigestManagement() {
 
   if (loading) {
     return (
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Channel Digests</h3>
-        <p className="text-xs text-neutral-500">Loading...</p>
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-medium text-neutral-900 dark:text-white">Channel Digests</h2>
+          <p className="mt-1 text-sm text-neutral-500">Loading...</p>
+        </div>
+        <div className="animate-pulse">
+          <div className="h-12 bg-neutral-200 dark:bg-neutral-800 rounded-lg" />
+        </div>
       </div>
     )
   }
@@ -59,32 +62,45 @@ export function DigestManagement() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-medium text-neutral-900 dark:text-white">Channel Digests</h3>
-        <p className="text-xs text-neutral-500 mt-1">
-          Receive periodic summaries of channel activity from Kan. Subscribe in each channel&apos;s settings.
+        <h2 className="text-lg font-medium text-neutral-900 dark:text-white">Channel Digests</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          Periodic activity summaries from Kan, delivered to your inbox. Subscribe per-channel in each channel&apos;s settings.
         </p>
       </div>
 
       {digests.length === 0 ? (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 py-2">
-          No digest subscriptions yet. Enable digests in a channel&apos;s settings to get started.
-        </p>
+        <div className="rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 px-4 py-6 text-center">
+          <svg className="mx-auto h-8 w-8 text-neutral-400 dark:text-neutral-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+          </svg>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            No digest subscriptions yet
+          </p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">
+            Open a channel&apos;s settings and turn on email digests to see them here
+          </p>
+        </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {digests.map(digest => (
-            <div key={digest.id} className="flex items-center justify-between">
-              <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate mr-3">
-                {digest.channelName}
-              </span>
+            <div
+              key={digest.id}
+              className="flex items-center justify-between rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-4 py-3"
+            >
+              <div className="min-w-0 mr-3">
+                <p className="text-sm font-medium text-neutral-900 dark:text-white truncate">
+                  {digest.channelName}
+                </p>
+              </div>
               <select
                 value={digest.frequency}
                 onChange={(e) => updateFrequency(digest.channelId, e.target.value)}
-                className="text-sm rounded-md border border-neutral-300 bg-white px-2 py-1 focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300"
+                className="shrink-0 text-sm rounded-md border border-neutral-300 bg-white px-2 py-1.5 focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
               >
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
-                <option value="off">Off</option>
+                <option value="off">Remove</option>
               </select>
             </div>
           ))}
