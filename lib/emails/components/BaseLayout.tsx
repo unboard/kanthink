@@ -7,7 +7,6 @@ import {
   Text,
   Preview,
   Img,
-  Button,
 } from '@react-email/components'
 import * as React from 'react'
 
@@ -115,28 +114,16 @@ export function BaseLayout({ previewText, tokens, children }: BaseLayoutProps) {
             borderTop: `1px solid ${t.borderColor}`,
             padding: '24px 32px',
           }}>
-            <Section style={{ textAlign: 'center' as const }}>
-              <Button href="https://kanthink.com" style={{
-                backgroundColor: t.ctaColor,
-                borderRadius: '6px',
-                color: '#ffffff',
-                display: 'inline-block' as const,
-                fontSize: '14px',
-                fontWeight: '600' as const,
-                padding: '10px 24px',
-                textDecoration: 'none',
-                textAlign: 'center' as const,
-              }}>
-                Go to Kanthink
-              </Button>
-            </Section>
             <Text style={{
               color: t.mutedColor,
               fontSize: '12px',
-              margin: '16px 0 0',
+              margin: '0',
               textAlign: 'center' as const,
+              lineHeight: '1.6',
             }}>
               AI-driven Kanban for clarity
+              <br />
+              <a href="https://www.kanthink.com" style={{ color: t.mutedColor, textDecoration: 'underline' }}>www.kanthink.com</a>
             </Text>
           </Section>
         </Container>
