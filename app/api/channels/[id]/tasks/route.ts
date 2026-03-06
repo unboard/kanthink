@@ -6,6 +6,7 @@ import { eq, and, desc, gte, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { nanoid } from 'nanoid'
+import { logChannelActivity } from '@/lib/db/activity'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -152,6 +153,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     } catch (e) {
       console.error('Task read-back failed (using constructed response):', e)
     }
+
+    // Log activity for digests
+    logChannelActivity(channelId, userId, 'task_created', 'task', taskId, { title }).catch(() => {})
 
     return NextResponse.json({ task: responseTask }, { status: 201 })
   } catch (error) {

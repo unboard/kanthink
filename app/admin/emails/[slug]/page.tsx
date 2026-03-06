@@ -10,6 +10,7 @@ const categoryColors: Record<EmailDefinition['category'], string> = {
   collaboration: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400',
   billing: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
   usage: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400',
+  digest: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400',
 }
 
 export default function EmailDetailPage() {

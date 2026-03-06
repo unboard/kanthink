@@ -413,6 +413,49 @@ export const emailTemplates = sqliteTable('email_templates', {
   uniqueIndex('email_templates_slug_idx').on(table.slug),
 ])
 
+// Channel digest subscriptions (per-user, per-channel opt-in)
+export const channelDigestSubscriptions = sqliteTable('channel_digest_subscriptions', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  frequency: text('frequency').$type<'daily' | 'weekly' | 'monthly'>().notNull().default('weekly'),
+  muted: integer('muted', { mode: 'boolean' }).default(false),
+  lastSentAt: integer('last_sent_at', { mode: 'timestamp' }),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('channel_digest_subs_user_channel').on(table.userId, table.channelId),
+  index('channel_digest_subs_user_idx').on(table.userId),
+])
+
+// Channel activity log (events that feed digests)
+export const channelActivityLog = sqliteTable('channel_activity_log', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  action: text('action').$type<'card_created' | 'card_moved' | 'card_deleted' | 'card_updated' | 'task_created' | 'task_completed'>().notNull(),
+  entityType: text('entity_type').$type<'card' | 'task'>().notNull(),
+  entityId: text('entity_id').notNull(),
+  metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('channel_activity_log_channel_created_idx').on(table.channelId, table.createdAt),
+])
+
+// Digest send log (idempotency + debugging)
+export const digestSendLog = sqliteTable('digest_send_log', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  frequency: text('frequency').$type<'daily' | 'weekly' | 'monthly'>().notNull(),
+  periodStart: integer('period_start', { mode: 'timestamp' }).notNull(),
+  periodEnd: integer('period_end', { mode: 'timestamp' }).notNull(),
+  activityCount: integer('activity_count').notNull(),
+  sentAt: integer('sent_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
 // ===== JSON TYPE DEFINITIONS =====
 // These match the types in lib/types.ts but are for JSON storage
 
@@ -581,3 +624,9 @@ export type DbChannelChatThread = typeof channelChatThreads.$inferSelect
 export type NewDbChannelChatThread = typeof channelChatThreads.$inferInsert
 export type DbEmailTemplate = typeof emailTemplates.$inferSelect
 export type NewDbEmailTemplate = typeof emailTemplates.$inferInsert
+export type DbChannelDigestSubscription = typeof channelDigestSubscriptions.$inferSelect
+export type NewDbChannelDigestSubscription = typeof channelDigestSubscriptions.$inferInsert
+export type DbChannelActivityLog = typeof channelActivityLog.$inferSelect
+export type NewDbChannelActivityLog = typeof channelActivityLog.$inferInsert
+export type DbDigestSendLog = typeof digestSendLog.$inferSelect
+export type NewDbDigestSendLog = typeof digestSendLog.$inferInsert

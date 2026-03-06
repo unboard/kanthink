@@ -5,6 +5,7 @@ import { cards, columns, tasks, channels, users } from '@/lib/db/schema'
 import { eq, and, gt, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { createNotification, createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
+import { logChannelActivity } from '@/lib/db/activity'
 
 interface RouteParams {
   params: Promise<{ id: string; cardId: string }>
@@ -130,6 +131,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       where: eq(cards.id, cardId),
     })
 
+    // Log activity for digests
+    if (body.columnId !== undefined && body.columnId !== existingCard.columnId) {
+      logChannelActivity(channelId, userId, 'card_moved', 'card', cardId, { title: updatedCard?.title }).catch(() => {})
+    } else {
+      logChannelActivity(channelId, userId, 'card_updated', 'card', cardId, { title: updatedCard?.title }).catch(() => {})
+    }
+
     // Notify on card assignment changes
     if (assignedTo !== undefined && updatedCard) {
       const oldAssigned = (existingCard.assignedTo as string[] | null) ?? []
@@ -211,6 +219,9 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     }
 
     const { columnId, position, isArchived } = existingCard
+
+    // Log activity for digests
+    logChannelActivity(channelId, userId, 'card_deleted', 'card', cardId, { title: existingCard.title }).catch(() => {})
 
     // Delete tasks associated with this card (cascade should handle this, but explicit)
     await db.delete(tasks).where(eq(tasks.cardId, cardId))

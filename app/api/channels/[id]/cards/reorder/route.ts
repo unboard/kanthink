@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { cards, columns } from '@/lib/db/schema'
 import { eq, and, gte, lte, gt, lt, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { logChannelActivity } from '@/lib/db/activity'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -138,6 +139,15 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const updatedCard = await db.query.cards.findFirst({
       where: eq(cards.id, cardId),
     })
+
+    // Log move activity if column changed
+    if (fromColumnId !== toColumnId) {
+      logChannelActivity(channelId, userId, 'card_moved', 'card', cardId, {
+        title: updatedCard?.title,
+        fromColumnId,
+        toColumnId,
+      }).catch(() => {})
+    }
 
     return NextResponse.json({
       card: {

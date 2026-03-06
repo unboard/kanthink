@@ -6,6 +6,7 @@ import { eq, and, asc, desc, gt, gte, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { nanoid } from 'nanoid'
 import { createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
+import { logChannelActivity } from '@/lib/db/activity'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -115,6 +116,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const createdCard = await db.query.cards.findFirst({
       where: eq(cards.id, cardId),
     })
+
+    // Log activity for digests
+    logChannelActivity(channelId, userId, 'card_created', 'card', cardId, { title }).catch(() => {})
 
     // Notify channel members about new card
     if (createdCard) {

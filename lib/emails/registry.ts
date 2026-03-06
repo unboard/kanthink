@@ -2,7 +2,7 @@ export interface EmailDefinition {
   slug: string
   name: string
   description: string
-  category: 'onboarding' | 'collaboration' | 'billing' | 'usage'
+  category: 'onboarding' | 'collaboration' | 'billing' | 'usage' | 'digest'
   trigger: {
     description: string
     type: 'event' | 'threshold'
@@ -128,6 +128,19 @@ export const emailRegistry: EmailDefinition[] = [
       location: 'lib/emails/send.ts → sendUsageLimitReachedEmail',
     },
     subject: "You've reached your Kanthink usage limit",
+    status: 'active',
+  },
+  {
+    slug: 'channel-digest',
+    name: 'Channel Digest',
+    description: 'Periodic summary of channel activity sent to subscribed users. Includes AI-generated summary and activity list.',
+    category: 'digest',
+    trigger: {
+      description: 'Cron job runs daily at 8 AM UTC; processes daily/weekly/monthly subs',
+      type: 'event',
+      location: 'lib/emails/send.ts → sendChannelDigestEmail',
+    },
+    subject: 'Your {{periodLabel}} digest for "{{channelName}}"',
     status: 'active',
   },
 ]

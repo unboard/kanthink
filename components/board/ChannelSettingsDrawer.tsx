@@ -144,6 +144,9 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
   const [copied, setCopied] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
+  const [digestFrequency, setDigestFrequency] = useState<'off' | 'daily' | 'weekly' | 'monthly'>('off');
+  const [digestMuted, setDigestMuted] = useState(false);
+  const [digestLoading, setDigestLoading] = useState(true);
 
   // Check if current user is admin (set server-side in session)
   const isAdminUser = session?.user?.isAdmin ?? false;
@@ -168,8 +171,33 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
       setShowExport(false);
       setImportJson('');
       setImportError(null);
+
+      // Fetch digest subscription
+      setDigestLoading(true);
+      fetch(`/api/channels/${channel.id}/digest`)
+        .then(r => r.json())
+        .then(data => {
+          setDigestFrequency(data.digest?.frequency || 'off');
+          setDigestMuted(data.digest?.muted || false);
+        })
+        .catch(() => {})
+        .finally(() => setDigestLoading(false));
     }
   }, [channel.id, isOpen]);
+
+  const updateDigest = (frequency: string, muted?: boolean) => {
+    const newFreq = frequency as typeof digestFrequency;
+    setDigestFrequency(newFreq);
+    if (muted !== undefined) setDigestMuted(muted);
+    fetch(`/api/channels/${channel.id}/digest`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        frequency: newFreq,
+        ...(muted !== undefined ? { muted } : {}),
+      }),
+    }).catch(() => {});
+  };
 
   const handleSave = () => {
     if (aiInstructions.trim() !== (channel.aiInstructions || '')) {
@@ -377,6 +405,56 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
               onCancel={() => setShowInstructionChat(false)}
             />
           )}
+        </div>
+
+        {/* Notifications */}
+        <div className="pt-4">
+          <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">
+            Notifications
+          </h3>
+
+          {/* Mute toggle */}
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-sm text-neutral-700 dark:text-neutral-300">Mute channel</p>
+              <p className="text-xs text-neutral-500">Suppress all notifications from this channel</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => updateDigest(digestFrequency, !digestMuted)}
+              disabled={digestLoading}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
+                digestMuted ? 'bg-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  digestMuted ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Digest frequency */}
+          <div>
+            <label className="mb-1 block text-sm text-neutral-700 dark:text-neutral-300">
+              Email digest
+            </label>
+            <select
+              value={digestFrequency}
+              onChange={(e) => updateDigest(e.target.value)}
+              disabled={digestLoading}
+              className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
+            >
+              <option value="off">Off</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+            <p className="text-xs text-neutral-500 mt-1">
+              Receive a summary of activity in this channel from Kan
+            </p>
+          </div>
         </div>
 
         {/* Export/Import Section */}

@@ -126,6 +126,54 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0011 — channel_digest_subscriptions
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS channel_digest_subscriptions (
+      id text PRIMARY KEY NOT NULL,
+      user_id text NOT NULL,
+      channel_id text NOT NULL,
+      frequency text NOT NULL DEFAULT 'weekly',
+      muted integer DEFAULT false,
+      last_sent_at integer,
+      created_at integer,
+      updated_at integer,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade,
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE cascade
+    )`))
+  } catch {}
+
+  // Migration 0011 — channel_activity_log
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS channel_activity_log (
+      id text PRIMARY KEY NOT NULL,
+      channel_id text NOT NULL,
+      user_id text NOT NULL,
+      action text NOT NULL,
+      entity_type text NOT NULL,
+      entity_id text NOT NULL,
+      metadata text,
+      created_at integer,
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE cascade,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
+    )`))
+  } catch {}
+
+  // Migration 0011 — digest_send_log
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS digest_send_log (
+      id text PRIMARY KEY NOT NULL,
+      user_id text NOT NULL,
+      channel_id text NOT NULL,
+      frequency text NOT NULL,
+      period_start integer NOT NULL,
+      period_end integer NOT NULL,
+      activity_count integer NOT NULL,
+      sent_at integer,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade,
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE cascade
+    )`))
+  } catch {}
+
   // Indexes — IF NOT EXISTS works for these
   const indexes = [
     `CREATE UNIQUE INDEX IF NOT EXISTS notification_preferences_user_idx ON notification_preferences (user_id)`,
@@ -146,6 +194,10 @@ export async function ensureSchema() {
     // Migration 0010 indexes
     `CREATE INDEX IF NOT EXISTS email_templates_user_idx ON email_templates (user_id)`,
     `CREATE UNIQUE INDEX IF NOT EXISTS email_templates_slug_idx ON email_templates (slug)`,
+    // Migration 0011 indexes
+    `CREATE UNIQUE INDEX IF NOT EXISTS channel_digest_subs_user_channel ON channel_digest_subscriptions (user_id, channel_id)`,
+    `CREATE INDEX IF NOT EXISTS channel_digest_subs_user_idx ON channel_digest_subscriptions (user_id)`,
+    `CREATE INDEX IF NOT EXISTS channel_activity_log_channel_created_idx ON channel_activity_log (channel_id, created_at)`,
   ]
 
   for (const idx of indexes) {

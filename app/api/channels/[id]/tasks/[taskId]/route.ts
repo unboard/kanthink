@@ -6,6 +6,7 @@ import { eq, and } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { createNotification } from '@/lib/notifications/createNotification'
+import { logChannelActivity } from '@/lib/db/activity'
 
 interface RouteParams {
   params: Promise<{ id: string; taskId: string }>
@@ -80,6 +81,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const updatedTask = await db.query.tasks.findFirst({
       where: eq(tasks.id, taskId),
     })
+
+    // Log activity for digests
+    if (status === 'done' && task.status !== 'done') {
+      logChannelActivity(channelId, userId, 'task_completed', 'task', taskId, { title: updatedTask?.title }).catch(() => {})
+    }
 
     // Notify on task assignment changes
     if (assignedTo !== undefined && updatedTask) {

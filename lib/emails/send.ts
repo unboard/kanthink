@@ -9,6 +9,7 @@ import { SubscriptionConfirmed } from './SubscriptionConfirmed'
 import { SubscriptionCanceled } from './SubscriptionCanceled'
 import { UsageLimitWarning } from './UsageLimitWarning'
 import { UsageLimitReached } from './UsageLimitReached'
+import { ChannelDigest } from './ChannelDigest'
 import { DynamicEmail, type EmailConfig } from './dynamicRenderer'
 import { db } from '@/lib/db'
 import { emailTemplates } from '@/lib/db/schema'
@@ -122,6 +123,29 @@ export async function sendUsageLimitReachedEmail(
     to,
     'You\'ve reached your Kanthink usage limit',
     React.createElement(UsageLimitReached, props)
+  )
+}
+
+export async function sendChannelDigestEmail(
+  to: string,
+  props: {
+    channelName: string
+    userName: string
+    periodLabel: string
+    aiSummary: string | null
+    activities: Array<{
+      action: string
+      entityType: string
+      metadata?: Record<string, unknown>
+      createdAt: string
+    }>
+    channelUrl: string
+  }
+): Promise<boolean> {
+  return renderAndSend(
+    to,
+    `Your ${props.periodLabel} digest for "${props.channelName}"`,
+    React.createElement(ChannelDigest, props)
   )
 }
 
