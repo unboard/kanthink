@@ -31,6 +31,8 @@ export async function ensureSchema() {
     `ALTER TABLE tasks ADD column_id text`,
     // Migration 0009
     `ALTER TABLE notification_preferences ADD email_notifications_enabled integer DEFAULT true`,
+    // Migration 0012
+    `ALTER TABLE email_templates ADD system_slug text`,
   ]
 
   for (const stmt of alterStatements) {

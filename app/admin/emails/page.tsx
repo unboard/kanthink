@@ -10,6 +10,7 @@ interface SavedTemplate {
   slug: string
   subject: string
   status: 'draft' | 'active'
+  systemSlug?: string | null
   updatedAt: string | number
 }
 
@@ -52,7 +53,9 @@ export default function AdminEmailsPage() {
     fetchTemplates()
   }, [])
 
-  const totalCount = emailRegistry.length + savedTemplates.length
+  // Filter out system email overrides — they show on their system email detail page instead
+  const customTemplates = savedTemplates.filter(t => !t.systemSlug)
+  const totalCount = emailRegistry.length + customTemplates.length
 
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-8">
@@ -84,7 +87,7 @@ export default function AdminEmailsPage() {
       </div>
 
       {/* Custom Templates */}
-      {(savedTemplates.length > 0 || loadingTemplates) && (
+      {(customTemplates.length > 0 || loadingTemplates) && (
         <div className="mb-8">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-3">
             Custom Templates
@@ -93,7 +96,7 @@ export default function AdminEmailsPage() {
             <div className="text-sm text-neutral-400">Loading...</div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {savedTemplates.map((t) => (
+              {customTemplates.map((t) => (
                 <Link
                   key={t.id}
                   href={`/admin/emails/create?id=${t.id}`}
@@ -120,7 +123,7 @@ export default function AdminEmailsPage() {
 
       {/* System Emails */}
       <div>
-        {savedTemplates.length > 0 && (
+        {customTemplates.length > 0 && (
           <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500 mb-3">
             System Emails
           </h3>

@@ -27,103 +27,136 @@ async function renderAndSend(to: string, subject: string, component: React.React
   }
 }
 
+/**
+ * Check if a system email has a DB override. If so, render using DynamicEmail
+ * with variable substitution. Returns null if no override exists.
+ */
+async function trySystemOverride(
+  systemSlug: string,
+  to: string,
+  variables: Record<string, string>,
+): Promise<boolean | null> {
+  try {
+    await ensureSchema()
+    const [override] = await db
+      .select()
+      .from(emailTemplates)
+      .where(eq(emailTemplates.systemSlug, systemSlug))
+      .limit(1)
+
+    if (!override || !override.body || override.status !== 'active') return null
+
+    let subject = override.subject
+    let bodyJson = JSON.stringify(override.body)
+
+    for (const [key, value] of Object.entries(variables)) {
+      const pattern = new RegExp(`\\{\\{${key}\\}\\}`, 'g')
+      subject = subject.replace(pattern, value)
+      bodyJson = bodyJson.replace(pattern, value)
+    }
+
+    const config: EmailConfig = {
+      subject,
+      previewText: override.previewText || subject,
+      body: JSON.parse(bodyJson),
+    }
+
+    return renderAndSend(
+      to,
+      subject,
+      React.createElement(DynamicEmail, { config })
+    )
+  } catch (error) {
+    console.error(`[Email] Override check failed for ${systemSlug}, falling back to default:`, error)
+    return null
+  }
+}
+
 export async function sendChannelInviteEmail(
   to: string,
   props: { inviterName: string; channelName: string; signUpUrl: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    `${props.inviterName} invited you to "${props.channelName}" on Kanthink`,
-    React.createElement(ChannelInvite, props)
-  )
+  const override = await trySystemOverride('channel-invite', to, props)
+  if (override !== null) return override
+  return renderAndSend(to, `${props.inviterName} invited you to "${props.channelName}" on Kanthink`, React.createElement(ChannelInvite, props))
 }
 
 export async function sendWelcomeEmail(
   to: string,
   props: { userName: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    'Welcome to Kanthink!',
-    React.createElement(Welcome, props)
-  )
+  const override = await trySystemOverride('welcome', to, { userName: props.userName })
+  if (override !== null) return override
+  return renderAndSend(to, 'Welcome to Kanthink!', React.createElement(Welcome, props))
 }
 
 export async function sendTaskAssignedEmail(
   to: string,
   props: { assignerName: string; taskTitle: string; channelName: string; taskUrl: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    `Task assigned: ${props.taskTitle}`,
-    React.createElement(TaskAssigned, props)
-  )
+  const override = await trySystemOverride('task-assigned', to, props)
+  if (override !== null) return override
+  return renderAndSend(to, `Task assigned: ${props.taskTitle}`, React.createElement(TaskAssigned, props))
 }
 
 export async function sendCardAssignedEmail(
   to: string,
   props: { assignerName: string; cardTitle: string; channelName: string; cardUrl: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    `Card assigned: ${props.cardTitle}`,
-    React.createElement(CardAssigned, props)
-  )
+  const override = await trySystemOverride('card-assigned', to, props)
+  if (override !== null) return override
+  return renderAndSend(to, `Card assigned: ${props.cardTitle}`, React.createElement(CardAssigned, props))
 }
 
 export async function sendPaymentFailedEmail(
   to: string,
   props: { userName: string; settingsUrl: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    'Your Kanthink payment could not be processed',
-    React.createElement(PaymentFailed, props)
-  )
+  const override = await trySystemOverride('payment-failed', to, props)
+  if (override !== null) return override
+  return renderAndSend(to, 'Your Kanthink payment could not be processed', React.createElement(PaymentFailed, props))
 }
 
 export async function sendSubscriptionConfirmedEmail(
   to: string,
   props: { userName: string; tier: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    'Your Kanthink subscription is confirmed',
-    React.createElement(SubscriptionConfirmed, props)
-  )
+  const override = await trySystemOverride('subscription-confirmed', to, props)
+  if (override !== null) return override
+  return renderAndSend(to, 'Your Kanthink subscription is confirmed', React.createElement(SubscriptionConfirmed, props))
 }
 
 export async function sendSubscriptionCanceledEmail(
   to: string,
   props: { userName: string; endDate: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    'Your Kanthink subscription has been canceled',
-    React.createElement(SubscriptionCanceled, props)
-  )
+  const override = await trySystemOverride('subscription-canceled', to, props)
+  if (override !== null) return override
+  return renderAndSend(to, 'Your Kanthink subscription has been canceled', React.createElement(SubscriptionCanceled, props))
 }
 
 export async function sendUsageLimitWarningEmail(
   to: string,
   props: { userName: string; used: number; limit: number; tier: string; upgradeUrl: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    "You're approaching your Kanthink usage limit",
-    React.createElement(UsageLimitWarning, props)
-  )
+  const override = await trySystemOverride('usage-limit-warning', to, {
+    userName: props.userName, used: String(props.used), limit: String(props.limit),
+    tier: props.tier, upgradeUrl: props.upgradeUrl,
+  })
+  if (override !== null) return override
+  return renderAndSend(to, "You're approaching your Kanthink usage limit", React.createElement(UsageLimitWarning, props))
 }
 
 export async function sendUsageLimitReachedEmail(
   to: string,
   props: { userName: string; limit: number; tier: string; upgradeUrl: string; resetDate: string }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    'You\'ve reached your Kanthink usage limit',
-    React.createElement(UsageLimitReached, props)
-  )
+  const override = await trySystemOverride('usage-limit-reached', to, {
+    userName: props.userName, limit: String(props.limit),
+    tier: props.tier, upgradeUrl: props.upgradeUrl, resetDate: props.resetDate,
+  })
+  if (override !== null) return override
+  return renderAndSend(to, 'You\'ve reached your Kanthink usage limit', React.createElement(UsageLimitReached, props))
 }
 
 export async function sendChannelDigestEmail(
@@ -142,11 +175,13 @@ export async function sendChannelDigestEmail(
     channelUrl: string
   }
 ): Promise<boolean> {
-  return renderAndSend(
-    to,
-    `Your ${props.periodLabel} digest for "${props.channelName}"`,
-    React.createElement(ChannelDigest, props)
-  )
+  const override = await trySystemOverride('channel-digest', to, {
+    channelName: props.channelName, userName: props.userName,
+    periodLabel: props.periodLabel, aiSummary: props.aiSummary || '',
+    channelUrl: props.channelUrl,
+  })
+  if (override !== null) return override
+  return renderAndSend(to, `Your ${props.periodLabel} digest for "${props.channelName}"`, React.createElement(ChannelDigest, props))
 }
 
 /**

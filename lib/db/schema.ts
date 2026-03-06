@@ -406,6 +406,7 @@ export const emailTemplates = sqliteTable('email_templates', {
   body: text('body', { mode: 'json' }).$type<EmailNodeJson[]>(),
   status: text('status').$type<'draft' | 'active'>().default('draft'),
   conversationHistory: text('conversation_history', { mode: 'json' }).$type<EmailBuilderMessageJson[]>(),
+  systemSlug: text('system_slug'),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [

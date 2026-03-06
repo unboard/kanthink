@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { EmailConfig } from '@/lib/emails/dynamicRenderer'
+import { emailRegistry } from '@/lib/emails/registry'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -18,6 +19,8 @@ export default function EmailBuilderPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const templateId = searchParams.get('id')
+  const systemSlug = searchParams.get('systemSlug')
+  const systemEmail = systemSlug ? emailRegistry.find(e => e.slug === systemSlug) : null
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -125,6 +128,15 @@ export default function EmailBuilderPage() {
           userMessage,
           isInitialGreeting,
           context: { conversationHistory },
+          ...(systemEmail && isInitialGreeting ? {
+            systemEmailContext: {
+              slug: systemEmail.slug,
+              name: systemEmail.name,
+              description: systemEmail.description,
+              subject: systemEmail.subject,
+              variables: systemEmail.variables,
+            },
+          } : {}),
         }),
       })
 
@@ -163,6 +175,13 @@ export default function EmailBuilderPage() {
       setLoading(false)
     }
   }, [loading, messages, templateName])
+
+  // Set default name from system email
+  useEffect(() => {
+    if (systemEmail && !templateName) {
+      setTemplateName(systemEmail.name)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initial greeting on mount (only for new templates)
   useEffect(() => {
@@ -205,6 +224,7 @@ export default function EmailBuilderPage() {
       body: emailConfig.body,
       status,
       conversationHistory,
+      ...(systemSlug ? { systemSlug } : {}),
     }
 
     try {

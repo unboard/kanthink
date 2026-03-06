@@ -5,6 +5,14 @@ import { recordUsage } from '@/lib/usage'
 import { extractEmailConfig, cleanDisplayResponse } from '@/lib/emails/extractEmailConfig'
 import type { EmailConfig } from '@/lib/emails/dynamicRenderer'
 
+interface SystemEmailContext {
+  slug: string
+  name: string
+  description: string
+  subject: string
+  variables: Array<{ name: string; description: string; example: string }>
+}
+
 interface BuilderChatRequest {
   userMessage: string
   isInitialGreeting?: boolean
@@ -14,12 +22,14 @@ interface BuilderChatRequest {
       content: string
     }>
   }
+  systemEmailContext?: SystemEmailContext
 }
 
 function buildPrompt(
   userMessage: string,
   isInitialGreeting: boolean,
-  conversationHistory: BuilderChatRequest['context']['conversationHistory']
+  conversationHistory: BuilderChatRequest['context']['conversationHistory'],
+  systemEmailContext?: SystemEmailContext,
 ): LLMMessage[] {
   const systemPrompt = `You are Kan, a helpful AI assistant for Kanthink — a Kanban app with AI-powered email capabilities.
 
@@ -142,7 +152,21 @@ When ready, include the template in your response using this exact format:
     messages.push({ role: msg.role, content: msg.content })
   }
 
-  if (isInitialGreeting) {
+  if (isInitialGreeting && systemEmailContext) {
+    const varList = systemEmailContext.variables.map(v => `- {{${v.name}}}: ${v.description} (e.g. "${v.example}")`).join('\n')
+    messages.push({
+      role: 'user',
+      content: `I want to customize the "${systemEmailContext.name}" system email. Here's the context:
+
+**Description:** ${systemEmailContext.description}
+**Current subject:** ${systemEmailContext.subject}
+
+**Available variables (these will be substituted at send time):**
+${varList}
+
+Generate an initial version of this email using the description and available variables. Use {{variableName}} syntax in strings where the variable values should appear. Give a brief explanation of what you built, then include the template.`,
+    })
+  } else if (isInitialGreeting) {
     messages.push({
       role: 'user',
       content: 'I want to create a new email template. Give me a brief greeting (1-2 sentences) and ask what kind of email I want to build.',
@@ -157,7 +181,7 @@ When ready, include the template in your response using this exact format:
 export async function POST(request: Request) {
   try {
     const body: BuilderChatRequest = await request.json()
-    const { userMessage, isInitialGreeting, context } = body
+    const { userMessage, isInitialGreeting, context, systemEmailContext } = body
 
     if (!context) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -189,7 +213,8 @@ export async function POST(request: Request) {
     const messages = buildPrompt(
       userMessage || '',
       isInitialGreeting ?? false,
-      context.conversationHistory
+      context.conversationHistory,
+      systemEmailContext,
     )
 
     try {

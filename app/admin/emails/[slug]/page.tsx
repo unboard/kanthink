@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { emailRegistry, type EmailDefinition } from '@/lib/emails/registry'
 
 const categoryColors: Record<EmailDefinition['category'], string> = {
@@ -15,9 +15,34 @@ const categoryColors: Record<EmailDefinition['category'], string> = {
 
 export default function EmailDetailPage() {
   const { slug } = useParams<{ slug: string }>()
+  const router = useRouter()
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop')
+  const [override, setOverride] = useState<{ id: string } | null>(null)
+  const [loadingOverride, setLoadingOverride] = useState(true)
+  const [resetting, setResetting] = useState(false)
 
   const email = emailRegistry.find((e) => e.slug === slug)
+
+  // Check if a DB override exists for this system email
+  useEffect(() => {
+    if (!slug) return
+    async function checkOverride() {
+      try {
+        const res = await fetch(`/api/admin/emails/templates?systemSlug=${slug}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.length > 0) {
+            setOverride({ id: data[0].id })
+          }
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoadingOverride(false)
+      }
+    }
+    checkOverride()
+  }, [slug])
 
   if (!email) {
     return (
@@ -28,6 +53,22 @@ export default function EmailDetailPage() {
         </Link>
       </div>
     )
+  }
+
+  async function handleResetToDefault() {
+    if (!override) return
+    if (!confirm('Reset this email to the default template? Your customization will be deleted.')) return
+    setResetting(true)
+    try {
+      const res = await fetch(`/api/admin/emails/templates/${override.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setOverride(null)
+      }
+    } catch {
+      // ignore
+    } finally {
+      setResetting(false)
+    }
   }
 
   return (
@@ -44,6 +85,40 @@ export default function EmailDetailPage() {
           Catalog
         </Link>
         <span className="text-sm font-medium text-neutral-900 dark:text-white">{email.name}</span>
+
+        {override && (
+          <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400">
+            customized
+          </span>
+        )}
+
+        <div className="flex-1" />
+
+        {!loadingOverride && (
+          <div className="flex items-center gap-2">
+            {override && (
+              <button
+                onClick={handleResetToDefault}
+                disabled={resetting}
+                className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors disabled:opacity-50"
+              >
+                Reset to Default
+              </button>
+            )}
+            <Link
+              href={override
+                ? `/admin/emails/create?id=${override.id}`
+                : `/admin/emails/create?systemSlug=${slug}`
+              }
+              className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 transition-colors"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              {override ? 'Edit' : 'Customize'}
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Content: metadata + preview */}
@@ -83,6 +158,20 @@ export default function EmailDetailPage() {
                 </span>
               </div>
             </div>
+
+            {email.variables.length > 0 && (
+              <div>
+                <Label>Available Variables</Label>
+                <div className="space-y-2 mt-1.5">
+                  {email.variables.map((v) => (
+                    <div key={v.name} className="bg-neutral-50 dark:bg-neutral-900 rounded px-2.5 py-2">
+                      <code className="text-xs font-mono text-violet-600 dark:text-violet-400">{`{{${v.name}}}`}</code>
+                      <p className="text-[11px] text-neutral-500 mt-0.5">{v.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <Label>Code location</Label>

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { auth, isAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { emailTemplates } from '@/lib/db/schema'
@@ -13,7 +13,7 @@ function slugify(name: string): string {
     || 'template'
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await auth()
   if (!session?.user?.email || !isAdmin(session.user.email)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -21,6 +21,27 @@ export async function GET() {
 
   await ensureSchema()
 
+  const systemSlug = request.nextUrl.searchParams.get('systemSlug')
+
+  // If filtering by systemSlug, return overrides for that system email
+  if (systemSlug) {
+    const overrides = await db
+      .select({
+        id: emailTemplates.id,
+        name: emailTemplates.name,
+        slug: emailTemplates.slug,
+        subject: emailTemplates.subject,
+        status: emailTemplates.status,
+        systemSlug: emailTemplates.systemSlug,
+      })
+      .from(emailTemplates)
+      .where(eq(emailTemplates.systemSlug, systemSlug))
+      .limit(1)
+
+    return NextResponse.json(overrides)
+  }
+
+  // Default: return all non-system-override templates for this user
   const templates = await db
     .select({
       id: emailTemplates.id,
@@ -28,6 +49,7 @@ export async function GET() {
       slug: emailTemplates.slug,
       subject: emailTemplates.subject,
       status: emailTemplates.status,
+      systemSlug: emailTemplates.systemSlug,
       createdAt: emailTemplates.createdAt,
       updatedAt: emailTemplates.updatedAt,
     })
@@ -47,7 +69,7 @@ export async function POST(request: Request) {
   await ensureSchema()
 
   const body = await request.json()
-  const { name, subject, previewText, body: emailBody, status, conversationHistory } = body
+  const { name, subject, previewText, body: emailBody, status, conversationHistory, systemSlug } = body
 
   if (!name || !subject || !emailBody) {
     return NextResponse.json({ error: 'Missing required fields: name, subject, body' }, { status: 400 })
@@ -81,6 +103,7 @@ export async function POST(request: Request) {
     body: emailBody,
     status: status || 'draft',
     conversationHistory: conversationHistory || null,
+    systemSlug: systemSlug || null,
     createdAt: now,
     updatedAt: now,
   })

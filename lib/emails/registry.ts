@@ -1,3 +1,9 @@
+export interface EmailVariable {
+  name: string
+  description: string
+  example: string
+}
+
 export interface EmailDefinition {
   slug: string
   name: string
@@ -10,6 +16,7 @@ export interface EmailDefinition {
   }
   subject: string
   status: 'active' | 'draft'
+  variables: EmailVariable[]
 }
 
 export const emailRegistry: EmailDefinition[] = [
@@ -25,6 +32,9 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: 'Welcome to Kanthink!',
     status: 'active',
+    variables: [
+      { name: 'userName', description: "User's display name", example: 'Alex' },
+    ],
   },
   {
     slug: 'channel-invite',
@@ -38,6 +48,11 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: '{{inviterName}} invited you to "{{channelName}}" on Kanthink',
     status: 'active',
+    variables: [
+      { name: 'inviterName', description: 'Name of the person who sent the invite', example: 'Jordan' },
+      { name: 'channelName', description: 'Name of the channel being shared', example: 'Product Roadmap' },
+      { name: 'signUpUrl', description: 'URL to accept the invite', example: 'https://kanthink.com/invite/abc123' },
+    ],
   },
   {
     slug: 'task-assigned',
@@ -51,6 +66,12 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: 'Task assigned: {{taskTitle}}',
     status: 'active',
+    variables: [
+      { name: 'assignerName', description: 'Name of the person who assigned the task', example: 'Jordan' },
+      { name: 'taskTitle', description: 'Title of the assigned task', example: 'Review Q1 designs' },
+      { name: 'channelName', description: 'Channel the task belongs to', example: 'Product Roadmap' },
+      { name: 'taskUrl', description: 'Direct link to the task', example: 'https://kanthink.com/task/abc123' },
+    ],
   },
   {
     slug: 'card-assigned',
@@ -64,6 +85,12 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: 'Card assigned: {{cardTitle}}',
     status: 'active',
+    variables: [
+      { name: 'assignerName', description: 'Name of the person who assigned the card', example: 'Jordan' },
+      { name: 'cardTitle', description: 'Title of the assigned card', example: 'Fix login bug' },
+      { name: 'channelName', description: 'Channel the card belongs to', example: 'Engineering' },
+      { name: 'cardUrl', description: 'Direct link to the card', example: 'https://kanthink.com/card/abc123' },
+    ],
   },
   {
     slug: 'payment-failed',
@@ -77,6 +104,10 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: 'Your Kanthink payment could not be processed',
     status: 'active',
+    variables: [
+      { name: 'userName', description: "User's display name", example: 'Alex' },
+      { name: 'settingsUrl', description: 'Link to billing settings', example: 'https://kanthink.com/settings/billing' },
+    ],
   },
   {
     slug: 'subscription-confirmed',
@@ -90,6 +121,10 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: 'Your Kanthink subscription is confirmed',
     status: 'active',
+    variables: [
+      { name: 'userName', description: "User's display name", example: 'Alex' },
+      { name: 'tier', description: 'Subscription tier name', example: 'Pro' },
+    ],
   },
   {
     slug: 'subscription-canceled',
@@ -103,6 +138,10 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: 'Your Kanthink subscription has been canceled',
     status: 'active',
+    variables: [
+      { name: 'userName', description: "User's display name", example: 'Alex' },
+      { name: 'endDate', description: 'When access ends', example: 'April 15, 2026' },
+    ],
   },
   {
     slug: 'usage-limit-warning',
@@ -116,6 +155,13 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: "You're approaching your Kanthink usage limit",
     status: 'active',
+    variables: [
+      { name: 'userName', description: "User's display name", example: 'Alex' },
+      { name: 'used', description: 'Number of AI requests used', example: '80' },
+      { name: 'limit', description: 'Total AI request limit', example: '100' },
+      { name: 'tier', description: 'Subscription tier name', example: 'Pro' },
+      { name: 'upgradeUrl', description: 'Link to upgrade plan', example: 'https://kanthink.com/settings/billing' },
+    ],
   },
   {
     slug: 'usage-limit-reached',
@@ -129,6 +175,13 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: "You've reached your Kanthink usage limit",
     status: 'active',
+    variables: [
+      { name: 'userName', description: "User's display name", example: 'Alex' },
+      { name: 'limit', description: 'Total AI request limit', example: '100' },
+      { name: 'tier', description: 'Subscription tier name', example: 'Pro' },
+      { name: 'upgradeUrl', description: 'Link to upgrade plan', example: 'https://kanthink.com/settings/billing' },
+      { name: 'resetDate', description: 'When the usage limit resets', example: 'April 1, 2026' },
+    ],
   },
   {
     slug: 'channel-digest',
@@ -142,6 +195,13 @@ export const emailRegistry: EmailDefinition[] = [
     },
     subject: 'Your {{periodLabel}} digest for "{{channelName}}"',
     status: 'active',
+    variables: [
+      { name: 'channelName', description: 'Name of the channel', example: 'Product Roadmap' },
+      { name: 'userName', description: "User's display name", example: 'Alex' },
+      { name: 'periodLabel', description: 'Digest frequency (daily/weekly/monthly)', example: 'weekly' },
+      { name: 'aiSummary', description: 'AI-generated summary of activity (can be null)', example: 'Busy week — 12 cards moved to Done.' },
+      { name: 'channelUrl', description: 'Direct link to the channel', example: 'https://kanthink.com/channel/abc123' },
+    ],
   },
 ]
 
