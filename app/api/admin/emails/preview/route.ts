@@ -12,6 +12,7 @@ import { SubscriptionConfirmed } from '@/lib/emails/SubscriptionConfirmed'
 import { SubscriptionCanceled } from '@/lib/emails/SubscriptionCanceled'
 import { UsageLimitWarning } from '@/lib/emails/UsageLimitWarning'
 import { UsageLimitReached } from '@/lib/emails/UsageLimitReached'
+import { ChannelDigest } from '@/lib/emails/ChannelDigest'
 import { BaseLayout, type DesignTokens } from '@/lib/emails/components/BaseLayout'
 import { emailRegistry } from '@/lib/emails/registry'
 import { DynamicEmail, type EmailConfig } from '@/lib/emails/dynamicRenderer'
@@ -30,6 +31,7 @@ const components: Record<string, { component: React.FC<any>; previewProps: Recor
   'subscription-canceled': { component: SubscriptionCanceled, previewProps: SubscriptionCanceled.PreviewProps },
   'usage-limit-warning': { component: UsageLimitWarning, previewProps: UsageLimitWarning.PreviewProps },
   'usage-limit-reached': { component: UsageLimitReached, previewProps: UsageLimitReached.PreviewProps },
+  'channel-digest': { component: ChannelDigest, previewProps: ChannelDigest.PreviewProps },
 }
 
 function BaseLayoutPreview({ tokens }: { tokens?: Partial<DesignTokens> }) {

@@ -166,6 +166,7 @@ export default function EmailBuilderPage() {
 
   // Initial greeting on mount (only for new templates)
   useEffect(() => {
+    if (templateId) return // Existing template — skip greeting
     if (greetingSent.current) return
     greetingSent.current = true
     sendMessage('', true)
