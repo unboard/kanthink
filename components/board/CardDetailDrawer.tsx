@@ -35,6 +35,7 @@ import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { useKeyboardOffset } from './ChatInput';
+import { nanoid } from 'nanoid';
 
 interface SortableTaskItemProps {
   task: Task;
@@ -133,6 +134,10 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [activeTab, setActiveTab] = useState<ActiveTab>('thread');
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [copiedPublicLink, setCopiedPublicLink] = useState(false);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
   const titleDrawerInputRef = useRef<HTMLInputElement>(null);
 
   // Track keyboard height for mobile title drawer positioning
@@ -240,6 +245,18 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
   // Reset state when switching cards or when the drawer opens (re-sync from store)
   const cardId = card?.id;
+  // Close share menu on click outside
+  useEffect(() => {
+    if (!showShareMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShowShareMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showShareMenu]);
+
   useEffect(() => {
     if (card && isOpen) {
       setTitle(card.title);
@@ -413,26 +430,139 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
             placeholder="Card title"
           />
           {fullPage && card && (
-            <button
-              onClick={() => {
-                const url = `${window.location.origin}/channel/${card.channelId}/card/${card.id}`;
-                navigator.clipboard.writeText(url);
-                setCopiedLink(true);
-                setTimeout(() => setCopiedLink(false), 2000);
-              }}
-              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              title="Copy link"
-            >
-              {copiedLink ? (
-                <svg className="w-4.5 h-4.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
+            <div className="relative" ref={shareMenuRef}>
+              <button
+                onClick={() => setShowShareMenu(!showShareMenu)}
+                className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                title="Share"
+              >
                 <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                 </svg>
+              </button>
+
+              {showShareMenu && (
+                <div className="absolute right-0 top-10 w-72 bg-white dark:bg-neutral-800 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 z-50 overflow-hidden">
+                  <div className="p-3 border-b border-neutral-200 dark:border-neutral-700">
+                    <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">Share card</h3>
+                  </div>
+
+                  <div className="p-2 space-y-1">
+                    {/* Copy internal link */}
+                    <button
+                      onClick={() => {
+                        const url = `${window.location.origin}/channel/${card.channelId}/card/${card.id}`;
+                        navigator.clipboard.writeText(url);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2000);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-700 flex items-center justify-center flex-shrink-0">
+                        {copiedLink ? (
+                          <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                          </svg>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-neutral-900 dark:text-white block">
+                          {copiedLink ? 'Copied!' : 'Copy link'}
+                        </span>
+                        <span className="text-xs text-neutral-500">Share with channel members</span>
+                      </div>
+                    </button>
+
+                    {/* Invite to channel */}
+                    <button
+                      onClick={() => {
+                        setShowShareMenu(false);
+                        const url = `${window.location.origin}/channel/${card.channelId}?settings=open&tab=members`;
+                        window.open(url, '_self');
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-700 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-neutral-900 dark:text-white block">Invite people</span>
+                        <span className="text-xs text-neutral-500">Add members to this channel</span>
+                      </div>
+                    </button>
+
+                    {/* Publish / Make public */}
+                    <button
+                      onClick={async () => {
+                        if (isPublishing) return;
+                        setIsPublishing(true);
+                        try {
+                          if (card.isPublic) {
+                            updateCard(card.id, { isPublic: false, shareToken: undefined });
+                          } else {
+                            const token = card.shareToken || nanoid(12);
+                            updateCard(card.id, { isPublic: true, shareToken: token });
+                          }
+                        } finally {
+                          setIsPublishing(false);
+                        }
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                    >
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        card.isPublic
+                          ? 'bg-green-100 dark:bg-green-900/30'
+                          : 'bg-neutral-100 dark:bg-neutral-700'
+                      }`}>
+                        <svg className={`w-4 h-4 ${card.isPublic ? 'text-green-600 dark:text-green-400' : 'text-neutral-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-neutral-900 dark:text-white block">
+                          {card.isPublic ? 'Published' : 'Publish to web'}
+                        </span>
+                        <span className="text-xs text-neutral-500">
+                          {card.isPublic ? 'Anyone with the link can view' : 'Create a public page for this card'}
+                        </span>
+                      </div>
+                      {card.isPublic && (
+                        <span className="ml-auto text-xs text-green-600 dark:text-green-400 font-medium">Live</span>
+                      )}
+                    </button>
+
+                    {/* Public link (shown when published) */}
+                    {card.isPublic && card.shareToken && (
+                      <div className="mx-3 my-2 p-2.5 rounded-lg bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700">
+                        <div className="flex items-center gap-2">
+                          <input
+                            readOnly
+                            value={`${window.location.origin}/public/card/${card.shareToken}`}
+                            className="flex-1 bg-transparent text-xs text-neutral-600 dark:text-neutral-400 truncate border-none outline-none"
+                          />
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${window.location.origin}/public/card/${card.shareToken}`);
+                              setCopiedPublicLink(true);
+                              setTimeout(() => setCopiedPublicLink(false), 2000);
+                            }}
+                            className="flex-shrink-0 px-2 py-1 rounded text-xs font-medium bg-violet-600 text-white hover:bg-violet-500 transition-colors"
+                          >
+                            {copiedPublicLink ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
-            </button>
+            </div>
           )}
           {!fullPage && card && (
             <button

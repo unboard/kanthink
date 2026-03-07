@@ -177,6 +177,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       instructionHistory,
       unlinkedTaskOrder,
       isGlobalHelp,
+      coverImageUrl,
     } = body
 
     // Build update object with only provided fields
@@ -195,6 +196,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (questions !== undefined) updates.questions = questions
     if (instructionHistory !== undefined) updates.instructionHistory = instructionHistory
     if (unlinkedTaskOrder !== undefined) updates.unlinkedTaskOrder = unlinkedTaskOrder
+    if (coverImageUrl !== undefined) updates.coverImageUrl = coverImageUrl
 
     // Handle isGlobalHelp toggle (admin only, owner only)
     if (isGlobalHelp !== undefined) {

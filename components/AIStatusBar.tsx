@@ -125,7 +125,7 @@ export function AIStatusBar() {
     return () => clearInterval(interval);
   }, [aiOperation.isActive, aiOperation.startedAt]);
 
-  if (!aiOperation.isActive || pathname.startsWith('/marketplace')) {
+  if (!aiOperation.isActive || pathname.startsWith('/marketplace') || pathname.startsWith('/public')) {
     return null;
   }
 

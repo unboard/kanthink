@@ -96,6 +96,9 @@ export const channels = sqliteTable('channels', {
   // Global help channel (read-only for all users)
   isGlobalHelp: integer('is_global_help', { mode: 'boolean' }).default(false),
 
+  // Cover image
+  coverImageUrl: text('cover_image_url'),
+
   // JSON fields for complex data
   propertyDefinitions: text('property_definitions', { mode: 'json' }).$type<PropertyDefinitionJson[]>(),
   tagDefinitions: text('tag_definitions', { mode: 'json' }).$type<TagDefinitionJson[]>(),
@@ -160,6 +163,10 @@ export const cards = sqliteTable('cards', {
 
   // Spawned channels
   spawnedChannelIds: text('spawned_channel_ids', { mode: 'json' }).$type<string[]>(),
+
+  // Public sharing
+  isPublic: integer('is_public', { mode: 'boolean' }).default(false),
+  shareToken: text('share_token'),
 
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),

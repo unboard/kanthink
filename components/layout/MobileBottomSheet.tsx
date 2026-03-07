@@ -1319,7 +1319,7 @@ export function MobileBottomSheet() {
   }, [pathname, activePanel, isMobile, closePanel]);
 
   // Don't render on marketplace pages or when not visible
-  if (sheetPathname.startsWith('/marketplace') || !isVisible) {
+  if (sheetPathname.startsWith('/marketplace') || sheetPathname.startsWith('/public') || !isVisible) {
     return null;
   }
 

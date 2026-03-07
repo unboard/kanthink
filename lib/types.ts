@@ -281,6 +281,7 @@ export interface Channel {
   tagDefinitions?: TagDefinition[];
   unlinkedTaskOrder?: ID[];  // Order of standalone tasks (no cardId)
   isGlobalHelp?: boolean;    // True if this is a global help resource (read-only for all users)
+  coverImageUrl?: string;    // Cover image URL for the channel
   role?: ChannelRole;        // User's role in this channel (owner, editor, viewer)
   sharedBy?: SharedByInfo;   // Person who shared this channel (if not owner)
   createdAt: string;
@@ -306,6 +307,8 @@ export interface Card {
   hideCompletedTasks?: boolean;  // User preference to hide done tasks
   createdAt: string;
   updatedAt: string;
+  isPublic?: boolean;           // Whether this card is publicly accessible
+  shareToken?: string;          // Token for public sharing URL
   createdByInstructionId?: ID;  // For loop prevention: tracks which instruction created this card
   processedByInstructions?: Record<ID, string>;  // instructionId -> ISO timestamp of last run
 }

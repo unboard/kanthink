@@ -311,7 +311,7 @@ function MobileNav() {
 
 export function MiniNav() {
   const pathname = usePathname();
-  if (pathname.startsWith('/marketplace')) return null;
+  if (pathname.startsWith('/marketplace') || pathname.startsWith('/public')) return null;
 
   return (
     <>

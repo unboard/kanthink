@@ -104,6 +104,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       processedByInstructions,
       spawnedChannelIds,
       position,
+      isPublic,
+      shareToken,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -124,6 +126,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (hideCompletedTasks !== undefined) updates.hideCompletedTasks = hideCompletedTasks
     if (processedByInstructions !== undefined) updates.processedByInstructions = processedByInstructions
     if (spawnedChannelIds !== undefined) updates.spawnedChannelIds = spawnedChannelIds
+    if (isPublic !== undefined) updates.isPublic = isPublic
+    if (shareToken !== undefined) updates.shareToken = shareToken
 
     await db.update(cards).set(updates).where(eq(cards.id, cardId))
 
