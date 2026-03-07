@@ -341,7 +341,7 @@ export function ChatMessage({
           {/* Action buttons - always visible on mobile, hover-reveal on desktop */}
           <div className="ml-auto flex items-center gap-0.5">
             {/* Speaker button for AI messages */}
-            {isAI && !isEditing && <SpeakerButton text={message.content} />}
+            {isAI && !isEditing && <SpeakerButton text={message.content} messageId={message.id} />}
             {/* Edit button */}
             {canEdit && !isEditing && (
               <button

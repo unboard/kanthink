@@ -34,12 +34,12 @@ export async function POST(request: Request) {
     // Record usage (fire-and-forget)
     recordUsage(userId, 'voice-tts').catch(() => {});
 
-    // Stream the audio response
-    const audioBuffer = Buffer.from(await response.arrayBuffer());
-    return new NextResponse(audioBuffer, {
+    // Stream the audio response directly from OpenAI
+    const body = response.body;
+    return new NextResponse(body as ReadableStream<Uint8Array>, {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Content-Length': audioBuffer.length.toString(),
+        'Transfer-Encoding': 'chunked',
       },
     });
   } catch (error) {
