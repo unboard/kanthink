@@ -7,17 +7,17 @@ Read and implement bugs/features from the Kanthink bug channel.
    npx tsx scripts/read-kanthink-bugs.ts
    ```
 
-2. If there are **no cards** in the column, skip to step 7 (send a "no work" email summary). Do NOT commit, push, or deploy anything.
+2. If there are **no cards** in the column, skip to step 7 (send a "no work" email). Do NOT commit, push, or deploy anything.
 
 3. Review each card. Cards contain:
    - A title (the bug/feature name)
    - Thread messages with details (may include image URLs — read images with the Read tool)
-   - The card ID (needed to move it when done)
+   - The card ID (needed to move it and to add notes)
 
 4. For each card, implement the fix or feature. If a card is unclear, ask the user before proceeding.
 
 5. After implementing a card's fix:
-   a. **Add a note to the card thread** describing what you did:
+   a. **Add a note to the card thread** describing what you did. This shows as Kan (the AI) in the thread:
       ```
       npx tsx scripts/read-kanthink-bugs.ts --note <cardId> <description of what was done>
       ```
@@ -29,13 +29,16 @@ Read and implement bugs/features from the Kanthink bug channel.
 
 6. Once all cards are done, commit the changes and push to deploy (Vercel auto-deploys from main).
 
-7. **Send a summary email** after every run (whether work was done or not):
-   ```
-   npx tsx scripts/send-bug-summary-email.ts "<summary>"
-   ```
-   - If cards were completed: list each card title and a brief description of what was done.
-   - If no cards were in the queue: send "No cards in queue. Checked at <time>."
-   - The email goes to dhodg22@gmail.com via Customer.IO.
+7. **Send a summary email** after every run using the Kanthink email template:
+   - If cards were completed:
+     ```
+     npx tsx scripts/send-bug-summary-email.ts --completed '[{"title":"Card title","summary":"What was done"}]'
+     ```
+   - If no cards were in the queue:
+     ```
+     npx tsx scripts/send-bug-summary-email.ts --no-work
+     ```
+   The email renders using the DynamicEmail template (matching the Kanthink email design system) and sends to dhodg22@gmail.com via Customer.IO.
 
 ## Important: Timestamp format for raw SQL
 

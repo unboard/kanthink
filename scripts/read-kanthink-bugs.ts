@@ -99,7 +99,7 @@ async function addNote(cardId: string, noteText: string) {
   const messages: CardMessage[] = JSON.parse((res.rows[0].messages as string) || '[]')
   messages.push({
     id: `claude-${Date.now()}`,
-    type: 'note',
+    type: 'ai_response',
     content: noteText,
     createdAt: new Date().toISOString(),
   })
