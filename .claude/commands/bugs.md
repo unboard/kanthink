@@ -17,9 +17,9 @@ Read and implement bugs/features from the Kanthink bug channel.
 4. For each card, implement the fix or feature. If a card is unclear, ask the user before proceeding.
 
 5. After implementing a card's fix:
-   a. **Add a note to the card thread** describing what you did. This shows as Kan (the AI) in the thread:
+   a. **Add a note to the card thread** summarizing what was done. This shows as Kan in the thread. **Keep it to 2-3 short sentences max** — the thread UI truncates long messages. Include what shipped, any key decisions, and one suggested next step. No bullet lists or headers.
       ```
-      npx tsx scripts/read-kanthink-bugs.ts --note <cardId> <description of what was done>
+      npx tsx scripts/read-kanthink-bugs.ts --note <cardId> <short summary>
       ```
    b. **Move it to "Completed"**:
       ```
