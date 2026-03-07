@@ -60,6 +60,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       isGlobalResource,
       conversationHistory,
       steps,
+      coverImageUrl,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -85,6 +86,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (position !== undefined) updates.position = position
     if (conversationHistory !== undefined) updates.conversationHistory = conversationHistory
     if (steps !== undefined) updates.steps = steps
+    if (coverImageUrl !== undefined) updates.coverImageUrl = coverImageUrl
 
     // Handle isGlobalResource toggle (admin only)
     if (isGlobalResource !== undefined) {

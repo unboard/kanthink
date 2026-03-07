@@ -218,6 +218,7 @@ export const instructionCards = sqliteTable('instruction_cards', {
 
   // Global resource (available to all users, created by admin/Kanthink)
   isGlobalResource: integer('is_global_resource', { mode: 'boolean' }).default(false),
+  coverImageUrl: text('cover_image_url'),
 
   // Conversational creation/editing history
   conversationHistory: text('conversation_history', { mode: 'json' }).$type<ShroomChatMessageJson[]>(),

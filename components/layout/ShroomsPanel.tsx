@@ -1,13 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { NavPanel } from './NavPanel';
 import { useNav } from '@/components/providers/NavProvider';
 import { useStore, getGlobalShrooms, getChannelShrooms, getFavoriteShrooms } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import type { InstructionCard } from '@/lib/types';
+import { MushroomIcon } from '@/components/icons/MushroomIcon';
+import { shrooms as marketplaceShrooms } from '@/lib/marketplace-data';
+import type { InstructionCard, InstructionTarget } from '@/lib/types';
 
 type ShroomTab = 'channel' | 'favorites' | 'community';
 
@@ -128,6 +131,103 @@ const TAB_CONFIG: { key: ShroomTab; label: string }[] = [
   { key: 'favorites', label: 'Favorites' },
   { key: 'community', label: 'Community' },
 ];
+
+function CommunityTab() {
+  const createInstructionCard = useStore((s) => s.createInstructionCard);
+  const existingShrooms = useStore((s) => s.instructionCards);
+  const [search, setSearch] = useState('');
+  const [addedSlugs, setAddedSlugs] = useState<Set<string>>(new Set());
+
+  // Check which marketplace shrooms are already added (by matching title)
+  const existingTitles = useMemo(() => {
+    return new Set(Object.values(existingShrooms).map(s => s.title));
+  }, [existingShrooms]);
+
+  const filtered = useMemo(() => {
+    if (!search) return marketplaceShrooms;
+    const q = search.toLowerCase();
+    return marketplaceShrooms.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.tagline.toLowerCase().includes(q) ||
+      s.tags.some(t => t.includes(q))
+    );
+  }, [search]);
+
+  function handleAdd(shroom: typeof marketplaceShrooms[0]) {
+    const target: InstructionTarget = { type: 'column', columnId: '' };
+    createInstructionCard('', {
+      title: shroom.name,
+      instructions: shroom.instructions,
+      action: shroom.action,
+      target,
+      scope: 'global',
+    });
+    setAddedSlugs(prev => new Set([...prev, shroom.slug]));
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Search */}
+      <div className="px-1">
+        <input
+          type="text"
+          placeholder="Search shrooms..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-1.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
+        />
+      </div>
+
+      {/* Marketplace shrooms */}
+      <div className="space-y-1.5">
+        {filtered.map(shroom => {
+          const alreadyAdded = existingTitles.has(shroom.name) || addedSlugs.has(shroom.slug);
+          return (
+            <div key={shroom.slug} className="flex items-center gap-3 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 transition-colors">
+              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center text-lg">
+                {shroom.icon}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm text-neutral-900 dark:text-white truncate">{shroom.name}</span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400">
+                    <MushroomIcon size={10} />
+                    Kan
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500 truncate mt-0.5">{shroom.tagline}</p>
+              </div>
+              <button
+                onClick={() => handleAdd(shroom)}
+                disabled={alreadyAdded}
+                className={`flex-shrink-0 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  alreadyAdded
+                    ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400 cursor-default'
+                    : 'bg-violet-600 text-white hover:bg-violet-500'
+                }`}
+              >
+                {alreadyAdded ? 'Added' : 'Add'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Link to full marketplace */}
+      <div className="pt-2 text-center">
+        <Link
+          href="/marketplace"
+          className="inline-flex items-center gap-1.5 text-xs text-violet-500 hover:text-violet-400 transition-colors"
+        >
+          Browse full marketplace
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 export function ShroomsPanel() {
   const pathname = usePathname();
@@ -389,19 +489,7 @@ export function ShroomsPanel() {
             )}
 
             {activeTab === 'community' && (
-              <div className="text-center py-8">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-800 mb-3">
-                  <svg className="w-6 h-6 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                </div>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                  Coming soon
-                </p>
-                <p className="text-xs text-neutral-500 mt-1">
-                  Discover and share shrooms with the community
-                </p>
-              </div>
+              <CommunityTab />
             )}
           </div>
         </div>

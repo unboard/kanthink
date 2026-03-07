@@ -43,6 +43,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       safeguards,
       conversationHistory,
       steps,
+      coverImageUrl,
     } = body
 
     if (!title || instructions === undefined || instructions === null || !action || !target) {
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       safeguards,
       conversationHistory,
       steps,
+      coverImageUrl,
       position,
       createdAt: now,
       updatedAt: now,

@@ -171,6 +171,7 @@ export interface InstructionCard {
   dailyCountResetAt?: string;
   executionHistory?: ExecutionRecord[];   // Last N executions for tracking
   isGlobalResource?: boolean;             // True if this is a global resource (available to all, by Kanthink)
+  coverImageUrl?: string;                 // Cover/avatar image URL for the shroom
   conversationHistory?: ShroomChatMessage[];  // Chat history from conversational creation/editing
   steps?: ShroomStep[];                   // Multi-step action sequence (e.g. modify then move)
 }
