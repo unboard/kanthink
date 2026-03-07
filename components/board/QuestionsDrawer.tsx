@@ -5,6 +5,7 @@ import type { Channel, Card } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { Drawer, Button, Input } from '@/components/ui';
+import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
 
 interface Question {
   question: string;
@@ -86,7 +87,7 @@ function QuestionItem({
       </div>
 
       {/* Custom answer input */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center">
         <Input
           value={customAnswer}
           onChange={(e) => setCustomAnswer(e.target.value)}
@@ -97,6 +98,10 @@ function QuestionItem({
               handleCustomSubmit();
             }
           }}
+        />
+        <VoiceMicButton
+          onTranscription={(text) => setCustomAnswer((prev) => prev ? prev + ' ' + text : text)}
+          size="sm"
         />
         <Button
           onClick={handleCustomSubmit}

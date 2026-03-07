@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } fro
 import type { CardMessageType, ChannelMember } from '@/lib/types';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
 import { MentionDropdown } from './MentionDropdown';
 
 // Keyword highlighting for question mode
@@ -607,6 +608,12 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
               </div>
             )}
           </div>
+
+          {/* Voice input button */}
+          <VoiceMicButton
+            onTranscription={(text) => setContent((prev) => prev ? prev + ' ' + text : text)}
+            size="sm"
+          />
 
           {/* Send button - height matches single-line textarea */}
           <button

@@ -6,5 +6,11 @@ export async function GET() {
     process.env.OWNER_ANTHROPIC_API_KEY
   );
 
-  return NextResponse.json({ hasOwnerKey });
+  const ownerProvider = process.env.OWNER_OPENAI_API_KEY
+    ? 'openai'
+    : process.env.OWNER_GOOGLE_API_KEY
+    ? 'google'
+    : null;
+
+  return NextResponse.json({ hasOwnerKey, ownerProvider });
 }

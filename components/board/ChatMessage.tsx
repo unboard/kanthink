@@ -13,6 +13,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SmartSnippet } from './SmartSnippet';
 import { TaskCheckbox } from './TaskCheckbox';
 import { ImageTheater } from '@/components/ui/ImageTheater';
+import { SpeakerButton } from '@/components/ui/SpeakerButton';
 
 interface ChatMessageProps {
   message: CardMessage;
@@ -339,6 +340,8 @@ export function ChatMessage({
 
           {/* Action buttons - always visible on mobile, hover-reveal on desktop */}
           <div className="ml-auto flex items-center gap-0.5">
+            {/* Speaker button for AI messages */}
+            {isAI && !isEditing && <SpeakerButton text={message.content} />}
             {/* Edit button */}
             {canEdit && !isEditing && (
               <button

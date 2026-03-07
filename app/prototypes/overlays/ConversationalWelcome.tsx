@@ -7,6 +7,7 @@ import { useKeyboardOffset } from '@/components/board/ChatInput';
 import { useMessageTypewriter } from '@/lib/hooks/useTypewriter';
 import { ChannelPreview } from '@/components/board/ChannelPreview';
 import type { ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
+import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
 
 // Types shared with WelcomeFlowOverlay
 interface ChannelStructure {
@@ -485,6 +486,10 @@ export function ConversationalWelcome({
                 }}
                 onBlur={kbOnBlur}
                 className="flex-1 resize-none bg-transparent text-sm text-neutral-200 placeholder-neutral-500 focus:outline-none py-1"
+              />
+              <VoiceMicButton
+                onTranscription={(text) => setInputValue((prev) => prev ? prev + ' ' + text : text)}
+                size="sm"
               />
               <button
                 onClick={handleInputSubmit}

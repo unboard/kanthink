@@ -132,11 +132,7 @@ export async function fetchAIStatus() {
       fetch('/api/byok/status'),
     ]);
 
-    if (aiStatusRes.ok) {
-      const data = await aiStatusRes.json();
-      useSettingsStore.getState().setServerHasOwnerKey(data.hasOwnerKey);
-    }
-
+    // Process BYOK first so _hasByokConfigured is set before ai-status uses it
     if (byokStatusRes.ok) {
       const data = await byokStatusRes.json();
       useSettingsStore.getState().setHasByokConfigured(data.configured);
@@ -146,6 +142,15 @@ export async function fetchAIStatus() {
           provider: data.provider,
           model: data.model || '',
         });
+      }
+    }
+
+    if (aiStatusRes.ok) {
+      const data = await aiStatusRes.json();
+      useSettingsStore.getState().setServerHasOwnerKey(data.hasOwnerKey);
+      // If no BYOK configured, sync owner provider so voice availability check works
+      if (data.ownerProvider && !useSettingsStore.getState()._hasByokConfigured) {
+        useSettingsStore.getState().updateAISettings({ provider: data.ownerProvider });
       }
     }
   } catch {

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import type { EmailConfig } from '@/lib/emails/dynamicRenderer'
 import { emailRegistry } from '@/lib/emails/registry'
+import { VoiceMicButton } from '@/components/ui/VoiceMicButton'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -420,6 +421,10 @@ export default function EmailBuilderPage() {
                 placeholder="Describe your email..."
                 rows={1}
                 className="flex-1 resize-none rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500"
+              />
+              <VoiceMicButton
+                onTranscription={(text) => setInput((prev) => prev ? prev + ' ' + text : text)}
+                size="md"
               />
               <button
                 type="submit"
