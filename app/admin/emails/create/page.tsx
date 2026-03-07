@@ -29,6 +29,7 @@ export default function EmailBuilderPage() {
   const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null)
   const [previewHtml, setPreviewHtml] = useState<string | null>(null)
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop')
+  const [mobileView, setMobileView] = useState<'chat' | 'preview'>('chat')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const greetingSent = useRef(false)
@@ -337,6 +338,30 @@ export default function EmailBuilderPage() {
           </div>
         )}
 
+        {/* Mobile view toggle (chat/preview) */}
+        <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800 rounded-md p-0.5 shrink-0 lg:hidden">
+          <button
+            onClick={() => setMobileView('chat')}
+            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+              mobileView === 'chat'
+                ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
+                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+            }`}
+          >
+            Chat
+          </button>
+          <button
+            onClick={() => setMobileView('preview')}
+            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+              mobileView === 'preview'
+                ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
+                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+            }`}
+          >
+            Preview
+          </button>
+        </div>
+
         {/* Viewport toggle */}
         <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800 rounded-md p-0.5 shrink-0">
           <button
@@ -365,7 +390,7 @@ export default function EmailBuilderPage() {
       {/* Split pane */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Left: Chat */}
-        <div className="w-full lg:w-[420px] shrink-0 border-b lg:border-b-0 lg:border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex flex-col min-h-0">
+        <div className={`w-full lg:w-[420px] shrink-0 border-b lg:border-b-0 lg:border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex flex-col min-h-0 ${mobileView === 'preview' ? 'hidden lg:flex' : ''}`}>
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.map((msg, i) => (
@@ -440,7 +465,7 @@ export default function EmailBuilderPage() {
         </div>
 
         {/* Right: Preview */}
-        <div className="flex-1 flex flex-col bg-neutral-50 dark:bg-neutral-900 min-h-0">
+        <div className={`flex-1 flex flex-col bg-neutral-50 dark:bg-neutral-900 min-h-0 ${mobileView === 'chat' ? 'hidden lg:flex' : ''}`}>
           {/* Preview toolbar */}
           <div className="flex items-center px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
             {emailConfig && (
