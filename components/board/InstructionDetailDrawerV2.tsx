@@ -53,6 +53,8 @@ export function InstructionDetailDrawerV2({
   const [isRunning, setIsRunning] = useState(false);
   const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [showImagePrompt, setShowImagePrompt] = useState(false);
+  const [imagePromptText, setImagePromptText] = useState('');
 
   // Automatic mode state (kept but hidden in advanced)
   const [triggers, setTriggers] = useState<AutomaticTrigger[]>([]);
@@ -297,59 +299,130 @@ export function InstructionDetailDrawerV2({
                     Remove
                   </button>
                 </div>
+                {isGeneratingImage && (
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <svg className="w-6 h-6 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={async () => {
-                    setIsGeneratingImage(true);
-                    try {
-                      const res = await fetch('/api/generate-image', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ context: title || 'shroom', type: 'shroom' }),
-                      });
-                      const data = await res.json();
-                      if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
-                    } finally { setIsGeneratingImage(false); }
-                  }}
-                  disabled={isGeneratingImage}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-xs text-neutral-500 hover:border-violet-400 hover:text-violet-400 transition-colors"
-                >
-                  {isGeneratingImage ? (
-                    <span className="flex items-center gap-1.5">
-                      <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                      Generating...
-                    </span>
-                  ) : (
-                    <>
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      Generate cover image
-                    </>
-                  )}
-                </button>
-                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-xs text-neutral-500 hover:border-violet-400 hover:text-violet-400 transition-colors cursor-pointer">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  Upload
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const form = new FormData();
-                      form.append('file', file);
-                      const res = await fetch('/api/upload-image', { method: 'POST', body: form });
-                      const data = await res.json();
-                      if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setIsGeneratingImage(true);
+                      try {
+                        const res = await fetch('/api/generate-image', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ context: title || 'shroom', type: 'shroom' }),
+                        });
+                        const data = await res.json();
+                        if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                      } finally { setIsGeneratingImage(false); }
                     }}
-                  />
-                </label>
+                    disabled={isGeneratingImage}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-xs text-neutral-500 hover:border-violet-400 hover:text-violet-400 transition-colors"
+                  >
+                    {isGeneratingImage ? (
+                      <span className="flex items-center gap-1.5">
+                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                        Generating...
+                      </span>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                        </svg>
+                        Generate cover
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setShowImagePrompt(!showImagePrompt)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-xs text-neutral-500 hover:border-violet-400 hover:text-violet-400 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    Custom prompt
+                  </button>
+                  <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 text-xs text-neutral-500 hover:border-violet-400 hover:text-violet-400 transition-colors cursor-pointer">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Upload
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const form = new FormData();
+                        form.append('file', file);
+                        const res = await fetch('/api/upload-image', { method: 'POST', body: form });
+                        const data = await res.json();
+                        if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                      }}
+                    />
+                  </label>
+                </div>
+                {showImagePrompt && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={imagePromptText}
+                      onChange={(e) => setImagePromptText(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter' && imagePromptText.trim()) {
+                          setIsGeneratingImage(true);
+                          try {
+                            const res = await fetch('/api/generate-image', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ prompt: imagePromptText.trim() }),
+                            });
+                            const data = await res.json();
+                            if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                          } finally {
+                            setIsGeneratingImage(false);
+                            setShowImagePrompt(false);
+                            setImagePromptText('');
+                          }
+                        }
+                      }}
+                      placeholder="Describe the image you want..."
+                      className="flex-1 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-1.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:border-violet-500/40"
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!imagePromptText.trim()) return;
+                        setIsGeneratingImage(true);
+                        try {
+                          const res = await fetch('/api/generate-image', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ prompt: imagePromptText.trim() }),
+                          });
+                          const data = await res.json();
+                          if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                        } finally {
+                          setIsGeneratingImage(false);
+                          setShowImagePrompt(false);
+                          setImagePromptText('');
+                        }
+                      }}
+                      disabled={!imagePromptText.trim() || isGeneratingImage}
+                      className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
