@@ -16,6 +16,7 @@ import type {
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { ChatMessage } from './ChatMessage';
+import { speakIfVoiceInput } from '@/lib/hooks/voiceState';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
 import { ChannelActionSnippet, resolveColumnId, resolveCardId } from './ChannelActionSnippet';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -152,6 +153,8 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
       }
 
       const data = await res.json();
+      // Auto-play TTS if last input was voice
+      if (data.aiMessage?.content) speakIfVoiceInput(data.aiMessage.content);
 
       // Replace optimistic messages with server messages
       const serverMessages = [...messages, data.userMessage, data.aiMessage];

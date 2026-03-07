@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition, ChannelMember } from '@/lib/types';
+import { speakIfVoiceInput } from '@/lib/hooks/voiceState';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { fetchShares } from '@/lib/api/client';
@@ -170,6 +171,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         const data = await response.json();
         // Pass actions to addAIResponse
         addAIResponse(card.id, message.id, data.response, data.actions);
+        // Auto-play TTS if last input was voice
+        speakIfVoiceInput(data.response);
 
         // Optionally trigger summary update
         if (messages.length >= 3 && (messages.length % 3 === 0 || !card.summary)) {

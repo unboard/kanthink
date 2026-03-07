@@ -28,7 +28,6 @@ export function useVoiceMode() {
     if (typeof window === 'undefined') return true;
     return localStorage.getItem(VOICE_OUTPUT_KEY) !== 'false';
   });
-  const [lastInputWasVoice, setLastInputWasVoice] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -110,7 +109,6 @@ export function useVoiceMode() {
           }
 
           const data = await res.json();
-          setLastInputWasVoice(true);
           stopResolveRef.current?.(data.text || null);
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Transcription failed');
@@ -222,10 +220,6 @@ export function useVoiceMode() {
     setIsSpeaking(false);
   }, []);
 
-  const clearLastInputWasVoice = useCallback(() => {
-    setLastInputWasVoice(false);
-  }, []);
-
   return {
     // Recording
     isRecording: state === 'recording',
@@ -241,8 +235,5 @@ export function useVoiceMode() {
     isSpeaking,
     voiceOutputEnabled,
     setVoiceOutputEnabled,
-    // Voice input tracking
-    lastInputWasVoice,
-    clearLastInputWasVoice,
   };
 }

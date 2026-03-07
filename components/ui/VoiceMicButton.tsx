@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import { useVoiceAvailability } from '@/lib/hooks/useVoiceAvailability';
 import { useVoiceMode } from '@/lib/hooks/useVoiceMode';
+import { voiceState } from '@/lib/hooks/voiceState';
 
 interface VoiceMicButtonProps {
   onTranscription: (text: string) => void;
@@ -31,7 +32,10 @@ export function VoiceMicButton({ onTranscription, className = '', size = 'sm' }:
   const handleClick = useCallback(async () => {
     if (isRecording) {
       const text = await stopRecording();
-      if (text) onTranscription(text);
+      if (text) {
+        voiceState.lastInputWasVoice = true;
+        onTranscription(text);
+      }
     } else if (!isTranscribing) {
       await startRecording();
     }

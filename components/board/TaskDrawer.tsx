@@ -8,6 +8,7 @@ import { requireSignInForAI } from '@/lib/settingsStore';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
+import { speakIfVoiceInput } from '@/lib/hooks/voiceState';
 import { Drawer } from '@/components/ui';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
@@ -231,6 +232,8 @@ export function TaskDrawer({
 
         const data = await response.json();
 
+        // Auto-play TTS if last input was voice
+        speakIfVoiceInput(data.response);
         // Add AI response as a note from "Kan"
         addTaskNote(task.id, data.response, {
           id: 'kan',
