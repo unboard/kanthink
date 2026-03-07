@@ -8,6 +8,9 @@ let globalAudio: HTMLAudioElement | null = null;
 let globalCleanup: (() => void) | null = null;
 let globalActiveId: string | null = null;
 
+// Cache audio blobs by messageId so replay is instant
+const audioCache = new Map<string, string>(); // messageId -> blob URL
+
 function stopGlobalAudio() {
   if (globalAudio) {
     globalAudio.pause();
@@ -17,6 +20,49 @@ function stopGlobalAudio() {
   globalCleanup?.();
   globalCleanup = null;
   globalActiveId = null;
+}
+
+/** Strip markdown to plain text for TTS, then truncate */
+function prepareForTTS(text: string): string {
+  let clean = text
+    // Remove code blocks
+    .replace(/```[\s\S]*?```/g, '')
+    // Remove inline code
+    .replace(/`[^`]+`/g, '')
+    // Remove images
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    // Remove links but keep text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    // Remove headings markers
+    .replace(/^#{1,6}\s+/gm, '')
+    // Remove bold/italic markers
+    .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+    .replace(/_{1,3}([^_]+)_{1,3}/g, '$1')
+    // Remove strikethrough
+    .replace(/~~([^~]+)~~/g, '$1')
+    // Remove horizontal rules
+    .replace(/^[-*_]{3,}\s*$/gm, '')
+    // Remove list markers
+    .replace(/^[\s]*[-*+]\s+/gm, '')
+    .replace(/^[\s]*\d+\.\s+/gm, '')
+    // Remove blockquotes
+    .replace(/^>\s+/gm, '')
+    // Remove HTML tags
+    .replace(/<[^>]+>/g, '')
+    // Collapse multiple newlines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  // Truncate to ~800 chars at a sentence boundary for speed
+  if (clean.length > 800) {
+    const truncated = clean.slice(0, 800);
+    const lastSentence = truncated.search(/[.!?]\s[^.!?]*$/);
+    clean = lastSentence > 400
+      ? truncated.slice(0, lastSentence + 1)
+      : truncated + '...';
+  }
+
+  return clean;
 }
 
 interface SpeakerButtonProps {
@@ -53,8 +99,31 @@ export function SpeakerButton({ text, messageId, className = '' }: SpeakerButton
     };
   }, []);
 
+  const playFromUrl = useCallback((url: string) => {
+    const audio = new Audio(url);
+    globalAudio = audio;
+
+    const cleanup = () => {
+      setIsPlaying(false);
+      setIsLoading(false);
+      if (globalActiveId === instanceId.current) {
+        globalActiveId = null;
+        globalAudio = null;
+        globalCleanup = null;
+      }
+    };
+
+    globalCleanup = cleanup;
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+
+    setIsLoading(false);
+    setIsPlaying(true);
+    audio.play().catch(cleanup);
+  }, []);
+
   const handleClick = useCallback(async () => {
-    // If this button is playing, stop it
+    // If this button is playing/loading, stop it
     if (isPlaying || isLoading) {
       abortRef.current?.abort();
       if (globalActiveId === instanceId.current) stopGlobalAudio();
@@ -65,55 +134,45 @@ export function SpeakerButton({ text, messageId, className = '' }: SpeakerButton
 
     // Stop any other playing audio first
     stopGlobalAudio();
-
     globalActiveId = instanceId.current;
-    setIsLoading(true);
 
+    // Check cache first — instant replay
+    const cacheKey = instanceId.current;
+    const cached = audioCache.get(cacheKey);
+    if (cached) {
+      playFromUrl(cached);
+      return;
+    }
+
+    setIsLoading(true);
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
+      const ttsText = prepareForTTS(text);
       const res = await fetch('/api/voice/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text: ttsText }),
         signal: controller.signal,
       });
 
       if (!res.ok || !res.body) throw new Error('TTS failed');
 
-      // Collect chunks and play as soon as we have the blob
       const blob = await res.blob();
       if (controller.signal.aborted) return;
 
       const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      globalAudio = audio;
+      // Cache for instant replay (don't revoke cached URLs)
+      audioCache.set(cacheKey, url);
 
-      const cleanup = () => {
-        URL.revokeObjectURL(url);
-        setIsPlaying(false);
-        setIsLoading(false);
-        if (globalActiveId === instanceId.current) {
-          globalActiveId = null;
-          globalAudio = null;
-          globalCleanup = null;
-        }
-      };
-
-      globalCleanup = cleanup;
-      audio.onended = cleanup;
-      audio.onerror = cleanup;
-
-      setIsLoading(false);
-      setIsPlaying(true);
-      await audio.play();
+      playFromUrl(url);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       setIsPlaying(false);
       setIsLoading(false);
     }
-  }, [isPlaying, isLoading, text]);
+  }, [isPlaying, isLoading, text, playFromUrl]);
 
   if (!isAvailable || !text.trim()) return null;
 

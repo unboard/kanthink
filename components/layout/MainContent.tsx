@@ -13,8 +13,9 @@ export function MainContent({ children }: MainContentProps) {
   const { activePanel, isMobile } = useNav();
   const pathname = usePathname();
 
-  // On mobile, no margin adjustment needed (panels are overlays)
-  const marginLeft = isMobile ? 0 : getPanelWidth(activePanel);
+  // On mobile or marketplace pages, no margin adjustment needed
+  const isMarketplace = pathname.startsWith('/marketplace');
+  const marginLeft = isMobile || isMarketplace ? 0 : getPanelWidth(activePanel);
 
   // No bottom padding on card pages (mobile nav is hidden, card has its own tabs)
   const isCardPage = /\/channel\/[^/]+\/card\//.test(pathname);

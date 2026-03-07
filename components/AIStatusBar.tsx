@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import type { AIOperationContext } from '@/lib/types';
 
@@ -67,6 +68,7 @@ function generateMessage(context?: AIOperationContext, cycle: number = 0): strin
 }
 
 export function AIStatusBar() {
+  const pathname = usePathname();
   const aiOperation = useStore((state) => state.aiOperation);
   const cancelAIOperation = useStore((state) => state.cancelAIOperation);
 
@@ -123,7 +125,7 @@ export function AIStatusBar() {
     return () => clearInterval(interval);
   }, [aiOperation.isActive, aiOperation.startedAt]);
 
-  if (!aiOperation.isActive) {
+  if (!aiOperation.isActive || pathname.startsWith('/marketplace')) {
     return null;
   }
 

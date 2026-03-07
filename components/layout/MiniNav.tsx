@@ -310,6 +310,9 @@ function MobileNav() {
 }
 
 export function MiniNav() {
+  const pathname = usePathname();
+  if (pathname.startsWith('/marketplace')) return null;
+
   return (
     <>
       <DesktopNav />

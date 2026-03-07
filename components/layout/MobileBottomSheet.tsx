@@ -1159,6 +1159,7 @@ const PANEL_CONFIG: Record<string, { title: string; subtitle?: string }> = {
 
 export function MobileBottomSheet() {
   const { activePanel, closePanel, isMobile } = useNav();
+  const sheetPathname = usePathname();
   const [isVisible, setIsVisible] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
   // Track when interaction is safe - prevents accidental taps during open animation
@@ -1202,8 +1203,8 @@ export function MobileBottomSheet() {
     prevPathname.current = pathname;
   }, [pathname, activePanel, isMobile, closePanel]);
 
-  // Don't render anything if not visible
-  if (!isVisible) {
+  // Don't render on marketplace pages or when not visible
+  if (sheetPathname.startsWith('/marketplace') || !isVisible) {
     return null;
   }
 
