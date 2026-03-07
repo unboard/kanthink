@@ -90,6 +90,27 @@ async function listCards() {
   }
 }
 
+async function addNote(cardId: string, noteText: string) {
+  const res = await db.execute({ sql: 'SELECT messages FROM cards WHERE id = ?', args: [cardId] })
+  if (res.rows.length === 0) {
+    console.error(`Card not found: ${cardId}`)
+    process.exit(1)
+  }
+  const messages: CardMessage[] = JSON.parse((res.rows[0].messages as string) || '[]')
+  messages.push({
+    id: `claude-${Date.now()}`,
+    type: 'note',
+    content: noteText,
+    createdAt: new Date().toISOString(),
+  })
+  const nowEpoch = Math.floor(Date.now() / 1000)
+  await db.execute({
+    sql: 'UPDATE cards SET messages = ?, updated_at = ? WHERE id = ?',
+    args: [JSON.stringify(messages), nowEpoch, cardId],
+  })
+  console.log(`Added note to card ${cardId}`)
+}
+
 async function moveCard(cardId: string) {
   // Get the card
   const cardRes = await db.execute({ sql: 'SELECT column_id, position FROM cards WHERE id = ?', args: [cardId] })
@@ -130,12 +151,15 @@ async function main() {
 
   if (args[0] === '--move' && args[1]) {
     await moveCard(args[1])
+  } else if (args[0] === '--note' && args[1] && args.slice(2).length > 0) {
+    await addNote(args[1], args.slice(2).join(' '))
   } else if (args.length === 0) {
     await listCards()
   } else {
     console.log('Usage:')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts           # List cards in "Do these"')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts --move ID  # Move card to "Completed"')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts                    # List cards in "Do these"')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts --move ID          # Move card to "Completed"')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts --note ID <text>   # Add a note to a card thread')
   }
 }
 
