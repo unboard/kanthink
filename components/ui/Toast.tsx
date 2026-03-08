@@ -16,6 +16,8 @@ export function ToastContainer() {
           className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-sm max-w-sm animate-in fade-in slide-in-from-right-4 ${
             toast.type === 'success'
               ? 'bg-green-600 text-white'
+              : toast.type === 'error'
+              ? 'bg-red-600 text-white'
               : toast.type === 'warning'
               ? 'bg-amber-500 text-white'
               : 'bg-neutral-800 text-white'
@@ -24,6 +26,11 @@ export function ToastContainer() {
           {toast.type === 'success' && (
             <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+          {toast.type === 'error' && (
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           )}
           {toast.type === 'warning' && (

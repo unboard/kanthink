@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef, Re
 import { useSession } from 'next-auth/react'
 import { useStore, type ServerData } from '@/lib/store'
 import { fetchChannels, fetchChannel, fetchFolders, fetchGlobalShrooms } from '@/lib/api/client'
-import { enableServerMode, disableServerMode } from '@/lib/api/sync'
+import { enableServerMode, disableServerMode, hasPendingSyncs } from '@/lib/api/sync'
 import { initBroadcastSync } from '@/lib/sync/broadcastSync'
 import { applyBroadcastEvent } from '@/lib/sync/applyBroadcastEvent'
 import {
@@ -91,6 +91,13 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
 
   const fetchServerData = useCallback(async () => {
     try {
+      // Skip background refetches while syncs are in-flight to avoid
+      // overwriting optimistic local state with stale server data
+      if (lastFetchTimeRef.current > 0 && hasPendingSyncs()) {
+        console.warn('[ServerSync] Skipping refetch — pending syncs in progress')
+        return
+      }
+
       // Only show loading state on initial fetch, not background refetches.
       // If we've fetched before (lastFetchTimeRef > 0), this is a background refresh.
       if (lastFetchTimeRef.current === 0) {

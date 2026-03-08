@@ -8,14 +8,14 @@ export interface ToastAction {
 export interface Toast {
   id: string;
   message: string;
-  type: 'info' | 'success' | 'warning';
+  type: 'info' | 'success' | 'warning' | 'error';
   duration?: number;
   action?: ToastAction;
 }
 
 interface ToastState {
   toasts: Toast[];
-  addToast: (message: string, type?: 'info' | 'success' | 'warning', duration?: number, action?: ToastAction) => void;
+  addToast: (message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number, action?: ToastAction) => void;
   removeToast: (id: string) => void;
 }
 
