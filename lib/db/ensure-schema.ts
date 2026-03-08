@@ -33,6 +33,11 @@ export async function ensureSchema() {
     `ALTER TABLE notification_preferences ADD email_notifications_enabled integer DEFAULT true`,
     // Migration 0012
     `ALTER TABLE email_templates ADD system_slug text`,
+    // Migration 0013 — card sharing + cover images
+    `ALTER TABLE cards ADD cover_image_url text`,
+    `ALTER TABLE cards ADD is_public integer DEFAULT false`,
+    `ALTER TABLE cards ADD share_token text`,
+    `ALTER TABLE channels ADD cover_image_url text`,
   ]
 
   for (const stmt of alterStatements) {

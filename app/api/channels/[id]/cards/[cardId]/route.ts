@@ -6,6 +6,7 @@ import { eq, and, gt, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { createNotification, createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
 import { logChannelActivity } from '@/lib/db/activity'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 interface RouteParams {
   params: Promise<{ id: string; cardId: string }>
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'view')
 
     const card = await db.query.cards.findFirst({
@@ -80,6 +82,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'edit')
 
     // Verify card belongs to this channel
@@ -211,6 +214,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'edit')
 
     // Verify card belongs to this channel

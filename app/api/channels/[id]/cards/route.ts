@@ -7,6 +7,7 @@ import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { nanoid } from 'nanoid'
 import { createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
 import { logChannelActivity } from '@/lib/db/activity'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'edit')
 
     const body = await req.json()
