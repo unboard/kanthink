@@ -241,6 +241,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
           aiInstructions: channel.aiInstructions || '',
           includeBacksideInAI: channel.includeBacksideInAI ?? false,
           isGlobalHelp: channel.isGlobalHelp ?? false,
+          coverImageUrl: channel.coverImageUrl,
           role: channel.role,
           sharedBy: channel.sharedBy,
           columns: columnsWithCards.sort((a, b) => {
@@ -280,9 +281,13 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             tags: card.tags || [],
             taskIds: cardTaskIds,
             hideCompletedTasks: card.hideCompletedTasks ?? false,
+            assignedTo: card.assignedTo,
             createdByInstructionId: card.createdByInstructionId,
             processedByInstructions: card.processedByInstructions || {},
             spawnedChannelIds: card.spawnedChannelIds || [],
+            isPublic: card.isPublic,
+            shareToken: card.shareToken,
+            shareTheme: card.shareTheme,
             createdAt: card.createdAt,
             updatedAt: card.updatedAt,
           }
