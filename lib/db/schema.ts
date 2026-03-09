@@ -167,6 +167,7 @@ export const cards = sqliteTable('cards', {
   // Public sharing
   isPublic: integer('is_public', { mode: 'boolean' }).default(false),
   shareToken: text('share_token'),
+  shareTheme: text('share_theme').default('conversational'),
 
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),

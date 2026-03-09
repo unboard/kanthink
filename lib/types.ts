@@ -309,6 +309,7 @@ export interface Card {
   updatedAt: string;
   isPublic?: boolean;           // Whether this card is publicly accessible
   shareToken?: string;          // Token for public sharing URL
+  shareTheme?: string;          // Theme for public card page
   createdByInstructionId?: ID;  // For loop prevention: tracks which instruction created this card
   processedByInstructions?: Record<ID, string>;  // instructionId -> ISO timestamp of last run
 }

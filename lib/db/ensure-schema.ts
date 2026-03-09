@@ -38,6 +38,8 @@ export async function ensureSchema() {
     `ALTER TABLE cards ADD is_public integer DEFAULT false`,
     `ALTER TABLE cards ADD share_token text`,
     `ALTER TABLE channels ADD cover_image_url text`,
+    // Migration 0014 — card share theme
+    `ALTER TABLE cards ADD share_theme text DEFAULT 'conversational'`,
   ]
 
   for (const stmt of alterStatements) {

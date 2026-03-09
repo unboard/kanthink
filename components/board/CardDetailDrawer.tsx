@@ -559,6 +559,48 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         </div>
                       </div>
                     )}
+
+                    {/* Theme picker (shown when published) */}
+                    {card.isPublic && card.shareToken && (
+                      <div className="mx-3 my-2">
+                        <p className="text-xs font-medium text-neutral-500 mb-2">Page theme</p>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {([
+                            { key: 'conversational', label: 'Chat', bg: '#0e0e0e', accent: '#7c3aed', fg: '#a1a1aa', lines: '#27272a' },
+                            { key: 'editorial', label: 'Editorial', bg: '#fafaf9', accent: '#7c3aed', fg: '#78716c', lines: '#e7e5e4' },
+                            { key: 'terminal', label: 'Terminal', bg: '#0a0a0a', accent: '#4ade80', fg: '#525252', lines: '#262626' },
+                            { key: 'poster', label: 'Poster', bg: '#121214', accent: '#7c3aed', fg: '#a1a1aa', lines: 'rgba(255,255,255,0.1)' },
+                          ] as const).map((theme) => {
+                            const isActive = (card.shareTheme || 'conversational') === theme.key;
+                            return (
+                              <button
+                                key={theme.key}
+                                onClick={() => updateCard(card.id, { shareTheme: theme.key })}
+                                className={`rounded-lg p-1.5 border transition-all ${
+                                  isActive
+                                    ? 'border-violet-500 ring-1 ring-violet-500/50'
+                                    : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                                }`}
+                              >
+                                {/* Mini preview */}
+                                <div
+                                  className="rounded w-full aspect-[3/4] mb-1 p-1.5 flex flex-col gap-0.5"
+                                  style={{ backgroundColor: theme.bg }}
+                                >
+                                  <div className="w-full h-0.5 rounded-full" style={{ backgroundColor: theme.accent }} />
+                                  <div className="w-3/4 h-0.5 rounded-full" style={{ backgroundColor: theme.fg }} />
+                                  <div className="w-full h-0.5 rounded-full mt-auto" style={{ backgroundColor: theme.lines }} />
+                                  <div className="w-2/3 h-0.5 rounded-full" style={{ backgroundColor: theme.lines }} />
+                                </div>
+                                <p className="text-[10px] text-center text-neutral-500 font-medium leading-none">
+                                  {theme.label}
+                                </p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

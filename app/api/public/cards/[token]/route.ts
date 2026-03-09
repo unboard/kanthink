@@ -46,6 +46,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       summary: card.summary,
       tags: card.tags,
       source: card.source,
+      shareTheme: card.shareTheme || 'conversational',
       createdAt: card.createdAt?.toISOString(),
     },
     channel: channel ? { name: channel.name } : null,
