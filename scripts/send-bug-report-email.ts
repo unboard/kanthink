@@ -38,7 +38,7 @@ function buildBugBotReportHtml(tasks: Task[], date: string): string {
   const completedCount = tasks.filter(t => t.status === 'Completed').length
 
   const taskRows = tasks.map(t => {
-    const statusColor = t.status === 'Completed' ? '#7c3aed' : t.status === 'Failed' ? '#ef4444' : '#a1a1aa'
+    const statusColor = t.status === 'Completed' ? '#22c55e' : t.status === 'Failed' ? '#ef4444' : '#a1a1aa'
     return `
       <tr>
         <td style="font-size:14px;color:#3f3f46;padding:12px;border-bottom:1px solid #f4f4f5;vertical-align:top;">${t.name}</td>
@@ -65,22 +65,28 @@ function buildBugBotReportHtml(tasks: Task[], date: string): string {
     <!-- Body -->
     <div style="padding:32px 24px;">
       <h1 style="font-size:22px;font-weight:700;color:#18181b;margin:0 0 12px;">
-        <span style="color:#eab308;">Kan</span> Bug Bot Report
+        Kan Bug Bot Report
       </h1>
       <p style="font-size:15px;color:#3f3f46;line-height:1.6;margin:0 0 24px;">
-        <span style="color:#eab308;">Kan</span> completed <strong>${completedCount} task${completedCount !== 1 ? 's' : ''}</strong> and deployed to Vercel. Here's what was done:
+        Kan completed <strong>${completedCount} task${completedCount !== 1 ? 's' : ''}</strong> and deployed to Vercel. Here's what was done:
       </p>
 
       <!-- Stats -->
-      <div style="display:flex;gap:12px;margin-bottom:24px;">
-        <div style="flex:1;background:#f4f4f5;border-radius:8px;padding:16px;text-align:center;">
-          <div style="font-size:28px;font-weight:700;color:#18181b;">${completedCount}</div>
-          <div style="font-size:13px;color:#71717a;">Completed</div>
-        </div>
-        <div style="flex:1;background:#f4f4f5;border-radius:8px;padding:16px;text-align:center;">
-          <div style="font-size:14px;color:#3f3f46;margin-top:8px;">${date}</div>
-        </div>
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+        <tr>
+          <td width="50%" style="padding-right:6px;" valign="top">
+            <div style="background:#f4f4f5;border-radius:8px;padding:16px;text-align:center;height:60px;">
+              <div style="font-size:28px;font-weight:700;color:#18181b;">${completedCount}</div>
+              <div style="font-size:13px;color:#71717a;">Completed</div>
+            </div>
+          </td>
+          <td width="50%" style="padding-left:6px;" valign="top">
+            <div style="background:#f4f4f5;border-radius:8px;padding:16px;text-align:center;height:60px;">
+              <div style="font-size:14px;color:#3f3f46;line-height:60px;">${date}</div>
+            </div>
+          </td>
+        </tr>
+      </table>
 
       <!-- Task table -->
       <table style="width:100%;border-collapse:collapse;">

@@ -29,16 +29,24 @@ Read and implement bugs/features from the Kanthink bug channel.
 
 6. Once all cards are done, commit the changes and push to deploy (Vercel auto-deploys from main).
 
-7. **Send a summary email** after every run using the Kanthink email template:
-   - If cards were completed:
-     ```
-     npx tsx scripts/send-bug-summary-email.ts --completed '[{"title":"Card title","summary":"What was done"}]'
-     ```
-   - If no cards were in the queue:
-     ```
-     npx tsx scripts/send-bug-summary-email.ts --no-work
-     ```
-   The email renders using the DynamicEmail template (matching the Kanthink email design system) and sends to dhodg22@gmail.com via Customer.IO.
+7. **Send a status email** to dhodg22@gmail.com after every run:
+   ```
+   npx tsx scripts/send-bug-report-email.ts --to dhodg22@gmail.com --tasks '<JSON array>'
+   ```
+   The `--tasks` JSON is an array of objects: `[{"name":"Card title","status":"Completed|Skipped|Failed","details":"What was done"}]`
+   - If cards were completed, include each card as an entry with status and details.
+   - If no cards were in the queue, send: `--tasks '[{"name":"No tasks in queue","status":"Completed","details":"Checked the Do these column — no cards found. Nothing to implement this cycle."}]'`
+
+   The email uses the Kan Bug Bot Report template (Kanthink design system) and sends via Customer.IO.
+
+## Communication preferences
+
+These apply whether `/bugs` is run manually or via `/loop`:
+
+- **Email after every run** — Always send dhodg22@gmail.com a status email, even when there's nothing to do. Use the script above.
+- **Card thread notes** — After completing each card, add a Kan note to the card thread summarizing what shipped (2-3 sentences max). This is how the user tracks progress from their phone.
+- **Card descriptions** — Update each card's description with a breakdown of what was implemented.
+- **High-level status first** — Before starting work, briefly tell the user what your process will be.
 
 ## Important: Timestamp format for raw SQL
 
