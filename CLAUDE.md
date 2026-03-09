@@ -124,6 +124,17 @@ Do NOT use the Vercel CLI (`vercel --prod`). The repo is connected to Vercel via
 - Keep dependencies minimal.
 - Keep the UI clean and fast.
 
+## CRITICAL: Database Schema Changes (DO NOT SKIP MIGRATIONS)
+
+When adding columns to any table in `lib/db/schema.ts`, you **MUST** also add a corresponding `ALTER TABLE` statement to `lib/db/ensure-schema.ts`. The Turso database is not auto-migrated — Drizzle generates explicit column lists in SELECT queries, so missing columns crash ALL queries on that table.
+
+**Checklist for every schema change:**
+1. Add column to `lib/db/schema.ts`
+2. Add `ALTER TABLE <table> ADD <column> <type> [DEFAULT <value>]` to `lib/db/ensure-schema.ts`
+3. If the API route for that table doesn't already call `ensureSchema()`, add it
+
+Failure to do this will silently break the entire app for all users.
+
 ## CRITICAL: Mobile Drag-and-Drop (DO NOT BREAK)
 
 The Kanban card drag-drop uses `@dnd-kit` with specific configuration that **must not change**:
