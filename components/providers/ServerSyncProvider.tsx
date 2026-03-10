@@ -241,6 +241,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
           aiInstructions: channel.aiInstructions || '',
           includeBacksideInAI: channel.includeBacksideInAI ?? false,
           isGlobalHelp: channel.isGlobalHelp ?? false,
+          isQuickSave: channel.isQuickSave ?? false,
           coverImageUrl: channel.coverImageUrl,
           role: channel.role,
           sharedBy: channel.sharedBy,

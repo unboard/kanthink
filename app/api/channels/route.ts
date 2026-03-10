@@ -50,6 +50,7 @@ export async function GET() {
     role: roleMap.get(channel.id) || 'viewer',
     sharedBy: sharedByMap.get(channel.id),
     isGlobalHelp: channel.isGlobalHelp ?? false,
+    isQuickSave: channel.isQuickSave ?? false,
     createdAt: channel.createdAt?.toISOString(),
     updatedAt: channel.updatedAt?.toISOString(),
   }))

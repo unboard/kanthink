@@ -96,6 +96,9 @@ export const channels = sqliteTable('channels', {
   // Global help channel (read-only for all users)
   isGlobalHelp: integer('is_global_help', { mode: 'boolean' }).default(false),
 
+  // Quick Save channel (one per user, auto-created)
+  isQuickSave: integer('is_quick_save', { mode: 'boolean' }).default(false),
+
   // Cover image
   coverImageUrl: text('cover_image_url'),
 

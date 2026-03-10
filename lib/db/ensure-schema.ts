@@ -41,6 +41,8 @@ export async function ensureSchema() {
     `ALTER TABLE instruction_cards ADD cover_image_url text`,
     // Migration 0014 — card share theme
     `ALTER TABLE cards ADD share_theme text DEFAULT 'conversational'`,
+    // Migration 0015 — Quick Save channel flag
+    `ALTER TABLE channels ADD is_quick_save integer DEFAULT false`,
   ]
 
   for (const stmt of alterStatements) {

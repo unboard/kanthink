@@ -623,6 +623,46 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
           </div>
         </div>
 
+        {/* Quick Save Setup — only shown for Quick Save channels */}
+        {channel.isQuickSave && (
+          <div className="pt-4">
+            <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">
+              Quick Save Setup
+            </h3>
+
+            {/* Android */}
+            <div className="mb-4">
+              <p className="text-sm text-neutral-700 dark:text-neutral-300 font-medium mb-1">Android</p>
+              <p className="text-xs text-neutral-500">
+                Open Kanthink in Chrome on your phone, tap the menu (&hellip;) and select &ldquo;Install app&rdquo;.
+                Then share any link from any app &mdash; Kanthink will appear in your share sheet.
+              </p>
+            </div>
+
+            {/* Desktop bookmarklet */}
+            <div>
+              <p className="text-sm text-neutral-700 dark:text-neutral-300 font-medium mb-1">Desktop (Chrome)</p>
+              <p className="text-xs text-neutral-500 mb-2">
+                Drag this button to your bookmark bar, then click it on any page to save it:
+              </p>
+              <a
+                href={`javascript:void(window.open('${typeof window !== 'undefined' ? window.location.origin : 'https://kanthink.com'}/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))`}
+                onClick={(e) => e.preventDefault()}
+                draggable
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg cursor-grab active:cursor-grabbing hover:bg-violet-700 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+                Save to Kanthink
+              </a>
+              <p className="text-xs text-neutral-500 mt-1.5">
+                Drag the button above to your bookmarks bar
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Export/Import Section */}
         <div className="pt-4">
           <button
