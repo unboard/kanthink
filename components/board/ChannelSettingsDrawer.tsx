@@ -643,21 +643,29 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
             <div>
               <p className="text-sm text-neutral-700 dark:text-neutral-300 font-medium mb-1">Desktop (Chrome)</p>
               <p className="text-xs text-neutral-500 mb-2">
-                Drag this button to your bookmark bar, then click it on any page to save it:
+                Create a bookmark in your bookmarks bar, then edit it and replace the URL with the code below:
               </p>
-              <a
-                href={`javascript:void(window.open('${typeof window !== 'undefined' ? window.location.origin : 'https://kanthink.com'}/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))`}
-                onClick={(e) => e.preventDefault()}
-                draggable
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-xs font-medium rounded-lg cursor-grab active:cursor-grabbing hover:bg-violet-700 transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                </svg>
-                Save to Kanthink
-              </a>
+              <div className="relative">
+                <code className="block p-2.5 pr-16 bg-neutral-800 rounded-lg text-[10px] text-neutral-300 font-mono break-all leading-relaxed select-all">
+                  {`javascript:void(window.open('${typeof window !== 'undefined' ? window.location.origin : 'https://kanthink.com'}/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))`}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://kanthink.com'
+                    navigator.clipboard.writeText(
+                      `javascript:void(window.open('${origin}/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))`
+                    )
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  }}
+                  className="absolute top-2 right-2 px-2 py-1 text-xs bg-neutral-700 hover:bg-neutral-600 text-neutral-200 rounded transition-colors"
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
               <p className="text-xs text-neutral-500 mt-1.5">
-                Drag the button above to your bookmarks bar
+                Name it &ldquo;Save to Kanthink&rdquo; &mdash; click it on any page to save
               </p>
             </div>
           </div>
