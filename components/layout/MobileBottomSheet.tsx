@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -1470,16 +1470,6 @@ export function MobileBottomSheet() {
       return () => clearTimeout(timer);
     }
   }, [activePanel]);
-
-  // Close on route change (mobile only — desktop sidebar stays open)
-  const pathname = usePathname();
-  const prevPathname = useRef(pathname);
-  useEffect(() => {
-    if (prevPathname.current !== pathname && activePanel && isMobile) {
-      closePanel();
-    }
-    prevPathname.current = pathname;
-  }, [pathname, activePanel, isMobile, closePanel]);
 
   // Don't render on marketplace pages or when not visible
   if (sheetPathname.startsWith('/marketplace') || sheetPathname.startsWith('/public') || !isVisible) {

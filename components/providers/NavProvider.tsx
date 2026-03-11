@@ -6,8 +6,10 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react';
+import { usePathname } from 'next/navigation';
 
 export type NavPanelType = 'channels' | 'shrooms' | 'notifications' | 'account' | 'settings' | null;
 
@@ -60,6 +62,22 @@ export function NavProvider({ children }: NavProviderProps) {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []); // Empty deps - only run on mount
+
+  // Close panel on navigation to full-screen pages (marketplace, public, card detail)
+  const pathname = usePathname();
+  const prevPathname = useRef(pathname);
+  useEffect(() => {
+    if (prevPathname.current !== pathname && activePanel) {
+      const isFullScreenPage =
+        pathname.startsWith('/marketplace') ||
+        pathname.startsWith('/public') ||
+        /\/channel\/[^/]+\/card\//.test(pathname);
+      if (isFullScreenPage || isMobile) {
+        setActivePanel(null);
+      }
+    }
+    prevPathname.current = pathname;
+  }, [pathname, activePanel, isMobile]);
 
   // Escape key closes panel
   useEffect(() => {
