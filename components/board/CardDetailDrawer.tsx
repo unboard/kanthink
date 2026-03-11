@@ -842,6 +842,56 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           </div>
         )}
 
+        {/* Tab Buttons - above content */}
+        <div className="flex-shrink-0 flex gap-1 px-4 py-2 bg-white dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800">
+          <button
+            onClick={() => setActiveTab('thread')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === 'thread'
+                ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+                : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:text-neutral-400'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            Thread
+          </button>
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === 'tasks'
+                ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+                : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:text-neutral-400'
+            }`}
+          >
+            <div className="relative">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              {cardTasks.length - completedCount > 0 && (
+                <span className="absolute -top-1.5 -right-2 w-3.5 h-3.5 text-[9px] font-bold bg-violet-500 text-white rounded-full flex items-center justify-center">
+                  {cardTasks.length - completedCount}
+                </span>
+              )}
+            </div>
+            Tasks
+          </button>
+          <button
+            onClick={() => setActiveTab('info')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === 'info'
+                ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+                : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:text-neutral-400'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Info
+          </button>
+        </div>
+
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           {/* Thread Tab */}
@@ -1339,55 +1389,6 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           )}
         </div>
 
-        {/* Bottom Tabs - sticky on mobile */}
-        <div className="flex-shrink-0 sticky bottom-0 z-10 flex bg-white dark:bg-neutral-900">
-          <button
-            onClick={() => setActiveTab('thread')}
-            className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
-              activeTab === 'thread'
-                ? 'text-violet-600 dark:text-violet-400'
-                : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
-            }`}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-            </svg>
-            <span className="text-xs font-medium">Thread</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('tasks')}
-            className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors relative ${
-              activeTab === 'tasks'
-                ? 'text-violet-600 dark:text-violet-400'
-                : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
-            }`}
-          >
-            <div className="relative">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              {cardTasks.length - completedCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 text-[10px] font-bold bg-violet-500 text-white rounded-full flex items-center justify-center">
-                  {cardTasks.length - completedCount}
-                </span>
-              )}
-            </div>
-            <span className="text-xs font-medium">Tasks</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('info')}
-            className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
-              activeTab === 'info'
-                ? 'text-violet-600 dark:text-violet-400'
-                : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
-            }`}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-xs font-medium">Info</span>
-          </button>
-        </div>
       </div>
       <TaskDrawer
         task={selectedTask}
