@@ -11,7 +11,6 @@ import type { PresenceUser } from '@/lib/sync/pusherClient'
 import { getPresenceMembers, subscribeToPresence, setPresenceCallback } from '@/lib/sync/pusherClient'
 import { isServerMode } from '@/lib/api/sync'
 import { TaskCheckbox } from '@/components/board/TaskCheckbox'
-import { KanthinkIcon } from '@/components/icons/KanthinkIcon'
 
 const COLLAPSED_FOLDERS_KEY = 'kanthink-collapsed-folders'
 
@@ -317,18 +316,17 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     <div className="relative min-h-full">
       <div className="relative z-10 p-6 md:p-8 lg:p-10">
         {/* Header with toggle */}
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <KanthinkIcon size={28} className="text-violet-400" />
-            <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-            {/* Channels / Tasks toggle — matches Board.tsx style */}
-            <div className="flex items-center bg-neutral-800 rounded-lg p-0.5 sm:p-1">
+        <div className="mb-8 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-white tracking-tight">Dashboard</h1>
+            {/* Channels / Tasks toggle */}
+            <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5 sm:p-1">
               <button
                 onClick={() => setDashboardView('channels')}
-                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-colors ${
+                className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-all ${
                   dashboardView === 'channels'
-                    ? 'bg-neutral-700 text-white shadow-sm'
-                    : 'text-neutral-400 hover:text-white'
+                    ? 'bg-white/10 text-white shadow-sm'
+                    : 'text-white/40 hover:text-white/70'
                 }`}
               >
                 <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,10 +336,10 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
               </button>
               <button
                 onClick={() => setDashboardView('tasks')}
-                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-colors ${
+                className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-all ${
                   dashboardView === 'tasks'
-                    ? 'bg-neutral-700 text-white shadow-sm'
-                    : 'text-neutral-400 hover:text-white'
+                    ? 'bg-white/10 text-white shadow-sm'
+                    : 'text-white/40 hover:text-white/70'
                 }`}
               >
                 <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -353,34 +351,29 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
           </div>
           <button
             onClick={onCreateChannel}
-            className="flex items-center justify-center rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700"
+            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-violet-500 active:scale-[0.97]"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
+            <span>Channel</span>
           </button>
         </div>
 
         {/* Summary stats */}
-        <div className="mb-6 flex items-center gap-6 text-xs text-white/50">
-          <div className="flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            <span className="text-white/70 font-medium">{stats.totalChannels}</span> channels
+        <div className="mb-8 flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-white/[0.04]">
+            <span className="text-white/80 font-semibold tabular-nums">{stats.totalChannels}</span>
+            <span className="text-white/40">channels</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-            <span className="text-white/70 font-medium">{stats.completedTasks}/{stats.totalTasks}</span> tasks done
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-white/[0.04]">
+            <span className="text-white/80 font-semibold tabular-nums">{stats.completedTasks}/{stats.totalTasks}</span>
+            <span className="text-white/40">tasks done</span>
           </div>
           {stats.streak > 0 && (
-            <div className="flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5 text-orange-400/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-              </svg>
-              <span className="text-orange-400/80 font-medium">{stats.streak}d</span> streak
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-orange-500/[0.08]">
+              <span className="text-orange-400 font-semibold tabular-nums">{stats.streak}d</span>
+              <span className="text-orange-400/60">streak</span>
             </div>
           )}
         </div>
@@ -388,7 +381,7 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
         {dashboardView === 'channels' ? (
           <>
             {/* Sections: grouped root channels + folders, sorted by modified */}
-            <div className="space-y-2">
+            <div className="space-y-5">
               {allSections.map((section) => {
                 if (section.type === 'root') {
                   const isCollapsed = collapsedFolders.has('__root__')
@@ -396,26 +389,23 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
                     <div key="__root__">
                       <button
                         onClick={() => toggleFolder('__root__')}
-                        className="w-full flex items-center gap-2 py-2 px-1 group/folder"
+                        className="w-full flex items-center gap-2 py-1 px-1 mb-2 group/folder"
                       >
                         <svg
-                          className={`h-3 w-3 text-white/30 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                          className={`h-3 w-3 text-white/25 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
                           fill="currentColor"
                           viewBox="0 0 24 24"
                         >
                           <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
                         </svg>
-                        <svg className="h-3.5 w-3.5 text-cyan-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                        </svg>
-                        <span className="text-xs font-semibold text-white/70 group-hover/folder:text-white/90 transition-colors">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-white/40 group-hover/folder:text-white/60 transition-colors">
                           Channels
                         </span>
-                        <span className="text-xs text-white/30">{section.channels.length}</span>
-                        <div className="h-px flex-1 bg-white/[0.04]" />
+                        <span className="text-[11px] text-white/20 font-medium">{section.channels.length}</span>
+                        <div className="h-px flex-1 bg-gradient-to-r from-white/[0.06] to-transparent" />
                       </button>
                       {!isCollapsed && (
-                        <div className="space-y-1.5 pl-5">
+                        <div className="space-y-1">
                           {section.channels.map((channel) => (
                             <ChannelListItem
                               key={channel.id}
@@ -436,26 +426,26 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
                   <div key={section.folder.id}>
                     <button
                       onClick={() => toggleFolder(section.folder.id)}
-                      className="w-full flex items-center gap-2 py-2 px-1 group/folder"
+                      className="w-full flex items-center gap-2 py-1 px-1 mb-2 group/folder"
                     >
                       <svg
-                        className={`h-3 w-3 text-white/30 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                        className={`h-3 w-3 text-white/25 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
                         fill="currentColor"
                         viewBox="0 0 24 24"
                       >
                         <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
                       </svg>
-                      <svg className="h-3.5 w-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="h-3.5 w-3.5 text-amber-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                       </svg>
-                      <span className="text-xs font-semibold text-white/70 group-hover/folder:text-white/90 transition-colors">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-white/40 group-hover/folder:text-white/60 transition-colors">
                         {section.folder.name}
                       </span>
-                      <span className="text-xs text-white/30">{section.channels.length}</span>
-                      <div className="h-px flex-1 bg-white/[0.04]" />
+                      <span className="text-[11px] text-white/20 font-medium">{section.channels.length}</span>
+                      <div className="h-px flex-1 bg-gradient-to-r from-white/[0.06] to-transparent" />
                     </button>
                     {!isCollapsed && (
-                      <div className="space-y-1.5 pl-5">
+                      <div className="space-y-1">
                         {section.channels.map((channel) => (
                           <ChannelListItem
                             key={channel.id}

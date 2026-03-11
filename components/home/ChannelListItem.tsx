@@ -143,22 +143,22 @@ export function ChannelListItem({ channel, tasks, owner, activeUsers = [], onSha
   return (
     <div
       onClick={handleClick}
-      className="group flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/15 transition-all cursor-pointer"
+      className="group flex items-center gap-3 px-4 py-3.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.06] border border-transparent hover:border-white/[0.08] transition-all duration-150 cursor-pointer"
     >
       {/* Name + description */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-white truncate">
+          <h3 className="text-sm font-semibold text-white/90 group-hover:text-white truncate transition-colors">
             {channel.name}
           </h3>
           {channel.status === 'paused' && (
-            <span className="flex-shrink-0 rounded-full bg-amber-500/20 px-1.5 py-px text-[10px] font-medium text-amber-300">
+            <span className="flex-shrink-0 rounded-full bg-amber-500/15 px-1.5 py-px text-[10px] font-medium text-amber-400/80">
               Paused
             </span>
           )}
         </div>
         {channel.description && (
-          <p className="text-xs text-white/40 truncate mt-0.5">
+          <p className="text-xs text-white/30 group-hover:text-white/40 truncate mt-0.5 transition-colors">
             {channel.description}
           </p>
         )}
