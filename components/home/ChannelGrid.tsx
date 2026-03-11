@@ -11,6 +11,7 @@ import type { PresenceUser } from '@/lib/sync/pusherClient'
 import { getPresenceMembers, subscribeToPresence, setPresenceCallback } from '@/lib/sync/pusherClient'
 import { isServerMode } from '@/lib/api/sync'
 import { TaskCheckbox } from '@/components/board/TaskCheckbox'
+import { KanthinkIcon } from '@/components/icons/KanthinkIcon'
 
 const COLLAPSED_FOLDERS_KEY = 'kanthink-collapsed-folders'
 
@@ -239,14 +240,16 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     })
     .filter(Boolean) as { folder: typeof folders[string]; channels: Channel[]; folderModified: number }[]
 
-  // Sort everything into a single list: root channels + folders, by modified time
-  type Section = { type: 'root'; channel: Channel } | { type: 'folder'; folder: typeof folders[string]; channels: Channel[]; folderModified: number }
-  const sections: Section[] = [
-    ...rootMyChannels.map(c => ({ type: 'root' as const, channel: c })),
+  // Group root channels as a virtual section, sort all sections by modified time
+  type Section = { type: 'root'; channels: Channel[]; groupModified: number } | { type: 'folder'; folder: typeof folders[string]; channels: Channel[]; folderModified: number }
+  const allSections: Section[] = [
+    ...(rootMyChannels.length > 0
+      ? [{ type: 'root' as const, channels: rootMyChannels, groupModified: Math.max(...rootMyChannels.map(c => channelModifiedTime[c.id] || 0)) }]
+      : []),
     ...folderSections.map(f => ({ type: 'folder' as const, ...f })),
   ].sort((a, b) => {
-    const aTime = a.type === 'root' ? (channelModifiedTime[a.channel.id] || 0) : a.folderModified
-    const bTime = b.type === 'root' ? (channelModifiedTime[b.channel.id] || 0) : b.folderModified
+    const aTime = a.type === 'root' ? a.groupModified : a.folderModified
+    const bTime = b.type === 'root' ? b.groupModified : b.folderModified
     return bTime - aTime
   })
 
@@ -315,46 +318,46 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
       <div className="relative z-10 p-6 md:p-8 lg:p-10">
         {/* Header with toggle */}
         <div className="mb-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <KanthinkIcon size={28} className="text-violet-400" />
             <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-            {/* Channels / Tasks toggle */}
-            <div className="flex items-center bg-white/5 rounded-lg p-0.5">
+            {/* Channels / Tasks toggle — matches Board.tsx style */}
+            <div className="flex items-center bg-neutral-800 rounded-lg p-0.5 sm:p-1">
               <button
                 onClick={() => setDashboardView('channels')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-colors ${
                   dashboardView === 'channels'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-white/40 hover:text-white/70'
+                    ? 'bg-neutral-700 text-white shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
                 }`}
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
-                Channels
+                <span className="hidden xs:inline">Channels</span>
               </button>
               <button
                 onClick={() => setDashboardView('tasks')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors ${
+                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-colors ${
                   dashboardView === 'tasks'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-white/40 hover:text-white/70'
+                    ? 'bg-neutral-700 text-white shadow-sm'
+                    : 'text-neutral-400 hover:text-white'
                 }`}
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                 </svg>
-                Tasks
+                <span className="hidden xs:inline">Tasks</span>
               </button>
             </div>
           </div>
           <button
             onClick={onCreateChannel}
-            className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700"
+            className="flex items-center justify-center rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-700"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            <span className="hidden sm:inline">New Channel</span>
           </button>
         </div>
 
@@ -384,18 +387,47 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
 
         {dashboardView === 'channels' ? (
           <>
-            {/* Mixed sections: root channels + folders, sorted by modified */}
-            <div className="space-y-1.5">
-              {sections.map((section) => {
+            {/* Sections: grouped root channels + folders, sorted by modified */}
+            <div className="space-y-2">
+              {allSections.map((section) => {
                 if (section.type === 'root') {
+                  const isCollapsed = collapsedFolders.has('__root__')
                   return (
-                    <ChannelListItem
-                      key={section.channel.id}
-                      channel={section.channel}
-                      tasks={tasksByChannel[section.channel.id] || []}
-                      owner={ownerProps}
-                      activeUsers={activeUsersMap[section.channel.id] || []}
-                    />
+                    <div key="__root__">
+                      <button
+                        onClick={() => toggleFolder('__root__')}
+                        className="w-full flex items-center gap-2 py-2 px-1 group/folder"
+                      >
+                        <svg
+                          className={`h-3 w-3 text-white/30 transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                          fill="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
+                        </svg>
+                        <svg className="h-3.5 w-3.5 text-cyan-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        </svg>
+                        <span className="text-xs font-semibold text-white/70 group-hover/folder:text-white/90 transition-colors">
+                          Channels
+                        </span>
+                        <span className="text-xs text-white/30">{section.channels.length}</span>
+                        <div className="h-px flex-1 bg-white/[0.04]" />
+                      </button>
+                      {!isCollapsed && (
+                        <div className="space-y-1.5 pl-5">
+                          {section.channels.map((channel) => (
+                            <ChannelListItem
+                              key={channel.id}
+                              channel={channel}
+                              tasks={tasksByChannel[channel.id] || []}
+                              owner={ownerProps}
+                              activeUsers={activeUsersMap[channel.id] || []}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )
                 }
 
