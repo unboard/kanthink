@@ -865,17 +865,21 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 : 'text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:text-neutral-400'
             }`}
           >
-            <div className="relative">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              {cardTasks.length - completedCount > 0 && (
-                <span className="absolute -top-1.5 -right-2 w-3.5 h-3.5 text-[9px] font-bold bg-violet-500 text-white rounded-full flex items-center justify-center">
-                  {cardTasks.length - completedCount}
-                </span>
-              )}
-            </div>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
             Tasks
+            {cardTasks.length > 0 && (
+              <span className={`ml-0.5 tabular-nums ${
+                cardTasks.length - completedCount > 0
+                  ? activeTab === 'tasks'
+                    ? 'text-violet-600 dark:text-violet-300'
+                    : 'text-violet-500 dark:text-violet-400'
+                  : 'opacity-50'
+              }`}>
+                {completedCount}/{cardTasks.length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('info')}
