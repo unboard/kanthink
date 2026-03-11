@@ -152,6 +152,17 @@ export function ChannelListItem({ channel, tasks, owner, activeUsers = [], strea
           <h3 className="text-sm font-semibold text-white/90 group-hover:text-white truncate transition-colors">
             {channel.name}
           </h3>
+          {channel.sharedBy && (
+            <span
+              className="flex-shrink-0 flex items-center gap-1 rounded-full bg-violet-500/10 px-1.5 py-px text-[10px] font-medium text-violet-400/80"
+              title={`Shared by ${channel.sharedBy.name || channel.sharedBy.email}`}
+            >
+              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              {channel.sharedBy.name?.split(' ')[0] || 'Shared'}
+            </span>
+          )}
           {channel.status === 'paused' && (
             <span className="flex-shrink-0 rounded-full bg-amber-500/15 px-1.5 py-px text-[10px] font-medium text-amber-400/80">
               Paused
