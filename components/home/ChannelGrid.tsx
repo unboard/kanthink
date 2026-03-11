@@ -4,7 +4,7 @@ import { useMemo, useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useStore } from '@/lib/store'
 import { useServerSync } from '@/components/providers/ServerSyncProvider'
-import { ChannelCard } from './ChannelCard'
+import { ChannelListItem } from './ChannelListItem'
 // SporeBackground removed - provided by root layout's AmbientBackground
 import type { Task, ID, Channel, SharedByInfo } from '@/lib/types'
 import type { PresenceUser } from '@/lib/sync/pusherClient'
@@ -210,112 +210,95 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
 
         {/* Root channels (not in any folder) */}
         {rootMyChannels.length > 0 && (
-          <div className="-mx-6 px-6 md:-mx-8 md:px-8 lg:-mx-10 lg:px-10 overflow-x-auto scrollbar-none">
-            <div className="flex gap-4 pb-2" style={{ minWidth: 'min-content' }}>
-              {rootMyChannels.map((channel) => (
-                <div key={channel.id} className="w-72 flex-shrink-0">
-                  <ChannelCard
-                    channel={channel}
-                    tasks={tasksByChannel[channel.id] || []}
-                    owner={session?.user ? {
-                      id: session.user.id!,
-                      name: session.user.name ?? null,
-                      image: session.user.image ?? null,
-                    } : undefined}
-                    activeUsers={activeUsersMap[channel.id] || []}
-                  />
-                </div>
-              ))}
-            </div>
+          <div className="space-y-1.5">
+            {rootMyChannels.map((channel) => (
+              <ChannelListItem
+                key={channel.id}
+                channel={channel}
+                tasks={tasksByChannel[channel.id] || []}
+                owner={session?.user ? {
+                  id: session.user.id!,
+                  name: session.user.name ?? null,
+                  image: session.user.image ?? null,
+                } : undefined}
+                activeUsers={activeUsersMap[channel.id] || []}
+              />
+            ))}
           </div>
         )}
 
         {/* Folder sections */}
         {folderSections.map(({ folder, channels: folderChannels }) => (
-          <div key={folder.id} className="mt-10">
-            <div className="mb-5 flex items-center gap-3">
+          <div key={folder.id} className="mt-8">
+            <div className="mb-3 flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <svg className="h-5 w-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-4 w-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                 </svg>
-                <h2 className="text-lg font-semibold text-white">{folder.name}</h2>
+                <h2 className="text-sm font-semibold text-white">{folder.name}</h2>
               </div>
-              <span className="text-sm text-white/40">{folderChannels.length}</span>
-              <div className="h-px flex-1 bg-white/10" />
+              <span className="text-xs text-white/40">{folderChannels.length}</span>
+              <div className="h-px flex-1 bg-white/[0.06]" />
             </div>
-            <div className="-mx-6 px-6 md:-mx-8 md:px-8 lg:-mx-10 lg:px-10 overflow-x-auto scrollbar-none">
-              <div className="flex gap-4 pb-2" style={{ minWidth: 'min-content' }}>
-                {folderChannels.map((channel) => (
-                  <div key={channel.id} className="w-72 flex-shrink-0">
-                    <ChannelCard
-                      channel={channel}
-                      tasks={tasksByChannel[channel.id] || []}
-                      owner={session?.user ? {
-                        id: session.user.id!,
-                        name: session.user.name ?? null,
-                        image: session.user.image ?? null,
-                      } : undefined}
-                      activeUsers={activeUsersMap[channel.id] || []}
-                    />
-                  </div>
-                ))}
-              </div>
+            <div className="space-y-1.5">
+              {folderChannels.map((channel) => (
+                <ChannelListItem
+                  key={channel.id}
+                  channel={channel}
+                  tasks={tasksByChannel[channel.id] || []}
+                  owner={session?.user ? {
+                    id: session.user.id!,
+                    name: session.user.name ?? null,
+                    image: session.user.image ?? null,
+                  } : undefined}
+                  activeUsers={activeUsersMap[channel.id] || []}
+                />
+              ))}
             </div>
           </div>
         ))}
 
         {/* Shared with me Section */}
         {sharedChannels.length > 0 && (
-          <div className="mt-12">
-            <div className="mb-6 flex items-center gap-3">
+          <div className="mt-10">
+            <div className="mb-3 flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <svg className="h-5 w-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-4 w-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
-                <h2 className="text-lg font-semibold text-white">Shared with me</h2>
+                <h2 className="text-sm font-semibold text-white">Shared with me</h2>
               </div>
-              <div className="h-px flex-1 bg-white/10" />
+              <div className="h-px flex-1 bg-white/[0.06]" />
             </div>
 
-            {/* Group by sharer */}
-            <div className="space-y-8">
+            <div className="space-y-6">
               {Object.values(sharedByPerson).map(({ sharer, channels: sharerChannels }) => (
                 <div key={sharer.id}>
-                  {/* Sharer header */}
-                  <div className="mb-3 flex items-center gap-2">
+                  <div className="mb-2 flex items-center gap-2 pl-1">
                     {sharer.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={sharer.image}
-                        alt={sharer.name || 'Sharer'}
-                        className="h-6 w-6 rounded-full"
-                      />
+                      <img src={sharer.image} alt={sharer.name || 'Sharer'} className="h-5 w-5 rounded-full" />
                     ) : (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500/20">
-                        <span className="text-xs font-medium text-violet-300">
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20">
+                        <span className="text-[9px] font-medium text-violet-300">
                           {(sharer.name || sharer.email)?.[0]?.toUpperCase() || '?'}
                         </span>
                       </div>
                     )}
-                    <span className="text-sm font-medium text-white/70">
+                    <span className="text-xs font-medium text-white/50">
                       {sharer.name || sharer.email}
                     </span>
                   </div>
-
-                  {/* Sharer's channels */}
-                  <div className="-mx-6 px-6 md:-mx-8 md:px-8 lg:-mx-10 lg:px-10 overflow-x-auto scrollbar-none">
-                    <div className="flex gap-4 pb-2" style={{ minWidth: 'min-content' }}>
-                      {sharerChannels.map((channel) => (
-                        <div key={channel.id} className="w-72 flex-shrink-0">
-                          <ChannelCard
-                            channel={channel}
-                            tasks={tasksByChannel[channel.id] || []}
-                            owner={sharer}
-                            activeUsers={activeUsersMap[channel.id] || []}
-                          />
-                        </div>
-                      ))}
-                    </div>
+                  <div className="space-y-1.5">
+                    {sharerChannels.map((channel) => (
+                      <ChannelListItem
+                        key={channel.id}
+                        channel={channel}
+                        tasks={tasksByChannel[channel.id] || []}
+                        owner={sharer}
+                        activeUsers={activeUsersMap[channel.id] || []}
+                      />
+                    ))}
                   </div>
                 </div>
               ))}

@@ -477,8 +477,14 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
     return Object.values(groups)
       .filter((g) => g.tasks.length > 0 || g.cardId !== null)
       .sort((a, b) => {
+        // Unlinked tasks always first
         if (!a.cardId) return -1;
         if (!b.cardId) return 1;
+        // Groups with tasks before empty groups
+        const aHasTasks = a.tasks.length > 0 ? 0 : 1;
+        const bHasTasks = b.tasks.length > 0 ? 0 : 1;
+        if (aHasTasks !== bHasTasks) return aHasTasks - bHasTasks;
+        // Then alphabetical within each tier
         return a.cardTitle.localeCompare(b.cardTitle);
       });
   }, [filteredTasks, groupBy, cards, channel?.unlinkedTaskOrder, channel, channelId, filterCardIds, archivedCardIds, cardToColumnMap, members]);
