@@ -54,75 +54,68 @@ function getEffectiveModified(
   return latest
 }
 
+/** Parse a timestamp string to ms, handling ISO strings and epoch integers */
+function parseTimestamp(ts: string | undefined | null): number {
+  if (!ts) return NaN
+  const d = new Date(ts)
+  let ms = d.getTime()
+  if (!isNaN(ms)) return ms
+  // Try as epoch integer (seconds)
+  const num = Number(ts)
+  if (!isNaN(num)) {
+    // If it looks like seconds (< year 2100 in seconds), multiply by 1000
+    ms = num < 4102444800 ? num * 1000 : num
+    return ms
+  }
+  return NaN
+}
+
+/** Convert ms timestamp to a local day number for comparison */
+function toLocalDayNum(ms: number): number {
+  const d = new Date(ms)
+  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  return Math.floor(local.getTime() / 86400000)
+}
+
 /** Compute per-channel hot/cold streak */
 function computeChannelStreak(
   channel: Channel,
   cards: Record<ID, Card>,
   tasks: Record<ID, Task>,
 ): { hot: number; cold: number } {
-  const toDateStr = (ts: string) => {
-    try {
-      const d = new Date(ts)
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-    } catch { return '' }
+  const todayDayNum = toLocalDayNum(Date.now())
+  const activeDayNums = new Set<number>()
+
+  const addTs = (ts: string | undefined | null) => {
+    const ms = parseTimestamp(ts)
+    if (!isNaN(ms)) activeDayNums.add(toLocalDayNum(ms))
   }
 
-  // Collect all activity dates for this channel
-  const activeDays = new Set<string>()
-  const ds = toDateStr(channel.updatedAt)
-  if (ds) activeDays.add(ds)
-  const cs = toDateStr(channel.createdAt)
-  if (cs) activeDays.add(cs)
+  // Channel's own timestamps
+  addTs(channel.updatedAt)
+  addTs(channel.createdAt)
 
+  // Cards in this channel
   for (const card of Object.values(cards)) {
-    if (card.channelId === channel.id) {
-      const d = toDateStr(card.updatedAt)
-      if (d) activeDays.add(d)
-    }
+    if (card.channelId === channel.id) addTs(card.updatedAt)
   }
+  // Tasks in this channel
   for (const task of Object.values(tasks)) {
-    if (task.channelId === channel.id) {
-      const d = toDateStr(task.updatedAt)
-      if (d) activeDays.add(d)
-    }
+    if (task.channelId === channel.id) addTs(task.updatedAt)
   }
 
-  // Count consecutive days back from today (hot streak)
-  const today = new Date()
+  // Hot: consecutive days including today
   let hot = 0
   for (let i = 0; i < 365; i++) {
-    const d = new Date(today)
-    d.setDate(d.getDate() - i)
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-    if (activeDays.has(key)) {
-      hot++
-    } else {
-      break
-    }
+    if (activeDayNums.has(todayDayNum - i)) hot++
+    else break
   }
 
-  // Cold = days since last activity (0 if active today)
+  // Cold: days since last activity (only if not active today)
   let cold = 0
-  if (hot === 0) {
-    // Find most recent activity day
-    let latestMs = 0
-    const tryUpdate = (ts: string) => {
-      try {
-        const t = new Date(ts).getTime()
-        if (t > latestMs) latestMs = t
-      } catch { /* skip */ }
-    }
-    tryUpdate(channel.updatedAt)
-    tryUpdate(channel.createdAt)
-    for (const card of Object.values(cards)) {
-      if (card.channelId === channel.id) tryUpdate(card.updatedAt)
-    }
-    for (const task of Object.values(tasks)) {
-      if (task.channelId === channel.id) tryUpdate(task.updatedAt)
-    }
-    if (latestMs > 0) {
-      cold = Math.floor((today.getTime() - latestMs) / (1000 * 60 * 60 * 24))
-    }
+  if (hot === 0 && activeDayNums.size > 0) {
+    const maxDayNum = Math.max(...activeDayNums)
+    cold = todayDayNum - maxDayNum
   }
 
   return { hot, cold }

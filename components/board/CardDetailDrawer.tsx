@@ -164,7 +164,14 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const undoInstructionRun = useStore((s) => s.undoInstructionRun);
   const setCoverImage = useStore((s) => s.setCoverImage);
   const createTask = useStore((s) => s.createTask);
+  const createCard = useStore((s) => s.createCard);
+  const moveCard = useStore((s) => s.moveCard);
   const { members } = useChannelMembers(card?.channelId);
+
+  const [showCardMenu, setShowCardMenu] = useState(false);
+  const [showMoveChannelPicker, setShowMoveChannelPicker] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const cardMenuRef = useRef<HTMLDivElement>(null);
 
   const [activeDragTaskId, setActiveDragTaskId] = useState<ID | null>(null);
   const [isCoverUploading, setIsCoverUploading] = useState(false);
@@ -256,6 +263,20 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showShareMenu]);
+
+  // Close card menu on click outside
+  useEffect(() => {
+    if (!showCardMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (cardMenuRef.current && !cardMenuRef.current.contains(e.target as Node)) {
+        setShowCardMenu(false);
+        setShowMoveChannelPicker(false);
+        setShowDeleteConfirm(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showCardMenu]);
 
   useEffect(() => {
     if (card && isOpen) {
@@ -606,16 +627,174 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
               )}
             </div>
           )}
-          {!fullPage && card && (
-            <button
-              onClick={() => router.push(`/channel/${card.channelId}/card/${card.id}`)}
-              className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              title="Open full page"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-              </svg>
-            </button>
+          {card && (
+            <div className="relative" ref={cardMenuRef}>
+              <button
+                onClick={() => { setShowCardMenu(!showCardMenu); setShowMoveChannelPicker(false); setShowDeleteConfirm(false); }}
+                className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                title="More options"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                </svg>
+              </button>
+
+              {showCardMenu && (
+                <div className="absolute right-0 top-10 w-52 bg-white dark:bg-neutral-800 rounded-xl shadow-xl border border-neutral-200 dark:border-neutral-700 z-50 overflow-hidden py-1">
+                  {showDeleteConfirm ? (
+                    <div className="px-3 py-2">
+                      <p className="text-xs text-neutral-600 dark:text-neutral-300 mb-2">Delete this card permanently?</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            deleteCard(card.id);
+                            setShowCardMenu(false);
+                            setShowDeleteConfirm(false);
+                            onClose();
+                          }}
+                          className="flex-1 px-2 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => setShowDeleteConfirm(false)}
+                          className="flex-1 px-2 py-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : showMoveChannelPicker ? (
+                    <div className="max-h-64 overflow-y-auto">
+                      <button
+                        onClick={() => setShowMoveChannelPicker(false)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Back
+                      </button>
+                      <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
+                      {Object.values(channels)
+                        .filter((ch) => ch.id !== card.channelId && !ch.sharedBy)
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((ch) => {
+                          const targetCol = ch.columns?.[0];
+                          return targetCol ? (
+                            <button
+                              key={ch.id}
+                              onClick={() => {
+                                // Create a new card in the target channel's first column
+                                createCard(ch.id, targetCol.id, { title: card.title, initialMessage: card.messages?.[0]?.content || undefined });
+                                deleteCard(card.id);
+                                setShowCardMenu(false);
+                                setShowMoveChannelPicker(false);
+                                onClose();
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                            >
+                              <svg className="w-4 h-4 text-neutral-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                              </svg>
+                              <span className="truncate">{ch.name}</span>
+                            </button>
+                          ) : null;
+                        })}
+                    </div>
+                  ) : (
+                    <>
+                      {/* Full screen */}
+                      {!fullPage && (
+                        <button
+                          onClick={() => { setShowCardMenu(false); router.push(`/channel/${card.channelId}/card/${card.id}`); }}
+                          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                        >
+                          <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+                          </svg>
+                          Full screen
+                        </button>
+                      )}
+
+                      {/* Share — copy link */}
+                      <button
+                        onClick={() => {
+                          const url = `${window.location.origin}/channel/${card.channelId}/card/${card.id}`;
+                          navigator.clipboard.writeText(url);
+                          setCopiedLink(true);
+                          setTimeout(() => setCopiedLink(false), 2000);
+                          setShowCardMenu(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                        {copiedLink ? 'Link copied!' : 'Share'}
+                      </button>
+
+                      {/* Info */}
+                      <button
+                        onClick={() => { setShowCardMenu(false); setActiveTab('info'); }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Info
+                      </button>
+
+                      <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
+
+                      {/* Duplicate */}
+                      <button
+                        onClick={() => {
+                          const col = channels[card.channelId]?.columns?.find((c) => c.cardIds?.includes(card.id));
+                          if (col) {
+                            createCard(card.channelId, col.id, { title: `${card.title} (copy)`, initialMessage: card.messages?.[0]?.content || undefined });
+                          }
+                          setShowCardMenu(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Duplicate
+                      </button>
+
+                      {/* Move to channel */}
+                      <button
+                        onClick={() => setShowMoveChannelPicker(true)}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                        Move to channel
+                        <svg className="w-3 h-3 text-neutral-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+
+                      <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
+
+                      {/* Delete */}
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           )}
           {!fullPage && (
             <button
