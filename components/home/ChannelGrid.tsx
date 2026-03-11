@@ -530,6 +530,7 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
                             tasks={tasksByChannel[channel.id] || []}
                             owner={ownerProps}
                             activeUsers={activeUsersMap[channel.id] || []}
+                            streak={channelStreaks[channel.id]}
                           />
                         ))}
                       </div>
