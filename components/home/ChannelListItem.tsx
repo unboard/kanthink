@@ -165,21 +165,21 @@ export function ChannelListItem({ channel, tasks, owner, activeUsers = [], onSha
       </div>
 
       {/* Task progress — compact */}
-      <div className="hidden sm:flex items-center gap-2 flex-shrink-0 w-32">
+      <div className="hidden sm:flex items-center gap-2 flex-shrink-0 w-36 justify-end">
         {taskStats.total > 0 ? (
           <>
-            <div className="h-1 flex-1 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-1 w-16 rounded-full bg-white/10 overflow-hidden">
               <div
                 className="h-full rounded-full bg-green-500 transition-all"
                 style={{ width: `${taskStats.percentage}%` }}
               />
             </div>
-            <span className="text-xs text-white/50 tabular-nums whitespace-nowrap">
+            <span className="text-xs text-white/50 tabular-nums whitespace-nowrap w-10 text-right">
               {taskStats.completed}/{taskStats.total}
             </span>
           </>
         ) : (
-          <span className="text-xs text-white/25">No tasks</span>
+          <span className="text-xs text-white/25 w-full text-right">No tasks</span>
         )}
       </div>
 
