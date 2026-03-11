@@ -4270,38 +4270,42 @@ export const useStore = create<KanthinkState>()(
 
         // Retroactive fix: mark tasks on archived cards as done
         if (state) {
-          const archivedCardIds = new Set<string>();
-          for (const channel of Object.values(state.channels)) {
-            for (const col of channel.columns ?? []) {
-              for (const cid of col.backsideCardIds ?? []) {
-                archivedCardIds.add(cid);
-              }
-            }
-          }
-          if (archivedCardIds.size > 0) {
-            const timestamp = new Date().toISOString();
-            let changed = false;
-            const updatedTasks = { ...state.tasks };
-            for (const card of Object.values(state.cards)) {
-              if (archivedCardIds.has(card.id)) {
-                for (const taskId of card.taskIds ?? []) {
-                  const task = updatedTasks[taskId];
-                  if (task && task.status !== 'done') {
-                    updatedTasks[taskId] = { ...task, status: 'done', completedAt: timestamp, updatedAt: timestamp };
-                    changed = true;
-                  }
-                }
-              }
-            }
-            if (changed) {
-              useStore.setState({ tasks: updatedTasks });
-            }
-          }
+          completeTasksOnArchivedCards(state);
         }
       },
     }
   )
 );
+
+/** Complete all open tasks that belong to archived cards. Safe to call multiple times. */
+export function completeTasksOnArchivedCards(state?: KanthinkState | null) {
+  const s = state || useStore.getState();
+
+  // Build set of archived card IDs
+  const archivedCardIds = new Set<string>();
+  for (const channel of Object.values(s.channels)) {
+    for (const col of channel.columns ?? []) {
+      for (const cid of col.backsideCardIds ?? []) {
+        archivedCardIds.add(cid);
+      }
+    }
+  }
+  if (archivedCardIds.size === 0) return;
+
+  // Find all tasks whose cardId is archived and not yet done
+  const timestamp = new Date().toISOString();
+  let changed = false;
+  const updatedTasks = { ...s.tasks };
+  for (const task of Object.values(updatedTasks)) {
+    if (task.cardId && archivedCardIds.has(task.cardId) && task.status !== 'done') {
+      updatedTasks[task.id] = { ...task, status: 'done' as const, completedAt: timestamp, updatedAt: timestamp };
+      changed = true;
+    }
+  }
+  if (changed) {
+    useStore.setState({ tasks: updatedTasks });
+  }
+}
 
 // Selector helpers for shrooms (instruction cards)
 export function getGlobalShrooms(state: KanthinkState): InstructionCard[] {

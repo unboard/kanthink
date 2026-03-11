@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react'
 import { useSession } from 'next-auth/react'
-import { useStore, type ServerData } from '@/lib/store'
+import { useStore, type ServerData, completeTasksOnArchivedCards } from '@/lib/store'
 import { fetchChannels, fetchChannel, fetchFolders, fetchGlobalShrooms } from '@/lib/api/client'
 import { enableServerMode, disableServerMode, hasPendingSyncs } from '@/lib/api/sync'
 import { initBroadcastSync } from '@/lib/sync/broadcastSync'
@@ -465,6 +465,9 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       setIsServerMode(true)
       setHasFetched(true)
       lastFetchTimeRef.current = Date.now()
+
+      // Retroactive fix: mark tasks on archived cards as done
+      completeTasksOnArchivedCards()
 
       // Store channel IDs for Pusher subscription
       loadedChannelIdsRef.current = Object.keys(channels)
