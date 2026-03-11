@@ -19,6 +19,7 @@ interface ChatMessageProps {
   message: CardMessage;
   onDelete?: () => void;
   onEdit?: (content: string) => void;
+  onToggleReaction?: (emoji: string) => void;
   // Smart snippet props (optional for backwards compatibility)
   tagDefinitions?: TagDefinition[];
   cardTags?: string[];
@@ -250,10 +251,13 @@ function UserMessageHeader({ message, session }: { message: CardMessage; session
   );
 }
 
+const QUICK_EMOJIS = ['👍', '❤️', '😂', '🎉', '🤔', '👀'];
+
 export function ChatMessage({
   message,
   onDelete,
   onEdit,
+  onToggleReaction,
   tagDefinitions = [],
   cardTags = [],
   onActionApprove,
@@ -274,7 +278,9 @@ export function ChatMessage({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
   const [theaterIndex, setTheaterIndex] = useState<number | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   const imageUrls = message.imageUrls || [];
 
@@ -290,6 +296,32 @@ export function ChatMessage({
       ta.style.height = `${ta.scrollHeight}px`;
     }
   }, [isEditing]);
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showEmojiPicker]);
+
+  // Group reactions by emoji
+  const groupedReactions = (message.reactions ?? []).reduce<
+    Record<string, { emoji: string; users: { id: string; name?: string }[]; currentUserReacted: boolean }>
+  >((acc, r) => {
+    if (!acc[r.emoji]) {
+      acc[r.emoji] = { emoji: r.emoji, users: [], currentUserReacted: false };
+    }
+    acc[r.emoji].users.push({ id: r.userId, name: r.userName });
+    if (r.userId === session?.user?.id) {
+      acc[r.emoji].currentUserReacted = true;
+    }
+    return acc;
+  }, {});
 
   const handleSaveEdit = () => {
     const trimmed = editContent.trim();
@@ -449,6 +481,57 @@ export function ChatMessage({
           onClose={() => setTheaterIndex(null)}
           onNavigate={setTheaterIndex}
         />
+
+        {/* Reactions */}
+        {onToggleReaction && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            {Object.values(groupedReactions).map(({ emoji, users, currentUserReacted }) => (
+              <button
+                key={emoji}
+                onClick={() => onToggleReaction(emoji)}
+                title={users.map((u) => u.name ?? 'Unknown').join(', ')}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs transition-colors ${
+                  currentUserReacted
+                    ? 'bg-violet-100 dark:bg-violet-900/40 border border-violet-300 dark:border-violet-700'
+                    : 'bg-neutral-100 dark:bg-neutral-700/50 border border-transparent hover:border-neutral-300 dark:hover:border-neutral-600'
+                }`}
+              >
+                <span>{emoji}</span>
+                <span className={currentUserReacted ? 'text-violet-600 dark:text-violet-300 font-medium' : 'text-neutral-500 dark:text-neutral-400'}>
+                  {users.length}
+                </span>
+              </button>
+            ))}
+            {/* Add reaction button */}
+            <div className="relative" ref={emojiPickerRef}>
+              <button
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className="inline-flex items-center justify-center w-6 h-6 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                title="Add reaction"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              {showEmojiPicker && (
+                <div className="absolute bottom-full left-0 mb-1 z-10 flex gap-1 p-1.5 rounded-lg bg-white dark:bg-neutral-800 shadow-lg border border-neutral-200 dark:border-neutral-700">
+                  {QUICK_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        onToggleReaction(emoji);
+                        setShowEmojiPicker(false);
+                      }}
+                      className="w-8 h-8 flex items-center justify-center rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors text-base"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Smart Snippets section */}
         {hasSmartSnippets && onActionApprove && onActionReject && (() => {

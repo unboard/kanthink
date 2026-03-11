@@ -236,6 +236,12 @@ export interface StoredAction {
   resultId?: string;            // e.g., created task ID
 }
 
+export interface MessageReaction {
+  emoji: string;             // e.g. "👍", "❤️"
+  userId: string;
+  userName?: string;
+}
+
 export interface CardMessage {
   id: ID;
   type: CardMessageType;
@@ -247,6 +253,7 @@ export interface CardMessage {
   createdAt: string;
   replyToMessageId?: ID;     // For AI responses, links to the question
   proposedActions?: StoredAction[];  // Smart snippets for AI responses
+  reactions?: MessageReaction[];
 }
 
 export interface ChannelMember {

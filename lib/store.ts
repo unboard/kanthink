@@ -105,6 +105,7 @@ interface KanthinkState {
   updateMessageAction: (cardId: ID, messageId: ID, actionId: string, updates: Partial<StoredAction>) => void;
   editMessage: (cardId: ID, messageId: ID, content: string) => void;
   deleteMessage: (cardId: ID, messageId: ID) => void;
+  toggleReaction: (cardId: ID, messageId: ID, emoji: string, user: { id: string; name: string }) => void;
   setCardSummary: (cardId: ID, summary: string) => void;
   setCoverImage: (cardId: ID, url: string | null) => void;
 
@@ -1673,6 +1674,59 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs and devices
         broadcastAndPublish({ type: 'card:deleteMessage', cardId, messageId });
+      },
+
+      toggleReaction: (cardId, messageId, emoji, user) => {
+        let channelId: string | null = null;
+        let updatedMessages: CardMessage[] = [];
+
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card) return state;
+
+          channelId = card.channelId;
+          updatedMessages = (card.messages ?? []).map((m) => {
+            if (m.id !== messageId) return m;
+            const reactions = m.reactions ?? [];
+            const existing = reactions.findIndex(
+              (r) => r.emoji === emoji && r.userId === user.id
+            );
+            if (existing >= 0) {
+              // Remove reaction
+              return { ...m, reactions: reactions.filter((_, i) => i !== existing) };
+            } else {
+              // Add reaction
+              return {
+                ...m,
+                reactions: [...reactions, { emoji, userId: user.id, userName: user.name }],
+              };
+            }
+          });
+
+          return {
+            cards: {
+              ...state.cards,
+              [cardId]: {
+                ...card,
+                messages: updatedMessages,
+                updatedAt: now(),
+              },
+            },
+          };
+        });
+
+        if (channelId) {
+          sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
+        }
+
+        broadcastAndPublish({
+          type: 'card:toggleReaction',
+          cardId,
+          messageId,
+          emoji,
+          userId: user.id,
+          userName: user.name,
+        });
       },
 
       setCardSummary: (cardId, summary) => {

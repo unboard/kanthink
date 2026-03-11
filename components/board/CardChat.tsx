@@ -34,6 +34,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const addAIResponse = useStore((s) => s.addAIResponse);
   const editMessage = useStore((s) => s.editMessage);
   const deleteMessage = useStore((s) => s.deleteMessage);
+  const toggleReaction = useStore((s) => s.toggleReaction);
   const setCardSummary = useStore((s) => s.setCardSummary);
   const updateMessageAction = useStore((s) => s.updateMessageAction);
   const createTask = useStore((s) => s.createTask);
@@ -456,6 +457,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
                 message={message}
                 onDelete={() => handleDeleteMessage(message.id)}
                 onEdit={(content) => editMessage(card.id, message.id, content)}
+                onToggleReaction={session?.user ? (emoji) => toggleReaction(card.id, message.id, emoji, { id: session.user.id!, name: session.user.name ?? session.user.email ?? 'Unknown' }) : undefined}
                 tagDefinitions={tagDefinitions}
                 cardTags={cardTags}
                 onActionApprove={handleActionApprove}

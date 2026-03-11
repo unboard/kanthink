@@ -52,6 +52,7 @@ export type BroadcastEvent =
   | { type: 'card:updateMessageAction'; cardId: ID; messageId: ID; actionId: string; updates: Partial<StoredAction> }
   | { type: 'card:editMessage'; cardId: ID; messageId: ID; content: string }
   | { type: 'card:deleteMessage'; cardId: ID; messageId: ID }
+  | { type: 'card:toggleReaction'; cardId: ID; messageId: ID; emoji: string; userId: string; userName: string }
   | { type: 'card:setSummary'; cardId: ID; summary: string }
   | { type: 'card:setCoverImage'; cardId: ID; url: string | null }
 

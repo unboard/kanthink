@@ -522,6 +522,7 @@ interface CardMessageJson {
   imageUrls?: string[]
   createdAt: string
   replyToMessageId?: string
+  reactions?: { emoji: string; userId: string; userName?: string }[]
 }
 
 interface CardPropertyJson {

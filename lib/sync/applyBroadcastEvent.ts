@@ -509,6 +509,36 @@ export function applyBroadcastEvent(
       })
       break
 
+    case 'card:toggleReaction':
+      set((state) => {
+        const card = state.cards[event.cardId]
+        if (!card) return state
+        return {
+          cards: {
+            ...state.cards,
+            [event.cardId]: {
+              ...card,
+              messages: (card.messages ?? []).map((m) => {
+                if (m.id !== event.messageId) return m
+                const reactions = m.reactions ?? []
+                const existing = reactions.findIndex(
+                  (r) => r.emoji === event.emoji && r.userId === event.userId
+                )
+                if (existing >= 0) {
+                  return { ...m, reactions: reactions.filter((_, i) => i !== existing) }
+                }
+                return {
+                  ...m,
+                  reactions: [...reactions, { emoji: event.emoji, userId: event.userId, userName: event.userName }],
+                }
+              }),
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
     case 'card:setSummary':
       set((state) => {
         const card = state.cards[event.cardId]
