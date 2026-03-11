@@ -54,6 +54,80 @@ function getEffectiveModified(
   return latest
 }
 
+/** Compute per-channel hot/cold streak */
+function computeChannelStreak(
+  channel: Channel,
+  cards: Record<ID, Card>,
+  tasks: Record<ID, Task>,
+): { hot: number; cold: number } {
+  const toDateStr = (ts: string) => {
+    try {
+      const d = new Date(ts)
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    } catch { return '' }
+  }
+
+  // Collect all activity dates for this channel
+  const activeDays = new Set<string>()
+  const ds = toDateStr(channel.updatedAt)
+  if (ds) activeDays.add(ds)
+  const cs = toDateStr(channel.createdAt)
+  if (cs) activeDays.add(cs)
+
+  for (const card of Object.values(cards)) {
+    if (card.channelId === channel.id) {
+      const d = toDateStr(card.updatedAt)
+      if (d) activeDays.add(d)
+    }
+  }
+  for (const task of Object.values(tasks)) {
+    if (task.channelId === channel.id) {
+      const d = toDateStr(task.updatedAt)
+      if (d) activeDays.add(d)
+    }
+  }
+
+  // Count consecutive days back from today (hot streak)
+  const today = new Date()
+  let hot = 0
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    if (activeDays.has(key)) {
+      hot++
+    } else {
+      break
+    }
+  }
+
+  // Cold = days since last activity (0 if active today)
+  let cold = 0
+  if (hot === 0) {
+    // Find most recent activity day
+    let latestMs = 0
+    const tryUpdate = (ts: string) => {
+      try {
+        const t = new Date(ts).getTime()
+        if (t > latestMs) latestMs = t
+      } catch { /* skip */ }
+    }
+    tryUpdate(channel.updatedAt)
+    tryUpdate(channel.createdAt)
+    for (const card of Object.values(cards)) {
+      if (card.channelId === channel.id) tryUpdate(card.updatedAt)
+    }
+    for (const task of Object.values(tasks)) {
+      if (task.channelId === channel.id) tryUpdate(task.updatedAt)
+    }
+    if (latestMs > 0) {
+      cold = Math.floor((today.getTime() - latestMs) / (1000 * 60 * 60 * 24))
+    }
+  }
+
+  return { hot, cold }
+}
+
 /** Compute active streak (consecutive days with any channel/card/task modification) */
 function computeActiveStreak(channels: Record<ID, Channel>, cards: Record<ID, Card>, tasks: Record<ID, Task>): number {
   // Collect all unique active dates
@@ -171,6 +245,15 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     const map: Record<string, number> = {}
     for (const ch of Object.values(channels)) {
       map[ch.id] = getEffectiveModified(ch, cards, tasks)
+    }
+    return map
+  }, [channels, cards, tasks])
+
+  // Per-channel hot/cold streaks
+  const channelStreaks = useMemo(() => {
+    const map: Record<string, { hot: number; cold: number }> = {}
+    for (const ch of Object.values(channels)) {
+      map[ch.id] = computeChannelStreak(ch, cards, tasks)
     }
     return map
   }, [channels, cards, tasks])
@@ -413,6 +496,7 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
                               tasks={tasksByChannel[channel.id] || []}
                               owner={ownerProps}
                               activeUsers={activeUsersMap[channel.id] || []}
+                              streak={channelStreaks[channel.id]}
                             />
                           ))}
                         </div>

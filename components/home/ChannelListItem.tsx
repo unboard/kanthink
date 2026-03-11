@@ -42,10 +42,11 @@ interface ChannelListItemProps {
     image: string | null
   }
   activeUsers?: PresenceUser[]
+  streak?: { hot: number; cold: number }
   onShare?: (channelId: string) => void
 }
 
-export function ChannelListItem({ channel, tasks, owner, activeUsers = [], onShare }: ChannelListItemProps) {
+export function ChannelListItem({ channel, tasks, owner, activeUsers = [], streak, onShare }: ChannelListItemProps) {
   const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -163,6 +164,31 @@ export function ChannelListItem({ channel, tasks, owner, activeUsers = [], onSha
           </p>
         )}
       </div>
+
+      {/* Hot/cold streak */}
+      {streak && (streak.hot > 0 || streak.cold > 0) && (
+        <div className="flex items-center gap-1 flex-shrink-0" title={
+          streak.hot > 0
+            ? `${streak.hot} day${streak.hot !== 1 ? 's' : ''} active streak`
+            : `${streak.cold} day${streak.cold !== 1 ? 's' : ''} inactive`
+        }>
+          {streak.hot > 0 ? (
+            <>
+              <svg className="w-3.5 h-3.5 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+              </svg>
+              <span className="text-[11px] font-semibold text-orange-400 tabular-nums">{streak.hot}d</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-3.5 h-3.5 text-blue-400/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+              <span className="text-[11px] font-medium text-blue-400/50 tabular-nums">{streak.cold}d</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Task progress — compact */}
       <div className="hidden sm:flex items-center gap-2 flex-shrink-0 w-36 justify-end">
