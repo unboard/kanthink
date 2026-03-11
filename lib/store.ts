@@ -1365,11 +1365,22 @@ export const useStore = create<KanthinkState>()(
             return col;
           });
 
+          // Mark all tasks on this card as done
+          const timestamp = now();
+          const updatedTasks = { ...state.tasks };
+          for (const taskId of card.taskIds ?? []) {
+            const task = updatedTasks[taskId];
+            if (task && task.status !== 'done') {
+              updatedTasks[taskId] = { ...task, status: 'done', completedAt: timestamp, updatedAt: timestamp };
+            }
+          }
+
           return {
             channels: {
               ...state.channels,
               [card.channelId]: { ...channel, columns: updatedColumns, updatedAt: now() },
             },
+            tasks: updatedTasks,
           };
         });
 
@@ -4256,6 +4267,37 @@ export const useStore = create<KanthinkState>()(
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
+
+        // Retroactive fix: mark tasks on archived cards as done
+        if (state) {
+          const archivedCardIds = new Set<string>();
+          for (const channel of Object.values(state.channels)) {
+            for (const col of channel.columns ?? []) {
+              for (const cid of col.backsideCardIds ?? []) {
+                archivedCardIds.add(cid);
+              }
+            }
+          }
+          if (archivedCardIds.size > 0) {
+            const timestamp = new Date().toISOString();
+            let changed = false;
+            const updatedTasks = { ...state.tasks };
+            for (const card of Object.values(state.cards)) {
+              if (archivedCardIds.has(card.id)) {
+                for (const taskId of card.taskIds ?? []) {
+                  const task = updatedTasks[taskId];
+                  if (task && task.status !== 'done') {
+                    updatedTasks[taskId] = { ...task, status: 'done', completedAt: timestamp, updatedAt: timestamp };
+                    changed = true;
+                  }
+                }
+              }
+            }
+            if (changed) {
+              useStore.setState({ tasks: updatedTasks });
+            }
+          }
+        }
       },
     }
   )
