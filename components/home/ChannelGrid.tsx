@@ -5,11 +5,8 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useStore } from '@/lib/store'
 import { useServerSync } from '@/components/providers/ServerSyncProvider'
-import { ChannelListItem } from './ChannelListItem'
+import { ChannelRow } from './ChannelRow'
 import type { Task, ID, Channel, Card, TaskStatus } from '@/lib/types'
-import type { PresenceUser } from '@/lib/sync/pusherClient'
-import { getPresenceMembers, subscribeToPresence, setPresenceCallback } from '@/lib/sync/pusherClient'
-import { isServerMode } from '@/lib/api/sync'
 import { TaskCheckbox } from '@/components/board/TaskCheckbox'
 
 const COLLAPSED_FOLDERS_KEY = 'kanthink-collapsed-folders'
@@ -170,7 +167,7 @@ interface ChannelGridProps {
 type DashboardView = 'channels' | 'tasks'
 
 export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
-  const { data: session, status: sessionStatus } = useSession()
+  const { status: sessionStatus } = useSession()
   const router = useRouter()
   const { isLoading: isServerLoading } = useServerSync()
   const channels = useStore((s) => s.channels)
@@ -182,7 +179,6 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
   const hasHydrated = useStore((s) => s._hasHydrated)
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus)
 
-  const [activeUsersMap, setActiveUsersMap] = useState<Record<string, PresenceUser[]>>({})
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
   const [dashboardView, setDashboardView] = useState<DashboardView>('channels')
 
@@ -220,18 +216,6 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     return map
   }, [tasks])
 
-  // Subscribe to presence
-  useEffect(() => {
-    if (!isServerMode()) return
-    setPresenceCallback(() => {})
-    for (const channelId of orderedChannelIds) {
-      subscribeToPresence(channelId)
-      const members = getPresenceMembers(channelId)
-      if (members.length > 0) {
-        setActiveUsersMap(prev => ({ ...prev, [channelId]: members }))
-      }
-    }
-  }, [orderedChannelIds])
 
   // Effective modified time per channel (for sorting)
   const channelModifiedTime = useMemo(() => {
@@ -351,11 +335,6 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, channels, tasksByChannel])
 
-  const ownerProps = session?.user ? {
-    id: session.user.id!,
-    name: session.user.name ?? null,
-    image: session.user.image ?? null,
-  } : undefined
 
   if (channelList.length === 0) {
     return (
@@ -427,22 +406,27 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
           </button>
         </div>
 
-        {/* Summary stats */}
-        <div className="mb-8 flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-white/[0.04]">
-            <span className="text-white/80 font-semibold tabular-nums">{stats.totalChannels}</span>
-            <span className="text-white/40">channels</span>
+        {/* Summary stat cards */}
+        <div className="mb-8 grid grid-cols-3 gap-3">
+          <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-4 py-3">
+            <div className="text-2xl font-bold text-white tabular-nums">{stats.totalChannels}</div>
+            <div className="text-xs text-white/40 mt-0.5">Channels</div>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-white/[0.04]">
-            <span className="text-white/80 font-semibold tabular-nums">{stats.completedTasks}/{stats.totalTasks}</span>
-            <span className="text-white/40">tasks done</span>
+          <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-4 py-3">
+            <div className="text-2xl font-bold text-white tabular-nums">{stats.completedTasks}<span className="text-white/30 text-lg">/{stats.totalTasks}</span></div>
+            <div className="text-xs text-white/40 mt-0.5">Tasks done</div>
           </div>
-          {stats.streak > 0 && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-orange-500/[0.08]">
-              <span className="text-orange-400 font-semibold tabular-nums">{stats.streak}d</span>
-              <span className="text-orange-400/60">streak</span>
+          <div className={`rounded-xl px-4 py-3 border ${stats.streak > 0 ? 'bg-orange-500/[0.06] border-orange-500/[0.12]' : 'bg-white/[0.04] border-white/[0.06]'}`}>
+            <div className="flex items-center gap-1.5">
+              {stats.streak > 0 && (
+                <svg className="w-5 h-5 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+                </svg>
+              )}
+              <span className={`text-2xl font-bold tabular-nums ${stats.streak > 0 ? 'text-orange-400' : 'text-white/30'}`}>{stats.streak}d</span>
             </div>
-          )}
+            <div className={`text-xs mt-0.5 ${stats.streak > 0 ? 'text-orange-400/60' : 'text-white/40'}`}>Hot streak</div>
+          </div>
         </div>
 
         {dashboardView === 'channels' ? (
@@ -474,12 +458,9 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
                       {!isCollapsed && (
                         <div className="space-y-1">
                           {section.channels.map((channel) => (
-                            <ChannelListItem
+                            <ChannelRow
                               key={channel.id}
                               channel={channel}
-                              tasks={tasksByChannel[channel.id] || []}
-                              owner={ownerProps}
-                              activeUsers={activeUsersMap[channel.id] || []}
                               streak={channelStreaks[channel.id]}
                             />
                           ))}
@@ -515,12 +496,9 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
                     {!isCollapsed && (
                       <div className="space-y-1">
                         {section.channels.map((channel) => (
-                          <ChannelListItem
+                          <ChannelRow
                             key={channel.id}
                             channel={channel}
-                            tasks={tasksByChannel[channel.id] || []}
-                            owner={ownerProps}
-                            activeUsers={activeUsersMap[channel.id] || []}
                             streak={channelStreaks[channel.id]}
                           />
                         ))}

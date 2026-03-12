@@ -2,9 +2,60 @@
 
 import { useMemo, useState } from 'react'
 import { useStore } from '@/lib/store'
-import { ChannelCard } from '@/components/home/ChannelCard'
+import { ChannelRow } from '@/components/home/ChannelRow'
 import { FolderShareDrawer } from '@/components/sharing/FolderShareDrawer'
-import type { Folder, Task, ID } from '@/lib/types'
+import type { Folder, Task, ID, Channel, Card } from '@/lib/types'
+
+function parseTimestamp(ts: string | undefined | null): number {
+  if (!ts) return NaN
+  const d = new Date(ts)
+  let ms = d.getTime()
+  if (!isNaN(ms)) return ms
+  const num = Number(ts)
+  if (!isNaN(num)) {
+    ms = num < 4102444800 ? num * 1000 : num
+    return ms
+  }
+  return NaN
+}
+
+function toLocalDayNum(ms: number): number {
+  const d = new Date(ms)
+  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  return Math.floor(local.getTime() / 86400000)
+}
+
+function computeChannelStreak(
+  channel: Channel,
+  cards: Record<ID, Card>,
+  tasks: Record<ID, Task>,
+): { hot: number; cold: number } {
+  const todayDayNum = toLocalDayNum(Date.now())
+  const activeDayNums = new Set<number>()
+  const addTs = (ts: string | undefined | null) => {
+    const ms = parseTimestamp(ts)
+    if (!isNaN(ms)) activeDayNums.add(toLocalDayNum(ms))
+  }
+  addTs(channel.updatedAt)
+  addTs(channel.createdAt)
+  for (const card of Object.values(cards)) {
+    if (card.channelId === channel.id) addTs(card.updatedAt)
+  }
+  for (const task of Object.values(tasks)) {
+    if (task.channelId === channel.id) addTs(task.updatedAt)
+  }
+  let hot = 0
+  for (let i = 0; i < 365; i++) {
+    if (activeDayNums.has(todayDayNum - i)) hot++
+    else break
+  }
+  let cold = 0
+  if (hot === 0 && activeDayNums.size > 0) {
+    const maxDayNum = Math.max(...activeDayNums)
+    cold = todayDayNum - maxDayNum
+  }
+  return { hot, cold }
+}
 
 interface FolderViewProps {
   folder: Folder
@@ -13,6 +64,7 @@ interface FolderViewProps {
 export function FolderView({ folder }: FolderViewProps) {
   const channels = useStore((s) => s.channels)
   const tasks = useStore((s) => s.tasks)
+  const cards = useStore((s) => s.cards)
   const [showShareDrawer, setShowShareDrawer] = useState(false)
 
   const folderChannels = useMemo(() => {
@@ -22,17 +74,23 @@ export function FolderView({ folder }: FolderViewProps) {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   }, [folder.channelIds, channels])
 
-  // Get tasks by channel
-  const tasksByChannel = useMemo(() => {
-    const map: Record<ID, Task[]> = {}
-    for (const task of Object.values(tasks)) {
-      if (!map[task.channelId]) {
-        map[task.channelId] = []
-      }
-      map[task.channelId].push(task)
+  const channelStreaks = useMemo(() => {
+    const streaks: Record<string, { hot: number; cold: number }> = {}
+    for (const ch of folderChannels) {
+      streaks[ch.id] = computeChannelStreak(ch, cards, tasks)
     }
-    return map
-  }, [tasks])
+    return streaks
+  }, [folderChannels, cards, tasks])
+
+  // Folder stats
+  const folderStats = useMemo(() => {
+    const folderChannelIds = new Set(folderChannels.map(c => c.id))
+    const folderTasks = Object.values(tasks).filter(t => folderChannelIds.has(t.channelId))
+    const totalTasks = folderTasks.length
+    const completedTasks = folderTasks.filter(t => t.status === 'done').length
+    const hotStreakCount = Object.values(channelStreaks).filter(s => s.hot > 0).length
+    return { totalTasks, completedTasks, hotStreakCount }
+  }, [folderChannels, tasks, channelStreaks])
 
   const isOwner = !folder.isReadOnly && !folder.isVirtual
 
@@ -89,7 +147,32 @@ export function FolderView({ folder }: FolderViewProps) {
         </div>
       </div>
 
-      {/* Channel grid */}
+      {/* Summary stat cards */}
+      {folderChannels.length > 0 && (
+        <div className="px-6 pt-4 grid grid-cols-3 gap-3">
+          <div className="rounded-xl bg-white/[0.04] dark:bg-white/[0.04] border border-white/[0.06] dark:border-white/[0.06] bg-neutral-50 dark:bg-transparent px-4 py-3">
+            <div className="text-2xl font-bold text-neutral-900 dark:text-white tabular-nums">{folderChannels.length}</div>
+            <div className="text-xs text-neutral-500 dark:text-white/40 mt-0.5">Channels</div>
+          </div>
+          <div className="rounded-xl bg-white/[0.04] dark:bg-white/[0.04] border border-white/[0.06] dark:border-white/[0.06] bg-neutral-50 dark:bg-transparent px-4 py-3">
+            <div className="text-2xl font-bold text-neutral-900 dark:text-white tabular-nums">{folderStats.completedTasks}<span className="text-neutral-400 dark:text-white/30 text-lg">/{folderStats.totalTasks}</span></div>
+            <div className="text-xs text-neutral-500 dark:text-white/40 mt-0.5">Tasks done</div>
+          </div>
+          <div className={`rounded-xl px-4 py-3 border ${folderStats.hotStreakCount > 0 ? 'bg-orange-500/[0.06] border-orange-500/[0.12]' : 'bg-white/[0.04] dark:bg-white/[0.04] border-white/[0.06] dark:border-white/[0.06] bg-neutral-50 dark:bg-transparent'}`}>
+            <div className="flex items-center gap-1.5">
+              {folderStats.hotStreakCount > 0 && (
+                <svg className="w-5 h-5 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+                </svg>
+              )}
+              <span className={`text-2xl font-bold tabular-nums ${folderStats.hotStreakCount > 0 ? 'text-orange-400' : 'text-neutral-400 dark:text-white/30'}`}>{folderStats.hotStreakCount}</span>
+            </div>
+            <div className={`text-xs mt-0.5 ${folderStats.hotStreakCount > 0 ? 'text-orange-400/60' : 'text-neutral-500 dark:text-white/40'}`}>Active</div>
+          </div>
+        </div>
+      )}
+
+      {/* Channel list */}
       <div className="flex-1 p-6">
         {folderChannels.length === 0 ? (
           <div className="flex h-64 items-center justify-center">
@@ -108,12 +191,12 @@ export function FolderView({ folder }: FolderViewProps) {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="space-y-1">
             {folderChannels.map((channel) => (
-              <ChannelCard
+              <ChannelRow
                 key={channel.id}
                 channel={channel}
-                tasks={tasksByChannel[channel.id] || []}
+                streak={channelStreaks[channel.id]}
               />
             ))}
           </div>
