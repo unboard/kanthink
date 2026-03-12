@@ -301,18 +301,6 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     })
     .filter(Boolean) as { folder: typeof folders[string]; channels: Channel[]; folderModified: number }[]
 
-  // Group root channels as a virtual section, sort all sections by modified time
-  type Section = { type: 'root'; channels: Channel[]; groupModified: number } | { type: 'folder'; folder: typeof folders[string]; channels: Channel[]; folderModified: number }
-  const allSections: Section[] = [
-    ...(rootMyChannels.length > 0
-      ? [{ type: 'root' as const, channels: rootMyChannels, groupModified: Math.max(...rootMyChannels.map(c => channelModifiedTime[c.id] || 0)) }]
-      : []),
-    ...folderSections.map(f => ({ type: 'folder' as const, ...f })),
-  ].sort((a, b) => {
-    const aTime = a.type === 'root' ? a.groupModified : a.folderModified
-    const bTime = b.type === 'root' ? b.groupModified : b.folderModified
-    return bTime - aTime
-  })
 
   // All tasks for the master task list, grouped by channel
   const allTasksByChannel = useMemo(() => {
@@ -431,70 +419,45 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
 
         {dashboardView === 'channels' ? (
           <>
-            {/* Sections: grouped root channels + folders, sorted by modified */}
-            <div className="space-y-5">
-              {allSections.map((section) => {
-                if (section.type === 'root') {
-                  const isCollapsed = collapsedFolders.has('__root__')
-                  return (
-                    <div key="__root__">
-                      <button
-                        onClick={() => toggleFolder('__root__')}
-                        className="w-full flex items-center gap-2 py-1 px-1 mb-2 group/folder"
-                      >
-                        <svg
-                          className={`h-3 w-3 text-white/25 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
-                        </svg>
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-white/40 group-hover/folder:text-white/60 transition-colors">
-                          Channels
-                        </span>
-                        <span className="text-[11px] text-white/20 font-medium">{section.channels.length}</span>
-                        <div className="h-px flex-1 bg-gradient-to-r from-white/[0.06] to-transparent" />
-                      </button>
-                      {!isCollapsed && (
-                        <div className="space-y-1">
-                          {section.channels.map((channel) => (
-                            <ChannelRow
-                              key={channel.id}
-                              channel={channel}
-                              streak={channelStreaks[channel.id]}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                }
-
+            {/* Channel + folder list styled like the nav drawer */}
+            <div className="space-y-2">
+              {/* Folders */}
+              {folderSections.map((section) => {
                 const isCollapsed = collapsedFolders.has(section.folder.id)
                 return (
                   <div key={section.folder.id}>
-                    <button
+                    {/* Folder header - styled like nav drawer */}
+                    <div
                       onClick={() => toggleFolder(section.folder.id)}
-                      className="w-full flex items-center gap-2 py-1 px-1 mb-2 group/folder"
+                      className="flex items-center gap-3 p-3 rounded-xl cursor-pointer select-none bg-white/[0.03] hover:bg-white/[0.07] border border-transparent hover:border-white/[0.06] transition-all"
                     >
                       <svg
-                        className={`h-3 w-3 text-white/25 transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
+                        className={`h-4 w-4 text-white/30 transition-transform duration-200 flex-shrink-0 ${isCollapsed ? '' : 'rotate-90'}`}
                         fill="currentColor"
                         viewBox="0 0 24 24"
                       >
                         <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
                       </svg>
-                      <svg className="h-3.5 w-3.5 text-amber-400/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      <svg className="h-4 w-4 text-amber-400/70 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
                       </svg>
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-white/40 group-hover/folder:text-white/60 transition-colors">
+                      <span className="text-sm font-medium text-white/80 flex-1 min-w-0 truncate">
                         {section.folder.name}
                       </span>
-                      <span className="text-[11px] text-white/20 font-medium">{section.channels.length}</span>
-                      <div className="h-px flex-1 bg-gradient-to-r from-white/[0.06] to-transparent" />
-                    </button>
+                      <span className="text-xs text-white/30 font-medium tabular-nums flex-shrink-0">{section.channels.length}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); router.push(`/folder/${section.folder.id}`) }}
+                        className="p-1 rounded-md text-white/20 hover:text-white/50 hover:bg-white/10 transition-colors flex-shrink-0"
+                        title="Open folder"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                        </svg>
+                      </button>
+                    </div>
+                    {/* Folder channels - indented */}
                     {!isCollapsed && (
-                      <div className="space-y-1">
+                      <div className="space-y-1 mt-1 ml-4">
                         {section.channels.map((channel) => (
                           <ChannelRow
                             key={channel.id}
@@ -507,6 +470,15 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
                   </div>
                 )
               })}
+
+              {/* Root channels (not in folders) */}
+              {rootMyChannels.map((channel) => (
+                <ChannelRow
+                  key={channel.id}
+                  channel={channel}
+                  streak={channelStreaks[channel.id]}
+                />
+              ))}
             </div>
 
           </>

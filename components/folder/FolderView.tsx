@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useStore } from '@/lib/store'
 import { ChannelRow } from '@/components/home/ChannelRow'
 import { FolderShareDrawer } from '@/components/sharing/FolderShareDrawer'
@@ -62,10 +63,19 @@ interface FolderViewProps {
 }
 
 export function FolderView({ folder }: FolderViewProps) {
+  const router = useRouter()
   const channels = useStore((s) => s.channels)
   const tasks = useStore((s) => s.tasks)
   const cards = useStore((s) => s.cards)
+  const createChannel = useStore((s) => s.createChannel)
+  const moveChannelToFolder = useStore((s) => s.moveChannelToFolder)
   const [showShareDrawer, setShowShareDrawer] = useState(false)
+
+  const handleCreateChannel = () => {
+    const newChannel = createChannel({ name: 'New Channel' })
+    moveChannelToFolder(newChannel.id, folder.id)
+    router.push(`/channel/${newChannel.id}`)
+  }
 
   const folderChannels = useMemo(() => {
     return folder.channelIds
@@ -130,6 +140,18 @@ export function FolderView({ folder }: FolderViewProps) {
                 )}
                 <span>Shared by {folder.sharedBy.name || folder.sharedBy.email}</span>
               </div>
+            )}
+
+            {!folder.isReadOnly && (
+              <button
+                onClick={handleCreateChannel}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-white/10 dark:bg-white/10 text-neutral-700 dark:text-white hover:bg-white/20 dark:hover:bg-white/20 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Channel
+              </button>
             )}
 
             {isOwner && (
