@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
-import { DailyTimeline } from '@/components/home/DailyTimeline';
+import { Dashboard } from '@/components/home/Dashboard';
 import { NewChannelOverlay } from '@/components/home/NewChannelOverlay';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
 import { signInWithGoogle } from '@/lib/actions/auth';
@@ -91,7 +91,7 @@ export default function Home() {
 
   return (
     <div className="h-full">
-      <DailyTimeline onCreateChannel={() => setShowNewChannelOverlay(true)} />
+      <Dashboard onCreateChannel={() => setShowNewChannelOverlay(true)} />
 
       {/* New Channel Overlay - shows options for Quick Start, Kan Help, Templates */}
       <NewChannelOverlay
