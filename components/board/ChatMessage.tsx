@@ -349,7 +349,7 @@ export function ChatMessage({
   return (
     <div className="group relative">
       <div
-        className={`rounded-xl px-4 py-3 ${
+        className={`rounded-xl px-4 py-3 overflow-hidden ${
           isAI
             ? 'bg-neutral-50 dark:bg-neutral-800/50'
             : isQuestion
@@ -434,7 +434,7 @@ export function ChatMessage({
           </div>
         ) : message.content ? (
           <div
-            className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-neutral dark:prose-invert max-w-none
+            className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-neutral dark:prose-invert max-w-none break-words overflow-hidden
             prose-headings:font-semibold prose-headings:text-neutral-900 dark:prose-headings:text-neutral-100
             prose-h1:text-base prose-h1:mt-3 prose-h1:mb-2
             prose-h2:text-sm prose-h2:mt-2.5 prose-h2:mb-1.5
