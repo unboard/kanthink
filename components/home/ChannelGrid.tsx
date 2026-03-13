@@ -346,118 +346,113 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
     )
   }
 
+  // Task completion percentage
+  const taskPct = stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0
+
   return (
     <div className="relative min-h-full">
-      <div className="relative z-10 p-6 md:p-8 lg:p-10">
-        {/* Header with toggle */}
-        <div className="mb-8 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-white tracking-tight">Dashboard</h1>
-            {/* Channels / Tasks toggle */}
-            <div className="flex items-center bg-white/[0.06] rounded-lg p-0.5 sm:p-1">
-              <button
-                onClick={() => setDashboardView('channels')}
-                className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-all ${
-                  dashboardView === 'channels'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-white/40 hover:text-white/70'
-                }`}
-              >
-                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                </svg>
-                <span className="hidden xs:inline">Channels</span>
-              </button>
-              <button
-                onClick={() => setDashboardView('tasks')}
-                className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-all ${
-                  dashboardView === 'tasks'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-white/40 hover:text-white/70'
-                }`}
-              >
-                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                </svg>
-                <span className="hidden xs:inline">Tasks</span>
-              </button>
+      <div className="relative z-10 px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10 max-w-2xl">
+        {/* Header */}
+        <div className="mb-10 flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-none">Dashboard</h1>
+            {/* Stats inline under title */}
+            <div className="mt-3 flex items-center gap-4 text-[13px] text-white/40">
+              <span><span className="text-white/70 font-semibold tabular-nums">{stats.totalChannels}</span> channels</span>
+              <span className="text-white/10">|</span>
+              <span><span className="text-white/70 font-semibold tabular-nums">{stats.completedTasks}</span><span className="text-white/25">/{stats.totalTasks}</span> tasks</span>
+              {stats.streak > 0 && (
+                <>
+                  <span className="text-white/10">|</span>
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+                    </svg>
+                    <span className="text-orange-400/80 font-semibold tabular-nums">{stats.streak}d</span>
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <button
             onClick={onCreateChannel}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-violet-500 active:scale-[0.97]"
+            className="flex items-center gap-1.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.12] px-3.5 py-2 text-[13px] font-medium text-white/70 hover:text-white transition-all active:scale-[0.97]"
           >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            <span>Channel</span>
+            <span>New</span>
           </button>
         </div>
 
-        {/* Summary stat cards */}
-        <div className="mb-8 grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-4 py-3">
-            <div className="text-2xl font-bold text-white tabular-nums">{stats.totalChannels}</div>
-            <div className="text-xs text-white/40 mt-0.5">Channels</div>
-          </div>
-          <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-4 py-3">
-            <div className="text-2xl font-bold text-white tabular-nums">{stats.completedTasks}<span className="text-white/30 text-lg">/{stats.totalTasks}</span></div>
-            <div className="text-xs text-white/40 mt-0.5">Tasks done</div>
-          </div>
-          <div className={`rounded-xl px-4 py-3 border ${stats.streak > 0 ? 'bg-orange-500/[0.06] border-orange-500/[0.12]' : 'bg-white/[0.04] border-white/[0.06]'}`}>
-            <div className="flex items-center gap-1.5">
-              {stats.streak > 0 && (
-                <svg className="w-5 h-5 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-                </svg>
-              )}
-              <span className={`text-2xl font-bold tabular-nums ${stats.streak > 0 ? 'text-orange-400' : 'text-white/30'}`}>{stats.streak}d</span>
-            </div>
-            <div className={`text-xs mt-0.5 ${stats.streak > 0 ? 'text-orange-400/60' : 'text-white/40'}`}>Hot streak</div>
-          </div>
+        {/* View toggle — pill style */}
+        <div className="mb-6 flex items-center gap-1 border-b border-white/[0.06] pb-px">
+          <button
+            onClick={() => setDashboardView('channels')}
+            className={`px-3 py-2 text-[13px] font-medium transition-colors border-b-2 -mb-px ${
+              dashboardView === 'channels'
+                ? 'text-white border-white'
+                : 'text-white/35 border-transparent hover:text-white/60'
+            }`}
+          >
+            Channels
+          </button>
+          <button
+            onClick={() => setDashboardView('tasks')}
+            className={`px-3 py-2 text-[13px] font-medium transition-colors border-b-2 -mb-px ${
+              dashboardView === 'tasks'
+                ? 'text-white border-white'
+                : 'text-white/35 border-transparent hover:text-white/60'
+            }`}
+          >
+            Tasks
+            {stats.totalTasks > 0 && (
+              <span className="ml-1.5 text-[11px] text-white/25 tabular-nums">{taskPct}%</span>
+            )}
+          </button>
         </div>
 
         {dashboardView === 'channels' ? (
           <>
-            {/* Channel + folder list styled like the nav drawer */}
-            <div className="space-y-2">
+            {/* Channel + folder list */}
+            <div className="space-y-px">
               {/* Folders */}
               {folderSections.map((section) => {
                 const isCollapsed = collapsedFolders.has(section.folder.id)
                 return (
                   <div key={section.folder.id}>
-                    {/* Folder header - styled like nav drawer */}
+                    {/* Folder header */}
                     <div
                       onClick={() => toggleFolder(section.folder.id)}
-                      className="flex items-center gap-3 p-3 rounded-xl cursor-pointer select-none bg-white/[0.03] hover:bg-white/[0.07] border border-transparent hover:border-white/[0.06] transition-all"
+                      className="group/folder flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer select-none hover:bg-white/[0.04] transition-colors"
                     >
                       <svg
-                        className={`h-4 w-4 text-white/30 transition-transform duration-200 flex-shrink-0 ${isCollapsed ? '' : 'rotate-90'}`}
+                        className={`h-3 w-3 text-white/25 transition-transform duration-200 flex-shrink-0 ${isCollapsed ? '' : 'rotate-90'}`}
                         fill="currentColor"
                         viewBox="0 0 24 24"
                       >
                         <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
                       </svg>
-                      <svg className="h-4 w-4 text-amber-400/70 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <svg className="h-3.5 w-3.5 text-amber-500/50 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                         <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
                       </svg>
-                      <span className="text-sm font-medium text-white/80 flex-1 min-w-0 truncate">
+                      <span className="text-[11px] font-medium text-white/50 group-hover/folder:text-white/70 flex-1 min-w-0 truncate transition-colors uppercase tracking-wider">
                         {section.folder.name}
                       </span>
-                      <span className="text-xs text-white/30 font-medium tabular-nums flex-shrink-0">{section.channels.length}</span>
+                      <span className="text-[10px] text-white/20 font-medium tabular-nums flex-shrink-0">{section.channels.length}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); router.push(`/folder/${section.folder.id}`) }}
-                        className="p-1 rounded-md text-white/20 hover:text-white/50 hover:bg-white/10 transition-colors flex-shrink-0"
+                        className="p-1 rounded-md text-white/0 group-hover/folder:text-white/30 hover:!text-white/60 hover:bg-white/10 transition-all flex-shrink-0"
                         title="Open folder"
                       >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </button>
                     </div>
-                    {/* Folder channels - indented */}
+                    {/* Folder channels */}
                     {!isCollapsed && (
-                      <div className="space-y-1 mt-1 ml-4">
+                      <div className="ml-5 border-l border-white/[0.04] pl-2 space-y-px">
                         {section.channels.map((channel) => (
                           <ChannelRow
                             key={channel.id}
@@ -487,66 +482,69 @@ export function ChannelGrid({ onCreateChannel }: ChannelGridProps) {
           <div>
             {/* Task progress summary */}
             {stats.totalTasks > 0 && (
-              <div className="mb-4">
-                <div className="flex items-center justify-between text-xs text-white/50 mb-1.5">
-                  <span>{stats.completedTasks}/{stats.totalTasks} tasks completed</span>
-                  <span>{stats.totalTasks > 0 ? Math.round((stats.completedTasks / stats.totalTasks) * 100) : 0}%</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+              <div className="mb-6 flex items-center gap-3">
+                <div className="flex-1 h-1 rounded-full bg-white/[0.06] overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-green-500 transition-all"
-                    style={{ width: `${stats.totalTasks > 0 ? (stats.completedTasks / stats.totalTasks) * 100 : 0}%` }}
+                    className="h-full rounded-full bg-green-500/60 transition-all"
+                    style={{ width: `${taskPct}%` }}
                   />
                 </div>
+                <span className="text-[11px] text-white/30 tabular-nums font-medium flex-shrink-0">
+                  {stats.completedTasks}/{stats.totalTasks}
+                </span>
               </div>
             )}
 
             {allTasksByChannel.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-sm text-white/40">No tasks yet. Create tasks in your channels to see them here.</p>
+              <div className="text-center py-16">
+                <p className="text-[13px] text-white/30">No tasks yet</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {allTasksByChannel.map(({ channelId, channelName, tasks: chTasks }) => (
-                  <div key={channelId}>
-                    <button
-                      onClick={() => router.push(`/channel/${channelId}`)}
-                      className="flex items-center gap-2 mb-2 group/ch hover:text-white transition-colors"
-                    >
-                      <svg className="w-3.5 h-3.5 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                      </svg>
-                      <span className="text-xs font-semibold text-white/60 group-hover/ch:text-white/90">{channelName}</span>
-                      <span className="text-xs text-white/30">
-                        {chTasks.filter(t => t.status === 'done').length}/{chTasks.length}
-                      </span>
-                    </button>
-                    <div className="space-y-0.5">
-                      {chTasks.map((task) => (
-                        <div
-                          key={task.id}
-                          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors group/task"
-                        >
-                          <TaskCheckbox
-                            status={task.status}
-                            onToggle={() => toggleTaskStatus(task.id)}
-                            size="sm"
-                          />
-                          <span className={`flex-1 text-sm truncate ${
-                            task.status === 'done' ? 'text-white/30 line-through' : 'text-white/80'
-                          }`}>
-                            {task.title}
-                          </span>
-                          {task.status === 'in_progress' && (
-                            <span className="text-[10px] font-medium text-blue-400/70 bg-blue-400/10 px-1.5 py-0.5 rounded">
-                              In progress
+              <div className="space-y-8">
+                {allTasksByChannel.map(({ channelId, channelName, tasks: chTasks }) => {
+                  const chDone = chTasks.filter(t => t.status === 'done').length
+                  const chPct = Math.round((chDone / chTasks.length) * 100)
+                  return (
+                    <div key={channelId}>
+                      {/* Channel group header */}
+                      <button
+                        onClick={() => router.push(`/channel/${channelId}`)}
+                        className="group/ch flex items-center gap-3 w-full mb-1 hover:text-white transition-colors"
+                      >
+                        <span className="text-[11px] font-semibold text-white/40 group-hover/ch:text-white/70 uppercase tracking-wider truncate transition-colors">{channelName}</span>
+                        <div className="flex-1 h-px bg-white/[0.04]" />
+                        <span className="text-[10px] text-white/20 tabular-nums flex-shrink-0 font-medium">
+                          {chPct}%
+                        </span>
+                      </button>
+                      {/* Tasks */}
+                      <div className="space-y-px">
+                        {chTasks.map((task) => (
+                          <div
+                            key={task.id}
+                            className="group/task flex items-center gap-3 px-2 py-2 rounded-md hover:bg-white/[0.03] transition-colors"
+                          >
+                            <TaskCheckbox
+                              status={task.status}
+                              onToggle={() => toggleTaskStatus(task.id)}
+                              size="sm"
+                            />
+                            <span className={`flex-1 text-[13px] truncate transition-colors ${
+                              task.status === 'done'
+                                ? 'text-white/20 line-through decoration-white/10'
+                                : 'text-white/70'
+                            }`}>
+                              {task.title}
                             </span>
-                          )}
-                        </div>
-                      ))}
+                            {task.status === 'in_progress' && (
+                              <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-blue-400/70" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
