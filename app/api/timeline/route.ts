@@ -8,8 +8,10 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/timeline?date=2026-03-13&channelId=optional
- * Returns daily activity, tasks, and a bar chart of recent activity.
+ * GET /api/timeline?date=2026-03-13&tzOffset=-300&channelId=optional
+ *
+ * tzOffset is minutes behind UTC (e.g. EST = -300, UTC = 0).
+ * Server computes local day boundaries in UTC using this offset.
  */
 export async function GET(request: NextRequest) {
   const session = await auth()
@@ -23,10 +25,14 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const dateStr = searchParams.get('date') || new Date().toISOString().split('T')[0]
   const channelFilter = searchParams.get('channelId')
+  // Client's timezone offset in minutes (e.g. -300 for EST)
+  const tzOffsetMin = parseInt(searchParams.get('tzOffset') || '0', 10)
 
-  // Parse date to get start/end of day (UTC)
+  // Compute day boundaries in UTC, adjusted for client timezone
+  // If tzOffset is -300 (EST, UTC-5), local midnight = 05:00 UTC
   const dayStart = new Date(dateStr + 'T00:00:00.000Z')
-  const dayEnd = new Date(dateStr + 'T23:59:59.999Z')
+  dayStart.setMinutes(dayStart.getMinutes() - tzOffsetMin)
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1)
 
   // Get user's channels first
   const userChannels = await db
@@ -51,15 +57,22 @@ export async function GET(request: NextRequest) {
     )
     .orderBy(desc(channelActivityLog.createdAt))
 
-  // Filter to only user's channels
-  const filteredActivities = dayActivities.filter(a => userChannelIds.has(a.channelId))
+  // Filter to user's channels only
+  const ownedActivities = dayActivities.filter(a => userChannelIds.has(a.channelId))
+
+  // Deduplicate: keep only the latest event per (entityId, action) pair
+  const seen = new Set<string>()
+  const dedupedActivities = ownedActivities.filter(a => {
+    const key = `${a.entityId}:${a.action}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 
   // 2. Activity counts for the past 14 days (for bar chart)
-  const fourteenDaysAgo = new Date(dayStart)
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 13)
-  fourteenDaysAgo.setUTCHours(0, 0, 0, 0)
-
-  const chartEnd = new Date(dateStr + 'T23:59:59.999Z')
+  // Count unique entities changed per day, not raw events
+  const chartStart = new Date(dayStart)
+  chartStart.setDate(chartStart.getDate() - 13)
 
   const recentActivities = await db
     .select()
@@ -67,24 +80,30 @@ export async function GET(request: NextRequest) {
     .where(
       and(
         eq(channelActivityLog.userId, userId),
-        gte(channelActivityLog.createdAt, fourteenDaysAgo),
-        lte(channelActivityLog.createdAt, chartEnd),
+        gte(channelActivityLog.createdAt, chartStart),
+        lte(channelActivityLog.createdAt, dayEnd),
         ...(channelFilter ? [eq(channelActivityLog.channelId, channelFilter)] : [])
       )
     )
 
-  // Group by day
-  const activityByDay: Record<string, number> = {}
+  // Group by local day, counting unique entities per day
+  const activityByDay: Record<string, Set<string>> = {}
   for (let i = 0; i < 14; i++) {
-    const d = new Date(fourteenDaysAgo)
+    const d = new Date(chartStart)
     d.setDate(d.getDate() + i)
-    activityByDay[d.toISOString().split('T')[0]] = 0
+    // Convert back to local date string for this day
+    const localDate = new Date(d.getTime() + tzOffsetMin * 60000)
+    activityByDay[localDate.toISOString().split('T')[0]] = new Set()
   }
+
   for (const a of recentActivities) {
     if (!userChannelIds.has(a.channelId)) continue
-    const day = a.createdAt ? new Date(a.createdAt).toISOString().split('T')[0] : null
-    if (day && day in activityByDay) {
-      activityByDay[day]++
+    if (!a.createdAt) continue
+    // Convert UTC timestamp to local date
+    const localDate = new Date(a.createdAt.getTime() + tzOffsetMin * 60000)
+    const day = localDate.toISOString().split('T')[0]
+    if (day in activityByDay) {
+      activityByDay[day].add(a.entityId)
     }
   }
 
@@ -102,7 +121,9 @@ export async function GET(request: NextRequest) {
     if (channelFilter && t.channelId !== channelFilter) return false
     if (!userChannelIds.has(t.channelId)) return false
     const dueMs = t.dueDate instanceof Date ? t.dueDate.getTime() : Number(t.dueDate) * 1000
-    const dueDay = new Date(dueMs).toISOString().split('T')[0]
+    // Compare in local timezone
+    const localDue = new Date(dueMs + tzOffsetMin * 60000)
+    const dueDay = localDue.toISOString().split('T')[0]
     return dueDay === dateStr && t.status !== 'done'
   })
 
@@ -112,11 +133,13 @@ export async function GET(request: NextRequest) {
     if (channelFilter && t.channelId !== channelFilter) return false
     if (!userChannelIds.has(t.channelId)) return false
     const compMs = t.completedAt instanceof Date ? t.completedAt.getTime() : Number(t.completedAt) * 1000
-    const compDay = new Date(compMs).toISOString().split('T')[0]
+    const localComp = new Date(compMs + tzOffsetMin * 60000)
+    const compDay = localComp.toISOString().split('T')[0]
     return compDay === dateStr
   })
 
-  // 5. Cards modified on the selected day
+  // 5. Cards created or meaningfully changed on the selected day
+  // Query cards updated within the day window
   const modifiedCards = await db
     .select()
     .from(cards)
@@ -130,8 +153,23 @@ export async function GET(request: NextRequest) {
 
   const filteredCards = modifiedCards.filter(c => userChannelIds.has(c.channelId))
 
-  // Build response
-  const activities = filteredActivities.map(a => ({
+  // Determine which cards were actually created today (in local time)
+  const cardsWithLocalCheck = filteredCards.map(c => {
+    const createdMs = c.createdAt ? c.createdAt.getTime() : 0
+    const isNew = createdMs >= dayStart.getTime() && createdMs <= dayEnd.getTime()
+    return {
+      id: c.id,
+      title: c.title,
+      channelId: c.channelId,
+      channelName: channelNameMap.get(c.channelId) || 'Unknown',
+      updatedAt: c.updatedAt?.toISOString(),
+      createdAt: c.createdAt?.toISOString(),
+      isNew,
+    }
+  })
+
+  // Build deduped activity response
+  const activities = dedupedActivities.map(a => ({
     id: a.id,
     action: a.action,
     entityType: a.entityType,
@@ -142,15 +180,15 @@ export async function GET(request: NextRequest) {
     createdAt: a.createdAt?.toISOString(),
   }))
 
-  const isToday = dateStr === new Date().toISOString().split('T')[0]
+  const isToday = dateStr === new Date(Date.now() + tzOffsetMin * 60000).toISOString().split('T')[0]
 
   return NextResponse.json({
     date: dateStr,
     isToday,
     activities,
-    activityChart: Object.entries(activityByDay).map(([date, count]) => ({
+    activityChart: Object.entries(activityByDay).map(([date, entitySet]) => ({
       date,
-      count,
+      count: entitySet.size,
       isSelected: date === dateStr,
     })),
     dueTasks: dueTasks.map(t => ({
@@ -168,15 +206,7 @@ export async function GET(request: NextRequest) {
       channelName: channelNameMap.get(t.channelId) || 'Unknown',
       completedAt: t.completedAt instanceof Date ? t.completedAt.toISOString() : t.completedAt,
     })),
-    modifiedCards: filteredCards.map(c => ({
-      id: c.id,
-      title: c.title,
-      channelId: c.channelId,
-      channelName: channelNameMap.get(c.channelId) || 'Unknown',
-      updatedAt: c.updatedAt?.toISOString(),
-      createdAt: c.createdAt?.toISOString(),
-      isNew: c.createdAt && c.createdAt >= dayStart && c.createdAt <= dayEnd,
-    })),
+    modifiedCards: cardsWithLocalCheck,
     channels: userChannels.map(c => ({ id: c.id, name: c.name })),
   })
 }

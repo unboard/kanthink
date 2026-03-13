@@ -57,13 +57,17 @@ interface TimelineData {
   channels: ChannelOption[]
 }
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00')
   const today = new Date()
-  const todayStr = today.toISOString().split('T')[0]
+  const todayStr = localDateStr(today)
   const yesterday = new Date(today)
   yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split('T')[0]
+  const yesterdayStr = localDateStr(yesterday)
 
   if (dateStr === todayStr) return 'Today'
   if (dateStr === yesterdayStr) return 'Yesterday'
@@ -107,18 +111,19 @@ interface DailyTimelineProps {
 export function DailyTimeline({ onCreateChannel }: DailyTimelineProps) {
   const router = useRouter()
   const channels = useStore((s) => s.channels)
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })
   const [channelFilter, setChannelFilter] = useState<string | null>(null)
   const [data, setData] = useState<TimelineData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [summaryLoading, setSummaryLoading] = useState(false)
-  const [summary, setSummary] = useState<string | null>(null)
 
   const fetchTimeline = useCallback(async (date: string, chId: string | null) => {
     setLoading(true)
-    setSummary(null)
     try {
-      const params = new URLSearchParams({ date })
+      const tzOffset = new Date().getTimezoneOffset()
+      const params = new URLSearchParams({ date, tzOffset: String(tzOffset) })
       if (chId) params.set('channelId', chId)
       const res = await fetch(`/api/timeline?${params}`)
       if (res.ok) {
@@ -136,22 +141,24 @@ export function DailyTimeline({ onCreateChannel }: DailyTimelineProps) {
     fetchTimeline(selectedDate, channelFilter)
   }, [selectedDate, channelFilter, fetchTimeline])
 
-  // Generate summary from data (client-side, no AI call for now — keeps it fast)
+  // Generate summary from deduplicated data
   const generatedSummary = useMemo(() => {
     if (!data) return null
     const parts: string[] = []
 
-    if (data.activities.length > 0) {
-      const created = data.activities.filter(a => a.action === 'card_created').length
-      const moved = data.activities.filter(a => a.action === 'card_moved').length
-      const completed = data.completedTasks.length
-      const updated = data.activities.filter(a => a.action === 'card_updated').length
+    // Count unique entities per action (already deduped by server)
+    const created = data.activities.filter(a => a.action === 'card_created').length
+    const moved = data.activities.filter(a => a.action === 'card_moved').length
+    const completed = data.completedTasks.length
+    const taskCreated = data.activities.filter(a => a.action === 'task_created').length
+    // Count cards that were modified but not created today
+    const modifiedOnly = data.modifiedCards.filter(c => !c.isNew).length
 
-      if (created > 0) parts.push(`${created} card${created > 1 ? 's' : ''} created`)
-      if (moved > 0) parts.push(`${moved} moved`)
-      if (updated > 0) parts.push(`${updated} updated`)
-      if (completed > 0) parts.push(`${completed} task${completed > 1 ? 's' : ''} completed`)
-    }
+    if (created > 0) parts.push(`${created} card${created > 1 ? 's' : ''} created`)
+    if (modifiedOnly > 0) parts.push(`${modifiedOnly} card${modifiedOnly > 1 ? 's' : ''} updated`)
+    if (moved > 0) parts.push(`${moved} moved`)
+    if (taskCreated > 0) parts.push(`${taskCreated} task${taskCreated > 1 ? 's' : ''} added`)
+    if (completed > 0) parts.push(`${completed} task${completed > 1 ? 's' : ''} completed`)
 
     if (parts.length === 0 && data.dueTasks.length === 0) return null
     return parts.length > 0 ? parts.join(', ') + '.' : null
@@ -179,7 +186,8 @@ export function DailyTimeline({ onCreateChannel }: DailyTimelineProps) {
     )
   }
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const isToday = selectedDate === todayStr
   const maxBarCount = data ? Math.max(...data.activityChart.map(b => b.count), 1) : 1
 
@@ -226,7 +234,7 @@ export function DailyTimeline({ onCreateChannel }: DailyTimelineProps) {
                   key={bar.date}
                   onClick={() => setSelectedDate(bar.date)}
                   className="flex-1 flex flex-col justify-end group relative"
-                  title={`${bar.date}: ${bar.count} actions`}
+                  title={`${bar.date}: ${bar.count} item${bar.count !== 1 ? 's' : ''} changed`}
                 >
                   <div
                     className={`w-full rounded-sm transition-all ${
