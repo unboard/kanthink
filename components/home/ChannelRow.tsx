@@ -3,7 +3,6 @@
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers'
-import { useStore } from '@/lib/store'
 import type { Channel } from '@/lib/types'
 
 interface ChannelRowProps {
@@ -14,59 +13,52 @@ interface ChannelRowProps {
 export function ChannelRow({ channel, streak }: ChannelRowProps) {
   const router = useRouter()
   const { members } = useChannelMembers(channel.id)
-  const tasks = useStore((s) => s.tasks)
-
-  // Compute task stats for this channel
-  const channelTasks = Object.values(tasks).filter(t => t.channelId === channel.id)
-  const totalTasks = channelTasks.length
-  const doneTasks = channelTasks.filter(t => t.status === 'done').length
-  const inProgressTasks = channelTasks.filter(t => t.status === 'in_progress').length
 
   return (
     <div
       onClick={() => router.push(`/channel/${channel.id}`)}
-      className="group/row flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer select-none hover:bg-white/[0.05] active:bg-white/[0.08] transition-colors"
+      className="flex items-center gap-3 p-3 rounded-xl cursor-pointer select-none bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.1] border border-transparent hover:border-white/[0.06] transition-all"
     >
+      {/* Drag handle (visual only — no DnD here) */}
+      <div className="text-white/15 flex-shrink-0">
+        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+        </svg>
+      </div>
+
       {/* Channel name */}
-      <span className="text-[13px] font-medium text-white/70 group-hover/row:text-white/90 flex-1 min-w-0 truncate transition-colors">
+      <span className="text-sm font-medium text-white/80 flex-1 min-w-0 truncate">
         {channel.name}
       </span>
 
       {/* Shared badge */}
       {channel.sharedBy && (
-        <span className="flex-shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[10px] font-medium text-violet-400/80 tracking-wide uppercase">
+        <span className="flex-shrink-0 flex items-center gap-0.5 rounded-full bg-violet-500/15 px-1.5 py-px text-[10px] font-medium text-violet-400">
+          <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
           {channel.sharedBy.name?.split(' ')[0] || 'Shared'}
         </span>
       )}
 
-      {/* Task progress — only show if tasks exist */}
-      {totalTasks > 0 && (
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* Mini progress bar */}
-          <div className="w-8 h-1 rounded-full bg-white/[0.06] overflow-hidden">
-            <div
-              className="h-full rounded-full bg-green-500/70 transition-all"
-              style={{ width: `${(doneTasks / totalTasks) * 100}%` }}
-            />
-          </div>
-          <span className="text-[10px] text-white/30 tabular-nums font-medium">
-            {doneTasks}/{totalTasks}
-          </span>
-        </div>
-      )}
-
-      {/* In-progress indicator */}
-      {inProgressTasks > 0 && (
-        <div className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-blue-400/70" title={`${inProgressTasks} in progress`} />
-      )}
-
       {/* Streak */}
-      {streak && streak.hot > 0 && (
+      {streak && (streak.hot > 0 || streak.cold > 0) && (
         <div className="flex items-center gap-0.5 flex-shrink-0">
-          <svg className="w-3 h-3 text-orange-400/80" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-          </svg>
-          <span className="text-[10px] font-semibold text-orange-400/80 tabular-nums">{streak.hot}</span>
+          {streak.hot > 0 ? (
+            <>
+              <svg className="w-3 h-3 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+              </svg>
+              <span className="text-[10px] font-semibold text-orange-400 tabular-nums">{streak.hot}</span>
+            </>
+          ) : (
+            <>
+              <svg className="w-3 h-3 text-blue-400/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+              <span className="text-[10px] font-medium text-blue-400/50 tabular-nums">{streak.cold}</span>
+            </>
+          )}
         </div>
       )}
 
@@ -79,29 +71,24 @@ export function ChannelRow({ channel, streak }: ChannelRowProps) {
                 <Image
                   src={member.image}
                   alt={member.name || 'Member'}
-                  width={18}
-                  height={18}
+                  width={20}
+                  height={20}
                   className="rounded-full"
                 />
               ) : (
-                <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-[7px] font-bold text-white">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-[8px] font-bold text-white">
                   {(member.name || 'U').charAt(0).toUpperCase()}
                 </div>
               )}
             </div>
           ))}
           {members.length > 3 && (
-            <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white/10 text-[7px] font-medium text-white/60 ring-1 ring-neutral-900">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[8px] font-medium text-white/60 ring-1 ring-neutral-900">
               +{members.length - 3}
             </div>
           )}
         </div>
       )}
-
-      {/* Chevron on hover */}
-      <svg className="w-3.5 h-3.5 text-white/0 group-hover/row:text-white/20 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-      </svg>
     </div>
   )
 }
