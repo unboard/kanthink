@@ -33,6 +33,8 @@ export function Card({ card }: CardProps) {
   const [showMoveChannelPicker, setShowMoveChannelPicker] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const cardMenuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const [menuPosition, setMenuPosition] = useState<'below' | 'above'>('below');
   const { data: session } = useSession();
   const deleteCard = useStore((s) => s.deleteCard);
   const archiveCard = useStore((s) => s.archiveCard);
@@ -165,7 +167,19 @@ export function Card({ card }: CardProps) {
         {/* 3-dot menu button */}
         <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10" ref={cardMenuRef}>
           <button
-            onClick={(e) => { e.stopPropagation(); setShowCardMenu(!showCardMenu); setShowSnoozeSubmenu(false); }}
+            ref={menuButtonRef}
+            onClick={(e) => {
+              e.stopPropagation();
+              // Compute whether to render menu above or below
+              if (menuButtonRef.current) {
+                const rect = menuButtonRef.current.getBoundingClientRect();
+                const spaceBelow = window.innerHeight - rect.bottom;
+                setMenuPosition(spaceBelow < 350 ? 'above' : 'below');
+              }
+              setShowCardMenu(!showCardMenu);
+              setShowSnoozeSubmenu(false);
+              setShowMoveChannelPicker(false);
+            }}
             className="p-1 rounded text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-700"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -174,7 +188,7 @@ export function Card({ card }: CardProps) {
           </button>
 
           {showCardMenu && (
-            <div className="absolute top-full right-0 mt-1 w-52 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50">
+            <div className={`absolute right-0 w-52 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50 ${menuPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
               {showSnoozeSubmenu ? (
                 <>
                   <button
