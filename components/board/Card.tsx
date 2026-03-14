@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -21,6 +22,7 @@ interface CardProps {
 }
 
 export function Card({ card }: CardProps) {
+  const router = useRouter();
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -28,6 +30,8 @@ export function Card({ card }: CardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCardMenu, setShowCardMenu] = useState(false);
   const [showSnoozeSubmenu, setShowSnoozeSubmenu] = useState(false);
+  const [showMoveChannelPicker, setShowMoveChannelPicker] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
   const cardMenuRef = useRef<HTMLDivElement>(null);
   const { data: session } = useSession();
   const deleteCard = useStore((s) => s.deleteCard);
@@ -36,6 +40,7 @@ export function Card({ card }: CardProps) {
   const updateTask = useStore((s) => s.updateTask);
   const createTask = useStore((s) => s.createTask);
   const createCardStore = useStore((s) => s.createCard);
+  const moveCardToChannel = useStore((s) => s.moveCardToChannel);
   const tasks = useStore((s) => s.tasks);
   const channels = useStore((s) => s.channels);
   const { members } = useChannelMembers(card.channelId);
@@ -167,7 +172,7 @@ export function Card({ card }: CardProps) {
           </button>
 
           {showCardMenu && (
-            <div className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50">
+            <div className="absolute top-full right-0 mt-1 w-52 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50">
               {showSnoozeSubmenu ? (
                 <>
                   <button
@@ -181,8 +186,108 @@ export function Card({ card }: CardProps) {
                   </button>
                   <SnoozePicker onSnooze={handleSnooze} onClose={() => { setShowCardMenu(false); setShowSnoozeSubmenu(false); }} />
                 </>
+              ) : showMoveChannelPicker ? (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMoveChannelPicker(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-700/50"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <div className="max-h-48 overflow-y-auto">
+                    {Object.values(channels)
+                      .filter((ch) => ch.id !== card.channelId && !ch.sharedBy)
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((ch) => {
+                        const targetCol = ch.columns?.[0];
+                        return targetCol ? (
+                          <button
+                            key={ch.id}
+                            onClick={(e) => { e.stopPropagation(); moveCardToChannel(card.id, ch.id, targetCol.id); setShowCardMenu(false); setShowMoveChannelPicker(false); }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                          >
+                            <span className="truncate">{ch.name}</span>
+                          </button>
+                        ) : null;
+                      })}
+                  </div>
+                </>
               ) : (
                 <>
+                  {/* Full screen */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); router.push(`/channel/${card.channelId}/card/${card.id}`); }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+                    </svg>
+                    Full screen
+                  </button>
+                  {/* Share */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const url = `${window.location.origin}/channel/${card.channelId}/card/${card.id}`;
+                      navigator.clipboard.writeText(url);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2000);
+                      setShowCardMenu(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                    {copiedLink ? 'Link copied!' : 'Share'}
+                  </button>
+                  {/* Info */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); setIsCardDrawerOpen(true); }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Info
+                  </button>
+                  <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
+                  {/* Duplicate */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDuplicate(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Duplicate
+                  </button>
+                  {/* Archive */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); archiveCard(card.id); setShowCardMenu(false); }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                    </svg>
+                    Archive
+                  </button>
+                  {/* Move to channel */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMoveChannelPicker(true); }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                    Move to channel
+                    <svg className="w-3 h-3 text-neutral-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
                   {/* Snooze */}
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowSnoozeSubmenu(true); }}
@@ -204,27 +309,7 @@ export function Card({ card }: CardProps) {
                     <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                     </svg>
-                    {isPinned ? 'Unpin' : 'Pin to top'}
-                  </button>
-                  {/* Archive */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); archiveCard(card.id); setShowCardMenu(false); }}
-                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
-                  >
-                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                    </svg>
-                    Archive
-                  </button>
-                  {/* Duplicate */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDuplicate(); }}
-                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
-                  >
-                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    Duplicate
+                    {isPinned ? 'Unpin' : 'Pin'}
                   </button>
                   <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
                   {/* Delete */}
