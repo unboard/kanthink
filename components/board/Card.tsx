@@ -138,7 +138,7 @@ export function Card({ card }: CardProps) {
         {...listeners}
         className={`
           card-container
-          group relative cursor-grab rounded-md overflow-hidden transition-shadow
+          group relative cursor-grab rounded-md transition-shadow
           select-none
           ${isDragging ? 'touch-none' : 'touch-manipulation'}
           bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md
@@ -148,14 +148,16 @@ export function Card({ card }: CardProps) {
       >
         {/* Cover image */}
         {card.coverImageUrl && (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={card.coverImageUrl}
-            alt=""
-            className="w-full h-32 object-cover cursor-pointer"
-            loading="lazy"
-            onClick={() => setIsCardDrawerOpen(true)}
-          />
+          <div className="overflow-hidden rounded-t-md">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={card.coverImageUrl}
+              alt=""
+              className="w-full h-32 object-cover cursor-pointer"
+              loading="lazy"
+              onClick={() => setIsCardDrawerOpen(true)}
+            />
+          </div>
         )}
 
         {/* Card content with padding */}
