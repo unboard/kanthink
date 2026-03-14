@@ -20,74 +20,79 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData) {
   if (!ctx) return
 
   const dpr = window.devicePixelRatio || 1
-  const displayW = canvas.clientWidth
-  const displayH = canvas.clientHeight
-  canvas.width = displayW * dpr
-  canvas.height = displayH * dpr
+  const dw = canvas.clientWidth
+  const dh = canvas.clientHeight
+  canvas.width = dw * dpr
+  canvas.height = dh * dpr
   ctx.scale(dpr, dpr)
 
-  // White background
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, displayW, displayH)
+  ctx.fillStyle = '#f8f8f8'
+  ctx.fillRect(0, 0, dw, dh)
 
-  if (data.strokes.length === 0) return
+  const objs = data.objects
+  if (!objs || objs.length === 0) return
 
-  // Find bounding box of all strokes
+  // Bounding box
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const stroke of data.strokes) {
-    for (const [x, y] of stroke.points) {
-      if (x < minX) minX = x
-      if (y < minY) minY = y
-      if (x > maxX) maxX = x
-      if (y > maxY) maxY = y
+  for (const obj of objs) {
+    if (obj.type === 'stroke') {
+      for (const p of obj.points) {
+        if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
+        if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
+      }
+    } else if (obj.type === 'sticky') {
+      if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
+      if (obj.x + obj.width > maxX) maxX = obj.x + obj.width
+      if (obj.y + obj.height > maxY) maxY = obj.y + obj.height
     }
   }
 
-  const contentW = maxX - minX || 1
-  const contentH = maxY - minY || 1
-  const padding = 12
-  const scaleX = (displayW - padding * 2) / contentW
-  const scaleY = (displayH - padding * 2) / contentH
-  const scale = Math.min(scaleX, scaleY, 1) // Don't upscale
-  const offsetX = padding + (displayW - padding * 2 - contentW * scale) / 2
-  const offsetY = padding + (displayH - padding * 2 - contentH * scale) / 2
+  const cw = maxX - minX || 1
+  const ch = maxY - minY || 1
+  const pad = 8
+  const scale = Math.min((dw - pad * 2) / cw, (dh - pad * 2) / ch, 1)
+  const ox = pad + (dw - pad * 2 - cw * scale) / 2
+  const oy = pad + (dh - pad * 2 - ch * scale) / 2
 
   ctx.save()
-  ctx.translate(offsetX, offsetY)
+  ctx.translate(ox, oy)
   ctx.scale(scale, scale)
   ctx.translate(-minX, -minY)
 
-  for (const stroke of data.strokes) {
-    if (stroke.points.length < 2) continue
-    ctx.beginPath()
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-
-    if (stroke.tool === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out'
-      ctx.strokeStyle = 'rgba(0,0,0,1)'
-    } else {
-      ctx.globalCompositeOperation = 'source-over'
-      ctx.strokeStyle = stroke.color
-    }
-    ctx.lineWidth = stroke.width
-
-    const pts = stroke.points
-    ctx.moveTo(pts[0][0], pts[0][1])
-    if (pts.length === 2) {
-      ctx.lineTo(pts[1][0], pts[1][1])
-    } else {
-      for (let i = 1; i < pts.length - 1; i++) {
-        const midX = (pts[i][0] + pts[i + 1][0]) / 2
-        const midY = (pts[i][1] + pts[i + 1][1]) / 2
-        ctx.quadraticCurveTo(pts[i][0], pts[i][1], midX, midY)
+  for (const obj of objs) {
+    if (obj.type === 'stroke') {
+      if (obj.points.length < 2) continue
+      ctx.beginPath()
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+      if (obj.tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out'
+        ctx.strokeStyle = 'rgba(0,0,0,1)'
+      } else {
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.strokeStyle = obj.color
       }
-      ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1])
+      ctx.lineWidth = obj.width
+      const pts = obj.points
+      ctx.moveTo(pts[0].x, pts[0].y)
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i].x + pts[i + 1].x) / 2
+        const my = (pts[i].y + pts[i + 1].y) / 2
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my)
+      }
+      ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y)
+      ctx.stroke()
+      ctx.globalCompositeOperation = 'source-over'
+    } else if (obj.type === 'sticky') {
+      ctx.fillStyle = obj.color
+      ctx.fillRect(obj.x, obj.y, obj.width, obj.height)
+      if (obj.text) {
+        ctx.fillStyle = '#1a1a1a'
+        ctx.font = '12px sans-serif'
+        ctx.textBaseline = 'top'
+        ctx.fillText(obj.text.slice(0, 30), obj.x + 6, obj.y + 6, obj.width - 12)
+      }
     }
-    ctx.stroke()
-    ctx.globalCompositeOperation = 'source-over'
   }
-
   ctx.restore()
 }
 
@@ -96,19 +101,15 @@ export function WhiteboardPreview({ snapshotJson, whiteboardId, onUpdate }: Whit
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const data: WhiteboardData | null = (() => {
-    try {
-      return JSON.parse(snapshotJson)
-    } catch {
-      return null
-    }
+    try { return JSON.parse(snapshotJson) } catch { return null }
   })()
 
-  const strokeCount = data?.strokes?.length ?? 0
+  const objCount = data?.objects?.length ?? 0
 
   useEffect(() => {
-    if (!canvasRef.current || !data || strokeCount === 0) return
+    if (!canvasRef.current || !data || objCount === 0) return
     drawThumbnail(canvasRef.current, data)
-  }, [snapshotJson, strokeCount, data])
+  }, [snapshotJson, objCount, data])
 
   return (
     <>
@@ -116,11 +117,8 @@ export function WhiteboardPreview({ snapshotJson, whiteboardId, onUpdate }: Whit
         onClick={() => setIsEditorOpen(true)}
         className="group block w-full rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors"
       >
-        {strokeCount > 0 ? (
-          <canvas
-            ref={canvasRef}
-            style={{ width: '100%', height: 120, display: 'block' }}
-          />
+        {objCount > 0 ? (
+          <canvas ref={canvasRef} style={{ width: '100%', height: 120, display: 'block' }} />
         ) : (
           <div className="flex items-center justify-center h-[80px] bg-neutral-50 dark:bg-neutral-800/50">
             <span className="text-xs text-neutral-400">Empty whiteboard</span>
@@ -131,7 +129,7 @@ export function WhiteboardPreview({ snapshotJson, whiteboardId, onUpdate }: Whit
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
           </svg>
           <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
-            {strokeCount > 0 ? `${strokeCount} stroke${strokeCount !== 1 ? 's' : ''}` : 'Empty'}
+            {objCount > 0 ? `${objCount} element${objCount !== 1 ? 's' : ''}` : 'Empty'}
             {' \u00B7 Tap to edit'}
           </span>
         </div>
