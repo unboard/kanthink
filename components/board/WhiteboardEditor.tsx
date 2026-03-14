@@ -26,7 +26,17 @@ interface StickyObj {
   color: string
 }
 
-type CanvasObject = StrokeObj | StickyObj
+interface ImageObj {
+  type: 'image'
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  url: string  // Cloudinary URL
+}
+
+type CanvasObject = StrokeObj | StickyObj | ImageObj
 
 export interface WhiteboardData {
   objects: CanvasObject[]
@@ -105,6 +115,8 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   const [color, setColor] = useState('#1a1a1a')
   const [brushSize, setBrushSize] = useState(4)
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
 
   // View transform (infinite canvas)
   const viewRef = useRef({ x: 0, y: 0, zoom: 1 })
@@ -205,6 +217,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       if (!obj || !obj.type) continue
       if (obj.type === 'stroke') drawStroke(ctx, obj)
       else if (obj.type === 'sticky') drawSticky(ctx, obj)
+      else if (obj.type === 'image') drawImageObj(ctx, obj)
     }
 
     // Draw current stroke in progress
@@ -217,7 +230,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       const sel = objectsRef.current.find(o => o.id === selectedId)
       if (sel) {
         let bx = 0, by = 0, bw = 0, bh = 0
-        if (sel.type === 'sticky') {
+        if (sel.type === 'sticky' || sel.type === 'image') {
           bx = sel.x; by = sel.y; bw = sel.width; bh = sel.height
         } else if (sel.type === 'stroke' && sel.points.length > 0) {
           let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
@@ -327,6 +340,36 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     }
   }
 
+  // Image cache for loaded HTMLImageElements
+  const imageCache = useRef<Map<string, HTMLImageElement>>(new Map())
+
+  const drawImageObj = (ctx: CanvasRenderingContext2D, img: ImageObj) => {
+    const cached = imageCache.current.get(img.url)
+    if (cached && cached.complete) {
+      ctx.drawImage(cached, img.x, img.y, img.width, img.height)
+    } else if (!cached) {
+      // Start loading
+      const el = new Image()
+      el.crossOrigin = 'anonymous'
+      el.onload = () => { imageCache.current.set(img.url, el); redraw() }
+      el.src = img.url
+      imageCache.current.set(img.url, el)
+      // Draw placeholder
+      ctx.fillStyle = '#e5e5e5'
+      ctx.fillRect(img.x, img.y, img.width, img.height)
+      ctx.fillStyle = '#a3a3a3'
+      ctx.font = '12px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('Loading...', img.x + img.width / 2, img.y + img.height / 2)
+      ctx.textAlign = 'start'
+    } else {
+      // Still loading — draw placeholder
+      ctx.fillStyle = '#e5e5e5'
+      ctx.fillRect(img.x, img.y, img.width, img.height)
+    }
+  }
+
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] => {
     const words = text.split(' ')
     const lines: string[] = []
@@ -403,11 +446,10 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       const wp = screenToWorld(sp.x, sp.y)
       // Hit test stickies (reverse order = top first)
       const hit = [...objectsRef.current].reverse().find(o => {
-        if (o.type === 'sticky') {
+        if (o.type === 'sticky' || o.type === 'image') {
           return wp.x >= o.x && wp.x <= o.x + o.width && wp.y >= o.y && wp.y <= o.y + o.height
         }
         if (o.type === 'stroke' && o.points.length > 0) {
-          // Simple proximity check for strokes
           return o.points.some(p => Math.hypot(p.x - wp.x, p.y - wp.y) < o.width * 2 + 8)
         }
         return false
@@ -416,7 +458,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         setSelectedId(hit.id)
         ds.dragging = true
         ds.dragStart = wp
-        if (hit.type === 'sticky') {
+        if (hit.type === 'sticky' || hit.type === 'image') {
           ds.dragObjStart = { x: hit.x, y: hit.y }
         } else if (hit.type === 'stroke' && hit.points.length > 0) {
           ds.dragObjStart = { x: hit.points[0].x, y: hit.points[0].y }
@@ -480,8 +522,8 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       const dx = wp.x - ds.dragStart.x
       const dy = wp.y - ds.dragStart.y
       const obj = objectsRef.current.find(o => o.id === selectedId)
-      if (obj?.type === 'sticky') {
-        setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, x: ds.dragObjStart!.x + dx, y: ds.dragObjStart!.y + dy } as StickyObj : o))
+      if (obj?.type === 'sticky' || obj?.type === 'image') {
+        setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, x: ds.dragObjStart!.x + dx, y: ds.dragObjStart!.y + dy } : o))
       } else if (obj?.type === 'stroke') {
         const origFirst = ds.dragObjStart
         const origObj = objectsRef.current.find(o => o.id === selectedId) as StrokeObj | undefined
@@ -589,6 +631,55 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     requestAnimationFrame(redraw)
   }
 
+  // ===== IMAGE UPLOAD =====
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = '' // Reset so same file can be re-selected
+
+    setIsUploadingImage(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('cardId', 'whiteboard') // Generic identifier for whiteboard images
+      const res = await fetch('/api/upload-image', { method: 'POST', body: form })
+      if (!res.ok) throw new Error('Upload failed')
+      const { url } = await res.json()
+
+      // Get image natural dimensions to set a reasonable initial size
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        imageCache.current.set(url, img)
+        const maxDim = 300
+        const scale = Math.min(maxDim / img.naturalWidth, maxDim / img.naturalHeight, 1)
+        const w = img.naturalWidth * scale
+        const h = img.naturalHeight * scale
+
+        // Place at center of current view
+        const { w: canW, h: canH } = canvasSize.current
+        const center = screenToWorld(canW / 2, canH / 2)
+
+        pushUndo()
+        const imageObj: ImageObj = {
+          type: 'image', id: uid(),
+          x: center.x - w / 2, y: center.y - h / 2,
+          width: w, height: h, url,
+        }
+        setObjects(prev => [...prev, imageObj])
+        setSelectedId(imageObj.id)
+        setActiveTool('select')
+        requestAnimationFrame(redraw)
+      }
+      img.src = url
+    } catch (err) {
+      console.error('Image upload failed:', err)
+    } finally {
+      setIsUploadingImage(false)
+    }
+  }
+
   // ===== STICKY EDITING =====
 
   const editingSticky = editingStickyId ? objects.find(o => o.id === editingStickyId && o.type === 'sticky') as StickyObj | undefined : undefined
@@ -630,7 +721,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
                 if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
                 if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
               }
-            } else if (obj.type === 'sticky') {
+            } else if (obj.type === 'sticky' || obj.type === 'image') {
               if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
               if (obj.x + obj.width > maxX) maxX = obj.x + obj.width
               if (obj.y + obj.height > maxY) maxY = obj.y + obj.height
@@ -653,6 +744,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
             if (!obj || !obj.type) continue
             if (obj.type === 'stroke') drawStroke(ctx, obj, true)
             else if (obj.type === 'sticky') drawSticky(ctx, obj)
+            else if (obj.type === 'image') drawImageObj(ctx, obj)
           }
           ctx.restore()
 
@@ -676,6 +768,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     eraser: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 20H7L3 16l9-9 8 8-4 4"/><path d="M6.5 13.5l5-5"/></svg>,
     sticky: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15.5 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8.5L15.5 3z"/><path d="M14 3v6h6"/></svg>,
     pan: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 11V6a2 2 0 00-4 0v6"/><path d="M14 10V4a2 2 0 00-4 0v7"/><path d="M10 10.5V5a2 2 0 00-4 0v9"/><path d="M18 11a2 2 0 014 0v3a8 8 0 01-8 8h-2c-2.8 0-4.5-.9-5.7-2.4L3.7 16a2 2 0 013-2.6l.3.3"/></svg>,
+    image: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>,
   }
 
   const ToolBtn = ({ t }: { t: string }) => (
@@ -716,6 +809,23 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
       {/* Tools */}
       {['select', 'pen', 'eraser', 'sticky', 'pan'].map(t => <ToolBtn key={t} t={t} />)}
+
+      {/* Image upload button */}
+      <button
+        onClick={() => imageInputRef.current?.click()}
+        disabled={isUploadingImage}
+        style={{
+          width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: 'none', cursor: 'pointer', background: 'transparent', color: '#737373',
+          opacity: isUploadingImage ? 0.5 : 1,
+        }}
+        title="Insert image"
+      >
+        {isUploadingImage ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" className="animate-spin"><circle cx="12" cy="12" r="10" stroke="#a3a3a3" strokeWidth="2" fill="none" strokeDasharray="31.4" strokeDashoffset="10" /></svg>
+        ) : toolIcons.image}
+      </button>
+      <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" className="hidden" onChange={handleImageUpload} />
 
       <div style={{ width: 1, height: 24, background: '#e5e5e5', flexShrink: 0, margin: '0 2px' }} />
 

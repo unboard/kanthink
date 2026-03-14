@@ -41,7 +41,7 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData) {
         if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
         if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
       }
-    } else if (obj.type === 'sticky') {
+    } else if (obj.type === 'sticky' || obj.type === 'image') {
       if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
       if (obj.x + obj.width > maxX) maxX = obj.x + obj.width
       if (obj.y + obj.height > maxY) maxY = obj.y + obj.height
@@ -93,6 +93,19 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData) {
         ctx.textBaseline = 'top'
         ctx.fillText(obj.text.slice(0, 30), obj.x + 6, obj.y + 6, obj.width - 12)
       }
+    } else if (obj.type === 'image') {
+      // Draw placeholder rect for images in thumbnail
+      ctx.fillStyle = '#e5e5e5'
+      ctx.fillRect(obj.x, obj.y, obj.width, obj.height)
+      ctx.strokeStyle = '#d4d4d4'
+      ctx.lineWidth = 1
+      ctx.strokeRect(obj.x, obj.y, obj.width, obj.height)
+      ctx.fillStyle = '#a3a3a3'
+      ctx.font = '10px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('IMG', obj.x + obj.width / 2, obj.y + obj.height / 2)
+      ctx.textAlign = 'start'
     }
   }
   ctx.restore()
