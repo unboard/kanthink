@@ -33,6 +33,7 @@ import { Button, Input, Modal } from '@/components/ui';
 import { useSettingsStore, requireSignInForAI } from '@/lib/settingsStore';
 import { useToastStore } from '@/lib/toastStore';
 import { SortableColumn } from './SortableColumn';
+import { ShroomFavoritesBar } from './ShroomFavoritesBar';
 import { AIDebugModal } from './AIDebugModal';
 // Commented out - question system disabled
 // import { QuestionsDrawer } from './QuestionsDrawer';
@@ -1260,6 +1261,7 @@ export function Board({ channel }: BoardProps) {
         )
       ) : (
         <>
+          <ShroomFavoritesBar channelId={channel.id} onRunShroom={handleRunInstruction} />
           <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}

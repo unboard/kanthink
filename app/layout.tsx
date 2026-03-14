@@ -17,6 +17,7 @@ import { NavProvider } from "@/components/providers/NavProvider";
 import { ServerSyncProvider } from "@/components/providers/ServerSyncProvider";
 import { ToastContainer, SignUpOverlay } from "@/components/ui";
 import { GlobalNewChannelOverlay } from "@/components/layout/GlobalNewChannelOverlay";
+import { CardSearch } from "@/components/board/CardSearch";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -90,6 +91,9 @@ export default function RootLayout({
 
                   {/* Global new channel overlay - triggered from nav buttons */}
                   <GlobalNewChannelOverlay />
+
+                  {/* Global card search — Cmd/Ctrl+K */}
+                  <CardSearch />
                 </NavProvider>
                 <ToastContainer />
                 <SignUpOverlay />
