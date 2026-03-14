@@ -29,12 +29,13 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData) {
   ctx.fillStyle = '#f8f8f8'
   ctx.fillRect(0, 0, dw, dh)
 
-  const objs = data.objects
+  const objs = data.objects?.filter(Boolean)
   if (!objs || objs.length === 0) return
 
   // Bounding box
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const obj of objs) {
+    if (!obj || !obj.type) continue
     if (obj.type === 'stroke') {
       for (const p of obj.points) {
         if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
@@ -60,6 +61,7 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData) {
   ctx.translate(-minX, -minY)
 
   for (const obj of objs) {
+    if (!obj || !obj.type) continue
     if (obj.type === 'stroke') {
       if (obj.points.length < 2) continue
       ctx.beginPath()
@@ -104,7 +106,7 @@ export function WhiteboardPreview({ snapshotJson, whiteboardId, onUpdate }: Whit
     try { return JSON.parse(snapshotJson) } catch { return null }
   })()
 
-  const objCount = data?.objects?.length ?? 0
+  const objCount = data?.objects?.filter(Boolean)?.length ?? 0
 
   useEffect(() => {
     if (!canvasRef.current || !data || objCount === 0) return

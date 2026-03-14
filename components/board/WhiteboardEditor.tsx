@@ -95,7 +95,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     if (!initialData) return
     try {
       const data: WhiteboardData = JSON.parse(initialData)
-      if (data.objects) setObjects(data.objects)
+      if (Array.isArray(data.objects)) setObjects(data.objects.filter(Boolean))
       if (data.viewX !== undefined) viewRef.current.x = data.viewX
       if (data.viewY !== undefined) viewRef.current.y = data.viewY
       if (data.zoom !== undefined) viewRef.current.zoom = data.zoom
@@ -158,6 +158,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     ctx.scale(v.zoom, v.zoom)
 
     for (const obj of objects) {
+      if (!obj || !obj.type) continue
       if (obj.type === 'stroke') drawStroke(ctx, obj)
       else if (obj.type === 'sticky') drawSticky(ctx, obj)
     }
