@@ -49,6 +49,8 @@ export async function ensureSchema() {
     `ALTER TABLE instruction_cards ADD next_instruction_id text`,
     // Migration 0017 — card pinning
     `ALTER TABLE cards ADD pinned_at integer`,
+    // Migration 0018 — card reactions
+    `ALTER TABLE cards ADD reactions text`,
   ]
 
   for (const stmt of alterStatements) {

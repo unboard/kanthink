@@ -178,6 +178,9 @@ export const cards = sqliteTable('cards', {
   // Pinning
   pinnedAt: integer('pinned_at', { mode: 'timestamp' }),
 
+  // Card-level reactions
+  reactions: text('reactions', { mode: 'json' }).$type<{ emoji: string; userIds: string[] }[]>(),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [

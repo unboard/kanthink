@@ -171,6 +171,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
   const [showCardMenu, setShowCardMenu] = useState(false);
   const [showMoveChannelPicker, setShowMoveChannelPicker] = useState(false);
+  const [showMoveColumnPicker, setShowMoveColumnPicker] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const cardMenuRef = useRef<HTMLDivElement>(null);
 
@@ -665,6 +666,32 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         </button>
                       </div>
                     </div>
+                  ) : showMoveColumnPicker ? (
+                    <div className="max-h-64 overflow-y-auto">
+                      <button
+                        onClick={() => setShowMoveColumnPicker(false)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Back
+                      </button>
+                      <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
+                      {(channels[card.channelId]?.columns ?? []).map((col) => (
+                        <button
+                          key={col.id}
+                          onClick={() => {
+                            moveCard(card.id, col.id, 0);
+                            setShowCardMenu(false);
+                            setShowMoveColumnPicker(false);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                        >
+                          <span className="truncate">{col.name}</span>
+                        </button>
+                      ))}
+                    </div>
                   ) : showMoveChannelPicker ? (
                     <div className="max-h-64 overflow-y-auto">
                       <button
@@ -777,6 +804,20 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                         </svg>
                         Archive
+                      </button>
+
+                      {/* Move to column */}
+                      <button
+                        onClick={() => setShowMoveColumnPicker(true)}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        Move to column
+                        <svg className="w-3 h-3 text-neutral-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </button>
 
                       {/* Move to channel */}

@@ -136,6 +136,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (shareTheme !== undefined) updates.shareTheme = shareTheme
     if (snoozedUntil !== undefined) updates.snoozedUntil = snoozedUntil ? new Date(snoozedUntil) : null
     if (body.pinnedAt !== undefined) updates.pinnedAt = body.pinnedAt ? new Date(body.pinnedAt) : null
+    if (body.reactions !== undefined) updates.reactions = body.reactions
 
     await db.update(cards).set(updates).where(eq(cards.id, cardId))
 

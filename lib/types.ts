@@ -332,6 +332,7 @@ export interface Card {
   processedByInstructions?: Record<ID, string>;  // instructionId -> ISO timestamp of last run
   snoozedUntil?: string;  // ISO timestamp — card hidden from board until this time
   pinnedAt?: string;      // ISO timestamp — pinned cards sort to top of column
+  reactions?: { emoji: string; userIds: string[] }[];  // Card-level emoji reactions
 }
 
 // ===== REVIEW QUEUE TYPES =====

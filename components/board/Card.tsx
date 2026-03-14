@@ -31,6 +31,7 @@ export function Card({ card }: CardProps) {
   const [showCardMenu, setShowCardMenu] = useState(false);
   const [showSnoozeSubmenu, setShowSnoozeSubmenu] = useState(false);
   const [showMoveChannelPicker, setShowMoveChannelPicker] = useState(false);
+  const [showMoveColumnPicker, setShowMoveColumnPicker] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const cardMenuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -43,6 +44,7 @@ export function Card({ card }: CardProps) {
   const createTask = useStore((s) => s.createTask);
   const createCardStore = useStore((s) => s.createCard);
   const moveCardToChannel = useStore((s) => s.moveCardToChannel);
+  const moveCard = useStore((s) => s.moveCard);
   const tasks = useStore((s) => s.tasks);
   const channels = useStore((s) => s.channels);
   const { members } = useChannelMembers(card.channelId);
@@ -107,6 +109,31 @@ export function Card({ card }: CardProps) {
   };
 
   const isPinned = !!card.pinnedAt;
+
+  const REACTION_EMOJIS = ['👍', '❤️', '🔥', '👀', '✅', '🤔', '👏', '🚀'];
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+
+  const handleReaction = (emoji: string) => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    const reactions = [...(card.reactions ?? [])];
+    const existing = reactions.find((r) => r.emoji === emoji);
+    if (existing) {
+      if (existing.userIds.includes(userId)) {
+        existing.userIds = existing.userIds.filter((id) => id !== userId);
+        if (existing.userIds.length === 0) {
+          reactions.splice(reactions.indexOf(existing), 1);
+        }
+      } else {
+        existing.userIds.push(userId);
+      }
+    } else {
+      reactions.push({ emoji, userIds: [userId] });
+    }
+    updateCard(card.id, { reactions });
+    setShowReactionPicker(false);
+    setShowCardMenu(false);
+  };
 
   // Use summary for preview, fall back to first message content
   const messages = card.messages ?? [];
@@ -180,6 +207,7 @@ export function Card({ card }: CardProps) {
               setShowCardMenu(!showCardMenu);
               setShowSnoozeSubmenu(false);
               setShowMoveChannelPicker(false);
+              setShowMoveColumnPicker(false);
             }}
             className="p-1 rounded text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-700"
           >
@@ -202,6 +230,29 @@ export function Card({ card }: CardProps) {
                     Back
                   </button>
                   <SnoozePicker onSnooze={handleSnooze} onClose={() => { setShowCardMenu(false); setShowSnoozeSubmenu(false); }} />
+                </>
+              ) : showMoveColumnPicker ? (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMoveColumnPicker(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-700/50"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <div className="max-h-48 overflow-y-auto">
+                    {(channels[card.channelId]?.columns ?? []).map((col) => (
+                      <button
+                        key={col.id}
+                        onClick={(e) => { e.stopPropagation(); moveCard(card.id, col.id, 0); setShowCardMenu(false); setShowMoveColumnPicker(false); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <span className="truncate">{col.name}</span>
+                      </button>
+                    ))}
+                  </div>
                 </>
               ) : showMoveChannelPicker ? (
                 <>
@@ -291,6 +342,19 @@ export function Card({ card }: CardProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                     </svg>
                     Archive
+                  </button>
+                  {/* Move to column */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMoveColumnPicker(true); }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    Move to column
+                    <svg className="w-3 h-3 text-neutral-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                   </button>
                   {/* Move to channel */}
                   <button
@@ -425,6 +489,45 @@ export function Card({ card }: CardProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="text-[10px] font-medium">Published</span>
+          </div>
+        )}
+
+        {/* Reactions */}
+        {(card.reactions ?? []).length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+            {(card.reactions ?? []).map((r) => (
+              <button
+                key={r.emoji}
+                onClick={() => handleReaction(r.emoji)}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs transition-colors ${
+                  r.userIds.includes(session?.user?.id ?? '')
+                    ? 'bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700'
+                    : 'bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
+                }`}
+              >
+                <span>{r.emoji}</span>
+                <span className="text-neutral-500 dark:text-neutral-400">{r.userIds.length}</span>
+              </button>
+            ))}
+            <button
+              onClick={() => setShowReactionPicker(!showReactionPicker)}
+              className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            >
+              +
+            </button>
+            {showReactionPicker && (
+              <div className="absolute z-50 mt-6 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 p-1.5 flex gap-1">
+                {REACTION_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => handleReaction(emoji)}
+                    className="w-7 h-7 flex items-center justify-center rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-sm"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

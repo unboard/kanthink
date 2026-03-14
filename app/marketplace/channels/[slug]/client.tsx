@@ -1,7 +1,10 @@
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { MarketplaceChannel } from '@/lib/marketplace-data'
+import { useStore } from '@/lib/store'
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon'
 
 function formatCount(n: number): string {
@@ -10,6 +13,28 @@ function formatCount(n: number): string {
 }
 
 export function ChannelProductClient({ channel }: { channel: MarketplaceChannel }) {
+  const router = useRouter()
+  const createChannelWithStructure = useStore((s) => s.createChannelWithStructure)
+  const [isAdding, setIsAdding] = useState(false)
+
+  const handleAddChannel = () => {
+    if (isAdding) return
+    setIsAdding(true)
+    try {
+      const newChannel = createChannelWithStructure({
+        name: channel.name,
+        description: channel.description,
+        aiInstructions: channel.aiInstructions,
+        columns: channel.columns.map((name, i) => ({ name, isAiTarget: i === 0 })),
+        instructionCards: [],
+      })
+      router.push(`/channel/${newChannel.id}`)
+    } catch (err) {
+      console.error('Failed to add channel:', err)
+      setIsAdding(false)
+    }
+  }
+
   return (
     <>
       {/* Nav */}
@@ -62,11 +87,22 @@ export function ChannelProductClient({ channel }: { channel: MarketplaceChannel 
             <p className="text-sm sm:text-base text-neutral-400 leading-relaxed">{channel.tagline}</p>
 
             <div className="flex items-center gap-4 mt-4">
-              <button className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition-colors shadow-lg shadow-emerald-600/20">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add Channel
+              <button
+                onClick={handleAddChannel}
+                disabled={isAdding}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors shadow-lg shadow-emerald-600/20"
+              >
+                {isAdding ? (
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                )}
+                {isAdding ? 'Adding...' : 'Add Channel'}
               </button>
               <div className="flex items-center gap-1 text-xs text-neutral-500">
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
