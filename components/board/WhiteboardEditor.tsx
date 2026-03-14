@@ -212,18 +212,63 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       drawStroke(ctx, drawState.current.currentStroke)
     }
 
+    // Draw selection bounding box
+    if (selectedId) {
+      const sel = objectsRef.current.find(o => o.id === selectedId)
+      if (sel) {
+        let bx = 0, by = 0, bw = 0, bh = 0
+        if (sel.type === 'sticky') {
+          bx = sel.x; by = sel.y; bw = sel.width; bh = sel.height
+        } else if (sel.type === 'stroke' && sel.points.length > 0) {
+          let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity
+          for (const p of sel.points) {
+            if (p.x < x1) x1 = p.x; if (p.y < y1) y1 = p.y
+            if (p.x > x2) x2 = p.x; if (p.y > y2) y2 = p.y
+          }
+          const pad = sel.width
+          bx = x1 - pad; by = y1 - pad; bw = x2 - x1 + pad * 2; bh = y2 - y1 + pad * 2
+        }
+        if (bw > 0 && bh > 0) {
+          ctx.strokeStyle = '#3b82f6'
+          ctx.lineWidth = 1.5 / v.zoom
+          ctx.setLineDash([4 / v.zoom, 4 / v.zoom])
+          ctx.strokeRect(bx, by, bw, bh)
+          ctx.setLineDash([])
+
+          // Corner handles
+          const hs = 6 / v.zoom
+          const corners = [
+            [bx, by], [bx + bw, by], [bx, by + bh], [bx + bw, by + bh],
+          ]
+          for (const [cx, cy] of corners) {
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(cx - hs / 2, cy - hs / 2, hs, hs)
+            ctx.strokeStyle = '#3b82f6'
+            ctx.lineWidth = 1.5 / v.zoom
+            ctx.strokeRect(cx - hs / 2, cy - hs / 2, hs, hs)
+          }
+        }
+      }
+    }
+
     ctx.restore()
   }, []) // No dependency on objects — reads from ref
 
-  const drawStroke = (ctx: CanvasRenderingContext2D, s: StrokeObj) => {
+  const drawStroke = (ctx: CanvasRenderingContext2D, s: StrokeObj, snapshotMode = false) => {
     if (s.points.length < 2) return
     ctx.beginPath()
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
     if (s.tool === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out'
-      ctx.strokeStyle = 'rgba(0,0,0,1)'
+      if (snapshotMode) {
+        // In snapshot mode, draw erasers as background color (avoid transparent holes)
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.strokeStyle = '#f8f8f8'
+      } else {
+        ctx.globalCompositeOperation = 'destination-out'
+        ctx.strokeStyle = 'rgba(0,0,0,1)'
+      }
     } else {
       ctx.globalCompositeOperation = 'source-over'
       ctx.strokeStyle = s.color
@@ -606,7 +651,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
           for (const obj of objs) {
             if (!obj || !obj.type) continue
-            if (obj.type === 'stroke') drawStroke(ctx, obj)
+            if (obj.type === 'stroke') drawStroke(ctx, obj, true)
             else if (obj.type === 'sticky') drawSticky(ctx, obj)
           }
           ctx.restore()
@@ -622,6 +667,85 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   if (!isOpen) return null
 
   const zoomPct = Math.round(viewRef.current.zoom * 100)
+  const hasUndo = undoStackRef.current.length > 0
+  const hasRedo = redoStackRef.current.length > 0
+
+  const toolIcons: Record<string, React.ReactNode> = {
+    select: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>,
+    pen: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18"/></svg>,
+    eraser: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 20H7L3 16l9-9 8 8-4 4"/><path d="M6.5 13.5l5-5"/></svg>,
+    sticky: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15.5 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8.5L15.5 3z"/><path d="M14 3v6h6"/></svg>,
+    pan: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 11V6a2 2 0 00-4 0v6"/><path d="M14 10V4a2 2 0 00-4 0v7"/><path d="M10 10.5V5a2 2 0 00-4 0v9"/><path d="M18 11a2 2 0 014 0v3a8 8 0 01-8 8h-2c-2.8 0-4.5-.9-5.7-2.4L3.7 16a2 2 0 013-2.6l.3.3"/></svg>,
+  }
+
+  const ToolBtn = ({ t }: { t: string }) => (
+    <button
+      onClick={() => { setActiveTool(t as any); setShowColorPicker(false); setEditingStickyId(null); }}
+      style={{
+        width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: 'none', cursor: 'pointer',
+        background: activeTool === t ? '#e5e5e5' : 'transparent',
+        color: activeTool === t ? '#1a1a1a' : '#737373',
+      }}
+      title={t[0].toUpperCase() + t.slice(1)}
+    >
+      {toolIcons[t]}
+    </button>
+  )
+
+  const toolbar = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#fafafa', position: 'relative', zIndex: 5 }}
+      onTouchStart={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
+    >
+      {/* Undo/Redo */}
+      <button onClick={handleUndo} disabled={!hasUndo} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', cursor: hasUndo ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={hasUndo ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 0 1 15.36-6.36L21 9"/></svg>
+      </button>
+      <button onClick={handleRedo} disabled={!hasRedo} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', cursor: hasRedo ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={hasRedo ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 0 0-15.36-6.36L3 9"/></svg>
+      </button>
+
+      {selectedId && (
+        <button onClick={() => { pushUndo(); setObjects(prev => prev.filter(o => o.id !== selectedId)); setSelectedId(null); requestAnimationFrame(redraw); }}
+          style={{ width: 32, height: 32, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
+        </button>
+      )}
+
+      <div style={{ width: 1, height: 24, background: '#e5e5e5', flexShrink: 0, margin: '0 2px' }} />
+
+      {/* Tools */}
+      {['select', 'pen', 'eraser', 'sticky', 'pan'].map(t => <ToolBtn key={t} t={t} />)}
+
+      <div style={{ width: 1, height: 24, background: '#e5e5e5', flexShrink: 0, margin: '0 2px' }} />
+
+      {/* Color swatch */}
+      <div style={{ position: 'relative' }}>
+        <button onClick={(e) => { e.stopPropagation(); setShowColorPicker(!showColorPicker); }}
+          style={{ width: 24, height: 24, borderRadius: 12, background: color, border: `2px solid ${color === '#ffffff' ? '#d4d4d4' : color}`, cursor: 'pointer' }} />
+        {showColorPicker && (
+          <div onClick={e => e.stopPropagation()}
+            style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4, padding: 8, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)', zIndex: 20 }}>
+            {COLORS.map(c => (
+              <button key={c} onClick={e => { e.stopPropagation(); setColor(c); setShowColorPicker(false); if (activeTool !== 'pen') setActiveTool('pen'); }}
+                style={{ width: 28, height: 28, borderRadius: 14, background: c, border: c === color ? '2.5px solid #3b82f6' : `1.5px solid ${c === '#ffffff' ? '#d4d4d4' : 'transparent'}`, cursor: 'pointer' }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Sizes */}
+      {SIZES.map(s => (
+        <button key={s} onClick={() => setBrushSize(s)}
+          style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: brushSize === s ? '#e5e5e5' : 'transparent', border: 'none', cursor: 'pointer' }}>
+          <div style={{ width: Math.min(s + 2, 12), height: Math.min(s + 2, 12), borderRadius: '50%', background: '#404040' }} />
+        </button>
+      ))}
+
+      <div style={{ flex: 1 }} />
+      <span style={{ fontSize: 10, color: '#a3a3a3', whiteSpace: 'nowrap' }}>{zoomPct}%</span>
+    </div>
+  )
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col" style={{ colorScheme: 'light' }}>
@@ -632,92 +756,9 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         <button onClick={handleSave} style={{ fontSize: 14, fontWeight: 500, color: '#a78bfa', background: 'none', border: 'none', cursor: 'pointer' }}>Save</button>
       </div>
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fafafa', borderBottom: '1px solid #e5e5e5', flexShrink: 0, overflowX: 'auto', position: 'relative', zIndex: 5 }}>
-        {/* Undo/Redo (left side) */}
-        <button onClick={handleUndo} disabled={undoStackRef.current.length === 0} style={{ padding: 4, borderRadius: 6, border: 'none', cursor: undoStackRef.current.length > 0 ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={undoStackRef.current.length > 0 ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 0 1 15.36-6.36L21 9"/></svg>
-        </button>
-        <button onClick={handleRedo} disabled={redoStackRef.current.length === 0} style={{ padding: 4, borderRadius: 6, border: 'none', cursor: redoStackRef.current.length > 0 ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={redoStackRef.current.length > 0 ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 0 0-15.36-6.36L3 9"/></svg>
-        </button>
-
-        <div style={{ width: 1, height: 20, background: '#e5e5e5', flexShrink: 0 }} />
-
-        {/* Tools */}
-        {(['select', 'pen', 'eraser', 'sticky', 'pan'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => { setActiveTool(t); setShowColorPicker(false); setEditingStickyId(null); }}
-            style={{
-              padding: '5px 8px', borderRadius: 6, fontSize: 12, fontWeight: 500,
-              border: 'none', cursor: 'pointer',
-              background: activeTool === t ? '#e5e5e5' : 'transparent',
-              color: '#404040', whiteSpace: 'nowrap',
-            }}
-          >
-            {t === 'select' ? 'Select' : t === 'pen' ? 'Pen' : t === 'eraser' ? 'Eraser' : t === 'sticky' ? 'Sticky' : 'Pan'}
-          </button>
-        ))}
-
-        <div style={{ width: 1, height: 20, background: '#e5e5e5', flexShrink: 0 }} />
-
-        {/* Color */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowColorPicker(!showColorPicker); }}
-            style={{ width: 22, height: 22, borderRadius: 11, background: color, border: `2px solid ${color === '#ffffff' ? '#d4d4d4' : color}`, cursor: 'pointer' }}
-          />
-          {showColorPicker && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4, padding: 6, background: '#fff', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 20, width: 148 }}
-            >
-              {COLORS.map(c => (
-                <button
-                  key={c}
-                  onClick={(e) => { e.stopPropagation(); setColor(c); setShowColorPicker(false); if (activeTool !== 'pen') setActiveTool('pen'); }}
-                  style={{ width: 24, height: 24, borderRadius: 12, background: c, border: c === color ? '2px solid #3b82f6' : `1px solid ${c === '#ffffff' ? '#d4d4d4' : 'transparent'}`, cursor: 'pointer' }}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={{ width: 1, height: 20, background: '#e5e5e5', flexShrink: 0 }} />
-
-        {/* Sizes */}
-        {SIZES.map(s => (
-          <button
-            key={s}
-            onClick={() => setBrushSize(s)}
-            style={{ width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: brushSize === s ? '#e5e5e5' : 'transparent', border: 'none', cursor: 'pointer' }}
-          >
-            <div style={{ width: Math.min(s + 2, 14), height: Math.min(s + 2, 14), borderRadius: '50%', background: '#404040' }} />
-          </button>
-        ))}
-
-        <div style={{ flex: 1 }} />
-
-        {/* Delete selected */}
-        {selectedId && (
-          <button
-            onClick={() => {
-              pushUndo()
-              setObjects(prev => prev.filter(o => o.id !== selectedId))
-              setSelectedId(null)
-              requestAnimationFrame(redraw)
-            }}
-            style={{ padding: 4, borderRadius: 6, border: 'none', cursor: 'pointer', background: 'transparent', display: 'flex', alignItems: 'center' }}
-            title="Delete selected"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
-          </button>
-        )}
-
-        {/* Zoom indicator */}
-        <span style={{ fontSize: 11, color: '#a3a3a3', marginRight: 4, whiteSpace: 'nowrap' }}>{zoomPct}%</span>
-
+      {/* Desktop toolbar (top) — hidden on small screens */}
+      <div className="hidden sm:block" style={{ borderBottom: '1px solid #e5e5e5' }}>
+        {toolbar}
       </div>
 
       {/* Canvas */}
@@ -763,6 +804,11 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
             </div>
           )
         })()}
+      </div>
+
+      {/* Mobile toolbar (bottom) — visible only on small screens */}
+      <div className="sm:hidden" style={{ borderTop: '1px solid #e5e5e5', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        {toolbar}
       </div>
     </div>
   )
