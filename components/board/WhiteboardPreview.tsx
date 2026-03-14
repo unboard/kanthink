@@ -47,6 +47,10 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData, onImageL
       if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
       if (obj.x + obj.width > maxX) maxX = obj.x + obj.width
       if (obj.y + obj.height > maxY) maxY = obj.y + obj.height
+    } else if (obj.type === 'emoji') {
+      if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
+      if (obj.x + obj.size > maxX) maxX = obj.x + obj.size
+      if (obj.y + obj.size > maxY) maxY = obj.y + obj.size
     }
   }
 
@@ -112,6 +116,10 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData, onImageL
         ctx.fillStyle = '#e5e5e5'
         ctx.fillRect(obj.x, obj.y, obj.width, obj.height)
       }
+    } else if (obj.type === 'emoji') {
+      ctx.font = `${obj.size}px sans-serif`
+      ctx.textBaseline = 'top'
+      ctx.fillText(obj.emoji, obj.x, obj.y)
     }
   }
   ctx.restore()
