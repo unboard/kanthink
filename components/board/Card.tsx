@@ -146,6 +146,7 @@ export function Card({ card }: CardProps) {
           bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md
           ${isDragging ? 'opacity-50 shadow-lg' : ''}
           ${card.isProcessing ? 'card-processing' : ''}
+          ${showCardMenu ? 'z-40' : ''}
         `}
       >
         {/* Cover image */}
