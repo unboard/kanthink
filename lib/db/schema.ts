@@ -172,6 +172,9 @@ export const cards = sqliteTable('cards', {
   shareToken: text('share_token'),
   shareTheme: text('share_theme').default('conversational'),
 
+  // Snooze
+  snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [
@@ -198,6 +201,9 @@ export const tasks = sqliteTable('tasks', {
 
   createdBy: text('created_by'),
   position: integer('position').notNull().default(0),
+
+  // Snooze
+  snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }),
 
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -236,6 +242,9 @@ export const instructionCards = sqliteTable('instruction_cards', {
 
   // Multi-step action sequence
   steps: text('steps', { mode: 'json' }).$type<{ action: string; targetColumnId: string; description: string; cardCount?: number }[]>(),
+
+  // Chaining: run another shroom after this one completes
+  nextInstructionId: text('next_instruction_id'),
 
   lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
   nextScheduledRun: integer('next_scheduled_run', { mode: 'timestamp' }),

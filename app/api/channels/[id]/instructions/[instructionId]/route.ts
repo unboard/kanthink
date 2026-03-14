@@ -61,6 +61,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       conversationHistory,
       steps,
       coverImageUrl,
+      nextInstructionId,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -87,6 +88,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (conversationHistory !== undefined) updates.conversationHistory = conversationHistory
     if (steps !== undefined) updates.steps = steps
     if (coverImageUrl !== undefined) updates.coverImageUrl = coverImageUrl
+    if (nextInstructionId !== undefined) updates.nextInstructionId = nextInstructionId || null
 
     // Handle isGlobalResource toggle (admin only)
     if (isGlobalResource !== undefined) {

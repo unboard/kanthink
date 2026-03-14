@@ -960,6 +960,24 @@ export function Board({ channel }: BoardProps) {
           addToast(result.message, 'info');
         }
       }
+      // Chain: trigger next shroom if this one completed successfully
+      if (!result.error && instructionCard.nextInstructionId) {
+        const nextShroom = instructionCards[instructionCard.nextInstructionId!];
+        if (nextShroom) {
+          // Depth guard: prevent chains longer than 5
+          const chainDepth = (instructionCard as InstructionCard & { _chainDepth?: number })._chainDepth ?? 0;
+          if (chainDepth < 5) {
+            addToast(`Chain: running "${nextShroom.title}"...`, 'info');
+            // Small delay to let UI settle
+            setTimeout(() => {
+              const chainedShroom = { ...nextShroom, _chainDepth: chainDepth + 1 } as InstructionCard & { _chainDepth?: number };
+              executeInstruction(chainedShroom as InstructionCard);
+            }, 500);
+          } else {
+            addToast('Chain depth limit reached (max 5)', 'warning');
+          }
+        }
+      }
     } catch (error) {
       console.error('Failed to run instruction:', error);
       if (error instanceof Error && error.name !== 'AbortError') {

@@ -110,6 +110,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       isPublic,
       shareToken,
       shareTheme,
+      snoozedUntil,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -133,6 +134,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (isPublic !== undefined) updates.isPublic = isPublic
     if (shareToken !== undefined) updates.shareToken = shareToken
     if (shareTheme !== undefined) updates.shareTheme = shareTheme
+    if (snoozedUntil !== undefined) updates.snoozedUntil = snoozedUntil ? new Date(snoozedUntil) : null
 
     await db.update(cards).set(updates).where(eq(cards.id, cardId))
 

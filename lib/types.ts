@@ -174,6 +174,7 @@ export interface InstructionCard {
   coverImageUrl?: string;                 // Cover/avatar image URL for the shroom
   conversationHistory?: ShroomChatMessage[];  // Chat history from conversational creation/editing
   steps?: ShroomStep[];                   // Multi-step action sequence (e.g. modify then move)
+  nextInstructionId?: ID;                 // Chaining: run this shroom after current one completes
 }
 
 export interface TaskNote {
@@ -204,6 +205,7 @@ export interface Task {
   // Assignment & scheduling
   assignedTo?: string[];
   dueDate?: string;
+  snoozedUntil?: string;  // ISO timestamp — task hidden from board until this time
 }
 
 // Smart snippet types for actionable AI responses
@@ -328,6 +330,7 @@ export interface Card {
   shareTheme?: string;          // Theme for public card page
   createdByInstructionId?: ID;  // For loop prevention: tracks which instruction created this card
   processedByInstructions?: Record<ID, string>;  // instructionId -> ISO timestamp of last run
+  snoozedUntil?: string;  // ISO timestamp — card hidden from board until this time
 }
 
 // ===== REVIEW QUEUE TYPES =====

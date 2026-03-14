@@ -14,6 +14,7 @@ import { AssigneeAvatars } from './AssigneeAvatars';
 import { Modal } from '@/components/ui';
 import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
+import { SnoozePicker } from './SnoozePicker';
 
 interface CardProps {
   card: CardType;
@@ -25,9 +26,12 @@ export function Card({ card }: CardProps) {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showSnoozePicker, setShowSnoozePicker] = useState(false);
   const { data: session } = useSession();
   const deleteCard = useStore((s) => s.deleteCard);
   const archiveCard = useStore((s) => s.archiveCard);
+  const updateCard = useStore((s) => s.updateCard);
+  const updateTask = useStore((s) => s.updateTask);
   const createTask = useStore((s) => s.createTask);
   const tasks = useStore((s) => s.tasks);
   const channels = useStore((s) => s.channels);
@@ -65,6 +69,15 @@ export function Card({ card }: CardProps) {
   const handleConfirmDelete = () => {
     deleteCard(card.id);
     setShowDeleteConfirm(false);
+  };
+
+  const handleSnooze = (until: string) => {
+    // Snooze the card
+    updateCard(card.id, { snoozedUntil: until });
+    // Also snooze all tasks belonging to this card
+    cardTasks.forEach((task) => {
+      updateTask(task.id, { snoozedUntil: until });
+    });
   };
 
   // Use summary for preview, fall back to first message content
@@ -124,6 +137,15 @@ export function Card({ card }: CardProps) {
         {/* Quick action buttons - positioned in content area, not over image */}
         <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10">
           <button
+            onClick={(e) => { e.stopPropagation(); setShowSnoozePicker(!showSnoozePicker); }}
+            className="p-1 rounded text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950"
+            title="Snooze card"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+          <button
             onClick={handleQuickComplete}
             className="p-1 rounded text-neutral-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
             title="Archive card"
@@ -143,8 +165,29 @@ export function Card({ card }: CardProps) {
           </button>
         </div>
 
+        {/* Snooze picker dropdown */}
+        {showSnoozePicker && (
+          <div className="absolute top-8 right-2 z-20">
+            <SnoozePicker
+              onSnooze={handleSnooze}
+              onClose={() => setShowSnoozePicker(false)}
+            />
+          </div>
+        )}
+
         {/* Clickable content area */}
         <div onClick={() => setIsCardDrawerOpen(true)}>
+          {/* Snoozed badge */}
+          {card.snoozedUntil && new Date(card.snoozedUntil) > new Date() && (
+            <div className="mb-1.5 flex items-center gap-1 text-blue-500 dark:text-blue-400">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-[10px] font-medium">
+                Snoozed until {new Date(card.snoozedUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </span>
+            </div>
+          )}
           {/* Tags - above title */}
           {(card.tags ?? []).length > 0 && (
             <div className="mb-1.5 flex flex-wrap gap-1 pr-12">

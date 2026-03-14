@@ -43,6 +43,10 @@ export async function ensureSchema() {
     `ALTER TABLE cards ADD share_theme text DEFAULT 'conversational'`,
     // Migration 0015 — Quick Save channel flag
     `ALTER TABLE channels ADD is_quick_save integer DEFAULT false`,
+    // Migration 0016 — Card & task snooze + shroom chaining
+    `ALTER TABLE cards ADD snoozed_until integer`,
+    `ALTER TABLE tasks ADD snoozed_until integer`,
+    `ALTER TABLE instruction_cards ADD next_instruction_id text`,
   ]
 
   for (const stmt of alterStatements) {

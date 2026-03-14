@@ -51,6 +51,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       cardId,
       columnId,
       position,
+      snoozedUntil,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -75,6 +76,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (cardId !== undefined) updates.cardId = cardId
     if (columnId !== undefined) updates.columnId = columnId
     if (position !== undefined) updates.position = position
+    if (snoozedUntil !== undefined) updates.snoozedUntil = snoozedUntil ? new Date(snoozedUntil) : null
 
     await db.update(tasks).set(updates).where(eq(tasks.id, taskId))
 

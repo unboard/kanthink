@@ -71,6 +71,10 @@ export function InstructionDetailDrawerV2({
   // Global resource state (admin only)
   const [isGlobalResource, setIsGlobalResource] = useState(false);
 
+  // Chain state
+  const [nextInstructionId, setNextInstructionId] = useState<string | undefined>();
+  const allInstructionCards = useStore((s) => s.instructionCards);
+
   const isSyncingRef = useRef(false);
   const instructionCardId = instructionCard?.id;
 
@@ -107,6 +111,7 @@ export function InstructionDetailDrawerV2({
       setScope(instructionCard.scope || 'channel');
       setIsGlobalResource(instructionCard.isGlobalResource || false);
       setCoverImageUrl(instructionCard.coverImageUrl);
+      setNextInstructionId(instructionCard.nextInstructionId ?? undefined);
 
       setTimeout(() => { isSyncingRef.current = false; }, 0);
     }
@@ -153,6 +158,7 @@ export function InstructionDetailDrawerV2({
       scope,
       isGlobalResource,
       coverImageUrl,
+      nextInstructionId: nextInstructionId || undefined,
     });
   };
 
@@ -720,6 +726,32 @@ export function InstructionDetailDrawerV2({
                     </p>
                   </div>
                 </label>
+
+                {/* Chain: Then run another shroom */}
+                <div>
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2 block">
+                    Then run
+                  </span>
+                  <select
+                    value={nextInstructionId || ''}
+                    onChange={(e) => {
+                      setNextInstructionId(e.target.value || undefined);
+                      setTimeout(() => handleSave(), 0);
+                    }}
+                    className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                  >
+                    <option value="">None (no chain)</option>
+                    {Object.values(allInstructionCards)
+                      .filter(ic => ic.channelId === channel.id && ic.id !== instructionCard?.id)
+                      .map(ic => (
+                        <option key={ic.id} value={ic.id}>{ic.title}</option>
+                      ))
+                    }
+                  </select>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Automatically run another shroom after this one completes (max chain depth: 5)
+                  </p>
+                </div>
 
                 {/* Admin-only: Share as Kanthink Resource */}
                 {isAdminUser && (

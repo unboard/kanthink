@@ -39,8 +39,17 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const backsideCount = backsideCards.length + backsideTasks.length;
   const completedTaskCount = (column.taskIds ?? []).filter((id) => tasks[id]?.status === 'done').length;
 
-  // Build interleaved item list from itemOrder
-  const itemOrder = column.itemOrder ?? column.cardIds;
+  // Build interleaved item list from itemOrder, filtering out snoozed items
+  const now = new Date();
+  const allItemOrder = column.itemOrder ?? column.cardIds;
+  const itemOrder = allItemOrder.filter((id) => {
+    const card = cards[id];
+    if (card?.snoozedUntil && new Date(card.snoozedUntil) > now) return false;
+    const task = tasks[id];
+    if (task?.snoozedUntil && new Date(task.snoozedUntil) > now) return false;
+    return true;
+  });
+  const snoozedCount = allItemOrder.length - itemOrder.length;
   const itemCount = itemOrder.length;
 
   const [isRenaming, setIsRenaming] = useState(false);
@@ -307,6 +316,19 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           </svg>
           Back to active
         </button>
+      )}
+
+      {/* Snoozed count indicator */}
+      {snoozedCount > 0 && !isFlipped && (
+        <div
+          className="absolute bottom-2 left-2 z-10 flex items-center gap-1 px-2 py-1 rounded-md text-xs text-blue-400 dark:text-blue-500"
+          title={`${snoozedCount} snoozed`}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>{snoozedCount}</span>
+        </div>
       )}
 
       {/* Archive entry button - only shown on front side */}
