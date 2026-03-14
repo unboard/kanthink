@@ -39,17 +39,28 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const backsideCount = backsideCards.length + backsideTasks.length;
   const completedTaskCount = (column.taskIds ?? []).filter((id) => tasks[id]?.status === 'done').length;
 
-  // Build interleaved item list from itemOrder, filtering out snoozed items
+  // Build interleaved item list from itemOrder, filtering out snoozed items and sorting pinned first
   const now = new Date();
   const allItemOrder = column.itemOrder ?? column.cardIds;
-  const itemOrder = allItemOrder.filter((id) => {
+  const filteredOrder = allItemOrder.filter((id) => {
     const card = cards[id];
     if (card?.snoozedUntil && new Date(card.snoozedUntil) > now) return false;
     const task = tasks[id];
     if (task?.snoozedUntil && new Date(task.snoozedUntil) > now) return false;
     return true;
   });
-  const snoozedCount = allItemOrder.length - itemOrder.length;
+  // Sort pinned cards to top (most recently pinned first), then unpinned in original order
+  const itemOrder = [...filteredOrder].sort((a, b) => {
+    const cardA = cards[a];
+    const cardB = cards[b];
+    const pinnedA = cardA?.pinnedAt ? new Date(cardA.pinnedAt).getTime() : 0;
+    const pinnedB = cardB?.pinnedAt ? new Date(cardB.pinnedAt).getTime() : 0;
+    if (pinnedA && !pinnedB) return -1;
+    if (!pinnedA && pinnedB) return 1;
+    if (pinnedA && pinnedB) return pinnedB - pinnedA; // Most recent pin first
+    return 0; // Preserve original order for unpinned
+  });
+  const snoozedCount = allItemOrder.length - filteredOrder.length;
   const itemCount = itemOrder.length;
 
   const [isRenaming, setIsRenaming] = useState(false);

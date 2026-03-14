@@ -175,6 +175,9 @@ export const cards = sqliteTable('cards', {
   // Snooze
   snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }),
 
+  // Pinning
+  pinnedAt: integer('pinned_at', { mode: 'timestamp' }),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [

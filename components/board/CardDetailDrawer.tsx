@@ -764,6 +764,21 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         Duplicate
                       </button>
 
+                      {/* Archive */}
+                      <button
+                        onClick={() => {
+                          archiveCard(card.id);
+                          setShowCardMenu(false);
+                          onClose();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                        </svg>
+                        Archive
+                      </button>
+
                       {/* Move to channel */}
                       <button
                         onClick={() => setShowMoveChannelPicker(true)}

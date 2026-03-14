@@ -331,6 +331,7 @@ export interface Card {
   createdByInstructionId?: ID;  // For loop prevention: tracks which instruction created this card
   processedByInstructions?: Record<ID, string>;  // instructionId -> ISO timestamp of last run
   snoozedUntil?: string;  // ISO timestamp — card hidden from board until this time
+  pinnedAt?: string;      // ISO timestamp — pinned cards sort to top of column
 }
 
 // ===== REVIEW QUEUE TYPES =====
