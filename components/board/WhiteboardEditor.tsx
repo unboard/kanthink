@@ -40,7 +40,7 @@ export interface WhiteboardData {
 interface WhiteboardEditorProps {
   isOpen: boolean
   initialData?: string
-  onSave: (dataJson: string) => void
+  onSave: (dataJson: string, snapshotDataUrl?: string) => void
   onClose: () => void
 }
 
@@ -95,8 +95,9 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     objectsRef.current = next
     setObjectsState(next)
   }, [])
-  const [undoStack, setUndoStack] = useState<CanvasObject[][]>([])
-  const [redoStack, setRedoStack] = useState<CanvasObject[][]>([])
+  const undoStackRef = useRef<CanvasObject[][]>([])
+  const redoStackRef = useRef<CanvasObject[][]>([])
+  const [, forceUndoRender] = useState(0)
 
   // Tool state
   const [activeTool, setActiveTool] = useState<'pen' | 'eraser' | 'sticky' | 'pan' | 'select'>('pen')
@@ -414,7 +415,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       width: activeTool === 'eraser' ? brushSize * 4 : brushSize,
       tool: activeTool as 'pen' | 'eraser',
     }
-    setRedoStack([])
+    redoStackRef.current = []
   }
 
   const handlePointerMove = (e: React.TouchEvent | React.MouseEvent) => {
@@ -519,24 +520,27 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   // ===== UNDO/REDO =====
 
   const pushUndo = () => {
-    setUndoStack(prev => [...prev.slice(-50), objectsRef.current])
+    undoStackRef.current = [...undoStackRef.current.slice(-50), [...objectsRef.current]]
+    forceUndoRender(n => n + 1)
   }
 
   const handleUndo = () => {
-    if (undoStack.length === 0) return
-    setRedoStack(prev => [...prev, objectsRef.current])
-    const prev = undoStack[undoStack.length - 1]
-    setUndoStack(s => s.slice(0, -1))
+    if (undoStackRef.current.length === 0) return
+    redoStackRef.current = [...redoStackRef.current, [...objectsRef.current]]
+    const prev = undoStackRef.current[undoStackRef.current.length - 1]
+    undoStackRef.current = undoStackRef.current.slice(0, -1)
     setObjects(prev)
+    forceUndoRender(n => n + 1)
     requestAnimationFrame(redraw)
   }
 
   const handleRedo = () => {
-    if (redoStack.length === 0) return
-    setUndoStack(prev => [...prev, objectsRef.current])
-    const next = redoStack[redoStack.length - 1]
-    setRedoStack(s => s.slice(0, -1))
+    if (redoStackRef.current.length === 0) return
+    undoStackRef.current = [...undoStackRef.current, [...objectsRef.current]]
+    const next = redoStackRef.current[redoStackRef.current.length - 1]
+    redoStackRef.current = redoStackRef.current.slice(0, -1)
     setObjects(next)
+    forceUndoRender(n => n + 1)
     requestAnimationFrame(redraw)
   }
 
@@ -551,13 +555,68 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   // ===== SAVE =====
 
   const handleSave = () => {
+    const objs = objectsRef.current
     const data: WhiteboardData = {
-      objects: objectsRef.current,
+      objects: objs,
       viewX: viewRef.current.x,
       viewY: viewRef.current.y,
       zoom: viewRef.current.zoom,
     }
-    onSave(JSON.stringify(data))
+
+    // Generate a snapshot image of the whiteboard content
+    let snapshotUrl: string | undefined
+    if (objs.length > 0) {
+      try {
+        const snapCanvas = document.createElement('canvas')
+        const snapW = 600, snapH = 400
+        snapCanvas.width = snapW
+        snapCanvas.height = snapH
+        const ctx = snapCanvas.getContext('2d')
+        if (ctx) {
+          ctx.fillStyle = '#f8f8f8'
+          ctx.fillRect(0, 0, snapW, snapH)
+
+          // Find bounding box
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+          for (const obj of objs) {
+            if (!obj) continue
+            if (obj.type === 'stroke') {
+              for (const p of obj.points) {
+                if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
+                if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
+              }
+            } else if (obj.type === 'sticky') {
+              if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
+              if (obj.x + obj.width > maxX) maxX = obj.x + obj.width
+              if (obj.y + obj.height > maxY) maxY = obj.y + obj.height
+            }
+          }
+
+          const cw = maxX - minX || 1
+          const ch = maxY - minY || 1
+          const pad = 20
+          const scale = Math.min((snapW - pad * 2) / cw, (snapH - pad * 2) / ch, 2)
+          const ox = pad + (snapW - pad * 2 - cw * scale) / 2
+          const oy = pad + (snapH - pad * 2 - ch * scale) / 2
+
+          ctx.save()
+          ctx.translate(ox, oy)
+          ctx.scale(scale, scale)
+          ctx.translate(-minX, -minY)
+
+          for (const obj of objs) {
+            if (!obj || !obj.type) continue
+            if (obj.type === 'stroke') drawStroke(ctx, obj)
+            else if (obj.type === 'sticky') drawSticky(ctx, obj)
+          }
+          ctx.restore()
+
+          snapshotUrl = snapCanvas.toDataURL('image/png')
+        }
+      } catch { /* snapshot is optional */ }
+    }
+
+    onSave(JSON.stringify(data), snapshotUrl)
   }
 
   if (!isOpen) return null
@@ -576,11 +635,11 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fafafa', borderBottom: '1px solid #e5e5e5', flexShrink: 0, overflowX: 'auto', position: 'relative', zIndex: 5 }}>
         {/* Undo/Redo (left side) */}
-        <button onClick={handleUndo} disabled={undoStack.length === 0} style={{ padding: 4, borderRadius: 6, border: 'none', cursor: undoStack.length > 0 ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={undoStack.length > 0 ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 0 1 15.36-6.36L21 9"/></svg>
+        <button onClick={handleUndo} disabled={undoStackRef.current.length === 0} style={{ padding: 4, borderRadius: 6, border: 'none', cursor: undoStackRef.current.length > 0 ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={undoStackRef.current.length > 0 ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 0 1 15.36-6.36L21 9"/></svg>
         </button>
-        <button onClick={handleRedo} disabled={redoStack.length === 0} style={{ padding: 4, borderRadius: 6, border: 'none', cursor: redoStack.length > 0 ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={redoStack.length > 0 ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 0 0-15.36-6.36L3 9"/></svg>
+        <button onClick={handleRedo} disabled={redoStackRef.current.length === 0} style={{ padding: 4, borderRadius: 6, border: 'none', cursor: redoStackRef.current.length > 0 ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={redoStackRef.current.length > 0 ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 0 0-15.36-6.36L3 9"/></svg>
         </button>
 
         <div style={{ width: 1, height: 20, background: '#e5e5e5', flexShrink: 0 }} />

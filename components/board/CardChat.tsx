@@ -538,14 +538,32 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       {isWhiteboardOpen && (
         <WhiteboardEditor
           isOpen={true}
-          onSave={(snapshotJson) => {
+          onSave={async (snapshotJson, snapshotDataUrl) => {
             setIsWhiteboardOpen(false);
             const author = session?.user?.id ? {
               id: session.user.id as string,
               name: (session.user.name ?? session.user.email ?? 'Unknown') as string,
               image: session.user.image as string | undefined,
             } : undefined;
-            addMessage(card.id, 'note', '', undefined, author, [{ id: nanoid(), snapshot: snapshotJson }]);
+
+            // Upload snapshot image if available
+            let imageUrls: string[] | undefined;
+            if (snapshotDataUrl) {
+              try {
+                const blob = await (await fetch(snapshotDataUrl)).blob();
+                const file = new File([blob], 'whiteboard.png', { type: 'image/png' });
+                const form = new FormData();
+                form.append('file', file);
+                form.append('cardId', card.id);
+                const res = await fetch('/api/upload-image', { method: 'POST', body: form });
+                if (res.ok) {
+                  const { url } = await res.json();
+                  imageUrls = [url];
+                }
+              } catch { /* snapshot upload is best-effort */ }
+            }
+
+            addMessage(card.id, 'note', '', imageUrls, author, [{ id: nanoid(), snapshot: snapshotJson }]);
           }}
           onClose={() => setIsWhiteboardOpen(false)}
         />

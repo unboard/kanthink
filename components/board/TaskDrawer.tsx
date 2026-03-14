@@ -725,12 +725,29 @@ export function TaskDrawer({
           {isWhiteboardOpen && (
             <WhiteboardEditor
               isOpen={true}
-              onSave={(snapshotJson) => {
+              onSave={async (snapshotJson, snapshotDataUrl) => {
                 setIsWhiteboardOpen(false);
                 const author = session?.user
                   ? { id: session.user.id!, name: session.user.name ?? 'Unknown', image: session.user.image ?? undefined }
                   : undefined;
-                addTaskNote(task.id, '', author, undefined, [{ id: nanoid(), snapshot: snapshotJson }]);
+
+                let imageUrls: string[] | undefined;
+                if (snapshotDataUrl) {
+                  try {
+                    const blob = await (await fetch(snapshotDataUrl)).blob();
+                    const file = new File([blob], 'whiteboard.png', { type: 'image/png' });
+                    const form = new FormData();
+                    form.append('file', file);
+                    form.append('cardId', task.id);
+                    const res = await fetch('/api/upload-image', { method: 'POST', body: form });
+                    if (res.ok) {
+                      const { url } = await res.json();
+                      imageUrls = [url];
+                    }
+                  } catch { /* best effort */ }
+                }
+
+                addTaskNote(task.id, '', author, imageUrls, [{ id: nanoid(), snapshot: snapshotJson }]);
               }}
               onClose={() => setIsWhiteboardOpen(false)}
             />
