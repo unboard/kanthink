@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -51,7 +51,9 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [newTaskId, setNewTaskId] = useState<ID | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
 
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
     id: `column-${column.id}`,
@@ -67,6 +69,18 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
       inputRef.current.select();
     }
   }, [isRenaming]);
+
+  // Close add menu on click outside
+  useEffect(() => {
+    if (!isAddMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setIsAddMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isAddMenuOpen]);
 
   // Auto-flip back to front when all archived cards are removed
   useEffect(() => {
@@ -222,27 +236,46 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         ) : (
           // Front side - show cards and tasks interleaved
           <>
-            {/* Add card + task buttons */}
-            <div className="flex gap-1.5">
+            {/* Add to column dropdown */}
+            <div className="relative" ref={addMenuRef}>
               <button
-                onClick={handleAddCard}
-                className="flex-1 flex items-center justify-center py-2.5 rounded-md transition-colors bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                title="Add card"
+                onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+                className="w-full flex items-center justify-center py-2.5 rounded-md transition-colors bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
               </button>
-              <button
-                onClick={handleAddTask}
-                className="flex items-center justify-center px-3 py-2.5 rounded-md transition-colors bg-white dark:bg-neutral-900 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                title="Add task"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <rect x="3" y="5" width="18" height="14" rx="2" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
-                </svg>
-              </button>
+              {isAddMenuOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+                  <button
+                    onClick={() => { setIsAddMenuOpen(false); handleAddCard(); }}
+                    className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M12 9v6" />
+                    </svg>
+                    <div>
+                      <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Card</div>
+                      <div className="text-xs text-neutral-400 dark:text-neutral-500">Holds tasks, threads, and details</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => { setIsAddMenuOpen(false); handleAddTask(); }}
+                    className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <rect x="3" y="5" width="18" height="14" rx="2" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+                    </svg>
+                    <div>
+                      <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Task</div>
+                      <div className="text-xs text-neutral-400 dark:text-neutral-500">A single to-do item</div>
+                    </div>
+                  </button>
+                </div>
+              )}
             </div>
             <SortableContext items={itemOrder} strategy={verticalListSortingStrategy}>
               {itemOrder.map((id) => {

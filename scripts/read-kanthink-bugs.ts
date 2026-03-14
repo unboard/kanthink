@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 const CHANNEL_ID = '64eQst0Zx_iYYN4QJLWw3'
 const DO_THESE_COLUMN_ID = 'nRPnpAXt9pK2w_e4Iqicm'
 const COMPLETED_COLUMN_ID = 'FaiL-RTAfoEUuyYwhLNAA'
+const RAW_IDEAS_COLUMN_ID = '5nI4LkFlS1cF8H1X4wUIV'
 const PRODUCTION_URL = 'https://www.kanthink.com'
 
 // ── Load env from .env.local ────────────────────────────────────────
@@ -145,6 +146,34 @@ async function moveCard(cardId: string) {
   console.log(`  From: ${fromColumnId} → To: ${COMPLETED_COLUMN_ID}`)
 }
 
+async function createCard(title: string, content: string, columnId: string = RAW_IDEAS_COLUMN_ID) {
+  const id = `idea-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const nowEpoch = Math.floor(Date.now() / 1000)
+
+  // Get next position in target column
+  const maxRes = await db.execute({
+    sql: 'SELECT COALESCE(MAX(position), -1) as max_pos FROM cards WHERE column_id = ? AND is_archived = 0',
+    args: [columnId],
+  })
+  const position = Number(maxRes.rows[0].max_pos) + 1
+
+  const messages: CardMessage[] = [{
+    id: `claude-${Date.now()}`,
+    type: 'ai_response',
+    content: content,
+    createdAt: new Date().toISOString(),
+  }]
+
+  await db.execute({
+    sql: `INSERT INTO cards (id, channel_id, column_id, title, messages, position, source, is_archived, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'ai', 0, ?, ?)`,
+    args: [id, CHANNEL_ID, columnId, title, JSON.stringify(messages), position, nowEpoch, nowEpoch],
+  })
+
+  console.log(`Created card "${title}" in column (${columnId})`)
+  console.log(`  ID: ${id}`)
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────
 async function main() {
   const args = process.argv.slice(2)
@@ -153,13 +182,23 @@ async function main() {
     await moveCard(args[1])
   } else if (args[0] === '--note' && args[1] && args.slice(2).length > 0) {
     await addNote(args[1], args.slice(2).join(' '))
+  } else if (args[0] === '--create' && args[1]) {
+    // --create <title> --content <content> [--column <columnId>]
+    const title = args[1]
+    const contentIdx = args.indexOf('--content')
+    const columnIdx = args.indexOf('--column')
+    const contentEnd = columnIdx > contentIdx ? columnIdx : args.length
+    const content = contentIdx !== -1 ? args.slice(contentIdx + 1, contentEnd).join(' ') : ''
+    const columnId = columnIdx !== -1 ? args[columnIdx + 1] : RAW_IDEAS_COLUMN_ID
+    await createCard(title, content, columnId)
   } else if (args.length === 0) {
     await listCards()
   } else {
     console.log('Usage:')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts                    # List cards in "Do these"')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts --move ID          # Move card to "Completed"')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts --note ID <text>   # Add a note to a card thread')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts                                    # List cards in "Do these"')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts --move ID                           # Move card to "Completed"')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts --note ID <text>                    # Add a note to a card thread')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts --create <title> --content <text>   # Create a card in Raw Ideas')
   }
 }
 
