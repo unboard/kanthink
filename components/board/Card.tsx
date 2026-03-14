@@ -32,6 +32,7 @@ export function Card({ card }: CardProps) {
   const [showSnoozeSubmenu, setShowSnoozeSubmenu] = useState(false);
   const [showMoveChannelPicker, setShowMoveChannelPicker] = useState(false);
   const [showMoveColumnPicker, setShowMoveColumnPicker] = useState(false);
+  const [showReactSubmenu, setShowReactSubmenu] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const cardMenuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -208,6 +209,7 @@ export function Card({ card }: CardProps) {
               setShowSnoozeSubmenu(false);
               setShowMoveChannelPicker(false);
               setShowMoveColumnPicker(false);
+              setShowReactSubmenu(false);
             }}
             className="p-1 rounded text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-700"
           >
@@ -218,7 +220,30 @@ export function Card({ card }: CardProps) {
 
           {showCardMenu && (
             <div className={`absolute right-0 w-52 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50 ${menuPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
-              {showSnoozeSubmenu ? (
+              {showReactSubmenu ? (
+                <div className="p-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowReactSubmenu(false); }}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 rounded mb-1"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {REACTION_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={(e) => { e.stopPropagation(); handleReaction(emoji); }}
+                        className="w-8 h-8 flex items-center justify-center rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-base"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : showSnoozeSubmenu ? (
                 <>
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowSnoozeSubmenu(false); }}
@@ -391,6 +416,14 @@ export function Card({ card }: CardProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                     </svg>
                     {isPinned ? 'Unpin' : 'Pin'}
+                  </button>
+                  {/* React */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowReactSubmenu(true); }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <span className="w-4 h-4 flex items-center justify-center text-sm">😀</span>
+                    React
                   </button>
                   <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
                   {/* Delete */}
