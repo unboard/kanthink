@@ -180,6 +180,7 @@ export interface TaskNote {
   id: ID;
   content: string;
   imageUrls?: string[];
+  whiteboards?: WhiteboardAttachment[];
   authorId?: string;
   authorName?: string;
   authorImage?: string;

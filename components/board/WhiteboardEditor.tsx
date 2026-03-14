@@ -39,26 +39,37 @@ export function WhiteboardEditor({ isOpen, initialSnapshot, onSave, onClose }: W
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col bg-black">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-neutral-900 border-b border-neutral-800">
+    <div
+      className="fixed inset-0 z-[200] flex flex-col"
+      style={{ colorScheme: 'light' }}
+    >
+      {/* Header — stays dark for contrast with app chrome */}
+      <div className="flex items-center justify-between px-4 py-3 bg-neutral-900 border-b border-neutral-800 shrink-0">
         <button
           onClick={onClose}
           className="text-sm text-neutral-400 hover:text-white transition-colors"
+          style={{ color: '#a3a3a3' }}
         >
           Cancel
         </button>
-        <span className="text-sm font-medium text-neutral-300">Whiteboard</span>
+        <span className="text-sm font-medium" style={{ color: '#d4d4d4' }}>Whiteboard</span>
         <button
           onClick={handleSave}
-          className="text-sm font-medium text-violet-400 hover:text-violet-300 transition-colors"
+          className="text-sm font-medium transition-colors"
+          style={{ color: '#a78bfa' }}
         >
           Save
         </button>
       </div>
 
-      {/* Canvas — tldraw needs a container with explicit width/height */}
-      <div className="flex-1 relative">
+      {/* Canvas — isolated from dark mode so tldraw renders correctly */}
+      <div
+        style={{
+          flex: 1,
+          position: 'relative',
+          background: '#ffffff',
+        }}
+      >
         <div style={{ position: 'absolute', inset: 0 }}>
           <Tldraw
             onMount={handleMount}

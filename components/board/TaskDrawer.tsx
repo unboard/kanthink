@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import dynamic from 'next/dynamic';
 import type { Task, TaskStatus, TaskNote, CardMessage, CardMessageType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
@@ -11,6 +12,12 @@ import { ChatMessage } from './ChatMessage';
 import { Drawer } from '@/components/ui';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
+import { nanoid } from 'nanoid';
+
+const WhiteboardEditor = dynamic(
+  () => import('./WhiteboardEditor').then(mod => ({ default: mod.WhiteboardEditor })),
+  { ssr: false }
+);
 
 /** Convert a TaskNote into the CardMessage format so we can reuse ChatMessage */
 function taskNoteToCardMessage(note: TaskNote): CardMessage {
@@ -20,6 +27,7 @@ function taskNoteToCardMessage(note: TaskNote): CardMessage {
     type: isKan ? 'ai_response' : 'note',
     content: note.content,
     imageUrls: note.imageUrls,
+    whiteboards: note.whiteboards,
     authorId: note.authorId,
     authorName: note.authorName,
     authorImage: isKan ? undefined : note.authorImage, // let ChatMessage use KanthinkIcon for Kan
@@ -74,6 +82,7 @@ export function TaskDrawer({
   const [isMovingTask, setIsMovingTask] = useState(false);
   const [isMovingToColumn, setIsMovingToColumn] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
+  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
 
   const { data: session } = useSession();
@@ -708,8 +717,24 @@ export function TaskDrawer({
               members={members}
               onKeyboardFocus={handleKeyboardFocus}
               onKeyboardBlur={handleKeyboardBlur}
+              onOpenWhiteboard={() => setIsWhiteboardOpen(true)}
             />
           </div>
+
+          {/* Whiteboard editor modal */}
+          {isWhiteboardOpen && (
+            <WhiteboardEditor
+              isOpen={true}
+              onSave={(snapshotJson) => {
+                setIsWhiteboardOpen(false);
+                const author = session?.user
+                  ? { id: session.user.id!, name: session.user.name ?? 'Unknown', image: session.user.image ?? undefined }
+                  : undefined;
+                addTaskNote(task.id, '', author, undefined, [{ id: nanoid(), snapshot: snapshotJson }]);
+              }}
+              onClose={() => setIsWhiteboardOpen(false)}
+            />
+          )}
         </div>
       </div>
 
