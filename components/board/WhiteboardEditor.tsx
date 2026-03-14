@@ -301,7 +301,9 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     const sp = getEventPoint(e)
     const ds = drawState.current
 
-    if (activeTool === 'pan') {
+    // Two-finger touch = always pan
+    const isTwoFinger = 'touches' in e && e.touches.length >= 2
+    if (activeTool === 'pan' || isTwoFinger) {
       ds.panning = true
       ds.panStart = sp
       ds.viewStart = { x: viewRef.current.x, y: viewRef.current.y }
@@ -462,14 +464,14 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   return (
     <div className="fixed inset-0 z-[200] flex flex-col" style={{ colorScheme: 'light' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#171717', borderBottom: '1px solid #262626', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#171717', borderBottom: '1px solid #262626', flexShrink: 0, position: 'relative', zIndex: 5 }}>
         <button onClick={onClose} style={{ fontSize: 14, color: '#a3a3a3', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
         <span style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Whiteboard</span>
         <button onClick={handleSave} style={{ fontSize: 14, fontWeight: 500, color: '#a78bfa', background: 'none', border: 'none', cursor: 'pointer' }}>Save</button>
       </div>
 
       {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fafafa', borderBottom: '1px solid #e5e5e5', flexShrink: 0, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fafafa', borderBottom: '1px solid #e5e5e5', flexShrink: 0, overflowX: 'auto', position: 'relative', zIndex: 5 }}>
         {/* Tools */}
         {(['pen', 'eraser', 'sticky', 'pan'] as const).map(t => (
           <button
@@ -528,9 +530,13 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         {/* Zoom indicator */}
         <span style={{ fontSize: 11, color: '#a3a3a3', marginRight: 4, whiteSpace: 'nowrap' }}>{zoomPct}%</span>
 
-        {/* Undo/Redo */}
-        <button onClick={handleUndo} disabled={undoStack.length === 0} style={{ padding: '4px 6px', borderRadius: 6, fontSize: 11, border: 'none', cursor: undoStack.length > 0 ? 'pointer' : 'default', background: 'transparent', color: undoStack.length > 0 ? '#404040' : '#d4d4d4' }}>Undo</button>
-        <button onClick={handleRedo} disabled={redoStack.length === 0} style={{ padding: '4px 6px', borderRadius: 6, fontSize: 11, border: 'none', cursor: redoStack.length > 0 ? 'pointer' : 'default', background: 'transparent', color: redoStack.length > 0 ? '#404040' : '#d4d4d4' }}>Redo</button>
+        {/* Undo/Redo icons */}
+        <button onClick={handleUndo} disabled={undoStack.length === 0} style={{ padding: 4, borderRadius: 6, border: 'none', cursor: undoStack.length > 0 ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={undoStack.length > 0 ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 0 1 15.36-6.36L21 9"/></svg>
+        </button>
+        <button onClick={handleRedo} disabled={redoStack.length === 0} style={{ padding: 4, borderRadius: 6, border: 'none', cursor: redoStack.length > 0 ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={redoStack.length > 0 ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 0 0-15.36-6.36L3 9"/></svg>
+        </button>
       </div>
 
       {/* Canvas */}
@@ -552,9 +558,14 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
           const sp = worldToScreen(editingSticky.x, editingSticky.y)
           const z = viewRef.current.zoom
           return (
-            <div style={{ position: 'absolute', left: sp.x, top: sp.y, width: editingSticky.width * z, height: editingSticky.height * z, zIndex: 10 }}>
+            <div
+              style={{ position: 'absolute', left: sp.x, top: sp.y, width: editingSticky.width * z, height: editingSticky.height * z, zIndex: 10 }}
+              onTouchStart={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               <textarea
                 autoFocus
+                ref={(el) => { if (el) setTimeout(() => el.focus(), 50); }}
                 value={editingSticky.text}
                 onChange={(e) => updateStickyText(e.target.value)}
                 onBlur={() => setEditingStickyId(null)}
