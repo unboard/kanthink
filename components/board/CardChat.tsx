@@ -546,8 +546,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
               image: session.user.image as string | undefined,
             } : undefined;
 
-            // Upload snapshot image if available
-            let imageUrls: string[] | undefined;
+            // Upload snapshot image for AI vision (stored on whiteboard, not displayed)
+            let snapshotImageUrl: string | undefined;
             if (snapshotDataUrl) {
               try {
                 const blob = await (await fetch(snapshotDataUrl)).blob();
@@ -558,12 +558,12 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
                 const res = await fetch('/api/upload-image', { method: 'POST', body: form });
                 if (res.ok) {
                   const { url } = await res.json();
-                  imageUrls = [url];
+                  snapshotImageUrl = url;
                 }
-              } catch { /* snapshot upload is best-effort */ }
+              } catch { /* best-effort */ }
             }
 
-            addMessage(card.id, 'note', '', imageUrls, author, [{ id: nanoid(), snapshot: snapshotJson }]);
+            addMessage(card.id, 'note', '', undefined, author, [{ id: nanoid(), snapshot: snapshotJson, snapshotImageUrl }]);
           }}
           onClose={() => setIsWhiteboardOpen(false)}
         />

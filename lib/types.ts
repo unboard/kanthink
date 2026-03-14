@@ -245,7 +245,8 @@ export interface MessageReaction {
 
 export interface WhiteboardAttachment {
   id: ID;
-  snapshot: string;          // Serialized tldraw editor snapshot JSON
+  snapshot: string;          // Serialized whiteboard data JSON
+  snapshotImageUrl?: string; // Uploaded PNG snapshot for AI vision (not displayed in thread)
 }
 
 export interface CardMessage {

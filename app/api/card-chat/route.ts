@@ -9,10 +9,11 @@ import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/l
 function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
   if (!whiteboards || whiteboards.length === 0) return ''
   const descs = whiteboards.map(wb => {
+    const imageRef = wb.snapshotImageUrl ? ` [Whiteboard image: ${wb.snapshotImageUrl}]` : ''
     try {
       const data = JSON.parse(wb.snapshot)
       const objs = data?.objects?.filter(Boolean) ?? []
-      if (objs.length === 0) return '[Empty whiteboard]'
+      if (objs.length === 0) return `[Empty whiteboard]${imageRef}`
       const strokes = objs.filter((o: any) => o.type === 'stroke')
       const stickies = objs.filter((o: any) => o.type === 'sticky')
       const parts: string[] = []
@@ -21,10 +22,15 @@ function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
         const notes = stickies.map((s: any) => s.text ? `"${s.text}"` : '(empty)').join(', ')
         parts.push(`sticky notes: ${notes}`)
       }
-      return `[Whiteboard: ${parts.join('; ')}]`
-    } catch { return '[Whiteboard]' }
+      return `[Whiteboard: ${parts.join('; ')}]${imageRef}`
+    } catch { return `[Whiteboard]${imageRef}` }
   })
   return '\n' + descs.join('\n')
+}
+
+function getWhiteboardImageUrls(whiteboards?: WhiteboardAttachment[]): string[] {
+  if (!whiteboards) return []
+  return whiteboards.filter(wb => wb.snapshotImageUrl).map(wb => wb.snapshotImageUrl!)
 }
 
 const ANON_COOKIE_NAME = 'kanthink_anon_id';
@@ -150,18 +156,25 @@ Rules:
   // Add previous messages as conversation history (last 10)
   const recentMessages = previousMessages.slice(-10);
   for (const msg of recentMessages) {
-    if (msg.type === 'note') {
+    if (msg.type === 'note' || msg.type === 'question') {
+      const prefix = msg.type === 'note' ? '[Note] ' : '';
       const imageRef = msg.imageUrls?.length
         ? `\n[Attached images: ${msg.imageUrls.join(', ')}]`
         : '';
       const wbRef = describeWhiteboards(msg.whiteboards);
-      messages.push({ role: 'user', content: `[Note] ${msg.content}${imageRef}${wbRef}` });
-    } else if (msg.type === 'question') {
-      const imageRef = msg.imageUrls?.length
-        ? `\n[Attached images: ${msg.imageUrls.join(', ')}]`
-        : '';
-      const wbRef = describeWhiteboards(msg.whiteboards);
-      messages.push({ role: 'user', content: `${msg.content}${imageRef}${wbRef}` });
+      const wbImages = getWhiteboardImageUrls(msg.whiteboards);
+      const allImages = [...(msg.imageUrls || []), ...wbImages];
+
+      if (allImages.length > 0) {
+        // Multimodal message with images
+        const parts: LLMContentPart[] = [
+          { type: 'text', text: `${prefix}${msg.content}${wbRef}` },
+          ...allImages.map(url => ({ type: 'image_url' as const, image_url: { url } })),
+        ];
+        messages.push({ role: 'user', content: parts });
+      } else {
+        messages.push({ role: 'user', content: `${prefix}${msg.content}${imageRef}${wbRef}` });
+      }
     } else if (msg.type === 'ai_response') {
       messages.push({ role: 'assistant', content: msg.content });
     }

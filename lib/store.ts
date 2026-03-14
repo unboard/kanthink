@@ -101,7 +101,7 @@ interface KanthinkState {
   setCardTasksHidden: (cardId: ID, hidden: boolean) => void;
 
   // Card message actions
-  addMessage: (cardId: ID, type: CardMessageType, content: string, imageUrls?: string[], author?: { id: string; name: string; image?: string }, whiteboards?: { id: string; snapshot: string }[]) => CardMessage | null;
+  addMessage: (cardId: ID, type: CardMessageType, content: string, imageUrls?: string[], author?: { id: string; name: string; image?: string }, whiteboards?: { id: string; snapshot: string; snapshotImageUrl?: string }[]) => CardMessage | null;
   addAIResponse: (cardId: ID, questionId: ID, content: string, actions?: StoredAction[]) => CardMessage | null;
   updateMessageAction: (cardId: ID, messageId: ID, actionId: string, updates: Partial<StoredAction>) => void;
   editMessage: (cardId: ID, messageId: ID, content: string) => void;
@@ -127,7 +127,7 @@ interface KanthinkState {
   unhideTask: (channelId: ID, columnId: ID, taskId: ID) => void;
 
   // Task note actions
-  addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }, imageUrls?: string[], whiteboards?: { id: string; snapshot: string }[]) => TaskNote | null;
+  addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }, imageUrls?: string[], whiteboards?: { id: string; snapshot: string; snapshotImageUrl?: string }[]) => TaskNote | null;
   editTaskNote: (taskId: ID, noteId: ID, content: string) => void;
   deleteTaskNote: (taskId: ID, noteId: ID) => void;
 

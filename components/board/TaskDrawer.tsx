@@ -731,7 +731,7 @@ export function TaskDrawer({
                   ? { id: session.user.id!, name: session.user.name ?? 'Unknown', image: session.user.image ?? undefined }
                   : undefined;
 
-                let imageUrls: string[] | undefined;
+                let snapshotImageUrl: string | undefined;
                 if (snapshotDataUrl) {
                   try {
                     const blob = await (await fetch(snapshotDataUrl)).blob();
@@ -742,12 +742,12 @@ export function TaskDrawer({
                     const res = await fetch('/api/upload-image', { method: 'POST', body: form });
                     if (res.ok) {
                       const { url } = await res.json();
-                      imageUrls = [url];
+                      snapshotImageUrl = url;
                     }
                   } catch { /* best effort */ }
                 }
 
-                addTaskNote(task.id, '', author, imageUrls, [{ id: nanoid(), snapshot: snapshotJson }]);
+                addTaskNote(task.id, '', author, undefined, [{ id: nanoid(), snapshot: snapshotJson, snapshotImageUrl }]);
               }}
               onClose={() => setIsWhiteboardOpen(false)}
             />
