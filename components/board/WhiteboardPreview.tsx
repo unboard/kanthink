@@ -15,7 +15,9 @@ interface WhiteboardPreviewProps {
   onUpdate?: (whiteboardId: string, newSnapshot: string) => void
 }
 
-function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData) {
+const thumbImageCache = new Map<string, HTMLImageElement>()
+
+function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData, onImageLoad?: () => void) {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
@@ -94,18 +96,22 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData) {
         ctx.fillText(obj.text.slice(0, 30), obj.x + 6, obj.y + 6, obj.width - 12)
       }
     } else if (obj.type === 'image') {
-      // Draw placeholder rect for images in thumbnail
-      ctx.fillStyle = '#e5e5e5'
-      ctx.fillRect(obj.x, obj.y, obj.width, obj.height)
-      ctx.strokeStyle = '#d4d4d4'
-      ctx.lineWidth = 1
-      ctx.strokeRect(obj.x, obj.y, obj.width, obj.height)
-      ctx.fillStyle = '#a3a3a3'
-      ctx.font = '10px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('IMG', obj.x + obj.width / 2, obj.y + obj.height / 2)
-      ctx.textAlign = 'start'
+      const cached = thumbImageCache.get(obj.url)
+      if (cached && cached.complete) {
+        ctx.drawImage(cached, obj.x, obj.y, obj.width, obj.height)
+      } else if (!cached) {
+        // Start loading, redraw when done
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => { thumbImageCache.set(obj.url, img); onImageLoad?.() }
+        img.src = obj.url
+        thumbImageCache.set(obj.url, img)
+        ctx.fillStyle = '#e5e5e5'
+        ctx.fillRect(obj.x, obj.y, obj.width, obj.height)
+      } else {
+        ctx.fillStyle = '#e5e5e5'
+        ctx.fillRect(obj.x, obj.y, obj.width, obj.height)
+      }
     }
   }
   ctx.restore()
@@ -121,10 +127,11 @@ export function WhiteboardPreview({ snapshotJson, whiteboardId, onUpdate }: Whit
 
   const objCount = data?.objects?.filter(Boolean)?.length ?? 0
 
+  const [thumbVersion, setThumbVersion] = useState(0)
   useEffect(() => {
     if (!canvasRef.current || !data || objCount === 0) return
-    drawThumbnail(canvasRef.current, data)
-  }, [snapshotJson, objCount, data])
+    drawThumbnail(canvasRef.current, data, () => setThumbVersion(v => v + 1))
+  }, [snapshotJson, objCount, data, thumbVersion])
 
   return (
     <>

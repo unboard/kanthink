@@ -247,24 +247,45 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
           bx = x1 - pad; by = y1 - pad; bw = x2 - x1 + pad * 2; bh = y2 - y1 + pad * 2
         }
         if (bw > 0 && bh > 0) {
+          // Selection outline
           ctx.strokeStyle = '#3b82f6'
           ctx.lineWidth = 1.5 / v.zoom
-          ctx.setLineDash([4 / v.zoom, 4 / v.zoom])
-          ctx.strokeRect(bx, by, bw, bh)
           ctx.setLineDash([])
+          ctx.strokeRect(bx, by, bw, bh)
 
-          // Corner handles
-          const hs = 6 / v.zoom
-          const corners = [
+          // Handles — corners + midpoints (tldraw style: filled blue squares)
+          const hs = 8 / v.zoom
+          const handles = [
+            // Corners
             [bx, by], [bx + bw, by], [bx, by + bh], [bx + bw, by + bh],
+            // Midpoints
+            [bx + bw / 2, by], [bx + bw / 2, by + bh],
+            [bx, by + bh / 2], [bx + bw, by + bh / 2],
           ]
-          for (const [cx, cy] of corners) {
+          for (const [cx, cy] of handles) {
             ctx.fillStyle = '#ffffff'
             ctx.fillRect(cx - hs / 2, cy - hs / 2, hs, hs)
             ctx.strokeStyle = '#3b82f6'
             ctx.lineWidth = 1.5 / v.zoom
             ctx.strokeRect(cx - hs / 2, cy - hs / 2, hs, hs)
           }
+
+          // Rotation handle (circle above top-center)
+          const rotY = by - 20 / v.zoom
+          ctx.beginPath()
+          ctx.arc(bx + bw / 2, rotY, 4 / v.zoom, 0, Math.PI * 2)
+          ctx.fillStyle = '#ffffff'
+          ctx.fill()
+          ctx.strokeStyle = '#3b82f6'
+          ctx.lineWidth = 1.5 / v.zoom
+          ctx.stroke()
+          // Line from rotation handle to top-center
+          ctx.beginPath()
+          ctx.moveTo(bx + bw / 2, rotY + 4 / v.zoom)
+          ctx.lineTo(bx + bw / 2, by)
+          ctx.strokeStyle = '#3b82f6'
+          ctx.lineWidth = 1 / v.zoom
+          ctx.stroke()
         }
       }
     }
@@ -438,17 +459,23 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     const sp = getEventPoint(e)
     const ds = drawState.current
 
-    // Two-finger touch = pinch-to-zoom + pan
+    // Two-finger touch = pinch-to-zoom + pan (using midpoint)
     const isTwoFinger = 'touches' in e && e.touches.length >= 2
     if (activeTool === 'pan' || isTwoFinger) {
       ds.panning = true
-      ds.panStart = sp
-      ds.viewStart = { x: viewRef.current.x, y: viewRef.current.y }
       if (isTwoFinger) {
         const t = (e as React.TouchEvent).touches
+        const canvas = canvasRef.current
+        const rect = canvas?.getBoundingClientRect()
+        const midX = (t[0].clientX + t[1].clientX) / 2 - (rect?.left ?? 0)
+        const midY = (t[0].clientY + t[1].clientY) / 2 - (rect?.top ?? 0)
+        ds.panStart = { x: midX, y: midY }
         ds.pinchDist = Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY)
         ds.pinchZoomStart = viewRef.current.zoom
+      } else {
+        ds.panStart = sp
       }
+      ds.viewStart = { x: viewRef.current.x, y: viewRef.current.y }
       return
     }
 
@@ -542,27 +569,32 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     const ds = drawState.current
 
     if (ds.panning && ds.panStart && ds.viewStart) {
-      viewRef.current.x = ds.viewStart.x + (sp.x - ds.panStart.x)
-      viewRef.current.y = ds.viewStart.y + (sp.y - ds.panStart.y)
-
-      // Pinch to zoom
       if ('touches' in e && (e as React.TouchEvent).touches.length >= 2 && ds.pinchDist && ds.pinchZoomStart) {
+        // Two-finger: simultaneous pan + zoom using midpoint
         const t = (e as React.TouchEvent).touches
+        const canvas = canvasRef.current
+        const rect = canvas?.getBoundingClientRect()
+        const midX = (t[0].clientX + t[1].clientX) / 2 - (rect?.left ?? 0)
+        const midY = (t[0].clientY + t[1].clientY) / 2 - (rect?.top ?? 0)
+
+        // Pan based on midpoint delta
+        const panDx = midX - ds.panStart.x
+        const panDy = midY - ds.panStart.y
+
+        // Zoom based on finger distance change
         const newDist = Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY)
         const zoomFactor = newDist / ds.pinchDist
         const newZoom = Math.max(0.1, Math.min(5, ds.pinchZoomStart * zoomFactor))
-        const midX = (t[0].clientX + t[1].clientX) / 2
-        const midY = (t[0].clientY + t[1].clientY) / 2
-        const canvas = canvasRef.current
-        if (canvas) {
-          const rect = canvas.getBoundingClientRect()
-          const mx = midX - rect.left
-          const my = midY - rect.top
-          viewRef.current.x = mx - (mx - ds.viewStart.x) * (newZoom / ds.pinchZoomStart)
-          viewRef.current.y = my - (my - ds.viewStart.y) * (newZoom / ds.pinchZoomStart)
-        }
+
+        // Apply zoom centered on midpoint, plus pan offset
+        viewRef.current.x = midX - (ds.panStart.x - ds.viewStart.x) * (newZoom / ds.pinchZoomStart) - (midX - ds.panStart.x) * (newZoom / ds.pinchZoomStart) + panDx
+        viewRef.current.y = midY - (ds.panStart.y - ds.viewStart.y) * (newZoom / ds.pinchZoomStart) - (midY - ds.panStart.y) * (newZoom / ds.pinchZoomStart) + panDy
         viewRef.current.zoom = newZoom
         forceRender(n => n + 1)
+      } else {
+        // Single finger or Pan tool: just pan
+        viewRef.current.x = ds.viewStart.x + (sp.x - ds.panStart.x)
+        viewRef.current.y = ds.viewStart.y + (sp.y - ds.panStart.y)
       }
 
       redraw()
