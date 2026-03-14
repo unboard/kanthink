@@ -242,11 +242,17 @@ export interface MessageReaction {
   userName?: string;
 }
 
+export interface WhiteboardAttachment {
+  id: ID;
+  snapshot: string;          // Serialized tldraw editor snapshot JSON
+}
+
 export interface CardMessage {
   id: ID;
   type: CardMessageType;
   content: string;           // Plain text (no HTML)
   imageUrls?: string[];      // Attached image URLs
+  whiteboards?: WhiteboardAttachment[];  // Embedded tldraw whiteboards
   authorId?: string;         // User who created the message
   authorName?: string;       // Display name at time of creation
   authorImage?: string;      // Avatar URL at time of creation

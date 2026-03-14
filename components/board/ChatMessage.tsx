@@ -13,6 +13,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SmartSnippet } from './SmartSnippet';
 import { TaskCheckbox } from './TaskCheckbox';
 import { ImageTheater } from '@/components/ui/ImageTheater';
+import { WhiteboardPreview } from './WhiteboardPreview';
 import { SpeakerButton } from '@/components/ui/SpeakerButton';
 
 interface ChatMessageProps {
@@ -481,6 +482,19 @@ export function ChatMessage({
           onClose={() => setTheaterIndex(null)}
           onNavigate={setTheaterIndex}
         />
+
+        {/* Whiteboards */}
+        {message.whiteboards && message.whiteboards.length > 0 && (
+          <div className={`space-y-2 ${message.content || imageUrls.length > 0 ? 'mt-2' : ''}`}>
+            {message.whiteboards.map((wb) => (
+              <WhiteboardPreview
+                key={wb.id}
+                whiteboardId={wb.id}
+                snapshotJson={wb.snapshot}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Reactions */}
         {onToggleReaction && (

@@ -2,12 +2,19 @@
 
 import { useRef, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import dynamic from 'next/dynamic';
 import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition, ChannelMember } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { fetchShares } from '@/lib/api/client';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
+import { nanoid } from 'nanoid';
+
+const WhiteboardEditor = dynamic(
+  () => import('./WhiteboardEditor').then(mod => ({ default: mod.WhiteboardEditor })),
+  { ssr: false }
+);
 
 interface CardChatProps {
   card: Card;
@@ -23,6 +30,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [members, setMembers] = useState<ChannelMember[]>([]);
+  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
 
   const { data: session } = useSession();
 
@@ -522,8 +530,26 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           onKeyboardFocus={handleKeyboardFocus}
           onKeyboardBlur={handleKeyboardBlur}
           members={members}
+          onOpenWhiteboard={() => setIsWhiteboardOpen(true)}
         />
       </div>
+
+      {/* Whiteboard editor modal */}
+      {isWhiteboardOpen && (
+        <WhiteboardEditor
+          isOpen={true}
+          onSave={(snapshotJson) => {
+            setIsWhiteboardOpen(false);
+            const author = session?.user?.id ? {
+              id: session.user.id as string,
+              name: (session.user.name ?? session.user.email ?? 'Unknown') as string,
+              image: session.user.image as string | undefined,
+            } : undefined;
+            addMessage(card.id, 'note', '', undefined, author, [{ id: nanoid(), snapshot: snapshotJson }]);
+          }}
+          onClose={() => setIsWhiteboardOpen(false)}
+        />
+      )}
     </div>
   );
 

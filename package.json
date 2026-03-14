@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "email": "email dev --dir lib/emails --port 3001"
+    "email": "email dev --dir lib/emails --port 3001",
+    "test": "vitest run"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",
@@ -45,6 +46,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "stripe": "^20.2.0",
+    "tldraw": "^4.4.1",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -59,6 +61,7 @@
     "eslint-config-next": "16.1.1",
     "react-email": "^5.2.9",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.0.18"
   }
 }
