@@ -1,10 +1,31 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { nanoid } from 'nanoid';
-import type { CardMessage, TagDefinition, ProposedActionType, StoredAction } from '@/lib/types';
+import type { CardMessage, TagDefinition, ProposedActionType, StoredAction, WhiteboardAttachment } from '@/lib/types';
 import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+
+function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
+  if (!whiteboards || whiteboards.length === 0) return ''
+  const descs = whiteboards.map(wb => {
+    try {
+      const data = JSON.parse(wb.snapshot)
+      const objs = data?.objects?.filter(Boolean) ?? []
+      if (objs.length === 0) return '[Empty whiteboard]'
+      const strokes = objs.filter((o: any) => o.type === 'stroke')
+      const stickies = objs.filter((o: any) => o.type === 'sticky')
+      const parts: string[] = []
+      if (strokes.length > 0) parts.push(`${strokes.length} drawing stroke${strokes.length !== 1 ? 's' : ''}`)
+      if (stickies.length > 0) {
+        const notes = stickies.map((s: any) => s.text ? `"${s.text}"` : '(empty)').join(', ')
+        parts.push(`sticky notes: ${notes}`)
+      }
+      return `[Whiteboard: ${parts.join('; ')}]`
+    } catch { return '[Whiteboard]' }
+  })
+  return '\n' + descs.join('\n')
+}
 
 const ANON_COOKIE_NAME = 'kanthink_anon_id';
 
@@ -133,12 +154,14 @@ Rules:
       const imageRef = msg.imageUrls?.length
         ? `\n[Attached images: ${msg.imageUrls.join(', ')}]`
         : '';
-      messages.push({ role: 'user', content: `[Note] ${msg.content}${imageRef}` });
+      const wbRef = describeWhiteboards(msg.whiteboards);
+      messages.push({ role: 'user', content: `[Note] ${msg.content}${imageRef}${wbRef}` });
     } else if (msg.type === 'question') {
       const imageRef = msg.imageUrls?.length
         ? `\n[Attached images: ${msg.imageUrls.join(', ')}]`
         : '';
-      messages.push({ role: 'user', content: `${msg.content}${imageRef}` });
+      const wbRef = describeWhiteboards(msg.whiteboards);
+      messages.push({ role: 'user', content: `${msg.content}${imageRef}${wbRef}` });
     } else if (msg.type === 'ai_response') {
       messages.push({ role: 'assistant', content: msg.content });
     }
