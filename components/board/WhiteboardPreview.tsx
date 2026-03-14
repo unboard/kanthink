@@ -67,8 +67,8 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData) {
       ctx.beginPath()
       ctx.lineCap = 'round'; ctx.lineJoin = 'round'
       if (obj.tool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out'
-        ctx.strokeStyle = 'rgba(0,0,0,1)'
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.strokeStyle = '#f8f8f8'
       } else {
         ctx.globalCompositeOperation = 'source-over'
         ctx.strokeStyle = obj.color

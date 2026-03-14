@@ -127,16 +127,21 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     drawing: boolean
     panning: boolean
     dragging: boolean
+    resizing: boolean
     currentStroke: StrokeObj | null
     panStart: Point | null
     viewStart: Point | null
     editingStickyId: string | null
     dragStart: Point | null
     dragObjStart: Point | null
+    resizeObjStart: { x: number; y: number; w: number; h: number } | null
+    pinchDist: number | null
+    pinchZoomStart: number | null
   }>({
-    drawing: false, panning: false, dragging: false, currentStroke: null,
+    drawing: false, panning: false, dragging: false, resizing: false, currentStroke: null,
     panStart: null, viewStart: null, editingStickyId: null,
     dragStart: null, dragObjStart: null,
+    resizeObjStart: null, pinchDist: null, pinchZoomStart: null,
   })
 
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null)
@@ -433,18 +438,39 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     const sp = getEventPoint(e)
     const ds = drawState.current
 
-    // Two-finger touch = always pan
+    // Two-finger touch = pinch-to-zoom + pan
     const isTwoFinger = 'touches' in e && e.touches.length >= 2
     if (activeTool === 'pan' || isTwoFinger) {
       ds.panning = true
       ds.panStart = sp
       ds.viewStart = { x: viewRef.current.x, y: viewRef.current.y }
+      if (isTwoFinger) {
+        const t = (e as React.TouchEvent).touches
+        ds.pinchDist = Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY)
+        ds.pinchZoomStart = viewRef.current.zoom
+      }
       return
     }
 
     if (activeTool === 'select') {
       const wp = screenToWorld(sp.x, sp.y)
-      // Hit test stickies (reverse order = top first)
+
+      // Check if touching a resize handle of the selected object
+      if (selectedId) {
+        const sel = objectsRef.current.find(o => o.id === selectedId)
+        if (sel && (sel.type === 'sticky' || sel.type === 'image')) {
+          const handleSize = 12 / viewRef.current.zoom
+          const br = { x: sel.x + sel.width, y: sel.y + sel.height }
+          if (Math.abs(wp.x - br.x) < handleSize && Math.abs(wp.y - br.y) < handleSize) {
+            ds.resizing = true
+            ds.dragStart = wp
+            ds.resizeObjStart = { x: sel.x, y: sel.y, w: sel.width, h: sel.height }
+            return
+          }
+        }
+      }
+
+      // Hit test objects (reverse order = top first)
       const hit = [...objectsRef.current].reverse().find(o => {
         if (o.type === 'sticky' || o.type === 'image') {
           return wp.x >= o.x && wp.x <= o.x + o.width && wp.y >= o.y && wp.y <= o.y + o.height
@@ -455,6 +481,11 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         return false
       })
       if (hit) {
+        // Double-tap on sticky opens text editor
+        if (hit.type === 'sticky' && hit.id === selectedId) {
+          setEditingStickyId(hit.id)
+          return
+        }
         setSelectedId(hit.id)
         ds.dragging = true
         ds.dragStart = wp
@@ -513,6 +544,39 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     if (ds.panning && ds.panStart && ds.viewStart) {
       viewRef.current.x = ds.viewStart.x + (sp.x - ds.panStart.x)
       viewRef.current.y = ds.viewStart.y + (sp.y - ds.panStart.y)
+
+      // Pinch to zoom
+      if ('touches' in e && (e as React.TouchEvent).touches.length >= 2 && ds.pinchDist && ds.pinchZoomStart) {
+        const t = (e as React.TouchEvent).touches
+        const newDist = Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY)
+        const zoomFactor = newDist / ds.pinchDist
+        const newZoom = Math.max(0.1, Math.min(5, ds.pinchZoomStart * zoomFactor))
+        const midX = (t[0].clientX + t[1].clientX) / 2
+        const midY = (t[0].clientY + t[1].clientY) / 2
+        const canvas = canvasRef.current
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect()
+          const mx = midX - rect.left
+          const my = midY - rect.top
+          viewRef.current.x = mx - (mx - ds.viewStart.x) * (newZoom / ds.pinchZoomStart)
+          viewRef.current.y = my - (my - ds.viewStart.y) * (newZoom / ds.pinchZoomStart)
+        }
+        viewRef.current.zoom = newZoom
+        forceRender(n => n + 1)
+      }
+
+      redraw()
+      return
+    }
+
+    if (ds.resizing && selectedId && ds.dragStart && ds.resizeObjStart) {
+      const wp = screenToWorld(sp.x, sp.y)
+      const dx = wp.x - ds.dragStart.x
+      const dy = wp.y - ds.dragStart.y
+      const rs = ds.resizeObjStart
+      const newW = Math.max(30, rs.w + dx)
+      const newH = Math.max(30, rs.h + dy)
+      setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, width: newW, height: newH } : o))
       redraw()
       return
     }
@@ -553,6 +617,15 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       ds.panning = false
       ds.panStart = null
       ds.viewStart = null
+      ds.pinchDist = null
+      ds.pinchZoomStart = null
+      return
+    }
+
+    if (ds.resizing) {
+      ds.resizing = false
+      ds.dragStart = null
+      ds.resizeObjStart = null
       return
     }
 
