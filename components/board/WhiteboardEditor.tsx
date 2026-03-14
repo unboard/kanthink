@@ -111,7 +111,14 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
   // Tool state
   const [activeTool, setActiveTool] = useState<'pen' | 'eraser' | 'sticky' | 'pan' | 'select'>('pen')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selectedIdRef = useRef<string | null>(null)
+  const [selectedId, setSelectedIdState] = useState<string | null>(null)
+  const redrawRef = useRef<(() => void) | null>(null)
+  const setSelectedId = useCallback((id: string | null) => {
+    selectedIdRef.current = id
+    setSelectedIdState(id)
+    requestAnimationFrame(() => redrawRef.current?.())
+  }, [])
   const [color, setColor] = useState('#1a1a1a')
   const [brushSize, setBrushSize] = useState(4)
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -231,8 +238,8 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     }
 
     // Draw selection bounding box
-    if (selectedId) {
-      const sel = objectsRef.current.find(o => o.id === selectedId)
+    if (selectedIdRef.current) {
+      const sel = objectsRef.current.find(o => o.id === selectedIdRef.current)
       if (sel) {
         let bx = 0, by = 0, bw = 0, bh = 0
         if (sel.type === 'sticky' || sel.type === 'image') {
@@ -292,6 +299,9 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
     ctx.restore()
   }, []) // No dependency on objects — reads from ref
+
+  // Keep redraw ref current for selection changes
+  redrawRef.current = redraw
 
   const drawStroke = (ctx: CanvasRenderingContext2D, s: StrokeObj, snapshotMode = false) => {
     if (s.points.length < 2) return
