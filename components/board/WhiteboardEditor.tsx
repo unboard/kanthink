@@ -57,12 +57,14 @@ export function WhiteboardEditor({ isOpen, initialSnapshot, onSave, onClose }: W
         </button>
       </div>
 
-      {/* Canvas */}
+      {/* Canvas — tldraw needs a container with explicit width/height */}
       <div className="flex-1 relative">
-        <Tldraw
-          onMount={handleMount}
-          {...(snapshot ? { snapshot: snapshot as any } : {})}
-        />
+        <div style={{ position: 'absolute', inset: 0 }}>
+          <Tldraw
+            onMount={handleMount}
+            {...(snapshot ? { snapshot: snapshot as any } : {})}
+          />
+        </div>
       </div>
     </div>
   )
