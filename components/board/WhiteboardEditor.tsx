@@ -59,13 +59,21 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Canvas state
-  const [objects, setObjects] = useState<CanvasObject[]>([])
+  // Canvas state — objects stored in ref for immediate access during drawing,
+  // plus React state for UI reactivity (save, sticky editing)
+  const objectsRef = useRef<CanvasObject[]>([])
+  const [objects, setObjectsState] = useState<CanvasObject[]>([])
+  const setObjects = useCallback((updater: CanvasObject[] | ((prev: CanvasObject[]) => CanvasObject[])) => {
+    const next = typeof updater === 'function' ? updater(objectsRef.current) : updater
+    objectsRef.current = next
+    setObjectsState(next)
+  }, [])
   const [undoStack, setUndoStack] = useState<CanvasObject[][]>([])
   const [redoStack, setRedoStack] = useState<CanvasObject[][]>([])
 
   // Tool state
-  const [activeTool, setActiveTool] = useState<'pen' | 'eraser' | 'sticky' | 'pan'>('pen')
+  const [activeTool, setActiveTool] = useState<'pen' | 'eraser' | 'sticky' | 'pan' | 'select'>('pen')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [color, setColor] = useState('#1a1a1a')
   const [brushSize, setBrushSize] = useState(4)
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -78,13 +86,17 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   const drawState = useRef<{
     drawing: boolean
     panning: boolean
+    dragging: boolean
     currentStroke: StrokeObj | null
     panStart: Point | null
     viewStart: Point | null
     editingStickyId: string | null
+    dragStart: Point | null
+    dragObjStart: Point | null
   }>({
-    drawing: false, panning: false, currentStroke: null,
+    drawing: false, panning: false, dragging: false, currentStroke: null,
     panStart: null, viewStart: null, editingStickyId: null,
+    dragStart: null, dragObjStart: null,
   })
 
   const [editingStickyId, setEditingStickyId] = useState<string | null>(null)
@@ -95,7 +107,11 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     if (!initialData) return
     try {
       const data: WhiteboardData = JSON.parse(initialData)
-      if (Array.isArray(data.objects)) setObjects(data.objects.filter(Boolean))
+      if (Array.isArray(data.objects)) {
+        const filtered = data.objects.filter(Boolean)
+        objectsRef.current = filtered
+        setObjectsState(filtered)
+      }
       if (data.viewX !== undefined) viewRef.current.x = data.viewX
       if (data.viewY !== undefined) viewRef.current.y = data.viewY
       if (data.zoom !== undefined) viewRef.current.zoom = data.zoom
@@ -152,12 +168,12 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke()
     }
 
-    // Draw objects
+    // Draw objects from ref (always current)
     ctx.save()
     ctx.translate(v.x, v.y)
     ctx.scale(v.zoom, v.zoom)
 
-    for (const obj of objects) {
+    for (const obj of objectsRef.current) {
       if (!obj || !obj.type) continue
       if (obj.type === 'stroke') drawStroke(ctx, obj)
       else if (obj.type === 'sticky') drawSticky(ctx, obj)
@@ -169,7 +185,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     }
 
     ctx.restore()
-  }, [objects])
+  }, []) // No dependency on objects — reads from ref
 
   const drawStroke = (ctx: CanvasRenderingContext2D, s: StrokeObj) => {
     if (s.points.length < 2) return
@@ -310,6 +326,34 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       return
     }
 
+    if (activeTool === 'select') {
+      const wp = screenToWorld(sp.x, sp.y)
+      // Hit test stickies (reverse order = top first)
+      const hit = [...objectsRef.current].reverse().find(o => {
+        if (o.type === 'sticky') {
+          return wp.x >= o.x && wp.x <= o.x + o.width && wp.y >= o.y && wp.y <= o.y + o.height
+        }
+        if (o.type === 'stroke' && o.points.length > 0) {
+          // Simple proximity check for strokes
+          return o.points.some(p => Math.hypot(p.x - wp.x, p.y - wp.y) < o.width * 2 + 8)
+        }
+        return false
+      })
+      if (hit) {
+        setSelectedId(hit.id)
+        ds.dragging = true
+        ds.dragStart = wp
+        if (hit.type === 'sticky') {
+          ds.dragObjStart = { x: hit.x, y: hit.y }
+        } else if (hit.type === 'stroke' && hit.points.length > 0) {
+          ds.dragObjStart = { x: hit.points[0].x, y: hit.points[0].y }
+        }
+      } else {
+        setSelectedId(null)
+      }
+      return
+    }
+
     if (activeTool === 'sticky') {
       // Check if tapping an existing sticky
       const wp = screenToWorld(sp.x, sp.y)
@@ -358,6 +402,27 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       return
     }
 
+    if (ds.dragging && selectedId && ds.dragStart && ds.dragObjStart) {
+      const wp = screenToWorld(sp.x, sp.y)
+      const dx = wp.x - ds.dragStart.x
+      const dy = wp.y - ds.dragStart.y
+      const obj = objectsRef.current.find(o => o.id === selectedId)
+      if (obj?.type === 'sticky') {
+        setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, x: ds.dragObjStart!.x + dx, y: ds.dragObjStart!.y + dy } as StickyObj : o))
+      } else if (obj?.type === 'stroke') {
+        const origFirst = ds.dragObjStart
+        const origObj = objectsRef.current.find(o => o.id === selectedId) as StrokeObj | undefined
+        if (origObj) {
+          // Move all points by the delta from first point
+          const firstDx = (ds.dragObjStart.x + dx) - origObj.points[0].x
+          const firstDy = (ds.dragObjStart.y + dy) - origObj.points[0].y
+          setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, points: (o as StrokeObj).points.map(p => ({ x: p.x + firstDx, y: p.y + firstDy })) } as StrokeObj : o))
+        }
+      }
+      redraw()
+      return
+    }
+
     if (ds.drawing && ds.currentStroke) {
       const wp = screenToWorld(sp.x, sp.y)
       ds.currentStroke.points.push(wp)
@@ -376,6 +441,13 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       return
     }
 
+    if (ds.dragging) {
+      ds.dragging = false
+      ds.dragStart = null
+      ds.dragObjStart = null
+      return
+    }
+
     if (ds.drawing && ds.currentStroke) {
       if (ds.currentStroke.points.length > 1) {
         pushUndo()
@@ -383,6 +455,8 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       }
       ds.drawing = false
       ds.currentStroke = null
+      // Immediate redraw to show persisted stroke
+      requestAnimationFrame(redraw)
     }
   }
 
@@ -418,23 +492,25 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   // ===== UNDO/REDO =====
 
   const pushUndo = () => {
-    setUndoStack(prev => [...prev.slice(-50), objects])
+    setUndoStack(prev => [...prev.slice(-50), objectsRef.current])
   }
 
   const handleUndo = () => {
     if (undoStack.length === 0) return
-    setRedoStack(prev => [...prev, objects])
+    setRedoStack(prev => [...prev, objectsRef.current])
     const prev = undoStack[undoStack.length - 1]
     setUndoStack(s => s.slice(0, -1))
     setObjects(prev)
+    requestAnimationFrame(redraw)
   }
 
   const handleRedo = () => {
     if (redoStack.length === 0) return
-    setUndoStack(prev => [...prev, objects])
+    setUndoStack(prev => [...prev, objectsRef.current])
     const next = redoStack[redoStack.length - 1]
     setRedoStack(s => s.slice(0, -1))
     setObjects(next)
+    requestAnimationFrame(redraw)
   }
 
   // ===== STICKY EDITING =====
@@ -449,7 +525,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
   const handleSave = () => {
     const data: WhiteboardData = {
-      objects,
+      objects: objectsRef.current,
       viewX: viewRef.current.x,
       viewY: viewRef.current.y,
       zoom: viewRef.current.zoom,
@@ -473,7 +549,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#fafafa', borderBottom: '1px solid #e5e5e5', flexShrink: 0, overflowX: 'auto', position: 'relative', zIndex: 5 }}>
         {/* Tools */}
-        {(['pen', 'eraser', 'sticky', 'pan'] as const).map(t => (
+        {(['select', 'pen', 'eraser', 'sticky', 'pan'] as const).map(t => (
           <button
             key={t}
             onClick={() => { setActiveTool(t); setShowColorPicker(false); setEditingStickyId(null); }}
@@ -484,7 +560,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
               color: '#404040', whiteSpace: 'nowrap',
             }}
           >
-            {t === 'pen' ? 'Pen' : t === 'eraser' ? 'Eraser' : t === 'sticky' ? 'Sticky' : 'Pan'}
+            {t === 'select' ? 'Select' : t === 'pen' ? 'Pen' : t === 'eraser' ? 'Eraser' : t === 'sticky' ? 'Sticky' : 'Pan'}
           </button>
         ))}
 
@@ -527,6 +603,22 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
         <div style={{ flex: 1 }} />
 
+        {/* Delete selected */}
+        {selectedId && (
+          <button
+            onClick={() => {
+              pushUndo()
+              setObjects(prev => prev.filter(o => o.id !== selectedId))
+              setSelectedId(null)
+              requestAnimationFrame(redraw)
+            }}
+            style={{ padding: 4, borderRadius: 6, border: 'none', cursor: 'pointer', background: 'transparent', display: 'flex', alignItems: 'center' }}
+            title="Delete selected"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
+          </button>
+        )}
+
         {/* Zoom indicator */}
         <span style={{ fontSize: 11, color: '#a3a3a3', marginRight: 4, whiteSpace: 'nowrap' }}>{zoomPct}%</span>
 
@@ -550,7 +642,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
           onTouchStart={handlePointerDown}
           onTouchMove={handlePointerMove}
           onTouchEnd={handlePointerUp}
-          style={{ position: 'absolute', inset: 0, cursor: activeTool === 'pan' ? 'grab' : activeTool === 'eraser' ? 'cell' : activeTool === 'sticky' ? 'crosshair' : 'crosshair' }}
+          style={{ position: 'absolute', inset: 0, cursor: activeTool === 'pan' ? 'grab' : activeTool === 'eraser' ? 'cell' : activeTool === 'select' ? 'default' : 'crosshair' }}
         />
 
         {/* Sticky note text editor overlay */}
