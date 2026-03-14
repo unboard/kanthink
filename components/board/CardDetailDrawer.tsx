@@ -166,6 +166,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const createTask = useStore((s) => s.createTask);
   const createCard = useStore((s) => s.createCard);
   const moveCard = useStore((s) => s.moveCard);
+  const moveCardToChannel = useStore((s) => s.moveCardToChannel);
   const { members } = useChannelMembers(card?.channelId);
 
   const [showCardMenu, setShowCardMenu] = useState(false);
@@ -685,9 +686,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                             <button
                               key={ch.id}
                               onClick={() => {
-                                // Create a new card in the target channel's first column
-                                createCard(ch.id, targetCol.id, { title: card.title, initialMessage: card.messages?.[0]?.content || undefined });
-                                deleteCard(card.id);
+                                // Move card to target channel preserving all data
+                                moveCardToChannel(card.id, ch.id, targetCol.id);
                                 setShowCardMenu(false);
                                 setShowMoveChannelPicker(false);
                                 onClose();

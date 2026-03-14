@@ -95,6 +95,7 @@ interface KanthinkState {
   deleteAllCardsInColumn: (channelId: ID, columnId: ID) => void;
   sortColumnCards: (channelId: ID, columnId: ID, sortedCardIds: ID[]) => void;
   moveCard: (cardId: ID, toColumnId: ID, toIndex: number) => void;
+  moveCardToChannel: (cardId: ID, targetChannelId: ID, targetColumnId: ID) => Card | null;
   archiveCard: (cardId: ID) => void;
   unarchiveCard: (cardId: ID) => void;
   setCardTasksHidden: (cardId: ID, hidden: boolean) => void;
@@ -1333,6 +1334,111 @@ export const useStore = create<KanthinkState>()(
             toIndex,
           });
         }
+      },
+
+      moveCardToChannel: (cardId, targetChannelId, targetColumnId) => {
+        const state = get();
+        const oldCard = state.cards[cardId];
+        if (!oldCard) return null;
+
+        const sourceChannelId = oldCard.channelId;
+        const newCardId = nanoid();
+        const timestamp = now();
+
+        // Clone the card with new id and channel, preserving all data
+        const newCard: Card = {
+          ...oldCard,
+          id: newCardId,
+          channelId: targetChannelId,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+        // Move associated tasks to the new card/channel
+        const cardTasks = Object.values(state.tasks).filter(t => t.cardId === cardId);
+
+        set((s) => {
+          // Remove card from source channel columns
+          const sourceChannel = s.channels[sourceChannelId];
+          const targetChannel = s.channels[targetChannelId];
+          if (!sourceChannel || !targetChannel) return s;
+
+          const updatedSourceColumns = sourceChannel.columns.map((col) => ({
+            ...col,
+            cardIds: col.cardIds.filter((id) => id !== cardId),
+            itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== cardId),
+          }));
+
+          // Add card to target channel's first column (at top)
+          const updatedTargetColumns = targetChannel.columns.map((col) => {
+            if (col.id === targetColumnId) {
+              return {
+                ...col,
+                cardIds: [newCardId, ...col.cardIds],
+                itemOrder: [newCardId, ...(col.itemOrder ?? col.cardIds)],
+              };
+            }
+            return col;
+          });
+
+          // Update tasks to point to new card and channel
+          const updatedTasks = { ...s.tasks };
+          for (const task of cardTasks) {
+            updatedTasks[task.id] = {
+              ...task,
+              cardId: newCardId,
+              channelId: targetChannelId,
+              updatedAt: timestamp,
+            };
+          }
+
+          // Remove old card, add new card
+          const updatedCards = { ...s.cards };
+          delete updatedCards[cardId];
+          updatedCards[newCardId] = newCard;
+
+          return {
+            cards: updatedCards,
+            tasks: updatedTasks,
+            channels: {
+              ...s.channels,
+              [sourceChannelId]: { ...sourceChannel, columns: updatedSourceColumns, updatedAt: timestamp },
+              [targetChannelId]: { ...targetChannel, columns: updatedTargetColumns, updatedAt: timestamp },
+            },
+          };
+        });
+
+        // Sync: delete old card, create new in target channel, then update with full data
+        sync.syncCardDelete(sourceChannelId, cardId);
+        const finalState = get();
+        const createdCard = finalState.cards[newCardId];
+        if (createdCard) {
+          // Create the card on server (basic data)
+          sync.syncCardCreate(targetChannelId, newCardId, {
+            columnId: targetColumnId,
+            title: createdCard.title,
+            initialMessage: createdCard.messages?.[0]?.content,
+            source: createdCard.source,
+          });
+          // Then push full card data (all messages, tags, properties, etc.)
+          sync.syncCardUpdate(targetChannelId, newCardId, {
+            messages: createdCard.messages,
+            tags: createdCard.tags,
+            properties: createdCard.properties,
+            summary: createdCard.summary,
+            assignedTo: createdCard.assignedTo,
+            coverImageUrl: createdCard.coverImageUrl,
+          });
+          // Sync task updates
+          for (const task of cardTasks) {
+            sync.syncTaskUpdate(targetChannelId, task.id, {
+              cardId: newCardId,
+              channelId: targetChannelId,
+            });
+          }
+        }
+
+        return createdCard ?? null;
       },
 
       archiveCard: (cardId) => {
