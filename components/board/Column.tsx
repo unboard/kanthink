@@ -31,6 +31,8 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const createCard = useStore((s) => s.createCard);
   const createColumnTask = useStore((s) => s.createColumnTask);
   const hideCompletedTasks = useStore((s) => s.hideCompletedTasks);
+  const updateCard = useStore((s) => s.updateCard);
+  const updateTask = useStore((s) => s.updateTask);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
 
   const columnCards = column.cardIds.map((id) => cards[id]).filter(Boolean);
@@ -65,6 +67,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
 
   const [isRenaming, setIsRenaming] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [showSnoozed, setShowSnoozed] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [newCardId, setNewCardId] = useState<ID | null>(null);
@@ -331,14 +334,63 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
 
       {/* Snoozed count indicator */}
       {snoozedCount > 0 && !isFlipped && (
-        <div
-          className="absolute bottom-2 left-2 z-10 flex items-center gap-1 px-2 py-1 rounded-md text-xs text-blue-400 dark:text-blue-500"
-          title={`${snoozedCount} snoozed`}
+        <button
+          onClick={() => setShowSnoozed(!showSnoozed)}
+          className="absolute bottom-2 left-2 z-10 flex items-center gap-1 px-2 py-1 rounded-md text-xs text-blue-400 dark:text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+          title={`${snoozedCount} snoozed — click to view`}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <span>{snoozedCount}</span>
+        </button>
+      )}
+
+      {/* Snoozed items overlay */}
+      {showSnoozed && snoozedCount > 0 && (
+        <div className="absolute bottom-10 left-2 right-2 z-20 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 max-h-60 overflow-y-auto">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-200 dark:border-neutral-700">
+            <span className="text-xs font-medium text-neutral-500">Snoozed ({snoozedCount})</span>
+            <button onClick={() => setShowSnoozed(false)} className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          {allItemOrder.filter((id) => {
+            const card = cards[id];
+            if (card?.snoozedUntil && new Date(card.snoozedUntil) > now) return true;
+            const task = tasks[id];
+            if (task?.snoozedUntil && new Date(task.snoozedUntil) > now) return true;
+            return false;
+          }).map((id) => {
+            const card = cards[id];
+            const task = tasks[id];
+            const item = card || task;
+            if (!item) return null;
+            const snoozedUntil = card?.snoozedUntil || task?.snoozedUntil;
+            return (
+              <div key={id} className="px-3 py-2 border-b border-neutral-100 dark:border-neutral-700/50 last:border-b-0">
+                <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate">
+                  {card?.title || task?.title}
+                </div>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-[10px] text-blue-400">
+                    Until {snoozedUntil ? new Date(snoozedUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (card) updateCard(card.id, { snoozedUntil: '' });
+                      if (task) updateTask(task.id, { snoozedUntil: '' });
+                    }}
+                    className="text-[10px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                  >
+                    Unsnooze
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

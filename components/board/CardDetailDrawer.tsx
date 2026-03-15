@@ -812,7 +812,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                       {/* Pin/Unpin */}
                       <button
                         onClick={() => {
-                          updateCard(card.id, { pinnedAt: card.pinnedAt ? undefined : new Date().toISOString() });
+                          updateCard(card.id, { pinnedAt: card.pinnedAt ? '' : new Date().toISOString() });
                           setShowCardMenu(false);
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
@@ -826,22 +826,22 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                       {/* React */}
                       <button
                         onClick={() => {
+                          setShowCardMenu(false);
                           const userId = session?.user?.id;
-                          if (!userId) return;
-                          const reactions = [...(card.reactions ?? [])];
-                          const existing = reactions.find((r) => r.emoji === '👍');
+                          if (!userId || !card) return;
+                          const currentReactions = card.reactions ? JSON.parse(JSON.stringify(card.reactions)) : [];
+                          const existing = currentReactions.find((r: { emoji: string }) => r.emoji === '👍');
                           if (existing) {
                             if (existing.userIds.includes(userId)) {
-                              existing.userIds = existing.userIds.filter((id) => id !== userId);
-                              if (existing.userIds.length === 0) reactions.splice(reactions.indexOf(existing), 1);
+                              existing.userIds = existing.userIds.filter((id: string) => id !== userId);
+                              if (existing.userIds.length === 0) currentReactions.splice(currentReactions.indexOf(existing), 1);
                             } else {
                               existing.userIds.push(userId);
                             }
                           } else {
-                            reactions.push({ emoji: '👍', userIds: [userId] });
+                            currentReactions.push({ emoji: '👍', userIds: [userId] });
                           }
-                          updateCard(card.id, { reactions });
-                          setShowCardMenu(false);
+                          updateCard(card.id, { reactions: currentReactions });
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
                       >

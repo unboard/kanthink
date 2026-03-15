@@ -97,7 +97,7 @@ export function Card({ card }: CardProps) {
   };
 
   const handlePin = () => {
-    updateCard(card.id, { pinnedAt: card.pinnedAt ? undefined : new Date().toISOString() });
+    updateCard(card.id, { pinnedAt: card.pinnedAt ? '' : new Date().toISOString() });
     setShowCardMenu(false);
   };
 
