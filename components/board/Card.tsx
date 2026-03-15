@@ -111,7 +111,7 @@ export function Card({ card }: CardProps) {
 
   const isPinned = !!card.pinnedAt;
 
-  const REACTION_EMOJIS = ['👍', '❤️', '🔥', '👀', '✅', '🤔', '👏', '🚀'];
+  const REACTION_EMOJIS = ['👍', '👎', '❤️', '🔥', '👀', '✅', '🤔', '👏', '🚀', '🎉', '💡', '🍄', '😂'];
   const [showReactionPicker, setShowReactionPicker] = useState(false);
 
   const handleReaction = (emoji: string) => {
@@ -413,7 +413,7 @@ export function Card({ card }: CardProps) {
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
                   >
                     <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 4.5l-4 4 1 4-6 6v-5l4-6 4-1 4.5 1.5L21 6l-2.5-2.5L15 4.5z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 2h10l-2 5h3l-4 8v5h-4v-5L6 7h3L7 2z" />
                     </svg>
                     {isPinned ? 'Unpin' : 'Pin'}
                   </button>
@@ -449,7 +449,7 @@ export function Card({ card }: CardProps) {
             <div className="mb-1.5">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
                 <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 4.5l-4 4 1 4-6 6v-5l4-6 4-1 4.5 1.5L21 6l-2.5-2.5L15 4.5z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 2h10l-2 5h3l-4 8v5h-4v-5L6 7h3L7 2z" />
                 </svg>
                 Pinned
               </span>

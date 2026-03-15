@@ -818,9 +818,35 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
                       >
                         <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 4.5l-4 4 1 4-6 6v-5l4-6 4-1 4.5 1.5L21 6l-2.5-2.5L15 4.5z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 2h10l-2 5h3l-4 8v5h-4v-5L6 7h3L7 2z" />
                         </svg>
                         {card.pinnedAt ? 'Unpin' : 'Pin'}
+                      </button>
+
+                      {/* React */}
+                      <button
+                        onClick={() => {
+                          const userId = session?.user?.id;
+                          if (!userId) return;
+                          const reactions = [...(card.reactions ?? [])];
+                          const existing = reactions.find((r) => r.emoji === '👍');
+                          if (existing) {
+                            if (existing.userIds.includes(userId)) {
+                              existing.userIds = existing.userIds.filter((id) => id !== userId);
+                              if (existing.userIds.length === 0) reactions.splice(reactions.indexOf(existing), 1);
+                            } else {
+                              existing.userIds.push(userId);
+                            }
+                          } else {
+                            reactions.push({ emoji: '👍', userIds: [userId] });
+                          }
+                          updateCard(card.id, { reactions });
+                          setShowCardMenu(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <span className="w-4 h-4 flex items-center justify-center text-sm">👍</span>
+                        React
                       </button>
 
                       {/* Archive */}
