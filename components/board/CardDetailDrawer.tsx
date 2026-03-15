@@ -111,8 +111,7 @@ interface PollDetailViewProps {
 function PollDetailView({ card, isCreator, userId, channelName, channelDescription, tagDefinitions }: PollDetailViewProps) {
   const updateCard = useStore((s) => s.updateCard);
   const [newOptionText, setNewOptionText] = useState('');
-  const [isEditingQuestion, setIsEditingQuestion] = useState(false);
-  const [editedQuestion, setEditedQuestion] = useState('');
+  const { members } = useChannelMembers(card.channelId);
 
   const data = (card.typeData as unknown as PollTypeData) || {
     question: card.title,
@@ -164,14 +163,6 @@ function PollDetailView({ card, isCreator, userId, channelName, channelDescripti
   const handleRemoveOption = (optionId: string) => {
     if (data.options.length <= 2) return;
     updatePollData({ options: data.options.filter(o => o.id !== optionId) });
-  };
-
-  const handleSaveQuestion = () => {
-    if (editedQuestion.trim()) {
-      updatePollData({ question: editedQuestion.trim() });
-      updateCard(card.id, { title: editedQuestion.trim() });
-    }
-    setIsEditingQuestion(false);
   };
 
   const handleToggleClosed = () => {
@@ -326,17 +317,54 @@ function PollDetailView({ card, isCreator, userId, channelName, channelDescripti
           </div>
         )}
 
-        {/* Thread Section */}
-        <div className="border-t border-neutral-100 dark:border-neutral-800">
-          <div className="flex-1 min-h-0 flex flex-col" style={{ height: '400px' }}>
-            <CardChat
-              card={card}
-              channelName={channelName}
-              channelDescription={channelDescription}
-              tagDefinitions={tagDefinitions}
-            />
+        {/* Voter Results Table (creator only) */}
+        {isCreator && totalVotes > 0 && (
+          <div className="px-4 pb-4 border-t border-neutral-100 dark:border-neutral-800 pt-3">
+            <h4 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-3">Responses</h4>
+            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-neutral-50 dark:bg-neutral-800">
+                    <th className="text-left px-3 py-2 font-medium text-neutral-500">Voter</th>
+                    <th className="text-left px-3 py-2 font-medium text-neutral-500">Choice</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                  {data.options.flatMap(opt =>
+                    opt.voterIds.map(voterId => {
+                      const member = members.find(m => m.id === voterId);
+                      return (
+                        <tr key={`${opt.id}-${voterId}`}>
+                          <td className="px-3 py-2 text-neutral-700 dark:text-neutral-300">
+                            <div className="flex items-center gap-2">
+                              {member?.image ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={member.image} alt="" className="w-5 h-5 rounded-full" />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-[8px] font-medium text-neutral-500">
+                                  {(member?.name || 'U')[0].toUpperCase()}
+                                </div>
+                              )}
+                              <span>{member?.name || member?.email || 'Unknown'}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300">
+                              {opt.text}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-2 text-[10px] text-neutral-400">
+              {totalVotes} {totalVotes === 1 ? 'response' : 'responses'} · Created {new Date(card.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
