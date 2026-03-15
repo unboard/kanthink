@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import type { CalendarTypeData, PollTypeData } from '@/lib/types';
 
 interface WidgetPickerProps {
@@ -112,7 +113,7 @@ function CalendarSettings({ onCreate }: { onCreate: (title: string, data: Calend
   );
 }
 
-function PollSettings({ onCreate }: { onCreate: (title: string, data: PollTypeData) => void }) {
+function PollSettings({ onCreate, creatorId }: { onCreate: (title: string, data: PollTypeData) => void; creatorId?: string }) {
   const [question, setQuestion] = useState('');
   const [options, setOptions] = useState(['', '']);
 
@@ -186,6 +187,7 @@ function PollSettings({ onCreate }: { onCreate: (title: string, data: PollTypeDa
               voterIds: [],
             })),
             closed: false,
+            creatorId,
           });
         }}
         disabled={!question.trim() || options.filter(o => o.trim()).length < 2}
@@ -198,6 +200,7 @@ function PollSettings({ onCreate }: { onCreate: (title: string, data: PollTypeDa
 }
 
 export function WidgetPicker({ isOpen, onClose, onCreateWidget }: WidgetPickerProps) {
+  const { data: session } = useSession();
   const [selectedWidget, setSelectedWidget] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -257,7 +260,7 @@ export function WidgetPicker({ isOpen, onClose, onCreateWidget }: WidgetPickerPr
               onClose();
             }} />
           ) : selectedWidget === 'poll' ? (
-            <PollSettings onCreate={(title, data) => {
+            <PollSettings creatorId={session?.user?.id} onCreate={(title, data) => {
               onCreateWidget('poll', title, data as unknown as Record<string, unknown>);
               setSelectedWidget(null);
               onClose();

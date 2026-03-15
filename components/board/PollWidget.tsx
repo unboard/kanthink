@@ -19,15 +19,14 @@ export function PollWidget({ card }: PollWidgetProps) {
     closed: false,
   };
 
+  const isCreator = userId === data.creatorId;
   const totalVotes = data.options.reduce((sum, opt) => sum + opt.voterIds.length, 0);
-  const maxVotes = Math.max(...data.options.map(o => o.voterIds.length), 1);
 
   const handleVote = (optionId: string) => {
     if (!userId || data.closed) return;
 
     const updatedOptions = data.options.map(opt => {
       if (opt.id === optionId) {
-        // Toggle vote
         const hasVoted = opt.voterIds.includes(userId);
         return {
           ...opt,
@@ -36,7 +35,6 @@ export function PollWidget({ card }: PollWidgetProps) {
             : [...opt.voterIds, userId],
         };
       }
-      // Remove vote from other options (single-choice)
       return {
         ...opt,
         voterIds: opt.voterIds.filter(id => id !== userId),
@@ -56,7 +54,7 @@ export function PollWidget({ card }: PollWidgetProps) {
     <div className="bg-white dark:bg-neutral-900 rounded-md shadow-sm p-3">
       {/* Question */}
       <h4 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 mb-3">
-        📊 {data.question}
+        {data.question}
       </h4>
 
       {/* Options */}
@@ -64,7 +62,6 @@ export function PollWidget({ card }: PollWidgetProps) {
         {data.options.map((opt) => {
           const votes = opt.voterIds.length;
           const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
-          const isLeading = votes === maxVotes && votes > 0;
           const isUserVote = opt.id === userVotedOption;
 
           return (
@@ -81,13 +78,13 @@ export function PollWidget({ card }: PollWidgetProps) {
                 ${data.closed ? 'cursor-default' : 'cursor-pointer'}
               `}
             >
-              {/* Progress bar background */}
-              <div
-                className={`absolute inset-0 transition-all ${
-                  isLeading ? 'bg-violet-100 dark:bg-violet-900/20' : 'bg-neutral-100 dark:bg-neutral-800'
-                }`}
-                style={{ width: `${percentage}%` }}
-              />
+              {/* Progress bar — only visible to creator */}
+              {isCreator && (
+                <div
+                  className="absolute inset-0 bg-violet-100 dark:bg-violet-900/20 transition-all"
+                  style={{ width: `${percentage}%` }}
+                />
+              )}
 
               {/* Content */}
               <div className="relative flex items-center justify-between px-3 py-2">
@@ -101,9 +98,12 @@ export function PollWidget({ card }: PollWidgetProps) {
                     {opt.text}
                   </span>
                 </div>
-                <span className="text-[10px] text-neutral-400 flex-shrink-0 ml-2">
-                  {votes} {votes === 1 ? 'vote' : 'votes'} · {percentage}%
-                </span>
+                {/* Only creator sees vote counts */}
+                {isCreator && (
+                  <span className="text-[10px] text-neutral-400 flex-shrink-0 ml-2">
+                    {votes} · {percentage}%
+                  </span>
+                )}
               </div>
             </button>
           );
@@ -112,11 +112,17 @@ export function PollWidget({ card }: PollWidgetProps) {
 
       {/* Footer */}
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-[10px] text-neutral-400">
-          {totalVotes} total {totalVotes === 1 ? 'vote' : 'votes'}
-        </span>
+        {isCreator ? (
+          <span className="text-[10px] text-neutral-400">
+            {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
+          </span>
+        ) : (
+          <span className="text-[10px] text-neutral-400">
+            {userVotedOption ? 'You voted' : 'Tap to vote'}
+          </span>
+        )}
         {data.closed && (
-          <span className="text-[10px] text-neutral-400 font-medium">Poll closed</span>
+          <span className="text-[10px] text-neutral-400 font-medium">Closed</span>
         )}
       </div>
     </div>

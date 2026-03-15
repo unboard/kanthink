@@ -103,6 +103,7 @@ function TableView({ data, onUpdateItems }: { data: CalendarTypeData; onUpdateIt
   const dayItems = data.dayItems || {};
   const [addingDay, setAddingDay] = useState<string | null>(null);
   const [newItemText, setNewItemText] = useState('');
+  const [addingType, setAddingType] = useState<'card' | 'task' | null>(null);
 
   const days: { date: number; dayName: string; dateKey: string; isWeekend: boolean }[] = [];
   for (let d = 1; d <= daysInMonth; d++) {
@@ -169,20 +170,45 @@ function TableView({ data, onUpdateItems }: { data: CalendarTypeData; onUpdateIt
                 </div>
               ))}
               {addingDay === dateKey ? (
-                <div className="flex gap-1">
-                  <input
-                    type="text"
-                    value={newItemText}
-                    onChange={(e) => setNewItemText(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') addItem(dateKey); if (e.key === 'Escape') setAddingDay(null); }}
-                    placeholder="Add item..."
-                    className="flex-1 text-[10px] bg-transparent border-b border-neutral-200 dark:border-neutral-700 focus:outline-none focus:border-violet-500 py-0.5"
-                    autoFocus
-                  />
+                <div className="space-y-1">
+                  {addingType === null ? (
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setAddingType('card')}
+                        className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 hover:bg-violet-100 dark:hover:bg-violet-900/20 hover:text-violet-600"
+                      >
+                        + Card
+                      </button>
+                      <button
+                        onClick={() => setAddingType('task')}
+                        className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400 hover:bg-violet-100 dark:hover:bg-violet-900/20 hover:text-violet-600"
+                      >
+                        + Task
+                      </button>
+                      <button
+                        onClick={() => { setAddingDay(null); setAddingType(null); }}
+                        className="text-[9px] text-neutral-300 dark:text-neutral-600"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        value={newItemText}
+                        onChange={(e) => setNewItemText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { addItem(dateKey); setAddingType(null); } if (e.key === 'Escape') { setAddingDay(null); setAddingType(null); } }}
+                        placeholder={addingType === 'card' ? 'Card title...' : 'Task title...'}
+                        className="flex-1 text-[10px] bg-transparent border-b border-neutral-200 dark:border-neutral-700 focus:outline-none focus:border-violet-500 py-0.5"
+                        autoFocus
+                      />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <button
-                  onClick={() => { setAddingDay(dateKey); setNewItemText(''); }}
+                  onClick={() => { setAddingDay(dateKey); setNewItemText(''); setAddingType(null); }}
                   className="text-[9px] text-neutral-300 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400"
                 >
                   +

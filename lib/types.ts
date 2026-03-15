@@ -356,6 +356,7 @@ export interface PollTypeData {
     voterIds: string[];
   }>;
   closed?: boolean;
+  creatorId?: string;
 }
 
 // ===== REVIEW QUEUE TYPES =====
