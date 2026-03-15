@@ -191,6 +191,16 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
+        {/* Pinned header */}
+        {isPinned && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 border-b border-neutral-200/50 dark:border-neutral-700/50">
+            <svg className="w-3 h-3 text-neutral-400" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Pinned</span>
+          </div>
+        )}
+
         {/* Card content with padding */}
         <div className="relative p-3">
         {/* 3-dot menu button */}
@@ -473,13 +483,8 @@ export function Card({ card }: CardProps) {
             </div>
           )}
 
-          <h4 className="text-sm font-medium text-neutral-900 dark:text-white pr-6 flex items-center gap-1">
-            {isPinned && (
-              <svg className="w-3 h-3 text-neutral-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-              </svg>
-            )}
-            <span className="truncate">{card.title}</span>
+          <h4 className="text-sm font-medium text-neutral-900 dark:text-white pr-6">
+            {card.title}
           </h4>
           {contentPreview && (
             <p className="mt-1 text-xs text-neutral-500 line-clamp-2">

@@ -791,6 +791,38 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         Duplicate
                       </button>
 
+                      {/* Snooze */}
+                      <button
+                        onClick={() => {
+                          const tomorrow = new Date();
+                          tomorrow.setDate(tomorrow.getDate() + 1);
+                          tomorrow.setHours(9, 0, 0, 0);
+                          updateCard(card.id, { snoozedUntil: tomorrow.toISOString() });
+                          setShowCardMenu(false);
+                          onClose();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Snooze until tomorrow
+                      </button>
+
+                      {/* Pin/Unpin */}
+                      <button
+                        onClick={() => {
+                          updateCard(card.id, { pinnedAt: card.pinnedAt ? undefined : new Date().toISOString() });
+                          setShowCardMenu(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
+                      >
+                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                        {card.pinnedAt ? 'Unpin' : 'Pin'}
+                      </button>
+
                       {/* Archive */}
                       <button
                         onClick={() => {

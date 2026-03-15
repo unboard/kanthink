@@ -1261,7 +1261,6 @@ export function Board({ channel }: BoardProps) {
         )
       ) : (
         <>
-          <ShroomFavoritesBar channelId={channel.id} onRunShroom={handleRunInstruction} />
           <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
