@@ -289,6 +289,9 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             isPublic: card.isPublic,
             shareToken: card.shareToken,
             shareTheme: card.shareTheme,
+            snoozedUntil: card.snoozedUntil,
+            pinnedAt: card.pinnedAt,
+            reactions: card.reactions,
             createdAt: card.createdAt,
             updatedAt: card.updatedAt,
           }
@@ -307,6 +310,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             notes: task.notes,
             dueDate: task.dueDate,
             completedAt: task.completedAt,
+            snoozedUntil: task.snoozedUntil,
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
           }

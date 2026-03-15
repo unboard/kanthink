@@ -51,6 +51,19 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData, onImageL
       if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
       if (obj.x + obj.size > maxX) maxX = obj.x + obj.size
       if (obj.y + obj.size > maxY) maxY = obj.y + obj.size
+    } else if (obj.type === 'rect') {
+      if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
+      if (obj.x + obj.width > maxX) maxX = obj.x + obj.width
+      if (obj.y + obj.height > maxY) maxY = obj.y + obj.height
+    } else if (obj.type === 'circle') {
+      const rx = Math.abs(obj.rx), ry = Math.abs(obj.ry)
+      if (obj.cx - rx < minX) minX = obj.cx - rx; if (obj.cy - ry < minY) minY = obj.cy - ry
+      if (obj.cx + rx > maxX) maxX = obj.cx + rx; if (obj.cy + ry > maxY) maxY = obj.cy + ry
+    } else if (obj.type === 'line') {
+      if (Math.min(obj.x1, obj.x2) < minX) minX = Math.min(obj.x1, obj.x2)
+      if (Math.min(obj.y1, obj.y2) < minY) minY = Math.min(obj.y1, obj.y2)
+      if (Math.max(obj.x1, obj.x2) > maxX) maxX = Math.max(obj.x1, obj.x2)
+      if (Math.max(obj.y1, obj.y2) > maxY) maxY = Math.max(obj.y1, obj.y2)
     }
   }
 
@@ -120,6 +133,31 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData, onImageL
       ctx.font = `${obj.size}px sans-serif`
       ctx.textBaseline = 'top'
       ctx.fillText(obj.emoji, obj.x, obj.y)
+    } else if (obj.type === 'rect') {
+      if (obj.fillColor && obj.fillColor !== 'transparent') {
+        ctx.fillStyle = obj.fillColor
+        ctx.fillRect(obj.x, obj.y, obj.width, obj.height)
+      }
+      ctx.strokeStyle = obj.color
+      ctx.lineWidth = obj.strokeWidth
+      ctx.strokeRect(obj.x, obj.y, obj.width, obj.height)
+    } else if (obj.type === 'circle') {
+      ctx.beginPath()
+      ctx.ellipse(obj.cx, obj.cy, Math.abs(obj.rx), Math.abs(obj.ry), 0, 0, Math.PI * 2)
+      if (obj.fillColor && obj.fillColor !== 'transparent') {
+        ctx.fillStyle = obj.fillColor
+        ctx.fill()
+      }
+      ctx.strokeStyle = obj.color
+      ctx.lineWidth = obj.strokeWidth
+      ctx.stroke()
+    } else if (obj.type === 'line') {
+      ctx.beginPath()
+      ctx.moveTo(obj.x1, obj.y1)
+      ctx.lineTo(obj.x2, obj.y2)
+      ctx.strokeStyle = obj.color
+      ctx.lineWidth = obj.strokeWidth
+      ctx.stroke()
     }
   }
   ctx.restore()

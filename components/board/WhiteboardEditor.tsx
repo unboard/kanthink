@@ -45,7 +45,42 @@ interface EmojiObj {
   emoji: string
 }
 
-type CanvasObject = StrokeObj | StickyObj | ImageObj | EmojiObj
+interface RectObj {
+  type: 'rect'
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  color: string
+  fillColor: string
+  strokeWidth: number
+}
+
+interface CircleObj {
+  type: 'circle'
+  id: string
+  cx: number
+  cy: number
+  rx: number
+  ry: number
+  color: string
+  fillColor: string
+  strokeWidth: number
+}
+
+interface LineObj {
+  type: 'line'
+  id: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  color: string
+  strokeWidth: number
+}
+
+type CanvasObject = StrokeObj | StickyObj | ImageObj | EmojiObj | RectObj | CircleObj | LineObj
 
 export interface WhiteboardData {
   objects: CanvasObject[]
@@ -119,7 +154,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   const [, forceUndoRender] = useState(0)
 
   // Tool state
-  const [activeTool, setActiveTool] = useState<'pen' | 'eraser' | 'sticky' | 'pan' | 'select' | 'kitty'>('pen')
+  const [activeTool, setActiveTool] = useState<'pen' | 'eraser' | 'sticky' | 'pan' | 'select' | 'kitty' | 'rect' | 'circle' | 'line'>('pen')
   const [selectedKitty, setSelectedKitty] = useState('🐱')
   const selectedIdRef = useRef<string | null>(null)
   const [selectedId, setSelectedIdState] = useState<string | null>(null)
@@ -241,6 +276,9 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       else if (obj.type === 'sticky') drawSticky(ctx, obj)
       else if (obj.type === 'image') drawImageObj(ctx, obj)
       else if (obj.type === 'emoji') drawEmoji(ctx, obj)
+      else if (obj.type === 'rect') drawRect(ctx, obj)
+      else if (obj.type === 'circle') drawCircle(ctx, obj)
+      else if (obj.type === 'line') drawLine(ctx, obj)
     }
 
     // Draw current stroke in progress
@@ -253,8 +291,12 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       const sel = objectsRef.current.find(o => o.id === selectedIdRef.current)
       if (sel) {
         let bx = 0, by = 0, bw = 0, bh = 0
-        if (sel.type === 'sticky' || sel.type === 'image') {
+        if (sel.type === 'sticky' || sel.type === 'image' || sel.type === 'rect') {
           bx = sel.x; by = sel.y; bw = sel.width; bh = sel.height
+        } else if (sel.type === 'circle') {
+          bx = sel.cx - Math.abs(sel.rx); by = sel.cy - Math.abs(sel.ry); bw = Math.abs(sel.rx) * 2; bh = Math.abs(sel.ry) * 2
+        } else if (sel.type === 'line') {
+          bx = Math.min(sel.x1, sel.x2); by = Math.min(sel.y1, sel.y2); bw = Math.abs(sel.x2 - sel.x1) || 10; bh = Math.abs(sel.y2 - sel.y1) || 10
         } else if (sel.type === 'emoji') {
           bx = sel.x; by = sel.y; bw = sel.size; bh = sel.size
         } else if (sel.type === 'stroke' && sel.points.length > 0) {
@@ -389,6 +431,50 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     }
   }
 
+  const drawRect = (ctx: CanvasRenderingContext2D, r: RectObj) => {
+    ctx.beginPath()
+    const rad = 4
+    ctx.moveTo(r.x + rad, r.y)
+    ctx.lineTo(r.x + r.width - rad, r.y)
+    ctx.quadraticCurveTo(r.x + r.width, r.y, r.x + r.width, r.y + rad)
+    ctx.lineTo(r.x + r.width, r.y + r.height - rad)
+    ctx.quadraticCurveTo(r.x + r.width, r.y + r.height, r.x + r.width - rad, r.y + r.height)
+    ctx.lineTo(r.x + rad, r.y + r.height)
+    ctx.quadraticCurveTo(r.x, r.y + r.height, r.x, r.y + r.height - rad)
+    ctx.lineTo(r.x, r.y + rad)
+    ctx.quadraticCurveTo(r.x, r.y, r.x + rad, r.y)
+    ctx.closePath()
+    if (r.fillColor && r.fillColor !== 'transparent') {
+      ctx.fillStyle = r.fillColor
+      ctx.fill()
+    }
+    ctx.strokeStyle = r.color
+    ctx.lineWidth = r.strokeWidth
+    ctx.stroke()
+  }
+
+  const drawCircle = (ctx: CanvasRenderingContext2D, c: CircleObj) => {
+    ctx.beginPath()
+    ctx.ellipse(c.cx, c.cy, Math.abs(c.rx), Math.abs(c.ry), 0, 0, Math.PI * 2)
+    if (c.fillColor && c.fillColor !== 'transparent') {
+      ctx.fillStyle = c.fillColor
+      ctx.fill()
+    }
+    ctx.strokeStyle = c.color
+    ctx.lineWidth = c.strokeWidth
+    ctx.stroke()
+  }
+
+  const drawLine = (ctx: CanvasRenderingContext2D, l: LineObj) => {
+    ctx.beginPath()
+    ctx.moveTo(l.x1, l.y1)
+    ctx.lineTo(l.x2, l.y2)
+    ctx.strokeStyle = l.color
+    ctx.lineWidth = l.strokeWidth
+    ctx.lineCap = 'round'
+    ctx.stroke()
+  }
+
   const drawEmoji = (ctx: CanvasRenderingContext2D, e: EmojiObj) => {
     ctx.font = `${e.size}px -apple-system, BlinkMacSystemFont, sans-serif`
     ctx.textBaseline = 'top'
@@ -514,15 +600,19 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       // Check if touching a resize handle of the selected object
       if (selectedId) {
         const sel = objectsRef.current.find(o => o.id === selectedId)
-        if (sel && (sel.type === 'sticky' || sel.type === 'image' || sel.type === 'emoji')) {
-          const handleSize = 12 / viewRef.current.zoom
-          const selW = sel.type === 'emoji' ? sel.size : sel.width
-          const selH = sel.type === 'emoji' ? sel.size : sel.height
-          const br = { x: sel.x + selW, y: sel.y + selH }
+        if (sel && (sel.type === 'sticky' || sel.type === 'image' || sel.type === 'emoji' || sel.type === 'rect' || sel.type === 'circle' || sel.type === 'line')) {
+          const handleSize = 20 / viewRef.current.zoom
+          let selW: number, selH: number, selX = 0, selY = 0
+          if ('x' in sel) { selX = sel.x; selY = sel.y }
+          if (sel.type === 'emoji') { selW = sel.size; selH = sel.size }
+          else if (sel.type === 'circle') { selW = Math.abs(sel.rx) * 2; selH = Math.abs(sel.ry) * 2; selX = sel.cx - Math.abs(sel.rx); selY = sel.cy - Math.abs(sel.ry) }
+          else if (sel.type === 'line') { selW = Math.abs(sel.x2 - sel.x1) || 10; selH = Math.abs(sel.y2 - sel.y1) || 10; selX = Math.min(sel.x1, sel.x2); selY = Math.min(sel.y1, sel.y2) }
+          else { selW = sel.width; selH = sel.height }
+          const br = { x: selX + selW, y: selY + selH }
           if (Math.abs(wp.x - br.x) < handleSize && Math.abs(wp.y - br.y) < handleSize) {
             ds.resizing = true
             ds.dragStart = wp
-            ds.resizeObjStart = { x: sel.x, y: sel.y, w: sel.type === 'emoji' ? sel.size : sel.width, h: sel.type === 'emoji' ? sel.size : sel.height }
+            ds.resizeObjStart = { x: selX, y: selY, w: selW, h: selH }
             return
           }
         }
@@ -530,11 +620,20 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
       // Hit test objects (reverse order = top first)
       const hit = [...objectsRef.current].reverse().find(o => {
-        if (o.type === 'sticky' || o.type === 'image') {
+        if (o.type === 'sticky' || o.type === 'image' || o.type === 'rect') {
           return wp.x >= o.x && wp.x <= o.x + o.width && wp.y >= o.y && wp.y <= o.y + o.height
         }
         if (o.type === 'emoji') {
           return wp.x >= o.x && wp.x <= o.x + o.size && wp.y >= o.y && wp.y <= o.y + o.size
+        }
+        if (o.type === 'circle') {
+          const dx = (wp.x - o.cx) / Math.abs(o.rx || 1)
+          const dy = (wp.y - o.cy) / Math.abs(o.ry || 1)
+          return dx * dx + dy * dy <= 1
+        }
+        if (o.type === 'line') {
+          const dist = Math.abs((o.y2 - o.y1) * wp.x - (o.x2 - o.x1) * wp.y + o.x2 * o.y1 - o.y2 * o.x1) / Math.hypot(o.y2 - o.y1, o.x2 - o.x1)
+          return dist < 10
         }
         if (o.type === 'stroke' && o.points.length > 0) {
           return o.points.some(p => Math.hypot(p.x - wp.x, p.y - wp.y) < o.width * 2 + 8)
@@ -550,8 +649,12 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         setSelectedId(hit.id)
         ds.dragging = true
         ds.dragStart = wp
-        if (hit.type === 'sticky' || hit.type === 'image' || hit.type === 'emoji') {
+        if (hit.type === 'sticky' || hit.type === 'image' || hit.type === 'emoji' || hit.type === 'rect') {
           ds.dragObjStart = { x: hit.x, y: hit.y }
+        } else if (hit.type === 'circle') {
+          ds.dragObjStart = { x: hit.cx, y: hit.cy }
+        } else if (hit.type === 'line') {
+          ds.dragObjStart = { x: hit.x1, y: hit.y1 }
         } else if (hit.type === 'stroke' && hit.points.length > 0) {
           ds.dragObjStart = { x: hit.points[0].x, y: hit.points[0].y }
         }
@@ -581,6 +684,51 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       }
       setObjects(prev => [...prev, sticky])
       setEditingStickyId(sticky.id)
+      return
+    }
+
+    if (activeTool === 'rect') {
+      pushUndo()
+      const wp = screenToWorld(sp.x, sp.y)
+      const rectObj: RectObj = {
+        type: 'rect', id: uid(),
+        x: wp.x - 60, y: wp.y - 40,
+        width: 120, height: 80,
+        color: color, fillColor: color + '20', strokeWidth: brushSize,
+      }
+      setObjects(prev => [...prev, rectObj])
+      setSelectedId(rectObj.id)
+      setActiveTool('select')
+      return
+    }
+
+    if (activeTool === 'circle') {
+      pushUndo()
+      const wp = screenToWorld(sp.x, sp.y)
+      const circleObj: CircleObj = {
+        type: 'circle', id: uid(),
+        cx: wp.x, cy: wp.y,
+        rx: 50, ry: 50,
+        color: color, fillColor: color + '20', strokeWidth: brushSize,
+      }
+      setObjects(prev => [...prev, circleObj])
+      setSelectedId(circleObj.id)
+      setActiveTool('select')
+      return
+    }
+
+    if (activeTool === 'line') {
+      pushUndo()
+      const wp = screenToWorld(sp.x, sp.y)
+      const lineObj: LineObj = {
+        type: 'line', id: uid(),
+        x1: wp.x - 60, y1: wp.y,
+        x2: wp.x + 60, y2: wp.y,
+        color: color, strokeWidth: brushSize,
+      }
+      setObjects(prev => [...prev, lineObj])
+      setSelectedId(lineObj.id)
+      setActiveTool('select')
       return
     }
 
@@ -659,6 +807,10 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       if (obj?.type === 'emoji') {
         const newSize = Math.max(20, Math.max(newW, newH))
         setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, size: newSize } : o))
+      } else if (obj?.type === 'circle') {
+        setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, rx: Math.max(10, newW / 2), ry: Math.max(10, newH / 2) } : o))
+      } else if (obj?.type === 'line') {
+        setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, x2: (o as LineObj).x1 + newW, y2: (o as LineObj).y1 + newH } : o))
       } else {
         setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, width: newW, height: newH } : o))
       }
@@ -671,7 +823,13 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       const dx = wp.x - ds.dragStart.x
       const dy = wp.y - ds.dragStart.y
       const obj = objectsRef.current.find(o => o.id === selectedId)
-      if (obj?.type === 'sticky' || obj?.type === 'image' || obj?.type === 'emoji') {
+      if (obj?.type === 'circle') {
+        setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, cx: ds.dragObjStart!.x + dx, cy: ds.dragObjStart!.y + dy } : o))
+      } else if (obj?.type === 'line') {
+        const lineW = (obj as LineObj).x2 - (obj as LineObj).x1
+        const lineH = (obj as LineObj).y2 - (obj as LineObj).y1
+        setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, x1: ds.dragObjStart!.x + dx, y1: ds.dragObjStart!.y + dy, x2: ds.dragObjStart!.x + dx + lineW, y2: ds.dragObjStart!.y + dy + lineH } : o))
+      } else if (obj?.type === 'sticky' || obj?.type === 'image' || obj?.type === 'emoji' || obj?.type === 'rect') {
         setObjects(prev => prev.map(o => o.id === selectedId ? { ...o, x: ds.dragObjStart!.x + dx, y: ds.dragObjStart!.y + dy } : o))
       } else if (obj?.type === 'stroke') {
         const origFirst = ds.dragObjStart
@@ -887,6 +1045,15 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
               if (obj.x < minX) minX = obj.x; if (obj.y < minY) minY = obj.y
               if (obj.x + obj.size > maxX) maxX = obj.x + obj.size
               if (obj.y + obj.size > maxY) maxY = obj.y + obj.size
+            } else if (obj.type === 'circle') {
+              const cx = obj.cx, cy = obj.cy, rx = Math.abs(obj.rx), ry = Math.abs(obj.ry)
+              if (cx - rx < minX) minX = cx - rx; if (cy - ry < minY) minY = cy - ry
+              if (cx + rx > maxX) maxX = cx + rx; if (cy + ry > maxY) maxY = cy + ry
+            } else if (obj.type === 'line') {
+              if (Math.min(obj.x1, obj.x2) < minX) minX = Math.min(obj.x1, obj.x2)
+              if (Math.min(obj.y1, obj.y2) < minY) minY = Math.min(obj.y1, obj.y2)
+              if (Math.max(obj.x1, obj.x2) > maxX) maxX = Math.max(obj.x1, obj.x2)
+              if (Math.max(obj.y1, obj.y2) > maxY) maxY = Math.max(obj.y1, obj.y2)
             }
           }
 
@@ -908,6 +1075,9 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
             else if (obj.type === 'sticky') drawSticky(ctx, obj)
             else if (obj.type === 'image') drawImageObj(ctx, obj)
             else if (obj.type === 'emoji') drawEmoji(ctx, obj)
+            else if (obj.type === 'rect') drawRect(ctx, obj)
+            else if (obj.type === 'circle') drawCircle(ctx, obj)
+            else if (obj.type === 'line') drawLine(ctx, obj)
           }
           ctx.restore()
 
@@ -932,6 +1102,9 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     sticky: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15.5 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8.5L15.5 3z"/><path d="M14 3v6h6"/></svg>,
     pan: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 11V6a2 2 0 00-4 0v6"/><path d="M14 10V4a2 2 0 00-4 0v7"/><path d="M10 10.5V5a2 2 0 00-4 0v9"/><path d="M18 11a2 2 0 014 0v3a8 8 0 01-8 8h-2c-2.8 0-4.5-.9-5.7-2.4L3.7 16a2 2 0 013-2.6l.3.3"/></svg>,
     image: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>,
+    rect: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>,
+    circle: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/></svg>,
+    line: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="19" x2="19" y2="5"/></svg>,
     kitty: <span style={{ fontSize: 16, lineHeight: 1 }}>{selectedKitty}</span>,
   }
 
@@ -982,7 +1155,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       <div style={{ width: 1, height: 24, background: '#e5e5e5', flexShrink: 0, margin: '0 2px' }} />
 
       {/* Tools */}
-      {['select', 'pen', 'eraser', 'sticky', 'pan'].map(t => <ToolBtn key={t} t={t} />)}
+      {['select', 'pen', 'eraser', 'sticky', 'rect', 'circle', 'line', 'pan'].map(t => <ToolBtn key={t} t={t} />)}
 
       {/* Kitty stamp tool */}
       <div style={{ position: 'relative' }}>
