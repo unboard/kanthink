@@ -23,7 +23,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useSession } from 'next-auth/react';
-import type { Card, Task, ID } from '@/lib/types';
+import type { Card, Task, ID, PollTypeData, TagDefinition } from '@/lib/types';
 import { useStore, type PromoteConfig } from '@/lib/store';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import { Drawer } from '@/components/ui';
@@ -93,6 +93,299 @@ function SortableTaskItem({ task, onTaskClick, onToggleStatus }: SortableTaskIte
       >
         {task.title}
       </button>
+    </div>
+  );
+}
+
+// ===== Poll Detail View =====
+
+interface PollDetailViewProps {
+  card: Card;
+  isCreator: boolean;
+  userId?: string;
+  channelName: string;
+  channelDescription: string;
+  tagDefinitions: TagDefinition[];
+}
+
+function PollDetailView({ card, isCreator, userId, channelName, channelDescription, tagDefinitions }: PollDetailViewProps) {
+  const updateCard = useStore((s) => s.updateCard);
+  const [newOptionText, setNewOptionText] = useState('');
+  const [isEditingQuestion, setIsEditingQuestion] = useState(false);
+  const [editedQuestion, setEditedQuestion] = useState('');
+
+  const data = (card.typeData as unknown as PollTypeData) || {
+    question: card.title,
+    options: [],
+    closed: false,
+  };
+
+  const totalVotes = data.options.reduce((sum, opt) => sum + opt.voterIds.length, 0);
+  const userVotedOption = userId
+    ? data.options.find(o => o.voterIds.includes(userId))?.id
+    : null;
+
+  const updatePollData = (updates: Partial<PollTypeData>) => {
+    updateCard(card.id, {
+      typeData: { ...data, ...updates } as unknown as Record<string, unknown>,
+    });
+  };
+
+  const handleVote = (optionId: string) => {
+    if (!userId || data.closed) return;
+    const updatedOptions = data.options.map(opt => {
+      if (opt.id === optionId) {
+        const hasVoted = opt.voterIds.includes(userId);
+        return {
+          ...opt,
+          voterIds: hasVoted
+            ? opt.voterIds.filter(id => id !== userId)
+            : [...opt.voterIds, userId],
+        };
+      }
+      return {
+        ...opt,
+        voterIds: opt.voterIds.filter(id => id !== userId),
+      };
+    });
+    updatePollData({ options: updatedOptions });
+  };
+
+  const handleAddOption = () => {
+    if (!newOptionText.trim()) return;
+    const updatedOptions = [
+      ...data.options,
+      { id: nanoid(), text: newOptionText.trim(), voterIds: [] },
+    ];
+    updatePollData({ options: updatedOptions });
+    setNewOptionText('');
+  };
+
+  const handleRemoveOption = (optionId: string) => {
+    if (data.options.length <= 2) return;
+    updatePollData({ options: data.options.filter(o => o.id !== optionId) });
+  };
+
+  const handleSaveQuestion = () => {
+    if (editedQuestion.trim()) {
+      updatePollData({ question: editedQuestion.trim() });
+      updateCard(card.id, { title: editedQuestion.trim() });
+    }
+    setIsEditingQuestion(false);
+  };
+
+  const handleToggleClosed = () => {
+    updatePollData({ closed: !data.closed });
+  };
+
+  return (
+    <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+      <div className="flex-1 overflow-y-auto">
+        {/* Poll Results Section */}
+        <div className="p-4 space-y-3">
+          {/* Question */}
+          <div>
+            {isCreator && isEditingQuestion ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={editedQuestion}
+                  onChange={(e) => setEditedQuestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveQuestion();
+                    if (e.key === 'Escape') setIsEditingQuestion(false);
+                  }}
+                  autoFocus
+                  className="flex-1 text-base font-semibold text-neutral-900 dark:text-white bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
+                <button
+                  onClick={handleSaveQuestion}
+                  className="px-3 py-2 text-xs font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-500"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => setIsEditingQuestion(false)}
+                  className="px-3 py-2 text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <h3
+                className={`text-base font-semibold text-neutral-900 dark:text-white ${isCreator ? 'cursor-pointer hover:text-violet-600 dark:hover:text-violet-400' : ''}`}
+                onClick={() => {
+                  if (isCreator) {
+                    setEditedQuestion(data.question);
+                    setIsEditingQuestion(true);
+                  }
+                }}
+              >
+                {data.question}
+                {isCreator && (
+                  <svg className="w-3.5 h-3.5 inline-block ml-1.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                )}
+              </h3>
+            )}
+          </div>
+
+          {/* Status badge */}
+          {data.closed && (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-xs font-medium text-neutral-500">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Poll closed
+            </div>
+          )}
+
+          {/* Options with vote bars */}
+          <div className="space-y-2">
+            {data.options.map((opt) => {
+              const votes = opt.voterIds.length;
+              const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+              const isUserVote = opt.id === userVotedOption;
+
+              return (
+                <div key={opt.id} className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleVote(opt.id)}
+                    disabled={data.closed}
+                    className={`
+                      flex-1 relative overflow-hidden rounded-lg border transition-all text-left
+                      ${isUserVote
+                        ? 'border-violet-300 dark:border-violet-700 bg-violet-50 dark:bg-violet-900/20'
+                        : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                      }
+                      ${data.closed ? 'cursor-default' : 'cursor-pointer'}
+                    `}
+                  >
+                    {/* Progress bar — visible to creator */}
+                    {isCreator && (
+                      <div
+                        className="absolute inset-0 bg-violet-100 dark:bg-violet-900/20 transition-all"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    )}
+
+                    <div className="relative flex items-center justify-between px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        {isUserVote && (
+                          <svg className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        <span className={`text-sm ${isUserVote ? 'font-medium text-violet-700 dark:text-violet-300' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                          {opt.text}
+                        </span>
+                      </div>
+                      {isCreator && (
+                        <span className="text-xs text-neutral-500 flex-shrink-0 ml-2 tabular-nums">
+                          {votes} {votes === 1 ? 'vote' : 'votes'} · {percentage}%
+                        </span>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* Remove option button (creator only, 3+ options) */}
+                  {isCreator && data.options.length > 2 && (
+                    <button
+                      onClick={() => handleRemoveOption(opt.id)}
+                      className="flex-shrink-0 w-7 h-7 flex items-center justify-center text-neutral-400 hover:text-red-500 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      title="Remove option"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Total votes + close/reopen (creator) */}
+          <div className="flex items-center justify-between pt-1">
+            {isCreator ? (
+              <>
+                <span className="text-xs text-neutral-500">
+                  {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
+                </span>
+                <button
+                  onClick={handleToggleClosed}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    data.closed
+                      ? 'text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/20'
+                      : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'
+                  }`}
+                >
+                  {data.closed ? (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                      </svg>
+                      Reopen poll
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                      Close poll
+                    </>
+                  )}
+                </button>
+              </>
+            ) : (
+              <span className="text-xs text-neutral-500">
+                {userVotedOption ? 'You voted' : 'Tap to vote'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Poll Settings (creator only) */}
+        {isCreator && (
+          <div className="px-4 pb-4 border-t border-neutral-100 dark:border-neutral-800 pt-3">
+            <h4 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-3">Poll Settings</h4>
+
+            {/* Add option */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newOptionText}
+                onChange={(e) => setNewOptionText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddOption();
+                }}
+                placeholder="Add an option..."
+                className="flex-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              />
+              <button
+                onClick={handleAddOption}
+                disabled={!newOptionText.trim()}
+                className="px-3 py-2 text-sm font-medium text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-900/20 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Thread Section */}
+        <div className="border-t border-neutral-100 dark:border-neutral-800">
+          <div className="flex-1 min-h-0 flex flex-col" style={{ height: '400px' }}>
+            <CardChat
+              card={card}
+              channelName={channelName}
+              channelDescription={channelDescription}
+              tagDefinitions={tagDefinitions}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -956,6 +1249,18 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           </div>
         )}
 
+        {/* Poll cards get a dedicated detail view */}
+        {card.cardType === 'poll' ? (
+          <PollDetailView
+            card={card}
+            isCreator={session?.user?.id === (card.typeData as unknown as PollTypeData)?.creatorId}
+            userId={session?.user?.id}
+            channelName={channels[card.channelId]?.name ?? 'Unknown Channel'}
+            channelDescription={channels[card.channelId]?.description ?? ''}
+            tagDefinitions={channels[card.channelId]?.tagDefinitions ?? []}
+          />
+        ) : (
+        <>
         {/* Tab Buttons - above content */}
         <div className="flex-shrink-0 flex gap-1 px-4 py-2 bg-white dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800">
           <button
@@ -1506,6 +1811,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
             </div>
           )}
         </div>
+        </>
+        )}
 
       </div>
       <TaskDrawer

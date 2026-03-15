@@ -339,13 +339,20 @@ export interface Card {
 
 // ===== WIDGET CARD TYPES =====
 
+export interface CalendarDayEntry {
+  type: 'card' | 'task' | 'note';
+  id: string;        // for card/task: references existing card/task ID. For note: unique ID
+  title: string;     // display title (denormalized for quick rendering)
+}
+
 export interface CalendarTypeData {
   style: 'month-table' | 'month-only' | 'table-only';
   month: number;  // 0-11
   year: number;
   showWeekends: boolean;
   firstDayOfWeek: 0 | 1;  // 0 = Sunday, 1 = Monday
-  dayItems?: Record<string, string[]>;  // ISO date string → array of item descriptions
+  dayEntries?: Record<string, CalendarDayEntry[]>;  // ISO date key → entries
+  dayThreads?: Record<string, Array<{ id: string; content: string; createdAt: string }>>;  // day-level threads
 }
 
 export interface PollTypeData {

@@ -103,7 +103,7 @@ function CalendarSettings({ onCreate }: { onCreate: (title: string, data: Calend
           year,
           showWeekends: true,
           firstDayOfWeek: 1,
-          dayItems: {},
+          dayEntries: {},
         })}
         className="w-full py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
       >
