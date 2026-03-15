@@ -191,18 +191,16 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
-        {/* Pinned header */}
-        {isPinned && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 border-b border-neutral-200/50 dark:border-neutral-700/50">
-            <svg className="w-3 h-3 text-neutral-400" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-            </svg>
-            <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">Pinned</span>
-          </div>
-        )}
-
         {/* Card content with padding */}
         <div className="relative p-3">
+        {/* Pin icon (always visible) */}
+        {isPinned && (
+          <div className="absolute top-2.5 right-8 z-10">
+            <svg className="w-3.5 h-3.5 text-neutral-400" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M16 4l-1.5 1.5L17 8l-4.5 4.5-5-1L5 14l5.5 0L12 21l1.5-2.5 0-5.5L18 8.5l2.5 2.5L22 9.5 16 4z" />
+            </svg>
+          </div>
+        )}
         {/* 3-dot menu button */}
         <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10" ref={cardMenuRef}>
           <button
