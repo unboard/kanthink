@@ -193,14 +193,6 @@ export function Card({ card }: CardProps) {
 
         {/* Card content with padding */}
         <div className="relative p-3">
-        {/* Pin icon (always visible) */}
-        {isPinned && (
-          <div className="absolute top-2.5 right-8 z-10">
-            <svg className="w-3.5 h-3.5 text-neutral-400" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M16 4l-1.5 1.5L17 8l-4.5 4.5-5-1L5 14l5.5 0L12 21l1.5-2.5 0-5.5L18 8.5l2.5 2.5L22 9.5 16 4z" />
-            </svg>
-          </div>
-        )}
         {/* 3-dot menu button */}
         <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10" ref={cardMenuRef}>
           <button
@@ -421,7 +413,7 @@ export function Card({ card }: CardProps) {
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
                   >
                     <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 4.5l-4 4 1 4-6 6v-5l4-6 4-1 4.5 1.5L21 6l-2.5-2.5L15 4.5z" />
                     </svg>
                     {isPinned ? 'Unpin' : 'Pin'}
                   </button>
@@ -452,6 +444,17 @@ export function Card({ card }: CardProps) {
 
         {/* Clickable content area */}
         <div onClick={() => setIsCardDrawerOpen(true)}>
+          {/* Pinned chip */}
+          {isPinned && (
+            <div className="mb-1.5">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 4.5l-4 4 1 4-6 6v-5l4-6 4-1 4.5 1.5L21 6l-2.5-2.5L15 4.5z" />
+                </svg>
+                Pinned
+              </span>
+            </div>
+          )}
           {/* Snoozed badge */}
           {card.snoozedUntil && new Date(card.snoozedUntil) > new Date() && (
             <div className="mb-1.5 flex items-center gap-1 text-blue-500 dark:text-blue-400">
