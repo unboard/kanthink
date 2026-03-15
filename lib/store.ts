@@ -102,7 +102,7 @@ interface KanthinkState {
 
   // Card message actions
   addMessage: (cardId: ID, type: CardMessageType, content: string, imageUrls?: string[], author?: { id: string; name: string; image?: string }, whiteboards?: { id: string; snapshot: string; snapshotImageUrl?: string }[]) => CardMessage | null;
-  addAIResponse: (cardId: ID, questionId: ID, content: string, actions?: StoredAction[]) => CardMessage | null;
+  addAIResponse: (cardId: ID, questionId: ID, content: string, actions?: StoredAction[], imageUrls?: string[]) => CardMessage | null;
   updateMessageAction: (cardId: ID, messageId: ID, actionId: string, updates: Partial<StoredAction>) => void;
   editMessage: (cardId: ID, messageId: ID, content: string) => void;
   deleteMessage: (cardId: ID, messageId: ID) => void;
@@ -1623,7 +1623,7 @@ export const useStore = create<KanthinkState>()(
         return result;
       },
 
-      addAIResponse: (cardId, questionId, content, actions) => {
+      addAIResponse: (cardId, questionId, content, actions, imageUrls) => {
         const id = nanoid();
         const timestamp = now();
         const message: CardMessage = {
@@ -1633,6 +1633,7 @@ export const useStore = create<KanthinkState>()(
           createdAt: timestamp,
           replyToMessageId: questionId,
           proposedActions: actions,
+          imageUrls,
         };
 
         let result: CardMessage | null = null;

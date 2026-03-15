@@ -4,7 +4,8 @@ import { nanoid } from 'nanoid';
 import type { CardMessage, TagDefinition, ProposedActionType, StoredAction, WhiteboardAttachment } from '@/lib/types';
 import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
-import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage, getUserByokConfigWithError } from '@/lib/usage';
+import { uploadImageToCloudinary } from '@/lib/cloudinary';
 
 function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
   if (!whiteboards || whiteboards.length === 0) return ''
@@ -278,6 +279,90 @@ function convertToStoredActions(actions: ProposedAction[]): StoredAction[] {
   return result;
 }
 
+/**
+ * Detect if the user is asking for image generation
+ */
+function detectImageGenerationIntent(text: string): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  const patterns = [
+    'generate an image', 'generate image', 'create an image', 'create image',
+    'make an image', 'make image', 'draw me', 'draw a', 'draw an',
+    'generate a picture', 'create a picture', 'make a picture',
+    'generate art', 'create art', 'make art',
+    'generate a photo', 'create a photo',
+    'generate illustration', 'create illustration',
+    'image of', 'picture of', 'illustration of',
+    'dall-e', 'dalle',
+  ]
+  return patterns.some(p => lower.includes(p))
+}
+
+/**
+ * Extract the image prompt from the user's message
+ */
+function extractImagePrompt(text: string): string {
+  // Remove common prefixes to get the actual prompt
+  const prefixes = [
+    /^(can you |please |could you |hey kan,? |kan,? )/i,
+    /^(generate|create|make|draw) (an?|me an?|the) (image|picture|illustration|art|photo) (of |for |showing |that shows |with |depicting )/i,
+    /^(generate|create|make|draw) (an?|me an?) (image|picture|illustration|art|photo)\s*/i,
+  ]
+  let prompt = text
+  for (const prefix of prefixes) {
+    prompt = prompt.replace(prefix, '')
+  }
+  return prompt.trim() || text
+}
+
+/**
+ * Generate an image using OpenAI's DALL-E API
+ */
+async function generateImage(apiKey: string, prompt: string): Promise<{ url: string } | { error: string }> {
+  try {
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt: prompt,
+        n: 1,
+        size: '1024x1024',
+        quality: 'standard',
+      }),
+    })
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      return { error: err?.error?.message || `Image generation failed (${response.status})` }
+    }
+
+    const data = await response.json()
+    const imageUrl = data?.data?.[0]?.url
+    if (!imageUrl) return { error: 'No image URL in response' }
+    return { url: imageUrl }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Image generation failed' }
+  }
+}
+
+/**
+ * Get an OpenAI API key for image generation (BYOK or env)
+ */
+async function getOpenAIKeyForUser(userId: string | undefined): Promise<string | null> {
+  if (userId) {
+    const byok = await getUserByokConfigWithError(userId)
+    if (byok.config?.provider === 'openai' && byok.config?.apiKey) {
+      return byok.config.apiKey
+    }
+  }
+  // Fall back to owner/env keys
+  return process.env.OWNER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || null
+}
+
 export async function POST(request: Request) {
   try {
     const body: CardChatRequest = await request.json();
@@ -397,10 +482,38 @@ export async function POST(request: Request) {
         ? convertToStoredActions(parsed.actions)
         : undefined;
 
+      // Check for image generation intent
+      let generatedImageUrls: string[] | undefined;
+      if (detectImageGenerationIntent(questionContent)) {
+        const openaiKey = await getOpenAIKeyForUser(userId);
+        if (openaiKey) {
+          const imagePrompt = extractImagePrompt(questionContent);
+          const imageResult = await generateImage(openaiKey, imagePrompt);
+          if ('url' in imageResult) {
+            // Download the image and upload to Cloudinary for persistence
+            try {
+              const imageResponse = await fetch(imageResult.url);
+              const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+              const cloudinaryResult = await uploadImageToCloudinary(imageBuffer, { cardId: body.cardId || 'chat-image' });
+              generatedImageUrls = [cloudinaryResult.url];
+            } catch {
+              // If Cloudinary upload fails, use the temporary OpenAI URL
+              generatedImageUrls = [imageResult.url];
+            }
+          } else {
+            // Add error info to the response
+            parsed.response = `${parsed.response}\n\n(Image generation error: ${imageResult.error})`;
+          }
+        } else {
+          parsed.response = `${parsed.response}\n\n(Image generation requires an OpenAI API key. Add one in Settings > AI.)`;
+        }
+      }
+
       const response = NextResponse.json({
         success: true,
         response: parsed.response,
         actions: actions && actions.length > 0 ? actions : undefined,
+        imageUrls: generatedImageUrls,
       });
 
       // Set anonymous cookie if needed
