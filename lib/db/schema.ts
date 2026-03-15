@@ -181,6 +181,10 @@ export const cards = sqliteTable('cards', {
   // Card-level reactions
   reactions: text('reactions', { mode: 'json' }).$type<{ emoji: string; userIds: string[] }[]>(),
 
+  // Widget card type system
+  cardType: text('card_type'),  // null = standard, 'calendar', 'poll', etc.
+  typeData: text('type_data', { mode: 'json' }),  // type-specific configuration
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [

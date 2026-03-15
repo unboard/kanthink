@@ -333,6 +333,29 @@ export interface Card {
   snoozedUntil?: string;  // ISO timestamp — card hidden from board until this time
   pinnedAt?: string;      // ISO timestamp — pinned cards sort to top of column
   reactions?: { emoji: string; userIds: string[] }[];  // Card-level emoji reactions
+  cardType?: string;    // null = standard card, 'calendar', 'poll', etc.
+  typeData?: Record<string, unknown>;  // Type-specific configuration data
+}
+
+// ===== WIDGET CARD TYPES =====
+
+export interface CalendarTypeData {
+  style: 'month-table' | 'month-only' | 'table-only';
+  month: number;  // 0-11
+  year: number;
+  showWeekends: boolean;
+  firstDayOfWeek: 0 | 1;  // 0 = Sunday, 1 = Monday
+  dayItems?: Record<string, string[]>;  // ISO date string → array of item descriptions
+}
+
+export interface PollTypeData {
+  question: string;
+  options: Array<{
+    id: string;
+    text: string;
+    voterIds: string[];
+  }>;
+  closed?: boolean;
 }
 
 // ===== REVIEW QUEUE TYPES =====

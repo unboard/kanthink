@@ -292,6 +292,8 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             snoozedUntil: card.snoozedUntil,
             pinnedAt: card.pinnedAt,
             reactions: card.reactions,
+            cardType: card.cardType,
+            typeData: card.typeData,
             createdAt: card.createdAt,
             updatedAt: card.updatedAt,
           }

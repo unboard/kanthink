@@ -137,6 +137,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (snoozedUntil !== undefined) updates.snoozedUntil = snoozedUntil ? new Date(snoozedUntil) : null
     if (body.pinnedAt !== undefined) updates.pinnedAt = body.pinnedAt ? new Date(body.pinnedAt) : null
     if (body.reactions !== undefined) updates.reactions = body.reactions
+    if (body.cardType !== undefined) updates.cardType = body.cardType || null
+    if (body.typeData !== undefined) updates.typeData = body.typeData
 
     await db.update(cards).set(updates).where(eq(cards.id, cardId))
 

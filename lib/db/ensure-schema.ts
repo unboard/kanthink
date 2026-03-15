@@ -51,6 +51,9 @@ export async function ensureSchema() {
     `ALTER TABLE cards ADD pinned_at integer`,
     // Migration 0018 — card reactions
     `ALTER TABLE cards ADD reactions text`,
+    // Migration 0019 — widget card types
+    `ALTER TABLE cards ADD card_type text`,
+    `ALTER TABLE cards ADD type_data text`,
   ]
 
   for (const stmt of alterStatements) {

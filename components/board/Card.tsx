@@ -15,6 +15,8 @@ import { AssigneeAvatars } from './AssigneeAvatars';
 import { Modal } from '@/components/ui';
 import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
+import { CalendarWidget } from './CalendarWidget';
+import { PollWidget } from './PollWidget';
 import { SnoozePicker } from './SnoozePicker';
 
 interface CardProps {
@@ -442,8 +444,20 @@ export function Card({ card }: CardProps) {
           )}
         </div>
 
-        {/* Clickable content area */}
-        <div onClick={() => setIsCardDrawerOpen(true)}>
+        {/* Widget card renderer */}
+        {card.cardType === 'calendar' && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <CalendarWidget card={card} />
+          </div>
+        )}
+        {card.cardType === 'poll' && (
+          <div onClick={(e) => e.stopPropagation()}>
+            <PollWidget card={card} />
+          </div>
+        )}
+
+        {/* Standard clickable content area (hidden for widget cards) */}
+        {!card.cardType && <div onClick={() => setIsCardDrawerOpen(true)}>
           {/* Pinned chip */}
           {isPinned && (
             <div className="mb-1.5">
@@ -492,7 +506,7 @@ export function Card({ card }: CardProps) {
               {contentPreview}
             </p>
           )}
-        </div>
+        </div>}
 
         {/* Assignee avatars */}
         {(card.assignedTo ?? []).length > 0 && (
