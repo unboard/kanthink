@@ -932,10 +932,18 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     sticky: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15.5 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8.5L15.5 3z"/><path d="M14 3v6h6"/></svg>,
     pan: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 11V6a2 2 0 00-4 0v6"/><path d="M14 10V4a2 2 0 00-4 0v7"/><path d="M10 10.5V5a2 2 0 00-4 0v9"/><path d="M18 11a2 2 0 014 0v3a8 8 0 01-8 8h-2c-2.8 0-4.5-.9-5.7-2.4L3.7 16a2 2 0 013-2.6l.3.3"/></svg>,
     image: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>,
-    kitty: <span style={{ fontSize: 16, lineHeight: 1 }}>🐱</span>,
+    kitty: <span style={{ fontSize: 16, lineHeight: 1 }}>{selectedKitty}</span>,
   }
 
-  const KITTY_EMOJIS = ['🐱', '😺', '😸', '😻', '🙀', '😿', '😹', '🐈', '🐈‍⬛', '🐾']
+  const EMOJI_CATEGORIES: Record<string, { icon: string; emojis: string[] }> = {
+    'Kitties': { icon: '🐱', emojis: ['🐱', '😺', '😸', '😻', '🙀', '😿', '😹', '🐈', '🐈‍⬛', '🐾'] },
+    'Faces': { icon: '😀', emojis: ['😀', '😎', '🤔', '😍', '🥳', '😱', '💀', '👻', '🤖', '👽'] },
+    'Hands': { icon: '👍', emojis: ['👍', '👎', '👋', '✌️', '🤝', '👏', '🙌', '💪', '🤞', '☝️'] },
+    'Objects': { icon: '⭐', emojis: ['⭐', '💡', '🔥', '💎', '🎯', '🏆', '🎁', '🔑', '💰', '🎵'] },
+    'Arrows': { icon: '➡️', emojis: ['➡️', '⬆️', '⬇️', '⬅️', '↗️', '↘️', '🔄', '↩️', '⤴️', '⤵️'] },
+    'Nature': { icon: '🌸', emojis: ['🌸', '🌲', '☀️', '🌈', '⚡', '❄️', '🌊', '🍀', '🌻', '🍄'] },
+  }
+  const [emojiCategory, setEmojiCategory] = useState('Kitties')
 
   const ToolBtn = ({ t }: { t: string }) => (
     <button
@@ -981,13 +989,26 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         <ToolBtn t="kitty" />
         {activeTool === 'kitty' && (
           <div onClick={e => e.stopPropagation()}
-            style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, display: 'flex', flexWrap: 'wrap', gap: 4, padding: 8, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)', zIndex: 20, width: 160 }}>
-            {KITTY_EMOJIS.map(k => (
-              <button key={k} onClick={e => { e.stopPropagation(); setSelectedKitty(k); }}
-                style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, cursor: 'pointer', border: k === selectedKitty ? '2px solid #3b82f6' : '1px solid #e5e5e5', background: k === selectedKitty ? '#eff6ff' : 'transparent' }}>
-                {k}
-              </button>
-            ))}
+            style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, padding: 6, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)', zIndex: 20, width: 200 }}>
+            {/* Category tabs */}
+            <div style={{ display: 'flex', gap: 2, marginBottom: 4, flexWrap: 'wrap' }}>
+              {Object.entries(EMOJI_CATEGORIES).map(([name, cat]) => (
+                <button key={name} onClick={e => { e.stopPropagation(); setEmojiCategory(name); }}
+                  style={{ padding: '2px 6px', borderRadius: 6, fontSize: 14, cursor: 'pointer', border: 'none', background: emojiCategory === name ? '#e5e5e5' : 'transparent' }}
+                  title={name}>
+                  {cat.icon}
+                </button>
+              ))}
+            </div>
+            {/* Emoji grid */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              {EMOJI_CATEGORIES[emojiCategory]?.emojis.map(k => (
+                <button key={k} onClick={e => { e.stopPropagation(); setSelectedKitty(k); }}
+                  style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, cursor: 'pointer', border: k === selectedKitty ? '2px solid #3b82f6' : '1px solid #e5e5e5', background: k === selectedKitty ? '#eff6ff' : 'transparent' }}>
+                  {k}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
