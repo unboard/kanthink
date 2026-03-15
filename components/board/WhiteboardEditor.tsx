@@ -201,8 +201,14 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   const redoStackRef = useRef<CanvasObject[][]>([])
   const [, forceUndoRender] = useState(0)
 
-  // Tool state
-  const [activeTool, setActiveTool] = useState<'pen' | 'eraser' | 'sticky' | 'pan' | 'select' | 'kitty' | 'rect' | 'circle' | 'line' | 'connector'>('pen')
+  // ===== 3-STATE INTERACTION MODEL =====
+  // 'idle' = select/move/resize, toolbar shows insert tools
+  // 'drawing' = pen strokes, toolbar shows draw settings
+  // 'editing' = element-specific editing, toolbar shows edit options
+  type InteractionState = 'idle' | 'drawing' | 'editing'
+  const [interactionState, setInteractionState] = useState<InteractionState>('idle')
+  const [drawingTool, setDrawingTool] = useState<'pen' | 'eraser'>('pen')
+
   const [selectedKitty, setSelectedKitty] = useState('🐱')
   const selectedIdRef = useRef<string | null>(null)
   const [selectedId, setSelectedIdState] = useState<string | null>(null)
@@ -214,16 +220,16 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   }, [])
   const [color, setColor] = useState('#1a1a1a')
   const [brushSize, setBrushSize] = useState(4)
-  const [showColorPicker, setShowColorPicker] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
 
   // Double-click editing state
+  const [editingStickyId, setEditingStickyId] = useState<string | null>(null)
   const [editingShapeId, setEditingShapeId] = useState<string | null>(null)
   const [editingEmojiId, setEditingEmojiId] = useState<string | null>(null)
   const lastClickRef = useRef<{ id: string; time: number } | null>(null)
 
-  // Connector tool state
+  // Connector tool state (used during idle insert)
   const connectorSourceRef = useRef<string | null>(null)
   const [connectorSource, setConnectorSource] = useState<string | null>(null)
 
@@ -264,7 +270,6 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     draggingLineEndpoint: null, lineEndpointStart: null,
   })
 
-  const [editingStickyId, setEditingStickyId] = useState<string | null>(null)
   const canvasSize = useRef({ w: 0, h: 0 })
 
   // Load initial data
@@ -741,84 +746,134 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     return false
   }
 
+  // ===== HIT TEST HELPER =====
+  const hitTest = (wp: Point): CanvasObject | undefined => {
+    return [...objectsRef.current].reverse().find(o => {
+      // Skip hidden/locked layers
+      if (o.layerId) {
+        const layer = layers.find(l => l.id === o.layerId)
+        if (layer && (!layer.visible || layer.locked)) return false
+      }
+      if (o.type === 'sticky' || o.type === 'image' || o.type === 'rect') {
+        return wp.x >= o.x && wp.x <= o.x + o.width && wp.y >= o.y && wp.y <= o.y + o.height
+      }
+      if (o.type === 'emoji') {
+        return wp.x >= o.x && wp.x <= o.x + o.size && wp.y >= o.y && wp.y <= o.y + o.size
+      }
+      if (o.type === 'circle') {
+        const dx = (wp.x - o.cx) / Math.abs(o.rx || 1)
+        const dy = (wp.y - o.cy) / Math.abs(o.ry || 1)
+        return dx * dx + dy * dy <= 1
+      }
+      if (o.type === 'line') {
+        const dist = Math.abs((o.y2 - o.y1) * wp.x - (o.x2 - o.x1) * wp.y + o.x2 * o.y1 - o.y2 * o.x1) / Math.hypot(o.y2 - o.y1, o.x2 - o.x1)
+        return dist < 10
+      }
+      if (o.type === 'connector') {
+        const src = objectsRef.current.find(s => s.id === o.sourceId)
+        const tgt = objectsRef.current.find(s => s.id === o.targetId)
+        if (!src || !tgt) return false
+        const sc = getObjectCenter(src)
+        const tc = getObjectCenter(tgt)
+        if (!sc || !tc) return false
+        const lineLen = Math.hypot(tc.x - sc.x, tc.y - sc.y)
+        if (lineLen === 0) return false
+        const dist = Math.abs((tc.y - sc.y) * wp.x - (tc.x - sc.x) * wp.y + tc.x * sc.y - tc.y * sc.x) / lineLen
+        const dot = ((wp.x - sc.x) * (tc.x - sc.x) + (wp.y - sc.y) * (tc.y - sc.y)) / (lineLen * lineLen)
+        return dist < 10 && dot >= 0 && dot <= 1
+      }
+      if (o.type === 'stroke' && o.points.length > 0) {
+        return o.points.some(p => Math.hypot(p.x - wp.x, p.y - wp.y) < o.width * 2 + 8)
+      }
+      return false
+    })
+  }
+
   const handlePointerDown = (e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault()
-    setShowColorPicker(false)
     const sp = getEventPoint(e)
     const ds = drawState.current
 
-    // Two-finger touch = pinch-to-zoom + pan (using midpoint)
+    // Two-finger touch = pinch-to-zoom + pan (always, regardless of state)
     const isTwoFinger = 'touches' in e && e.touches.length >= 2
-    if (activeTool === 'pan' || isTwoFinger) {
+    if (isTwoFinger) {
       ds.panning = true
-      if (isTwoFinger) {
-        const t = (e as React.TouchEvent).touches
-        const canvas = canvasRef.current
-        const rect = canvas?.getBoundingClientRect()
-        const midX = (t[0].clientX + t[1].clientX) / 2 - (rect?.left ?? 0)
-        const midY = (t[0].clientY + t[1].clientY) / 2 - (rect?.top ?? 0)
-        ds.panStart = { x: midX, y: midY }
-        ds.pinchDist = Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY)
-        ds.pinchZoomStart = viewRef.current.zoom
-      } else {
-        ds.panStart = sp
-      }
+      const t = (e as React.TouchEvent).touches
+      const canvas = canvasRef.current
+      const rect = canvas?.getBoundingClientRect()
+      const midX = (t[0].clientX + t[1].clientX) / 2 - (rect?.left ?? 0)
+      const midY = (t[0].clientY + t[1].clientY) / 2 - (rect?.top ?? 0)
+      ds.panStart = { x: midX, y: midY }
+      ds.pinchDist = Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY)
+      ds.pinchZoomStart = viewRef.current.zoom
       ds.viewStart = { x: viewRef.current.x, y: viewRef.current.y }
       return
     }
 
-    if (activeTool === 'connector') {
+    // ===== STATE: DRAWING =====
+    if (interactionState === 'drawing') {
+      ds.drawing = true
       const wp = screenToWorld(sp.x, sp.y)
-      // Hit test to find which object was clicked
-      const hit = [...objectsRef.current].reverse().find(o => {
-        if (o.type === 'connector') return false // can't connect to connectors
-        if (o.type === 'sticky' || o.type === 'image' || o.type === 'rect') {
-          return wp.x >= o.x && wp.x <= o.x + o.width && wp.y >= o.y && wp.y <= o.y + o.height
-        }
-        if (o.type === 'emoji') {
-          return wp.x >= o.x && wp.x <= o.x + o.size && wp.y >= o.y && wp.y <= o.y + o.size
-        }
-        if (o.type === 'circle') {
-          const dx = (wp.x - o.cx) / Math.abs(o.rx || 1)
-          const dy = (wp.y - o.cy) / Math.abs(o.ry || 1)
-          return dx * dx + dy * dy <= 1
-        }
-        if (o.type === 'line') {
-          const dist = Math.abs((o.y2 - o.y1) * wp.x - (o.x2 - o.x1) * wp.y + o.x2 * o.y1 - o.y2 * o.x1) / Math.hypot(o.y2 - o.y1, o.x2 - o.x1)
-          return dist < 10
-        }
-        if (o.type === 'stroke' && o.points.length > 0) {
-          return o.points.some(p => Math.hypot(p.x - wp.x, p.y - wp.y) < o.width * 2 + 8)
-        }
-        return false
-      })
+      ds.currentStroke = {
+        type: 'stroke', id: uid(),
+        points: [wp],
+        color: drawingTool === 'eraser' ? color : color,
+        width: drawingTool === 'eraser' ? brushSize * 4 : brushSize,
+        tool: drawingTool,
+        layerId: activeLayerId,
+      }
+      redoStackRef.current = []
+      return
+    }
 
-      if (hit) {
-        if (!connectorSourceRef.current) {
-          // Set source
-          connectorSourceRef.current = hit.id
-          setConnectorSource(hit.id)
-          setSelectedId(hit.id)
-        } else if (connectorSourceRef.current !== hit.id) {
-          // Set target and create connector
-          pushUndo()
-          const conn: ConnectorObj = {
-            type: 'connector',
-            id: uid(),
-            sourceId: connectorSourceRef.current,
-            targetId: hit.id,
-            color: color,
-            strokeWidth: brushSize,
-            layerId: activeLayerId,
+    // ===== STATE: EDITING =====
+    if (interactionState === 'editing') {
+      // Check if clicking on the currently editing element — allow drag
+      const wp = screenToWorld(sp.x, sp.y)
+      const editId = editingStickyId || editingShapeId || editingEmojiId
+      if (editId) {
+        const editObj = objectsRef.current.find(o => o.id === editId)
+        if (editObj) {
+          // Check if click is on the editing element
+          let isOnElement = false
+          if (editObj.type === 'sticky' || editObj.type === 'image' || editObj.type === 'rect') {
+            isOnElement = wp.x >= editObj.x && wp.x <= editObj.x + editObj.width && wp.y >= editObj.y && wp.y <= editObj.y + editObj.height
+          } else if (editObj.type === 'emoji') {
+            isOnElement = wp.x >= editObj.x && wp.x <= editObj.x + editObj.size && wp.y >= editObj.y && wp.y <= editObj.y + editObj.size
+          } else if (editObj.type === 'circle') {
+            const dx = (wp.x - editObj.cx) / Math.abs(editObj.rx || 1)
+            const dy = (wp.y - editObj.cy) / Math.abs(editObj.ry || 1)
+            isOnElement = dx * dx + dy * dy <= 1
           }
-          setObjects(prev => [...prev, conn])
-          connectorSourceRef.current = null
-          setConnectorSource(null)
-          setSelectedId(conn.id)
-          requestAnimationFrame(redraw)
+          if (isOnElement) return // let the overlay handle it
         }
+      }
+      // Clicked away — exit editing
+      exitEditing()
+      return
+    }
+
+    // ===== STATE: IDLE =====
+    // Connector mode (special idle sub-mode)
+    if (connectorSourceRef.current) {
+      const wp = screenToWorld(sp.x, sp.y)
+      const hit = hitTest(wp)
+      if (hit && hit.type !== 'connector' && connectorSourceRef.current !== hit.id) {
+        pushUndo()
+        const conn: ConnectorObj = {
+          type: 'connector', id: uid(),
+          sourceId: connectorSourceRef.current,
+          targetId: hit.id,
+          color: color, strokeWidth: brushSize,
+          layerId: activeLayerId,
+        }
+        setObjects(prev => [...prev, conn])
+        connectorSourceRef.current = null
+        setConnectorSource(null)
+        setSelectedId(conn.id)
+        requestAnimationFrame(redraw)
       } else {
-        // Clicked empty space — cancel connector
+        // Clicked empty space or same element — cancel connector
         connectorSourceRef.current = null
         setConnectorSource(null)
         setSelectedId(null)
@@ -826,238 +881,107 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       return
     }
 
-    if (activeTool === 'select') {
-      const wp = screenToWorld(sp.x, sp.y)
-
-      // Check if touching a line endpoint handle
-      if (selectedId) {
-        const sel = objectsRef.current.find(o => o.id === selectedId)
-        if (sel && sel.type === 'line') {
-          const handleSize = 20 / viewRef.current.zoom
-          if (Math.hypot(wp.x - sel.x1, wp.y - sel.y1) < handleSize) {
-            ds.draggingLineEndpoint = 'start'
-            ds.lineEndpointStart = { x: sel.x1, y: sel.y1 }
-            ds.dragStart = wp
-            setDraggingLineEndpoint('start')
-            return
-          }
-          if (Math.hypot(wp.x - sel.x2, wp.y - sel.y2) < handleSize) {
-            ds.draggingLineEndpoint = 'end'
-            ds.lineEndpointStart = { x: sel.x2, y: sel.y2 }
-            ds.dragStart = wp
-            setDraggingLineEndpoint('end')
-            return
-          }
-        }
-      }
-
-      // Check if touching a resize handle of the selected object
-      if (selectedId) {
-        const sel = objectsRef.current.find(o => o.id === selectedId)
-        if (sel && (sel.type === 'sticky' || sel.type === 'image' || sel.type === 'emoji' || sel.type === 'rect' || sel.type === 'circle')) {
-          const handleSize = 20 / viewRef.current.zoom
-          let selW: number, selH: number, selX = 0, selY = 0
-          if ('x' in sel) { selX = sel.x; selY = sel.y }
-          if (sel.type === 'emoji') { selW = sel.size; selH = sel.size }
-          else if (sel.type === 'circle') { selW = Math.abs(sel.rx) * 2; selH = Math.abs(sel.ry) * 2; selX = sel.cx - Math.abs(sel.rx); selY = sel.cy - Math.abs(sel.ry) }
-          else { selW = sel.width; selH = sel.height }
-          const br = { x: selX + selW, y: selY + selH }
-          if (Math.abs(wp.x - br.x) < handleSize && Math.abs(wp.y - br.y) < handleSize) {
-            ds.resizing = true
-            ds.dragStart = wp
-            ds.resizeObjStart = { x: selX, y: selY, w: selW, h: selH }
-            return
-          }
-        }
-      }
-
-      // Hit test objects (reverse order = top first)
-      const hit = [...objectsRef.current].reverse().find(o => {
-        // Skip hidden/locked layers
-        if (o.layerId) {
-          const layer = layers.find(l => l.id === o.layerId)
-          if (layer && (!layer.visible || layer.locked)) return false
-        }
-        if (o.type === 'sticky' || o.type === 'image' || o.type === 'rect') {
-          return wp.x >= o.x && wp.x <= o.x + o.width && wp.y >= o.y && wp.y <= o.y + o.height
-        }
-        if (o.type === 'emoji') {
-          return wp.x >= o.x && wp.x <= o.x + o.size && wp.y >= o.y && wp.y <= o.y + o.size
-        }
-        if (o.type === 'circle') {
-          const dx = (wp.x - o.cx) / Math.abs(o.rx || 1)
-          const dy = (wp.y - o.cy) / Math.abs(o.ry || 1)
-          return dx * dx + dy * dy <= 1
-        }
-        if (o.type === 'line') {
-          const dist = Math.abs((o.y2 - o.y1) * wp.x - (o.x2 - o.x1) * wp.y + o.x2 * o.y1 - o.y2 * o.x1) / Math.hypot(o.y2 - o.y1, o.x2 - o.x1)
-          return dist < 10
-        }
-        if (o.type === 'connector') {
-          // Hit test connector: check distance from the line between source and target centers
-          const src = objectsRef.current.find(s => s.id === o.sourceId)
-          const tgt = objectsRef.current.find(s => s.id === o.targetId)
-          if (!src || !tgt) return false
-          const sc = getObjectCenter(src)
-          const tc = getObjectCenter(tgt)
-          if (!sc || !tc) return false
-          const lineLen = Math.hypot(tc.x - sc.x, tc.y - sc.y)
-          if (lineLen === 0) return false
-          const dist = Math.abs((tc.y - sc.y) * wp.x - (tc.x - sc.x) * wp.y + tc.x * sc.y - tc.y * sc.x) / lineLen
-          // Also check that the point is between source and target (not extending beyond)
-          const dot = ((wp.x - sc.x) * (tc.x - sc.x) + (wp.y - sc.y) * (tc.y - sc.y)) / (lineLen * lineLen)
-          return dist < 10 && dot >= 0 && dot <= 1
-        }
-        if (o.type === 'stroke' && o.points.length > 0) {
-          return o.points.some(p => Math.hypot(p.x - wp.x, p.y - wp.y) < o.width * 2 + 8)
-        }
-        return false
-      })
-      if (hit) {
-        // Double-click detection
-        const isDoubleClick = checkDoubleClick(hit.id)
-
-        if (isDoubleClick) {
-          if (hit.type === 'sticky') {
-            setEditingStickyId(hit.id)
-            return
-          }
-          if (hit.type === 'rect' || hit.type === 'circle') {
-            setEditingShapeId(hit.id)
-            return
-          }
-          if (hit.type === 'emoji') {
-            setEditingEmojiId(hit.id)
-            return
-          }
-          // Line double-click: just select, endpoints are already draggable
-        }
-
-        setSelectedId(hit.id)
-        // Close any editing popovers when selecting a different object
-        if (hit.id !== editingShapeId) setEditingShapeId(null)
-        if (hit.id !== editingEmojiId) setEditingEmojiId(null)
-
-        ds.dragging = true
-        ds.dragStart = wp
-        if (hit.type === 'sticky' || hit.type === 'image' || hit.type === 'emoji' || hit.type === 'rect') {
-          ds.dragObjStart = { x: hit.x, y: hit.y }
-        } else if (hit.type === 'circle') {
-          ds.dragObjStart = { x: hit.cx, y: hit.cy }
-        } else if (hit.type === 'line') {
-          ds.dragObjStart = { x: hit.x1, y: hit.y1 }
-        } else if (hit.type === 'stroke' && hit.points.length > 0) {
-          ds.dragObjStart = { x: hit.points[0].x, y: hit.points[0].y }
-        } else if (hit.type === 'connector') {
-          // Connectors can't be dragged directly (they follow their source/target)
-          ds.dragging = false
-        }
-      } else {
-        setSelectedId(null)
-        setEditingShapeId(null)
-        setEditingEmojiId(null)
-      }
-      return
-    }
-
-    if (activeTool === 'sticky') {
-      // Check if tapping an existing sticky
-      const wp = screenToWorld(sp.x, sp.y)
-      const hit = [...objects].reverse().find(o =>
-        o.type === 'sticky' && wp.x >= o.x && wp.x <= o.x + o.width && wp.y >= o.y && wp.y <= o.y + o.height
-      )
-      if (hit && hit.type === 'sticky') {
-        setEditingStickyId(hit.id)
-        return
-      }
-      // Create new sticky
-      pushUndo()
-      const sticky: StickyObj = {
-        type: 'sticky', id: uid(),
-        x: wp.x - 75, y: wp.y - 50,
-        width: 150, height: 100,
-        text: '', color: STICKY_COLORS[Math.floor(Math.random() * STICKY_COLORS.length)],
-        layerId: activeLayerId,
-      }
-      setObjects(prev => [...prev, sticky])
-      setEditingStickyId(sticky.id)
-      return
-    }
-
-    if (activeTool === 'rect') {
-      pushUndo()
-      const wp = screenToWorld(sp.x, sp.y)
-      const rectObj: RectObj = {
-        type: 'rect', id: uid(),
-        x: wp.x - 60, y: wp.y - 40,
-        width: 120, height: 80,
-        color: color, fillColor: color + '20', strokeWidth: brushSize,
-        layerId: activeLayerId,
-      }
-      setObjects(prev => [...prev, rectObj])
-      setSelectedId(rectObj.id)
-      setActiveTool('select')
-      return
-    }
-
-    if (activeTool === 'circle') {
-      pushUndo()
-      const wp = screenToWorld(sp.x, sp.y)
-      const circleObj: CircleObj = {
-        type: 'circle', id: uid(),
-        cx: wp.x, cy: wp.y,
-        rx: 50, ry: 50,
-        color: color, fillColor: color + '20', strokeWidth: brushSize,
-        layerId: activeLayerId,
-      }
-      setObjects(prev => [...prev, circleObj])
-      setSelectedId(circleObj.id)
-      setActiveTool('select')
-      return
-    }
-
-    if (activeTool === 'line') {
-      pushUndo()
-      const wp = screenToWorld(sp.x, sp.y)
-      const lineObj: LineObj = {
-        type: 'line', id: uid(),
-        x1: wp.x - 60, y1: wp.y,
-        x2: wp.x + 60, y2: wp.y,
-        color: color, strokeWidth: brushSize,
-        layerId: activeLayerId,
-      }
-      setObjects(prev => [...prev, lineObj])
-      setSelectedId(lineObj.id)
-      setActiveTool('select')
-      return
-    }
-
-    if (activeTool === 'kitty') {
-      pushUndo()
-      const wp = screenToWorld(sp.x, sp.y)
-      const emojiObj: EmojiObj = {
-        type: 'emoji', id: uid(),
-        x: wp.x - 30, y: wp.y - 30,
-        size: 60,
-        emoji: selectedKitty,
-        layerId: activeLayerId,
-      }
-      setObjects(prev => [...prev, emojiObj])
-      return
-    }
-
-    // Pen or eraser
-    ds.drawing = true
     const wp = screenToWorld(sp.x, sp.y)
-    ds.currentStroke = {
-      type: 'stroke', id: uid(),
-      points: [wp],
-      color,
-      width: activeTool === 'eraser' ? brushSize * 4 : brushSize,
-      tool: activeTool as 'pen' | 'eraser',
-      layerId: activeLayerId,
+
+    // Check if touching a line endpoint handle (when a line is selected)
+    if (selectedId) {
+      const sel = objectsRef.current.find(o => o.id === selectedId)
+      if (sel && sel.type === 'line') {
+        const handleSize = 20 / viewRef.current.zoom
+        if (Math.hypot(wp.x - sel.x1, wp.y - sel.y1) < handleSize) {
+          ds.draggingLineEndpoint = 'start'
+          ds.lineEndpointStart = { x: sel.x1, y: sel.y1 }
+          ds.dragStart = wp
+          setDraggingLineEndpoint('start')
+          return
+        }
+        if (Math.hypot(wp.x - sel.x2, wp.y - sel.y2) < handleSize) {
+          ds.draggingLineEndpoint = 'end'
+          ds.lineEndpointStart = { x: sel.x2, y: sel.y2 }
+          ds.dragStart = wp
+          setDraggingLineEndpoint('end')
+          return
+        }
+      }
     }
-    redoStackRef.current = []
+
+    // Check if touching a resize handle of the selected object
+    if (selectedId) {
+      const sel = objectsRef.current.find(o => o.id === selectedId)
+      if (sel && (sel.type === 'sticky' || sel.type === 'image' || sel.type === 'emoji' || sel.type === 'rect' || sel.type === 'circle')) {
+        const handleSize = 20 / viewRef.current.zoom
+        let selW: number, selH: number, selX = 0, selY = 0
+        if ('x' in sel) { selX = sel.x; selY = sel.y }
+        if (sel.type === 'emoji') { selW = sel.size; selH = sel.size }
+        else if (sel.type === 'circle') { selW = Math.abs(sel.rx) * 2; selH = Math.abs(sel.ry) * 2; selX = sel.cx - Math.abs(sel.rx); selY = sel.cy - Math.abs(sel.ry) }
+        else { selW = sel.width; selH = sel.height }
+        const br = { x: selX + selW, y: selY + selH }
+        if (Math.abs(wp.x - br.x) < handleSize && Math.abs(wp.y - br.y) < handleSize) {
+          ds.resizing = true
+          ds.dragStart = wp
+          ds.resizeObjStart = { x: selX, y: selY, w: selW, h: selH }
+          return
+        }
+      }
+    }
+
+    // Hit test objects (reverse order = top first)
+    const hit = hitTest(wp)
+    if (hit) {
+      // Double-click detection
+      const isDoubleClick = checkDoubleClick(hit.id)
+
+      if (isDoubleClick) {
+        // Enter editing state
+        setSelectedId(hit.id)
+        if (hit.type === 'sticky') {
+          setEditingStickyId(hit.id)
+          setEditingShapeId(null)
+          setEditingEmojiId(null)
+          setInteractionState('editing')
+          return
+        }
+        if (hit.type === 'rect' || hit.type === 'circle') {
+          setEditingShapeId(hit.id)
+          setEditingStickyId(null)
+          setEditingEmojiId(null)
+          setInteractionState('editing')
+          return
+        }
+        if (hit.type === 'emoji') {
+          setEditingEmojiId(hit.id)
+          setEditingStickyId(null)
+          setEditingShapeId(null)
+          setInteractionState('editing')
+          return
+        }
+        // Line double-click: just select, endpoints are already draggable
+      }
+
+      setSelectedId(hit.id)
+      // Close any editing popovers when selecting a different object
+      if (hit.id !== editingShapeId) setEditingShapeId(null)
+      if (hit.id !== editingEmojiId) setEditingEmojiId(null)
+
+      ds.dragging = true
+      ds.dragStart = wp
+      if (hit.type === 'sticky' || hit.type === 'image' || hit.type === 'emoji' || hit.type === 'rect') {
+        ds.dragObjStart = { x: hit.x, y: hit.y }
+      } else if (hit.type === 'circle') {
+        ds.dragObjStart = { x: hit.cx, y: hit.cy }
+      } else if (hit.type === 'line') {
+        ds.dragObjStart = { x: hit.x1, y: hit.y1 }
+      } else if (hit.type === 'stroke' && hit.points.length > 0) {
+        ds.dragObjStart = { x: hit.points[0].x, y: hit.points[0].y }
+      } else if (hit.type === 'connector') {
+        // Connectors can't be dragged directly (they follow their source/target)
+        ds.dragging = false
+      }
+    } else {
+      setSelectedId(null)
+      setEditingShapeId(null)
+      setEditingEmojiId(null)
+    }
   }
 
   const handlePointerMove = (e: React.TouchEvent | React.MouseEvent) => {
@@ -1307,7 +1231,6 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         }
         setObjects(prev => [...prev, imageObj])
         setSelectedId(imageObj.id)
-        setActiveTool('select')
         requestAnimationFrame(redraw)
       }
       img.src = url
@@ -1316,6 +1239,102 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     } finally {
       setIsUploadingImage(false)
     }
+  }
+
+  // ===== EXIT EDITING =====
+  const exitEditing = () => {
+    setEditingStickyId(null)
+    setEditingShapeId(null)
+    setEditingEmojiId(null)
+    setInteractionState('idle')
+  }
+
+  // ===== INSERT FUNCTIONS (place at canvas center, auto-select, stay in idle) =====
+
+  const insertSticky = () => {
+    pushUndo()
+    const center = screenToWorld(canvasSize.current.w / 2, canvasSize.current.h / 2)
+    const sticky: StickyObj = {
+      type: 'sticky', id: uid(),
+      x: center.x - 75, y: center.y - 50,
+      width: 150, height: 100,
+      text: '', color: STICKY_COLORS[Math.floor(Math.random() * STICKY_COLORS.length)],
+      layerId: activeLayerId,
+    }
+    setObjects(prev => [...prev, sticky])
+    setSelectedId(sticky.id)
+  }
+
+  const insertRect = () => {
+    pushUndo()
+    const center = screenToWorld(canvasSize.current.w / 2, canvasSize.current.h / 2)
+    const rectObj: RectObj = {
+      type: 'rect', id: uid(),
+      x: center.x - 60, y: center.y - 40,
+      width: 120, height: 80,
+      color: color, fillColor: color + '20', strokeWidth: brushSize,
+      layerId: activeLayerId,
+    }
+    setObjects(prev => [...prev, rectObj])
+    setSelectedId(rectObj.id)
+  }
+
+  const insertCircle = () => {
+    pushUndo()
+    const center = screenToWorld(canvasSize.current.w / 2, canvasSize.current.h / 2)
+    const circleObj: CircleObj = {
+      type: 'circle', id: uid(),
+      cx: center.x, cy: center.y,
+      rx: 50, ry: 50,
+      color: color, fillColor: color + '20', strokeWidth: brushSize,
+      layerId: activeLayerId,
+    }
+    setObjects(prev => [...prev, circleObj])
+    setSelectedId(circleObj.id)
+  }
+
+  const insertLine = () => {
+    pushUndo()
+    const center = screenToWorld(canvasSize.current.w / 2, canvasSize.current.h / 2)
+    const lineObj: LineObj = {
+      type: 'line', id: uid(),
+      x1: center.x - 60, y1: center.y,
+      x2: center.x + 60, y2: center.y,
+      color: color, strokeWidth: brushSize,
+      layerId: activeLayerId,
+    }
+    setObjects(prev => [...prev, lineObj])
+    setSelectedId(lineObj.id)
+  }
+
+  const insertEmoji = () => {
+    pushUndo()
+    const center = screenToWorld(canvasSize.current.w / 2, canvasSize.current.h / 2)
+    const emojiObj: EmojiObj = {
+      type: 'emoji', id: uid(),
+      x: center.x - 30, y: center.y - 30,
+      size: 60,
+      emoji: selectedKitty,
+      layerId: activeLayerId,
+    }
+    setObjects(prev => [...prev, emojiObj])
+    setSelectedId(emojiObj.id)
+  }
+
+  const startConnector = () => {
+    // Connector needs a source first — if something is selected, use it as source
+    if (selectedId) {
+      const sel = objectsRef.current.find(o => o.id === selectedId)
+      if (sel && sel.type !== 'connector') {
+        connectorSourceRef.current = selectedId
+        setConnectorSource(selectedId)
+        return
+      }
+    }
+    // If nothing selected, just prompt user (they need to click a source)
+    // We'll set a flag so the next click in idle selects a connector source
+    connectorSourceRef.current = '__pending__'
+    setConnectorSource('__pending__')
   }
 
   // ===== STICKY EDITING =====
@@ -1440,20 +1459,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   const hasUndo = undoStackRef.current.length > 0
   const hasRedo = redoStackRef.current.length > 0
 
-  const toolIcons: Record<string, React.ReactNode> = {
-    select: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>,
-    pen: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18"/></svg>,
-    eraser: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 20H7L3 16l9-9 8 8-4 4"/><path d="M6.5 13.5l5-5"/></svg>,
-    sticky: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15.5 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8.5L15.5 3z"/><path d="M14 3v6h6"/></svg>,
-    pan: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 11V6a2 2 0 00-4 0v6"/><path d="M14 10V4a2 2 0 00-4 0v7"/><path d="M10 10.5V5a2 2 0 00-4 0v9"/><path d="M18 11a2 2 0 014 0v3a8 8 0 01-8 8h-2c-2.8 0-4.5-.9-5.7-2.4L3.7 16a2 2 0 013-2.6l.3.3"/></svg>,
-    image: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>,
-    rect: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>,
-    circle: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/></svg>,
-    line: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="19" x2="19" y2="5"/></svg>,
-    connector: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M15 6l6 6-6 6"/><circle cx="3" cy="12" r="2" fill="currentColor"/></svg>,
-    kitty: <span style={{ fontSize: 16, lineHeight: 1 }}>{selectedKitty}</span>,
-  }
-
+  // ===== EMOJI CATEGORIES =====
   const EMOJI_CATEGORIES: Record<string, { icon: string; emojis: string[] }> = {
     'Kitties': { icon: '🐱', emojis: ['🐱', '😺', '😸', '😻', '🙀', '😿', '😹', '🐈', '🐈‍⬛', '🐾'] },
     'Faces': { icon: '😀', emojis: ['😀', '😎', '🤔', '😍', '🥳', '😱', '💀', '👻', '🤖', '👽'] },
@@ -1463,50 +1469,263 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     'Nature': { icon: '🌸', emojis: ['🌸', '🌲', '☀️', '🌈', '⚡', '❄️', '🌊', '🍀', '🌻', '🍄'] },
   }
   const [emojiCategory, setEmojiCategory] = useState('Kitties')
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
-  const ToolBtn = ({ t }: { t: string }) => (
-    <button
-      onClick={() => { setActiveTool(t as any); setShowColorPicker(false); setEditingStickyId(null); setEditingShapeId(null); setEditingEmojiId(null); if (t !== 'connector') { connectorSourceRef.current = null; setConnectorSource(null); } }}
-      style={{
-        width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        border: 'none', cursor: 'pointer',
-        background: activeTool === t ? '#e5e5e5' : 'transparent',
-        color: activeTool === t ? '#1a1a1a' : '#737373',
-      }}
-      title={t[0].toUpperCase() + t.slice(1)}
-    >
-      {toolIcons[t]}
-    </button>
-  )
+  // ===== TOOLBAR ICONS =====
+  const icons = {
+    sticky: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15.5 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8.5L15.5 3z"/><path d="M14 3v6h6"/></svg>,
+    rect: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>,
+    circle: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/></svg>,
+    line: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="19" x2="19" y2="5"/></svg>,
+    connector: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M15 6l6 6-6 6"/><circle cx="3" cy="12" r="2" fill="currentColor"/></svg>,
+    image: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>,
+    draw: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18"/></svg>,
+    undo: (active: boolean) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={active ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 0 1 15.36-6.36L21 9"/></svg>,
+    redo: (active: boolean) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={active ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 0 0-15.36-6.36L3 9"/></svg>,
+    layers: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>,
+    delete: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>,
+    duplicate: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
+    check: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+    eraser: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 20H7L3 16l9-9 8 8-4 4"/><path d="M6.5 13.5l5-5"/></svg>,
+  }
 
-  const toolbar = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#fafafa', position: 'relative', zIndex: 5 }}
-      onTouchStart={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
-    >
-      {/* Undo/Redo */}
-      <button onClick={handleUndo} disabled={!hasUndo} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', cursor: hasUndo ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={hasUndo ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 0 1 15.36-6.36L21 9"/></svg>
-      </button>
-      <button onClick={handleRedo} disabled={!hasRedo} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', cursor: hasRedo ? 'pointer' : 'default', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={hasRedo ? '#404040' : '#d4d4d4'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 0 0-15.36-6.36L3 9"/></svg>
-      </button>
+  // ===== HELPER: duplicate selected object =====
+  const duplicateSelected = () => {
+    if (!selectedId) return
+    const sel = objectsRef.current.find(o => o.id === selectedId)
+    if (!sel) return
+    pushUndo()
+    const newId = uid()
+    let clone: CanvasObject
+    const offset = 20
+    if (sel.type === 'sticky' || sel.type === 'image' || sel.type === 'rect') {
+      clone = { ...sel, id: newId, x: sel.x + offset, y: sel.y + offset }
+    } else if (sel.type === 'emoji') {
+      clone = { ...sel, id: newId, x: sel.x + offset, y: sel.y + offset }
+    } else if (sel.type === 'circle') {
+      clone = { ...sel, id: newId, cx: sel.cx + offset, cy: sel.cy + offset }
+    } else if (sel.type === 'line') {
+      clone = { ...sel, id: newId, x1: sel.x1 + offset, y1: sel.y1 + offset, x2: sel.x2 + offset, y2: sel.y2 + offset }
+    } else if (sel.type === 'stroke') {
+      clone = { ...sel, id: newId, points: sel.points.map(p => ({ x: p.x + offset, y: p.y + offset })) }
+    } else {
+      // connector — skip duplication
+      return
+    }
+    setObjects(prev => [...prev, clone])
+    setSelectedId(newId)
+  }
 
-      {selectedId && (
-        <button onClick={() => { pushUndo(); setObjects(prev => prev.filter(o => o.id !== selectedId)); setSelectedId(null); setEditingShapeId(null); setEditingEmojiId(null); requestAnimationFrame(redraw); }}
-          style={{ width: 32, height: 32, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
+  // ===== HELPER: delete selected object =====
+  const deleteSelected = () => {
+    if (!selectedId) return
+    pushUndo()
+    setObjects(prev => prev.filter(o => o.id !== selectedId))
+    setSelectedId(null)
+    exitEditing()
+    requestAnimationFrame(redraw)
+  }
+
+  // Button style helper
+  const btnStyle = (active = false): React.CSSProperties => ({
+    width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    border: 'none', cursor: 'pointer',
+    background: active ? '#e5e5e5' : 'transparent',
+    color: active ? '#1a1a1a' : '#737373',
+  })
+
+  const smallBtnStyle: React.CSSProperties = {
+    width: 32, height: 32, borderRadius: 8, border: 'none', cursor: 'pointer',
+    background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  }
+
+  const divider = <div style={{ width: 1, height: 24, background: '#e5e5e5', flexShrink: 0, margin: '0 2px' }} />
+
+  // ===== CONTEXTUAL TOOLBAR =====
+
+  const renderToolbar = () => {
+    const toolbarWrap = (children: React.ReactNode) => (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', background: '#fafafa', position: 'relative', zIndex: 5, flexWrap: 'wrap' }}
+        onTouchStart={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    )
+
+    // ===== DRAWING TOOLBAR =====
+    if (interactionState === 'drawing') {
+      return toolbarWrap(<>
+        {/* Color row */}
+        {COLORS.map(c => (
+          <button key={c} onClick={() => setColor(c)}
+            style={{
+              width: 24, height: 24, borderRadius: 12, background: c, cursor: 'pointer',
+              border: c === color ? '2.5px solid #3b82f6' : `1.5px solid ${c === '#ffffff' ? '#d4d4d4' : 'transparent'}`,
+            }} />
+        ))}
+
+        {divider}
+
+        {/* Size dots */}
+        {SIZES.map(s => (
+          <button key={s} onClick={() => setBrushSize(s)}
+            style={{ ...smallBtnStyle, background: brushSize === s ? '#e5e5e5' : 'transparent' }}>
+            <div style={{ width: Math.min(s + 2, 12), height: Math.min(s + 2, 12), borderRadius: '50%', background: '#404040' }} />
+          </button>
+        ))}
+
+        {divider}
+
+        {/* Pen / Eraser toggle */}
+        <button onClick={() => setDrawingTool('pen')} style={btnStyle(drawingTool === 'pen')} title="Pen">
+          {icons.draw}
         </button>
-      )}
+        <button onClick={() => setDrawingTool('eraser')} style={btnStyle(drawingTool === 'eraser')} title="Eraser">
+          {icons.eraser}
+        </button>
 
-      <div style={{ width: 1, height: 24, background: '#e5e5e5', flexShrink: 0, margin: '0 2px' }} />
+        <div style={{ flex: 1 }} />
 
-      {/* Tools */}
-      {['select', 'pen', 'eraser', 'sticky', 'rect', 'circle', 'line', 'connector', 'pan'].map(t => <ToolBtn key={t} t={t} />)}
+        {/* Done button */}
+        <button
+          onClick={() => setInteractionState('idle')}
+          style={{ ...btnStyle(), background: '#22c55e', color: '#fff', padding: '0 12px', width: 'auto', fontSize: 13, fontWeight: 600, gap: 4 }}
+          title="Done drawing"
+        >
+          {icons.check}
+          <span style={{ marginLeft: 4 }}>Done</span>
+        </button>
+      </>)
+    }
 
-      {/* Kitty stamp tool */}
+    // ===== EDITING TOOLBAR =====
+    if (interactionState === 'editing') {
+      const editId = editingStickyId || editingShapeId || editingEmojiId
+      const editObj = editId ? objectsRef.current.find(o => o.id === editId) : null
+
+      return toolbarWrap(<>
+        {/* Delete */}
+        <button onClick={deleteSelected} style={smallBtnStyle} title="Delete">
+          {icons.delete}
+        </button>
+
+        {/* Duplicate */}
+        <button onClick={duplicateSelected} style={smallBtnStyle} title="Duplicate">
+          {icons.duplicate}
+        </button>
+
+        {divider}
+
+        {/* Shape-specific: fill + stroke color */}
+        {editObj && (editObj.type === 'rect' || editObj.type === 'circle') && (() => {
+          const shape = editObj as RectObj | CircleObj
+          return <>
+            {/* Fill color */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: 10, color: '#737373', marginRight: 2, fontWeight: 600 }}>Fill</span>
+              <button
+                onClick={() => { pushUndo(); setObjects(prev => prev.map(o => o.id === editId ? { ...o, fillColor: 'transparent' } : o)); }}
+                style={{
+                  width: 20, height: 20, borderRadius: 10, cursor: 'pointer',
+                  background: 'linear-gradient(135deg, #fff 45%, #ef4444 45%, #ef4444 55%, #fff 55%)',
+                  border: shape.fillColor === 'transparent' ? '2px solid #3b82f6' : '1px solid #d4d4d4',
+                }}
+                title="No fill"
+              />
+              {COLORS.slice(0, 5).map(c => (
+                <button key={c}
+                  onClick={() => { pushUndo(); setObjects(prev => prev.map(o => o.id === editId ? { ...o, fillColor: c + '40' } : o)); }}
+                  style={{
+                    width: 20, height: 20, borderRadius: 10, background: c + '40', cursor: 'pointer',
+                    border: shape.fillColor === c + '40' ? '2px solid #3b82f6' : `1px solid ${c === '#ffffff' ? '#d4d4d4' : 'transparent'}`,
+                  }}
+                />
+              ))}
+            </div>
+
+            {divider}
+
+            {/* Stroke color */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: 10, color: '#737373', marginRight: 2, fontWeight: 600 }}>Stroke</span>
+              {COLORS.slice(0, 5).map(c => (
+                <button key={c}
+                  onClick={() => { pushUndo(); setObjects(prev => prev.map(o => o.id === editId ? { ...o, color: c } : o)); }}
+                  style={{
+                    width: 20, height: 20, borderRadius: 10, background: c, cursor: 'pointer',
+                    border: shape.color === c ? '2px solid #3b82f6' : `1px solid ${c === '#ffffff' ? '#d4d4d4' : 'transparent'}`,
+                  }}
+                />
+              ))}
+            </div>
+          </>
+        })()}
+
+        {/* Sticky-specific: background color */}
+        {editObj && editObj.type === 'sticky' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <span style={{ fontSize: 10, color: '#737373', marginRight: 2, fontWeight: 600 }}>Color</span>
+            {STICKY_COLORS.map(c => (
+              <button key={c}
+                onClick={() => { pushUndo(); setObjects(prev => prev.map(o => o.id === editId ? { ...o, color: c } : o)); }}
+                style={{
+                  width: 22, height: 22, borderRadius: 11, background: c, cursor: 'pointer',
+                  border: (editObj as StickyObj).color === c ? '2px solid #3b82f6' : '1px solid #d4d4d4',
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Emoji-specific: emoji category picker */}
+        {editObj && editObj.type === 'emoji' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <span style={{ fontSize: 10, color: '#737373', marginRight: 2, fontWeight: 600 }}>Swap</span>
+            {Object.entries(EMOJI_CATEGORIES).map(([name, cat]) => (
+              <button key={name} onClick={() => setEmojiCategory(name)}
+                style={{ padding: '2px 4px', borderRadius: 6, fontSize: 14, cursor: 'pointer', border: 'none', background: emojiCategory === name ? '#e5e5e5' : 'transparent' }}
+                title={name}>
+                {cat.icon}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ flex: 1 }} />
+
+        {/* Done button */}
+        <button
+          onClick={exitEditing}
+          style={{ ...btnStyle(), background: '#3b82f6', color: '#fff', padding: '0 12px', width: 'auto', fontSize: 13, fontWeight: 600, gap: 4 }}
+          title="Done editing"
+        >
+          {icons.check}
+          <span style={{ marginLeft: 4 }}>Done</span>
+        </button>
+      </>)
+    }
+
+    // ===== IDLE TOOLBAR (default) =====
+    return toolbarWrap(<>
+      {/* Insert tools */}
+      <button onClick={insertSticky} style={btnStyle()} title="Sticky note">{icons.sticky}</button>
+      <button onClick={insertRect} style={btnStyle()} title="Rectangle">{icons.rect}</button>
+      <button onClick={insertCircle} style={btnStyle()} title="Circle">{icons.circle}</button>
+      <button onClick={insertLine} style={btnStyle()} title="Line">{icons.line}</button>
+
+      {/* Emoji insert with picker */}
       <div style={{ position: 'relative' }}>
-        <ToolBtn t="kitty" />
-        {activeTool === 'kitty' && (
+        <button onClick={() => { insertEmoji(); setShowEmojiPicker(false); }} style={btnStyle()} title="Emoji">
+          <span style={{ fontSize: 16, lineHeight: 1 }}>{selectedKitty}</span>
+        </button>
+        {/* Long-press or right-click for picker — for simplicity, use a small arrow button */}
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(!showEmojiPicker); }}
+          style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, background: '#e5e5e5', border: '1px solid #d4d4d4', fontSize: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+        >
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#737373" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        {showEmojiPicker && (
           <div onClick={e => e.stopPropagation()}
             style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, padding: 6, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)', zIndex: 20, width: 200 }}>
             {/* Category tabs */}
@@ -1522,7 +1741,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
             {/* Emoji grid */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
               {EMOJI_CATEGORIES[emojiCategory]?.emojis.map(k => (
-                <button key={k} onClick={e => { e.stopPropagation(); setSelectedKitty(k); }}
+                <button key={k} onClick={e => { e.stopPropagation(); setSelectedKitty(k); setShowEmojiPicker(false); }}
                   style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, cursor: 'pointer', border: k === selectedKitty ? '2px solid #3b82f6' : '1px solid #e5e5e5', background: k === selectedKitty ? '#eff6ff' : 'transparent' }}>
                   {k}
                 </button>
@@ -1532,78 +1751,76 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         )}
       </div>
 
+      <button onClick={startConnector} style={btnStyle(!!connectorSource)} title="Connector">{icons.connector}</button>
+
       {/* Image upload button */}
       <button
         onClick={() => imageInputRef.current?.click()}
         disabled={isUploadingImage}
-        style={{
-          width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          border: 'none', cursor: 'pointer', background: 'transparent', color: '#737373',
-          opacity: isUploadingImage ? 0.5 : 1,
-        }}
+        style={{ ...btnStyle(), opacity: isUploadingImage ? 0.5 : 1 }}
         title="Insert image"
       >
         {isUploadingImage ? (
           <svg width="18" height="18" viewBox="0 0 24 24" className="animate-spin"><circle cx="12" cy="12" r="10" stroke="#a3a3a3" strokeWidth="2" fill="none" strokeDasharray="31.4" strokeDashoffset="10" /></svg>
-        ) : toolIcons.image}
+        ) : icons.image}
       </button>
       <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" className="hidden" onChange={handleImageUpload} />
 
-      <div style={{ width: 1, height: 24, background: '#e5e5e5', flexShrink: 0, margin: '0 2px' }} />
+      {divider}
+
+      {/* Draw toggle */}
+      <button onClick={() => { setInteractionState('drawing'); setDrawingTool('pen'); setSelectedId(null); setShowEmojiPicker(false); }} style={btnStyle()} title="Draw">
+        {icons.draw}
+      </button>
+
+      {divider}
+
+      {/* Undo/Redo */}
+      <button onClick={handleUndo} disabled={!hasUndo} style={{ ...smallBtnStyle, cursor: hasUndo ? 'pointer' : 'default' }}>
+        {icons.undo(hasUndo)}
+      </button>
+      <button onClick={handleRedo} disabled={!hasRedo} style={{ ...smallBtnStyle, cursor: hasRedo ? 'pointer' : 'default' }}>
+        {icons.redo(hasRedo)}
+      </button>
+
+      {divider}
 
       {/* Layers toggle */}
       <button
         onClick={() => setShowLayerPanel(!showLayerPanel)}
-        style={{
-          width: 36, height: 36, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          border: 'none', cursor: 'pointer',
-          background: showLayerPanel ? '#e5e5e5' : 'transparent',
-          color: showLayerPanel ? '#1a1a1a' : '#737373',
-        }}
+        style={btnStyle(showLayerPanel)}
         title="Layers"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polygon points="12 2 2 7 12 12 22 7 12 2" />
-          <polyline points="2 17 12 22 22 17" />
-          <polyline points="2 12 12 17 22 12" />
-        </svg>
+        {icons.layers}
       </button>
 
-      <div style={{ width: 1, height: 24, background: '#e5e5e5', flexShrink: 0, margin: '0 2px' }} />
-
-      {/* Color swatch */}
-      <div style={{ position: 'relative' }}>
-        <button onClick={(e) => { e.stopPropagation(); setShowColorPicker(!showColorPicker); }}
-          style={{ width: 24, height: 24, borderRadius: 12, background: color, border: `2px solid ${color === '#ffffff' ? '#d4d4d4' : color}`, cursor: 'pointer' }} />
-        {showColorPicker && (
-          <div onClick={e => e.stopPropagation()}
-            style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 4, padding: 8, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)', zIndex: 20 }}>
-            {COLORS.map(c => (
-              <button key={c} onClick={e => { e.stopPropagation(); setColor(c); setShowColorPicker(false); if (activeTool !== 'pen') setActiveTool('pen'); }}
-                style={{ width: 28, height: 28, borderRadius: 14, background: c, border: c === color ? '2.5px solid #3b82f6' : `1.5px solid ${c === '#ffffff' ? '#d4d4d4' : 'transparent'}`, cursor: 'pointer' }} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Sizes */}
-      {SIZES.map(s => (
-        <button key={s} onClick={() => setBrushSize(s)}
-          style={{ width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: brushSize === s ? '#e5e5e5' : 'transparent', border: 'none', cursor: 'pointer' }}>
-          <div style={{ width: Math.min(s + 2, 12), height: Math.min(s + 2, 12), borderRadius: '50%', background: '#404040' }} />
+      {/* Delete selected (when something is selected in idle) */}
+      {selectedId && <>
+        {divider}
+        <button onClick={deleteSelected} style={smallBtnStyle} title="Delete">
+          {icons.delete}
         </button>
-      ))}
+      </>}
 
       <div style={{ flex: 1 }} />
 
       {/* Connector source indicator */}
       {connectorSource && (
-        <span style={{ fontSize: 10, color: '#3b82f6', whiteSpace: 'nowrap', marginRight: 4 }}>Click target...</span>
+        <span style={{ fontSize: 10, color: '#3b82f6', whiteSpace: 'nowrap', marginRight: 4 }}>
+          {connectorSource === '__pending__' ? 'Click source...' : 'Click target...'}
+        </span>
       )}
 
       <span style={{ fontSize: 10, color: '#a3a3a3', whiteSpace: 'nowrap' }}>{zoomPct}%</span>
-    </div>
-  )
+    </>)
+  }
+
+  // Determine cursor based on interaction state
+  const getCursor = (): string => {
+    if (interactionState === 'drawing') return 'crosshair'
+    if (connectorSource) return 'crosshair'
+    return 'default'
+  }
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col" style={{ colorScheme: 'light' }}>
@@ -1616,7 +1833,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
       {/* Desktop toolbar (top) — hidden on small screens */}
       <div className="hidden sm:block" style={{ borderBottom: '1px solid #e5e5e5' }}>
-        {toolbar}
+        {renderToolbar()}
       </div>
 
       {/* Canvas */}
@@ -1630,7 +1847,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
           onTouchStart={handlePointerDown}
           onTouchMove={handlePointerMove}
           onTouchEnd={handlePointerUp}
-          style={{ position: 'absolute', inset: 0, cursor: activeTool === 'pan' ? 'grab' : activeTool === 'eraser' ? 'cell' : activeTool === 'select' ? 'default' : activeTool === 'connector' ? 'crosshair' : 'crosshair' }}
+          style={{ position: 'absolute', inset: 0, cursor: getCursor() }}
         />
 
         {/* Sticky note text editor overlay */}
@@ -1648,7 +1865,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
                 ref={(el) => { if (el) setTimeout(() => el.focus(), 50); }}
                 value={editingSticky.text}
                 onChange={(e) => updateStickyText(e.target.value)}
-                onBlur={() => setEditingStickyId(null)}
+                onBlur={() => { /* don't exit editing on blur — use Done button */ }}
                 placeholder="Type here..."
                 style={{
                   width: '100%', height: '100%',
@@ -1663,80 +1880,8 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
           )
         })()}
 
-        {/* Shape style popover (double-click rect/circle) */}
-        {editingShape && (() => {
-          let sx: number, sy: number
-          if (editingShape.type === 'rect') {
-            const sp = worldToScreen(editingShape.x + editingShape.width / 2, editingShape.y)
-            sx = sp.x; sy = sp.y - 10
-          } else {
-            const sp = worldToScreen(editingShape.cx, editingShape.cy - Math.abs(editingShape.ry))
-            sx = sp.x; sy = sp.y - 10
-          }
-          return (
-            <div
-              style={{
-                position: 'absolute', left: sx, top: sy, transform: 'translate(-50%, -100%)',
-                background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-                padding: 10, zIndex: 15, minWidth: 200,
-              }}
-              onTouchStart={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-            >
-              {/* Close button */}
-              <button
-                onClick={() => setEditingShapeId(null)}
-                style={{ position: 'absolute', top: 4, right: 6, background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#a3a3a3' }}
-              >x</button>
-
-              {/* Fill color */}
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 10, color: '#737373', marginBottom: 4, fontWeight: 600 }}>Fill</div>
-                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                  <button
-                    onClick={() => { pushUndo(); setObjects(prev => prev.map(o => o.id === editingShapeId ? { ...o, fillColor: 'transparent' } : o)); }}
-                    style={{
-                      width: 22, height: 22, borderRadius: 11, cursor: 'pointer',
-                      background: 'linear-gradient(135deg, #fff 45%, #ef4444 45%, #ef4444 55%, #fff 55%)',
-                      border: editingShape.fillColor === 'transparent' ? '2px solid #3b82f6' : '1px solid #d4d4d4',
-                    }}
-                    title="No fill"
-                  />
-                  {COLORS.map(c => (
-                    <button
-                      key={c}
-                      onClick={() => { pushUndo(); setObjects(prev => prev.map(o => o.id === editingShapeId ? { ...o, fillColor: c + '40' } : o)); }}
-                      style={{
-                        width: 22, height: 22, borderRadius: 11, background: c + '40', cursor: 'pointer',
-                        border: editingShape.fillColor === c + '40' ? '2px solid #3b82f6' : `1px solid ${c === '#ffffff' ? '#d4d4d4' : 'transparent'}`,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Stroke color */}
-              <div>
-                <div style={{ fontSize: 10, color: '#737373', marginBottom: 4, fontWeight: 600 }}>Stroke</div>
-                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                  {COLORS.map(c => (
-                    <button
-                      key={c}
-                      onClick={() => { pushUndo(); setObjects(prev => prev.map(o => o.id === editingShapeId ? { ...o, color: c } : o)); }}
-                      style={{
-                        width: 22, height: 22, borderRadius: 11, background: c, cursor: 'pointer',
-                        border: editingShape.color === c ? '2px solid #3b82f6' : `1px solid ${c === '#ffffff' ? '#d4d4d4' : 'transparent'}`,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* Emoji swap popover (double-click emoji) */}
-        {editingEmojiObj && (() => {
+        {/* Emoji swap grid (shown in editing mode for emoji) */}
+        {interactionState === 'editing' && editingEmojiObj && (() => {
           const sp = worldToScreen(editingEmojiObj.x + editingEmojiObj.size / 2, editingEmojiObj.y)
           return (
             <div
@@ -1748,22 +1893,6 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
               onTouchStart={e => e.stopPropagation()}
               onMouseDown={e => e.stopPropagation()}
             >
-              {/* Close button */}
-              <button
-                onClick={() => setEditingEmojiId(null)}
-                style={{ position: 'absolute', top: 2, right: 4, background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#a3a3a3' }}
-              >x</button>
-
-              {/* Category tabs */}
-              <div style={{ display: 'flex', gap: 2, marginBottom: 4, flexWrap: 'wrap' }}>
-                {Object.entries(EMOJI_CATEGORIES).map(([name, cat]) => (
-                  <button key={name} onClick={e => { e.stopPropagation(); setEmojiCategory(name); }}
-                    style={{ padding: '2px 6px', borderRadius: 6, fontSize: 14, cursor: 'pointer', border: 'none', background: emojiCategory === name ? '#e5e5e5' : 'transparent' }}
-                    title={name}>
-                    {cat.icon}
-                  </button>
-                ))}
-              </div>
               {/* Emoji grid */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                 {EMOJI_CATEGORIES[emojiCategory]?.emojis.map(k => (
@@ -1878,7 +2007,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
 
       {/* Mobile toolbar (bottom) — visible only on small screens */}
       <div className="sm:hidden" style={{ borderTop: '1px solid #e5e5e5', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-        {toolbar}
+        {renderToolbar()}
       </div>
     </div>
   )
