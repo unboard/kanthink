@@ -183,54 +183,6 @@ function PollDetailView({ card, isCreator, userId, channelName, channelDescripti
       <div className="flex-1 overflow-y-auto">
         {/* Poll Results Section */}
         <div className="p-4 space-y-3">
-          {/* Question */}
-          <div>
-            {isCreator && isEditingQuestion ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={editedQuestion}
-                  onChange={(e) => setEditedQuestion(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveQuestion();
-                    if (e.key === 'Escape') setIsEditingQuestion(false);
-                  }}
-                  autoFocus
-                  className="flex-1 text-base font-semibold text-neutral-900 dark:text-white bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                />
-                <button
-                  onClick={handleSaveQuestion}
-                  className="px-3 py-2 text-xs font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-500"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={() => setIsEditingQuestion(false)}
-                  className="px-3 py-2 text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <h3
-                className={`text-base font-semibold text-neutral-900 dark:text-white ${isCreator ? 'cursor-pointer hover:text-violet-600 dark:hover:text-violet-400' : ''}`}
-                onClick={() => {
-                  if (isCreator) {
-                    setEditedQuestion(data.question);
-                    setIsEditingQuestion(true);
-                  }
-                }}
-              >
-                {data.question}
-                {isCreator && (
-                  <svg className="w-3.5 h-3.5 inline-block ml-1.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                )}
-              </h3>
-            )}
-          </div>
-
           {/* Status badge */}
           {data.closed && (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 text-xs font-medium text-neutral-500">
