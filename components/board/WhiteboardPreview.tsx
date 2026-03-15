@@ -17,6 +17,21 @@ interface WhiteboardPreviewProps {
 
 const thumbImageCache = new Map<string, HTMLImageElement>()
 
+function getThumbCenter(obj: any): { x: number; y: number } | null {
+  if (obj.type === 'sticky' || obj.type === 'rect' || obj.type === 'image') {
+    return { x: obj.x + obj.width / 2, y: obj.y + obj.height / 2 }
+  }
+  if (obj.type === 'circle') return { x: obj.cx, y: obj.cy }
+  if (obj.type === 'emoji') return { x: obj.x + obj.size / 2, y: obj.y + obj.size / 2 }
+  if (obj.type === 'stroke' && obj.points?.length > 0) {
+    let sx = 0, sy = 0
+    for (const p of obj.points) { sx += p.x; sy += p.y }
+    return { x: sx / obj.points.length, y: sy / obj.points.length }
+  }
+  if (obj.type === 'line') return { x: (obj.x1 + obj.x2) / 2, y: (obj.y1 + obj.y2) / 2 }
+  return null
+}
+
 function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData, onImageLoad?: () => void) {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -64,6 +79,19 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData, onImageL
       if (Math.min(obj.y1, obj.y2) < minY) minY = Math.min(obj.y1, obj.y2)
       if (Math.max(obj.x1, obj.x2) > maxX) maxX = Math.max(obj.x1, obj.x2)
       if (Math.max(obj.y1, obj.y2) > maxY) maxY = Math.max(obj.y1, obj.y2)
+    } else if (obj.type === 'connector') {
+      const src = objs.find((s: any) => s.id === obj.sourceId)
+      const tgt = objs.find((s: any) => s.id === obj.targetId)
+      if (src && tgt) {
+        const sc = getThumbCenter(src)
+        const tc = getThumbCenter(tgt)
+        if (sc && tc) {
+          if (Math.min(sc.x, tc.x) < minX) minX = Math.min(sc.x, tc.x)
+          if (Math.min(sc.y, tc.y) < minY) minY = Math.min(sc.y, tc.y)
+          if (Math.max(sc.x, tc.x) > maxX) maxX = Math.max(sc.x, tc.x)
+          if (Math.max(sc.y, tc.y) > maxY) maxY = Math.max(sc.y, tc.y)
+        }
+      }
     }
   }
 
@@ -158,6 +186,32 @@ function drawThumbnail(canvas: HTMLCanvasElement, data: WhiteboardData, onImageL
       ctx.strokeStyle = obj.color
       ctx.lineWidth = obj.strokeWidth
       ctx.stroke()
+    } else if (obj.type === 'connector') {
+      const src = objs.find((s: any) => s.id === obj.sourceId)
+      const tgt = objs.find((s: any) => s.id === obj.targetId)
+      if (src && tgt) {
+        const sc = getThumbCenter(src)
+        const tc = getThumbCenter(tgt)
+        if (sc && tc) {
+          ctx.beginPath()
+          ctx.moveTo(sc.x, sc.y)
+          ctx.lineTo(tc.x, tc.y)
+          ctx.strokeStyle = obj.color
+          ctx.lineWidth = obj.strokeWidth
+          ctx.lineCap = 'round'
+          ctx.stroke()
+          // Arrowhead
+          const angle = Math.atan2(tc.y - sc.y, tc.x - sc.x)
+          const headLen = 10
+          ctx.beginPath()
+          ctx.moveTo(tc.x, tc.y)
+          ctx.lineTo(tc.x - headLen * Math.cos(angle - Math.PI / 6), tc.y - headLen * Math.sin(angle - Math.PI / 6))
+          ctx.lineTo(tc.x - headLen * Math.cos(angle + Math.PI / 6), tc.y - headLen * Math.sin(angle + Math.PI / 6))
+          ctx.closePath()
+          ctx.fillStyle = obj.color
+          ctx.fill()
+        }
+      }
     }
   }
   ctx.restore()
