@@ -337,39 +337,6 @@ export interface Card {
   typeData?: Record<string, unknown>;  // Type-specific configuration data
 }
 
-// ===== WIDGET CARD TYPES =====
-
-export interface CalendarDayEntry {
-  type: 'card' | 'task' | 'note';
-  id: string;        // for card/task: references existing card/task ID. For note: unique ID
-  title: string;     // display title (denormalized for quick rendering)
-}
-
-export interface CalendarTypeData {
-  style: 'month-table' | 'month-only' | 'table-only';
-  month: number;  // 0-11
-  year: number;
-  showWeekends: boolean;
-  firstDayOfWeek: 0 | 1;  // 0 = Sunday, 1 = Monday
-  dayEntries?: Record<string, CalendarDayEntry[]>;  // ISO date key → entries
-  dayThreads?: Record<string, Array<{ id: string; content: string; createdAt: string }>>;  // day-level threads
-}
-
-export interface PollTypeData {
-  question: string;
-  options: Array<{
-    id: string;
-    text: string;
-    voterIds: string[];
-  }>;
-  closed?: boolean;
-  creatorId?: string;
-}
-
-export interface ShroomTypeData {
-  instructionCardId: string;  // Reference to the shroom/instruction card
-}
-
 // ===== REVIEW QUEUE TYPES =====
 
 export type RejectionReason = 'too_similar' | 'not_relevant' | 'too_vague' | 'not_for_me' | 'already_know';

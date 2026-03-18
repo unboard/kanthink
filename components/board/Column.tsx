@@ -15,7 +15,7 @@ import { SkeletonCard } from './SkeletonCard';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { ColumnTaskItem } from './ColumnTaskItem';
 import { TaskDrawer } from './TaskDrawer';
-import { WidgetPicker } from './WidgetPicker';
+
 
 interface ColumnProps {
   column: ColumnType;
@@ -76,7 +76,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const [newTaskId, setNewTaskId] = useState<ID | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
-  const [showWidgetPicker, setShowWidgetPicker] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
 
@@ -299,21 +298,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                       <div className="text-xs text-neutral-400 dark:text-neutral-500">A single to-do item</div>
                     </div>
                   </button>
-                  <button
-                    onClick={() => { setIsAddMenuOpen(false); setShowWidgetPicker(true); }}
-                    className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
-                  >
-                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                      <rect x="3" y="3" width="7" height="7" rx="1" />
-                      <rect x="14" y="3" width="7" height="7" rx="1" />
-                      <rect x="3" y="14" width="7" height="7" rx="1" />
-                      <rect x="14" y="14" width="7" height="7" rx="1" />
-                    </svg>
-                    <div>
-                      <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Widgets</div>
-                      <div className="text-xs text-neutral-400 dark:text-neutral-500">Calendar, poll, and more</div>
-                    </div>
-                  </button>
                 </div>
               )}
             </div>
@@ -449,18 +433,6 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         autoFocusTitle
       />
 
-      {/* Widget Picker */}
-      <WidgetPicker
-        isOpen={showWidgetPicker}
-        onClose={() => setShowWidgetPicker(false)}
-        channelId={channelId}
-        onCreateWidget={(cardType, title, typeData) => {
-          const card = createCard(channelId, column.id, { title });
-          // Update the card with widget type data
-          updateCard(card.id, { cardType, typeData });
-          setNewCardId(card.id);
-        }}
-      />
     </div>
   );
 }

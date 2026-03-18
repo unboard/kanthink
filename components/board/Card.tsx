@@ -15,9 +15,6 @@ import { AssigneeAvatars } from './AssigneeAvatars';
 import { Modal } from '@/components/ui';
 import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
-import { CalendarWidget } from './CalendarWidget';
-import { PollWidget } from './PollWidget';
-import { ShroomWidget } from './ShroomWidget';
 import { SnoozePicker } from './SnoozePicker';
 
 interface CardProps {
@@ -458,25 +455,8 @@ export function Card({ card }: CardProps) {
           )}
         </div>
 
-        {/* Widget card renderer */}
-        {card.cardType === 'calendar' && (
-          <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
-            <CalendarWidget card={card} />
-          </div>
-        )}
-        {card.cardType === 'poll' && (
-          <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
-            <PollWidget card={card} />
-          </div>
-        )}
-        {card.cardType === 'shroom' && (
-          <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
-            <ShroomWidget card={card} />
-          </div>
-        )}
-
-        {/* Standard clickable content area (hidden for widget cards) */}
-        {!card.cardType && <div onClick={() => setIsCardDrawerOpen(true)}>
+        {/* Clickable content area */}
+        <div onClick={() => setIsCardDrawerOpen(true)}>
           {/* Pinned chip */}
           {isPinned && (
             <div className="mb-1.5">
@@ -525,10 +505,9 @@ export function Card({ card }: CardProps) {
               {contentPreview}
             </p>
           )}
-        </div>}
+        </div>
 
-        {/* Standard card extras (hidden for widget cards) */}
-        {!card.cardType && (card.assignedTo ?? []).length > 0 && (
+        {(card.assignedTo ?? []).length > 0 && (
           <div className="mt-2" onClick={() => setIsCardDrawerOpen(true)}>
             <AssigneeAvatars
               userIds={card.assignedTo!}
@@ -539,7 +518,7 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Task progress bar */}
-        {!card.cardType && cardTasks.length > 0 && (
+        {cardTasks.length > 0 && (
           <div className="mt-2" onClick={() => setIsCardDrawerOpen(true)}>
             <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
               <span>{cardTasks.filter(t => t.status === 'done').length}/{cardTasks.length} tasks</span>
@@ -555,7 +534,7 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Published indicator */}
-        {!card.cardType && card.isPublic && (
+        {card.isPublic && (
           <div className="mt-2 flex items-center gap-1 text-green-600 dark:text-green-400">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -564,8 +543,8 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
-        {/* Reactions (hidden for widget cards) */}
-        {!card.cardType && (card.reactions ?? []).length > 0 && (
+        {/* Reactions */}
+        {(card.reactions ?? []).length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
             {(card.reactions ?? []).map((r) => (
               <button
@@ -603,8 +582,7 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
-        {/* Tasks (hidden for widget cards) */}
-        {!card.cardType && <div>
+        <div>
           <TaskListOnCard
             cardId={card.id}
             channelId={card.channelId}
@@ -622,7 +600,7 @@ export function Card({ card }: CardProps) {
               setIsTaskDrawerOpen(true);
             }}
           />
-        </div>}
+        </div>
         </div>{/* End card content padding wrapper */}
       </div>
       <CardDetailDrawer
