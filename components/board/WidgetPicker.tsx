@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
-import type { CalendarTypeData, PollTypeData } from '@/lib/types';
+import type { CalendarTypeData, PollTypeData, ShroomTypeData, ID } from '@/lib/types';
+import { useStore } from '@/lib/store';
 
 interface WidgetPickerProps {
   isOpen: boolean;
   onClose: () => void;
   onCreateWidget: (cardType: string, title: string, typeData: Record<string, unknown>) => void;
+  channelId?: ID;
 }
 
 interface WidgetDefinition {
@@ -31,6 +33,13 @@ const WIDGETS: WidgetDefinition[] = [
     name: 'Poll',
     description: 'Quick voting for decisions',
     icon: '📊',
+    hasSettings: true,
+  },
+  {
+    id: 'shroom',
+    name: 'Shroom',
+    description: 'Place an AI shroom in a column',
+    icon: '🍄',
     hasSettings: true,
   },
 ];
@@ -199,7 +208,77 @@ function PollSettings({ onCreate, creatorId }: { onCreate: (title: string, data:
   );
 }
 
-export function WidgetPicker({ isOpen, onClose, onCreateWidget }: WidgetPickerProps) {
+const ACTION_ICONS: Record<string, string> = {
+  generate: '+',
+  modify: '✎',
+  move: '↔',
+};
+
+function ShroomSettings({ channelId, onCreate }: { channelId?: ID; onCreate: (title: string, data: ShroomTypeData) => void }) {
+  const instructionCards = useStore((s) => s.instructionCards);
+  const favoriteIds = useStore((s) => s.favoriteInstructionCardIds);
+
+  // Get channel shrooms + favorited/global shrooms
+  const channelShrooms = Object.values(instructionCards).filter(
+    (ic) => channelId && ic.channelId === channelId
+  );
+  const favoritedShrooms = favoriteIds
+    .map((id) => instructionCards[id])
+    .filter(Boolean)
+    .filter((ic) => !channelId || ic.channelId === channelId || !ic.channelId || ic.isGlobalResource);
+  const globalShrooms = Object.values(instructionCards).filter(
+    (ic) => ic.isGlobalResource && !channelShrooms.some((cs) => cs.id === ic.id)
+  );
+
+  // Deduplicate
+  const seen = new Set<string>();
+  const allShrooms = [...channelShrooms, ...favoritedShrooms, ...globalShrooms].filter((s) => {
+    if (seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
+
+  if (allShrooms.length === 0) {
+    return (
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Select a Shroom</h3>
+        <div className="py-8 text-center">
+          <span className="text-3xl mb-2 block">🍄</span>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">No shrooms available</p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1">Create a shroom in channel settings first</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Select a Shroom</h3>
+      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+        {allShrooms.map((shroom) => (
+          <button
+            key={shroom.id}
+            onClick={() => onCreate(shroom.title, { instructionCardId: shroom.id })}
+            className="w-full text-left px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:border-violet-300 dark:hover:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/10 transition-all"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-sm">🍄</span>
+              <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate">{shroom.title}</span>
+              <span className="ml-auto flex-shrink-0 text-[10px] font-medium text-neutral-400 dark:text-neutral-500 uppercase">
+                {ACTION_ICONS[shroom.action] || '+'} {shroom.action}
+              </span>
+            </div>
+            {shroom.instructions && (
+              <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500 line-clamp-1">{shroom.instructions}</p>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function WidgetPicker({ isOpen, onClose, onCreateWidget, channelId }: WidgetPickerProps) {
   const { data: session } = useSession();
   const [selectedWidget, setSelectedWidget] = useState<string | null>(null);
 
@@ -262,6 +341,12 @@ export function WidgetPicker({ isOpen, onClose, onCreateWidget }: WidgetPickerPr
           ) : selectedWidget === 'poll' ? (
             <PollSettings creatorId={session?.user?.id} onCreate={(title, data) => {
               onCreateWidget('poll', title, data as unknown as Record<string, unknown>);
+              setSelectedWidget(null);
+              onClose();
+            }} />
+          ) : selectedWidget === 'shroom' ? (
+            <ShroomSettings channelId={channelId} onCreate={(title, data) => {
+              onCreateWidget('shroom', title, data as unknown as Record<string, unknown>);
               setSelectedWidget(null);
               onClose();
             }} />

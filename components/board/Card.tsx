@@ -17,6 +17,7 @@ import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
 import { CalendarWidget } from './CalendarWidget';
 import { PollWidget } from './PollWidget';
+import { ShroomWidget } from './ShroomWidget';
 import { SnoozePicker } from './SnoozePicker';
 
 interface CardProps {
@@ -466,6 +467,11 @@ export function Card({ card }: CardProps) {
         {card.cardType === 'poll' && (
           <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
             <PollWidget card={card} />
+          </div>
+        )}
+        {card.cardType === 'shroom' && (
+          <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
+            <ShroomWidget card={card} />
           </div>
         )}
 

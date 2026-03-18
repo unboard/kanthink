@@ -453,6 +453,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
       <WidgetPicker
         isOpen={showWidgetPicker}
         onClose={() => setShowWidgetPicker(false)}
+        channelId={channelId}
         onCreateWidget={(cardType, title, typeData) => {
           const card = createCard(channelId, column.id, { title });
           // Update the card with widget type data

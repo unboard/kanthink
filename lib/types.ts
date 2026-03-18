@@ -366,6 +366,10 @@ export interface PollTypeData {
   creatorId?: string;
 }
 
+export interface ShroomTypeData {
+  instructionCardId: string;  // Reference to the shroom/instruction card
+}
+
 // ===== REVIEW QUEUE TYPES =====
 
 export type RejectionReason = 'too_similar' | 'not_relevant' | 'too_vague' | 'not_for_me' | 'already_know';
