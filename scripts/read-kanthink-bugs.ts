@@ -174,6 +174,42 @@ async function createCard(title: string, content: string, columnId: string = RAW
   console.log(`  ID: ${id}`)
 }
 
+async function tagCard(cardId: string, tagName: string) {
+  const res = await db.execute({ sql: 'SELECT tags FROM cards WHERE id = ?', args: [cardId] })
+  if (res.rows.length === 0) {
+    console.error(`Card not found: ${cardId}`)
+    process.exit(1)
+  }
+  const tags: string[] = JSON.parse((res.rows[0].tags as string) || '[]')
+  if (!tags.includes(tagName)) {
+    tags.push(tagName)
+    const nowEpoch = Math.floor(Date.now() / 1000)
+    await db.execute({
+      sql: 'UPDATE cards SET tags = ?, updated_at = ? WHERE id = ?',
+      args: [JSON.stringify(tags), nowEpoch, cardId],
+    })
+  }
+  console.log(`Tagged card ${cardId} with "${tagName}"`)
+}
+
+async function untagCard(cardId: string, tagName: string) {
+  const res = await db.execute({ sql: 'SELECT tags FROM cards WHERE id = ?', args: [cardId] })
+  if (res.rows.length === 0) {
+    console.error(`Card not found: ${cardId}`)
+    process.exit(1)
+  }
+  const tags: string[] = JSON.parse((res.rows[0].tags as string) || '[]')
+  const filtered = tags.filter(t => t !== tagName)
+  if (filtered.length !== tags.length) {
+    const nowEpoch = Math.floor(Date.now() / 1000)
+    await db.execute({
+      sql: 'UPDATE cards SET tags = ?, updated_at = ? WHERE id = ?',
+      args: [JSON.stringify(filtered), nowEpoch, cardId],
+    })
+  }
+  console.log(`Removed tag "${tagName}" from card ${cardId}`)
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────
 async function main() {
   const args = process.argv.slice(2)
@@ -191,6 +227,10 @@ async function main() {
     const content = contentIdx !== -1 ? args.slice(contentIdx + 1, contentEnd).join(' ') : ''
     const columnId = columnIdx !== -1 ? args[columnIdx + 1] : RAW_IDEAS_COLUMN_ID
     await createCard(title, content, columnId)
+  } else if (args[0] === '--tag' && args[1] && args[2]) {
+    await tagCard(args[1], args.slice(2).join(' '))
+  } else if (args[0] === '--untag' && args[1] && args[2]) {
+    await untagCard(args[1], args.slice(2).join(' '))
   } else if (args.length === 0) {
     await listCards()
   } else {
@@ -199,6 +239,8 @@ async function main() {
     console.log('  npx tsx scripts/read-kanthink-bugs.ts --move ID                           # Move card to "Completed"')
     console.log('  npx tsx scripts/read-kanthink-bugs.ts --note ID <text>                    # Add a note to a card thread')
     console.log('  npx tsx scripts/read-kanthink-bugs.ts --create <title> --content <text>   # Create a card in Raw Ideas')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts --tag ID <tag>                      # Add a tag to a card')
+    console.log('  npx tsx scripts/read-kanthink-bugs.ts --untag ID <tag>                    # Remove a tag from a card')
   }
 }
 

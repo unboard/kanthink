@@ -14,14 +14,21 @@ Read and implement bugs/features from the Kanthink bug channel.
    - Thread messages with details (may include image URLs — read images with the Read tool)
    - The card ID (needed to move it and to add notes)
 
-4. For each card, implement the fix or feature. If a card is unclear, ask the user before proceeding.
+4. For each card, **tag it as "Processing"** before starting work, then implement the fix or feature. If a card is unclear, ask the user before proceeding.
+   ```
+   npx tsx scripts/read-kanthink-bugs.ts --tag <cardId> Processing
+   ```
 
 5. After implementing a card's fix:
    a. **Add a note to the card thread** summarizing what was done. This shows as Kan in the thread. **Keep it to 2-3 short sentences max** — the thread UI truncates long messages. Include what shipped, any key decisions, and one suggested next step. No bullet lists or headers.
       ```
       npx tsx scripts/read-kanthink-bugs.ts --note <cardId> <short summary>
       ```
-   b. **Move it to "Completed"**:
+   b. **Remove the "Processing" tag**:
+      ```
+      npx tsx scripts/read-kanthink-bugs.ts --untag <cardId> Processing
+      ```
+   c. **Move it to "Completed"**:
       ```
       npx tsx scripts/read-kanthink-bugs.ts --move <cardId>
       ```
