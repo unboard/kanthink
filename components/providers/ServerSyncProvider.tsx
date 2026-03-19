@@ -341,6 +341,11 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             executionHistory: ic.executionHistory || [],
             conversationHistory: ic.conversationHistory || [],
             steps: ic.steps || undefined,
+            scope: ic.scope || 'channel',
+            isGlobalResource: ic.isGlobalResource ?? false,
+            coverImageUrl: ic.coverImageUrl,
+            nextInstructionId: ic.nextInstructionId ?? undefined,
+            autoApprove: ic.autoApprove ?? false,
             createdAt: ic.createdAt,
             updatedAt: ic.updatedAt,
           }
