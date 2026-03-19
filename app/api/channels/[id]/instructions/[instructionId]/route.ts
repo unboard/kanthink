@@ -89,6 +89,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (steps !== undefined) updates.steps = steps
     if (coverImageUrl !== undefined) updates.coverImageUrl = coverImageUrl
     if (nextInstructionId !== undefined) updates.nextInstructionId = nextInstructionId || null
+    if (body.autoApprove !== undefined) updates.autoApprove = body.autoApprove ? 1 : 0
 
     // Handle isGlobalResource toggle (admin only)
     if (isGlobalResource !== undefined) {

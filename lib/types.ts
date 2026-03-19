@@ -175,6 +175,7 @@ export interface InstructionCard {
   conversationHistory?: ShroomChatMessage[];  // Chat history from conversational creation/editing
   steps?: ShroomStep[];                   // Multi-step action sequence (e.g. modify then move)
   nextInstructionId?: ID;                 // Chaining: run this shroom after current one completes
+  autoApprove?: boolean;                  // Skip review queue for generate actions
 }
 
 export interface TaskNote {
@@ -368,6 +369,10 @@ export interface ReviewQueueState {
   targetColumnName: string;
   cards: ReviewQueueCard[];
   createdAt: string;
+  pendingChain?: {
+    nextInstructionId: ID;
+    chainDepth: number;
+  };
 }
 
 export interface ChannelInput {

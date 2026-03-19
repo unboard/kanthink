@@ -17,9 +17,10 @@ const REJECTION_REASONS: { key: RejectionReason; label: string }[] = [
 interface ReviewDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  onChainTrigger?: (nextInstructionId: string, chainDepth: number) => void;
 }
 
-export function ReviewDrawer({ isOpen, onClose }: ReviewDrawerProps) {
+export function ReviewDrawer({ isOpen, onClose, onChainTrigger }: ReviewDrawerProps) {
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   const activeReviewId = useStore((s) => s.activeReviewId);
@@ -61,8 +62,13 @@ export function ReviewDrawer({ isOpen, onClose }: ReviewDrawerProps) {
   };
 
   const handleCommit = () => {
+    const pendingChain = review.pendingChain;
     commitReviewQueue(review.instructionCardId);
     onClose();
+    // Trigger chained shroom after approval completes
+    if (pendingChain && onChainTrigger) {
+      onChainTrigger(pendingChain.nextInstructionId, pendingChain.chainDepth);
+    }
   };
 
   return (

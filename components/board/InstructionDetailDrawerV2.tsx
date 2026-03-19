@@ -73,6 +73,7 @@ export function InstructionDetailDrawerV2({
 
   // Chain state
   const [nextInstructionId, setNextInstructionId] = useState<string | undefined>();
+  const [autoApprove, setAutoApprove] = useState(false);
   const allInstructionCards = useStore((s) => s.instructionCards);
 
   const isSyncingRef = useRef(false);
@@ -112,6 +113,7 @@ export function InstructionDetailDrawerV2({
       setIsGlobalResource(instructionCard.isGlobalResource || false);
       setCoverImageUrl(instructionCard.coverImageUrl);
       setNextInstructionId(instructionCard.nextInstructionId ?? undefined);
+      setAutoApprove(instructionCard.autoApprove || false);
 
       setTimeout(() => { isSyncingRef.current = false; }, 0);
     }
@@ -159,6 +161,7 @@ export function InstructionDetailDrawerV2({
       isGlobalResource,
       coverImageUrl,
       nextInstructionId: nextInstructionId || undefined,
+      autoApprove,
     });
   };
 
@@ -726,6 +729,29 @@ export function InstructionDetailDrawerV2({
                     </p>
                   </div>
                 </label>
+
+                {/* Auto-approve: skip review queue for generate shrooms */}
+                {action === 'generate' && (
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoApprove}
+                      onChange={(e) => {
+                        setAutoApprove(e.target.checked);
+                        setTimeout(() => handleSave(), 0);
+                      }}
+                      className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                        Auto-approve cards
+                      </span>
+                      <p className="text-xs text-neutral-500">
+                        Skip the review queue and create cards directly
+                      </p>
+                    </div>
+                  </label>
+                )}
 
                 {/* Chain: Then run another shroom */}
                 <div>

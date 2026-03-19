@@ -256,6 +256,9 @@ export const instructionCards = sqliteTable('instruction_cards', {
   // Chaining: run another shroom after this one completes
   nextInstructionId: text('next_instruction_id'),
 
+  // Skip review queue for generate actions
+  autoApprove: integer('auto_approve').default(0),
+
   lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
   nextScheduledRun: integer('next_scheduled_run', { mode: 'timestamp' }),
   dailyExecutionCount: integer('daily_execution_count').default(0),

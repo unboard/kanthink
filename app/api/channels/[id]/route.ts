@@ -129,6 +129,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       })),
       instructionCards: channelInstructions.map(ic => ({
         ...ic,
+        autoApprove: !!ic.autoApprove,
         lastExecutedAt: ic.lastExecutedAt?.toISOString(),
         nextScheduledRun: ic.nextScheduledRun?.toISOString(),
         dailyCountResetAt: ic.dailyCountResetAt?.toISOString(),

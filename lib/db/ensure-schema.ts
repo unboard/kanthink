@@ -54,6 +54,8 @@ export async function ensureSchema() {
     // Migration 0019 — widget card types
     `ALTER TABLE cards ADD card_type text`,
     `ALTER TABLE cards ADD type_data text`,
+    // Migration 0020 — auto-approve for generate shrooms
+    `ALTER TABLE instruction_cards ADD auto_approve integer DEFAULT 0`,
   ]
 
   for (const stmt of alterStatements) {

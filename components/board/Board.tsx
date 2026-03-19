@@ -669,25 +669,52 @@ export function Board({ channel }: BoardProps) {
       const filterAssignees = (ids?: string[]) =>
         ids?.filter(id => validMemberIds.has(id));
 
+      // Track whether chaining should be deferred (generate with review queue)
+      let chainDeferred = false;
+
       if (result.action === 'generate' && result.generatedCards) {
-        // Route generated cards to review queue instead of creating directly
         const targetColId = result.targetColumnIds[0] || channel.columns[0]?.id;
         const targetCol = targetColId ? channel.columns.find(c => c.id === targetColId) : null;
         if (targetColId && targetCol) {
-          openReviewQueue({
-            instructionCardId: instructionCard.id,
-            instructionTitle: instructionCard.title,
-            channelId: channel.id,
-            targetColumnId: targetColId,
-            targetColumnName: targetCol.name,
-            cards: result.generatedCards.map(cardInput => ({
-              title: cardInput.title,
-              content: cardInput.initialMessage,
-              assignedTo: filterAssignees(cardInput.assignedTo),
-              accepted: true,
-            })),
-            createdAt: new Date().toISOString(),
-          });
+          if (instructionCard.autoApprove) {
+            // Auto-approve: create cards directly, skip review queue
+            for (const cardInput of result.generatedCards) {
+              const assignees = filterAssignees(cardInput.assignedTo);
+              const newCard = createCard(channel.id, targetColId, {
+                title: cardInput.title,
+                initialMessage: cardInput.initialMessage,
+                assignedTo: assignees,
+              }, 'ai', instructionCard.id);
+              if (assignees?.length && newCard) {
+                setCardAssignees(newCard.id, assignees);
+              }
+            }
+            addToast(`Created ${result.generatedCards.length} card(s)`, 'success');
+          } else {
+            // Route to review queue
+            const chainDepth = (instructionCard as InstructionCard & { _chainDepth?: number })._chainDepth ?? 0;
+            const pendingChain = instructionCard.nextInstructionId
+              ? { nextInstructionId: instructionCard.nextInstructionId, chainDepth }
+              : undefined;
+
+            openReviewQueue({
+              instructionCardId: instructionCard.id,
+              instructionTitle: instructionCard.title,
+              channelId: channel.id,
+              targetColumnId: targetColId,
+              targetColumnName: targetCol.name,
+              cards: result.generatedCards.map(cardInput => ({
+                title: cardInput.title,
+                content: cardInput.initialMessage,
+                assignedTo: filterAssignees(cardInput.assignedTo),
+                accepted: true,
+              })),
+              createdAt: new Date().toISOString(),
+              pendingChain,
+            });
+            // Chain will be triggered by commitReviewQueue instead
+            chainDeferred = true;
+          }
         }
       } else if (result.action === 'modify' && result.modifiedCards) {
         // Track all changes for undo capability
@@ -842,20 +869,41 @@ export function Board({ channel }: BoardProps) {
           const targetColId = result.targetColumnIds?.[0] || channel.columns[0]?.id;
           const targetCol = targetColId ? channel.columns.find(c => c.id === targetColId) : null;
           if (targetColId && targetCol) {
-            openReviewQueue({
-              instructionCardId: instructionCard.id,
-              instructionTitle: instructionCard.title,
-              channelId: channel.id,
-              targetColumnId: targetColId,
-              targetColumnName: targetCol.name,
-              cards: result.generatedCards.map(cardInput => ({
-                title: cardInput.title,
-                content: cardInput.initialMessage,
-                assignedTo: filterAssignees(cardInput.assignedTo),
-                accepted: true,
-              })),
-              createdAt: new Date().toISOString(),
-            });
+            if (instructionCard.autoApprove) {
+              for (const cardInput of result.generatedCards) {
+                const assignees = filterAssignees(cardInput.assignedTo);
+                const newCard = createCard(channel.id, targetColId, {
+                  title: cardInput.title,
+                  initialMessage: cardInput.initialMessage,
+                  assignedTo: assignees,
+                }, 'ai', instructionCard.id);
+                if (assignees?.length && newCard) {
+                  setCardAssignees(newCard.id, assignees);
+                }
+              }
+            } else {
+              const chainDepth = (instructionCard as InstructionCard & { _chainDepth?: number })._chainDepth ?? 0;
+              const pendingChain = instructionCard.nextInstructionId
+                ? { nextInstructionId: instructionCard.nextInstructionId, chainDepth }
+                : undefined;
+
+              openReviewQueue({
+                instructionCardId: instructionCard.id,
+                instructionTitle: instructionCard.title,
+                channelId: channel.id,
+                targetColumnId: targetColId,
+                targetColumnName: targetCol.name,
+                cards: result.generatedCards.map(cardInput => ({
+                  title: cardInput.title,
+                  content: cardInput.initialMessage,
+                  assignedTo: filterAssignees(cardInput.assignedTo),
+                  accepted: true,
+                })),
+                createdAt: new Date().toISOString(),
+                pendingChain,
+              });
+              chainDeferred = true;
+            }
           }
         }
 
@@ -962,7 +1010,8 @@ export function Board({ channel }: BoardProps) {
         }
       }
       // Chain: trigger next shroom if this one completed successfully
-      if (!result.error && instructionCard.nextInstructionId) {
+      // Skip if chain was deferred to commitReviewQueue (generate without auto-approve)
+      if (!result.error && !chainDeferred && instructionCard.nextInstructionId) {
         const nextShroom = instructionCards[instructionCard.nextInstructionId!];
         if (nextShroom) {
           // Depth guard: prevent chains longer than 5
@@ -1472,6 +1521,16 @@ export function Board({ channel }: BoardProps) {
       <ReviewDrawer
         isOpen={activeReviewId !== null}
         onClose={() => closeReviewQueue()}
+        onChainTrigger={(nextInstructionId, chainDepth) => {
+          const nextShroom = instructionCards[nextInstructionId];
+          if (nextShroom && chainDepth < 5) {
+            addToast(`Chain: running "${nextShroom.title}"...`, 'info');
+            setTimeout(() => {
+              const chainedShroom = { ...nextShroom, _chainDepth: chainDepth + 1 } as InstructionCard & { _chainDepth?: number };
+              executeInstruction(chainedShroom as InstructionCard);
+            }, 500);
+          }
+        }}
       />
 
       <ChannelChatDrawer
