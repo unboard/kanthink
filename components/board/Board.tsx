@@ -42,6 +42,7 @@ import { ShroomChatDrawer } from './ShroomChatDrawer';
 import { ReviewDrawer } from './ReviewDrawer';
 import { TaskListView } from './TaskListView';
 import { FocusColumnView } from './FocusColumnView';
+import { CardListView } from './CardListView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
 import { ChannelChatDrawer } from './ChannelChatDrawer';
@@ -63,7 +64,7 @@ interface PreflightResult {
   unprocessed: string[];       // Card IDs
 }
 
-type ViewMode = 'board' | 'tasks' | 'focus';
+type ViewMode = 'board' | 'tasks' | 'list' | 'focus';
 
 interface BoardProps {
   channel: Channel;
@@ -1246,6 +1247,21 @@ export function Board({ channel }: BoardProps) {
               </svg>
               <span className="hidden xs:inline">Tasks</span>
             </button>
+            {viewMode !== 'focus' && (
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm'
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                </svg>
+                <span className="hidden xs:inline">List</span>
+              </button>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -1300,7 +1316,9 @@ export function Board({ channel }: BoardProps) {
 
       <AnonymousUpgradeBanner />
 
-      {viewMode === 'tasks' ? (
+      {viewMode === 'list' ? (
+        <CardListView channelId={channel.id} />
+      ) : viewMode === 'tasks' ? (
         <TaskListView channelId={channel.id} />
       ) : viewMode === 'focus' && focusColumn ? (
         focusSubView === 'tasks' ? (
