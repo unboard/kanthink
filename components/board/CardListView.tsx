@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import type { ID, Card as CardType, Column as ColumnType } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { CardDetailDrawer } from './CardDetailDrawer';
 
 interface CardListViewProps {
   channelId: ID;
@@ -20,14 +21,7 @@ export function CardListView({ channelId }: CardListViewProps) {
   const [filterColumn, setFilterColumn] = useState<string>('all');
   const [filterTag, setFilterTag] = useState<string>('all');
   const [search, setSearch] = useState('');
-  const [selectedCardId, setSelectedCardId] = useState<ID | null>(null);
-
-  // Build column lookup
-  const columnMap = useMemo(() => {
-    const map: Record<string, ColumnType> = {};
-    channel?.columns.forEach((col) => { map[col.id] = col; });
-    return map;
-  }, [channel]);
+  const [openCardId, setOpenCardId] = useState<ID | null>(null);
 
   // Get all cards with their column info
   const cardRows = useMemo(() => {
@@ -115,6 +109,8 @@ export function CardListView({ channelId }: CardListViewProps) {
     }
   }, [channel, moveCard]);
 
+  const openCard = allCards[openCardId || ''] || null;
+
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <span className="text-neutral-300 dark:text-neutral-600 ml-1">↕</span>;
     return <span className="text-violet-500 ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
@@ -123,7 +119,6 @@ export function CardListView({ channelId }: CardListViewProps) {
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) {
-      // Try epoch integer
       const epoch = parseInt(dateStr);
       if (!isNaN(epoch)) {
         const ed = new Date(epoch * 1000);
@@ -201,144 +196,120 @@ export function CardListView({ channelId }: CardListViewProps) {
         </span>
       </div>
 
-      {/* Table */}
+      {/* Card list */}
       <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-white dark:bg-neutral-800/50">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800">
-              <th
-                className="text-left px-4 py-2.5 font-medium text-neutral-500 dark:text-neutral-400 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-200 select-none"
-                onClick={() => handleSort('title')}
-              >
-                Title <SortIcon field="title" />
-              </th>
-              <th
-                className="text-left px-4 py-2.5 font-medium text-neutral-500 dark:text-neutral-400 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-200 select-none hidden sm:table-cell w-[140px]"
-                onClick={() => handleSort('column')}
-              >
-                Column <SortIcon field="column" />
-              </th>
-              <th className="text-left px-4 py-2.5 font-medium text-neutral-500 dark:text-neutral-400 hidden md:table-cell w-[160px]">
-                Tags
-              </th>
-              <th
-                className="text-left px-4 py-2.5 font-medium text-neutral-500 dark:text-neutral-400 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-200 select-none hidden lg:table-cell w-[100px]"
-                onClick={() => handleSort('created')}
-              >
-                Created <SortIcon field="created" />
-              </th>
-              <th
-                className="text-left px-4 py-2.5 font-medium text-neutral-500 dark:text-neutral-400 cursor-pointer hover:text-neutral-700 dark:hover:text-neutral-200 select-none hidden lg:table-cell w-[100px]"
-                onClick={() => handleSort('updated')}
-              >
-                Updated <SortIcon field="updated" />
-              </th>
-              <th className="w-[100px] px-4 py-2.5 hidden sm:table-cell">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="text-center py-12 text-neutral-400 dark:text-neutral-500">
-                  {search || filterColumn !== 'all' || filterTag !== 'all'
-                    ? 'No cards match your filters'
-                    : 'No cards in this channel'}
-                </td>
-              </tr>
-            ) : (
-              sorted.map(({ card, column }, idx) => (
-                <tr
-                  key={card.id}
-                  className={`border-b border-neutral-100 dark:border-neutral-700/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 cursor-pointer transition-colors ${
-                    selectedCardId === card.id ? 'bg-violet-50 dark:bg-violet-900/20' : ''
-                  }`}
-                  onClick={() => {
-                    // Navigate to card in board view by dispatching a custom event
-                    const event = new CustomEvent('openCardDrawer', { detail: { cardId: card.id, columnId: column.id } });
-                    window.dispatchEvent(event);
-                  }}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-start gap-2">
-                      {card.source === 'ai' && (
-                        <span className="flex-shrink-0 mt-0.5 w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center" title="AI generated">
-                          <svg className="w-2.5 h-2.5 text-violet-500" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                          </svg>
-                        </span>
-                      )}
-                      <div className="min-w-0">
-                        <div className="font-medium text-neutral-900 dark:text-white truncate max-w-[300px] lg:max-w-[500px]">
-                          {card.title}
-                        </div>
-                        {card.summary && (
-                          <div className="text-xs text-neutral-400 dark:text-neutral-500 truncate max-w-[280px] lg:max-w-[480px] mt-0.5">
-                            {card.summary.slice(0, 100)}
-                          </div>
-                        )}
-                        {/* Mobile column badge */}
-                        <span className="inline-flex sm:hidden mt-1 text-xs px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300">
-                          {column.name}
-                        </span>
-                      </div>
+        {/* Header row - hidden on mobile */}
+        <div className="hidden sm:grid sm:grid-cols-[1fr_140px_100px] md:grid-cols-[1fr_140px_160px_100px] border-b border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          <button className="text-left px-4 py-2.5 hover:text-neutral-700 dark:hover:text-neutral-200 select-none" onClick={() => handleSort('title')}>
+            Title <SortIcon field="title" />
+          </button>
+          <button className="text-left px-4 py-2.5 hover:text-neutral-700 dark:hover:text-neutral-200 select-none" onClick={() => handleSort('column')}>
+            Column <SortIcon field="column" />
+          </button>
+          <div className="hidden md:block px-4 py-2.5">Tags</div>
+          <button className="text-left px-4 py-2.5 hover:text-neutral-700 dark:hover:text-neutral-200 select-none" onClick={() => handleSort('updated')}>
+            Updated <SortIcon field="updated" />
+          </button>
+        </div>
+
+        {/* Card rows */}
+        {sorted.length === 0 ? (
+          <div className="text-center py-12 text-neutral-400 dark:text-neutral-500">
+            {search || filterColumn !== 'all' || filterTag !== 'all'
+              ? 'No cards match your filters'
+              : 'No cards in this channel'}
+          </div>
+        ) : (
+          sorted.map(({ card, column }) => (
+            <div
+              key={card.id}
+              className={`border-b border-neutral-100 dark:border-neutral-700/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 cursor-pointer transition-colors active:bg-neutral-100 dark:active:bg-neutral-700/50 ${
+                openCardId === card.id ? 'bg-violet-50 dark:bg-violet-900/20' : ''
+              }`}
+              onClick={() => setOpenCardId(card.id)}
+            >
+              {/* Mobile layout */}
+              <div className="sm:hidden px-4 py-3">
+                <div className="font-medium text-neutral-900 dark:text-white text-sm leading-snug">
+                  {card.title}
+                </div>
+                {card.summary && (
+                  <div className="text-xs text-neutral-400 dark:text-neutral-500 mt-0.5 line-clamp-1">
+                    {card.summary.slice(0, 100)}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400">
+                    {column.name}
+                  </span>
+                  {card.messages && card.messages.length > 0 && (
+                    <span className="flex items-center gap-0.5 text-[11px] text-neutral-400">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      {card.messages.length}
+                    </span>
+                  )}
+                  {(card.tags || []).slice(0, 2).map((tag) => (
+                    <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Desktop layout */}
+              <div className="hidden sm:grid sm:grid-cols-[1fr_140px_100px] md:grid-cols-[1fr_140px_160px_100px] items-center">
+                <div className="px-4 py-3 min-w-0">
+                  <div className="font-medium text-neutral-900 dark:text-white truncate text-sm">
+                    {card.title}
+                  </div>
+                  {card.summary && (
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500 truncate mt-0.5">
+                      {card.summary.slice(0, 100)}
                     </div>
-                  </td>
-                  <td className="px-4 py-3 hidden sm:table-cell">
-                    <select
-                      value={column.id}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleMoveCard(card.id, e.target.value);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-xs rounded-md border border-neutral-200 dark:border-neutral-600 bg-transparent text-neutral-700 dark:text-neutral-300 px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-violet-500/30 cursor-pointer"
-                    >
-                      {channel.columns.map((col) => (
-                        <option key={col.id} value={col.id}>{col.name}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-4 py-3 hidden md:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {(card.tags || []).slice(0, 3).map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 font-medium"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {(card.tags || []).length > 3 && (
-                        <span className="text-[10px] text-neutral-400">+{card.tags!.length - 3}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500 dark:text-neutral-400 hidden lg:table-cell whitespace-nowrap">
-                    {formatDate(card.createdAt)}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500 dark:text-neutral-400 hidden lg:table-cell whitespace-nowrap">
-                    {getTimeAgo(card.updatedAt)}
-                  </td>
-                  <td className="px-4 py-3 hidden sm:table-cell">
-                    <div className="flex items-center gap-1 justify-end">
-                      {card.messages && card.messages.length > 0 && (
-                        <span className="flex items-center gap-0.5 text-xs text-neutral-400" title={`${card.messages.length} message${card.messages.length !== 1 ? 's' : ''}`}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                          </svg>
-                          {card.messages.length}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                  )}
+                </div>
+                <div className="px-4 py-3">
+                  <select
+                    value={column.id}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleMoveCard(card.id, e.target.value);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs rounded-md border border-neutral-200 dark:border-neutral-600 bg-transparent text-neutral-700 dark:text-neutral-300 px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-violet-500/30 cursor-pointer w-full"
+                  >
+                    {channel.columns.map((col) => (
+                      <option key={col.id} value={col.id}>{col.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="hidden md:flex px-4 py-3 flex-wrap gap-1">
+                  {(card.tags || []).slice(0, 3).map((tag) => (
+                    <span key={tag} className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 font-medium">
+                      {tag}
+                    </span>
+                  ))}
+                  {(card.tags || []).length > 3 && (
+                    <span className="text-[10px] text-neutral-400">+{card.tags!.length - 3}</span>
+                  )}
+                </div>
+                <div className="px-4 py-3 text-xs text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
+                  {getTimeAgo(card.updatedAt)}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
+
+      {/* Card detail drawer */}
+      <CardDetailDrawer
+        card={openCard}
+        isOpen={!!openCard}
+        onClose={() => setOpenCardId(null)}
+      />
     </div>
   );
 }
