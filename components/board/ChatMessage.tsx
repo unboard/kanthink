@@ -73,10 +73,14 @@ const sanitizeSchema = {
 
 // Regex to match @[Name](userId) mention format
 const MENTION_REGEX = /@\[([^\]]+)\]\(([^)]+)\)/g;
+// Regex to match #[Title](cardId) card mention format
+const CARD_MENTION_REGEX = /#\[([^\]]+)\]\(([^)]+)\)/g;
+// Combined regex for both mention types
+const ALL_MENTIONS_REGEX = /(@\[([^\]]+)\]\(([^)]+)\)|#\[([^\]]+)\]\(([^)]+)\))/g;
 
-/** Strip mention markup to plain @Name (for previews, etc.) */
+/** Strip mention markup to plain @Name or #Title (for previews, etc.) */
 export function stripMentionMarkup(text: string): string {
-  return text.replace(MENTION_REGEX, '@$1');
+  return text.replace(MENTION_REGEX, '@$1').replace(CARD_MENTION_REGEX, '#$1');
 }
 
 /** Parse a kanthink:// URL, returning { type, id } or null */
@@ -171,17 +175,23 @@ function buildMarkdownComponents(linkHandlers?: LinkHandlers, unwrapP?: boolean)
 
 /** Render message content with mentions as styled spans, rest through ReactMarkdown */
 function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers) {
-  // Split content by mention patterns
-  const parts: Array<{ type: 'text' | 'mention'; value: string; name?: string }> = [];
+  // Split content by all mention patterns (@ members and # cards)
+  const parts: Array<{ type: 'text' | 'mention' | 'cardMention'; value: string; name?: string; id?: string }> = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  MENTION_REGEX.lastIndex = 0;
-  while ((match = MENTION_REGEX.exec(content)) !== null) {
+  ALL_MENTIONS_REGEX.lastIndex = 0;
+  while ((match = ALL_MENTIONS_REGEX.exec(content)) !== null) {
     if (match.index > lastIndex) {
       parts.push({ type: 'text', value: content.slice(lastIndex, match.index) });
     }
-    parts.push({ type: 'mention', value: match[0], name: match[1] });
+    if (match[2]) {
+      // @[Name](userId) — member mention
+      parts.push({ type: 'mention', value: match[0], name: match[2], id: match[3] });
+    } else if (match[4]) {
+      // #[Title](cardId) — card mention
+      parts.push({ type: 'cardMention', value: match[0], name: match[4], id: match[5] });
+    }
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < content.length) {
@@ -213,6 +223,20 @@ function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers)
             >
               @{part.name}
             </span>
+          );
+        }
+        if (part.type === 'cardMention') {
+          return (
+            <button
+              key={i}
+              onClick={() => linkHandlers?.onOpenCard?.(part.id!)}
+              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 text-xs font-medium hover:bg-neutral-200 dark:hover:bg-neutral-600 transition-colors cursor-pointer"
+            >
+              <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+              </svg>
+              {part.name}
+            </button>
           );
         }
         return (

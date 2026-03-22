@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
-import type { CardMessageType, ChannelMember } from '@/lib/types';
+import type { CardMessageType, ChannelMember, Card as CardType } from '@/lib/types';
+import { useStore } from '@/lib/store';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
@@ -107,7 +108,13 @@ interface StagedImage {
 interface MentionState {
   isActive: boolean;
   query: string;
-  startIndex: number; // cursor position of the '@'
+  startIndex: number; // cursor position of the '@' or '#'
+}
+
+interface CardMentionState {
+  isActive: boolean;
+  query: string;
+  startIndex: number; // cursor position of '#'
 }
 
 interface ChatInputProps {
@@ -135,6 +142,9 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
   const [mention, setMention] = useState<MentionState>({ isActive: false, query: '', startIndex: 0 });
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
   const [mentionsMap, setMentionsMap] = useState<Record<string, string>>({}); // name -> userId
+  const [cardMention, setCardMention] = useState<CardMentionState>({ isActive: false, query: '', startIndex: 0 });
+  const [cardMentionSelectedIndex, setCardMentionSelectedIndex] = useState(0);
+  const [cardMentionsMap, setCardMentionsMap] = useState<Record<string, string>>({}); // title -> cardId
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,6 +159,23 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
       m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
     );
   }, [mention.isActive, mention.query, members]);
+
+  // Filtered cards for # card mention dropdown
+  const allCards = useStore((s) => s.cards);
+  const channels = useStore((s) => s.channels);
+  const filteredCards = useMemo(() => {
+    if (!cardMention.isActive) return [];
+    const q = cardMention.query.toLowerCase();
+    return Object.values(allCards)
+      .filter((card) => card.title.toLowerCase().includes(q))
+      .sort((a, b) => {
+        // Exact start match first
+        const aStarts = a.title.toLowerCase().startsWith(q) ? 1 : 0;
+        const bStarts = b.title.toLowerCase().startsWith(q) ? 1 : 0;
+        return bStarts - aStarts;
+      })
+      .slice(0, 8);
+  }, [cardMention.isActive, cardMention.query, allCards]);
 
   // Build regex to detect inserted mentions in content
   const mentionNames = Object.keys(mentionsMap);
@@ -361,6 +388,14 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
         `@[${name}](${userId})`
       );
     }
+    // Convert #Title mentions to #[Title](cardId) format for storage
+    for (const [title, cardId] of Object.entries(cardMentionsMap)) {
+      const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      finalContent = finalContent.replace(
+        new RegExp(`#${escaped}(?=\\s|$)`, 'g'),
+        `#[${title}](${cardId})`
+      );
+    }
 
     onSubmit(
       finalContent,
@@ -369,6 +404,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
     );
     setContent('');
     setMentionsMap({});
+    setCardMentionsMap({});
     setStagedImages([]);
     setNeedsScroll(false);
     clearError();
@@ -399,8 +435,52 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
     });
   }, [content, mention.startIndex, mention.query]);
 
+  const handleCardMentionSelect = useCallback((card: CardType) => {
+    const before = content.slice(0, cardMention.startIndex);
+    const after = content.slice(cardMention.startIndex + 1 + cardMention.query.length); // +1 for #
+    const shortTitle = card.title.length > 40 ? card.title.slice(0, 37) + '...' : card.title;
+    const insert = `#${shortTitle} `;
+    const newContent = before + insert + after;
+    setContent(newContent);
+    setCardMentionsMap((prev) => ({ ...prev, [shortTitle]: card.id }));
+    setCardMention({ isActive: false, query: '', startIndex: 0 });
+
+    const newCursorPos = before.length + insert.length;
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.selectionStart = newCursorPos;
+        textareaRef.current.selectionEnd = newCursorPos;
+        textareaRef.current.focus();
+      }
+    });
+  }, [content, cardMention]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Intercept keys when mention dropdown is active
+    // Intercept keys when card mention dropdown is active
+    if (cardMention.isActive && filteredCards.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setCardMentionSelectedIndex((prev) => (prev + 1) % filteredCards.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setCardMentionSelectedIndex((prev) => (prev - 1 + filteredCards.length) % filteredCards.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        handleCardMentionSelect(filteredCards[cardMentionSelectedIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setCardMention({ isActive: false, query: '', startIndex: 0 });
+        return;
+      }
+    }
+
+    // Intercept keys when member mention dropdown is active
     if (mention.isActive && filteredMembers.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -443,7 +523,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
       className={`px-3 pt-2 ${isFocused ? 'pb-1 relative z-50 bg-white dark:bg-neutral-900' : 'pb-3'}`}
     >
       <div className="relative rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2.5">
-        {/* @mention dropdown */}
+        {/* @mention dropdown (members) */}
         {mention.isActive && filteredMembers.length > 0 && (
           <MentionDropdown
             members={members}
@@ -452,6 +532,39 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
             onSelect={handleMentionSelect}
             onClose={() => setMention({ isActive: false, query: '', startIndex: 0 })}
           />
+        )}
+        {/* #mention dropdown (cards) */}
+        {cardMention.isActive && filteredCards.length > 0 && (
+          <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 max-h-48 overflow-y-auto z-50">
+            <div className="px-3 py-1.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider border-b border-neutral-100 dark:border-neutral-700">
+              Cards
+            </div>
+            {filteredCards.map((card, i) => {
+              const ch = channels[card.channelId];
+              const col = ch?.columns?.find((c) => c.cardIds?.includes(card.id));
+              return (
+                <button
+                  key={card.id}
+                  onMouseDown={(e) => { e.preventDefault(); handleCardMentionSelect(card); }}
+                  className={`w-full flex items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                    i === cardMentionSelectedIndex
+                      ? 'bg-violet-50 dark:bg-violet-900/20'
+                      : 'hover:bg-neutral-50 dark:hover:bg-neutral-700/50'
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5 text-neutral-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                  </svg>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-neutral-900 dark:text-white truncate">{card.title}</div>
+                    <div className="text-[10px] text-neutral-400 truncate">
+                      {ch?.name}{col ? ` · ${col.name}` : ''}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )}
         {/* Staged images preview */}
         {stagedImages.length > 0 && (
@@ -544,20 +657,31 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
                 const val = e.target.value;
                 setContent(val);
 
-                // Detect @mention
+                // Detect @mention (members)
+                const cursorPos = e.target.selectionStart;
+                const textBeforeCursor = val.slice(0, cursorPos);
+
                 if (members.length > 0) {
-                  const cursorPos = e.target.selectionStart;
-                  const textBeforeCursor = val.slice(0, cursorPos);
-                  // Find last @ that's preceded by whitespace or at start
                   const atMatch = textBeforeCursor.match(/(?:^|[\s])@([^\s@]*)$/);
                   if (atMatch) {
                     const query = atMatch[1];
-                    const startIndex = cursorPos - query.length - 1; // position of @
+                    const startIndex = cursorPos - query.length - 1;
                     setMention({ isActive: true, query, startIndex });
                     setMentionSelectedIndex(0);
                   } else {
                     setMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
                   }
+                }
+
+                // Detect #mention (cards)
+                const hashMatch = textBeforeCursor.match(/(?:^|[\s])#([^\s#]*)$/);
+                if (hashMatch) {
+                  const query = hashMatch[1];
+                  const startIndex = cursorPos - query.length - 1;
+                  setCardMention({ isActive: true, query, startIndex });
+                  setCardMentionSelectedIndex(0);
+                } else {
+                  setCardMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
                 }
               }}
               onKeyDown={handleKeyDown}
