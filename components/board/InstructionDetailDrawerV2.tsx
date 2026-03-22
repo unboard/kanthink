@@ -833,9 +833,27 @@ export function InstructionDetailDrawerV2({
           >
             Delete
           </Button>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Done
-          </Button>
+          <div className="flex items-center gap-2">
+            {onPreview && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handlePreview}
+                disabled={isPreviewing || isRunning}
+                className="text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-900/20"
+              >
+                {isPreviewing ? 'Previewing...' : 'Preview'}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={handleRun}
+              disabled={isRunning || isPreviewing}
+              className="bg-violet-600 hover:bg-violet-700 text-white"
+            >
+              {isRunning ? 'Running...' : 'Run'}
+            </Button>
+          </div>
         </div>
       </div>
     </Drawer>

@@ -281,6 +281,10 @@ export function InstructionDetailDrawer({
         const col = channel.columns.find(c => c.id === trigger.columnId);
         return `"${col?.name || 'Unknown'}" ${trigger.operator === 'below' ? 'falls below' : 'exceeds'} ${trigger.threshold} cards`;
       }
+      case 'reaction': {
+        const col = trigger.columnId ? channel.columns.find(c => c.id === trigger.columnId) : null;
+        return `Card gets ${trigger.minCount}+ ${trigger.emoji} reactions${col ? ` in "${col.name}"` : ''}`;
+      }
     }
   };
 

@@ -26,6 +26,7 @@ import {
 import type { Channel, ID, Column as ColumnType, InstructionCard, CardChange } from '@/lib/types';
 import { useStore, getAIAbortSignal } from '@/lib/store';
 import { type AIDebugInfo } from '@/lib/ai/generateCards';
+import { type RunInstructionResult } from '@/lib/ai/runInstruction';
 import { processCard } from '@/lib/ai/processCard';
 import { runInstruction } from '@/lib/ai/runInstruction';
 import { generateProcessingStatus } from '@/lib/processingStatus';
@@ -90,6 +91,7 @@ export function Board({ channel }: BoardProps) {
   const { isServerMode } = useServerSync();
   const { members: channelMembers } = useChannelMembers(channel.id);
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
+  const [previewResult, setPreviewResult] = useState<{ instruction: InstructionCard; result: import('@/lib/ai/runInstruction').RunInstructionResult } | null>(null);
   const [pendingShroomAction, setPendingShroomAction] = useState<{ type: 'edit' | 'run' | 'create'; id?: string } | null>(null);
   const [showShroomChatDrawer, setShowShroomChatDrawer] = useState(false);
   const [isChannelChatOpen, setIsChannelChatOpen] = useState(false);
@@ -1127,6 +1129,36 @@ export function Board({ channel }: BoardProps) {
     setPreflightResult(null);
   };
 
+  // Dry run / preview: run the instruction but show results instead of applying
+  const handlePreviewInstruction = async (instructionCard: InstructionCard) => {
+    const { runInstruction } = await import('@/lib/ai/runInstruction');
+    try {
+      const result = await runInstruction(
+        instructionCard,
+        channel,
+        cards,
+        tasks,
+      );
+      setPreviewResult({ instruction: instructionCard, result });
+    } catch (err: any) {
+      setPreviewResult({
+        instruction: instructionCard,
+        result: {
+          action: instructionCard.action,
+          targetColumnIds: [],
+          error: err.message || 'Preview failed',
+        },
+      });
+    }
+  };
+
+  // Apply previewed results
+  const handleApplyPreview = async () => {
+    if (!previewResult) return;
+    setPreviewResult(null);
+    await executeInstruction(previewResult.instruction);
+  };
+
   // Handle pending shroom actions (run or create)
   useEffect(() => {
     if (!pendingShroomAction) return;
@@ -1499,6 +1531,108 @@ export function Board({ channel }: BoardProps) {
         )}
       </Modal>
 
+      {/* Shroom preview / dry run results */}
+      <Modal
+        isOpen={!!previewResult}
+        onClose={() => setPreviewResult(null)}
+        title={`Preview: ${previewResult?.instruction.title || ''}`}
+        size="lg"
+      >
+        {previewResult && (
+          <div className="space-y-4">
+            {previewResult.result.error ? (
+              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">
+                {previewResult.result.error}
+              </div>
+            ) : (
+              <>
+                {/* Generated cards preview */}
+                {previewResult.result.generatedCards && previewResult.result.generatedCards.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                      Would generate {previewResult.result.generatedCards.length} card{previewResult.result.generatedCards.length !== 1 ? 's' : ''}:
+                    </h3>
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                      {previewResult.result.generatedCards.map((card, i) => (
+                        <div key={i} className="p-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
+                          <div className="font-medium text-sm text-neutral-900 dark:text-white">{card.title}</div>
+                          {card.initialMessage && (
+                            <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">{card.initialMessage}</div>
+                          )}
+                          {card.assignedTo && card.assignedTo.length > 0 && (
+                            <div className="text-xs text-neutral-400 mt-1">
+                              Assigned to {card.assignedTo.length} user{card.assignedTo.length !== 1 ? 's' : ''}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Modified cards preview */}
+                {previewResult.result.modifiedCards && previewResult.result.modifiedCards.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                      Would modify {previewResult.result.modifiedCards.length} card{previewResult.result.modifiedCards.length !== 1 ? 's' : ''}:
+                    </h3>
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                      {previewResult.result.modifiedCards.map((card, i) => (
+                        <div key={i} className="p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
+                          <div className="font-medium text-sm text-neutral-900 dark:text-white">{card.title}</div>
+                          {card.tags && <div className="text-xs text-neutral-500 mt-1">Tags: {card.tags.join(', ')}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Moved cards preview */}
+                {previewResult.result.movedCards && previewResult.result.movedCards.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                      Would move {previewResult.result.movedCards.length} card{previewResult.result.movedCards.length !== 1 ? 's' : ''}:
+                    </h3>
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                      {previewResult.result.movedCards.map((move, i) => {
+                        const card = cards[move.cardId];
+                        const destCol = channel.columns.find((c) => c.id === move.destinationColumnId);
+                        return (
+                          <div key={i} className="p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
+                            <div className="font-medium text-sm text-neutral-900 dark:text-white">{card?.title || move.cardId}</div>
+                            <div className="text-xs text-neutral-500 mt-1">→ {destCol?.name || move.destinationColumnId}</div>
+                            {move.reason && <div className="text-xs text-neutral-400 mt-0.5 italic">{move.reason}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {previewResult.result.message && (
+                  <p className="text-sm text-neutral-600 dark:text-neutral-400">{previewResult.result.message}</p>
+                )}
+              </>
+            )}
+
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="ghost" onClick={() => setPreviewResult(null)}>
+                Cancel
+              </Button>
+              {!previewResult.result.error && (
+                <Button
+                  variant="primary"
+                  onClick={handleApplyPreview}
+                  className="bg-violet-600 hover:bg-violet-700 text-white"
+                >
+                  Apply Changes
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <ChannelSettingsDrawer
         channel={channel}
         isOpen={isSettingsOpen}
@@ -1524,6 +1658,7 @@ export function Board({ channel }: BoardProps) {
         isOpen={editingShroomId !== null}
         onClose={() => setEditingShroomId(null)}
         onRun={handleRunInstruction}
+        onPreview={handlePreviewInstruction}
         onChatWithKan={(card) => {
           setEditingShroomId(null);
           setShowShroomChatDrawer(true);

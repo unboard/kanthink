@@ -29,7 +29,7 @@ export interface ShroomStep {
 export type InstructionScope = 'channel' | 'global' | 'public';
 
 // Automation trigger types
-export type TriggerType = 'scheduled' | 'event' | 'threshold';
+export type TriggerType = 'scheduled' | 'event' | 'threshold' | 'reaction';
 export type ScheduleInterval = 'hourly' | 'every4hours' | 'daily' | 'weekly';
 export type EventTriggerType = 'card_moved_to' | 'card_created_in' | 'card_modified';
 export type ThresholdOperator = 'below' | 'above';
@@ -54,7 +54,14 @@ export interface ThresholdTrigger {
   threshold: number;
 }
 
-export type AutomaticTrigger = ScheduledTrigger | EventTrigger | ThresholdTrigger;
+export interface ReactionTrigger {
+  type: 'reaction';
+  emoji: string;           // The emoji to watch for (e.g. '👍')
+  minCount: number;        // Minimum reaction count to trigger (e.g. 3)
+  columnId?: ID;           // Optional: only watch cards in this column
+}
+
+export type AutomaticTrigger = ScheduledTrigger | EventTrigger | ThresholdTrigger | ReactionTrigger;
 
 export interface AutomaticSafeguards {
   cooldownMinutes: number;
