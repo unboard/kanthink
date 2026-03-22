@@ -39,6 +39,8 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Get all cards organized by column (including archived if enabled)
   const columnCards = useMemo(() => {
@@ -75,10 +77,19 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
     });
   }, []);
 
-  // Scroll chat to bottom
+  // Scroll chat to bottom on new messages
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+    if (chatMessages.length > 1) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, isChatLoading]);
+
+  // Focus chat input when entering kan mode
+  useEffect(() => {
+    if (kanMode && !isChatLoading) {
+      chatInputRef.current?.focus();
+    }
+  }, [kanMode, isChatLoading]);
 
   // Get tasks from selected cards
   const selectedTasksContext = useMemo(() => {
@@ -108,31 +119,26 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
           type: 'chat',
           channelName: channel.name,
           channelDescription: channel.description || '',
-          prompt: `You are Kan, helping a user create a ${activeAction} from their channel content. The user said: "${userMsg}".
+          prompt: `You are Kan, helping a user create a ${activeAction} from their Kanthink channel content. The channel "${channel.name}" has ${selectedCards.length} cards across selected columns.
 
-Based on their request, either:
-1. Ask a clarifying question to understand their needs better (if their request is vague)
-2. Acknowledge their instruction and confirm what you'll do
+The user said: "${userMsg}"
 
-Keep your response to 2-3 sentences max. Be helpful and conversational. Don't generate the actual content yet — just have the conversation.`,
+You're having a collaborative conversation to understand what the user wants before generating the content. Based on their message:
+- If they're giving you instructions (format, tone, style, questions count, image preferences), acknowledge and ask if there's anything else
+- If they're vague, ask a specific clarifying question
+- If they seem ready, say something like "Got it! When you're ready, hit Generate below."
+
+Keep your response to 2-3 sentences. Be helpful, warm, and conversational — like a creative collaborator, not a form.`,
           cards: selectedCards.slice(0, 5).map((c) => ({ title: c.title, summary: c.summary || '', content: '', tags: c.tags || [] })),
         }),
       });
       const data = await res.json();
-      setChatMessages((prev) => [...prev, { role: 'kan', content: data.content || 'I had trouble processing that. Could you rephrase?' }]);
+      setChatMessages((prev) => [...prev, { role: 'kan', content: data.content || 'I had trouble processing that. Could you try again?' }]);
     } catch {
       setChatMessages((prev) => [...prev, { role: 'kan', content: 'Something went wrong. Try again?' }]);
     }
     setIsChatLoading(false);
   }, [chatInput, activeAction, selectedCards, channel]);
-
-  const handleGenerateFromChat = useCallback(async () => {
-    const additionalInstructions = chatMessages
-      .filter((m) => m.role === 'user')
-      .map((m) => m.content)
-      .join('. ');
-    await handleGenerateWithInstructions(activeAction, additionalInstructions);
-  }, [chatMessages, activeAction]);
 
   const handleGenerateWithInstructions = useCallback(async (type: ActionType, additionalInstructions?: string) => {
     if (!type) return;
@@ -146,7 +152,6 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
       tags: card.tags || [],
     }));
 
-    // Add task context if enabled
     const taskSuffix = selectedTasksContext;
 
     const typePrompts: Record<string, string> = {
@@ -186,6 +191,14 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
     await handleGenerateWithInstructions(type);
   }, [handleGenerateWithInstructions]);
 
+  const handleGenerateFromChat = useCallback(async () => {
+    const additionalInstructions = chatMessages
+      .filter((m) => m.role === 'user')
+      .map((m) => m.content)
+      .join('. ');
+    await handleGenerateWithInstructions(activeAction, additionalInstructions);
+  }, [chatMessages, activeAction, handleGenerateWithInstructions]);
+
   const handleSendEmail = useCallback(async () => {
     if (!recipientEmail.trim()) {
       setError('Please enter a recipient email');
@@ -218,6 +231,13 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
   }, [recipientEmail, generatedContent, channel]);
 
   const handleBack = useCallback(() => {
+    if (kanMode && genState === 'idle') {
+      // Exit kan mode back to column selection
+      setKanMode(false);
+      setChatMessages([]);
+      setChatInput('');
+      return;
+    }
     setActiveAction(null);
     setGenState('idle');
     setGeneratedContent('');
@@ -226,12 +246,26 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
     setKanMode(false);
     setChatMessages([]);
     setChatInput('');
-  }, []);
+  }, [kanMode, genState]);
 
   const handleClose = useCallback(() => {
-    handleBack();
+    setActiveAction(null);
+    setGenState('idle');
+    setGeneratedContent('');
+    setError('');
+    setRecipientEmail('');
+    setKanMode(false);
+    setChatMessages([]);
+    setChatInput('');
     onClose();
-  }, [handleBack, onClose]);
+  }, [onClose]);
+
+  const handleChatKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleChatSend();
+    }
+  }, [handleChatSend]);
 
   const actions = [
     {
@@ -243,7 +277,6 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
       ),
       title: 'Email Newsletter',
       description: 'Generate a newsletter from your cards and send it via email',
-      ready: true,
     },
     {
       type: 'course' as const,
@@ -254,7 +287,6 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
       ),
       title: 'Course Outline',
       description: 'Turn your cards into a structured course with modules and lessons',
-      ready: true,
     },
     {
       type: 'blog' as const,
@@ -265,10 +297,133 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
       ),
       title: 'Blog Post',
       description: 'Generate a blog post or article from your channel content',
-      ready: true,
     },
   ];
 
+  const activeActionTitle = actions.find((a) => a.type === activeAction)?.title || '';
+
+  // ── Full chat mode (Generate with Kan) ──
+  if (kanMode && activeAction && (genState === 'idle' || genState === 'error')) {
+    return (
+      <Drawer isOpen={isOpen} onClose={handleClose} width="lg">
+        <div className="flex flex-col h-full">
+          {/* Chat header */}
+          <div className="flex-shrink-0 flex items-center gap-3 p-4 border-b border-neutral-100 dark:border-neutral-800">
+            <img
+              src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+              alt="Kan"
+              className="w-8 h-8"
+            />
+            <div className="flex-1 min-w-0">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-white">
+                Generate {activeActionTitle}
+              </h2>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                {selectedCards.length} cards from {channel.name}
+              </p>
+            </div>
+            <button
+              onClick={handleBack}
+              className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 dark:hover:text-neutral-300 dark:hover:bg-neutral-800"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Chat messages area */}
+          <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+            {chatMessages.map((msg, i) => (
+              <div
+                key={i}
+                className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                {msg.role === 'kan' && (
+                  <img
+                    src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+                    alt="Kan"
+                    className="w-7 h-7 flex-shrink-0 mt-0.5"
+                  />
+                )}
+                <div
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                    msg.role === 'user'
+                      ? 'bg-violet-600 text-white rounded-br-md'
+                      : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 rounded-bl-md'
+                  }`}
+                >
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+
+            {/* Loading indicator */}
+            {isChatLoading && (
+              <div className="flex gap-2.5 justify-start">
+                <img
+                  src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+                  alt="Kan"
+                  className="w-7 h-7 flex-shrink-0 mt-0.5 animate-pulse"
+                />
+                <div className="bg-neutral-100 dark:bg-neutral-800 rounded-2xl rounded-bl-md px-4 py-3">
+                  <div className="flex gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="flex justify-center">
+                <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-lg">
+                  {error}
+                </p>
+              </div>
+            )}
+
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Input area */}
+          <div className="flex-shrink-0 p-4 border-t border-neutral-100 dark:border-neutral-800">
+            <div className="flex gap-2 mb-3">
+              <textarea
+                ref={chatInputRef}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={handleChatKeyDown}
+                placeholder="Tell Kan what you want..."
+                rows={1}
+                disabled={isChatLoading}
+                className="flex-1 resize-none rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 py-2.5 text-sm text-neutral-900 dark:text-white placeholder:text-neutral-400 outline-none focus:border-violet-400 dark:focus:border-violet-500 disabled:opacity-50"
+              />
+              <button
+                onClick={handleChatSend}
+                disabled={!chatInput.trim() || isChatLoading}
+                className="flex-shrink-0 w-10 h-10 rounded-xl bg-violet-600 text-white flex items-center justify-center hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </div>
+            <button
+              onClick={handleGenerateFromChat}
+              disabled={chatMessages.filter((m) => m.role === 'user').length === 0 || isChatLoading}
+              className="w-full py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors disabled:cursor-not-allowed"
+            >
+              Generate {activeActionTitle}
+            </button>
+          </div>
+        </div>
+      </Drawer>
+    );
+  }
+
+  // ── Standard drawer (action selection, column selection, preview, etc.) ──
   return (
     <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating>
       <div className="p-6 pt-12">
@@ -279,7 +434,7 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
           </div>
           <div>
             <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">
-              {activeAction ? actions.find((a) => a.type === activeAction)?.title : 'Channel Actions'}
+              {activeAction ? activeActionTitle : 'Channel Actions'}
             </h2>
             <p className="text-sm text-neutral-500 dark:text-neutral-400">
               {activeAction
@@ -404,82 +559,30 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
               </div>
             )}
 
-            {!kanMode ? (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleGenerate(activeAction)}
-                  disabled={selectedCards.length === 0}
-                  className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors"
-                >
-                  Generate
-                </button>
-                <button
-                  onClick={() => {
-                    setKanMode(true);
-                    setChatMessages([{ role: 'kan', content: `I'll help you create a ${activeAction} from ${selectedCards.length} card${selectedCards.length !== 1 ? 's' : ''}. Tell me what you'd like — for example, specific format, tone, number of sections, images to include, or any other preferences.` }]);
-                  }}
-                  disabled={selectedCards.length === 0}
-                  className="flex-1 py-2.5 px-4 rounded-lg border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-50 font-medium text-sm transition-colors"
-                >
-                  Generate with Kan
-                </button>
-              </div>
-            ) : (
-              /* Kan chat mode */
-              <div>
-                <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 mb-3 max-h-[250px] overflow-y-auto p-3 space-y-3 bg-neutral-50 dark:bg-neutral-800/50">
-                  {chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                        msg.role === 'user'
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-600'
-                      }`}>
-                        {msg.content}
-                      </div>
-                    </div>
-                  ))}
-                  {isChatLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-white dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 rounded-lg px-3 py-2 text-sm text-neutral-400">
-                        Kan is thinking...
-                      </div>
-                    </div>
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-                <div className="flex gap-2 mb-3">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
-                    placeholder="Tell Kan what you want..."
-                    className="flex-1 px-3 py-2 text-sm rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500"
-                    disabled={isChatLoading}
-                  />
-                  <button
-                    onClick={handleChatSend}
-                    disabled={!chatInput.trim() || isChatLoading}
-                    className="px-3 py-2 rounded-lg bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 disabled:opacity-50 transition-colors"
-                  >
-                    <svg className="w-4 h-4 text-neutral-600 dark:text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                  </button>
-                </div>
-                <button
-                  onClick={handleGenerateFromChat}
-                  disabled={chatMessages.filter(m => m.role === 'user').length === 0}
-                  className="w-full py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors"
-                >
-                  Generate with these instructions
-                </button>
-              </div>
-            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleGenerate(activeAction)}
+                disabled={selectedCards.length === 0}
+                className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors"
+              >
+                Generate
+              </button>
+              <button
+                onClick={() => {
+                  setKanMode(true);
+                  setChatMessages([{
+                    role: 'kan',
+                    content: `Hey! I'll help you create ${activeActionTitle === 'Email Newsletter' ? 'a newsletter' : activeActionTitle === 'Course Outline' ? 'a course' : 'a blog post'} from your ${selectedCards.length} cards. What are you looking for? For example, you could tell me about the tone, format, number of sections, whether to include images, or any specific structure you have in mind.`
+                  }]);
+                }}
+                disabled={selectedCards.length === 0}
+                className="flex-1 py-2.5 px-4 rounded-lg border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-50 font-medium text-sm transition-colors"
+              >
+                Generate with Kan
+              </button>
+            </div>
           </div>
         ) : genState === 'generating' ? (
-          /* Loading */
           <div className="flex flex-col items-center justify-center py-16">
             <div className="animate-spin w-8 h-8 border-2 border-violet-200 border-t-violet-600 rounded-full mb-4" />
             <p className="text-sm text-neutral-500 dark:text-neutral-400">
@@ -487,7 +590,6 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
             </p>
           </div>
         ) : genState === 'preview' ? (
-          /* Preview */
           <div>
             <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden mb-4">
               <div className="max-h-[400px] overflow-y-auto p-4 bg-white dark:bg-neutral-800">
@@ -521,7 +623,10 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
 
             <div className="flex gap-2">
               <button
-                onClick={() => handleGenerate(activeAction)}
+                onClick={() => {
+                  setGenState('idle');
+                  setGeneratedContent('');
+                }}
                 className="flex-1 py-2.5 px-4 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 font-medium text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
               >
                 Regenerate
@@ -538,7 +643,6 @@ Keep your response to 2-3 sentences max. Be helpful and conversational. Don't ge
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(generatedContent);
-                    setError('');
                   }}
                   className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-medium text-sm transition-colors"
                 >
