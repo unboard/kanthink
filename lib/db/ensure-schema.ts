@@ -56,6 +56,8 @@ export async function ensureSchema() {
     `ALTER TABLE cards ADD type_data text`,
     // Migration 0020 — auto-approve for generate shrooms
     `ALTER TABLE instruction_cards ADD auto_approve integer DEFAULT 0`,
+    // Migration 0021 — card color coding
+    `ALTER TABLE cards ADD color text`,
   ]
 
   for (const stmt of alterStatements) {

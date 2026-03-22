@@ -175,6 +175,9 @@ export const cards = sqliteTable('cards', {
   // Snooze
   snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }),
 
+  // Visual
+  color: text('color'),  // Left border color: 'red', 'blue', 'green', etc.
+
   // Pinning
   pinnedAt: integer('pinned_at', { mode: 'timestamp' }),
 

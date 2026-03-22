@@ -17,6 +17,17 @@ import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
 import { SnoozePicker } from './SnoozePicker';
 
+const CARD_COLORS: Record<string, string> = {
+  red: '#ef4444',
+  orange: '#f97316',
+  amber: '#f59e0b',
+  green: '#22c55e',
+  teal: '#14b8a6',
+  blue: '#3b82f6',
+  purple: '#8b5cf6',
+  pink: '#ec4899',
+};
+
 interface CardProps {
   card: CardType;
 }
@@ -163,7 +174,10 @@ export function Card({ card }: CardProps) {
           ──────────────────────────────────────────────────────────────────── */}
       <div
         ref={setNodeRef}
-        style={style}
+        style={{
+          ...style,
+          ...(card.color ? { borderLeftColor: CARD_COLORS[card.color as keyof typeof CARD_COLORS] || card.color } : {}),
+        }}
         {...attributes}
         {...listeners}
         className={`
@@ -175,6 +189,7 @@ export function Card({ card }: CardProps) {
           ${isDragging ? 'opacity-50 shadow-lg' : ''}
           ${card.isProcessing ? 'card-processing' : ''}
           ${showCardMenu ? 'z-40' : ''}
+          ${card.color ? 'border-l-[3px]' : ''}
         `}
       >
         {/* Cover image */}
@@ -438,6 +453,32 @@ export function Card({ card }: CardProps) {
                     <span className="w-4 h-4 flex items-center justify-center text-sm">😀</span>
                     React
                   </button>
+                  {/* Color */}
+                  <div className="px-3 py-2">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">Color</p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {card.color && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); updateCard(card.id, { color: undefined }); setShowCardMenu(false); }}
+                          className="w-5 h-5 rounded-full border-2 border-neutral-300 dark:border-neutral-600 flex items-center justify-center hover:border-neutral-500"
+                          title="Remove color"
+                        >
+                          <svg className="w-3 h-3 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                      {Object.entries(CARD_COLORS).map(([name, hex]) => (
+                        <button
+                          key={name}
+                          onClick={(e) => { e.stopPropagation(); updateCard(card.id, { color: name }); setShowCardMenu(false); }}
+                          className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${card.color === name ? 'border-white dark:border-neutral-200 ring-1 ring-offset-1 ring-neutral-400' : 'border-transparent'}`}
+                          style={{ backgroundColor: hex }}
+                          title={name}
+                        />
+                      ))}
+                    </div>
+                  </div>
                   <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
                   {/* Delete */}
                   <button

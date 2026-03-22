@@ -334,6 +334,7 @@ export interface Card {
   snoozedUntil?: string;  // ISO timestamp — card hidden from board until this time
   pinnedAt?: string;      // ISO timestamp — pinned cards sort to top of column
   reactions?: { emoji: string; userIds: string[] }[];  // Card-level emoji reactions
+  color?: string;       // Color code for left border accent (e.g. 'red', 'blue', 'green')
   cardType?: string;    // null = standard card, 'calendar', 'poll', etc.
   typeData?: Record<string, unknown>;  // Type-specific configuration data
 }
