@@ -51,6 +51,7 @@ import { ChannelChatDrawer } from './ChannelChatDrawer';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
+import { AgentStatusBar } from './AgentStatusBar';
 import { CursorPresence, PresenceIndicator } from '@/components/presence/CursorPresence';
 import { ChannelMembersBar } from './ChannelMembersBar';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
@@ -1358,6 +1359,7 @@ export function Board({ channel }: BoardProps) {
       </button>
 
       <AnonymousUpgradeBanner />
+      <AgentStatusBar channelId={channel.id} />
 
       {viewMode === 'list' ? (
         <CardListView channelId={channel.id} />

@@ -630,3 +630,28 @@ export function getCurrentPresenceChannelId(): string | null {
 export function setCurrentPresenceChannelId(channelId: string | null): void {
   currentPresenceChannelId = channelId
 }
+
+// ======== RAW EVENT LISTENERS ========
+
+/**
+ * Listen for raw Pusher events on a channel.
+ * Returns an unsubscribe function.
+ * Used by AgentStatusBar to detect agent activity.
+ */
+export function onChannelEvent(channelId: string, callback: (payload: unknown) => void): () => void {
+  const channelName = `private-channel-${channelId}`
+  const channel = subscriptions.get(channelId)
+  if (channel) {
+    channel.bind('sync', callback)
+    return () => channel.unbind('sync', callback)
+  }
+  // Channel not yet subscribed — try to find via Pusher instance
+  if (pusherInstance) {
+    const ch = pusherInstance.channel(channelName)
+    if (ch) {
+      ch.bind('sync', callback)
+      return () => ch.unbind('sync', callback)
+    }
+  }
+  return () => {}
+}
