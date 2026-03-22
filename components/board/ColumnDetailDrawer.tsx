@@ -162,6 +162,10 @@ export function ColumnDetailDrawer({
             className="w-full min-h-[80px] px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent resize-none"
           />
 
+          <p className="mt-1.5 text-xs text-neutral-400 dark:text-neutral-500">
+            Kan uses this description to understand the purpose of this column when generating and organizing cards.
+          </p>
+
           {/* Suggestions */}
           {suggestions.length > 0 && (
             <div className="mt-3 space-y-2">

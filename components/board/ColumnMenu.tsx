@@ -151,7 +151,7 @@ export function ColumnMenu({
               }}
               className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
             >
-              Column instructions
+              Column description
               {hasInstructions && (
                 <span className="w-2 h-2 bg-violet-500 rounded-full" />
               )}
