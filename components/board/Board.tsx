@@ -44,6 +44,7 @@ import { TaskListView } from './TaskListView';
 import { FocusColumnView } from './FocusColumnView';
 import { CardListView } from './CardListView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
+import { ChannelActionsDrawer } from './ChannelActionsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
 import { ChannelChatDrawer } from './ChannelChatDrawer';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -83,6 +84,7 @@ export function Board({ channel }: BoardProps) {
   const [isQuestionsOpen, setIsQuestionsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [editingShroomId, setEditingShroomId] = useState<string | null>(null);
   const [shroomsButtonPulse, setShroomsButtonPulse] = useState(false);
   const { isServerMode } = useServerSync();
@@ -1269,7 +1271,16 @@ export function Board({ channel }: BoardProps) {
           {isServerMode && (
             <ChannelMembersBar channelId={channel.id} />
           )}
-{/* Shrooms button removed - now accessible from left nav */}
+          {/* Channel actions button */}
+          <button
+            onClick={() => setIsActionsOpen(true)}
+            className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            title="Channel actions"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+          </button>
           {debugInfo && (
             <button
               onClick={() => setIsDebugModalOpen(true)}
@@ -1499,6 +1510,12 @@ export function Board({ channel }: BoardProps) {
         channelName={channel.name}
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
+      />
+
+      <ChannelActionsDrawer
+        channel={channel}
+        isOpen={isActionsOpen}
+        onClose={() => setIsActionsOpen(false)}
       />
 
       <InstructionDetailDrawerV2
