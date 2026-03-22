@@ -273,9 +273,56 @@ export const useStore = create<KanthinkState>()(
 
       // Server sync actions
       loadFromServer: (data) => {
+        // Preserve cards that exist locally but haven't synced to the server yet.
+        // This prevents the critical bug where a refetch overwrites unsynced cards.
+        const { getPendingCardIds, getPendingMoveCardIds } = require('@/lib/api/sync');
+        const pendingCreates = getPendingCardIds() as Set<string>;
+        const pendingMoves = getPendingMoveCardIds() as Set<string>;
+        const currentState = get();
+
+        let mergedCards = { ...data.cards };
+        let mergedChannels = { ...data.channels };
+
+        // Preserve cards that were created locally but haven't synced yet
+        if (pendingCreates.size > 0) {
+          for (const cardId of pendingCreates) {
+            if (currentState.cards[cardId] && !data.cards[cardId]) {
+              mergedCards[cardId] = currentState.cards[cardId];
+              // Also ensure the card's column in its channel still references it
+              const card = currentState.cards[cardId];
+              const channelId = card.channelId;
+              if (mergedChannels[channelId]) {
+                const channel = { ...mergedChannels[channelId] };
+                channel.columns = channel.columns.map((col) => {
+                  if (col.cardIds.includes(cardId)) return col;
+                  // Find the column this card belongs to in local state
+                  const localChannel = currentState.channels[channelId];
+                  const localCol = localChannel?.columns.find((c) => c.cardIds.includes(cardId));
+                  if (localCol && localCol.id === col.id) {
+                    return { ...col, cardIds: [...col.cardIds, cardId] };
+                  }
+                  return col;
+                });
+                mergedChannels[channelId] = channel;
+              }
+              console.log(`[ServerSync] Preserved unsynced card: ${card.title?.slice(0, 40)}`);
+            }
+          }
+        }
+
+        // Preserve card positions for cards with pending moves
+        if (pendingMoves.size > 0) {
+          for (const cardId of pendingMoves) {
+            if (currentState.cards[cardId]) {
+              // Keep the local card data (which has the updated column position)
+              mergedCards[cardId] = currentState.cards[cardId];
+            }
+          }
+        }
+
         set({
-          channels: data.channels,
-          cards: data.cards,
+          channels: mergedChannels,
+          cards: mergedCards,
           tasks: data.tasks,
           instructionCards: data.instructionCards,
           folders: data.folders,

@@ -13,6 +13,11 @@ let serverModeEnabled = false
 // Track pending syncs to warn before page unload
 let pendingSyncCount = 0
 
+// Track card IDs that are pending sync (created locally but not yet confirmed by server)
+const pendingCardIds = new Set<string>()
+// Track card IDs that have pending moves (moved locally but not yet confirmed by server)
+const pendingMoveCardIds = new Set<string>()
+
 export function enableServerMode() {
   serverModeEnabled = true
 }
@@ -29,6 +34,16 @@ export function hasPendingSyncs() {
   return pendingSyncCount > 0
 }
 
+/** Get IDs of cards that were created locally but not yet confirmed by the server */
+export function getPendingCardIds(): Set<string> {
+  return new Set(pendingCardIds)
+}
+
+/** Get IDs of cards that have pending moves not yet confirmed by the server */
+export function getPendingMoveCardIds(): Set<string> {
+  return new Set(pendingMoveCardIds)
+}
+
 // Warn user before closing tab if syncs are pending
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', (e) => {
@@ -39,7 +54,7 @@ if (typeof window !== 'undefined') {
 }
 
 // Helper to run sync in background with retry logic
-function syncInBackground(fn: () => Promise<void>, label?: string) {
+function syncInBackground(fn: () => Promise<void>, label?: string, onFinalFailure?: () => void) {
   if (!serverModeEnabled) {
     console.warn(`[Sync] Skipping ${label || 'sync'} - server mode not enabled`)
     return
@@ -58,6 +73,7 @@ function syncInBackground(fn: () => Promise<void>, label?: string) {
         return attempt(retries - 1, delay * 2)
       }
       pendingSyncCount--
+      onFinalFailure?.()
       console.error(`[Sync] ${label || 'Background sync'} failed after all retries:`, err)
 
       // Show error toast with retry action
@@ -105,10 +121,12 @@ export function syncCardCreate(
   cardId: string,
   data: { columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number }
 ) {
+  pendingCardIds.add(cardId)
   syncInBackground(async () => {
     // Pass the client-generated ID so server uses the same ID
     await api.createCard(channelId, { ...data, id: cardId })
-  }, 'save card')
+    pendingCardIds.delete(cardId)
+  }, 'save card', () => { pendingCardIds.delete(cardId) })
 }
 
 export function syncCardUpdate(channelId: string, cardId: string, updates: Record<string, unknown>) {
@@ -130,9 +148,11 @@ export function syncCardMove(
   toPosition: number,
   isArchived = false
 ) {
+  pendingMoveCardIds.add(cardId)
   syncInBackground(async () => {
     await api.moveCard(channelId, cardId, toColumnId, toPosition, isArchived)
-  }, 'move card')
+    pendingMoveCardIds.delete(cardId)
+  }, 'move card', () => { pendingMoveCardIds.delete(cardId) })
 }
 
 // ===== COLUMN SYNC =====

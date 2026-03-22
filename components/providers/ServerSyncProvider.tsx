@@ -657,6 +657,18 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        // Never refetch while syncs are in-flight — this prevents overwriting
+        // locally created/moved cards that haven't reached the server yet.
+        if (hasPendingSyncs()) {
+          console.warn('[ServerSync] Tab visible but pending syncs exist — deferring refetch')
+          // Retry the refetch after a short delay to give syncs time to complete
+          setTimeout(() => {
+            if (!hasPendingSyncs()) {
+              fetchServerData()
+            }
+          }, 3000)
+          return
+        }
         const elapsed = Date.now() - lastFetchTimeRef.current
         // Always refetch if Pusher is disconnected (mobile browsers suspend WebSocket
         // when backgrounded, so events were missed even if the user returns quickly)
