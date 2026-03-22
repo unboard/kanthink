@@ -10,6 +10,11 @@ const COMPLETED_COLUMN_ID = 'FaiL-RTAfoEUuyYwhLNAA'
 const RAW_IDEAS_COLUMN_ID = '5nI4LkFlS1cF8H1X4wUIV'
 const PRODUCTION_URL = 'https://www.kanthink.com'
 
+// Agent identity
+const AGENT_ID = 'kan-bugs-agent'
+const AGENT_NAME = 'Kan'
+const AGENT_IMAGE = 'https://res.cloudinary.com/dcht3dytz/image/upload/f_png,w_128,h_128/v1769532115/kanthink-icon_pbne7q.svg'
+
 // ── Load env from .env.local ────────────────────────────────────────
 function loadEnv(): Record<string, string> {
   const scriptDir = typeof __dirname !== 'undefined' ? __dirname : dirname(fileURLToPath(import.meta.url))
@@ -32,12 +37,33 @@ const db = createClient({
   authToken: env.TURSO_AUTH_TOKEN,
 })
 
+// ── Ensure agent user exists ─────────────────────────────────────────
+async function ensureAgentUser() {
+  try {
+    const existing = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [AGENT_ID] })
+    if (existing.rows.length === 0) {
+      await db.execute({
+        sql: `INSERT INTO users (id, name, email, image, subscription_status, tier)
+              VALUES (?, ?, ?, ?, 'free', 'free')`,
+        args: [AGENT_ID, AGENT_NAME, 'kan-bugs@kanthink.local', AGENT_IMAGE],
+      })
+      console.log('Created agent user: Kan')
+    }
+  } catch (err) {
+    // Ignore if user already exists (race condition)
+    console.warn('Agent user check:', (err as Error).message)
+  }
+}
+
 // ── Message formatting ──────────────────────────────────────────────
 interface CardMessage {
   id: string
   type: 'note' | 'question' | 'ai_response'
   content: string
   imageUrls?: string[]
+  authorId?: string
+  authorName?: string
+  authorImage?: string
   createdAt: string
   replyToMessageId?: string
 }
@@ -102,6 +128,9 @@ async function addNote(cardId: string, noteText: string) {
     id: `claude-${Date.now()}`,
     type: 'ai_response',
     content: noteText,
+    authorId: AGENT_ID,
+    authorName: AGENT_NAME,
+    authorImage: AGENT_IMAGE,
     createdAt: new Date().toISOString(),
   })
   const nowEpoch = Math.floor(Date.now() / 1000)
@@ -161,6 +190,9 @@ async function createCard(title: string, content: string, columnId: string = RAW
     id: `claude-${Date.now()}`,
     type: 'ai_response',
     content: content,
+    authorId: AGENT_ID,
+    authorName: AGENT_NAME,
+    authorImage: AGENT_IMAGE,
     createdAt: new Date().toISOString(),
   }]
 
@@ -212,6 +244,7 @@ async function untagCard(cardId: string, tagName: string) {
 
 // ── CLI ─────────────────────────────────────────────────────────────
 async function main() {
+  await ensureAgentUser()
   const args = process.argv.slice(2)
 
   if (args[0] === '--move' && args[1]) {
