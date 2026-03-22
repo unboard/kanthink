@@ -187,7 +187,7 @@ export function Card({ card }: CardProps) {
           ${isDragging ? 'touch-none' : 'touch-manipulation'}
           bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md
           ${isDragging ? 'opacity-50 shadow-lg' : ''}
-          ${card.isProcessing ? 'card-processing border-l-[3px] border-l-violet-500 animate-pulse-border' : ''}
+          ${card.isProcessing ? 'card-processing' : ''}
           ${showCardMenu ? 'z-40' : ''}
           ${!card.isProcessing && card.color ? 'border-l-[3px]' : ''}
         `}
@@ -534,10 +534,10 @@ export function Card({ card }: CardProps) {
               </span>
             </div>
           )}
-          {/* Tags - above title */}
-          {(card.tags ?? []).length > 0 && (
+          {/* Tags - above title (hide "Processing" tag when agent is active) */}
+          {(card.tags ?? []).filter(t => !(card.isProcessing && t === 'Processing')).length > 0 && (
             <div className="mb-1.5 flex flex-wrap gap-1 pr-12">
-              {(card.tags ?? []).map((tagName) => {
+              {(card.tags ?? []).filter(t => !(card.isProcessing && t === 'Processing')).map((tagName) => {
                 const colorInfo = getTagColorInfo(tagName);
                 return (
                   <span
