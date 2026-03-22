@@ -104,12 +104,19 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
     return tasks.length > 0 ? `\n\nTasks from these cards:\n${tasks.join('\n')}` : '';
   }, [selectedCards, allTasks, includeTasks]);
 
+  const userMessageCount = chatMessages.filter((m) => m.role === 'user').length;
+  const isReadyToGenerate = userMessageCount >= 1;
+
   const handleChatSend = useCallback(async () => {
     if (!chatInput.trim() || !activeAction) return;
     const userMsg = chatInput.trim();
     setChatInput('');
-    setChatMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
+    const updatedMessages = [...chatMessages, { role: 'user' as const, content: userMsg }];
+    setChatMessages(updatedMessages);
     setIsChatLoading(true);
+
+    const msgCount = updatedMessages.filter((m) => m.role === 'user').length;
+    const conversationHistory = updatedMessages.map((m) => `${m.role === 'user' ? 'User' : 'Kan'}: ${m.content}`).join('\n');
 
     try {
       const res = await fetch('/api/channels/actions/generate', {
@@ -119,17 +126,18 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
           type: 'chat',
           channelName: channel.name,
           channelDescription: channel.description || '',
-          prompt: `You are Kan, helping a user create a ${activeAction} from their Kanthink channel content. The channel "${channel.name}" has ${selectedCards.length} cards across selected columns.
+          prompt: `You are Kan, a creative collaborator helping a user create a ${activeAction} from their Kanthink channel "${channel.name}" (${selectedCards.length} cards).
 
-The user said: "${userMsg}"
+Conversation so far:
+${conversationHistory}
 
-You're having a collaborative conversation to understand what the user wants before generating the content. Based on their message:
-- If they're giving you instructions (format, tone, style, questions count, image preferences), acknowledge and ask if there's anything else
-- If they're vague, ask a specific clarifying question
-- If they seem ready, say something like "Got it! When you're ready, hit Generate below."
-
-Keep your response to 2-3 sentences. Be helpful, warm, and conversational — like a creative collaborator, not a form.`,
-          cards: selectedCards.slice(0, 5).map((c) => ({ title: c.title, summary: c.summary || '', content: '', tags: c.tags || [] })),
+Guidelines for your response:
+- Keep it to 2-3 sentences max
+- Be warm and collaborative
+- After the user gives you 1-2 preferences, confirm what you've understood and tell them they can hit "Generate" whenever they're ready, or keep adding preferences
+- ${msgCount >= 2 ? 'The user has given enough input. Summarize what you\'ll create and encourage them to hit Generate.' : 'Ask ONE specific question about their preference (tone, format, length, style, or audience).'}
+- Never generate the actual content — just have the conversation`,
+          cards: selectedCards.slice(0, 3).map((c) => ({ title: c.title, summary: c.summary || '', content: '', tags: c.tags || [] })),
         }),
       });
       const data = await res.json();
@@ -350,7 +358,7 @@ Keep your response to 2-3 sentences. Be helpful, warm, and conversational — li
                   className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                     msg.role === 'user'
                       ? 'bg-violet-600 text-white rounded-br-md'
-                      : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 rounded-bl-md'
+                      : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 rounded-bl-md'
                   }`}
                 >
                   {msg.content}
@@ -412,10 +420,14 @@ Keep your response to 2-3 sentences. Be helpful, warm, and conversational — li
             </div>
             <button
               onClick={handleGenerateFromChat}
-              disabled={chatMessages.filter((m) => m.role === 'user').length === 0 || isChatLoading}
-              className="w-full py-2.5 px-4 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors disabled:cursor-not-allowed"
+              disabled={!isReadyToGenerate || isChatLoading}
+              className={`w-full py-2.5 px-4 rounded-xl text-white font-medium text-sm transition-all disabled:cursor-not-allowed ${
+                isReadyToGenerate
+                  ? 'bg-violet-600 hover:bg-violet-700 shadow-[0_0_12px_rgba(139,92,246,0.4)]'
+                  : 'bg-neutral-600 dark:bg-neutral-700 opacity-50'
+              }`}
             >
-              Generate {activeActionTitle}
+              {isReadyToGenerate ? `Generate ${activeActionTitle}` : 'Chat with Kan first, then generate'}
             </button>
           </div>
         </div>
@@ -570,9 +582,14 @@ Keep your response to 2-3 sentences. Be helpful, warm, and conversational — li
               <button
                 onClick={() => {
                   setKanMode(true);
+                  const greetings: Record<string, string> = {
+                    newsletter: `I'll create a newsletter from your ${selectedCards.length} cards. First question — who's the audience? (e.g. your team, customers, subscribers)`,
+                    course: `I'll turn your ${selectedCards.length} cards into a course. To start — what format are you thinking? (e.g. quiz-based, tutorial-style, slide deck outline)`,
+                    blog: `I'll create a blog post from your ${selectedCards.length} cards. Quick question — what tone works best? (e.g. professional, casual, thought-leadership)`,
+                  };
                   setChatMessages([{
                     role: 'kan',
-                    content: `Hey! I'll help you create ${activeActionTitle === 'Email Newsletter' ? 'a newsletter' : activeActionTitle === 'Course Outline' ? 'a course' : 'a blog post'} from your ${selectedCards.length} cards. What are you looking for? For example, you could tell me about the tone, format, number of sections, whether to include images, or any specific structure you have in mind.`
+                    content: greetings[activeAction!] || greetings.newsletter,
                   }]);
                 }}
                 disabled={selectedCards.length === 0}

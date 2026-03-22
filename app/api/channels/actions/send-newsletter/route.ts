@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sendTransactionalEmail } from '@/lib/customerio';
+import { RegionUS, APIClient, SendEmailRequest } from 'customerio-node';
 
 export async function POST(request: Request) {
   try {
@@ -33,15 +34,40 @@ export async function POST(request: Request) {
 
     const subject = `${channelName || 'Kanthink'} Newsletter`;
 
-    const sent = await sendTransactionalEmail({
+    let sent = await sendTransactionalEmail({
       to,
       subject,
       html: emailHtml,
     });
 
+    // Fallback: if the shared CIO client isn't configured, try direct instantiation
+    if (!sent) {
+      const apiKey = process.env.CUSTOMERIO_TRANSACTIONAL_API_KEY;
+      if (apiKey) {
+        try {
+          const directApi = new APIClient(apiKey, { region: RegionUS });
+          const messageId = process.env.CUSTOMERIO_TRANSACTIONAL_MESSAGE_ID || 'kanthink_email';
+          const request = new SendEmailRequest({
+            transactional_message_id: messageId,
+            to,
+            from: process.env.CUSTOMERIO_FROM_EMAIL || 'kan@kanthink.com',
+            subject,
+            body: emailHtml,
+            identifiers: { email: to },
+            message_data: { subject, body: emailHtml },
+            disable_message_retention: false,
+          });
+          await directApi.sendEmail(request);
+          sent = true;
+        } catch (fallbackErr) {
+          console.error('[Actions/SendNewsletter] Fallback send failed:', fallbackErr);
+        }
+      }
+    }
+
     if (!sent) {
       return NextResponse.json(
-        { error: 'Failed to send email — check Customer.IO configuration' },
+        { error: 'Email service is not configured. Please set CUSTOMERIO_TRANSACTIONAL_API_KEY in your environment.' },
         { status: 500 }
       );
     }
