@@ -204,7 +204,7 @@ async function moveCard(cardId: string) {
   })
 
   // Broadcast real-time move event
-  await broadcastToChannel({ type: 'card:move', cardId, fromColumnId, toColumnId: COMPLETED_COLUMN_ID, channelId: CHANNEL_ID })
+  await broadcastToChannel({ type: 'card:move', cardId, fromColumnId, toColumnId: COMPLETED_COLUMN_ID, channelId: CHANNEL_ID, toIndex: toPosition })
   console.log(`Moved card ${cardId} to "Completed" column.`)
   console.log(`  From: ${fromColumnId} → To: ${COMPLETED_COLUMN_ID}`)
 }
