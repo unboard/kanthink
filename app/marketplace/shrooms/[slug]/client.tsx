@@ -1,7 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import type { MarketplaceShroom } from '@/lib/marketplace-data'
+import type { InstructionTarget } from '@/lib/types'
+import { useStore } from '@/lib/store'
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon'
 import { MushroomIcon } from '@/components/icons/MushroomIcon'
 
@@ -11,6 +15,21 @@ function formatCount(n: number): string {
 }
 
 export function ShroomProductClient({ shroom }: { shroom: MarketplaceShroom }) {
+  const createInstructionCard = useStore((s) => s.createInstructionCard)
+  const [isAdded, setIsAdded] = useState(false)
+  const router = useRouter()
+
+  const handleAdd = () => {
+    const target: InstructionTarget = { type: 'column', columnId: '' }
+    createInstructionCard('', {
+      title: shroom.name,
+      instructions: shroom.instructions,
+      action: shroom.action,
+      target,
+      scope: 'global',
+    })
+    setIsAdded(true)
+  }
   return (
     <>
       {/* Nav */}
@@ -61,9 +80,28 @@ export function ShroomProductClient({ shroom }: { shroom: MarketplaceShroom }) {
             <p className="text-sm sm:text-base text-neutral-400 leading-relaxed">{shroom.tagline}</p>
 
             <div className="flex items-center gap-4 mt-4">
-              <button className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors shadow-lg shadow-violet-600/20">
-                <MushroomIcon size={14} />
-                Add to Kanthink
+              <button
+                onClick={handleAdd}
+                disabled={isAdded}
+                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-white text-sm font-medium transition-colors shadow-lg ${
+                  isAdded
+                    ? 'bg-green-600 shadow-green-600/20 cursor-default'
+                    : 'bg-violet-600 hover:bg-violet-500 shadow-violet-600/20'
+                }`}
+              >
+                {isAdded ? (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Added to Library
+                  </>
+                ) : (
+                  <>
+                    <MushroomIcon size={14} />
+                    Add to Kanthink
+                  </>
+                )}
               </button>
               <div className="flex items-center gap-1 text-xs text-neutral-500">
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

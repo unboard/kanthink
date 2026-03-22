@@ -209,12 +209,48 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           onOpenSettings={() => setIsDetailOpen(true)}
           onFocus={() => router.push(`/channel/${channelId}?focus=${column.id}`)}
           onHideCompletedTasks={() => hideCompletedTasks(channelId, column.id)}
+          onCollapse={() => updateColumn(channelId, column.id, { isCollapsed: !column.isCollapsed })}
+          isCollapsed={column.isCollapsed}
           hasInstructions={!!column.instructions}
         />
       </div>
       </div>
     </div>
   );
+
+  // Collapsed view
+  if (column.isCollapsed) {
+    return (
+      <div
+        className="column-container relative w-10 flex-shrink-0 h-full flex flex-col items-center rounded-lg bg-neutral-100 dark:bg-neutral-800/50 cursor-pointer hover:bg-neutral-200 dark:hover:bg-neutral-700/50 transition-colors"
+        onClick={() => updateColumn(channelId, column.id, { isCollapsed: false })}
+        title={`${column.name} (${itemCount} cards) — click to expand`}
+      >
+        <div className="py-3 flex flex-col items-center gap-2">
+          <button
+            {...dragHandleProps}
+            className="cursor-grab touch-none text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+            </svg>
+          </button>
+          <span className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 bg-neutral-200 dark:bg-neutral-700 rounded-full w-5 h-5 flex items-center justify-center">
+            {itemCount}
+          </span>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <span
+            className="text-xs font-medium text-neutral-500 dark:text-neutral-400 whitespace-nowrap"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            {column.name}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

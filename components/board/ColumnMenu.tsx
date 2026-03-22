@@ -18,6 +18,8 @@ interface ColumnMenuProps {
   onOpenSettings: () => void;
   onFocus: () => void;
   onHideCompletedTasks?: () => void;
+  onCollapse?: () => void;
+  isCollapsed?: boolean;
   hasInstructions?: boolean;
   isFocused?: boolean;
 }
@@ -33,6 +35,8 @@ export function ColumnMenu({
   onOpenSettings,
   onFocus,
   onHideCompletedTasks,
+  onCollapse,
+  isCollapsed,
   hasInstructions,
   isFocused,
 }: ColumnMenuProps) {
@@ -175,6 +179,21 @@ export function ColumnMenu({
                 </>
               )}
             </button>
+            {/* Collapse */}
+            {onCollapse && (
+              <button
+                onClick={() => {
+                  onCollapse();
+                  setIsOpen(false);
+                }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isCollapsed ? "M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" : "M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"} />
+                </svg>
+                {isCollapsed ? 'Expand column' : 'Collapse column'}
+              </button>
+            )}
             {/* Sort submenu */}
             <div className="relative">
               <button

@@ -13,6 +13,7 @@ interface InstructionDetailDrawerV2Props {
   isOpen: boolean;
   onClose: () => void;
   onRun: (card: InstructionCard) => Promise<void>;
+  onPreview?: (card: InstructionCard) => Promise<void>;
   onChatWithKan?: (card: InstructionCard) => void;
 }
 
@@ -32,6 +33,7 @@ export function InstructionDetailDrawerV2({
   isOpen,
   onClose,
   onRun,
+  onPreview,
   onChatWithKan,
 }: InstructionDetailDrawerV2Props) {
   const { data: session } = useSession();
@@ -165,6 +167,8 @@ export function InstructionDetailDrawerV2({
     });
   };
 
+  const [isPreviewing, setIsPreviewing] = useState(false);
+
   const handleRun = async () => {
     if (!instructionCard || isRunning) return;
     handleSave();
@@ -173,6 +177,17 @@ export function InstructionDetailDrawerV2({
       await onRun(instructionCard);
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    if (!instructionCard || isRunning || isPreviewing || !onPreview) return;
+    handleSave();
+    setIsPreviewing(true);
+    try {
+      await onPreview(instructionCard);
+    } finally {
+      setIsPreviewing(false);
     }
   };
 

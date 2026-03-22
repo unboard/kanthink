@@ -127,6 +127,7 @@ export interface Column {
   taskIds?: ID[];                // Standalone tasks in this column (cardId=null)
   itemOrder?: ID[];              // Interleaved display order of cards + tasks. Falls back to cardIds if absent.
   isAiTarget?: boolean;
+  isCollapsed?: boolean;         // Collapsed columns show as thin strips
 }
 
 export interface ChannelQuestion {
