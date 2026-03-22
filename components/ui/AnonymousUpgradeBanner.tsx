@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { signInWithGoogle } from '@/lib/actions/auth';
 import { KanthinkIcon } from '../icons/KanthinkIcon';
+import { useServerSync } from '@/components/providers/ServerSyncProvider';
 
 interface UsageData {
   used: number;
@@ -14,11 +15,12 @@ interface UsageData {
 
 export function AnonymousUpgradeBanner() {
   const { data: session, status } = useSession();
+  const { isServerMode } = useServerSync();
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
 
-  // Don't show if user is authenticated
-  const isAuthenticated = status === 'authenticated' && session?.user;
+  // Don't show if user is authenticated (check both session AND server mode)
+  const isAuthenticated = isServerMode || (status === 'authenticated' && session?.user);
 
   useEffect(() => {
     // Only fetch usage for anonymous users
