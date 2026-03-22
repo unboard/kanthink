@@ -160,6 +160,10 @@ export const cards = sqliteTable('cards', {
   // Task visibility preference
   hideCompletedTasks: integer('hide_completed_tasks', { mode: 'boolean' }).default(false),
 
+  // Agent processing state (persisted so it survives page reload)
+  isProcessing: integer('is_processing', { mode: 'boolean' }).default(false),
+  processingStatus: text('processing_status'),
+
   // AI tracking
   createdByInstructionId: text('created_by_instruction_id'),
   processedByInstructions: text('processed_by_instructions', { mode: 'json' }).$type<Record<string, string>>(),

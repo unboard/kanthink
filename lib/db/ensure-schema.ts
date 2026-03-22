@@ -58,6 +58,9 @@ export async function ensureSchema() {
     `ALTER TABLE instruction_cards ADD auto_approve integer DEFAULT 0`,
     // Migration 0021 — card color coding
     `ALTER TABLE cards ADD color text`,
+    // Migration 0022 — agent processing state
+    `ALTER TABLE cards ADD is_processing integer DEFAULT 0`,
+    `ALTER TABLE cards ADD processing_status text`,
   ]
 
   for (const stmt of alterStatements) {
