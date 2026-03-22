@@ -1284,7 +1284,16 @@ export const useStore = create<KanthinkState>()(
 
           const updatedColumns = ch.columns.map((col) => {
             if (col.id === columnId) {
-              return { ...col, cardIds: sortedCardIds };
+              // Update both cardIds AND itemOrder so the sort takes effect immediately.
+              // itemOrder may contain task IDs too — preserve those in their relative positions
+              // but reorder card IDs to match the sorted order.
+              let newItemOrder = sortedCardIds;
+              if (col.itemOrder) {
+                const taskIds = col.itemOrder.filter((id) => !col.cardIds.includes(id));
+                // Interleave: sorted cards first, then tasks at the end
+                newItemOrder = [...sortedCardIds, ...taskIds];
+              }
+              return { ...col, cardIds: sortedCardIds, itemOrder: newItemOrder };
             }
             return col;
           });
