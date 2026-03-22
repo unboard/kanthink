@@ -2,6 +2,7 @@ import { createClient } from '@libsql/client'
 import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import Pusher from 'pusher'
 
 // ── Config ──────────────────────────────────────────────────────────
 const CHANNEL_ID = '64eQst0Zx_iYYN4QJLWw3'
@@ -36,6 +37,35 @@ const db = createClient({
   url: env.DATABASE_URL,
   authToken: env.TURSO_AUTH_TOKEN,
 })
+
+// ── Pusher for real-time events ──────────────────────────────────────
+let pusher: Pusher | null = null
+function getPusher(): Pusher | null {
+  if (pusher) return pusher
+  const appId = env.PUSHER_APP_ID
+  const key = env.NEXT_PUBLIC_PUSHER_KEY
+  const secret = env.PUSHER_SECRET
+  const cluster = env.NEXT_PUBLIC_PUSHER_CLUSTER
+  if (!appId || !key || !secret || !cluster) return null
+  pusher = new Pusher({ appId, key, secret, cluster, useTLS: true })
+  return pusher
+}
+
+async function broadcastToChannel(event: Record<string, unknown>) {
+  const p = getPusher()
+  if (!p) return
+  try {
+    await p.trigger(`private-channel-${CHANNEL_ID}`, 'sync', {
+      event,
+      eventId: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      senderId: AGENT_ID,
+      timestamp: Date.now(),
+    })
+  } catch (err) {
+    // Non-critical — broadcast failure doesn't affect DB operations
+    console.warn('[Pusher] Broadcast failed:', (err as Error).message)
+  }
+}
 
 // ── Ensure agent user exists ─────────────────────────────────────────
 async function ensureAgentUser() {
@@ -138,6 +168,8 @@ async function addNote(cardId: string, noteText: string) {
     sql: 'UPDATE cards SET messages = ?, updated_at = ? WHERE id = ?',
     args: [JSON.stringify(messages), nowEpoch, cardId],
   })
+  // Broadcast real-time update
+  await broadcastToChannel({ type: 'card:update', id: cardId, updates: { messages } })
   console.log(`Added note to card ${cardId}`)
 }
 
@@ -171,6 +203,8 @@ async function moveCard(cardId: string) {
     args: [COMPLETED_COLUMN_ID, toPosition, nowEpoch, cardId],
   })
 
+  // Broadcast real-time move event
+  await broadcastToChannel({ type: 'card:move', cardId, fromColumnId, toColumnId: COMPLETED_COLUMN_ID, channelId: CHANNEL_ID })
   console.log(`Moved card ${cardId} to "Completed" column.`)
   console.log(`  From: ${fromColumnId} → To: ${COMPLETED_COLUMN_ID}`)
 }
@@ -220,6 +254,7 @@ async function tagCard(cardId: string, tagName: string) {
       sql: 'UPDATE cards SET tags = ?, updated_at = ? WHERE id = ?',
       args: [JSON.stringify(tags), nowEpoch, cardId],
     })
+    await broadcastToChannel({ type: 'card:update', id: cardId, updates: { tags } })
   }
   console.log(`Tagged card ${cardId} with "${tagName}"`)
 }
@@ -238,6 +273,7 @@ async function untagCard(cardId: string, tagName: string) {
       sql: 'UPDATE cards SET tags = ?, updated_at = ? WHERE id = ?',
       args: [JSON.stringify(filtered), nowEpoch, cardId],
     })
+    await broadcastToChannel({ type: 'card:update', id: cardId, updates: { tags: filtered } })
   }
   console.log(`Removed tag "${tagName}" from card ${cardId}`)
 }

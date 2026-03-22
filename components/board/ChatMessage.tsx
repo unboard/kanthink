@@ -13,6 +13,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SmartSnippet } from './SmartSnippet';
 import { TaskCheckbox } from './TaskCheckbox';
 import { ImageTheater } from '@/components/ui/ImageTheater';
+import { LinkPreview, extractUrls } from './LinkPreview';
 import { WhiteboardPreview } from './WhiteboardPreview';
 import { SpeakerButton } from '@/components/ui/SpeakerButton';
 
@@ -452,6 +453,11 @@ export function ChatMessage({
             {renderContentWithMentions(message.content, { onOpenCard, onOpenTask })}
           </div>
         ) : null}
+
+        {/* Link previews */}
+        {message.content && extractUrls(message.content).map((linkUrl) => (
+          <LinkPreview key={linkUrl} url={linkUrl} />
+        ))}
 
         {/* Attached images */}
         {imageUrls.length > 0 && (
