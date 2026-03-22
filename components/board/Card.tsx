@@ -206,18 +206,22 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
-        {/* Agent avatar when processing */}
+        {/* Agent processing indicator */}
         {card.isProcessing && (
-          <div className="flex items-center gap-2 px-3 pt-2 pb-0">
+          <>
+            {/* Background watermark avatar — large, low opacity, bottom-right corner */}
             <img
-              src="https://res.cloudinary.com/dcht3dytz/image/upload/f_png,w_64,h_64/v1769532115/kanthink-icon_pbne7q.svg"
-              alt="Agent"
-              className="w-5 h-5 rounded-full animate-pulse"
+              src="https://res.cloudinary.com/dcht3dytz/image/upload/f_png,w_128,h_128/v1769532115/kanthink-icon_pbne7q.svg"
+              alt=""
+              className="absolute bottom-1 right-1 w-16 h-16 opacity-[0.07] pointer-events-none select-none"
             />
-            <span className="text-[10px] font-medium text-violet-500 dark:text-violet-400 truncate">
-              {card.processingStatus || 'Working...'}
-            </span>
-          </div>
+            {/* Status text — upper left */}
+            <div className="px-3 pt-2 pb-0">
+              <span className="text-[10px] font-medium text-violet-500 dark:text-violet-400">
+                {card.processingStatus || 'Working...'}
+              </span>
+            </div>
+          </>
         )}
 
         {/* Card content with padding */}
