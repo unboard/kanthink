@@ -35,6 +35,17 @@ export function CardSearch() {
   const cards = useStore((s) => s.cards);
   const channels = useStore((s) => s.channels);
 
+  // Listen for external open requests (e.g. from nav search button)
+  useEffect(() => {
+    const handleOpenSearch = () => {
+      setIsOpen(true);
+      setQuery('');
+      setSelectedIndex(0);
+    };
+    window.addEventListener('openCardSearch', handleOpenSearch);
+    return () => window.removeEventListener('openCardSearch', handleOpenSearch);
+  }, []);
+
   // Global Cmd/Ctrl+K listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

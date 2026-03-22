@@ -156,6 +156,21 @@ function DesktopNav() {
         />
 
         <NavIconButton
+          isActive={false}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.dispatchEvent(new Event('openCardSearch'));
+          }}
+          label="Search"
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          }
+        />
+
+        <NavIconButton
           panel="shrooms"
           isActive={activePanel === 'shrooms'}
           onPointerDown={handleToggle('shrooms')}
