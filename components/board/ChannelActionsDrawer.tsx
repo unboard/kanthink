@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { Channel, ID, Card as CardType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui';
@@ -15,24 +15,43 @@ interface ChannelActionsDrawerProps {
 type ActionType = 'newsletter' | 'course' | 'blog' | null;
 type GenerationState = 'idle' | 'generating' | 'preview' | 'sending' | 'sent' | 'error';
 
+interface ChatMessage {
+  role: 'user' | 'kan';
+  content: string;
+}
+
 export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelActionsDrawerProps) {
   const allCards = useStore((s) => s.cards);
+  const allTasks = useStore((s) => s.tasks);
   const [activeAction, setActiveAction] = useState<ActionType>(null);
   const [genState, setGenState] = useState<GenerationState>('idle');
   const [generatedContent, setGeneratedContent] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [error, setError] = useState('');
   const [selectedColumnIds, setSelectedColumnIds] = useState<Set<string>>(new Set());
+  // Advanced options
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [includeTasks, setIncludeTasks] = useState(false);
+  // Generate with Kan chat mode
+  const [kanMode, setKanMode] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Get all cards organized by column
+  // Get all cards organized by column (including archived if enabled)
   const columnCards = useMemo(() => {
     return channel.columns.map((col) => {
-      const cards = (col.itemOrder || col.cardIds || [])
+      const activeIds = col.itemOrder || col.cardIds || [];
+      const archivedIds = includeArchived ? (col.backsideCardIds || []) : [];
+      const allIds = [...activeIds, ...archivedIds];
+      const cards = allIds
         .map((id) => allCards[id])
         .filter(Boolean) as CardType[];
-      return { column: col, cards };
+      return { column: col, cards, archivedCount: (col.backsideCardIds || []).length };
     });
-  }, [channel, allCards]);
+  }, [channel, allCards, includeArchived]);
 
   const totalCards = useMemo(() =>
     columnCards.reduce((sum, { cards }) => sum + cards.length, 0),
@@ -56,7 +75,66 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
     });
   }, []);
 
-  const handleGenerate = useCallback(async (type: ActionType) => {
+  // Scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // Get tasks from selected cards
+  const selectedTasksContext = useMemo(() => {
+    if (!includeTasks) return '';
+    const tasks: string[] = [];
+    selectedCards.forEach((card) => {
+      (card.taskIds || []).forEach((taskId) => {
+        const task = allTasks[taskId];
+        if (task) tasks.push(`- [${task.status === 'done' ? 'x' : ' '}] ${task.title}`);
+      });
+    });
+    return tasks.length > 0 ? `\n\nTasks from these cards:\n${tasks.join('\n')}` : '';
+  }, [selectedCards, allTasks, includeTasks]);
+
+  const handleChatSend = useCallback(async () => {
+    if (!chatInput.trim() || !activeAction) return;
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    setChatMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
+    setIsChatLoading(true);
+
+    try {
+      const res = await fetch('/api/channels/actions/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'chat',
+          channelName: channel.name,
+          channelDescription: channel.description || '',
+          prompt: `You are Kan, helping a user create a ${activeAction} from their channel content. The user said: "${userMsg}".
+
+Based on their request, either:
+1. Ask a clarifying question to understand their needs better (if their request is vague)
+2. Acknowledge their instruction and confirm what you'll do
+
+Keep your response to 2-3 sentences max. Be helpful and conversational. Don't generate the actual content yet — just have the conversation.`,
+          cards: selectedCards.slice(0, 5).map((c) => ({ title: c.title, summary: c.summary || '', content: '', tags: c.tags || [] })),
+        }),
+      });
+      const data = await res.json();
+      setChatMessages((prev) => [...prev, { role: 'kan', content: data.content || 'I had trouble processing that. Could you rephrase?' }]);
+    } catch {
+      setChatMessages((prev) => [...prev, { role: 'kan', content: 'Something went wrong. Try again?' }]);
+    }
+    setIsChatLoading(false);
+  }, [chatInput, activeAction, selectedCards, channel]);
+
+  const handleGenerateFromChat = useCallback(async () => {
+    const additionalInstructions = chatMessages
+      .filter((m) => m.role === 'user')
+      .map((m) => m.content)
+      .join('. ');
+    await handleGenerateWithInstructions(activeAction, additionalInstructions);
+  }, [chatMessages, activeAction]);
+
+  const handleGenerateWithInstructions = useCallback(async (type: ActionType, additionalInstructions?: string) => {
     if (!type) return;
     setGenState('generating');
     setError('');
@@ -68,10 +146,13 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
       tags: card.tags || [],
     }));
 
+    // Add task context if enabled
+    const taskSuffix = selectedTasksContext;
+
     const typePrompts: Record<string, string> = {
-      newsletter: `Create an engaging email newsletter based on the following channel content. The channel is called "${channel.name}"${channel.description ? ` and is about: ${channel.description}` : ''}. Write a compelling subject line, introduction paragraph, and then summarize the key cards as newsletter sections with headers. Keep it concise and scannable. Use a warm, professional tone. Output as HTML suitable for email.`,
-      course: `Create a course outline based on the following channel content. The channel is called "${channel.name}". Organize the cards into logical modules/lessons. For each lesson, include a title, learning objective, and key points. Output as clean HTML.`,
-      blog: `Create a blog post based on the following channel content. The channel is called "${channel.name}". Write a compelling title, introduction, and body that weaves the card content into a cohesive narrative. Output as clean HTML.`,
+      newsletter: `Create an engaging email newsletter based on the following channel content. The channel is called "${channel.name}"${channel.description ? ` and is about: ${channel.description}` : ''}. Write a compelling subject line, introduction paragraph, and then summarize the key cards as newsletter sections with headers. Keep it concise and scannable. Use a warm, professional tone. Output as HTML suitable for email.${additionalInstructions ? `\n\nAdditional user instructions: ${additionalInstructions}` : ''}${taskSuffix}`,
+      course: `Create a course outline based on the following channel content. The channel is called "${channel.name}". Organize the cards into logical modules/lessons. For each lesson, include a title, learning objective, and key points. Output as clean HTML.${additionalInstructions ? `\n\nAdditional user instructions: ${additionalInstructions}` : ''}${taskSuffix}`,
+      blog: `Create a blog post based on the following channel content. The channel is called "${channel.name}". Write a compelling title, introduction, and body that weaves the card content into a cohesive narrative. Output as clean HTML.${additionalInstructions ? `\n\nAdditional user instructions: ${additionalInstructions}` : ''}${taskSuffix}`,
     };
 
     try {
@@ -99,7 +180,11 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
       setError(err.message || 'Failed to generate content');
       setGenState('error');
     }
-  }, [selectedCards, channel]);
+  }, [selectedCards, channel, selectedTasksContext]);
+
+  const handleGenerate = useCallback(async (type: ActionType) => {
+    await handleGenerateWithInstructions(type);
+  }, [handleGenerateWithInstructions]);
 
   const handleSendEmail = useCallback(async () => {
     if (!recipientEmail.trim()) {
@@ -138,6 +223,9 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
     setGeneratedContent('');
     setError('');
     setRecipientEmail('');
+    setKanMode(false);
+    setChatMessages([]);
+    setChatInput('');
   }, []);
 
   const handleClose = useCallback(() => {
@@ -270,19 +358,125 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
               ))}
             </div>
 
+            {/* Advanced options */}
+            <div className="mb-4">
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
+              >
+                <svg className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                Advanced options
+              </button>
+              {showAdvanced && (
+                <div className="mt-2 space-y-2 pl-4">
+                  <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeArchived}
+                      onChange={(e) => setIncludeArchived(e.target.checked)}
+                      className="rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    Include archived cards
+                    {columnCards.some(c => c.archivedCount > 0) && (
+                      <span className="text-xs text-neutral-400">
+                        ({columnCards.reduce((sum, c) => sum + c.archivedCount, 0)} archived)
+                      </span>
+                    )}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeTasks}
+                      onChange={(e) => setIncludeTasks(e.target.checked)}
+                      className="rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    Include card tasks/subtasks
+                  </label>
+                </div>
+              )}
+            </div>
+
             {error && (
               <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">
                 {error}
               </div>
             )}
 
-            <button
-              onClick={() => handleGenerate(activeAction)}
-              disabled={selectedCards.length === 0}
-              className="w-full py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors"
-            >
-              Generate from {selectedCards.length} card{selectedCards.length !== 1 ? 's' : ''}
-            </button>
+            {!kanMode ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleGenerate(activeAction)}
+                  disabled={selectedCards.length === 0}
+                  className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors"
+                >
+                  Generate
+                </button>
+                <button
+                  onClick={() => {
+                    setKanMode(true);
+                    setChatMessages([{ role: 'kan', content: `I'll help you create a ${activeAction} from ${selectedCards.length} card${selectedCards.length !== 1 ? 's' : ''}. Tell me what you'd like — for example, specific format, tone, number of sections, images to include, or any other preferences.` }]);
+                  }}
+                  disabled={selectedCards.length === 0}
+                  className="flex-1 py-2.5 px-4 rounded-lg border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-50 font-medium text-sm transition-colors"
+                >
+                  Generate with Kan
+                </button>
+              </div>
+            ) : (
+              /* Kan chat mode */
+              <div>
+                <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 mb-3 max-h-[250px] overflow-y-auto p-3 space-y-3 bg-neutral-50 dark:bg-neutral-800/50">
+                  {chatMessages.map((msg, i) => (
+                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                        msg.role === 'user'
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-600'
+                      }`}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))}
+                  {isChatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-white dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 rounded-lg px-3 py-2 text-sm text-neutral-400">
+                        Kan is thinking...
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                    placeholder="Tell Kan what you want..."
+                    className="flex-1 px-3 py-2 text-sm rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500"
+                    disabled={isChatLoading}
+                  />
+                  <button
+                    onClick={handleChatSend}
+                    disabled={!chatInput.trim() || isChatLoading}
+                    className="px-3 py-2 rounded-lg bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 disabled:opacity-50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-neutral-600 dark:text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </button>
+                </div>
+                <button
+                  onClick={handleGenerateFromChat}
+                  disabled={chatMessages.filter(m => m.role === 'user').length === 0}
+                  className="w-full py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors"
+                >
+                  Generate with these instructions
+                </button>
+              </div>
+            )}
           </div>
         ) : genState === 'generating' ? (
           /* Loading */

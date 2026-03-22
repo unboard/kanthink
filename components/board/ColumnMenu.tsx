@@ -40,10 +40,12 @@ export function ColumnMenu({
   const [showSortSubmenu, setShowSortSubmenu] = useState(false);
   const [showDeleteCardsConfirm, setShowDeleteCardsConfirm] = useState(false);
   const [showDeleteColumnConfirm, setShowDeleteColumnConfirm] = useState(false);
+  const [showArchiveCardsConfirm, setShowArchiveCardsConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const deleteColumn = useStore((s) => s.deleteColumn);
   const deleteAllCardsInColumn = useStore((s) => s.deleteAllCardsInColumn);
+  const archiveCard = useStore((s) => s.archiveCard);
   const sortColumnCards = useStore((s) => s.sortColumnCards);
   const allCards = useStore((s) => s.cards);
 
@@ -234,6 +236,20 @@ export function ColumnMenu({
             </button>
             <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
             <button
+              onClick={() => {
+                if (cardCount === 0) return;
+                setIsOpen(false);
+                setShowArchiveCardsConfirm(true);
+              }}
+              disabled={cardCount === 0}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+              Archive all cards {cardCount > 0 && `(${cardCount})`}
+            </button>
+            <button
               onClick={handleDeleteAllCards}
               disabled={cardCount === 0}
               className="block w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
@@ -346,6 +362,43 @@ export function ColumnMenu({
               className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               Delete column
+            </button>
+          </div>
+        </div>
+      </Modal>
+      {/* Archive all cards confirmation */}
+      <Modal
+        isOpen={showArchiveCardsConfirm}
+        onClose={() => setShowArchiveCardsConfirm(false)}
+        size="sm"
+      >
+        <div className="p-6">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+            <svg className="h-6 w-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+            </svg>
+          </div>
+          <h3 className="mb-2 text-lg font-semibold text-neutral-900 dark:text-white text-center">
+            Archive all {cardCount} cards?
+          </h3>
+          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400 text-center">
+            Cards will be moved to the column&apos;s archive (backside). You can restore them later by flipping the column.
+          </p>
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => setShowArchiveCardsConfirm(false)}
+              className="px-4 py-2 text-sm font-medium rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                columnCardIds.forEach((cardId) => archiveCard(cardId));
+                setShowArchiveCardsConfirm(false);
+              }}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+            >
+              Archive all cards
             </button>
           </div>
         </div>
