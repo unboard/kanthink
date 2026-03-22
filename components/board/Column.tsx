@@ -190,7 +190,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           <h3
             onClick={() => setIsRenaming(true)}
             className="flex-1 truncate text-sm font-medium cursor-pointer text-neutral-700 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-white"
-            title="Click to rename"
+            title={column.instructions ? `${column.name}\n${column.instructions}` : 'Click to rename'}
           >
             {column.name}
           </h3>
