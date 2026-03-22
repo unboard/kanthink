@@ -9,6 +9,8 @@ import type {
   ChannelStoredAction,
   CreateCardActionData,
   ChannelCreateTaskActionData,
+  CreateTagActionData,
+  BulkTagActionData,
   CardMessage,
   CardMessageType,
   StoredAction,
@@ -57,6 +59,8 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
 
   const createCard = useStore((s) => s.createCard);
   const createTask = useStore((s) => s.createTask);
+  const addTagDefinition = useStore((s) => s.addTagDefinition);
+  const addTagToCard = useStore((s) => s.addTagToCard);
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
 
@@ -201,6 +205,20 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
           cardId = resolveCardId(taskData.cardTitle, channel) ?? null;
         }
         createTask(channel.id, cardId, { title: taskData.title, description: taskData.description });
+      } else if (action.type === 'create_tag') {
+        const tagData = finalData as CreateTagActionData;
+        addTagDefinition(channel.id, tagData.tagName, tagData.color || 'neutral');
+      } else if (action.type === 'bulk_tag') {
+        const tagData = finalData as BulkTagActionData;
+        // Ensure tag definition exists
+        const existingDef = channel.tagDefinitions?.find(t => t.name === tagData.tagName);
+        if (!existingDef) {
+          addTagDefinition(channel.id, tagData.tagName, tagData.color || 'neutral');
+        }
+        // Apply tag to all specified cards
+        for (const cardId of tagData.cardIds) {
+          addTagToCard(cardId, tagData.tagName);
+        }
       }
 
       // Update action status in messages

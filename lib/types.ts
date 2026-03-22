@@ -559,7 +559,7 @@ export interface RealtimeEvent {
 // ===== CHANNEL CHAT TYPES =====
 
 export type ChannelChatMessageType = 'question' | 'ai_response';
-export type ChannelProposedActionType = 'create_card' | 'create_task';
+export type ChannelProposedActionType = 'create_card' | 'create_task' | 'create_tag' | 'bulk_tag';
 
 export interface CreateCardActionData {
   title: string;
@@ -574,7 +574,19 @@ export interface ChannelCreateTaskActionData {
   cardTitle?: string;
 }
 
-export type ChannelActionData = CreateCardActionData | ChannelCreateTaskActionData;
+export interface CreateTagActionData {
+  tagName: string;
+  color?: string;
+}
+
+export interface BulkTagActionData {
+  tagName: string;
+  color?: string;
+  cardIds: string[];    // Cards to tag
+  columnName?: string;  // For display: "→ Raw Ideas"
+}
+
+export type ChannelActionData = CreateCardActionData | ChannelCreateTaskActionData | CreateTagActionData | BulkTagActionData;
 
 export interface ChannelStoredAction {
   id: string;

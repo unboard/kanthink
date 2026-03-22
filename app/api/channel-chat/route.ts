@@ -176,20 +176,24 @@ ${taskSection}${webContextSection}
 
 ## RESPONSE FORMAT
 
-You can propose actions: create_card (new card in a column) or create_task (optionally linked to a card).
+You can propose actions: create_card, create_task, create_tag, or bulk_tag.
 
 Your response MUST be valid JSON:
 {
   "response": "Your message (markdown supported)"${titleInstruction},
   "actions": [
     { "type": "create_card", "data": { "title": "Card title", "columnName": "Exact Column Name" } },
-    { "type": "create_task", "data": { "title": "Task title", "description": "Optional", "cardTitle": "Optional parent card" } }
+    { "type": "create_task", "data": { "title": "Task title", "description": "Optional", "cardTitle": "Optional parent card" } },
+    { "type": "create_tag", "data": { "tagName": "Tag Name", "color": "blue" } },
+    { "type": "bulk_tag", "data": { "tagName": "Tag Name", "color": "green", "cardIds": ["id1", "id2"], "columnName": "Raw Ideas" } }
   ]
 }
 
 Rules:
 - Always respond with valid JSON. The "actions" array is optional.
 - For create_card: use exact column names from above. For create_task: omit cardTitle for standalone tasks.
+- For create_tag: creates a tag definition for the channel. Colors: red, orange, yellow, green, blue, purple, pink, neutral.
+- For bulk_tag: creates the tag if needed AND applies it to the listed cardIds. Use this when the user asks to tag multiple cards. Include all matching card IDs from the data above.
 - Be concise. Reference cards, tasks, and columns by name.
 - IMPORTANT: When referencing existing cards or tasks, use clickable links with the kanthink:// scheme so users can navigate to them:
   - For cards: [Card Title](kanthink://card/CARD_ID)

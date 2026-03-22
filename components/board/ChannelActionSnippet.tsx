@@ -147,6 +147,35 @@ export function ChannelActionSnippet({ action, channel, onApprove, onReject }: C
       );
     }
 
+    if (action.type === 'create_tag') {
+      const data = action.data as import('@/lib/types').CreateTagActionData;
+      return (
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-neutral-700 dark:text-neutral-200">
+            <span className="font-medium">TAG: {data.tagName}</span>
+            {data.color && (
+              <span className={`ml-1.5 inline-block w-2.5 h-2.5 rounded-full`} style={{ backgroundColor: data.color === 'neutral' ? '#a1a1aa' : data.color }} />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (action.type === 'bulk_tag') {
+      const data = action.data as import('@/lib/types').BulkTagActionData;
+      return (
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-neutral-700 dark:text-neutral-200">
+            <span className="font-medium">TAG: {data.tagName}</span>
+            <span className="ml-1.5 text-xs text-neutral-400">
+              → {data.cardIds.length} card{data.cardIds.length !== 1 ? 's' : ''}
+              {data.columnName && ` in ${data.columnName}`}
+            </span>
+          </div>
+        </div>
+      );
+    }
+
     return null;
   };
 
@@ -155,7 +184,17 @@ export function ChannelActionSnippet({ action, channel, onApprove, onReject }: C
       <div className="flex items-start gap-2.5">
         {/* Icon */}
         <div className={`flex-shrink-0 mt-0.5 ${iconColor}`}>
-          {action.type === 'create_card' ? (
+          {(action.type === 'create_tag' || action.type === 'bulk_tag') ? (
+            isApproved ? (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+            )
+          ) : action.type === 'create_card' ? (
             isApproved ? (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
