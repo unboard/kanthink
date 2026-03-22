@@ -332,6 +332,20 @@ body {
   border-radius: 0.375rem 0.375rem 0 0;
 }
 
+/* Animated purple left border for agent-processing cards */
+@keyframes pulse-border {
+  0%, 100% {
+    border-left-color: rgba(139, 92, 246, 0.4);
+  }
+  50% {
+    border-left-color: rgba(139, 92, 246, 1);
+  }
+}
+
+.animate-pulse-border {
+  animation: pulse-border 2s ease-in-out infinite;
+}
+
 /* ===========================================
    HALFTONE SKELETON LOADING STYLES
    =========================================== */

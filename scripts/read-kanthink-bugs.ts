@@ -250,11 +250,18 @@ async function tagCard(cardId: string, tagName: string) {
   if (!tags.includes(tagName)) {
     tags.push(tagName)
     const nowEpoch = Math.floor(Date.now() / 1000)
+
+    // If tagging as Processing, also set isProcessing + processingStatus for visual feedback
+    const isProcessingTag = tagName === 'Processing'
+    const extraUpdates = isProcessingTag
+      ? { isProcessing: true, processingStatus: `${AGENT_NAME} is reviewing...` }
+      : {}
+
     await db.execute({
       sql: 'UPDATE cards SET tags = ?, updated_at = ? WHERE id = ?',
       args: [JSON.stringify(tags), nowEpoch, cardId],
     })
-    await broadcastToChannel({ type: 'card:update', id: cardId, updates: { tags } })
+    await broadcastToChannel({ type: 'card:update', id: cardId, updates: { tags, ...extraUpdates } })
   }
   console.log(`Tagged card ${cardId} with "${tagName}"`)
 }
@@ -269,11 +276,18 @@ async function untagCard(cardId: string, tagName: string) {
   const filtered = tags.filter(t => t !== tagName)
   if (filtered.length !== tags.length) {
     const nowEpoch = Math.floor(Date.now() / 1000)
+
+    // If removing Processing tag, clear isProcessing
+    const isProcessingTag = tagName === 'Processing'
+    const extraUpdates = isProcessingTag
+      ? { isProcessing: false, processingStatus: '' }
+      : {}
+
     await db.execute({
       sql: 'UPDATE cards SET tags = ?, updated_at = ? WHERE id = ?',
       args: [JSON.stringify(filtered), nowEpoch, cardId],
     })
-    await broadcastToChannel({ type: 'card:update', id: cardId, updates: { tags: filtered } })
+    await broadcastToChannel({ type: 'card:update', id: cardId, updates: { tags: filtered, ...extraUpdates } })
   }
   console.log(`Removed tag "${tagName}" from card ${cardId}`)
 }

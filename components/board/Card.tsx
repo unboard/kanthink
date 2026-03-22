@@ -187,9 +187,9 @@ export function Card({ card }: CardProps) {
           ${isDragging ? 'touch-none' : 'touch-manipulation'}
           bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md
           ${isDragging ? 'opacity-50 shadow-lg' : ''}
-          ${card.isProcessing ? 'card-processing' : ''}
+          ${card.isProcessing ? 'card-processing border-l-[3px] border-l-violet-500 animate-pulse-border' : ''}
           ${showCardMenu ? 'z-40' : ''}
-          ${card.color ? 'border-l-[3px]' : ''}
+          ${!card.isProcessing && card.color ? 'border-l-[3px]' : ''}
         `}
       >
         {/* Cover image */}
@@ -203,6 +203,20 @@ export function Card({ card }: CardProps) {
               loading="lazy"
               onClick={() => setIsCardDrawerOpen(true)}
             />
+          </div>
+        )}
+
+        {/* Agent avatar when processing */}
+        {card.isProcessing && (
+          <div className="flex items-center gap-2 px-3 pt-2 pb-0">
+            <img
+              src="https://res.cloudinary.com/dcht3dytz/image/upload/f_png,w_64,h_64/v1769532115/kanthink-icon_pbne7q.svg"
+              alt="Agent"
+              className="w-5 h-5 rounded-full animate-pulse"
+            />
+            <span className="text-[10px] font-medium text-violet-500 dark:text-violet-400 truncate">
+              {card.processingStatus || 'Working...'}
+            </span>
           </div>
         )}
 
