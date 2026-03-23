@@ -657,14 +657,42 @@ Guidelines for your response:
                   Send Newsletter
                 </button>
               ) : (
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(generatedContent);
-                  }}
-                  className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-medium text-sm transition-colors"
-                >
-                  Copy HTML
-                </button>
+                <>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/channels/actions/publish', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            channelId: channel.id,
+                            channelName: channel.name,
+                            title: `${channel.name} ${activeActionTitle}`,
+                            type: activeAction,
+                            html: generatedContent,
+                          }),
+                        });
+                        if (res.ok) {
+                          const data = await res.json();
+                          navigator.clipboard.writeText(data.url);
+                          setError(`Published! Link copied: ${data.url}`);
+                        }
+                      } catch { setError('Publish failed'); }
+                    }}
+                    className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-medium text-sm transition-colors"
+                  >
+                    Publish as Page
+                  </button>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(generatedContent)}
+                    className="py-2.5 px-3 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+                    title="Copy raw HTML"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    </svg>
+                  </button>
+                </>
               )}
             </div>
           </div>

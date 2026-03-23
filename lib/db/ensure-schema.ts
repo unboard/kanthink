@@ -61,6 +61,25 @@ export async function ensureSchema() {
     // Migration 0022 — agent processing state
     `ALTER TABLE cards ADD is_processing integer DEFAULT 0`,
     `ALTER TABLE cards ADD processing_status text`,
+    // Migration 0023 — notification preferences
+    `CREATE TABLE IF NOT EXISTS notification_preferences (id text PRIMARY KEY, user_id text NOT NULL, disabled_types text, browser_notifications_enabled integer DEFAULT 1, created_at integer, updated_at integer)`,
+    `ALTER TABLE notification_preferences ADD id text`,
+    `ALTER TABLE notification_preferences ADD user_id text`,
+    `ALTER TABLE notification_preferences ADD disabled_types text`,
+    `ALTER TABLE notification_preferences ADD browser_notifications_enabled integer DEFAULT 1`,
+    `ALTER TABLE notification_preferences ADD created_at integer`,
+    `ALTER TABLE notification_preferences ADD updated_at integer`,
+    // Migration 0024 — content pages (CREATE TABLE + individual columns for migration guard)
+    `CREATE TABLE IF NOT EXISTS content_pages (id text PRIMARY KEY, channel_id text, token text NOT NULL UNIQUE, title text, description text, channel_name text, type text, html_content text, created_at integer)`,
+    `ALTER TABLE content_pages ADD id text`,
+    `ALTER TABLE content_pages ADD channel_id text`,
+    `ALTER TABLE content_pages ADD token text`,
+    `ALTER TABLE content_pages ADD title text`,
+    `ALTER TABLE content_pages ADD description text`,
+    `ALTER TABLE content_pages ADD channel_name text`,
+    `ALTER TABLE content_pages ADD type text`,
+    `ALTER TABLE content_pages ADD html_content text`,
+    `ALTER TABLE content_pages ADD created_at integer`,
   ]
 
   for (const stmt of alterStatements) {

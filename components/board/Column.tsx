@@ -17,6 +17,36 @@ import { ColumnTaskItem } from './ColumnTaskItem';
 import { TaskDrawer } from './TaskDrawer';
 
 
+// Animated counter that briefly flashes when the value changes
+function AnimatedCount({ value }: { value: number }) {
+  const [displayValue, setDisplayValue] = useState(value);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const prevValue = useRef(value);
+
+  useEffect(() => {
+    if (value !== prevValue.current) {
+      setIsAnimating(true);
+      setDisplayValue(value);
+      prevValue.current = value;
+      const timer = setTimeout(() => setIsAnimating(false), 400);
+      return () => clearTimeout(timer);
+    }
+  }, [value]);
+
+  return (
+    <span
+      className={`text-xs transition-all duration-300 ${
+        isAnimating
+          ? 'text-violet-500 scale-110 font-medium'
+          : 'text-neutral-400 scale-100'
+      }`}
+      style={{ display: 'inline-block' }}
+    >
+      {displayValue}
+    </span>
+  );
+}
+
 interface ColumnProps {
   column: ColumnType;
   channelId: ID;
@@ -197,7 +227,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         )}
       </div>
       <div className="flex items-center gap-1">
-        <span className="text-xs text-neutral-400">{isFlipped ? backsideCount : itemCount}</span>
+        <AnimatedCount value={isFlipped ? backsideCount : itemCount} />
         <ColumnMenu
           channelId={channelId}
           columnId={column.id}

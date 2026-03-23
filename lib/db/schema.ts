@@ -673,3 +673,22 @@ export type DbChannelActivityLog = typeof channelActivityLog.$inferSelect
 export type NewDbChannelActivityLog = typeof channelActivityLog.$inferInsert
 export type DbDigestSendLog = typeof digestSendLog.$inferSelect
 export type NewDbDigestSendLog = typeof digestSendLog.$inferInsert
+
+// Published content pages (from Channel Actions)
+export const contentPages = sqliteTable('content_pages', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text('channel_id').references(() => channels.id, { onDelete: 'cascade' }),
+  token: text('token').notNull().unique(),
+  title: text('title'),
+  description: text('description'),
+  channelName: text('channel_name'),
+  type: text('type').$type<'newsletter' | 'course' | 'blog'>(),
+  htmlContent: text('html_content'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('content_pages_token_idx').on(table.token),
+  index('content_pages_channel_idx').on(table.channelId),
+])
+
+export type DbContentPage = typeof contentPages.$inferSelect
+export type NewDbContentPage = typeof contentPages.$inferInsert
