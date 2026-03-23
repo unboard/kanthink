@@ -16,6 +16,7 @@ import { Modal } from '@/components/ui';
 import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
 import { SnoozePicker } from './SnoozePicker';
+import { useSelectionStore } from '@/lib/selectionStore';
 
 const CARD_COLORS: Record<string, string> = {
   red: '#ef4444',
@@ -60,6 +61,9 @@ export function Card({ card }: CardProps) {
   const tasks = useStore((s) => s.tasks);
   const channels = useStore((s) => s.channels);
   const { members } = useChannelMembers(card.channelId);
+  const isSelected = useSelectionStore((s) => s.selectedCardIds.has(card.id));
+  const isSelectionMode = useSelectionStore((s) => s.isSelectionMode);
+  const toggleCard = useSelectionStore((s) => s.toggleCard);
 
   // Close card menu on click outside
   useEffect(() => {
@@ -190,6 +194,7 @@ export function Card({ card }: CardProps) {
           ${card.isProcessing ? 'card-processing' : ''}
           ${showCardMenu ? 'z-40' : ''}
           ${!card.isProcessing && card.color ? 'border-l-[3px]' : ''}
+          ${isSelected ? 'ring-2 ring-violet-500 dark:ring-violet-400' : ''}
         `}
       >
         {/* Cover image */}
@@ -223,6 +228,29 @@ export function Card({ card }: CardProps) {
             </div>
           </>
         )}
+
+        {/* Selection checkbox — visible on hover or when in selection mode */}
+        <div
+          className={`absolute top-2 left-2 z-20 transition-opacity ${
+            isSelectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleCard(card.id); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+              isSelected
+                ? 'bg-violet-500 border-violet-500 text-white'
+                : 'bg-white/90 dark:bg-neutral-800/90 border-neutral-300 dark:border-neutral-600 hover:border-violet-400'
+            }`}
+          >
+            {isSelected && (
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+        </div>
 
         {/* Card content with padding */}
         <div className="relative p-3">

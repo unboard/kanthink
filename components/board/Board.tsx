@@ -55,6 +55,8 @@ import { AgentStatusBar } from './AgentStatusBar';
 import { CursorPresence, PresenceIndicator } from '@/components/presence/CursorPresence';
 import { ChannelMembersBar } from './ChannelMembersBar';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
+import { BulkActionsToolbar } from './BulkActionsToolbar';
+import { useSelectionStore } from '@/lib/selectionStore';
 // Commented out - question system disabled
 // import { QuestionToast } from '@/components/ui/QuestionToast';
 // import { useQuestionTrigger } from '@/lib/hooks/useQuestionTrigger';
@@ -122,6 +124,12 @@ export function Board({ channel }: BoardProps) {
       router.replace(`/channel/${channel.id}`, { scroll: false });
     }
   }, [focusParam, focusColumn, router, channel.id]);
+
+  // Clear card selection when channel changes or view mode changes
+  const clearSelection = useSelectionStore((s) => s.clearSelection);
+  useEffect(() => {
+    clearSelection();
+  }, [channel.id, viewMode, clearSelection]);
 
   // Settings store for first-time highlight
   const shroomsButtonHighlighted = useSettingsStore((s) => s.shroomsButtonHighlighted);
@@ -1734,6 +1742,9 @@ export function Board({ channel }: BoardProps) {
         isOpen={isChannelChatOpen}
         onClose={() => setIsChannelChatOpen(false)}
       />
+
+      {/* Bulk card actions toolbar — appears when cards are selected */}
+      <BulkActionsToolbar channel={channel} />
     </div>
   );
 }
