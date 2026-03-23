@@ -1358,6 +1358,33 @@ export function Board({ channel }: BoardProps) {
 
       <AgentStatusBar channelId={channel.id} />
 
+      {/* Channel description banner */}
+      {channel.description && (() => {
+        const storageKey = `channel-desc-${channel.id}`;
+        const isHidden = typeof window !== 'undefined' && localStorage.getItem(storageKey) === 'hidden';
+        if (isHidden) return null;
+        return (
+          <div className="mx-4 sm:mx-6 mb-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/50 dark:border-neutral-700/30">
+            <p className="flex-1 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
+              {channel.description}
+            </p>
+            <button
+              onClick={() => {
+                localStorage.setItem(storageKey, 'hidden');
+                // Force re-render
+                setManualViewMode((prev) => prev);
+              }}
+              className="flex-shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-0.5"
+              title="Hide description"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        );
+      })()}
+
       {viewMode === 'list' ? (
         <CardListView channelId={channel.id} />
       ) : viewMode === 'tasks' ? (
