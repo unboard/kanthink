@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
-import type { ChannelChatMessage, ChannelStoredAction, ChannelProposedActionType } from '@/lib/types';
+import type { ChannelChatMessage, ChannelStoredAction, ChannelProposedActionType, ChannelActionData } from '@/lib/types';
 import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
@@ -51,6 +51,9 @@ interface ProposedAction {
     description?: string;
     columnName?: string;
     cardTitle?: string;
+    tagName?: string;
+    color?: string;
+    cardIds?: string[];
   };
 }
 
@@ -286,6 +289,30 @@ function convertToStoredActions(actions: ProposedAction[]): ChannelStoredAction[
         },
         status: 'pending',
       });
+    } else if (action.type === 'create_tag') {
+      if (!action.data.tagName) continue;
+      result.push({
+        id: nanoid(),
+        type: 'create_tag' as const,
+        data: {
+          tagName: action.data.tagName,
+          color: action.data.color || 'neutral',
+        } as ChannelActionData,
+        status: 'pending' as const,
+      } as ChannelStoredAction);
+    } else if (action.type === 'bulk_tag') {
+      if (!action.data.tagName || !action.data.cardIds?.length) continue;
+      result.push({
+        id: nanoid(),
+        type: 'bulk_tag' as const,
+        data: {
+          tagName: action.data.tagName,
+          color: action.data.color || 'neutral',
+          cardIds: action.data.cardIds,
+          columnName: action.data.columnName,
+        } as ChannelActionData,
+        status: 'pending' as const,
+      } as ChannelStoredAction);
     }
   }
 
