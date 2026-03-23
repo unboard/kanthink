@@ -186,7 +186,16 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mentionNames.join(',')]);
 
-  const hasMentions = mentionRegex !== null;
+  // Build regex for card mentions
+  const cardMentionNames = Object.keys(cardMentionsMap);
+  const cardMentionRegex = useMemo(() => {
+    if (cardMentionNames.length === 0) return null;
+    const escaped = cardMentionNames.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    return new RegExp(`#(${escaped.join('|')})(?=\\s|$)`, 'g');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardMentionNames.join(',')]);
+
+  const hasMentions = mentionRegex !== null || cardMentionRegex !== null;
   const showBackdrop = mode === 'question' || hasMentions;
 
   const { uploadFile, isUploading, error: uploadError, clearError } = useImageUpload({ cardId });
@@ -221,6 +230,15 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
       mentionRegex.lastIndex = 0;
       let m;
       while ((m = mentionRegex.exec(text)) !== null) {
+        matches.push({ start: m.index, end: m.index + m[0].length, type: 'mention', text: m[0] });
+      }
+    }
+
+    // Card mention matches
+    if (cardMentionRegex) {
+      cardMentionRegex.lastIndex = 0;
+      let m;
+      while ((m = cardMentionRegex.exec(text)) !== null) {
         matches.push({ start: m.index, end: m.index + m[0].length, type: 'mention', text: m[0] });
       }
     }
@@ -285,7 +303,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
 
     segments.push(<span key="trailing">&nbsp;</span>);
     return segments;
-  }, [content, mode, mentionRegex]);
+  }, [content, mode, mentionRegex, cardMentionRegex]);
 
   // Handle mouse events on backdrop for tooltips
   const handleBackdropMouseMove = useCallback((e: React.MouseEvent) => {

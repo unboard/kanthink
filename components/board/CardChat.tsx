@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
 import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition, ChannelMember } from '@/lib/types';
@@ -32,6 +33,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const [members, setMembers] = useState<ChannelMember[]>([]);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
 
+  const router = useRouter();
   const { data: session } = useSession();
 
   // Track keyboard height for mobile input positioning
@@ -47,6 +49,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const updateMessageAction = useStore((s) => s.updateMessageAction);
   const createTask = useStore((s) => s.createTask);
   const addTaskNote = useStore((s) => s.addTaskNote);
+  const cards = useStore((s) => s.cards);
   const addTagDefinition = useStore((s) => s.addTagDefinition);
   const addTagToCard = useStore((s) => s.addTagToCard);
   const removeTagFromCard = useStore((s) => s.removeTagFromCard);
@@ -472,6 +475,13 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
                 onActionReject={handleActionReject}
                 onApproveAll={handleApproveAll}
                 onRejectAll={handleRejectAll}
+                onOpenCard={(cardId) => {
+                  // Open the card detail drawer
+                  const targetCard = cards[cardId];
+                  if (targetCard) {
+                    router.push(`/channel/${targetCard.channelId}/card/${cardId}`);
+                  }
+                }}
               />
             )
           )
