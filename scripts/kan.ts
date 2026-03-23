@@ -5,10 +5,11 @@ import { fileURLToPath } from 'url'
 import Pusher from 'pusher'
 
 // ── Config ──────────────────────────────────────────────────────────
-const CHANNEL_ID = '64eQst0Zx_iYYN4QJLWw3'
-const DO_THESE_COLUMN_ID = 'nRPnpAXt9pK2w_e4Iqicm'
-const COMPLETED_COLUMN_ID = 'FaiL-RTAfoEUuyYwhLNAA'
-const RAW_IDEAS_COLUMN_ID = '5nI4LkFlS1cF8H1X4wUIV'
+// Defaults for the Kanthink Work channel — overridden by --channel flag
+let CHANNEL_ID = '64eQst0Zx_iYYN4QJLWw3'
+let DO_THESE_COLUMN_ID = 'nRPnpAXt9pK2w_e4Iqicm'
+let COMPLETED_COLUMN_ID = 'FaiL-RTAfoEUuyYwhLNAA'
+let RAW_IDEAS_COLUMN_ID = '5nI4LkFlS1cF8H1X4wUIV'
 const PRODUCTION_URL = 'https://www.kanthink.com'
 
 // Agent identity
@@ -300,10 +301,61 @@ async function untagCard(cardId: string, tagName: string) {
   console.log(`Removed tag "${tagName}" from card ${cardId}`)
 }
 
+// ── Column auto-discovery ────────────────────────────────────────────
+// When --channel is used, look up columns by name pattern
+async function discoverColumns(channelId: string) {
+  const res = await db.execute({
+    sql: `SELECT id, name FROM columns WHERE channel_id = ? ORDER BY position`,
+    args: [channelId],
+  })
+  if (res.rows.length === 0) {
+    console.error(`No columns found for channel ${channelId}. Does this channel exist?`)
+    process.exit(1)
+  }
+
+  // Match columns by common name patterns
+  const find = (patterns: string[]): string | null => {
+    for (const pattern of patterns) {
+      const match = res.rows.find(r => (r.name as string).toLowerCase().includes(pattern))
+      if (match) return match.id as string
+    }
+    return null
+  }
+
+  const doThese = find(['do these', 'inbox', 'to do', 'todo', 'backlog'])
+  const completed = find(['completed', 'done', 'complete', 'finished'])
+  const rawIdeas = find(['raw ideas', 'ideas', 'triage', 'new'])
+
+  if (!doThese || !completed) {
+    console.error(`Could not auto-discover required columns for channel ${channelId}.`)
+    console.error(`Found columns: ${res.rows.map(r => `"${r.name}" (${r.id})`).join(', ')}`)
+    console.error(`Need a column matching "Do these/Inbox/To do" and one matching "Completed/Done".`)
+    process.exit(1)
+  }
+
+  CHANNEL_ID = channelId
+  DO_THESE_COLUMN_ID = doThese
+  COMPLETED_COLUMN_ID = completed
+  if (rawIdeas) RAW_IDEAS_COLUMN_ID = rawIdeas
+
+  console.log(`Channel: ${channelId}`)
+  console.log(`  Inbox column: ${doThese}`)
+  console.log(`  Completed column: ${completed}`)
+  if (rawIdeas) console.log(`  Ideas column: ${rawIdeas}`)
+  console.log()
+}
+
 // ── CLI ─────────────────────────────────────────────────────────────
 async function main() {
   await ensureAgentUser()
-  const args = process.argv.slice(2)
+  let args = process.argv.slice(2)
+
+  // Extract --channel flag before processing other commands
+  const channelIdx = args.indexOf('--channel')
+  if (channelIdx !== -1 && args[channelIdx + 1]) {
+    await discoverColumns(args[channelIdx + 1])
+    args = [...args.slice(0, channelIdx), ...args.slice(channelIdx + 2)]
+  }
 
   if (args[0] === '--move' && args[1]) {
     await moveCard(args[1])
