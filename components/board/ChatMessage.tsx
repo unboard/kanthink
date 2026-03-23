@@ -619,9 +619,9 @@ export function ChatMessage({
                   </button>
                   <button
                     onClick={() => onApproveAll(message.id)}
-                    className="text-xs font-medium text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/30 px-2.5 py-1 rounded-md transition-colors"
+                    className="text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 px-3 py-1.5 rounded-md transition-colors shadow-sm"
                   >
-                    Accept all
+                    Accept all ({pendingActions.length})
                   </button>
                 </div>
               )}

@@ -187,7 +187,6 @@ Your response MUST be valid JSON:
   "actions": [
     { "type": "create_card", "data": { "title": "Card title", "columnName": "Exact Column Name" } },
     { "type": "create_task", "data": { "title": "Task title", "description": "Optional", "cardTitle": "Optional parent card" } },
-    { "type": "create_tag", "data": { "tagName": "Tag Name", "color": "blue" } },
     { "type": "bulk_tag", "data": { "tagName": "Tag Name", "color": "green", "cardIds": ["id1", "id2"], "columnName": "Raw Ideas" } }
   ]
 }
@@ -196,8 +195,7 @@ Rules:
 - Always respond with valid JSON.
 - CRITICAL: When the user asks you to DO something (create cards, tag cards, create tasks), you MUST include the appropriate actions in the "actions" array. Never just describe what you would do in text — actually propose the actions so the user can approve them. If the user says "go ahead and tag" or "do it", include ALL the relevant bulk_tag/create_tag actions.
 - For create_card: use exact column names from above. For create_task: omit cardTitle for standalone tasks.
-- For create_tag: creates a tag definition for the channel. Colors: red, orange, yellow, green, blue, purple, pink, neutral.
-- For bulk_tag: creates the tag if needed AND applies it to the listed cardIds. Use this when the user asks to tag or organize cards. Include all matching card IDs from the channel data above. You can include many bulk_tag actions in a single response.
+- For bulk_tag: creates the tag definition AND applies it to the listed cardIds in one action. Use this when the user asks to tag or organize cards. Include ALL matching card IDs from the data above. Colors: red, orange, yellow, green, blue, purple, pink, neutral. IMPORTANT: Keep the number of actions minimal — one bulk_tag per tag category is ideal. Don't create separate create_tag actions; bulk_tag handles creation automatically.
 - Be concise. Reference cards, tasks, and columns by name.
 - IMPORTANT: When referencing existing cards or tasks, use clickable links with the kanthink:// scheme so users can navigate to them:
   - For cards: [Card Title](kanthink://card/CARD_ID)
