@@ -21,6 +21,16 @@ interface ChatMessage {
   content: string;
 }
 
+interface SavedEmail {
+  id: string;
+  channelId: string;
+  type: string;
+  html: string;
+  conversation: ChatMessage[];
+  createdAt: string;
+  title: string;
+}
+
 export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelActionsDrawerProps) {
   const allCards = useStore((s) => s.cards);
   const allTasks = useStore((s) => s.tasks);
@@ -44,6 +54,16 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const { keyboardOffset, onFocus: kbFocus, onBlur: kbBlur } = useKeyboardOffset();
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('light');
+  // Email editor mode
+  const [editorChatInput, setEditorChatInput] = useState('');
+  const [isEditorChatLoading, setIsEditorChatLoading] = useState(false);
+  const [editorChatMessages, setEditorChatMessages] = useState<ChatMessage[]>([]);
+  const [testEmailAddress, setTestEmailAddress] = useState('');
+  const [sendTestStatus, setSendTestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  // Saved emails
+  const [savedEmails, setSavedEmails] = useState<SavedEmail[]>([]);
+  const [showSendScreen, setShowSendScreen] = useState(false);
+  const [sendRecipients, setSendRecipients] = useState('');
 
   // Get all cards organized by column (including archived if enabled)
   const columnCards = useMemo(() => {
@@ -93,6 +113,16 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
       chatInputRef.current?.focus();
     }
   }, [kanMode, isChatLoading]);
+
+  // Load saved emails from localStorage
+  useEffect(() => {
+    if (isOpen && channel.id) {
+      const stored = localStorage.getItem(`kanthink-saved-emails-${channel.id}`);
+      if (stored) {
+        try { setSavedEmails(JSON.parse(stored)); } catch { /* ignore */ }
+      }
+    }
+  }, [isOpen, channel.id]);
 
   // Get tasks from selected cards
   const selectedTasksContext = useMemo(() => {
@@ -193,6 +223,7 @@ Guidelines for your response:
       const data = await res.json();
       setGeneratedContent(data.content);
       setGenState('preview');
+      setEditorChatMessages([]);
     } catch (err: any) {
       setError(err.message || 'Failed to generate content');
       setGenState('error');
@@ -258,6 +289,8 @@ Guidelines for your response:
     setKanMode(false);
     setChatMessages([]);
     setChatInput('');
+    setEditorChatMessages([]);
+    setShowSendScreen(false);
   }, [kanMode, genState]);
 
   const handleClose = useCallback(() => {
@@ -269,6 +302,8 @@ Guidelines for your response:
     setKanMode(false);
     setChatMessages([]);
     setChatInput('');
+    setEditorChatMessages([]);
+    setShowSendScreen(false);
     onClose();
   }, [onClose]);
 
@@ -278,6 +313,109 @@ Guidelines for your response:
       handleChatSend();
     }
   }, [handleChatSend]);
+
+  const handleEditorChatSend = useCallback(async () => {
+    if (!editorChatInput.trim() || !generatedContent) return;
+    const userMsg = editorChatInput.trim();
+    setEditorChatInput('');
+    const updated = [...editorChatMessages, { role: 'user' as const, content: userMsg }];
+    setEditorChatMessages(updated);
+    setIsEditorChatLoading(true);
+
+    try {
+      const res = await fetch('/api/channels/actions/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: activeAction || 'newsletter',
+          channelName: channel.name,
+          channelDescription: channel.description || '',
+          prompt: `The user has already generated a ${activeAction} and wants to edit it. Here is the current HTML content:\n\n${generatedContent.slice(0, 3000)}\n\nThe user's edit request: "${userMsg}"\n\nReturn the COMPLETE updated HTML incorporating their requested change. Output only the HTML, no explanation.`,
+          cards: [],
+        }),
+      });
+      const data = await res.json();
+      if (data.content) {
+        setGeneratedContent(data.content);
+        setEditorChatMessages(prev => [...prev, { role: 'kan', content: 'Updated! Check the preview above.' }]);
+      }
+    } catch {
+      setEditorChatMessages(prev => [...prev, { role: 'kan', content: 'Failed to update. Try again?' }]);
+    }
+    setIsEditorChatLoading(false);
+  }, [editorChatInput, editorChatMessages, generatedContent, activeAction, channel]);
+
+  const handleSendTestEmail = useCallback(async () => {
+    if (!testEmailAddress.trim() || !generatedContent) return;
+    setSendTestStatus('sending');
+    try {
+      const res = await fetch('/api/channels/actions/send-newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: testEmailAddress.trim(), channelName: channel.name, html: generatedContent }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Send failed');
+      }
+      setSendTestStatus('sent');
+      setTimeout(() => setSendTestStatus('idle'), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send test');
+      setSendTestStatus('error');
+      setTimeout(() => setSendTestStatus('idle'), 3000);
+    }
+  }, [testEmailAddress, generatedContent, channel]);
+
+  const handleSaveEmail = useCallback(() => {
+    const email: SavedEmail = {
+      id: `email-${Date.now()}`,
+      channelId: channel.id,
+      type: activeAction || 'newsletter',
+      html: generatedContent,
+      conversation: [...chatMessages, ...editorChatMessages],
+      createdAt: new Date().toISOString(),
+      title: `${channel.name} ${activeAction || 'newsletter'} — ${new Date().toLocaleDateString()}`,
+    };
+    const updated = [email, ...savedEmails].slice(0, 20);
+    setSavedEmails(updated);
+    localStorage.setItem(`kanthink-saved-emails-${channel.id}`, JSON.stringify(updated));
+    setError('Email saved!');
+    setTimeout(() => setError(''), 2000);
+  }, [channel, activeAction, generatedContent, chatMessages, editorChatMessages, savedEmails]);
+
+  const handleLoadSavedEmail = useCallback((email: SavedEmail) => {
+    setActiveAction(email.type as ActionType);
+    setGeneratedContent(email.html);
+    setEditorChatMessages(email.conversation.filter(m => true)); // restore conversation
+    setGenState('preview');
+  }, []);
+
+  const handleBulkSend = useCallback(async () => {
+    if (!sendRecipients.trim() || !generatedContent) return;
+    setGenState('sending');
+    setError('');
+    const emails = sendRecipients.split(',').map(e => e.trim()).filter(e => e.includes('@'));
+    let sentCount = 0;
+    for (const email of emails) {
+      try {
+        const res = await fetch('/api/channels/actions/send-newsletter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: email, channelName: channel.name, html: generatedContent }),
+        });
+        if (res.ok) sentCount++;
+      } catch { /* continue */ }
+    }
+    if (sentCount === emails.length) {
+      setGenState('sent');
+      setRecipientEmail(emails.join(', '));
+    } else {
+      setError(`Sent to ${sentCount}/${emails.length} recipients`);
+      setGenState('preview');
+    }
+    setShowSendScreen(false);
+  }, [sendRecipients, generatedContent, channel]);
 
   const actions = [
     {
@@ -446,7 +584,7 @@ Guidelines for your response:
 
   // ── Standard drawer (action selection, column selection, preview, etc.) ──
   return (
-    <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating>
+    <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating={genState !== 'preview'}>
       <div className="p-6 pt-12">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
@@ -500,6 +638,24 @@ Guidelines for your response:
                 </button>
               ))}
             </div>
+
+            {savedEmails.length > 0 && !activeAction && (
+              <div className="mt-6">
+                <h3 className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mb-2">Recent emails</h3>
+                <div className="space-y-2">
+                  {savedEmails.slice(0, 5).map((email) => (
+                    <button
+                      key={email.id}
+                      onClick={() => handleLoadSavedEmail(email)}
+                      className="w-full text-left px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:border-violet-300 dark:hover:border-violet-700 hover:bg-violet-50/50 dark:hover:bg-violet-900/10 transition-colors"
+                    >
+                      <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate">{email.title}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{new Date(email.createdAt).toLocaleDateString()} · {email.type}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Channel stats */}
             <div className="text-xs text-neutral-400 dark:text-neutral-500 flex items-center gap-3">
@@ -653,123 +809,95 @@ Keep it conversational and brief. No bullet lists or markdown.`,
             </p>
           </div>
         ) : genState === 'preview' ? (
-          <div>
-            {/* Theme toggle */}
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">Preview:</span>
-              <button
-                onClick={() => setPreviewTheme('light')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  previewTheme === 'light'
-                    ? 'bg-neutral-200 dark:bg-neutral-600 text-neutral-900 dark:text-white'
-                    : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200'
-                }`}
-              >
-                Light
-              </button>
-              <button
-                onClick={() => setPreviewTheme('dark')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  previewTheme === 'dark'
-                    ? 'bg-neutral-200 dark:bg-neutral-600 text-neutral-900 dark:text-white'
-                    : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200'
-                }`}
-              >
-                Dark
-              </button>
-            </div>
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden mb-4">
-              <div
-                className={`max-h-[400px] overflow-y-auto p-4 ${
-                  previewTheme === 'dark' ? 'bg-neutral-900' : 'bg-white'
-                }`}
-              >
-                <div
-                  className={`prose prose-sm max-w-none ${previewTheme === 'dark' ? 'prose-invert' : ''}`}
-                  dangerouslySetInnerHTML={{ __html: generatedContent }}
-                />
+          showSendScreen ? (
+            // Send screen
+            <div>
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-white mb-3">Send to recipients</h3>
+              <textarea
+                value={sendRecipients}
+                onChange={(e) => setSendRecipients(e.target.value)}
+                placeholder="Enter email addresses, separated by commas..."
+                rows={4}
+                className="w-full px-3 py-2.5 text-sm rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder:text-neutral-400 outline-none focus:border-violet-400 resize-none mb-3"
+              />
+              <p className="text-xs text-neutral-400 mb-4">{sendRecipients.split(',').filter(e => e.trim().includes('@')).length} recipient(s)</p>
+              {error && <div className="mb-3 p-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-xs text-red-600 dark:text-red-400">{error}</div>}
+              <div className="flex gap-2">
+                <button onClick={() => setShowSendScreen(false)} className="flex-1 py-2.5 px-4 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 font-medium text-sm">Back to editor</button>
+                <button onClick={handleBulkSend} disabled={!sendRecipients.trim()} className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-medium text-sm transition-colors">Send to all</button>
               </div>
             </div>
-
-            {activeAction === 'newsletter' && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
-                  Send to email
-                </label>
-                <input
-                  type="email"
-                  value={recipientEmail}
-                  onChange={(e) => setRecipientEmail(e.target.value)}
-                  placeholder="recipient@example.com"
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500"
-                />
+          ) : (
+            // Editor: preview + chat
+            <div className="flex flex-col h-full -mx-6 -mb-6">
+              {/* Email preview - scrollable top section */}
+              <div className="flex-shrink-0 px-6 pt-0 pb-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-neutral-500 dark:text-neutral-400">Preview</span>
+                    <button onClick={() => setPreviewTheme(previewTheme === 'light' ? 'dark' : 'light')} className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">{previewTheme === 'light' ? '\u2600\uFE0F' : '\uD83C\uDF19'}</button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={handleSaveEmail} className="text-xs px-2 py-1 rounded-md text-neutral-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors" title="Save email">Save</button>
+                    <button onClick={() => navigator.clipboard.writeText(generatedContent)} className="text-xs px-2 py-1 rounded-md text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors" title="Copy HTML">Copy</button>
+                  </div>
+                </div>
+                <div className={`rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden ${previewTheme === 'dark' ? 'bg-neutral-900' : 'bg-white'}`}>
+                  <div className="max-h-[35vh] overflow-y-auto p-4">
+                    <div className={`prose prose-sm max-w-none ${previewTheme === 'dark' ? 'prose-invert' : ''}`} dangerouslySetInnerHTML={{ __html: generatedContent }} />
+                  </div>
+                </div>
               </div>
-            )}
 
-            {error && (
-              <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">
-                {error}
+              {/* Action buttons */}
+              <div className="flex-shrink-0 px-6 py-2 flex gap-2 border-t border-neutral-100 dark:border-neutral-800">
+                {/* Send test */}
+                <div className="flex-1 flex gap-1.5">
+                  <input type="email" value={testEmailAddress} onChange={(e) => setTestEmailAddress(e.target.value)} onFocus={kbFocus} onBlur={kbBlur} placeholder="Test email..." className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder:text-neutral-400 outline-none focus:border-violet-400" />
+                  <button onClick={handleSendTestEmail} disabled={!testEmailAddress.trim() || sendTestStatus === 'sending'} className={`flex-shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${sendTestStatus === 'sent' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200 dark:hover:bg-neutral-700 disabled:opacity-50'}`}>{sendTestStatus === 'sending' ? '...' : sendTestStatus === 'sent' ? '\u2713' : 'Test'}</button>
+                </div>
+                {/* Send button */}
+                <button onClick={() => setShowSendScreen(true)} className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium transition-colors">Send</button>
               </div>
-            )}
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setGenState('idle');
-                  setGeneratedContent('');
-                }}
-                className="flex-1 py-2.5 px-4 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 font-medium text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
-              >
-                Regenerate
-              </button>
-              {activeAction === 'newsletter' ? (
-                <button
-                  onClick={handleSendEmail}
-                  disabled={!recipientEmail.trim()}
-                  className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-neutral-300 disabled:dark:bg-neutral-700 text-white font-medium text-sm transition-colors"
-                >
-                  Send Newsletter
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={async () => {
-                      try {
-                        const res = await fetch('/api/channels/actions/publish', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            channelId: channel.id,
-                            channelName: channel.name,
-                            title: `${channel.name} ${activeActionTitle}`,
-                            type: activeAction,
-                            html: generatedContent,
-                          }),
-                        });
-                        if (res.ok) {
-                          const data = await res.json();
-                          navigator.clipboard.writeText(data.url);
-                          setError(`Published! Link copied: ${data.url}`);
-                        }
-                      } catch { setError('Publish failed'); }
-                    }}
-                    className="flex-1 py-2.5 px-4 rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-medium text-sm transition-colors"
-                  >
-                    Publish as Page
-                  </button>
-                  <button
-                    onClick={() => navigator.clipboard.writeText(generatedContent)}
-                    className="py-2.5 px-3 rounded-lg border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
-                    title="Copy raw HTML"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                    </svg>
-                  </button>
-                </>
-              )}
+              {error && <div className="mx-6 mb-2 p-2 rounded-lg bg-green-50 dark:bg-green-900/20 text-xs text-green-600 dark:text-green-400">{error}</div>}
+
+              {/* Editor chat */}
+              <div className="flex-1 flex flex-col min-h-0 border-t border-neutral-100 dark:border-neutral-800">
+                <div className="flex-1 overflow-y-auto px-6 py-3 space-y-3">
+                  {editorChatMessages.length === 0 && (
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center py-4">Tell Kan what to change — tone, layout, images, length...</p>
+                  )}
+                  {editorChatMessages.map((msg, i) => (
+                    <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      {msg.role === 'kan' && <img src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg" alt="Kan" className="w-6 h-6 flex-shrink-0 mt-0.5" />}
+                      <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${msg.role === 'user' ? 'bg-violet-600 text-white rounded-br-md' : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 rounded-bl-md'}`}>{msg.content}</div>
+                    </div>
+                  ))}
+                  {isEditorChatLoading && (
+                    <div className="flex gap-2 justify-start">
+                      <img src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg" alt="Kan" className="w-6 h-6 flex-shrink-0 animate-pulse" />
+                      <div className="bg-neutral-100 dark:bg-neutral-800 rounded-2xl rounded-bl-md px-4 py-3">
+                        <div className="flex gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-shrink-0 px-6 py-3 border-t border-neutral-100 dark:border-neutral-800">
+                  <div className="flex gap-2">
+                    <input type="text" value={editorChatInput} onChange={(e) => setEditorChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditorChatSend(); } }} onFocus={kbFocus} onBlur={kbBlur} placeholder="Edit: change tone, add image, adjust layout..." disabled={isEditorChatLoading} className="flex-1 px-3 py-2 text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder:text-neutral-400 outline-none focus:border-violet-400 disabled:opacity-50" />
+                    <button onClick={handleEditorChatSend} disabled={!editorChatInput.trim() || isEditorChatLoading} className="flex-shrink-0 w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center hover:bg-violet-700 disabled:opacity-50">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          )
         ) : genState === 'sending' ? (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="animate-spin w-8 h-8 border-2 border-violet-200 border-t-violet-600 rounded-full mb-4" />
