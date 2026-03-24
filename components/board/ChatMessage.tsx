@@ -302,6 +302,7 @@ export function ChatMessage({
   const [editContent, setEditContent] = useState(message.content);
   const [theaterIndex, setTheaterIndex] = useState<number | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [dismissedUrls, setDismissedUrls] = useState<Set<string>>(new Set());
   const editRef = useRef<HTMLTextAreaElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
@@ -476,8 +477,14 @@ export function ChatMessage({
         ) : null}
 
         {/* Link previews */}
-        {message.content && extractUrls(message.content).map((linkUrl) => (
-          <LinkPreview key={linkUrl} url={linkUrl} />
+        {message.content && extractUrls(message.content)
+          .filter((linkUrl) => !dismissedUrls.has(linkUrl))
+          .map((linkUrl) => (
+          <LinkPreview
+            key={linkUrl}
+            url={linkUrl}
+            onDismiss={() => setDismissedUrls((prev) => new Set([...prev, linkUrl]))}
+          />
         ))}
 
         {/* Attached images */}

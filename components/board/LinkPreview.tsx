@@ -19,7 +19,7 @@ function isYouTubeUrl(url: string): string | null {
   return match ? match[1] : null;
 }
 
-export function LinkPreview({ url }: { url: string }) {
+export function LinkPreview({ url, onDismiss }: { url: string; onDismiss?: () => void }) {
   const [data, setData] = useState<OGData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -59,7 +59,18 @@ export function LinkPreview({ url }: { url: string }) {
   const youtubeId = isYouTubeUrl(url);
   if (youtubeId) {
     return (
-      <div className="mt-2 rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700">
+      <div className="mt-2 relative rounded-lg overflow-hidden border border-neutral-200 dark:border-neutral-700 group/preview">
+        {onDismiss && (
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDismiss(); }}
+            className="absolute top-1.5 right-1.5 z-10 w-5 h-5 rounded-full bg-black/50 flex items-center justify-center text-white/80 hover:text-white opacity-0 group-hover/preview:opacity-100 transition-opacity"
+            title="Dismiss preview"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
         <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
           <iframe
             className="absolute inset-0 w-full h-full"
@@ -82,12 +93,24 @@ export function LinkPreview({ url }: { url: string }) {
 
   // Standard link preview
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="mt-2 block rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors group"
-    >
+    <div className="mt-2 relative rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden group/preview">
+      {onDismiss && (
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDismiss(); }}
+          className="absolute top-1.5 right-1.5 z-10 w-5 h-5 rounded-full bg-neutral-200/80 dark:bg-neutral-700/80 flex items-center justify-center text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200 opacity-0 group-hover/preview:opacity-100 transition-opacity"
+          title="Dismiss preview"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors group"
+      >
       <div className="flex">
         {/* Image */}
         {data.image && (
@@ -128,7 +151,8 @@ export function LinkPreview({ url }: { url: string }) {
           )}
         </div>
       </div>
-    </a>
+      </a>
+    </div>
   );
 }
 

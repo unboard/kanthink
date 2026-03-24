@@ -37,13 +37,14 @@ export async function POST(request: Request) {
         if (card.summary) parts.push(`Summary: ${card.summary}`);
         if (card.content) parts.push(`Content: ${card.content}`);
         if (card.tags?.length) parts.push(`Tags: ${card.tags.join(', ')}`);
+        if (card.coverImageUrl) parts.push(`Cover image URL: ${card.coverImageUrl}`);
         return parts.join('\n');
       })
       .join('\n\n');
 
     const systemPrompt = type === 'chat'
       ? `You are Kan, a friendly AI assistant for Kanthink — an AI-driven Kanban app. Respond in plain text only. No HTML, no markdown formatting, no code. Keep responses conversational and brief.`
-      : `You are Kan, an AI assistant for Kanthink — an AI-driven Kanban app. You're generating ${type} content from channel cards. Output clean, well-structured HTML. Do not include <html>, <head>, or <body> tags — just the inner content HTML. Use inline styles for compatibility. Keep the design clean and professional.`;
+      : `You are Kan, an AI assistant for Kanthink — an AI-driven Kanban app. You're generating ${type} content from channel cards. Output clean, well-structured HTML. Do not include <html>, <head>, or <body> tags — just the inner content HTML. Use inline styles for compatibility. Keep the design clean and professional. When cards include cover image URLs, use them as real <img> tags with the exact URL provided — do NOT use placeholder URLs. Set max-width:100% and add a border-radius.`;
 
     const userMessage = `${prompt}\n\nHere are the cards from the "${channelName}" channel:\n\n${cardSummaries}`;
 

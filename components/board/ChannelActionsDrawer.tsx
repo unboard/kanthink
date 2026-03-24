@@ -161,6 +161,7 @@ Guidelines for your response:
       summary: card.summary || '',
       content: card.messages?.map((m) => m.content).join('\n').slice(0, 500) || '',
       tags: card.tags || [],
+      coverImageUrl: card.coverImageUrl || '',
     }));
 
     const taskSuffix = selectedTasksContext;
@@ -600,6 +601,14 @@ Guidelines for your response:
                       return col?.name || 'Unknown';
                     }))].join(', ');
 
+                    // Find cover images from selected cards
+                    const coverImages = selectedCards
+                      .filter(c => c.coverImageUrl)
+                      .map(c => ({ title: c.title, url: c.coverImageUrl! }));
+                    const imageContext = coverImages.length > 0
+                      ? `\n\nAvailable cover images from cards: ${coverImages.map(i => `"${i.title}"`).join(', ')}. Mention these images and ask if they'd like to include any in the ${activeAction}. They can also upload or paste their own images.`
+                      : `\n\nNo cover images found in the selected cards. Let the user know they can upload or paste images into the chat if they want visuals.`;
+
                     const res = await fetch('/api/channels/actions/generate', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -607,7 +616,7 @@ Guidelines for your response:
                         type: 'chat',
                         channelName: channel.name,
                         channelDescription: channel.description,
-                        prompt: `You are Kan, the AI assistant in Kanthink. The user wants to generate a ${activeAction} from their channel "${channel.name}" (${channel.description || 'no description'}). They selected ${selectedCards.length} cards from columns: ${columnNames}. Card titles include: ${cardTitles}.
+                        prompt: `You are Kan, the AI assistant in Kanthink. The user wants to generate a ${activeAction} from their channel "${channel.name}" (${channel.description || 'no description'}). They selected ${selectedCards.length} cards from columns: ${columnNames}. Card titles include: ${cardTitles}.${imageContext}
 
 Write a short, friendly greeting (2-3 sentences max) that:
 1. Shows you understand their content and what they're trying to create
