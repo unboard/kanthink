@@ -1375,25 +1375,11 @@ export function Board({ channel }: BoardProps) {
 
       <AgentStatusBar channelId={channel.id} />
 
-      {/* Channel description banner — hidden by default, shown via channel settings */}
+      {/* Channel description — shown as simple text below header when enabled in settings */}
       {channel.description && showDescriptionBanner && (
-        <div className="mx-4 sm:mx-6 mb-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/50 dark:border-neutral-700/30">
-          <p className="flex-1 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-            {channel.description}
-          </p>
-          <button
-            onClick={() => {
-              localStorage.setItem(`channel-desc-${channel.id}`, 'hidden');
-              setShowDescriptionBanner(false);
-            }}
-            className="flex-shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-0.5"
-            title="Hide description"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+        <p className="px-4 sm:px-6 -mt-1 mb-2 text-xs text-neutral-400 dark:text-neutral-500 line-clamp-1">
+          {channel.description}
+        </p>
       )}
 
       {viewMode === 'list' ? (

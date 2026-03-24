@@ -1433,6 +1433,24 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
               />
             </div>
 
+            {/* Show description on board */}
+            {description && (
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={typeof window !== 'undefined' && localStorage.getItem(`channel-desc-${currentChannelId}`) === 'visible'}
+                  onChange={(e) => {
+                    if (currentChannelId) {
+                      localStorage.setItem(`channel-desc-${currentChannelId}`, e.target.checked ? 'visible' : 'hidden');
+                      window.dispatchEvent(new Event('description-banner-toggle'));
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
+                />
+                <span className="text-sm text-neutral-600 dark:text-neutral-400">Show description on board</span>
+              </label>
+            )}
+
             {/* Status */}
             <div>
               <label className="mb-1.5 block text-xs font-semibold text-neutral-500 uppercase tracking-wide">
