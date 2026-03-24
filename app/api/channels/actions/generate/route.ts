@@ -6,9 +6,9 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { type, channelName, channelDescription, prompt, cards } = body;
 
-    if (!type || !prompt || !cards?.length) {
+    if (!type || !prompt) {
       return NextResponse.json(
-        { error: 'Missing required fields: type, prompt, cards' },
+        { error: 'Missing required fields: type, prompt' },
         { status: 400 }
       );
     }

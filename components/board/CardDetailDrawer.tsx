@@ -135,6 +135,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
+  const [isImprovingTitle, setIsImprovingTitle] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [copiedPublicLink, setCopiedPublicLink] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement>(null);
@@ -455,8 +456,10 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           {/* Improve title with Kan */}
           {title && title.length > 3 && (
             <button
+              disabled={isImprovingTitle}
               onClick={async () => {
-                if (!card) return;
+                if (!card || isImprovingTitle) return;
+                setIsImprovingTitle(true);
                 const channel = channels[card.channelId];
                 try {
                   const res = await fetch('/api/channels/actions/generate', {
@@ -478,8 +481,13 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                     }
                   }
                 } catch { /* silent fail */ }
+                setIsImprovingTitle(false);
               }}
-              className="flex-shrink-0 w-7 h-7 flex items-center justify-center text-neutral-400 hover:text-violet-500 rounded-full hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+              className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full transition-colors ${
+                isImprovingTitle
+                  ? 'text-violet-500 bg-violet-50 dark:bg-violet-900/20 animate-pulse'
+                  : 'text-neutral-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20'
+              }`}
               title="Improve title with Kan"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
