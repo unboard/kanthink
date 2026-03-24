@@ -41,7 +41,9 @@ export async function POST(request: Request) {
       })
       .join('\n\n');
 
-    const systemPrompt = `You are Kan, an AI assistant for Kanthink — an AI-driven Kanban app. You're generating ${type} content from channel cards. Output clean, well-structured HTML. Do not include <html>, <head>, or <body> tags — just the inner content HTML. Use inline styles for compatibility. Keep the design clean and professional.`;
+    const systemPrompt = type === 'chat'
+      ? `You are Kan, a friendly AI assistant for Kanthink — an AI-driven Kanban app. Respond in plain text only. No HTML, no markdown formatting, no code. Keep responses conversational and brief.`
+      : `You are Kan, an AI assistant for Kanthink — an AI-driven Kanban app. You're generating ${type} content from channel cards. Output clean, well-structured HTML. Do not include <html>, <head>, or <body> tags — just the inner content HTML. Use inline styles for compatibility. Keep the design clean and professional.`;
 
     const userMessage = `${prompt}\n\nHere are the cards from the "${channelName}" channel:\n\n${cardSummaries}`;
 

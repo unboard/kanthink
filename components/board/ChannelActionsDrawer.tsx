@@ -43,6 +43,7 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const { keyboardOffset, onFocus: kbFocus, onBlur: kbBlur } = useKeyboardOffset();
+  const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('light');
 
   // Get all cards organized by column (including archived if enabled)
   const columnCards = useMemo(() => {
@@ -644,10 +645,38 @@ Keep it conversational and brief. No bullet lists or markdown.`,
           </div>
         ) : genState === 'preview' ? (
           <div>
+            {/* Theme toggle */}
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">Preview:</span>
+              <button
+                onClick={() => setPreviewTheme('light')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  previewTheme === 'light'
+                    ? 'bg-neutral-200 dark:bg-neutral-600 text-neutral-900 dark:text-white'
+                    : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200'
+                }`}
+              >
+                Light
+              </button>
+              <button
+                onClick={() => setPreviewTheme('dark')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  previewTheme === 'dark'
+                    ? 'bg-neutral-200 dark:bg-neutral-600 text-neutral-900 dark:text-white'
+                    : 'text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200'
+                }`}
+              >
+                Dark
+              </button>
+            </div>
             <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden mb-4">
-              <div className="max-h-[400px] overflow-y-auto p-4 bg-white dark:bg-neutral-800">
+              <div
+                className={`max-h-[400px] overflow-y-auto p-4 ${
+                  previewTheme === 'dark' ? 'bg-neutral-900' : 'bg-white'
+                }`}
+              >
                 <div
-                  className="prose prose-sm dark:prose-invert max-w-none"
+                  className={`prose prose-sm max-w-none ${previewTheme === 'dark' ? 'prose-invert' : ''}`}
                   dangerouslySetInnerHTML={{ __html: generatedContent }}
                 />
               </div>
