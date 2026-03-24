@@ -374,8 +374,19 @@ async function main() {
 
   if (args[0] === '--move' && args[1]) {
     await moveCard(args[1])
-  } else if (args[0] === '--note' && args[1] && args.slice(2).length > 0) {
-    await addNote(args[1], args.slice(2).join(' '))
+  } else if (args[0] === '--note' && args[1]) {
+    // Support --note <id> --file <path> for multi-line content
+    const fileIdx = args.indexOf('--file')
+    let noteText: string
+    if (fileIdx !== -1 && args[fileIdx + 1]) {
+      noteText = readFileSync(args[fileIdx + 1], 'utf-8')
+    } else if (args.slice(2).length > 0) {
+      noteText = args.slice(2).filter(a => a !== '--file').join(' ')
+    } else {
+      console.error('Usage: --note <cardId> <text> OR --note <cardId> --file <path>')
+      process.exit(1)
+    }
+    await addNote(args[1], noteText)
   } else if (args[0] === '--create' && args[1]) {
     // --create <title> --content <content> [--column <columnId>]
     const title = args[1]
@@ -385,8 +396,18 @@ async function main() {
     const content = contentIdx !== -1 ? args.slice(contentIdx + 1, contentEnd).join(' ') : ''
     const columnId = columnIdx !== -1 ? args[columnIdx + 1] : RAW_IDEAS_COLUMN_ID
     await createCard(title, content, columnId)
-  } else if (args[0] === '--describe' && args[1] && args.slice(2).length > 0) {
-    await describeCard(args[1], args.slice(2).join(' '))
+  } else if (args[0] === '--describe' && args[1]) {
+    const fileIdx = args.indexOf('--file')
+    let descText: string
+    if (fileIdx !== -1 && args[fileIdx + 1]) {
+      descText = readFileSync(args[fileIdx + 1], 'utf-8')
+    } else if (args.slice(2).length > 0) {
+      descText = args.slice(2).filter(a => a !== '--file').join(' ')
+    } else {
+      console.error('Usage: --describe <cardId> <text> OR --describe <cardId> --file <path>')
+      process.exit(1)
+    }
+    await describeCard(args[1], descText)
   } else if (args[0] === '--tag' && args[1] && args[2]) {
     await tagCard(args[1], args.slice(2).join(' '))
   } else if (args[0] === '--untag' && args[1] && args[2]) {
