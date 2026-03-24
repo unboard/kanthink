@@ -271,6 +271,21 @@ async function tagCard(cardId: string, tagName: string) {
   console.log(`Tagged card ${cardId} with "${tagName}"`)
 }
 
+async function describeCard(cardId: string, description: string) {
+  const res = await db.execute({ sql: 'SELECT id FROM cards WHERE id = ?', args: [cardId] })
+  if (res.rows.length === 0) {
+    console.error(`Card not found: ${cardId}`)
+    process.exit(1)
+  }
+  const nowEpoch = Math.floor(Date.now() / 1000)
+  await db.execute({
+    sql: 'UPDATE cards SET summary = ?, updated_at = ? WHERE id = ?',
+    args: [description, nowEpoch, cardId],
+  })
+  await broadcastToChannel({ type: 'card:update', id: cardId, updates: { summary: description } })
+  console.log(`Updated description for card ${cardId}`)
+}
+
 async function untagCard(cardId: string, tagName: string) {
   const res = await db.execute({ sql: 'SELECT tags FROM cards WHERE id = ?', args: [cardId] })
   if (res.rows.length === 0) {
@@ -370,6 +385,8 @@ async function main() {
     const content = contentIdx !== -1 ? args.slice(contentIdx + 1, contentEnd).join(' ') : ''
     const columnId = columnIdx !== -1 ? args[columnIdx + 1] : RAW_IDEAS_COLUMN_ID
     await createCard(title, content, columnId)
+  } else if (args[0] === '--describe' && args[1] && args.slice(2).length > 0) {
+    await describeCard(args[1], args.slice(2).join(' '))
   } else if (args[0] === '--tag' && args[1] && args[2]) {
     await tagCard(args[1], args.slice(2).join(' '))
   } else if (args[0] === '--untag' && args[1] && args[2]) {
