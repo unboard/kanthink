@@ -5,6 +5,7 @@ import type { Channel, ID, Card as CardType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { useKeyboardOffset } from './ChatInput';
 
 interface ChannelActionsDrawerProps {
   channel: Channel;
@@ -41,6 +42,7 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+  const { keyboardOffset, onFocus: kbFocus, onBlur: kbBlur } = useKeyboardOffset();
 
   // Get all cards organized by column (including archived if enabled)
   const columnCards = useMemo(() => {
@@ -314,7 +316,10 @@ Guidelines for your response:
   if (kanMode && activeAction && (genState === 'idle' || genState === 'error')) {
     return (
       <Drawer isOpen={isOpen} onClose={handleClose} width="lg">
-        <div className="flex flex-col h-full">
+        <div
+          className="flex flex-col sm:h-full sm:max-h-[calc(100vh-2rem)]"
+          style={{ height: keyboardOffset > 0 ? `calc(100dvh - ${keyboardOffset}px)` : '100dvh' }}
+        >
           {/* Chat header */}
           <div className="flex-shrink-0 flex items-center gap-3 p-4 border-b border-neutral-100 dark:border-neutral-800">
             <img
@@ -403,6 +408,8 @@ Guidelines for your response:
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={handleChatKeyDown}
+                onFocus={kbFocus}
+                onBlur={kbBlur}
                 placeholder="Tell Kan what you want..."
                 rows={1}
                 disabled={isChatLoading}
@@ -580,17 +587,46 @@ Guidelines for your response:
                 Generate
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   setKanMode(true);
-                  const greetings: Record<string, string> = {
-                    newsletter: `I'll create a newsletter from your ${selectedCards.length} cards. First question — who's the audience? (e.g. your team, customers, subscribers)`,
-                    course: `I'll turn your ${selectedCards.length} cards into a course. To start — what format are you thinking? (e.g. quiz-based, tutorial-style, slide deck outline)`,
-                    blog: `I'll create a blog post from your ${selectedCards.length} cards. Quick question — what tone works best? (e.g. professional, casual, thought-leadership)`,
-                  };
-                  setChatMessages([{
-                    role: 'kan',
-                    content: greetings[activeAction!] || greetings.newsletter,
-                  }]);
+                  setIsChatLoading(true);
+                  setChatMessages([]);
+                  try {
+                    // Build context from selected cards
+                    const cardTitles = selectedCards.slice(0, 15).map(c => c.title).join(', ');
+                    const columnNames = [...new Set(selectedCards.map(c => {
+                      const col = channel.columns.find(col => col.cardIds?.includes(c.id) || col.itemOrder?.includes(c.id));
+                      return col?.name || 'Unknown';
+                    }))].join(', ');
+
+                    const res = await fetch('/api/channels/actions/generate', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        type: 'chat',
+                        channelName: channel.name,
+                        channelDescription: channel.description,
+                        prompt: `You are Kan, the AI assistant in Kanthink. The user wants to generate a ${activeAction} from their channel "${channel.name}" (${channel.description || 'no description'}). They selected ${selectedCards.length} cards from columns: ${columnNames}. Card titles include: ${cardTitles}.
+
+Write a short, friendly greeting (2-3 sentences max) that:
+1. Shows you understand their content and what they're trying to create
+2. Asks ONE specific, smart question to help shape the output (audience, format, tone, length, etc.)
+3. Mentions that they can hit Generate at any time when ready
+
+Keep it conversational and brief. No bullet lists or markdown.`,
+                        cards: [],
+                      }),
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      setChatMessages([{ role: 'kan', content: data.content || `Let's create your ${activeAction}! What style or format are you going for?` }]);
+                    } else {
+                      setChatMessages([{ role: 'kan', content: `Let's create your ${activeAction} from these ${selectedCards.length} cards. Any specific style, tone, or format you'd like?` }]);
+                    }
+                  } catch {
+                    setChatMessages([{ role: 'kan', content: `Let's create your ${activeAction} from these ${selectedCards.length} cards. Any specific style, tone, or format you'd like?` }]);
+                  }
+                  setIsChatLoading(false);
                 }}
                 disabled={selectedCards.length === 0}
                 className="flex-1 py-2.5 px-4 rounded-lg border border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 disabled:opacity-50 font-medium text-sm transition-colors"
