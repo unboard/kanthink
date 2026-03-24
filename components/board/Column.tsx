@@ -15,6 +15,7 @@ import { SkeletonCard } from './SkeletonCard';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { ColumnTaskItem } from './ColumnTaskItem';
 import { TaskDrawer } from './TaskDrawer';
+import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
 
 
 // Animated counter that briefly flashes when the value changes
@@ -65,6 +66,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const updateCard = useStore((s) => s.updateCard);
   const updateTask = useStore((s) => s.updateTask);
   const skeletonCount = useStore((s) => s.generatingSkeletons[column.id] ?? 0);
+  const isMobile = useIsMobile();
 
   const columnCards = column.cardIds.map((id) => cards[id]).filter(Boolean);
   const backsideCards = (column.backsideCardIds ?? []).map((id) => cards[id]).filter(Boolean);
@@ -327,7 +329,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
               </button>
-              {isAddMenuOpen && (
+              {isAddMenuOpen && !isMobile && (
                 <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
                   <button
                     onClick={() => { setIsAddMenuOpen(false); handleAddCard(); }}
@@ -357,6 +359,34 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                   </button>
                 </div>
               )}
+              <MobileMenuDrawer isOpen={isAddMenuOpen && isMobile} onClose={() => setIsAddMenuOpen(false)} title="Add to column">
+                <button
+                  onClick={() => { setIsAddMenuOpen(false); handleAddCard(); }}
+                  className="w-full flex items-start gap-3 px-3 py-3.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg"
+                >
+                  <svg className="w-5 h-5 mt-0.5 flex-shrink-0 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M12 9v6" />
+                  </svg>
+                  <div>
+                    <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Card</div>
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500">Holds tasks, threads, and details</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { setIsAddMenuOpen(false); handleAddTask(); }}
+                  className="w-full flex items-start gap-3 px-3 py-3.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg"
+                >
+                  <svg className="w-5 h-5 mt-0.5 flex-shrink-0 text-neutral-500 dark:text-neutral-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+                  </svg>
+                  <div>
+                    <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Task</div>
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500">A single to-do item</div>
+                  </div>
+                </button>
+              </MobileMenuDrawer>
             </div>
             <SortableContext items={itemOrder} strategy={verticalListSortingStrategy}>
               {itemOrder.map((id) => {

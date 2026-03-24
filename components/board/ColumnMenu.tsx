@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { ID, Card } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Modal } from '@/components/ui';
+import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
 
 type SortOption = 'created_newest' | 'created_oldest' | 'updated_newest' | 'updated_oldest';
 
@@ -52,6 +53,7 @@ export function ColumnMenu({
   const archiveCard = useStore((s) => s.archiveCard);
   const sortColumnCards = useStore((s) => s.sortColumnCards);
   const allCards = useStore((s) => s.cards);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -133,7 +135,7 @@ export function ColumnMenu({
           </svg>
         </button>
 
-        {isOpen && (
+        {isOpen && !isMobile && (
           <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
             <button
               onClick={() => {
@@ -284,6 +286,53 @@ export function ColumnMenu({
             </button>
           </div>
         )}
+        <MobileMenuDrawer isOpen={isOpen && isMobile} onClose={() => { setIsOpen(false); setShowSortSubmenu(false); }}>
+          <button onClick={() => { onRename(); setIsOpen(false); }} className="w-full flex items-center gap-3 px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Rename</button>
+          <button onClick={() => { onOpenSettings(); setIsOpen(false); }} className="w-full flex items-center gap-3 px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">
+            Column description
+            {hasInstructions && <span className="w-2 h-2 bg-violet-500 rounded-full ml-auto" />}
+          </button>
+          <button onClick={() => { onFocus(); setIsOpen(false); }} className="w-full flex items-center gap-3 px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">
+            {isFocused ? 'Exit focus mode' : 'Focus on column'}
+          </button>
+          {onCollapse && (
+            <button onClick={() => { onCollapse(); setIsOpen(false); }} className="w-full flex items-center gap-3 px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">
+              {isCollapsed ? 'Expand column' : 'Collapse column'}
+            </button>
+          )}
+          {showSortSubmenu ? (
+            <>
+              <button onClick={() => setShowSortSubmenu(false)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 rounded-lg">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                Back
+              </button>
+              <button onClick={() => handleSort('created_newest')} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Created date (newest)</button>
+              <button onClick={() => handleSort('created_oldest')} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Created date (oldest)</button>
+              <button onClick={() => handleSort('updated_newest')} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Modified date (newest)</button>
+              <button onClick={() => handleSort('updated_oldest')} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Modified date (oldest)</button>
+            </>
+          ) : (
+            <button onClick={() => setShowSortSubmenu(true)} disabled={cardCount < 2} className="w-full flex items-center justify-between px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-50 rounded-lg">
+              Sort cards
+              <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </button>
+          )}
+          {onHideCompletedTasks && (
+            <button onClick={() => { onHideCompletedTasks(); setIsOpen(false); }} disabled={completedTaskCount === 0} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-50 rounded-lg">
+              Hide completed tasks{completedTaskCount > 0 ? ` (${completedTaskCount})` : ''}
+            </button>
+          )}
+          <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1 mx-2" />
+          <button onClick={() => { setIsOpen(false); setShowArchiveCardsConfirm(true); }} disabled={cardCount === 0} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-50 rounded-lg">
+            Archive all cards {cardCount > 0 && `(${cardCount})`}
+          </button>
+          <button onClick={handleDeleteAllCards} disabled={cardCount === 0} className="w-full px-3 py-3 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50 rounded-lg">
+            Delete all cards {cardCount > 0 && `(${cardCount})`}
+          </button>
+          <button onClick={handleDeleteColumn} disabled={columnCount <= 1} className="w-full px-3 py-3 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-50 rounded-lg">
+            Delete column
+          </button>
+        </MobileMenuDrawer>
       </div>
 
       {/* Delete all cards confirmation */}

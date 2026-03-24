@@ -17,6 +17,7 @@ import { getTagStyles } from './TagPicker';
 import { stripMentionMarkup } from './ChatMessage';
 import { SnoozePicker } from './SnoozePicker';
 import { useSelectionStore } from '@/lib/selectionStore';
+import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
 
 const CARD_COLORS: Record<string, string> = {
   red: '#ef4444',
@@ -64,6 +65,7 @@ export function Card({ card }: CardProps) {
   const isSelected = useSelectionStore((s) => s.selectedCardIds.has(card.id));
   const isSelectionMode = useSelectionStore((s) => s.isSelectionMode);
   const toggleCard = useSelectionStore((s) => s.toggleCard);
+  const isMobile = useIsMobile();
 
   // Close card menu on click outside
   useEffect(() => {
@@ -280,6 +282,143 @@ export function Card({ card }: CardProps) {
           </button>
 
           {showCardMenu && (
+            isMobile ? (
+            <MobileMenuDrawer isOpen={showCardMenu} onClose={() => { setShowCardMenu(false); setShowSnoozeSubmenu(false); setShowMoveColumnPicker(false); setShowMoveChannelPicker(false); setShowReactSubmenu(false); }}>
+              {showReactSubmenu ? (
+                <div className="p-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowReactSubmenu(false); }}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 rounded mb-1"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {REACTION_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={(e) => { e.stopPropagation(); handleReaction(emoji); }}
+                        className="w-10 h-10 flex items-center justify-center rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-lg"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : showSnoozeSubmenu ? (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowSnoozeSubmenu(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-700/50"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  <SnoozePicker onSnooze={handleSnooze} onClose={() => { setShowCardMenu(false); setShowSnoozeSubmenu(false); }} />
+                </>
+              ) : showMoveColumnPicker ? (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMoveColumnPicker(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-700/50"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  {(channels[card.channelId]?.columns ?? []).map((col) => (
+                    <button
+                      key={col.id}
+                      onClick={(e) => { e.stopPropagation(); moveCard(card.id, col.id, 0); setShowCardMenu(false); setShowMoveColumnPicker(false); }}
+                      className="w-full flex items-center gap-2 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                    >
+                      <span className="truncate">{col.name}</span>
+                    </button>
+                  ))}
+                </>
+              ) : showMoveChannelPicker ? (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowMoveChannelPicker(false); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-700/50"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </button>
+                  {Object.values(channels)
+                    .filter((ch) => ch.id !== card.channelId && !ch.sharedBy)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((ch) => {
+                      const targetCol = ch.columns?.[0];
+                      return targetCol ? (
+                        <button
+                          key={ch.id}
+                          onClick={(e) => { e.stopPropagation(); moveCardToChannel(card.id, ch.id, targetCol.id); setShowCardMenu(false); setShowMoveChannelPicker(false); }}
+                          className="w-full flex items-center gap-2 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                        >
+                          <span className="truncate">{ch.name}</span>
+                        </button>
+                      ) : null;
+                    })}
+                </>
+              ) : (
+                <>
+                  <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); router.push(`/channel/${card.channelId}/card/${card.id}`); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" /></svg>
+                    Full screen
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); setIsCardDrawerOpen(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Info
+                  </button>
+                  <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1 mx-2" />
+                  <button onClick={(e) => { e.stopPropagation(); setShowMoveColumnPicker(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    Move to column
+                    <svg className="w-3 h-3 text-neutral-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setShowMoveChannelPicker(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                    Move to channel
+                    <svg className="w-3 h-3 text-neutral-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setShowSnoozeSubmenu(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Snooze
+                    <svg className="w-3 h-3 text-neutral-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); handlePin(); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 2h10l-2 5h3l-4 8v5h-4v-5L6 7h3L7 2z" /></svg>
+                    {isPinned ? 'Unpin' : 'Pin'}
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setShowReactSubmenu(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <span className="w-5 h-5 flex items-center justify-center text-sm">😀</span>
+                    React
+                  </button>
+                  <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1 mx-2" />
+                  <button onClick={(e) => { e.stopPropagation(); handleDuplicate(); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    Duplicate
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); archiveCard(card.id); setShowCardMenu(false); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+                    Archive
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); setShowDeleteConfirm(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors rounded-lg">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    Delete
+                  </button>
+                </>
+              )}
+            </MobileMenuDrawer>
+            ) : (
             <div className={`absolute right-0 w-52 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden z-50 ${menuPosition === 'above' ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
               {showReactSubmenu ? (
                 <div className="p-2">
@@ -539,6 +678,7 @@ export function Card({ card }: CardProps) {
                 </>
               )}
             </div>
+            )
           )}
         </div>
 
