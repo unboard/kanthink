@@ -283,7 +283,7 @@ async function describeCard(cardId: string, description: string) {
     args: [description, nowEpoch, cardId],
   })
   await broadcastToChannel({ type: 'card:update', id: cardId, updates: { summary: description } })
-  console.log(`Updated description for card ${cardId}`)
+  console.log(`Updated summary for card ${cardId} (keep this SHORT — 1-2 sentences max)`)
 }
 
 async function untagCard(cardId: string, tagName: string) {
