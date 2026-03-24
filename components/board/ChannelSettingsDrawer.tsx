@@ -500,6 +500,23 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
           />
         </div>
 
+        {/* Show description on board toggle */}
+        {description && (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={typeof window !== 'undefined' && localStorage.getItem(`channel-desc-${channel.id}`) === 'visible'}
+              onChange={(e) => {
+                localStorage.setItem(`channel-desc-${channel.id}`, e.target.checked ? 'visible' : 'hidden');
+                // Dispatch storage event so Board picks it up
+                window.dispatchEvent(new Event('description-banner-toggle'));
+              }}
+              className="rounded border-neutral-300 text-violet-500 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
+            />
+            <span className="text-sm text-neutral-600 dark:text-neutral-400">Show description on board</span>
+          </label>
+        )}
+
         {/* Status */}
         <div>
           <label className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">

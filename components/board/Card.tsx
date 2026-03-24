@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useSortable } from '@dnd-kit/sortable';
@@ -66,6 +66,39 @@ export function Card({ card }: CardProps) {
   const isSelectionMode = useSelectionStore((s) => s.isSelectionMode);
   const toggleCard = useSelectionStore((s) => s.toggleCard);
   const isMobile = useIsMobile();
+
+  // Long-press to enter selection mode on mobile (800ms, no movement)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartPos = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStartForSelection = useCallback((e: React.TouchEvent) => {
+    if (!isMobile || isSelectionMode) return; // Only for entering selection mode
+    const touch = e.touches[0];
+    longPressStartPos.current = { x: touch.clientX, y: touch.clientY };
+    longPressTimer.current = setTimeout(() => {
+      toggleCard(card.id);
+      // Vibrate for feedback if available
+      navigator.vibrate?.(50);
+    }, 800);
+  }, [isMobile, isSelectionMode, card.id, toggleCard]);
+
+  const handleTouchMoveForSelection = useCallback((e: React.TouchEvent) => {
+    if (!longPressTimer.current || !longPressStartPos.current) return;
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - longPressStartPos.current.x);
+    const dy = Math.abs(touch.clientY - longPressStartPos.current.y);
+    if (dx > 10 || dy > 10) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const handleTouchEndForSelection = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
 
   // Close card menu on click outside
   useEffect(() => {
@@ -255,7 +288,12 @@ export function Card({ card }: CardProps) {
         </div>
 
         {/* Card content with padding */}
-        <div className="relative p-3">
+        <div
+          className="relative p-3"
+          onTouchStart={handleTouchStartForSelection}
+          onTouchMove={handleTouchMoveForSelection}
+          onTouchEnd={handleTouchEndForSelection}
+        >
         {/* 3-dot menu button */}
         <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10" ref={cardMenuRef}>
           <button
@@ -682,8 +720,8 @@ export function Card({ card }: CardProps) {
           )}
         </div>
 
-        {/* Clickable content area */}
-        <div onClick={() => setIsCardDrawerOpen(true)}>
+        {/* Clickable content area — in selection mode, tap toggles selection */}
+        <div onClick={() => { if (isSelectionMode) { toggleCard(card.id); } else { setIsCardDrawerOpen(true); } }}>
           {/* Pinned chip */}
           {isPinned && (
             <div className="mb-1.5">

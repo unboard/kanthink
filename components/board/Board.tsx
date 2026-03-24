@@ -98,6 +98,7 @@ export function Board({ channel }: BoardProps) {
   const [pendingShroomAction, setPendingShroomAction] = useState<{ type: 'edit' | 'run' | 'create'; id?: string } | null>(null);
   const [showShroomChatDrawer, setShowShroomChatDrawer] = useState(false);
   const [isChannelChatOpen, setIsChannelChatOpen] = useState(false);
+  const [showDescriptionBanner, setShowDescriptionBanner] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -124,6 +125,14 @@ export function Board({ channel }: BoardProps) {
       router.replace(`/channel/${channel.id}`, { scroll: false });
     }
   }, [focusParam, focusColumn, router, channel.id]);
+
+  // Read channel description banner state from localStorage (default: hidden)
+  useEffect(() => {
+    const read = () => setShowDescriptionBanner(localStorage.getItem(`channel-desc-${channel.id}`) === 'visible');
+    read();
+    window.addEventListener('description-banner-toggle', read);
+    return () => window.removeEventListener('description-banner-toggle', read);
+  }, [channel.id]);
 
   // Clear card selection when channel changes or view mode changes
   const clearSelection = useSelectionStore((s) => s.clearSelection);
@@ -1366,32 +1375,26 @@ export function Board({ channel }: BoardProps) {
 
       <AgentStatusBar channelId={channel.id} />
 
-      {/* Channel description banner */}
-      {channel.description && (() => {
-        const storageKey = `channel-desc-${channel.id}`;
-        const isHidden = typeof window !== 'undefined' && localStorage.getItem(storageKey) === 'hidden';
-        if (isHidden) return null;
-        return (
-          <div className="mx-4 sm:mx-6 mb-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/50 dark:border-neutral-700/30">
-            <p className="flex-1 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
-              {channel.description}
-            </p>
-            <button
-              onClick={() => {
-                localStorage.setItem(storageKey, 'hidden');
-                // Force re-render
-                setManualViewMode((prev) => prev);
-              }}
-              className="flex-shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-0.5"
-              title="Hide description"
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        );
-      })()}
+      {/* Channel description banner — hidden by default, shown via channel settings */}
+      {channel.description && showDescriptionBanner && (
+        <div className="mx-4 sm:mx-6 mb-2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/50 dark:border-neutral-700/30">
+          <p className="flex-1 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-1">
+            {channel.description}
+          </p>
+          <button
+            onClick={() => {
+              localStorage.setItem(`channel-desc-${channel.id}`, 'hidden');
+              setShowDescriptionBanner(false);
+            }}
+            className="flex-shrink-0 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-0.5"
+            title="Hide description"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {viewMode === 'list' ? (
         <CardListView channelId={channel.id} />
