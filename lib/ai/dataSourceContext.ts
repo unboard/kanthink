@@ -481,28 +481,17 @@ export async function queryMixpanelForChat(
         console.log('[MCP] Profile query detected. Available tools:', toolsContext);
         const { dateRange, unit } = parseDateRange(questionLower);
 
-        // Strategy 1: Try breakdown by $email property (most likely to have emails)
-        const emailBreakdownResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
-          project_id: projectId,
-          report_type: 'insights',
-          report: {
-            name: 'User Breakdown',
-            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'unique' } }],
-            chartType: 'table',
-            unit,
-            dateRange,
-            breakdowns: [{ property: '$email', type: 'event' }],
-          },
-        });
+        // Strategy 1: Use Run-Query with $email as a USER property breakdown
+        // $email is a reserved user profile property in Mixpanel, NOT an event property
+        const breakdownAttempts = [
+          { property: '$email', type: 'user', label: '$email (user property)' },
+          { property: 'email', type: 'user', label: 'email (user property)' },
+          { property: '$email', type: 'event', label: '$email (event property)' },
+          { property: '$distinct_id', type: 'event', label: '$distinct_id (event property)' },
+        ];
 
-        if (emailBreakdownResult.result) {
-          console.log('[MCP] Email breakdown query succeeded');
-          profileResult = emailBreakdownResult;
-        } else {
-          console.log('[MCP] $email breakdown failed:', emailBreakdownResult.error);
-
-          // Strategy 2: Try "email" (non-prefixed) as event property
-          const emailPlainResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+        for (const attempt of breakdownAttempts) {
+          const result = await callMcpTool(mcpUrl, token, 'Run-Query', {
             project_id: projectId,
             report_type: 'insights',
             report: {
@@ -511,55 +500,32 @@ export async function queryMixpanelForChat(
               chartType: 'table',
               unit,
               dateRange,
-              breakdowns: [{ property: 'email', type: 'event' }],
+              breakdowns: [{ property: attempt.property, type: attempt.type }],
             },
           });
-
-          if (emailPlainResult.result) {
-            console.log('[MCP] Plain email breakdown query succeeded');
-            profileResult = emailPlainResult;
+          if (result.result) {
+            console.log(`[MCP] Breakdown succeeded: ${attempt.label}`);
+            profileResult = result;
+            break;
           } else {
-            console.log('[MCP] Plain email breakdown failed:', emailPlainResult.error);
+            console.log(`[MCP] Breakdown failed (${attempt.label}):`, result.error);
+          }
+        }
 
-            // Strategy 3: Try $distinct_id as fallback
-            const distinctIdResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
-              project_id: projectId,
-              report_type: 'insights',
-              report: {
-                name: 'User Breakdown',
-                metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'unique' } }],
-                chartType: 'table',
-                unit,
-                dateRange,
-                breakdowns: [{ property: '$distinct_id', type: 'event' }],
-              },
-            });
-
-            if (distinctIdResult.result) {
-              console.log('[MCP] Distinct ID breakdown query succeeded');
-              profileResult = distinctIdResult;
-            } else {
-              // Strategy 4: Try any explicitly profile-related MCP tools (strict matching)
-              const profileToolNames = toolsContext
-                .split('\n')
-                .map(l => l.replace(/^-\s*/, '').split(':')[0].trim())
-                .filter(name => /^(query|get|list|search)[-_]?(profile|engage)/i.test(name));
-
-              for (const toolName of profileToolNames) {
-                const toolResult = await callMcpTool(mcpUrl, token, toolName, { project_id: projectId });
-                if (toolResult.result && !toolResult.error) {
-                  console.log(`[MCP] Profile tool succeeded: ${toolName}`);
-                  profileResult = toolResult;
-                  break;
-                }
-              }
-
-              if (!profileResult.result) {
-                profileResult = {
-                  error: `Could not retrieve user-level email data. Tried breakdown by $email, email, and $distinct_id — none returned results. This likely means email is not tracked as an event property for "${matchedEvent}". To get user emails, check Mixpanel's Users tab or use a property name that matches your tracking setup.`
-                };
-              }
-            }
+        // Strategy 2: Use Get-Property-Values to fetch email values directly
+        if (!profileResult.result) {
+          const propValues = await callMcpTool(mcpUrl, token, 'Get-Property-Values', {
+            project_id: projectId,
+            property: '$email',
+          });
+          if (propValues.result) {
+            console.log('[MCP] Get-Property-Values for $email succeeded');
+            profileResult = propValues;
+          } else {
+            console.log('[MCP] Get-Property-Values failed:', propValues.error);
+            profileResult = {
+              error: `Could not retrieve user emails. Tried Run-Query breakdowns by $email (user), email (user), $email (event), $distinct_id (event), and Get-Property-Values for $email — none returned results. This may mean email is not set as a user profile property in this project, or the MCP connection doesn't support user property queries.`
+            };
           }
         }
       }
