@@ -160,6 +160,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             cardId: card.id,
+            channelId: card.channelId,
             questionContent: content,
             imageUrls,
             context: {

@@ -6,6 +6,7 @@ import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart
 import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage, getUserByokConfigWithError } from '@/lib/usage';
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
+import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat } from '@/lib/ai/dataSourceContext';
 
 function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
   if (!whiteboards || whiteboards.length === 0) return ''
@@ -47,6 +48,7 @@ async function getWebTools() {
 
 interface CardChatRequest {
   cardId: string;
+  channelId?: string;
   questionContent: string;
   imageUrls?: string[];
   context: {
@@ -374,7 +376,7 @@ async function getOpenAIKeyForUser(userId: string | undefined): Promise<string |
 export async function POST(request: Request) {
   try {
     const body: CardChatRequest = await request.json();
-    const { questionContent, imageUrls, context } = body;
+    const { questionContent, channelId, imageUrls, context } = body;
 
     // Validate required fields
     if ((!questionContent && (!imageUrls || imageUrls.length === 0)) || !context) {
@@ -458,8 +460,27 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    // Build prompt with web context (from URL fetch)
-    const messages = buildPrompt(questionContent, context, imageUrls, webContext);
+    // Query Mixpanel if connected and user is asking about analytics
+    let mixpanelContext = '';
+    if (channelId && detectsMixpanelIntent(questionContent)) {
+      try {
+        mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
+      } catch (err) {
+        console.error('[Card Chat] Mixpanel query error:', err);
+      }
+    }
+
+    // Inject data source context into system prompt if connected
+    let dataSourceContext = '';
+    if (channelId) {
+      try {
+        const sources = await getChannelDataSources(channelId);
+        dataSourceContext = buildDataSourcePromptContext(sources);
+      } catch { /* non-critical */ }
+    }
+
+    // Build prompt with web context + mixpanel data + data source context
+    const messages = buildPrompt(questionContent, context, imageUrls, webContext + mixpanelContext + dataSourceContext);
 
     try {
       let llmResponse;
