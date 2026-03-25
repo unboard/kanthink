@@ -400,7 +400,7 @@ export async function queryMixpanelForChat(
       return '\n\n[Mixpanel connected but no data returned — the MCP query may have failed. Check Vercel logs for details.]';
     }
 
-    parts.push('\nUse this real Mixpanel data to answer the user\'s question with concrete numbers. If the data above doesn\'t directly answer the question, explain what data IS available and suggest how they could find what they need.');
+    parts.push('\nIMPORTANT: ONLY use numbers and data that appear in the query results above. NEVER fabricate, estimate, or hallucinate data. If the query results don\'t contain data for what the user asked, say so clearly and list what data IS available. If an event doesn\'t exist in the tracked events list, tell the user it\'s not being tracked.');
 
     return parts.join('\n');
   } catch (err) {
