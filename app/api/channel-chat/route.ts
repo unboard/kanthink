@@ -375,13 +375,16 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    // Query Mixpanel if the user is asking about analytics
+    // Always query Mixpanel when connected — prevents hallucination on follow-ups
     let mixpanelContext = '';
-    if (channelId && detectsMixpanelIntent(questionContent)) {
-      // Mixpanel takes priority over web search — we have real data
-      useWebSearch = false;
+    if (channelId) {
       try {
-        mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
+        const sources = await getChannelDataSources(channelId);
+        const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
+        if (hasMixpanel) {
+          useWebSearch = false;
+          mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
+        }
       } catch { /* non-critical */ }
     }
 

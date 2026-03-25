@@ -460,25 +460,25 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    // Query Mixpanel if connected and user is asking about analytics
+    // Check if channel has data sources connected
     let mixpanelContext = '';
-    const hasMixpanelIntent = channelId && detectsMixpanelIntent(questionContent);
-    if (hasMixpanelIntent) {
-      // Mixpanel takes priority over web search — we have real data
-      useWebSearch = false;
-      try {
-        mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
-      } catch (err) {
-        console.error('[Card Chat] Mixpanel query error:', err);
-      }
-    }
-
-    // Inject data source context into system prompt if connected
     let dataSourceContext = '';
     if (channelId) {
       try {
         const sources = await getChannelDataSources(channelId);
         dataSourceContext = buildDataSourcePromptContext(sources);
+
+        // If Mixpanel is connected, ALWAYS query it — not just on @mixpanel mentions
+        // This prevents hallucination on follow-up questions
+        const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
+        if (hasMixpanel) {
+          useWebSearch = false; // real data beats web search
+          try {
+            mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
+          } catch (err) {
+            console.error('[Card Chat] Mixpanel query error:', err);
+          }
+        }
       } catch { /* non-critical */ }
     }
 
