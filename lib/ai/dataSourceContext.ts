@@ -287,11 +287,18 @@ export async function queryMixpanelForChat(
 
     // Step 3: Extract first project ID and fetch events
     let projectId: number | null = null;
+    let projectName: string | null = null;
     if (projects.result) {
       try {
-        const projectData = JSON.parse(projects.result);
-        const firstKey = Object.keys(projectData)[0];
-        if (firstKey) projectId = parseInt(firstKey, 10);
+        const projectData = JSON.parse(projects.result) as Record<string, { id: number; name: string }>;
+        // Skip deprecated projects, prefer the last (most recent) one
+        const entries = Object.entries(projectData);
+        const nonDeprecated = entries.filter(([, p]) => !p.name.toLowerCase().includes('deprecated'));
+        const pick = nonDeprecated.length > 0 ? nonDeprecated[nonDeprecated.length - 1] : entries[entries.length - 1];
+        if (pick) {
+          projectId = parseInt(pick[0], 10);
+          projectName = pick[1].name;
+        }
       } catch { /* project result might not be JSON */ }
     }
 
@@ -353,7 +360,7 @@ export async function queryMixpanelForChat(
 
     // Build the context for the AI
     const parts: string[] = ['\n\n--- MIXPANEL DATA (LIVE CONNECTION) ---'];
-    parts.push(`Today's date is ${new Date().toISOString().split('T')[0]}. Mixpanel is connected to this channel. Below is real data from the account.`);
+    parts.push(`Today's date is ${new Date().toISOString().split('T')[0]}. Mixpanel is connected to this channel.${projectName ? ` Active project: "${projectName}".` : ''} Below is real data from the account.`);
 
     if (toolsContext) {
       parts.push(`\nAvailable Mixpanel tools:\n${toolsContext}`);
