@@ -383,12 +383,12 @@ export async function POST(request: Request) {
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
         if (hasMixpanel) {
           useWebSearch = false;
-          // Pass thread messages as conversation history for follow-up resolution
+          // Pass thread messages + LLM client so Mixpanel can construct correct queries
           const mpMessages: MixpanelChatMessage[] = (context.threadMessages || []).map(m => ({
             type: m.type,
             content: m.content,
           }));
-          mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages);
+          mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages, llm);
         }
       } catch { /* non-critical */ }
     }

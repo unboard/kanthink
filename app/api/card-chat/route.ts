@@ -474,12 +474,12 @@ export async function POST(request: Request) {
         if (hasMixpanel) {
           useWebSearch = false; // real data beats web search
           try {
-            // Pass conversation history so Mixpanel can resolve follow-up references
+            // Pass conversation history + LLM client so Mixpanel can construct correct queries
             const mpMessages: MixpanelChatMessage[] = (context.previousMessages || []).map(m => ({
               type: m.type,
               content: m.content,
             }));
-            mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages);
+            mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages, llm);
           } catch (err) {
             console.error('[Card Chat] Mixpanel query error:', err);
           }

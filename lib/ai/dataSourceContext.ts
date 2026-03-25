@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { channelDataSources } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import type { LLMProvider } from './providers/types';
 
 /** Minimal message shape for conversation context */
 export interface MixpanelChatMessage {
@@ -279,19 +280,74 @@ function isProfileQuery(question: string): boolean {
 }
 
 /**
+ * Use an LLM to construct the correct Mixpanel Run-Query parameters
+ * based on the query schema, available events, and user question.
+ */
+async function buildQueryWithLLM(
+  llm: LLMProvider,
+  userQuestion: string,
+  querySchema: string,
+  eventNames: string[],
+  userProperties: string,
+  previousMessages?: MixpanelChatMessage[],
+): Promise<Record<string, unknown> | null> {
+  const conversationContext = previousMessages && previousMessages.length > 0
+    ? `\nRecent conversation:\n${previousMessages.slice(-5).map(m => `${m.type}: ${m.content}`).join('\n')}`
+    : '';
+
+  const prompt = `You are a Mixpanel query builder. Given the user's question and the Mixpanel query schema, output ONLY valid JSON for the "report" parameter of Run-Query.
+
+Available events: ${JSON.stringify(eventNames)}
+User profile properties: ${userProperties}
+${conversationContext}
+
+Query schema for insights reports:
+${querySchema.slice(0, 6000)}
+
+User question: "${userQuestion}"
+
+Rules:
+- Output ONLY the JSON object for the "report" parameter. No explanation, no markdown, no wrapping.
+- Match events by name from the available list. If no exact match, pick the closest.
+- For breakdowns by user properties, follow the exact schema format.
+- For date-specific queries like "on March 25, 2026", use absolute date ranges with from/to in ISO format.
+- Use chartType "table" for breakdown/list queries, "line" for trends.
+- For questions about user emails/who/list of users, add a breakdown by the email user property.
+
+Output the JSON:`;
+
+  try {
+    const response = await llm.complete([
+      { role: 'user', content: prompt },
+    ], { maxTokens: 1000 });
+
+    // Extract JSON from response
+    let jsonStr = response.content.trim();
+    // Remove markdown code fences if present
+    jsonStr = jsonStr.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    const parsed = JSON.parse(jsonStr);
+    console.log('[MCP] LLM-generated query:', JSON.stringify(parsed).slice(0, 500));
+    return parsed;
+  } catch (e) {
+    console.error('[MCP] LLM query construction failed:', e);
+    return null;
+  }
+}
+
+/**
  * Query Mixpanel MCP for data relevant to the user's question.
  *
  * Strategy:
- * 1. Discover available tools via tools/list
- * 2. Fetch available events (Get-Events) for context
- * 3. Fetch projects (Get-Projects) for context
- * 4. Use conversation history to resolve follow-up references
- * 5. Pass all of this as context to the AI — let it answer with real data
+ * 1. Fetch context: tools, events, projects, query schema, user properties
+ * 2. Use LLM to construct the correct query from the schema
+ * 3. Execute the AI-generated query
+ * 4. Return results for the main AI to answer from
  */
 export async function queryMixpanelForChat(
   channelId: string,
   userQuestion: string,
   previousMessages?: MixpanelChatMessage[],
+  llm?: LLMProvider,
 ): Promise<string> {
   try {
     const [source] = await db
@@ -379,12 +435,10 @@ export async function queryMixpanelForChat(
       } catch { /* project result might not be JSON */ }
     }
 
-    // Step 4: Try to run a basic query based on the user's question
+    // Step 4: Build and execute the query
     let queryResult: { result?: string; error?: string } = {};
-    let comparisonResult: { result?: string; error?: string } = {};
-    let profileResult: { result?: string; error?: string } = {};
     if (projectId && events.result) {
-      // Extract event names from the events list
+      // Extract event names
       const eventNames: string[] = [];
       try {
         const eventsData = JSON.parse(events.result);
@@ -401,180 +455,71 @@ export async function queryMixpanelForChat(
       } catch { /* events might be plain text */ }
       console.log('[MCP] Found', eventNames.length, 'events, first 5:', eventNames.slice(0, 5));
 
-      // Try to match the user's question to an event name
-      const questionLower = userQuestion.toLowerCase().replace(/@mixpanel/gi, '').trim();
+      // Fetch user properties and query schema for LLM-driven query construction
+      let querySchema = '';
+      let userProperties = '';
 
-      // First try matching from the current question
-      let matchedEvent = eventNames.find(e =>
-        questionLower.includes(e.toLowerCase().replace(/\$/g, '').replace(/_/g, ' ')) ||
-        questionLower.includes(e.toLowerCase()) ||
-        e.toLowerCase().includes('page_view') && questionLower.includes('page') ||
-        e.toLowerCase().includes('session') && questionLower.includes('session') ||
-        e.toLowerCase().includes('sign_up') && questionLower.includes('sign')
-      );
+      if (llm) {
+        // Get the full query schema so the LLM knows the correct format
+        const [schemaResult, userPropsResult] = await Promise.all([
+          callMcpTool(mcpUrl, token, 'Get-Query-Schema', { report_type: 'insights' }),
+          callMcpTool(mcpUrl, token, 'Get-Property-Names', { project_id: projectId, resource_type: 'User' }),
+        ]);
+        querySchema = schemaResult.result || '';
+        userProperties = userPropsResult.result || '';
+        if (userProperties) console.log('[MCP] User properties:', userProperties.slice(0, 200));
+      }
 
-      // If no match from the question, check conversation history for previously referenced events
-      if (!matchedEvent && previousMessages && previousMessages.length > 0) {
-        const historyEvents = extractEventsFromHistory(previousMessages);
-        console.log('[MCP] Events from conversation history:', historyEvents);
-        if (historyEvents.length > 0) {
-          // Find the most recently mentioned event that exists in the event list
-          for (const histEvent of historyEvents.reverse()) {
+      // If we have an LLM, let it construct the query from the schema
+      if (llm && querySchema) {
+        console.log('[MCP] Using LLM to construct query');
+        const report = await buildQueryWithLLM(llm, userQuestion, querySchema, eventNames, userProperties, previousMessages);
+        if (report) {
+          queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+            project_id: projectId,
+            report_type: 'insights',
+            report,
+          });
+          console.log('[MCP] LLM query result preview:', (queryResult.result || queryResult.error || '').slice(0, 500));
+        }
+      }
+
+      // Fallback: simple hardcoded query if LLM not available or failed
+      if (!queryResult.result) {
+        const questionLower = userQuestion.toLowerCase().replace(/@mixpanel/gi, '').trim();
+        let matchedEvent = eventNames.find(e =>
+          questionLower.includes(e.toLowerCase().replace(/\$/g, '').replace(/_/g, ' ')) ||
+          questionLower.includes(e.toLowerCase())
+        );
+        // Check conversation history
+        if (!matchedEvent && previousMessages && previousMessages.length > 0) {
+          const historyEvents = extractEventsFromHistory(previousMessages);
+          for (const histEvent of [...historyEvents].reverse()) {
             const found = eventNames.find(e =>
               e.toLowerCase() === histEvent.toLowerCase() ||
               e.toLowerCase().replace(/_/g, ' ') === histEvent.toLowerCase()
             );
-            if (found) {
-              matchedEvent = found;
-              console.log('[MCP] Resolved event from conversation history:', matchedEvent);
-              break;
-            }
+            if (found) { matchedEvent = found; break; }
           }
         }
-      }
-
-      // Final fallback: page_view or first event
-      if (!matchedEvent) {
-        matchedEvent = eventNames.find(e => e.includes('page_view')) || eventNames[0];
-      }
-
-      if (matchedEvent) {
-        // Parse date range from the user's question
-        const { dateRange, unit } = parseDateRange(questionLower);
-
-        // Determine measurement type (unique vs total)
-        const isUnique = questionLower.includes('unique') || questionLower.includes('distinct') || questionLower.includes('users') || questionLower.includes('visitors');
-        console.log('[MCP] Running query:', { matchedEvent, dateRange, unit, isUnique, isProfile: isProfileQuery(questionLower), isComparison: isComparisonQuery(questionLower) });
-
-        queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
-          project_id: projectId,
-          report_type: 'insights',
-          report: {
-            name: 'Query',
-            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: isUnique ? 'unique' : 'total' } }],
-            chartType: 'line',
-            unit,
-            dateRange,
-          },
-        });
-
-        // If this is a comparison query, also fetch the comparison period
-        if (isComparisonQuery(questionLower)) {
-          // Run a second query with a wider date range to get both periods
-          const widerRange = { type: 'relative' as const, range: { unit: 'day' as const, value: 7 } };
-          comparisonResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+        if (!matchedEvent) {
+          matchedEvent = eventNames.find(e => e.includes('page_view')) || eventNames[0];
+        }
+        if (matchedEvent) {
+          const { dateRange, unit } = parseDateRange(questionLower);
+          const isUnique = questionLower.includes('unique') || questionLower.includes('users');
+          console.log('[MCP] Fallback query:', { matchedEvent, dateRange, unit });
+          queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
             project_id: projectId,
             report_type: 'insights',
             report: {
-              name: 'Comparison Query',
+              name: 'Query',
               metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: isUnique ? 'unique' : 'total' } }],
               chartType: 'line',
-              unit: 'day',
-              dateRange: widerRange,
+              unit,
+              dateRange,
             },
           });
-        }
-      }
-
-      // If this is a profile/PII query, try to get user-level data
-      if (isProfileQuery(questionLower) && matchedEvent) {
-        console.log('[MCP] Profile query detected');
-        const { dateRange, unit } = parseDateRange(questionLower);
-
-        // Step 1: Get the query schema and extract the breakdown definition
-        const schemaResult = await callMcpTool(mcpUrl, token, 'Get-Query-Schema', {
-          report_type: 'insights',
-        });
-
-        let breakdownSchema = '';
-        if (schemaResult.result) {
-          try {
-            // The schema result may have a text preamble before JSON
-            const jsonStart = schemaResult.result.indexOf('{');
-            if (jsonStart >= 0) {
-              const schema = JSON.parse(schemaResult.result.slice(jsonStart));
-              const defs = schema.$defs || schema.definitions || {};
-              // Find breakdown-related definitions
-              for (const [key, value] of Object.entries(defs)) {
-                if (key.toLowerCase().includes('breakdown')) {
-                  const defStr = JSON.stringify(value);
-                  breakdownSchema += `${key}: ${defStr}\n`;
-                  console.log(`[MCP] Schema breakdown def "${key}":`, defStr.slice(0, 500));
-                }
-              }
-              // Also check the main properties for breakdowns field
-              const props = schema.properties || {};
-              if (props.breakdowns) {
-                console.log('[MCP] Schema breakdowns prop:', JSON.stringify(props.breakdowns).slice(0, 500));
-              }
-            }
-          } catch (e) {
-            console.log('[MCP] Schema parse error:', e);
-          }
-        }
-
-        // Step 2: Get user property names to find the exact email property name
-        const userProps = await callMcpTool(mcpUrl, token, 'Get-Property-Names', {
-          project_id: projectId,
-          resource_type: 'User',
-        });
-        // From logs we know: user properties include "email" (not "$email")
-        let emailPropName = 'email';
-        if (userProps.result) {
-          console.log('[MCP] User properties:', userProps.result.slice(0, 300));
-          // Check if $email or email exists
-          if (userProps.result.includes('"$email"')) {
-            emailPropName = '$email';
-          } else if (userProps.result.includes('"email"')) {
-            emailPropName = 'email';
-          }
-        }
-        console.log('[MCP] Using email property:', emailPropName);
-
-        // Step 3: Try the breakdown query using the schema-informed format
-        // The validation error told us: "breakdowns.0.metric" is required
-        // So each breakdown needs: { property, resourceType, metric }
-        // metric references which metric index (0 = first) the breakdown applies to
-        const breakdownResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
-          project_id: projectId,
-          report_type: 'insights',
-          report: {
-            name: 'User Email Breakdown',
-            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'total' } }],
-            chartType: 'table',
-            unit,
-            dateRange,
-            breakdowns: [{ property: emailPropName, resourceType: 'user', metric: 0 }],
-          },
-        });
-
-        const hasEmails = breakdownResult.result &&
-          breakdownResult.result.includes('@') &&
-          !breakdownResult.result.includes('Validation error');
-
-        console.log(`[MCP] Breakdown result: ${hasEmails ? 'HAS EMAILS' : 'NO EMAILS'}, preview:`, (breakdownResult.result || breakdownResult.error || '').slice(0, 800));
-
-        if (hasEmails) {
-          profileResult = breakdownResult;
-        } else {
-          // If the primary attempt failed, log the full error and breakdown schema for debugging
-          console.log('[MCP] Breakdown schema definitions found:', breakdownSchema.slice(0, 1000) || 'none');
-          console.log('[MCP] Full breakdown error:', breakdownResult.result || breakdownResult.error);
-
-          // Fallback: Get-Property-Values for email — returns all known email values
-          const propValues = await callMcpTool(mcpUrl, token, 'Get-Property-Values', {
-            project_id: projectId,
-            property: emailPropName,
-          });
-          console.log('[MCP] Get-Property-Values result:', (propValues.result || propValues.error || '').slice(0, 500));
-
-          if (propValues.result && propValues.result.includes('@')) {
-            profileResult = propValues;
-          } else {
-            profileResult = {
-              error: `Could not retrieve user emails via breakdown query or property values. Breakdown error: ${(breakdownResult.result || breakdownResult.error || '').slice(0, 200)}. Schema breakdown defs: ${breakdownSchema.slice(0, 300) || 'none found'}`
-            };
-          }
         }
       }
     }
@@ -583,41 +528,26 @@ export async function queryMixpanelForChat(
     const parts: string[] = ['\n\n--- MIXPANEL DATA (LIVE CONNECTION) ---'];
     parts.push(`Today's date is ${new Date().toISOString().split('T')[0]}. Mixpanel is connected to this channel.${projectName ? ` Active project: "${projectName}".` : ''} Below is real data from the account.`);
 
-    if (toolsContext) {
-      parts.push(`\nAvailable Mixpanel tools:\n${toolsContext}`);
-    }
-    if (projects.result) {
-      parts.push(`\nProjects:\n${projects.result.slice(0, 1000)}`);
-    }
     if (events.result) {
       parts.push(`\nTracked events:\n${events.result.slice(0, 2000)}`);
     }
 
-    // Query results go LAST and are clearly marked — this is the data the AI must use
-    // Putting it last (closest to the user message) reduces hallucination
+    // Query results go LAST — closest to the user message reduces hallucination
     if (queryResult.result) {
-      parts.push(`\n>>> QUERY RESULTS (USE THESE EXACT NUMBERS) <<<\n${queryResult.result.slice(0, 3000)}`);
-    }
-    if (comparisonResult.result) {
-      parts.push(`\n>>> COMPARISON DATA (last 7 days, daily breakdown) <<<\n${comparisonResult.result.slice(0, 3000)}`);
-    }
-    if (profileResult.result) {
-      parts.push(`\n>>> USER-LEVEL EMAIL DATA (individual users broken down by email) <<<\nThe data below contains individual user emails. Present them to the user in a table or list.\n${profileResult.result.slice(0, 5000)}`);
+      parts.push(`\n>>> QUERY RESULTS (USE THESE EXACT NUMBERS) <<<\n${queryResult.result.slice(0, 5000)}`);
     }
 
-    // Log any errors for debugging
+    // Log errors
     if (events.error) parts.push(`\n[Events query error: ${events.error}]`);
     if (projects.error) parts.push(`\n[Projects query error: ${projects.error}]`);
     if (queryResult.error) parts.push(`\n[Query error: ${queryResult.error}]`);
-    if (comparisonResult.error) parts.push(`\n[Comparison query error: ${comparisonResult.error}]`);
-    if (profileResult.error) parts.push(`\n[Profile query info: ${profileResult.error}]`);
 
     if (parts.length <= 2) {
       console.error('[MCP] No data returned from any Mixpanel query');
       return '\n\n[Mixpanel connected but no data returned — the MCP query may have failed. Check Vercel logs for details.]';
     }
 
-    parts.push('\n⚠️ CRITICAL — READ BEFORE ANSWERING:\n1. ONLY cite numbers that appear VERBATIM in the "QUERY RESULTS" section above. Copy-paste them exactly as they appear.\n2. NEVER invent, estimate, round, or fabricate numbers. The number 56 is not 5. The number 8559 is not 8500. Copy the exact digits.\n3. Before writing any number in your response, find it in the QUERY RESULTS section and verify it matches character-for-character.\n4. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n5. If no QUERY RESULTS section appears above, say "I could not retrieve data for this query" — do NOT make up numbers.\n6. When including a chart, use the EXACT data points from the query results.\n7. For comparison queries, calculate the exact percent change from the data provided. Show both numbers and the formula.\n8. If a "USER-LEVEL EMAIL DATA" section appears above, it contains individual user emails from a Mixpanel breakdown query. Present ALL emails from that section to the user — do NOT say you cannot access them.');
+    parts.push('\n⚠️ CRITICAL — READ BEFORE ANSWERING:\n1. ONLY cite numbers that appear VERBATIM in the "QUERY RESULTS" section above. Copy-paste them exactly as they appear.\n2. NEVER invent, estimate, round, or fabricate numbers. The number 56 is not 5. The number 8559 is not 8500. Copy the exact digits.\n3. Before writing any number in your response, find it in the QUERY RESULTS section and verify it matches character-for-character.\n4. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n5. If no QUERY RESULTS section appears above, say "I could not retrieve data for this query" — do NOT make up numbers.\n6. When including a chart, use the EXACT data points from the query results.\n7. If the results contain individual user data (emails, IDs), present ALL of them to the user in a table.');
 
     return parts.join('\n');
   } catch (err) {
