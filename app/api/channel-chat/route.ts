@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
 import { channelChatThreads } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
-import { getChannelDataSources, buildDataSourcePromptContext } from '@/lib/ai/dataSourceContext';
+import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat } from '@/lib/ai/dataSourceContext';
 
 export const runtime = 'nodejs';
 
@@ -375,7 +375,15 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    const messages = await buildPrompt(questionContent, context, channelId, imageUrls, webContext);
+    // Query Mixpanel if the user is asking about analytics
+    let mixpanelContext = '';
+    if (channelId && detectsMixpanelIntent(questionContent)) {
+      try {
+        mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
+      } catch { /* non-critical */ }
+    }
+
+    const messages = await buildPrompt(questionContent, context, channelId, imageUrls, webContext + mixpanelContext);
 
     try {
       let llmResponse;
