@@ -481,61 +481,100 @@ export async function queryMixpanelForChat(
         console.log('[MCP] Profile query detected');
         const { dateRange, unit } = parseDateRange(questionLower);
 
-        // The breakdown schema requires a `metric` field referencing the metric index.
-        // Validation error from MCP: "breakdowns.0.metric" was missing.
-        // Format: { property, resourceType, metric } where metric = 0 references the first metric.
-        const breakdownFormats = [
-          // metric:0 + resourceType (based on validation error feedback)
-          { breakdowns: [{ property: '$email', resourceType: 'user', metric: 0 }], label: 'metric:0 resourceType:user' },
-          // metric:0 + typeName
-          { breakdowns: [{ property: '$email', typeName: 'user', metric: 0 }], label: 'metric:0 typeName:user' },
-          // metric:0 + type
-          { breakdowns: [{ property: '$email', type: 'user', metric: 0 }], label: 'metric:0 type:user' },
-          // metric:0 only
-          { breakdowns: [{ property: '$email', metric: 0 }], label: 'metric:0 (no type)' },
-        ];
+        // Step 1: Get the query schema and extract the breakdown definition
+        const schemaResult = await callMcpTool(mcpUrl, token, 'Get-Query-Schema', {
+          report_type: 'insights',
+        });
 
-        for (const fmt of breakdownFormats) {
-          const result = await callMcpTool(mcpUrl, token, 'Run-Query', {
-            project_id: projectId,
-            report_type: 'insights',
-            report: {
-              name: 'User Email Breakdown',
-              metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'total' } }],
-              chartType: 'table',
-              unit,
-              dateRange,
-              breakdowns: fmt.breakdowns,
-            },
-          });
-          // Only count as success if result contains actual @ email addresses
-          // (not just the word "email" in error messages)
-          const hasEmails = result.result && result.result.includes('@') && !result.result.startsWith('Validation error');
-          console.log(`[MCP] Breakdown (${fmt.label}): ${result.result ? 'data' : 'fail'}${hasEmails ? ' HAS_EMAILS' : ''}, preview: ${(result.result || result.error || '').slice(0, 400)}`);
-
-          if (hasEmails) {
-            profileResult = result;
-            break;
+        let breakdownSchema = '';
+        if (schemaResult.result) {
+          try {
+            // The schema result may have a text preamble before JSON
+            const jsonStart = schemaResult.result.indexOf('{');
+            if (jsonStart >= 0) {
+              const schema = JSON.parse(schemaResult.result.slice(jsonStart));
+              const defs = schema.$defs || schema.definitions || {};
+              // Find breakdown-related definitions
+              for (const [key, value] of Object.entries(defs)) {
+                if (key.toLowerCase().includes('breakdown')) {
+                  const defStr = JSON.stringify(value);
+                  breakdownSchema += `${key}: ${defStr}\n`;
+                  console.log(`[MCP] Schema breakdown def "${key}":`, defStr.slice(0, 500));
+                }
+              }
+              // Also check the main properties for breakdowns field
+              const props = schema.properties || {};
+              if (props.breakdowns) {
+                console.log('[MCP] Schema breakdowns prop:', JSON.stringify(props.breakdowns).slice(0, 500));
+              }
+            }
+          } catch (e) {
+            console.log('[MCP] Schema parse error:', e);
           }
         }
 
-        // Fallback: Get-Property-Values for $email
-        if (!profileResult.result) {
+        // Step 2: Get user property names to find the exact email property name
+        const userProps = await callMcpTool(mcpUrl, token, 'Get-Property-Names', {
+          project_id: projectId,
+          resource_type: 'User',
+        });
+        // From logs we know: user properties include "email" (not "$email")
+        let emailPropName = 'email';
+        if (userProps.result) {
+          console.log('[MCP] User properties:', userProps.result.slice(0, 300));
+          // Check if $email or email exists
+          if (userProps.result.includes('"$email"')) {
+            emailPropName = '$email';
+          } else if (userProps.result.includes('"email"')) {
+            emailPropName = 'email';
+          }
+        }
+        console.log('[MCP] Using email property:', emailPropName);
+
+        // Step 3: Try the breakdown query using the schema-informed format
+        // The validation error told us: "breakdowns.0.metric" is required
+        // So each breakdown needs: { property, resourceType, metric }
+        // metric references which metric index (0 = first) the breakdown applies to
+        const breakdownResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+          project_id: projectId,
+          report_type: 'insights',
+          report: {
+            name: 'User Email Breakdown',
+            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'total' } }],
+            chartType: 'table',
+            unit,
+            dateRange,
+            breakdowns: [{ property: emailPropName, resourceType: 'user', metric: 0 }],
+          },
+        });
+
+        const hasEmails = breakdownResult.result &&
+          breakdownResult.result.includes('@') &&
+          !breakdownResult.result.includes('Validation error');
+
+        console.log(`[MCP] Breakdown result: ${hasEmails ? 'HAS EMAILS' : 'NO EMAILS'}, preview:`, (breakdownResult.result || breakdownResult.error || '').slice(0, 800));
+
+        if (hasEmails) {
+          profileResult = breakdownResult;
+        } else {
+          // If the primary attempt failed, log the full error and breakdown schema for debugging
+          console.log('[MCP] Breakdown schema definitions found:', breakdownSchema.slice(0, 1000) || 'none');
+          console.log('[MCP] Full breakdown error:', breakdownResult.result || breakdownResult.error);
+
+          // Fallback: Get-Property-Values for email — returns all known email values
           const propValues = await callMcpTool(mcpUrl, token, 'Get-Property-Values', {
             project_id: projectId,
-            property: '$email',
-            resource_type: 'User',
+            property: emailPropName,
           });
-          console.log('[MCP] Get-Property-Values $email:', (propValues.result || propValues.error || '').slice(0, 500));
+          console.log('[MCP] Get-Property-Values result:', (propValues.result || propValues.error || '').slice(0, 500));
+
           if (propValues.result && propValues.result.includes('@')) {
             profileResult = propValues;
+          } else {
+            profileResult = {
+              error: `Could not retrieve user emails via breakdown query or property values. Breakdown error: ${(breakdownResult.result || breakdownResult.error || '').slice(0, 200)}. Schema breakdown defs: ${breakdownSchema.slice(0, 300) || 'none found'}`
+            };
           }
-        }
-
-        if (!profileResult.result) {
-          profileResult = {
-            error: `Could not retrieve user emails. Tried breakdown formats with metric:0 and Get-Property-Values. Check Vercel logs for details on each attempt.`
-          };
         }
       }
     }
