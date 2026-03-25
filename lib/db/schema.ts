@@ -115,6 +115,24 @@ export const channels = sqliteTable('channels', {
   index('channels_owner_idx').on(table.ownerId),
 ])
 
+// Data source connections for channels (e.g. Mixpanel, Amplitude)
+export const channelDataSources = sqliteTable('channel_data_sources', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(), // 'mixpanel', 'amplitude', etc.
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  tokenExpiresAt: integer('token_expires_at'), // epoch seconds
+  metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(), // provider-specific config (project id, region, etc.)
+  status: text('status').$type<'active' | 'expired' | 'disconnected'>().default('active'),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('channel_data_sources_channel_idx').on(table.channelId),
+  index('channel_data_sources_provider_idx').on(table.channelId, table.provider),
+])
+
 // Columns within a channel
 export const columns = sqliteTable('columns', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),

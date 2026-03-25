@@ -8,6 +8,7 @@ import { db } from '@/lib/db';
 import { channelChatThreads } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
+import { getChannelDataSources, buildDataSourcePromptContext } from '@/lib/ai/dataSourceContext';
 
 export const runtime = 'nodejs';
 
@@ -63,12 +64,13 @@ interface AIStructuredResponse {
   threadTitle?: string;
 }
 
-function buildPrompt(
+async function buildPrompt(
   questionContent: string,
   context: ChannelChatRequest['context'],
+  channelId: string,
   imageUrls?: string[],
   webContext?: string,
-): LLMMessage[] {
+): Promise<LLMMessage[]> {
   const { channelName, channelDescription, aiInstructions, columns, standaloneTasks, tagDefinitions, threadMessages, threadTitle } = context;
 
   // Build column/card context (concise — task details go in separate section)
@@ -202,8 +204,15 @@ Rules:
   - For tasks: [Task Title](kanthink://task/TASK_ID)
   Use the IDs from the data above (shown as "id:XXX"). Always link cards and tasks when mentioning them.`;
 
+  // Inject data source context if any are connected
+  let dataSourceContext = '';
+  try {
+    const sources = await getChannelDataSources(channelId);
+    dataSourceContext = buildDataSourcePromptContext(sources);
+  } catch { /* non-critical */ }
+
   const messages: LLMMessage[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: systemPrompt + dataSourceContext },
   ];
 
   // Add recent thread messages as conversation history
@@ -327,7 +336,7 @@ export async function POST(request: Request) {
     await ensureSchema();
 
     const body: ChannelChatRequest = await request.json();
-    const { threadId, questionContent, imageUrls, context } = body;
+    const { threadId, channelId, questionContent, imageUrls, context } = body;
 
     if ((!questionContent && (!imageUrls || imageUrls.length === 0)) || !context || !threadId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -366,7 +375,7 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    const messages = buildPrompt(questionContent, context, imageUrls, webContext);
+    const messages = await buildPrompt(questionContent, context, channelId, imageUrls, webContext);
 
     try {
       let llmResponse;

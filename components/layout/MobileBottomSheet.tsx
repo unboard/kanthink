@@ -1472,6 +1472,21 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
               </select>
             </div>
 
+            {/* Data Sources */}
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Data Sources
+              </label>
+              <a
+                href={`/api/auth/mixpanel?channelId=${currentChannelId}`}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:border-violet-400 transition-colors"
+              >
+                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Mixpanel</span>
+                <span className="text-xs text-neutral-400 ml-auto">Connect →</span>
+              </a>
+              <p className="text-xs text-neutral-500 mt-1.5">Connect data sources so AI can query them via @mention.</p>
+            </div>
+
             {/* Include archived cards in AI */}
             <div>
               <label className="flex items-center gap-3 cursor-pointer">

@@ -142,6 +142,9 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
   const [showExport, setShowExport] = useState(false);
   const [exportTab, setExportTab] = useState<'export' | 'import'>('export');
   const [copied, setCopied] = useState(false);
+  // Data sources
+  const [dataSources, setDataSources] = useState<Array<{ id: string; provider: string; status: string; createdAt: string }>>([]);
+  const [isLoadingDataSources, setIsLoadingDataSources] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [digestFrequency, setDigestFrequency] = useState<'off' | 'daily' | 'weekly' | 'monthly'>('off');
@@ -175,6 +178,14 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
       setShowExport(false);
       setImportJson('');
       setImportError(null);
+
+      // Fetch data sources
+      setIsLoadingDataSources(true);
+      fetch(`/api/channels/${channel.id}/data-sources`)
+        .then(r => r.json())
+        .then(data => setDataSources(data.sources || []))
+        .catch(() => {})
+        .finally(() => setIsLoadingDataSources(false));
 
       // Fetch digest subscription
       setDigestLoading(true);
@@ -531,6 +542,50 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
             <option value="paused">Paused</option>
             <option value="archived">Archived</option>
           </select>
+        </div>
+
+        {/* Data Sources */}
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            Data Sources
+          </label>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
+            Connect external data so AI can query it via @mention or automatically.
+          </p>
+          {isLoadingDataSources ? (
+            <div className="text-xs text-neutral-400">Loading...</div>
+          ) : (
+            <div className="space-y-2">
+              {/* Mixpanel */}
+              {dataSources.find(ds => ds.provider === 'mixpanel') ? (
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-green-500" />
+                    <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200">Mixpanel</span>
+                    <span className="text-xs text-green-600 dark:text-green-400">Connected</span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await fetch(`/api/channels/${channel.id}/data-sources?provider=mixpanel`, { method: 'DELETE' });
+                      setDataSources(prev => prev.filter(ds => ds.provider !== 'mixpanel'));
+                    }}
+                    className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <a
+                  href={`/api/auth/mixpanel?channelId=${channel.id}`}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:border-violet-300 dark:hover:border-violet-700 hover:bg-violet-50/50 dark:hover:bg-violet-900/10 transition-colors"
+                >
+                  <span className="w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Mixpanel</span>
+                  <span className="text-xs text-neutral-400 ml-auto">Connect →</span>
+                </a>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Include archived cards in AI */}

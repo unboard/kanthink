@@ -223,6 +223,23 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0012 — channel_data_sources (Mixpanel, etc.)
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS channel_data_sources (
+      id text PRIMARY KEY NOT NULL,
+      channel_id text NOT NULL,
+      provider text NOT NULL,
+      access_token text,
+      refresh_token text,
+      token_expires_at integer,
+      metadata text,
+      status text DEFAULT 'active',
+      created_at integer,
+      updated_at integer,
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE cascade
+    )`))
+  } catch {}
+
   // Indexes — IF NOT EXISTS works for these
   const indexes = [
     `CREATE UNIQUE INDEX IF NOT EXISTS notification_preferences_user_idx ON notification_preferences (user_id)`,
@@ -247,6 +264,9 @@ export async function ensureSchema() {
     `CREATE UNIQUE INDEX IF NOT EXISTS channel_digest_subs_user_channel ON channel_digest_subscriptions (user_id, channel_id)`,
     `CREATE INDEX IF NOT EXISTS channel_digest_subs_user_idx ON channel_digest_subscriptions (user_id)`,
     `CREATE INDEX IF NOT EXISTS channel_activity_log_channel_created_idx ON channel_activity_log (channel_id, created_at)`,
+    // Migration 0012 indexes
+    `CREATE INDEX IF NOT EXISTS channel_data_sources_channel_idx ON channel_data_sources (channel_id)`,
+    `CREATE INDEX IF NOT EXISTS channel_data_sources_channel_provider_idx ON channel_data_sources (channel_id, provider)`,
   ]
 
   for (const idx of indexes) {
