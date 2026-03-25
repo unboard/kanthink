@@ -152,12 +152,21 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
   const inputWrapperRef = useRef<HTMLDivElement>(null);
 
   // Filtered members for mention dropdown
+  // Integration mentions (data sources connected to the channel)
+  const INTEGRATION_MENTIONS: ChannelMember[] = [
+    { id: 'integration-mixpanel', name: 'mixpanel', email: 'Mixpanel Analytics', image: null, role: 'integration' },
+  ];
+
   const filteredMembers = useMemo(() => {
     if (!mention.isActive) return [];
     const q = mention.query.toLowerCase();
-    return members.filter((m) =>
+    const people = members.filter((m) =>
       m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
     );
+    const integrations = INTEGRATION_MENTIONS.filter((m) =>
+      m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
+    );
+    return [...integrations, ...people];
   }, [mention.isActive, mention.query, members]);
 
   // Filtered cards for # card mention dropdown
@@ -544,7 +553,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
         {/* @mention dropdown (members) */}
         {mention.isActive && filteredMembers.length > 0 && (
           <MentionDropdown
-            members={members}
+            members={[...INTEGRATION_MENTIONS, ...members]}
             query={mention.query}
             selectedIndex={mentionSelectedIndex}
             onSelect={handleMentionSelect}

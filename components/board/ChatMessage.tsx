@@ -217,10 +217,15 @@ function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers)
     <>
       {parts.map((part, i) => {
         if (part.type === 'mention') {
+          const isIntegration = part.id?.startsWith('integration-');
           return (
             <span
               key={i}
-              className="inline-flex items-center px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-xs font-medium"
+              className={`inline-flex items-center px-1 py-0.5 rounded text-xs font-medium ${
+                isIntegration
+                  ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300'
+                  : 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+              }`}
             >
               @{part.name}
             </span>
