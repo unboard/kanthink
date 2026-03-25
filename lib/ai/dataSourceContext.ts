@@ -481,36 +481,18 @@ export async function queryMixpanelForChat(
         console.log('[MCP] Profile query detected');
         const { dateRange, unit } = parseDateRange(questionLower);
 
-        // Step 1: Get the full query schema so we know the correct breakdown format
-        const schemaResult = await callMcpTool(mcpUrl, token, 'Get-Query-Schema', {
-          report_type: 'insights',
-        });
-        if (schemaResult.result) {
-          console.log('[MCP] Query schema preview:', schemaResult.result.slice(0, 1000));
-        }
-
-        // Step 2: Get user property names to confirm $email exists
-        const userProps = await callMcpTool(mcpUrl, token, 'Get-Property-Names', {
-          project_id: projectId,
-          resource_type: 'User',
-        });
-        if (userProps.result) {
-          console.log('[MCP] User properties:', userProps.result.slice(0, 500));
-        }
-
-        // Step 3: Try Run-Query with breakdown — use schema-informed format
-        // The breakdown format varies by MCP version, try multiple formats
+        // The breakdown schema requires a `metric` field referencing the metric index.
+        // Validation error from MCP: "breakdowns.0.metric" was missing.
+        // Format: { property, resourceType, metric } where metric = 0 references the first metric.
         const breakdownFormats = [
-          // Format A: property name + resourceType (common in Mixpanel API)
-          { breakdowns: [{ property: '$email', resourceType: 'user' }], label: '$email resourceType:user' },
-          // Format B: property name + typeName (alternative)
-          { breakdowns: [{ property: '$email', typeName: 'user' }], label: '$email typeName:user' },
-          // Format C: property name + type (what we tried before)
-          { breakdowns: [{ property: '$email', type: 'user' }], label: '$email type:user' },
-          // Format D: just property name (let MCP figure out the type)
-          { breakdowns: [{ property: '$email' }], label: '$email (no type)' },
-          // Format E: User Email display name
-          { breakdowns: [{ property: 'User Email' }], label: 'User Email' },
+          // metric:0 + resourceType (based on validation error feedback)
+          { breakdowns: [{ property: '$email', resourceType: 'user', metric: 0 }], label: 'metric:0 resourceType:user' },
+          // metric:0 + typeName
+          { breakdowns: [{ property: '$email', typeName: 'user', metric: 0 }], label: 'metric:0 typeName:user' },
+          // metric:0 + type
+          { breakdowns: [{ property: '$email', type: 'user', metric: 0 }], label: 'metric:0 type:user' },
+          // metric:0 only
+          { breakdowns: [{ property: '$email', metric: 0 }], label: 'metric:0 (no type)' },
         ];
 
         for (const fmt of breakdownFormats) {
@@ -526,12 +508,10 @@ export async function queryMixpanelForChat(
               breakdowns: fmt.breakdowns,
             },
           });
-          // Check if result actually contains email-like data (not just aggregate counts)
-          const hasEmails = result.result && (
-            result.result.includes('@') || // Contains email addresses
-            result.result.includes('email') // Contains email field references
-          );
-          console.log(`[MCP] Breakdown (${fmt.label}): ${result.result ? 'returned data' : 'failed'}${hasEmails ? ' WITH EMAILS' : ''}, preview: ${(result.result || result.error || '').slice(0, 300)}`);
+          // Only count as success if result contains actual @ email addresses
+          // (not just the word "email" in error messages)
+          const hasEmails = result.result && result.result.includes('@') && !result.result.startsWith('Validation error');
+          console.log(`[MCP] Breakdown (${fmt.label}): ${result.result ? 'data' : 'fail'}${hasEmails ? ' HAS_EMAILS' : ''}, preview: ${(result.result || result.error || '').slice(0, 400)}`);
 
           if (hasEmails) {
             profileResult = result;
@@ -539,7 +519,7 @@ export async function queryMixpanelForChat(
           }
         }
 
-        // Step 4: If no breakdown worked, try Get-Property-Values for $email
+        // Fallback: Get-Property-Values for $email
         if (!profileResult.result) {
           const propValues = await callMcpTool(mcpUrl, token, 'Get-Property-Values', {
             project_id: projectId,
@@ -554,7 +534,7 @@ export async function queryMixpanelForChat(
 
         if (!profileResult.result) {
           profileResult = {
-            error: `Could not retrieve user emails. Tried multiple breakdown formats and Get-Property-Values. Check Vercel logs for detailed results from each attempt.`
+            error: `Could not retrieve user emails. Tried breakdown formats with metric:0 and Get-Property-Values. Check Vercel logs for details on each attempt.`
           };
         }
       }
