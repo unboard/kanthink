@@ -291,7 +291,13 @@ export async function queryMixpanelForChat(
     let projectName: string | null = null;
     let events: { result?: string; error?: string } = { error: 'No projects found' };
 
-    if (projects.result) {
+    // Check if user has selected a specific project
+    const selectedProjectId = (metadata as Record<string, unknown>)?.projectId as number | undefined;
+    if (selectedProjectId) {
+      projectId = selectedProjectId;
+      projectName = ((metadata as Record<string, unknown>)?.projectName as string) || 'Selected project';
+      events = await callMcpTool(mcpUrl, token, 'Get-Events', { project_id: selectedProjectId });
+    } else if (projects.result) {
       try {
         const projectData = JSON.parse(projects.result) as Record<string, { id: number; name: string }>;
         const entries = Object.entries(projectData);

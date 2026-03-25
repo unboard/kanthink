@@ -145,6 +145,10 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
   // Data sources
   const [dataSources, setDataSources] = useState<Array<{ id: string; provider: string; status: string; createdAt: string }>>([]);
   const [isLoadingDataSources, setIsLoadingDataSources] = useState(false);
+  // Mixpanel project picker
+  const [mixpanelProjects, setMixpanelProjects] = useState<Array<{ id: number; name: string; mcpEnabled: boolean }>>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [importJson, setImportJson] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
   const [digestFrequency, setDigestFrequency] = useState<'off' | 'daily' | 'weekly' | 'monthly'>('off');
@@ -183,7 +187,25 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
       setIsLoadingDataSources(true);
       fetch(`/api/channels/${channel.id}/data-sources`)
         .then(r => r.json())
-        .then(data => setDataSources(data.sources || []))
+        .then(data => {
+          const sources = data.sources || [];
+          setDataSources(sources);
+          // If Mixpanel is connected, fetch projects
+          if (sources.find((ds: { provider: string }) => ds.provider === 'mixpanel')) {
+            setIsLoadingProjects(true);
+            fetch(`/api/channels/${channel.id}/data-sources/projects`)
+              .then(r => r.json())
+              .then(projData => {
+                setMixpanelProjects(projData.projects || []);
+                setSelectedProjectId(projData.selectedProjectId ?? null);
+              })
+              .catch(() => {})
+              .finally(() => setIsLoadingProjects(false));
+          } else {
+            setMixpanelProjects([]);
+            setSelectedProjectId(null);
+          }
+        })
         .catch(() => {})
         .finally(() => setIsLoadingDataSources(false));
 
@@ -558,21 +580,55 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
             <div className="space-y-2">
               {/* Mixpanel */}
               {dataSources.find(ds => ds.provider === 'mixpanel') ? (
-                <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200">Mixpanel</span>
-                    <span className="text-xs text-green-600 dark:text-green-400">Connected</span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-3 py-2 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-500" />
+                      <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200">Mixpanel</span>
+                      <span className="text-xs text-green-600 dark:text-green-400">Connected</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await fetch(`/api/channels/${channel.id}/data-sources?provider=mixpanel`, { method: 'DELETE' });
+                        setDataSources(prev => prev.filter(ds => ds.provider !== 'mixpanel'));
+                        setMixpanelProjects([]);
+                        setSelectedProjectId(null);
+                      }}
+                      className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
+                    >
+                      Disconnect
+                    </button>
                   </div>
-                  <button
-                    onClick={async () => {
-                      await fetch(`/api/channels/${channel.id}/data-sources?provider=mixpanel`, { method: 'DELETE' });
-                      setDataSources(prev => prev.filter(ds => ds.provider !== 'mixpanel'));
-                    }}
-                    className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
-                  >
-                    Disconnect
-                  </button>
+                  {/* Mixpanel Project Picker */}
+                  {isLoadingProjects ? (
+                    <div className="text-xs text-neutral-400 px-3">Loading projects...</div>
+                  ) : mixpanelProjects.length > 0 ? (
+                    <div className="px-3">
+                      <label className="text-xs text-neutral-500 dark:text-neutral-400 mb-1 block">Project</label>
+                      <select
+                        value={selectedProjectId ?? ''}
+                        onChange={async (e) => {
+                          const projId = parseInt(e.target.value, 10);
+                          const proj = mixpanelProjects.find(p => p.id === projId);
+                          if (!proj) return;
+                          setSelectedProjectId(projId);
+                          await fetch(`/api/channels/${channel.id}/data-sources/project`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ projectId: projId, projectName: proj.name }),
+                          });
+                        }}
+                        className="w-full text-sm rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 py-1.5 text-neutral-800 dark:text-neutral-200"
+                      >
+                        <option value="">Select a project...</option>
+                        {mixpanelProjects.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}{p.mcpEnabled ? '' : ' (MCP not enabled)'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <a

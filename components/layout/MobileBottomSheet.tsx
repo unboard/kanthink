@@ -1201,6 +1201,11 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [showCoverPrompt, setShowCoverPrompt] = useState(false);
   const [coverPromptText, setCoverPromptText] = useState('');
+  // Mixpanel project picker
+  const [dataSources, setDataSources] = useState<Array<{ id: string; provider: string; status: string }>>([]);
+  const [mixpanelProjects, setMixpanelProjects] = useState<Array<{ id: number; name: string; mcpEnabled: boolean }>>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
 
   // Sync form state when channel changes
   useEffect(() => {
@@ -1212,6 +1217,28 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
       setIncludeBacksideInAI(currentChannel.includeBacksideInAI ?? false);
       setIsGlobalHelp(currentChannel.isGlobalHelp ?? false);
       setCoverImageUrl(currentChannel.coverImageUrl || '');
+      // Fetch data sources
+      fetch(`/api/channels/${currentChannel.id}/data-sources`)
+        .then(r => r.json())
+        .then(data => {
+          const sources = data.sources || [];
+          setDataSources(sources);
+          if (sources.find((ds: { provider: string }) => ds.provider === 'mixpanel')) {
+            setIsLoadingProjects(true);
+            fetch(`/api/channels/${currentChannel.id}/data-sources/projects`)
+              .then(r => r.json())
+              .then(projData => {
+                setMixpanelProjects(projData.projects || []);
+                setSelectedProjectId(projData.selectedProjectId ?? null);
+              })
+              .catch(() => {})
+              .finally(() => setIsLoadingProjects(false));
+          } else {
+            setMixpanelProjects([]);
+            setSelectedProjectId(null);
+          }
+        })
+        .catch(() => {});
     }
   }, [currentChannel?.id]);
 
@@ -1477,13 +1504,66 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
               <label className="mb-1.5 block text-xs font-semibold text-neutral-500 uppercase tracking-wide">
                 Data Sources
               </label>
-              <a
-                href={`/api/auth/mixpanel?channelId=${currentChannelId}`}
-                className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:border-violet-400 transition-colors"
-              >
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Mixpanel</span>
-                <span className="text-xs text-neutral-400 ml-auto">Connect →</span>
-              </a>
+              {dataSources.find(ds => ds.provider === 'mixpanel') ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-500" />
+                      <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200">Mixpanel</span>
+                      <span className="text-xs text-green-600 dark:text-green-400">Connected</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await fetch(`/api/channels/${currentChannelId}/data-sources?provider=mixpanel`, { method: 'DELETE' });
+                        setDataSources(prev => prev.filter(ds => ds.provider !== 'mixpanel'));
+                        setMixpanelProjects([]);
+                        setSelectedProjectId(null);
+                      }}
+                      className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                  {/* Mixpanel Project Picker */}
+                  {isLoadingProjects ? (
+                    <div className="text-xs text-neutral-400 px-3">Loading projects...</div>
+                  ) : mixpanelProjects.length > 0 ? (
+                    <div className="px-3">
+                      <label className="text-xs text-neutral-500 dark:text-neutral-400 mb-1 block">Project</label>
+                      <select
+                        value={selectedProjectId ?? ''}
+                        onChange={async (e) => {
+                          const projId = parseInt(e.target.value, 10);
+                          const proj = mixpanelProjects.find(p => p.id === projId);
+                          if (!proj) return;
+                          setSelectedProjectId(projId);
+                          await fetch(`/api/channels/${currentChannelId}/data-sources/project`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ projectId: projId, projectName: proj.name }),
+                          });
+                        }}
+                        className="w-full text-sm rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 py-1.5 text-neutral-800 dark:text-neutral-200"
+                      >
+                        <option value="">Select a project...</option>
+                        {mixpanelProjects.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}{p.mcpEnabled ? '' : ' (MCP not enabled)'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <a
+                  href={`/api/auth/mixpanel?channelId=${currentChannelId}`}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:border-violet-400 transition-colors"
+                >
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Mixpanel</span>
+                  <span className="text-xs text-neutral-400 ml-auto">Connect →</span>
+                </a>
+              )}
               <p className="text-xs text-neutral-500 mt-1.5">Connect data sources so AI can query them via @mention.</p>
             </div>
 
