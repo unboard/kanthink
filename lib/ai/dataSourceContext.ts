@@ -306,12 +306,19 @@ export async function queryMixpanelForChat(
       const eventNames: string[] = [];
       try {
         const eventsData = JSON.parse(events.result);
-        if (Array.isArray(eventsData)) {
-          eventsData.forEach((e: { name?: string }) => { if (e.name) eventNames.push(e.name); });
+        if (eventsData?.events && Array.isArray(eventsData.events)) {
+          // Format: { events: ["name1", "name2"], count: N }
+          eventsData.events.forEach((name: string) => eventNames.push(name));
+        } else if (Array.isArray(eventsData)) {
+          eventsData.forEach((e: string | { name?: string }) => {
+            if (typeof e === 'string') eventNames.push(e);
+            else if (e.name) eventNames.push(e.name);
+          });
         } else if (typeof eventsData === 'object') {
           Object.keys(eventsData).forEach(k => eventNames.push(k));
         }
       } catch { /* events might be plain text */ }
+      console.log('[MCP] Found', eventNames.length, 'events, first 5:', eventNames.slice(0, 5));
 
       // Try to match the user's question to an event name
       const questionLower = userQuestion.toLowerCase().replace(/@mixpanel/gi, '').trim();
