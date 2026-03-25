@@ -75,7 +75,7 @@ export async function GET(request: Request) {
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);
-  authUrl.searchParams.set('scope', 'projects analysis events insights segmentation retention data:read funnels flows data_definitions');
+  authUrl.searchParams.set('scope', 'projects analysis events insights segmentation retention data:read funnels flows data_definitions dashboard_reports bookmarks user_details');
   authUrl.searchParams.set('code_challenge', codeChallenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
   authUrl.searchParams.set('state', state);
