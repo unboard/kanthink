@@ -505,6 +505,7 @@ export async function queryMixpanelForChat(
           });
           if (result.result) {
             console.log(`[MCP] Breakdown succeeded: ${attempt.label}`);
+            console.log(`[MCP] Breakdown data preview:`, result.result.slice(0, 500));
             profileResult = result;
             break;
           } else {
@@ -554,7 +555,7 @@ export async function queryMixpanelForChat(
       parts.push(`\n>>> COMPARISON DATA (last 7 days, daily breakdown) <<<\n${comparisonResult.result.slice(0, 3000)}`);
     }
     if (profileResult.result) {
-      parts.push(`\n>>> USER-LEVEL DATA <<<\n${profileResult.result.slice(0, 3000)}`);
+      parts.push(`\n>>> USER-LEVEL EMAIL DATA (individual users broken down by email) <<<\nThe data below contains individual user emails. Present them to the user in a table or list.\n${profileResult.result.slice(0, 5000)}`);
     }
 
     // Log any errors for debugging
@@ -569,7 +570,7 @@ export async function queryMixpanelForChat(
       return '\n\n[Mixpanel connected but no data returned — the MCP query may have failed. Check Vercel logs for details.]';
     }
 
-    parts.push('\n⚠️ CRITICAL — READ BEFORE ANSWERING:\n1. ONLY cite numbers that appear VERBATIM in the "QUERY RESULTS" section above. Copy-paste them exactly as they appear.\n2. NEVER invent, estimate, round, or fabricate numbers. The number 56 is not 5. The number 8559 is not 8500. Copy the exact digits.\n3. Before writing any number in your response, find it in the QUERY RESULTS section and verify it matches character-for-character.\n4. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n5. If no QUERY RESULTS section appears above, say "I could not retrieve data for this query" — do NOT make up numbers.\n6. When including a chart, use the EXACT data points from the query results.\n7. For comparison queries, calculate the exact percent change from the data provided. Show both numbers and the formula.');
+    parts.push('\n⚠️ CRITICAL — READ BEFORE ANSWERING:\n1. ONLY cite numbers that appear VERBATIM in the "QUERY RESULTS" section above. Copy-paste them exactly as they appear.\n2. NEVER invent, estimate, round, or fabricate numbers. The number 56 is not 5. The number 8559 is not 8500. Copy the exact digits.\n3. Before writing any number in your response, find it in the QUERY RESULTS section and verify it matches character-for-character.\n4. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n5. If no QUERY RESULTS section appears above, say "I could not retrieve data for this query" — do NOT make up numbers.\n6. When including a chart, use the EXACT data points from the query results.\n7. For comparison queries, calculate the exact percent change from the data provided. Show both numbers and the formula.\n8. If a "USER-LEVEL EMAIL DATA" section appears above, it contains individual user emails from a Mixpanel breakdown query. Present ALL emails from that section to the user — do NOT say you cannot access them.');
 
     return parts.join('\n');
   } catch (err) {
