@@ -23,9 +23,11 @@ export async function GET(request: Request) {
 
   // Decode state
   let channelId: string;
+  let clientId: string;
   try {
     const state = JSON.parse(Buffer.from(stateEncoded, 'base64url').toString());
     channelId = state.channelId;
+    clientId = state.clientId;
   } catch {
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL || 'https://www.kanthink.com'}/?error=mixpanel_invalid_state`);
   }
@@ -42,7 +44,7 @@ export async function GET(request: Request) {
   // Exchange code for tokens
   const region = process.env.MIXPANEL_REGION || 'us';
   const regionPrefix = region === 'eu' ? 'eu.' : region === 'in' ? 'in.' : '';
-  const tokenUrl = `https://${regionPrefix}mixpanel.com/oauth/mcp/token/`;
+  const tokenUrl = `https://${regionPrefix}mixpanel.com/oauth/token/`;
   const redirectUri = `${process.env.NEXTAUTH_URL || 'https://www.kanthink.com'}/api/auth/mixpanel/callback`;
 
   try {
@@ -52,6 +54,7 @@ export async function GET(request: Request) {
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code,
+        client_id: clientId,
         redirect_uri: redirectUri,
         code_verifier: codeVerifier,
       }),
