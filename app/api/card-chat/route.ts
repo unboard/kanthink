@@ -462,7 +462,10 @@ export async function POST(request: Request) {
 
     // Query Mixpanel if connected and user is asking about analytics
     let mixpanelContext = '';
-    if (channelId && detectsMixpanelIntent(questionContent)) {
+    const hasMixpanelIntent = channelId && detectsMixpanelIntent(questionContent);
+    if (hasMixpanelIntent) {
+      // Mixpanel takes priority over web search — we have real data
+      useWebSearch = false;
       try {
         mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
       } catch (err) {
