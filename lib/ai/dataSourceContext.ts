@@ -479,26 +479,30 @@ export async function queryMixpanelForChat(
       // If this is a profile/PII query, try to get user-level data
       if (isProfileQuery(questionLower) && matchedEvent) {
         console.log('[MCP] Profile query detected. Available tools:', toolsContext);
+        const { dateRange, unit } = parseDateRange(questionLower);
 
-        // Strategy 1: Try known profile/engage MCP tools
-        const profileToolNames = toolsContext
-          .split('\n')
-          .map(l => l.replace(/^-\s*/, '').split(':')[0].trim())
-          .filter(name => /profile|engage|user|export/i.test(name));
+        // Strategy 1: Try breakdown by $email property (most likely to have emails)
+        const emailBreakdownResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+          project_id: projectId,
+          report_type: 'insights',
+          report: {
+            name: 'User Breakdown',
+            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'unique' } }],
+            chartType: 'table',
+            unit,
+            dateRange,
+            breakdowns: [{ property: '$email', type: 'event' }],
+          },
+        });
 
-        for (const toolName of profileToolNames) {
-          profileResult = await callMcpTool(mcpUrl, token, toolName, { project_id: projectId });
-          if (profileResult.result && !profileResult.error) {
-            console.log(`[MCP] Profile query succeeded with ${toolName}`);
-            break;
-          }
-        }
+        if (emailBreakdownResult.result) {
+          console.log('[MCP] Email breakdown query succeeded');
+          profileResult = emailBreakdownResult;
+        } else {
+          console.log('[MCP] $email breakdown failed:', emailBreakdownResult.error);
 
-        // Strategy 2: Use Run-Query with a breakdown by email/$email property
-        // This returns user-level data grouped by email if tracked as an event property
-        if (!profileResult.result) {
-          const { dateRange, unit } = parseDateRange(questionLower);
-          const emailBreakdownResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+          // Strategy 2: Try "email" (non-prefixed) as event property
+          const emailPlainResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
             project_id: projectId,
             report_type: 'insights',
             report: {
@@ -507,15 +511,17 @@ export async function queryMixpanelForChat(
               chartType: 'table',
               unit,
               dateRange,
-              breakdowns: [{ property: '$email', type: 'event' }],
+              breakdowns: [{ property: 'email', type: 'event' }],
             },
           });
-          if (emailBreakdownResult.result) {
-            console.log('[MCP] Email breakdown query succeeded');
-            profileResult = emailBreakdownResult;
+
+          if (emailPlainResult.result) {
+            console.log('[MCP] Plain email breakdown query succeeded');
+            profileResult = emailPlainResult;
           } else {
-            console.log('[MCP] Email breakdown failed:', emailBreakdownResult.error);
-            // Try with $distinct_id as fallback
+            console.log('[MCP] Plain email breakdown failed:', emailPlainResult.error);
+
+            // Strategy 3: Try $distinct_id as fallback
             const distinctIdResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
               project_id: projectId,
               report_type: 'insights',
@@ -528,13 +534,31 @@ export async function queryMixpanelForChat(
                 breakdowns: [{ property: '$distinct_id', type: 'event' }],
               },
             });
+
             if (distinctIdResult.result) {
               console.log('[MCP] Distinct ID breakdown query succeeded');
               profileResult = distinctIdResult;
             } else {
-              profileResult = {
-                error: `Could not retrieve user-level data. The Mixpanel MCP connection only supports aggregated queries. Email breakdown error: ${emailBreakdownResult.error || 'unknown'}. Available MCP tools: ${toolsContext || 'unknown'}. To get user emails, export from the Mixpanel UI (Users tab) or use the Engage API directly.`
-              };
+              // Strategy 4: Try any explicitly profile-related MCP tools (strict matching)
+              const profileToolNames = toolsContext
+                .split('\n')
+                .map(l => l.replace(/^-\s*/, '').split(':')[0].trim())
+                .filter(name => /^(query|get|list|search)[-_]?(profile|engage)/i.test(name));
+
+              for (const toolName of profileToolNames) {
+                const toolResult = await callMcpTool(mcpUrl, token, toolName, { project_id: projectId });
+                if (toolResult.result && !toolResult.error) {
+                  console.log(`[MCP] Profile tool succeeded: ${toolName}`);
+                  profileResult = toolResult;
+                  break;
+                }
+              }
+
+              if (!profileResult.result) {
+                profileResult = {
+                  error: `Could not retrieve user-level email data. Tried breakdown by $email, email, and $distinct_id — none returned results. This likely means email is not tracked as an event property for "${matchedEvent}". To get user emails, check Mixpanel's Users tab or use a property name that matches your tracking setup.`
+                };
+              }
             }
           }
         }
@@ -555,14 +579,16 @@ export async function queryMixpanelForChat(
       parts.push(`\nTracked events:\n${events.result.slice(0, 2000)}`);
     }
 
+    // Query results go LAST and are clearly marked — this is the data the AI must use
+    // Putting it last (closest to the user message) reduces hallucination
     if (queryResult.result) {
-      parts.push(`\nQuery results:\n${queryResult.result.slice(0, 3000)}`);
+      parts.push(`\n>>> QUERY RESULTS (USE THESE EXACT NUMBERS) <<<\n${queryResult.result.slice(0, 3000)}`);
     }
     if (comparisonResult.result) {
-      parts.push(`\nComparison data (last 7 days, daily breakdown):\n${comparisonResult.result.slice(0, 3000)}`);
+      parts.push(`\n>>> COMPARISON DATA (last 7 days, daily breakdown) <<<\n${comparisonResult.result.slice(0, 3000)}`);
     }
     if (profileResult.result) {
-      parts.push(`\nUser profile data:\n${profileResult.result.slice(0, 3000)}`);
+      parts.push(`\n>>> USER-LEVEL DATA <<<\n${profileResult.result.slice(0, 3000)}`);
     }
 
     // Log any errors for debugging
@@ -577,7 +603,7 @@ export async function queryMixpanelForChat(
       return '\n\n[Mixpanel connected but no data returned — the MCP query may have failed. Check Vercel logs for details.]';
     }
 
-    parts.push('\nCRITICAL RULES:\n1. ONLY cite numbers that appear VERBATIM in the "Query results" or "Comparison data" sections above. Copy them exactly.\n2. NEVER estimate, round differently, or fabricate numbers. If the data says 8559, say 8559 — not 8471 or 8500.\n3. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n4. If no query results appear above, say "I could not retrieve data for this query" — do NOT make up numbers.\n5. When including a chart, use the EXACT data points from the query results.\n6. For comparison queries, calculate the exact percent change from the data provided. Show both numbers and the formula.');
+    parts.push('\n⚠️ CRITICAL — READ BEFORE ANSWERING:\n1. ONLY cite numbers that appear VERBATIM in the "QUERY RESULTS" section above. Copy-paste them exactly as they appear.\n2. NEVER invent, estimate, round, or fabricate numbers. The number 56 is not 5. The number 8559 is not 8500. Copy the exact digits.\n3. Before writing any number in your response, find it in the QUERY RESULTS section and verify it matches character-for-character.\n4. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n5. If no QUERY RESULTS section appears above, say "I could not retrieve data for this query" — do NOT make up numbers.\n6. When including a chart, use the EXACT data points from the query results.\n7. For comparison queries, calculate the exact percent change from the data provided. Show both numbers and the formula.');
 
     return parts.join('\n');
   } catch (err) {
