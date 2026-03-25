@@ -102,6 +102,7 @@ async function callMcpTool(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
         'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({
@@ -118,18 +119,37 @@ async function callMcpTool(
       return { error: `HTTP ${res.status}: ${errText.slice(0, 200)}` };
     }
 
-    const data = await res.json();
-    if (data?.error) {
-      console.error(`[MCP] ${toolName} RPC error:`, data.error);
-      return { error: data.error.message || JSON.stringify(data.error) };
+    // Mixpanel MCP returns SSE format (event: message\ndata: {...})
+    // Parse the SSE to extract JSON
+    const rawText = await res.text();
+    let data: Record<string, unknown>;
+    try {
+      // Try plain JSON first
+      data = JSON.parse(rawText);
+    } catch {
+      // Parse SSE: find the last "data: " line with JSON
+      const dataLines = rawText.split('\n').filter(l => l.startsWith('data: '));
+      const lastDataLine = dataLines[dataLines.length - 1];
+      if (lastDataLine) {
+        data = JSON.parse(lastDataLine.slice(6));
+      } else {
+        return { error: `Unexpected response format: ${rawText.slice(0, 200)}` };
+      }
     }
 
-    const content = data?.result?.content;
+    if (data?.error) {
+      console.error(`[MCP] ${toolName} RPC error:`, data.error);
+      const err = data.error as Record<string, unknown>;
+      return { error: (err.message as string) || JSON.stringify(err) };
+    }
+
+    const result = data?.result as Record<string, unknown> | undefined;
+    const content = result?.content;
     if (content && Array.isArray(content)) {
       return { result: content.map((c: { text?: string }) => c.text || '').join('\n') };
     }
 
-    return { result: JSON.stringify(data?.result || data).slice(0, 3000) };
+    return { result: JSON.stringify(result || data).slice(0, 3000) };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[MCP] ${toolName} exception:`, msg);
@@ -174,12 +194,20 @@ export async function queryMixpanelForChat(
     try {
       const toolsRes = await fetch(mcpUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
       });
       if (toolsRes.ok) {
-        const toolsData = await toolsRes.json();
-        const tools = toolsData?.result?.tools;
+        const toolsRaw = await toolsRes.text();
+        let toolsData: Record<string, unknown>;
+        try {
+          toolsData = JSON.parse(toolsRaw);
+        } catch {
+          const dataLines = toolsRaw.split('\n').filter((l: string) => l.startsWith('data: '));
+          toolsData = dataLines.length > 0 ? JSON.parse(dataLines[dataLines.length - 1].slice(6)) : {};
+        }
+        const toolsResult = toolsData?.result as Record<string, unknown> | undefined;
+        const tools = toolsResult?.tools;
         if (Array.isArray(tools)) {
           toolsContext = tools.map((t: { name: string; description?: string }) =>
             `- ${t.name}: ${t.description || 'no description'}`
@@ -190,11 +218,22 @@ export async function queryMixpanelForChat(
       console.error('[MCP] tools/list failed:', e);
     }
 
-    // Step 2: Fetch events for context
-    const events = await callMcpTool(mcpUrl, token, 'Get-Events');
-
-    // Step 3: Fetch projects for context
+    // Step 2: Fetch projects to get project IDs
     const projects = await callMcpTool(mcpUrl, token, 'Get-Projects');
+
+    // Step 3: Extract first project ID and fetch events
+    let projectId: number | null = null;
+    if (projects.result) {
+      try {
+        const projectData = JSON.parse(projects.result);
+        const firstKey = Object.keys(projectData)[0];
+        if (firstKey) projectId = parseInt(firstKey, 10);
+      } catch { /* project result might not be JSON */ }
+    }
+
+    const events = projectId
+      ? await callMcpTool(mcpUrl, token, 'Get-Events', { project_id: projectId })
+      : { error: 'No project found to query events from' };
 
     // Build the context for the AI
     const parts: string[] = ['\n\n--- MIXPANEL DATA (LIVE CONNECTION) ---'];
