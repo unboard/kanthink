@@ -400,7 +400,7 @@ export async function queryMixpanelForChat(
       return '\n\n[Mixpanel connected but no data returned — the MCP query may have failed. Check Vercel logs for details.]';
     }
 
-    parts.push('\nIMPORTANT: ONLY use numbers and data that appear in the query results above. NEVER fabricate, estimate, or hallucinate data. If the query results don\'t contain data for what the user asked, say so clearly and list what data IS available. If an event doesn\'t exist in the tracked events list, tell the user it\'s not being tracked.');
+    parts.push('\nCRITICAL RULES:\n1. ONLY cite numbers that appear VERBATIM in the "Query results" section above. Copy them exactly.\n2. NEVER estimate, round differently, or fabricate numbers. If the data says 8559, say 8559 — not 8471 or 8500.\n3. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n4. If no query results appear above, say "I could not retrieve data for this query" — do NOT make up numbers.\n5. When including a chart, use the EXACT data points from the query results.');
 
     return parts.join('\n');
   } catch (err) {

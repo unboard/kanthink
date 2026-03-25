@@ -483,6 +483,10 @@ export async function POST(request: Request) {
     }
 
     // Build prompt with web context + mixpanel data + data source context
+    if (mixpanelContext) {
+      console.log('[Card Chat] Mixpanel context length:', mixpanelContext.length);
+      console.log('[Card Chat] Mixpanel context preview:', mixpanelContext.slice(0, 500));
+    }
     const messages = buildPrompt(questionContent, context, imageUrls, webContext + mixpanelContext + dataSourceContext);
 
     try {
