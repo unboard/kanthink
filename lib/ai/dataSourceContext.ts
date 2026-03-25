@@ -346,7 +346,7 @@ export async function queryMixpanelForChat(
 
     // Build the context for the AI
     const parts: string[] = ['\n\n--- MIXPANEL DATA (LIVE CONNECTION) ---'];
-    parts.push('Mixpanel is connected to this channel. Below is real data from the account.');
+    parts.push(`Today's date is ${new Date().toISOString().split('T')[0]}. Mixpanel is connected to this channel. Below is real data from the account.`);
 
     if (toolsContext) {
       parts.push(`\nAvailable Mixpanel tools:\n${toolsContext}`);
