@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         token_endpoint_auth_method: 'none',
-        scope: 'projects analysis events insights segmentation retention data:read funnels flows data_definitions',
+        scope: 'projects analysis events insights segmentation retention data:read funnels flows data_definitions dashboard_reports bookmarks user_details',
       }),
     });
 

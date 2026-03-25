@@ -235,6 +235,45 @@ export async function queryMixpanelForChat(
       ? await callMcpTool(mcpUrl, token, 'Get-Events', { project_id: projectId })
       : { error: 'No project found to query events from' };
 
+    // Step 4: Try to run a basic query based on the user's question
+    let queryResult: { result?: string; error?: string } = {};
+    if (projectId && events.result) {
+      // Extract event names from the events list
+      const eventNames: string[] = [];
+      try {
+        const eventsData = JSON.parse(events.result);
+        if (Array.isArray(eventsData)) {
+          eventsData.forEach((e: { name?: string }) => { if (e.name) eventNames.push(e.name); });
+        } else if (typeof eventsData === 'object') {
+          Object.keys(eventsData).forEach(k => eventNames.push(k));
+        }
+      } catch { /* events might be plain text */ }
+
+      // Try to match the user's question to an event name
+      const questionLower = userQuestion.toLowerCase().replace(/@mixpanel/gi, '').trim();
+      const matchedEvent = eventNames.find(e =>
+        questionLower.includes(e.toLowerCase().replace(/\$/g, '').replace(/_/g, ' ')) ||
+        questionLower.includes(e.toLowerCase()) ||
+        e.toLowerCase().includes('page_view') && questionLower.includes('page') ||
+        e.toLowerCase().includes('session') && questionLower.includes('session') ||
+        e.toLowerCase().includes('sign_up') && questionLower.includes('sign')
+      ) || eventNames.find(e => e.includes('page_view')) || eventNames[0];
+
+      if (matchedEvent) {
+        queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+          project_id: projectId,
+          report_type: 'insights',
+          report: {
+            name: 'Query',
+            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'total' } }],
+            chartType: 'line',
+            unit: 'day',
+            dateRange: { type: 'relative', range: { unit: 'day', value: 7 } },
+          },
+        });
+      }
+    }
+
     // Build the context for the AI
     const parts: string[] = ['\n\n--- MIXPANEL DATA (LIVE CONNECTION) ---'];
     parts.push('Mixpanel is connected to this channel. Below is real data from the account.');
@@ -249,9 +288,14 @@ export async function queryMixpanelForChat(
       parts.push(`\nTracked events:\n${events.result.slice(0, 2000)}`);
     }
 
+    if (queryResult.result) {
+      parts.push(`\nQuery results (last 7 days):\n${queryResult.result.slice(0, 3000)}`);
+    }
+
     // Log any errors for debugging
     if (events.error) parts.push(`\n[Events query error: ${events.error}]`);
     if (projects.error) parts.push(`\n[Projects query error: ${projects.error}]`);
+    if (queryResult.error) parts.push(`\n[Query error: ${queryResult.error}]`);
 
     if (parts.length <= 2) {
       // Nothing came back — log it
