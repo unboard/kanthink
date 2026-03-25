@@ -297,22 +297,27 @@ async function buildQueryWithLLM(
 
   const prompt = `You are a Mixpanel query builder. Given the user's question and the Mixpanel query schema, output ONLY valid JSON for the "report" parameter of Run-Query.
 
+WORKING EXAMPLE — this format is confirmed to work:
+{"name":"My Query","metrics":[{"eventName":"page_view","measurement":{"type":"basic","math":"total"}}],"chartType":"line","unit":"day","dateRange":{"type":"relative","range":{"unit":"day","value":7}}}
+
+Build on this format. The required fields are: name, metrics, chartType, unit, dateRange.
+
 Available events: ${JSON.stringify(eventNames)}
 User profile properties: ${userProperties}
 ${conversationContext}
 
-Query schema for insights reports:
-${querySchema.slice(0, 6000)}
+FULL query schema (follow this EXACTLY for breakdowns, filters, etc.):
+${querySchema.slice(0, 8000)}
 
 User question: "${userQuestion}"
 
 Rules:
-- Output ONLY the JSON object for the "report" parameter. No explanation, no markdown, no wrapping.
-- Match events by name from the available list. If no exact match, pick the closest.
-- For breakdowns by user properties, follow the exact schema format.
-- For date-specific queries like "on March 25, 2026", use absolute date ranges with from/to in ISO format.
-- Use chartType "table" for breakdown/list queries, "line" for trends.
-- For questions about user emails/who/list of users, add a breakdown by the email user property.
+- Output ONLY the JSON object. No explanation, no markdown fences, no wrapping.
+- ALWAYS include: name (string), metrics (array), chartType, unit, dateRange.
+- metrics format: [{"eventName": "...", "measurement": {"type": "basic", "math": "total|unique"}}]
+- For breakdowns, follow the EXACT breakdown schema from above. Every breakdown MUST have a "metric" field (integer, 0 = first metric).
+- For absolute dates like "March 25, 2026", use: {"type":"absolute","from":"2026-03-25","to":"2026-03-25"}
+- Use chartType "table" for breakdown queries, "line" for time series.
 
 Output the JSON:`;
 
@@ -435,8 +440,9 @@ export async function queryMixpanelForChat(
       } catch { /* project result might not be JSON */ }
     }
 
-    // Step 4: Build and execute the query
+    // Step 4: Run queries
     let queryResult: { result?: string; error?: string } = {};
+    let advancedResult: { result?: string; error?: string } = {};
     if (projectId && events.result) {
       // Extract event names
       const eventNames: string[] = [];
@@ -455,71 +461,75 @@ export async function queryMixpanelForChat(
       } catch { /* events might be plain text */ }
       console.log('[MCP] Found', eventNames.length, 'events, first 5:', eventNames.slice(0, 5));
 
-      // Fetch user properties and query schema for LLM-driven query construction
-      let querySchema = '';
-      let userProperties = '';
+      const questionLower = userQuestion.toLowerCase().replace(/@mixpanel/gi, '').trim();
 
+      // ALWAYS run the simple query first — this is proven to work
+      let matchedEvent = eventNames.find(e =>
+        questionLower.includes(e.toLowerCase().replace(/\$/g, '').replace(/_/g, ' ')) ||
+        questionLower.includes(e.toLowerCase())
+      );
+      if (!matchedEvent && previousMessages && previousMessages.length > 0) {
+        const historyEvents = extractEventsFromHistory(previousMessages);
+        for (const histEvent of [...historyEvents].reverse()) {
+          const found = eventNames.find(e =>
+            e.toLowerCase() === histEvent.toLowerCase() ||
+            e.toLowerCase().replace(/_/g, ' ') === histEvent.toLowerCase()
+          );
+          if (found) { matchedEvent = found; break; }
+        }
+      }
+      if (!matchedEvent) {
+        matchedEvent = eventNames.find(e => e.includes('page_view')) || eventNames[0];
+      }
+      if (matchedEvent) {
+        const { dateRange, unit } = parseDateRange(questionLower);
+        const isUnique = questionLower.includes('unique') || questionLower.includes('users');
+        console.log('[MCP] Simple query:', { matchedEvent, dateRange, unit, isUnique });
+        queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+          project_id: projectId,
+          report_type: 'insights',
+          report: {
+            name: 'Query',
+            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: isUnique ? 'unique' : 'total' } }],
+            chartType: 'line',
+            unit,
+            dateRange,
+          },
+        });
+        // If the result is a validation error, clear it
+        if (queryResult.result?.includes('Validation error')) {
+          console.error('[MCP] Simple query returned validation error:', queryResult.result.slice(0, 200));
+          queryResult = {};
+        }
+      }
+
+      // ADDITIONALLY: if we have an LLM, run a schema-aware query for advanced features
+      // (breakdowns, filters, cohorts, etc.)
       if (llm) {
-        // Get the full query schema so the LLM knows the correct format
         const [schemaResult, userPropsResult] = await Promise.all([
           callMcpTool(mcpUrl, token, 'Get-Query-Schema', { report_type: 'insights' }),
           callMcpTool(mcpUrl, token, 'Get-Property-Names', { project_id: projectId, resource_type: 'User' }),
         ]);
-        querySchema = schemaResult.result || '';
-        userProperties = userPropsResult.result || '';
-        if (userProperties) console.log('[MCP] User properties:', userProperties.slice(0, 200));
-      }
+        const querySchema = schemaResult.result || '';
+        const userProperties = userPropsResult.result || '';
 
-      // If we have an LLM, let it construct the query from the schema
-      if (llm && querySchema) {
-        console.log('[MCP] Using LLM to construct query');
-        const report = await buildQueryWithLLM(llm, userQuestion, querySchema, eventNames, userProperties, previousMessages);
-        if (report) {
-          queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
-            project_id: projectId,
-            report_type: 'insights',
-            report,
-          });
-          console.log('[MCP] LLM query result preview:', (queryResult.result || queryResult.error || '').slice(0, 500));
-        }
-      }
-
-      // Fallback: simple hardcoded query if LLM not available or failed
-      if (!queryResult.result) {
-        const questionLower = userQuestion.toLowerCase().replace(/@mixpanel/gi, '').trim();
-        let matchedEvent = eventNames.find(e =>
-          questionLower.includes(e.toLowerCase().replace(/\$/g, '').replace(/_/g, ' ')) ||
-          questionLower.includes(e.toLowerCase())
-        );
-        // Check conversation history
-        if (!matchedEvent && previousMessages && previousMessages.length > 0) {
-          const historyEvents = extractEventsFromHistory(previousMessages);
-          for (const histEvent of [...historyEvents].reverse()) {
-            const found = eventNames.find(e =>
-              e.toLowerCase() === histEvent.toLowerCase() ||
-              e.toLowerCase().replace(/_/g, ' ') === histEvent.toLowerCase()
-            );
-            if (found) { matchedEvent = found; break; }
+        if (querySchema) {
+          console.log('[MCP] Running LLM-constructed query');
+          const report = await buildQueryWithLLM(llm, userQuestion, querySchema, eventNames, userProperties, previousMessages);
+          if (report) {
+            advancedResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+              project_id: projectId,
+              report_type: 'insights',
+              report,
+            });
+            // Discard if it's a validation error
+            if (advancedResult.result?.includes('Validation error')) {
+              console.error('[MCP] LLM query validation error:', advancedResult.result.slice(0, 300));
+              advancedResult = {};
+            } else {
+              console.log('[MCP] LLM query succeeded:', (advancedResult.result || '').slice(0, 300));
+            }
           }
-        }
-        if (!matchedEvent) {
-          matchedEvent = eventNames.find(e => e.includes('page_view')) || eventNames[0];
-        }
-        if (matchedEvent) {
-          const { dateRange, unit } = parseDateRange(questionLower);
-          const isUnique = questionLower.includes('unique') || questionLower.includes('users');
-          console.log('[MCP] Fallback query:', { matchedEvent, dateRange, unit });
-          queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
-            project_id: projectId,
-            report_type: 'insights',
-            report: {
-              name: 'Query',
-              metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: isUnique ? 'unique' : 'total' } }],
-              chartType: 'line',
-              unit,
-              dateRange,
-            },
-          });
         }
       }
     }
@@ -528,19 +538,29 @@ export async function queryMixpanelForChat(
     const parts: string[] = ['\n\n--- MIXPANEL DATA (LIVE CONNECTION) ---'];
     parts.push(`Today's date is ${new Date().toISOString().split('T')[0]}. Mixpanel is connected to this channel.${projectName ? ` Active project: "${projectName}".` : ''} Below is real data from the account.`);
 
+    if (toolsContext) {
+      parts.push(`\nAvailable Mixpanel tools:\n${toolsContext}`);
+    }
+    if (projects.result) {
+      parts.push(`\nProjects:\n${projects.result.slice(0, 1000)}`);
+    }
     if (events.result) {
       parts.push(`\nTracked events:\n${events.result.slice(0, 2000)}`);
     }
 
     // Query results go LAST — closest to the user message reduces hallucination
     if (queryResult.result) {
-      parts.push(`\n>>> QUERY RESULTS (USE THESE EXACT NUMBERS) <<<\n${queryResult.result.slice(0, 5000)}`);
+      parts.push(`\n>>> QUERY RESULTS (USE THESE EXACT NUMBERS) <<<\n${queryResult.result.slice(0, 3000)}`);
+    }
+    if (advancedResult.result) {
+      parts.push(`\n>>> ADVANCED QUERY RESULTS <<<\n${advancedResult.result.slice(0, 5000)}`);
     }
 
     // Log errors
     if (events.error) parts.push(`\n[Events query error: ${events.error}]`);
     if (projects.error) parts.push(`\n[Projects query error: ${projects.error}]`);
     if (queryResult.error) parts.push(`\n[Query error: ${queryResult.error}]`);
+    if (advancedResult.error) parts.push(`\n[Advanced query error: ${advancedResult.error}]`);
 
     if (parts.length <= 2) {
       console.error('[MCP] No data returned from any Mixpanel query');
