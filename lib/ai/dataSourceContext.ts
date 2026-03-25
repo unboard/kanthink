@@ -158,6 +158,70 @@ async function callMcpTool(
 }
 
 /**
+ * Parse a date range from a natural language question.
+ */
+function parseDateRange(question: string): { dateRange: Record<string, unknown>; unit: string } {
+  const q = question.toLowerCase();
+
+  // "today" or "this hour"
+  if (q.includes('today') || q.includes('this hour')) {
+    return { dateRange: { type: 'relative', range: { unit: 'day', value: 1 } }, unit: 'hour' };
+  }
+  // "yesterday"
+  if (q.includes('yesterday')) {
+    return { dateRange: { type: 'relative', range: { unit: 'day', value: 2 } }, unit: 'hour' };
+  }
+  // "this week"
+  if (q.includes('this week')) {
+    return { dateRange: { type: 'relative', range: { unit: 'week', value: 1 } }, unit: 'day' };
+  }
+  // "last week"
+  if (q.includes('last week')) {
+    return { dateRange: { type: 'relative', range: { unit: 'week', value: 2 } }, unit: 'day' };
+  }
+  // "this month"
+  if (q.includes('this month')) {
+    return { dateRange: { type: 'relative', range: { unit: 'month', value: 1 } }, unit: 'day' };
+  }
+  // "last month"
+  if (q.includes('last month')) {
+    return { dateRange: { type: 'relative', range: { unit: 'month', value: 2 } }, unit: 'day' };
+  }
+  // "last N days"
+  const lastNDays = q.match(/last\s+(\d+)\s*days?/);
+  if (lastNDays) {
+    const n = parseInt(lastNDays[1], 10);
+    return { dateRange: { type: 'relative', range: { unit: 'day', value: n } }, unit: n <= 7 ? 'day' : 'week' };
+  }
+  // "last N weeks"
+  const lastNWeeks = q.match(/last\s+(\d+)\s*weeks?/);
+  if (lastNWeeks) {
+    return { dateRange: { type: 'relative', range: { unit: 'week', value: parseInt(lastNWeeks[1], 10) } }, unit: 'day' };
+  }
+  // "last N months"
+  const lastNMonths = q.match(/last\s+(\d+)\s*months?/);
+  if (lastNMonths) {
+    return { dateRange: { type: 'relative', range: { unit: 'month', value: parseInt(lastNMonths[1], 10) } }, unit: 'week' };
+  }
+  // "this year" or "last year"
+  if (q.includes('this year') || q.includes('last year')) {
+    return { dateRange: { type: 'relative', range: { unit: 'month', value: 12 } }, unit: 'month' };
+  }
+  // Specific date like "March 23" or "March 23, 2026" — query last 30 days by day
+  const monthMatch = q.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}/);
+  if (monthMatch) {
+    return { dateRange: { type: 'relative', range: { unit: 'month', value: 1 } }, unit: 'day' };
+  }
+  // "hourly" granularity requested
+  if (q.includes('hourly') || q.includes('by hour')) {
+    return { dateRange: { type: 'relative', range: { unit: 'day', value: 1 } }, unit: 'hour' };
+  }
+
+  // Default: last 30 days
+  return { dateRange: { type: 'relative', range: { unit: 'day', value: 30 } }, unit: 'day' };
+}
+
+/**
  * Query Mixpanel MCP for data relevant to the user's question.
  *
  * Strategy:
@@ -260,15 +324,21 @@ export async function queryMixpanelForChat(
       ) || eventNames.find(e => e.includes('page_view')) || eventNames[0];
 
       if (matchedEvent) {
+        // Parse date range from the user's question
+        const { dateRange, unit } = parseDateRange(questionLower);
+
+        // Determine measurement type (unique vs total)
+        const isUnique = questionLower.includes('unique') || questionLower.includes('distinct') || questionLower.includes('users') || questionLower.includes('visitors');
+
         queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
           project_id: projectId,
           report_type: 'insights',
           report: {
             name: 'Query',
-            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'total' } }],
+            metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: isUnique ? 'unique' : 'total' } }],
             chartType: 'line',
-            unit: 'day',
-            dateRange: { type: 'relative', range: { unit: 'day', value: 7 } },
+            unit,
+            dateRange,
           },
         });
       }
