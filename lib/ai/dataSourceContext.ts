@@ -286,25 +286,32 @@ export async function queryMixpanelForChat(
     const projects = await callMcpTool(mcpUrl, token, 'Get-Projects');
 
     // Step 3: Extract first project ID and fetch events
+    // Step 3: Find a project with MCP enabled by trying Get-Events on each
     let projectId: number | null = null;
     let projectName: string | null = null;
+    let events: { result?: string; error?: string } = { error: 'No projects found' };
+
     if (projects.result) {
       try {
         const projectData = JSON.parse(projects.result) as Record<string, { id: number; name: string }>;
-        // Skip deprecated projects, prefer the last (most recent) one
         const entries = Object.entries(projectData);
-        const nonDeprecated = entries.filter(([, p]) => !p.name.toLowerCase().includes('deprecated'));
-        const pick = nonDeprecated.length > 0 ? nonDeprecated[nonDeprecated.length - 1] : entries[entries.length - 1];
-        if (pick) {
-          projectId = parseInt(pick[0], 10);
-          projectName = pick[1].name;
+        // Skip deprecated, try each until one returns events
+        const sorted = [
+          ...entries.filter(([, p]) => !p.name.toLowerCase().includes('deprecated')),
+          ...entries.filter(([, p]) => p.name.toLowerCase().includes('deprecated')),
+        ];
+
+        for (const [id, proj] of sorted) {
+          const tryEvents = await callMcpTool(mcpUrl, token, 'Get-Events', { project_id: parseInt(id, 10) });
+          if (tryEvents.result && !tryEvents.result.includes('not enabled')) {
+            projectId = parseInt(id, 10);
+            projectName = proj.name;
+            events = tryEvents;
+            break;
+          }
         }
       } catch { /* project result might not be JSON */ }
     }
-
-    const events = projectId
-      ? await callMcpTool(mcpUrl, token, 'Get-Events', { project_id: projectId })
-      : { error: 'No project found to query events from' };
 
     // Step 4: Try to run a basic query based on the user's question
     let queryResult: { result?: string; error?: string } = {};
