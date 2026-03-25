@@ -48,7 +48,13 @@ export function buildDataSourcePromptContext(sources: DataSourceInfo[]): string 
 
   for (const source of active) {
     if (source.provider === 'mixpanel') {
-      parts.push(`- **Mixpanel**: Connected and live. When the user asks about analytics, metrics, events, funnels, retention, or uses @mixpanel, real Mixpanel data will be injected into this conversation automatically. Use that data to give concrete answers with real numbers. Don't tell the user to go check Mixpanel — you have the data.`);
+      parts.push(`- **Mixpanel**: Connected and live. When the user asks about analytics, metrics, events, funnels, retention, or uses @mixpanel, real Mixpanel data will be injected into this conversation automatically. Use that data to give concrete answers with real numbers. Don't tell the user to go check Mixpanel — you have the data.
+
+When you have time-series or numerical data to display, include a chart using this format:
+\`\`\`chart
+{"type":"area","title":"Chart Title","data":[{"label":"Mon","value":120},{"label":"Tue","value":150}],"color":"violet","label":"Users"}
+\`\`\`
+Chart types: "area", "bar", "line". Colors: "violet", "blue", "green", "orange", "pink". For two series, add "value2", "color2", "label2". Place the chart block after your text explanation.`);
     }
   }
 

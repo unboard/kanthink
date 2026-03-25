@@ -14,6 +14,7 @@ import { SmartSnippet } from './SmartSnippet';
 import { TaskCheckbox } from './TaskCheckbox';
 import { ImageTheater } from '@/components/ui/ImageTheater';
 import { LinkPreview, extractUrls } from './LinkPreview';
+import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
 import { WhiteboardPreview } from './WhiteboardPreview';
 import { SpeakerButton } from '@/components/ui/SpeakerButton';
 
@@ -456,25 +457,36 @@ export function ChatMessage({
               <span className="text-xs text-neutral-400 ml-auto">Enter to save, Esc to cancel</span>
             </div>
           </div>
-        ) : message.content ? (
-          <div
-            className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-neutral dark:prose-invert max-w-none break-words overflow-hidden
-            prose-headings:font-semibold prose-headings:text-neutral-900 dark:prose-headings:text-neutral-100
-            prose-h1:text-base prose-h1:mt-3 prose-h1:mb-2
-            prose-h2:text-sm prose-h2:mt-2.5 prose-h2:mb-1.5
-            prose-h3:text-sm prose-h3:mt-2 prose-h3:mb-1
-            prose-p:my-1.5 prose-p:leading-relaxed
-            prose-ul:my-1.5 prose-ol:my-1.5
-            prose-li:my-0.5
-            prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
-            prose-strong:text-neutral-900 dark:prose-strong:text-neutral-100
-            prose-code:text-xs prose-code:bg-neutral-100 dark:prose-code:bg-neutral-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
-            prose-pre:bg-neutral-100 dark:prose-pre:bg-neutral-800 prose-pre:text-xs"
-            onDoubleClick={canEdit ? () => { setEditContent(message.content); setIsEditing(true); } : undefined}
-          >
-            {renderContentWithMentions(message.content, { onOpenCard, onOpenTask })}
-          </div>
-        ) : null}
+        ) : message.content ? (() => {
+          // Parse chart directives from AI responses
+          const { cleanText, charts } = isAI ? parseChartDirectives(message.content) : { cleanText: message.content, charts: [] };
+          return (
+            <>
+              {cleanText && (
+                <div
+                  className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-neutral dark:prose-invert max-w-none break-words overflow-hidden
+                  prose-headings:font-semibold prose-headings:text-neutral-900 dark:prose-headings:text-neutral-100
+                  prose-h1:text-base prose-h1:mt-3 prose-h1:mb-2
+                  prose-h2:text-sm prose-h2:mt-2.5 prose-h2:mb-1.5
+                  prose-h3:text-sm prose-h3:mt-2 prose-h3:mb-1
+                  prose-p:my-1.5 prose-p:leading-relaxed
+                  prose-ul:my-1.5 prose-ol:my-1.5
+                  prose-li:my-0.5
+                  prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
+                  prose-strong:text-neutral-900 dark:prose-strong:text-neutral-100
+                  prose-code:text-xs prose-code:bg-neutral-100 dark:prose-code:bg-neutral-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
+                  prose-pre:bg-neutral-100 dark:prose-pre:bg-neutral-800 prose-pre:text-xs"
+                  onDoubleClick={canEdit ? () => { setEditContent(message.content); setIsEditing(true); } : undefined}
+                >
+                  {renderContentWithMentions(cleanText, { onOpenCard, onOpenTask })}
+                </div>
+              )}
+              {charts.map((chart, i) => (
+                <KanChart key={i} config={chart} />
+              ))}
+            </>
+          );
+        })() : null}
 
         {/* Link previews */}
         {message.content && extractUrls(message.content)
