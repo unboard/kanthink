@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
 import { channelChatThreads } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
-import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat } from '@/lib/ai/dataSourceContext';
+import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
 
 export const runtime = 'nodejs';
 
@@ -383,7 +383,12 @@ export async function POST(request: Request) {
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
         if (hasMixpanel) {
           useWebSearch = false;
-          mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
+          // Pass thread messages as conversation history for follow-up resolution
+          const mpMessages: MixpanelChatMessage[] = (context.threadMessages || []).map(m => ({
+            type: m.type,
+            content: m.content,
+          }));
+          mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages);
         }
       } catch { /* non-critical */ }
     }

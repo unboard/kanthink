@@ -6,7 +6,7 @@ import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart
 import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage, getUserByokConfigWithError } from '@/lib/usage';
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
-import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat } from '@/lib/ai/dataSourceContext';
+import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
 
 function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
   if (!whiteboards || whiteboards.length === 0) return ''
@@ -474,7 +474,12 @@ export async function POST(request: Request) {
         if (hasMixpanel) {
           useWebSearch = false; // real data beats web search
           try {
-            mixpanelContext = await queryMixpanelForChat(channelId, questionContent);
+            // Pass conversation history so Mixpanel can resolve follow-up references
+            const mpMessages: MixpanelChatMessage[] = (context.previousMessages || []).map(m => ({
+              type: m.type,
+              content: m.content,
+            }));
+            mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages);
           } catch (err) {
             console.error('[Card Chat] Mixpanel query error:', err);
           }

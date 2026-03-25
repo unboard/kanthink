@@ -2,6 +2,12 @@ import { db } from '@/lib/db';
 import { channelDataSources } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
+/** Minimal message shape for conversation context */
+export interface MixpanelChatMessage {
+  type: 'note' | 'question' | 'ai_response';
+  content: string;
+}
+
 interface DataSourceInfo {
   provider: string;
   status: string;
@@ -222,17 +228,70 @@ function parseDateRange(question: string): { dateRange: Record<string, unknown>;
 }
 
 /**
+ * Extract event names mentioned in previous conversation messages.
+ * Looks for quoted event names and common patterns from AI responses.
+ */
+function extractEventsFromHistory(messages: MixpanelChatMessage[]): string[] {
+  const events: string[] = [];
+  for (const msg of messages) {
+    // Match quoted event names like 'Trial Account' or "Trial Account"
+    const quoted = msg.content.match(/['"]([A-Z][A-Za-z0-9_ ]+)['"]/g);
+    if (quoted) {
+      for (const q of quoted) {
+        const name = q.slice(1, -1);
+        // Filter out common false positives
+        if (name.length > 2 && name.length < 60 && !name.startsWith('http')) {
+          events.push(name);
+        }
+      }
+    }
+    // Match "the 'X' event" or "triggered X event" patterns
+    const eventPattern = msg.content.match(/(?:triggered|the|event)\s+['"]?([A-Z][A-Za-z0-9_ ]+?)['"]?\s+event/gi);
+    if (eventPattern) {
+      for (const match of eventPattern) {
+        const name = match.replace(/^(?:triggered|the|event)\s+['"]?/i, '').replace(/['"]?\s+event$/i, '');
+        if (name.length > 2) events.push(name);
+      }
+    }
+  }
+  // Deduplicate
+  return [...new Set(events)];
+}
+
+/**
+ * Detect if the question is a comparison/follow-up that references prior context.
+ */
+function isComparisonQuery(question: string): boolean {
+  const q = question.toLowerCase();
+  return q.includes('compare') || q.includes('versus') || q.includes('vs') ||
+    q.includes('percent change') || q.includes('% change') || q.includes('growth') ||
+    (q.includes('yesterday') && (q.includes('that') || q.includes('same') || q.includes('compare')));
+}
+
+/**
+ * Detect if the question is asking about user profiles/PII (emails, user lists, etc.)
+ */
+function isProfileQuery(question: string): boolean {
+  const q = question.toLowerCase();
+  return q.includes('email') || q.includes('user list') || q.includes('user names') ||
+    q.includes('who are') || q.includes('list of users') || q.includes('give me') && q.includes('user') ||
+    q.includes('profile') || q.includes('contact');
+}
+
+/**
  * Query Mixpanel MCP for data relevant to the user's question.
  *
  * Strategy:
  * 1. Discover available tools via tools/list
  * 2. Fetch available events (Get-Events) for context
  * 3. Fetch projects (Get-Projects) for context
- * 4. Pass all of this as context to the AI — let it answer with real data
+ * 4. Use conversation history to resolve follow-up references
+ * 5. Pass all of this as context to the AI — let it answer with real data
  */
 export async function queryMixpanelForChat(
   channelId: string,
   userQuestion: string,
+  previousMessages?: MixpanelChatMessage[],
 ): Promise<string> {
   try {
     const [source] = await db
@@ -276,6 +335,7 @@ export async function queryMixpanelForChat(
           toolsContext = tools.map((t: { name: string; description?: string }) =>
             `- ${t.name}: ${t.description || 'no description'}`
           ).join('\n');
+          console.log('[MCP] Available tools:', tools.map((t: { name: string }) => t.name).join(', '));
         }
       }
     } catch (e) {
@@ -321,13 +381,14 @@ export async function queryMixpanelForChat(
 
     // Step 4: Try to run a basic query based on the user's question
     let queryResult: { result?: string; error?: string } = {};
+    let comparisonResult: { result?: string; error?: string } = {};
+    let profileResult: { result?: string; error?: string } = {};
     if (projectId && events.result) {
       // Extract event names from the events list
       const eventNames: string[] = [];
       try {
         const eventsData = JSON.parse(events.result);
         if (eventsData?.events && Array.isArray(eventsData.events)) {
-          // Format: { events: ["name1", "name2"], count: N }
           eventsData.events.forEach((name: string) => eventNames.push(name));
         } else if (Array.isArray(eventsData)) {
           eventsData.forEach((e: string | { name?: string }) => {
@@ -342,13 +403,40 @@ export async function queryMixpanelForChat(
 
       // Try to match the user's question to an event name
       const questionLower = userQuestion.toLowerCase().replace(/@mixpanel/gi, '').trim();
-      const matchedEvent = eventNames.find(e =>
+
+      // First try matching from the current question
+      let matchedEvent = eventNames.find(e =>
         questionLower.includes(e.toLowerCase().replace(/\$/g, '').replace(/_/g, ' ')) ||
         questionLower.includes(e.toLowerCase()) ||
         e.toLowerCase().includes('page_view') && questionLower.includes('page') ||
         e.toLowerCase().includes('session') && questionLower.includes('session') ||
         e.toLowerCase().includes('sign_up') && questionLower.includes('sign')
-      ) || eventNames.find(e => e.includes('page_view')) || eventNames[0];
+      );
+
+      // If no match from the question, check conversation history for previously referenced events
+      if (!matchedEvent && previousMessages && previousMessages.length > 0) {
+        const historyEvents = extractEventsFromHistory(previousMessages);
+        console.log('[MCP] Events from conversation history:', historyEvents);
+        if (historyEvents.length > 0) {
+          // Find the most recently mentioned event that exists in the event list
+          for (const histEvent of historyEvents.reverse()) {
+            const found = eventNames.find(e =>
+              e.toLowerCase() === histEvent.toLowerCase() ||
+              e.toLowerCase().replace(/_/g, ' ') === histEvent.toLowerCase()
+            );
+            if (found) {
+              matchedEvent = found;
+              console.log('[MCP] Resolved event from conversation history:', matchedEvent);
+              break;
+            }
+          }
+        }
+      }
+
+      // Final fallback: page_view or first event
+      if (!matchedEvent) {
+        matchedEvent = eventNames.find(e => e.includes('page_view')) || eventNames[0];
+      }
 
       if (matchedEvent) {
         // Parse date range from the user's question
@@ -356,6 +444,7 @@ export async function queryMixpanelForChat(
 
         // Determine measurement type (unique vs total)
         const isUnique = questionLower.includes('unique') || questionLower.includes('distinct') || questionLower.includes('users') || questionLower.includes('visitors');
+        console.log('[MCP] Running query:', { matchedEvent, dateRange, unit, isUnique, isProfile: isProfileQuery(questionLower), isComparison: isComparisonQuery(questionLower) });
 
         queryResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
           project_id: projectId,
@@ -368,6 +457,87 @@ export async function queryMixpanelForChat(
             dateRange,
           },
         });
+
+        // If this is a comparison query, also fetch the comparison period
+        if (isComparisonQuery(questionLower)) {
+          // Run a second query with a wider date range to get both periods
+          const widerRange = { type: 'relative' as const, range: { unit: 'day' as const, value: 7 } };
+          comparisonResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+            project_id: projectId,
+            report_type: 'insights',
+            report: {
+              name: 'Comparison Query',
+              metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: isUnique ? 'unique' : 'total' } }],
+              chartType: 'line',
+              unit: 'day',
+              dateRange: widerRange,
+            },
+          });
+        }
+      }
+
+      // If this is a profile/PII query, try to get user-level data
+      if (isProfileQuery(questionLower) && matchedEvent) {
+        console.log('[MCP] Profile query detected. Available tools:', toolsContext);
+
+        // Strategy 1: Try known profile/engage MCP tools
+        const profileToolNames = toolsContext
+          .split('\n')
+          .map(l => l.replace(/^-\s*/, '').split(':')[0].trim())
+          .filter(name => /profile|engage|user|export/i.test(name));
+
+        for (const toolName of profileToolNames) {
+          profileResult = await callMcpTool(mcpUrl, token, toolName, { project_id: projectId });
+          if (profileResult.result && !profileResult.error) {
+            console.log(`[MCP] Profile query succeeded with ${toolName}`);
+            break;
+          }
+        }
+
+        // Strategy 2: Use Run-Query with a breakdown by email/$email property
+        // This returns user-level data grouped by email if tracked as an event property
+        if (!profileResult.result) {
+          const { dateRange, unit } = parseDateRange(questionLower);
+          const emailBreakdownResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+            project_id: projectId,
+            report_type: 'insights',
+            report: {
+              name: 'User Breakdown',
+              metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'unique' } }],
+              chartType: 'table',
+              unit,
+              dateRange,
+              breakdowns: [{ property: '$email', type: 'event' }],
+            },
+          });
+          if (emailBreakdownResult.result) {
+            console.log('[MCP] Email breakdown query succeeded');
+            profileResult = emailBreakdownResult;
+          } else {
+            console.log('[MCP] Email breakdown failed:', emailBreakdownResult.error);
+            // Try with $distinct_id as fallback
+            const distinctIdResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
+              project_id: projectId,
+              report_type: 'insights',
+              report: {
+                name: 'User Breakdown',
+                metrics: [{ eventName: matchedEvent, measurement: { type: 'basic', math: 'unique' } }],
+                chartType: 'table',
+                unit,
+                dateRange,
+                breakdowns: [{ property: '$distinct_id', type: 'event' }],
+              },
+            });
+            if (distinctIdResult.result) {
+              console.log('[MCP] Distinct ID breakdown query succeeded');
+              profileResult = distinctIdResult;
+            } else {
+              profileResult = {
+                error: `Could not retrieve user-level data. The Mixpanel MCP connection only supports aggregated queries. Email breakdown error: ${emailBreakdownResult.error || 'unknown'}. Available MCP tools: ${toolsContext || 'unknown'}. To get user emails, export from the Mixpanel UI (Users tab) or use the Engage API directly.`
+              };
+            }
+          }
+        }
       }
     }
 
@@ -386,21 +556,28 @@ export async function queryMixpanelForChat(
     }
 
     if (queryResult.result) {
-      parts.push(`\nQuery results (last 7 days):\n${queryResult.result.slice(0, 3000)}`);
+      parts.push(`\nQuery results:\n${queryResult.result.slice(0, 3000)}`);
+    }
+    if (comparisonResult.result) {
+      parts.push(`\nComparison data (last 7 days, daily breakdown):\n${comparisonResult.result.slice(0, 3000)}`);
+    }
+    if (profileResult.result) {
+      parts.push(`\nUser profile data:\n${profileResult.result.slice(0, 3000)}`);
     }
 
     // Log any errors for debugging
     if (events.error) parts.push(`\n[Events query error: ${events.error}]`);
     if (projects.error) parts.push(`\n[Projects query error: ${projects.error}]`);
     if (queryResult.error) parts.push(`\n[Query error: ${queryResult.error}]`);
+    if (comparisonResult.error) parts.push(`\n[Comparison query error: ${comparisonResult.error}]`);
+    if (profileResult.error) parts.push(`\n[Profile query info: ${profileResult.error}]`);
 
     if (parts.length <= 2) {
-      // Nothing came back — log it
       console.error('[MCP] No data returned from any Mixpanel query');
       return '\n\n[Mixpanel connected but no data returned — the MCP query may have failed. Check Vercel logs for details.]';
     }
 
-    parts.push('\nCRITICAL RULES:\n1. ONLY cite numbers that appear VERBATIM in the "Query results" section above. Copy them exactly.\n2. NEVER estimate, round differently, or fabricate numbers. If the data says 8559, say 8559 — not 8471 or 8500.\n3. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n4. If no query results appear above, say "I could not retrieve data for this query" — do NOT make up numbers.\n5. When including a chart, use the EXACT data points from the query results.');
+    parts.push('\nCRITICAL RULES:\n1. ONLY cite numbers that appear VERBATIM in the "Query results" or "Comparison data" sections above. Copy them exactly.\n2. NEVER estimate, round differently, or fabricate numbers. If the data says 8559, say 8559 — not 8471 or 8500.\n3. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n4. If no query results appear above, say "I could not retrieve data for this query" — do NOT make up numbers.\n5. When including a chart, use the EXACT data points from the query results.\n6. For comparison queries, calculate the exact percent change from the data provided. Show both numbers and the formula.');
 
     return parts.join('\n');
   } catch (err) {
