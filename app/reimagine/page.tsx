@@ -1,7 +1,7 @@
 'use client';
 
-import { ReimagineCanvas } from '@/components/reimagine/ReimagineCanvas';
+import { EditorialEngine } from '@/components/reimagine/EditorialEngine';
 
 export default function ReimaginePage() {
-  return <ReimagineCanvas />;
+  return <EditorialEngine />;
 }
