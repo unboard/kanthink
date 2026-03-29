@@ -61,13 +61,34 @@ function measureCard(
 
   const tags = card.tags || [];
   const tagRowHeight = tags.length > 0 ? 26 : 0; // single row of tags
-
-  // Total: padding-top + title + gap + body + tagRow + padding-bottom
-  const totalHeight = 12 + titleResult.height + (bodyHeight > 0 ? 8 + bodyHeight : 0) + (tagRowHeight > 0 ? 8 + tagRowHeight : 0) + 12;
+  const activity = card.messages?.length || 0;
 
   const now = Date.now();
   const created = new Date(card.createdAt).getTime();
   const age = Math.max(0, Math.floor((now - created) / (1000 * 60 * 60 * 24)));
+
+  // Match FluidCard render order exactly:
+  // p-3 (12px padding top/bottom)
+  // 1. Channel context row: dot + channel + "in" + column  ~16px + mb-2 (8px)
+  // 2. Title                                                from Pretext
+  // 3. Body (if exists)                                     mt-1.5 (6px) + from Pretext
+  // 4. Tags (if exist)                                      mt-2 (8px) + 26px row
+  // 5. Activity dots (if messages > 0)                      mt-2 (8px) + 12px
+  // 6. Age whisper row (always)                             mt-2 (8px) + 14px
+  const contextRowHeight = 16 + 8; // row + mb-2
+  const activityRowHeight = activity > 0 ? 8 + 12 : 0;
+  const ageRowHeight = 8 + 14;
+
+  const totalHeight =
+    12 +                                                    // padding top
+    contextRowHeight +                                      // channel/column context
+    titleResult.height +                                    // title
+    (bodyHeight > 0 ? 6 + bodyHeight : 0) +                // body with mt-1.5
+    (tagRowHeight > 0 ? 8 + tagRowHeight : 0) +            // tags with mt-2
+    activityRowHeight +                                     // activity dots
+    ageRowHeight +                                          // age whisper
+    12 +                                                     // padding bottom
+    4;                                                       // border + accent line + rounding buffer
 
   return {
     card,
@@ -80,7 +101,7 @@ function measureCard(
     bodyLines,
     tags,
     age,
-    activity: card.messages?.length || 0,
+    activity,
   };
 }
 
