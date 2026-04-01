@@ -15,23 +15,22 @@ function hashString(str: string): number {
   return Math.abs(hash);
 }
 
-// HSL color with good saturation and lightness for dark-mode gradients
 function hslColor(h: number, s: number, l: number, a: number = 1): string {
   return `hsla(${h % 360}, ${s}%, ${l}%, ${a})`;
 }
 
-// Predefined palettes that look great — each is a set of 5 gradient stops
+// Vibrant palettes — high saturation, visible lightness
 const PALETTES = [
-  { hues: [210, 240, 280, 330, 195], name: 'azure' },
-  { hues: [15, 340, 280, 220, 45], name: 'sunset' },
-  { hues: [170, 145, 200, 270, 190], name: 'aurora' },
-  { hues: [175, 195, 320, 35, 160], name: 'reef' },
-  { hues: [140, 160, 270, 300, 40], name: 'forest' },
-  { hues: [330, 350, 280, 240, 310], name: 'rose' },
-  { hues: [220, 200, 185, 250, 170], name: 'ocean' },
-  { hues: [20, 350, 310, 35, 0], name: 'volcanic' },
-  { hues: [270, 290, 330, 210, 250], name: 'lavender' },
-  { hues: [40, 25, 350, 280, 55], name: 'golden' },
+  { hues: [210, 240, 280, 330, 195] },  // azure dream
+  { hues: [15, 340, 280, 220, 45] },    // sunset lagoon
+  { hues: [170, 145, 200, 270, 190] },   // aurora
+  { hues: [175, 195, 320, 35, 160] },    // tropical reef
+  { hues: [140, 160, 270, 300, 40] },    // mystic forest
+  { hues: [330, 350, 280, 240, 310] },   // rose quartz
+  { hues: [220, 200, 185, 250, 170] },   // deep ocean
+  { hues: [20, 350, 310, 35, 0] },      // volcanic
+  { hues: [270, 290, 330, 210, 250] },   // lavender fields
+  { hues: [40, 25, 350, 280, 55] },     // golden hour
 ];
 
 function getPalette(channelId: string) {
@@ -59,16 +58,17 @@ export const LiquidBackground = memo(function LiquidBackground({
     return channelId ? getPalette(channelId) : DEFAULT_HUES;
   }, [channelId]);
 
+  // Much more vibrant gradients — higher saturation (85%), higher lightness (35-45%), more opacity
   const gradientStyle = useMemo(() => {
     const [h1, h2, h3, h4, h5] = hues;
     return {
       background: `
-        radial-gradient(ellipse 80% 60% at 10% 90%, ${hslColor(h1, 75, 25, 0.7)} 0%, transparent 60%),
-        radial-gradient(ellipse 70% 80% at 85% 20%, ${hslColor(h2, 70, 22, 0.65)} 0%, transparent 55%),
-        radial-gradient(ellipse 90% 50% at 50% 50%, ${hslColor(h3, 60, 18, 0.5)} 0%, transparent 60%),
-        radial-gradient(ellipse 60% 70% at 20% 30%, ${hslColor(h4, 65, 20, 0.45)} 0%, transparent 50%),
-        radial-gradient(ellipse 50% 90% at 75% 80%, ${hslColor(h5, 70, 23, 0.55)} 0%, transparent 55%),
-        linear-gradient(135deg, ${hslColor(h1, 40, 10, 1)} 0%, ${hslColor(h3, 35, 8, 1)} 100%)
+        radial-gradient(ellipse 80% 60% at 10% 85%, ${hslColor(h1, 85, 40, 0.8)} 0%, transparent 55%),
+        radial-gradient(ellipse 70% 80% at 90% 15%, ${hslColor(h2, 80, 35, 0.75)} 0%, transparent 50%),
+        radial-gradient(ellipse 90% 50% at 50% 50%, ${hslColor(h3, 75, 30, 0.6)} 0%, transparent 55%),
+        radial-gradient(ellipse 60% 70% at 25% 25%, ${hslColor(h4, 80, 38, 0.55)} 0%, transparent 45%),
+        radial-gradient(ellipse 50% 90% at 80% 75%, ${hslColor(h5, 85, 36, 0.65)} 0%, transparent 50%),
+        linear-gradient(135deg, ${hslColor(h1, 50, 12, 1)} 0%, ${hslColor(h3, 45, 10, 1)} 100%)
       `.trim(),
     } as React.CSSProperties;
   }, [hues]);
@@ -82,48 +82,46 @@ export const LiquidBackground = memo(function LiquidBackground({
             src={coverImageUrl}
             alt=""
             className="absolute inset-0 w-full h-full object-cover"
-            style={{ filter: 'blur(40px) saturate(1.4) brightness(0.4)', transform: 'scale(1.15)' }}
+            style={{ filter: 'blur(40px) saturate(1.6) brightness(0.5)', transform: 'scale(1.15)' }}
           />
-          {/* Dark overlay to ensure readability */}
-          <div className="absolute inset-0 bg-black/30" />
+          <div className="absolute inset-0 bg-black/20" />
         </>
       )}
-      {/* Gradient layer — always present, provides color when no image */}
+      {/* Gradient layer */}
       <div
         className="absolute inset-0 liquid-base"
         style={{
           ...gradientStyle,
-          // When cover image exists, reduce gradient opacity so image dominates
-          opacity: coverImageUrl ? 0.5 : 1,
+          opacity: coverImageUrl ? 0.4 : 1,
         }}
       />
-      {/* Animated blob layers for the liquid motion effect */}
+      {/* Animated blob layers — brighter, more saturated */}
       <div
         className="absolute inset-0 liquid-blobs"
-        style={coverImageUrl ? { opacity: 0.4 } : undefined}
+        style={coverImageUrl ? { opacity: 0.35 } : undefined}
       >
         <div
           className="liquid-blob liquid-blob-1"
           style={{
-            background: `radial-gradient(circle, ${hslColor(hues[0], 80, 30, 0.4)} 0%, transparent 70%)`,
+            background: `radial-gradient(circle, ${hslColor(hues[0], 90, 45, 0.55)} 0%, transparent 70%)`,
           }}
         />
         <div
           className="liquid-blob liquid-blob-2"
           style={{
-            background: `radial-gradient(circle, ${hslColor(hues[1], 75, 28, 0.35)} 0%, transparent 70%)`,
+            background: `radial-gradient(circle, ${hslColor(hues[1], 85, 42, 0.5)} 0%, transparent 70%)`,
           }}
         />
         <div
           className="liquid-blob liquid-blob-3"
           style={{
-            background: `radial-gradient(circle, ${hslColor(hues[2], 70, 32, 0.3)} 0%, transparent 70%)`,
+            background: `radial-gradient(circle, ${hslColor(hues[2], 80, 48, 0.45)} 0%, transparent 70%)`,
           }}
         />
         <div
           className="liquid-blob liquid-blob-4"
           style={{
-            background: `radial-gradient(circle, ${hslColor(hues[3], 65, 26, 0.35)} 0%, transparent 70%)`,
+            background: `radial-gradient(circle, ${hslColor(hues[3], 85, 40, 0.5)} 0%, transparent 70%)`,
           }}
         />
       </div>

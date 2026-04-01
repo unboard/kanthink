@@ -142,17 +142,17 @@ body.theme-terminal main {
 
 /* Liquid: Root variables */
 [data-theme="liquid"] {
-  --background: #0a0e1a;
-  --foreground: #f0f0f5;
-  --liquid-glass-bg: rgba(255, 255, 255, 0.06);
-  --liquid-glass-border: rgba(255, 255, 255, 0.12);
-  --liquid-glass-hover: rgba(255, 255, 255, 0.1);
-  --liquid-glass-active: rgba(255, 255, 255, 0.14);
-  --liquid-glass-blur: 20px;
-  --liquid-glass-card: rgba(255, 255, 255, 0.08);
-  --liquid-glass-card-border: rgba(255, 255, 255, 0.1);
-  --liquid-glass-elevated: rgba(255, 255, 255, 0.1);
-  --liquid-glass-elevated-border: rgba(255, 255, 255, 0.15);
+  --background: #080c18;
+  --foreground: #f2f2f8;
+  --liquid-glass-bg: rgba(255, 255, 255, 0.08);
+  --liquid-glass-border: rgba(255, 255, 255, 0.15);
+  --liquid-glass-hover: rgba(255, 255, 255, 0.12);
+  --liquid-glass-active: rgba(255, 255, 255, 0.16);
+  --liquid-glass-blur: 24px;
+  --liquid-glass-card: rgba(255, 255, 255, 0.10);
+  --liquid-glass-card-border: rgba(255, 255, 255, 0.14);
+  --liquid-glass-elevated: rgba(255, 255, 255, 0.12);
+  --liquid-glass-elevated-border: rgba(255, 255, 255, 0.18);
   --liquid-accent: rgba(168, 140, 255, 0.8);
   --liquid-accent-subtle: rgba(168, 140, 255, 0.15);
 }
@@ -192,39 +192,39 @@ body.theme-terminal main {
 .liquid-blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(60px);
   will-change: transform;
 }
 
 .liquid-blob-1 {
-  width: 50vw;
-  height: 50vh;
-  top: -10%;
-  left: -10%;
+  width: 60vw;
+  height: 60vh;
+  top: -15%;
+  left: -15%;
   animation: liquid-drift-1 25s ease-in-out infinite;
 }
 
 .liquid-blob-2 {
-  width: 45vw;
-  height: 55vh;
-  top: 20%;
-  right: -15%;
+  width: 55vw;
+  height: 65vh;
+  top: 15%;
+  right: -20%;
   animation: liquid-drift-2 30s ease-in-out infinite;
 }
 
 .liquid-blob-3 {
-  width: 55vw;
-  height: 45vh;
-  bottom: -5%;
-  left: 20%;
+  width: 65vw;
+  height: 55vh;
+  bottom: -10%;
+  left: 15%;
   animation: liquid-drift-3 35s ease-in-out infinite;
 }
 
 .liquid-blob-4 {
-  width: 40vw;
-  height: 40vh;
-  bottom: 10%;
-  right: 10%;
+  width: 50vw;
+  height: 50vh;
+  bottom: 5%;
+  right: 5%;
   animation: liquid-drift-4 28s ease-in-out infinite;
 }
 
@@ -268,32 +268,30 @@ body.theme-terminal main {
 
 /* Liquid: Column containers */
 [data-theme="liquid"] .column-container {
-  background: var(--liquid-glass-card) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  border: 1px solid var(--liquid-glass-card-border) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
   border-radius: 1rem !important;
 }
 
 /* Liquid: Card containers — frosted glass */
 [data-theme="liquid"] .card-container {
-  background: var(--liquid-glass-elevated) !important;
-  backdrop-filter: blur(24px) saturate(1.4) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(1.4) !important;
-  border: 1px solid var(--liquid-glass-elevated-border) !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(28px) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(1.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
   border-radius: 0.875rem !important;
   box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
-  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s !important;
+    0 1px 4px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  transition: background 0.3s ease, border-color 0.3s ease !important;
 }
 
+/* Subtle hover — just a slight shift in glass opacity, no shadow jump */
 [data-theme="liquid"] .card-container:hover {
-  background: rgba(255, 255, 255, 0.13) !important;
-  border-color: rgba(255, 255, 255, 0.2) !important;
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
 }
 
 /* Liquid: Modal/dialog styling */
