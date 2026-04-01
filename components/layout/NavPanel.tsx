@@ -38,7 +38,6 @@ export function NavPanel({ panelKey, title, subtitle, width = 'sm', children }: 
   // (state can be briefly false during hydration, causing desktop panel to flash)
   return (
     <div
-      data-nav-panel={panelKey}
       className={`
         hidden md:block
         fixed left-14 top-0 h-full z-40

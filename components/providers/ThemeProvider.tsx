@@ -13,9 +13,8 @@ function migrateSettings() {
       const parsed = JSON.parse(stored);
       let needsMigration = false;
 
-      // Fix invalid theme values
-      const validThemes = ['spores', 'liquid'];
-      if (parsed.state?.theme && !validThemes.includes(parsed.state.theme)) {
+      // Fix invalid theme values (only 'spores' is valid now)
+      if (parsed.state?.theme && parsed.state.theme !== 'spores') {
         parsed.state.theme = 'spores';
         needsMigration = true;
       }
@@ -38,22 +37,17 @@ function migrateSettings() {
 
 function applyTheme(theme: Theme) {
   if (typeof window === 'undefined') return;
-  const validThemes: Theme[] = ['spores', 'liquid'];
-  const safeTheme: Theme = validThemes.includes(theme) ? theme : 'spores';
+  // Force spores theme - other themes disabled for now
+  const safeTheme: Theme = 'spores';
   const root = document.documentElement;
 
-  // Liquid theme uses light mode; everything else is dark
-  if (safeTheme === 'liquid') {
-    root.classList.remove('dark');
-    root.classList.add('light');
-  } else {
-    root.classList.add('dark');
-    root.classList.remove('light');
-  }
+  // ALWAYS force dark mode - no light mode support
+  root.classList.add('dark');
+  root.classList.remove('light');
 
   root.setAttribute('data-theme', safeTheme);
   // Force a style recalculation - remove all theme classes and add the current one
-  document.body.classList.remove('theme-spores', 'theme-stars', 'theme-terminal', 'theme-liquid');
+  document.body.classList.remove('theme-spores', 'theme-stars', 'theme-terminal');
   document.body.classList.add('theme-' + safeTheme);
 }
 
@@ -67,10 +61,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [theme]);
 
   // Also apply on initial mount from localStorage (before store hydration)
+  // Always force spores theme regardless of stored value
   // Also migrate any corrupted settings
   useEffect(() => {
     migrateSettings();
-    applyTheme(theme);
+    applyTheme('spores');
   }, []);
 
   // Reapply when store hydrates (in case it differs from localStorage read)
