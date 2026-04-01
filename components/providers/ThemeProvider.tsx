@@ -13,8 +13,9 @@ function migrateSettings() {
       const parsed = JSON.parse(stored);
       let needsMigration = false;
 
-      // Fix invalid theme values (only 'spores' is valid now)
-      if (parsed.state?.theme && parsed.state.theme !== 'spores') {
+      // Fix invalid theme values
+      const validThemes = ['spores', 'liquid'];
+      if (parsed.state?.theme && !validThemes.includes(parsed.state.theme)) {
         parsed.state.theme = 'spores';
         needsMigration = true;
       }
@@ -37,8 +38,8 @@ function migrateSettings() {
 
 function applyTheme(theme: Theme) {
   if (typeof window === 'undefined') return;
-  // Force spores theme - other themes disabled for now
-  const safeTheme: Theme = 'spores';
+  const validThemes: Theme[] = ['spores', 'liquid'];
+  const safeTheme: Theme = validThemes.includes(theme) ? theme : 'spores';
   const root = document.documentElement;
 
   // ALWAYS force dark mode - no light mode support
@@ -47,7 +48,7 @@ function applyTheme(theme: Theme) {
 
   root.setAttribute('data-theme', safeTheme);
   // Force a style recalculation - remove all theme classes and add the current one
-  document.body.classList.remove('theme-spores', 'theme-stars', 'theme-terminal');
+  document.body.classList.remove('theme-spores', 'theme-stars', 'theme-terminal', 'theme-liquid');
   document.body.classList.add('theme-' + safeTheme);
 }
 
@@ -61,11 +62,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [theme]);
 
   // Also apply on initial mount from localStorage (before store hydration)
-  // Always force spores theme regardless of stored value
   // Also migrate any corrupted settings
   useEffect(() => {
     migrateSettings();
-    applyTheme('spores');
+    applyTheme(theme);
   }, []);
 
   // Reapply when store hydrates (in case it differs from localStorage read)

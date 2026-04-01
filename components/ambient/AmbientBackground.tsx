@@ -1,9 +1,15 @@
 'use client';
 
+import { useSettingsStore } from '@/lib/settingsStore';
 import { SporeBackground } from './SporeBackground';
-// import { Starfield } from './Starfield'; // Disabled - only spores theme available for now
+import { LiquidBackground } from './LiquidBackground';
 
 export function AmbientBackground() {
-  // Only spores theme available for now
+  const theme = useSettingsStore((s) => s.theme);
+
+  if (theme === 'liquid') {
+    return <LiquidBackground />;
+  }
+
   return <SporeBackground />;
 }
