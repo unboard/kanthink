@@ -46,96 +46,42 @@ function SporesThemePreview() {
 
 function LiquidThemePreview() {
   return (
-    <div className="p-3 relative overflow-hidden" style={{ background: '#0a0e1a' }}>
-      {/* Liquid gradient blobs */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div
-          className="absolute rounded-full animate-pulse"
-          style={{
-            width: '60%',
-            height: '80%',
-            top: '-20%',
-            left: '-10%',
-            background: 'radial-gradient(circle, hsla(210, 75%, 30%, 0.5) 0%, transparent 70%)',
-            filter: 'blur(12px)',
-            animationDuration: '4s',
-          }}
-        />
-        <div
-          className="absolute rounded-full animate-pulse"
-          style={{
-            width: '50%',
-            height: '70%',
-            bottom: '-30%',
-            right: '-10%',
-            background: 'radial-gradient(circle, hsla(330, 70%, 28%, 0.45) 0%, transparent 70%)',
-            filter: 'blur(12px)',
-            animationDelay: '1s',
-            animationDuration: '5s',
-          }}
-        />
-        <div
-          className="absolute rounded-full animate-pulse"
-          style={{
-            width: '40%',
-            height: '50%',
-            top: '20%',
-            left: '40%',
-            background: 'radial-gradient(circle, hsla(280, 65%, 25%, 0.4) 0%, transparent 70%)',
-            filter: 'blur(10px)',
-            animationDelay: '2s',
-            animationDuration: '4.5s',
-          }}
-        />
-      </div>
+    <div
+      className="p-3 relative overflow-hidden"
+      style={{
+        background: `
+          radial-gradient(ellipse 100% 80% at 50% 0%, hsla(205, 75, 82, 0.95) 0%, transparent 60%),
+          radial-gradient(ellipse 70% 60% at 0% 100%, hsla(330, 80, 65, 0.7) 0%, transparent 50%),
+          radial-gradient(ellipse 60% 70% at 100% 80%, hsla(175, 75, 60, 0.6) 0%, transparent 50%),
+          linear-gradient(180deg, hsl(205, 65, 88) 0%, hsl(280, 55, 70) 100%)
+        `,
+      }}
+    >
       <div className="relative flex gap-2">
-        {/* Glass column preview */}
+        {/* White frosted glass columns */}
         <div
           className="flex-1 rounded-lg p-2"
           style={{
-            background: 'rgba(255, 255, 255, 0.08)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            backdropFilter: 'blur(8px)',
+            background: 'rgba(255, 255, 255, 0.35)',
+            border: '1px solid rgba(255, 255, 255, 0.45)',
           }}
         >
-          <div className="h-2 w-12 rounded bg-white/20 mb-2" />
+          <div className="h-2 w-12 rounded mb-2" style={{ background: 'rgba(0,0,0,0.15)' }} />
           <div className="space-y-1.5">
-            <div
-              className="h-6 rounded-md"
-              style={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06)',
-              }}
-            />
-            <div
-              className="h-6 rounded-md"
-              style={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06)',
-              }}
-            />
+            <div className="h-6 rounded-md" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.5)' }} />
+            <div className="h-6 rounded-md" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.5)' }} />
           </div>
         </div>
         <div
           className="flex-1 rounded-lg p-2"
           style={{
-            background: 'rgba(255, 255, 255, 0.08)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            backdropFilter: 'blur(8px)',
+            background: 'rgba(255, 255, 255, 0.35)',
+            border: '1px solid rgba(255, 255, 255, 0.45)',
           }}
         >
-          <div className="h-2 w-8 rounded bg-white/20 mb-2" />
+          <div className="h-2 w-8 rounded mb-2" style={{ background: 'rgba(0,0,0,0.15)' }} />
           <div className="space-y-1.5">
-            <div
-              className="h-6 rounded-md"
-              style={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.06)',
-              }}
-            />
+            <div className="h-6 rounded-md" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.5)' }} />
           </div>
         </div>
       </div>
@@ -214,7 +160,7 @@ export function ThemeSection() {
         <ThemeCard
           theme="liquid"
           name="Liquid"
-          description="Flowing glass gradients"
+          description="Frosted glass over vivid landscapes"
           preview={<LiquidThemePreview />}
           isActive={theme === 'liquid'}
           onSelect={() => setTheme('liquid')}

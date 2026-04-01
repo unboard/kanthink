@@ -137,28 +137,29 @@ body.theme-terminal main {
 
 /* ===========================================
    THEME: LIQUID
-   Glassmorphism + animated gradient backgrounds
+   Light-mode glassmorphism over vivid gradients.
+   Inspired by frosted white glass over colorful
+   abstract landscapes — bright, airy, dreamy.
    =========================================== */
 
-/* Liquid: Root variables */
+/* Liquid: Root — light background for any gaps */
 [data-theme="liquid"] {
-  --background: #080c18;
-  --foreground: #f2f2f8;
-  --liquid-glass-bg: rgba(255, 255, 255, 0.08);
-  --liquid-glass-border: rgba(255, 255, 255, 0.15);
-  --liquid-glass-hover: rgba(255, 255, 255, 0.12);
-  --liquid-glass-active: rgba(255, 255, 255, 0.16);
-  --liquid-glass-blur: 24px;
-  --liquid-glass-card: rgba(255, 255, 255, 0.10);
-  --liquid-glass-card-border: rgba(255, 255, 255, 0.14);
-  --liquid-glass-elevated: rgba(255, 255, 255, 0.12);
-  --liquid-glass-elevated-border: rgba(255, 255, 255, 0.18);
-  --liquid-accent: rgba(168, 140, 255, 0.8);
-  --liquid-accent-subtle: rgba(168, 140, 255, 0.15);
+  --background: #e8edf5;
+  --foreground: #1a1a2e;
+  --liquid-glass: rgba(255, 255, 255, 0.55);
+  --liquid-glass-strong: rgba(255, 255, 255, 0.70);
+  --liquid-glass-subtle: rgba(255, 255, 255, 0.35);
+  --liquid-border: rgba(255, 255, 255, 0.50);
+  --liquid-border-subtle: rgba(255, 255, 255, 0.30);
+  --liquid-blur: 24px;
+  --liquid-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  --liquid-accent: #7c3aed;
+  color-scheme: light;
 }
 
 [data-theme="liquid"] body {
   background: var(--background) !important;
+  color: var(--foreground) !important;
 }
 
 /* Liquid: Animated blob keyframes */
@@ -231,310 +232,282 @@ body.theme-terminal main {
 /* Liquid: Noise texture for depth */
 .liquid-noise {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  opacity: 0.03;
+  opacity: 0.025;
   mix-blend-mode: overlay;
   pointer-events: none;
 }
 
-/* Liquid: Desktop sidebar (icon rail) */
+/* ---- SURFACE OVERRIDES ---- */
+
+/* Liquid: Desktop sidebar (icon rail) — white frosted glass */
 [data-theme="liquid"] nav[data-mini-nav] {
-  background: var(--liquid-glass-bg) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  border-color: var(--liquid-glass-border) !important;
+  background: var(--liquid-glass) !important;
+  backdrop-filter: blur(var(--liquid-blur)) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(1.4) !important;
+  border-color: var(--liquid-border) !important;
 }
 
-/* Liquid: Nav buttons */
+/* Liquid: Nav icon buttons */
 [data-theme="liquid"] nav[data-mini-nav] button {
   border-radius: 0.75rem !important;
+  color: #374151 !important;
 }
 
 [data-theme="liquid"] nav[data-mini-nav] button:hover {
-  background: var(--liquid-glass-hover) !important;
+  background: rgba(0, 0, 0, 0.06) !important;
 }
 
 [data-theme="liquid"] nav[data-mini-nav] button.bg-neutral-200,
 [data-theme="liquid"] nav[data-mini-nav] button[class*="bg-neutral-700"] {
-  background: var(--liquid-glass-active) !important;
+  background: rgba(0, 0, 0, 0.08) !important;
+  color: #111827 !important;
 }
 
-/* Liquid: Nav panel sidebar (channels, shrooms, notifications) */
+/* Liquid: Nav panel sidebar */
 [data-theme="liquid"] [data-nav-panel] {
-  background: var(--liquid-glass-bg) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  border-color: var(--liquid-glass-border) !important;
+  background: var(--liquid-glass) !important;
+  backdrop-filter: blur(var(--liquid-blur)) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(1.4) !important;
+  border-color: var(--liquid-border) !important;
 }
 
-/* Liquid: Column containers */
+/* Liquid: Nav panel text colors */
+[data-theme="liquid"] [data-nav-panel] h2 {
+  color: #111827 !important;
+}
+
+[data-theme="liquid"] [data-nav-panel] button,
+[data-theme="liquid"] [data-nav-panel] a {
+  color: #374151 !important;
+}
+
+[data-theme="liquid"] [data-nav-panel] button:hover,
+[data-theme="liquid"] [data-nav-panel] a:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+[data-theme="liquid"] [data-nav-panel] button[class*="bg-neutral-800"],
+[data-theme="liquid"] [data-nav-panel] button[class*="bg-neutral-200"],
+[data-theme="liquid"] [data-nav-panel] a[class*="bg-neutral-800"],
+[data-theme="liquid"] [data-nav-panel] a[class*="bg-neutral-200"] {
+  background: rgba(0, 0, 0, 0.07) !important;
+  color: #111827 !important;
+}
+
+/* Liquid: Column containers — very subtle glass */
 [data-theme="liquid"] .column-container {
-  background: rgba(255, 255, 255, 0.06) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  background: var(--liquid-glass-subtle) !important;
+  backdrop-filter: blur(20px) saturate(1.3) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.3) !important;
+  border: 1px solid var(--liquid-border-subtle) !important;
   border-radius: 1rem !important;
 }
 
-/* Liquid: Card containers — frosted glass */
+/* Liquid: Card containers — white frosted glass like the reference */
 [data-theme="liquid"] .card-container {
-  background: rgba(255, 255, 255, 0.12) !important;
+  background: var(--liquid-glass-strong) !important;
   backdrop-filter: blur(28px) saturate(1.5) !important;
   -webkit-backdrop-filter: blur(28px) saturate(1.5) !important;
-  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border: 1px solid var(--liquid-border) !important;
   border-radius: 0.875rem !important;
-  box-shadow:
-    0 1px 4px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  box-shadow: var(--liquid-shadow) !important;
   transition: background 0.3s ease, border-color 0.3s ease !important;
 }
 
-/* Subtle hover — just a slight shift in glass opacity, no shadow jump */
+/* Subtle hover — just a gentle brightening of the glass */
 [data-theme="liquid"] .card-container:hover {
-  background: rgba(255, 255, 255, 0.16) !important;
-  border-color: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(255, 255, 255, 0.78) !important;
+  border-color: rgba(255, 255, 255, 0.60) !important;
 }
 
-/* Liquid: Modal/dialog styling */
-[data-theme="liquid"] [role="dialog"],
-[data-theme="liquid"] [role="menu"] {
-  background: rgba(15, 20, 35, 0.85) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-  border: 1px solid var(--liquid-glass-border) !important;
+/* Liquid: Card text — dark for readability */
+[data-theme="liquid"] .card-container,
+[data-theme="liquid"] .card-container * {
+  color: #1a1a2e;
+}
+
+[data-theme="liquid"] .card-container .text-neutral-400,
+[data-theme="liquid"] .card-container .text-neutral-500 {
+  color: #6b7280 !important;
+}
+
+/* Liquid: Column header text */
+[data-theme="liquid"] .column-container .text-neutral-400,
+[data-theme="liquid"] .column-container .text-neutral-500 {
+  color: #6b7280 !important;
+}
+
+/* Liquid: Modal/dialog — white frosted glass */
+[data-theme="liquid"] [role="dialog"] {
+  background: var(--liquid-glass-strong) !important;
+  backdrop-filter: blur(var(--liquid-blur)) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(1.5) !important;
+  border: 1px solid var(--liquid-border) !important;
   border-radius: 1rem !important;
 }
 
-/* Liquid: Modal backdrops — blurred */
+[data-theme="liquid"] [role="menu"] {
+  background: var(--liquid-glass-strong) !important;
+  backdrop-filter: blur(var(--liquid-blur)) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(1.5) !important;
+  border: 1px solid var(--liquid-border) !important;
+  border-radius: 0.75rem !important;
+}
+
+/* Liquid: Backdrop blur for modals */
 [data-theme="liquid"] .fixed.inset-0 > .fixed.inset-0.bg-black\/50,
 [data-theme="liquid"] .fixed.inset-0 > .absolute.inset-0.bg-black\/40 {
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
+  background: rgba(0, 0, 0, 0.15) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
 }
 
-/* Liquid: Drawer panels */
+/* Liquid: Drawer panels — white frosted glass */
 [data-theme="liquid"] .fixed.inset-0 > .relative.w-full {
-  background: rgba(12, 16, 30, 0.88) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.4) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.4) !important;
-  border-left: 1px solid var(--liquid-glass-border) !important;
+  background: var(--liquid-glass-strong) !important;
+  backdrop-filter: blur(var(--liquid-blur)) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(1.4) !important;
+  border-left: 1px solid var(--liquid-border) !important;
 }
 
-/* Liquid: Input/textarea/select — glass inputs */
+/* Liquid: Inputs — light glass */
 [data-theme="liquid"] input,
 [data-theme="liquid"] textarea,
 [data-theme="liquid"] select {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border-color: var(--liquid-glass-border) !important;
+  background: rgba(255, 255, 255, 0.50) !important;
+  border-color: rgba(0, 0, 0, 0.10) !important;
   border-radius: 0.75rem !important;
-  transition: border-color 0.2s, background 0.2s !important;
+  color: #1a1a2e !important;
+}
+
+[data-theme="liquid"] input::placeholder,
+[data-theme="liquid"] textarea::placeholder {
+  color: #9ca3af !important;
 }
 
 [data-theme="liquid"] input:focus,
 [data-theme="liquid"] textarea:focus,
 [data-theme="liquid"] select:focus {
-  background: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.65) !important;
   border-color: var(--liquid-accent) !important;
-  box-shadow: 0 0 0 2px var(--liquid-accent-subtle) !important;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15) !important;
   outline: none !important;
 }
 
-/* Liquid: Buttons — primary (violet) */
+/* Liquid: Buttons — keep violet buttons readable */
 [data-theme="liquid"] button[class*="bg-violet"],
 [data-theme="liquid"] button[class*="bg-purple"] {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.7), rgba(168, 85, 247, 0.7)) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(168, 140, 255, 0.3) !important;
-  border-radius: 0.75rem !important;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.2) !important;
-}
-
-[data-theme="liquid"] button[class*="bg-violet"]:hover,
-[data-theme="liquid"] button[class*="bg-purple"]:hover {
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.85), rgba(168, 85, 247, 0.85)) !important;
-  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3) !important;
-}
-
-/* Liquid: Primary buttons (white in dark mode) */
-[data-theme="liquid"] button.dark\:bg-white {
-  background: rgba(255, 255, 255, 0.9) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
   border-radius: 0.75rem !important;
 }
 
-/* Liquid: Secondary/ghost buttons */
-[data-theme="liquid"] button[class*="bg-neutral-800"],
-[data-theme="liquid"] button[class*="dark:bg-neutral-800"] {
-  background: var(--liquid-glass-bg) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid var(--liquid-glass-border) !important;
-  border-radius: 0.75rem !important;
-}
-
-[data-theme="liquid"] button[class*="bg-neutral-800"]:hover,
-[data-theme="liquid"] button[class*="dark:bg-neutral-800"]:hover {
-  background: var(--liquid-glass-hover) !important;
-}
-
-/* Liquid: Settings page cards */
-[data-theme="liquid"] .settings-section {
-  background: var(--liquid-glass-card) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  border-color: var(--liquid-glass-card-border) !important;
-  border-radius: 1rem !important;
-}
-
-/* Liquid: Settings cards (the bg-white/80 dark:bg-neutral-900/80 pattern) */
+/* Liquid: Settings page containers */
+[data-theme="liquid"] .rounded-2xl[class*="bg-white"],
 [data-theme="liquid"] .rounded-2xl[class*="bg-neutral-900"] {
-  background: var(--liquid-glass-card) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  border-color: var(--liquid-glass-card-border) !important;
+  background: var(--liquid-glass) !important;
+  backdrop-filter: blur(var(--liquid-blur)) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(1.4) !important;
+  border-color: var(--liquid-border) !important;
 }
 
-/* Liquid: Borders throughout */
-[data-theme="liquid"] hr {
-  border-color: var(--liquid-glass-border) !important;
-}
-
-/* Liquid: Scrollbar */
+/* Liquid: Scrollbar — subtle */
 [data-theme="liquid"] * {
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important;
+  scrollbar-color: rgba(0, 0, 0, 0.12) transparent !important;
 }
 
 [data-theme="liquid"] *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
+  background: rgba(0, 0, 0, 0.12) !important;
   border-radius: 4px !important;
 }
 
 [data-theme="liquid"] *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
+  background: rgba(0, 0, 0, 0.20) !important;
 }
 
-/* Liquid: Mobile bottom nav — the fixed bottom nav */
+/* Liquid: Mobile bottom nav */
 @media (max-width: 767px) {
   [data-theme="liquid"] nav[data-mini-nav] {
-    background: rgba(10, 14, 26, 0.75) !important;
-    backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-    -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-    border-color: var(--liquid-glass-border) !important;
+    background: var(--liquid-glass) !important;
+    backdrop-filter: blur(var(--liquid-blur)) saturate(1.5) !important;
+    -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(1.5) !important;
+    border-color: var(--liquid-border) !important;
   }
 }
 
-/* Liquid: Mobile header */
-[data-theme="liquid"] [data-mobile-header] {
-  background: rgba(10, 14, 26, 0.6) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) !important;
-  border-color: var(--liquid-glass-border) !important;
+/* Liquid: Popover menus */
+[data-theme="liquid"] [data-radix-popper-content-wrapper] > div,
+[data-theme="liquid"] .dropdown-menu {
+  background: var(--liquid-glass-strong) !important;
+  backdrop-filter: blur(var(--liquid-blur)) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(1.5) !important;
+  border: 1px solid var(--liquid-border) !important;
+  border-radius: 0.75rem !important;
+  box-shadow: var(--liquid-shadow) !important;
 }
 
-/* Liquid: Toast notifications */
-[data-theme="liquid"] [data-sonner-toast] {
-  background: rgba(15, 20, 35, 0.85) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-  border: 1px solid var(--liquid-glass-border) !important;
-  border-radius: 1rem !important;
-}
-
-/* Liquid: Card processing glow — use accent */
+/* Liquid: Card processing glow */
 [data-theme="liquid"] .card-processing::before {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--liquid-accent) 50%,
-    transparent 100%
-  ) !important;
+  background: linear-gradient(90deg, transparent 0%, rgba(124, 58, 237, 0.5) 50%, transparent 100%) !important;
 }
 
 [data-theme="liquid"] .card-processing::after {
-  background: linear-gradient(
-    to bottom,
-    var(--liquid-accent-subtle) 0%,
-    transparent 100%
-  ) !important;
+  background: linear-gradient(to bottom, rgba(124, 58, 237, 0.08) 0%, transparent 100%) !important;
 }
 
 /* Liquid: Gradient border animation */
 [data-theme="liquid"] .gradient-border-animated {
-  background: linear-gradient(
-    90deg,
-    rgba(168, 140, 255, 0.3),
-    rgba(168, 140, 255, 0.8),
-    rgba(168, 140, 255, 0.3)
-  ) !important;
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.3), rgba(124, 58, 237, 0.7), rgba(124, 58, 237, 0.3)) !important;
   background-size: 200% 100% !important;
 }
 
-/* Liquid: Selection ring */
-[data-theme="liquid"] .card-container[class*="ring-violet"] {
-  box-shadow:
-    0 0 0 2px var(--liquid-accent),
-    0 4px 16px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
-}
-
-/* Liquid: Skeleton loading — glass version */
+/* Liquid: Skeleton loading */
 [data-theme="liquid"] .skeleton-bar {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: rgba(0, 0, 0, 0.06) !important;
   border-radius: 0.5rem !important;
 }
 
-/* Liquid: Nav panel list items */
-[data-theme="liquid"] [data-nav-panel] button:hover,
-[data-theme="liquid"] [data-nav-panel] a:hover {
-  background: var(--liquid-glass-hover) !important;
-}
-
-[data-theme="liquid"] [data-nav-panel] button[class*="bg-neutral-800"],
-[data-theme="liquid"] [data-nav-panel] a[class*="bg-neutral-800"] {
-  background: var(--liquid-glass-active) !important;
-}
-
-/* Liquid: Notification badge */
-[data-theme="liquid"] span[class*="bg-violet-500"].rounded-full {
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.5) !important;
-}
-
-/* Liquid: General elevated surfaces (toolbars, overlays) */
-[data-theme="liquid"] .fixed.bottom-4,
-[data-theme="liquid"] .fixed.bottom-6 {
-  backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-}
-
-/* Liquid: Popover menus (context menus, dropdowns) */
-[data-theme="liquid"] [data-radix-popper-content-wrapper] > div,
-[data-theme="liquid"] .dropdown-menu {
-  background: rgba(15, 20, 35, 0.88) !important;
-  backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(1.5) !important;
-  border: 1px solid var(--liquid-glass-border) !important;
-  border-radius: 0.875rem !important;
-}
-
-/* Liquid: General glass treatment for dark bg surfaces */
-[data-theme="liquid"] .bg-neutral-900,
-[data-theme="liquid"] .dark\:bg-neutral-900 {
-  background: rgba(12, 16, 30, 0.85) !important;
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-}
-
-/* Liquid: Preserve transparent main content area so gradient shows through */
+/* Liquid: Keep main content transparent so gradient shows */
 [data-theme="liquid"] main {
   background: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+}
+
+/* Liquid: General bg-white and bg-neutral-900 surfaces → glass */
+[data-theme="liquid"] .bg-neutral-900,
+[data-theme="liquid"] .bg-neutral-50 {
+  background: var(--liquid-glass) !important;
+  backdrop-filter: blur(16px) saturate(1.3) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.3) !important;
+}
+
+/* Liquid: Board header area */
+[data-theme="liquid"] .text-white {
+  color: #1a1a2e !important;
+}
+
+[data-theme="liquid"] .text-neutral-100 {
+  color: #1f2937 !important;
+}
+
+[data-theme="liquid"] .text-neutral-200 {
+  color: #374151 !important;
+}
+
+[data-theme="liquid"] .text-neutral-300 {
+  color: #4b5563 !important;
+}
+
+[data-theme="liquid"] .text-neutral-400 {
+  color: #6b7280 !important;
+}
+
+/* Liquid: Border overrides for light mode */
+[data-theme="liquid"] .border-neutral-800,
+[data-theme="liquid"] .border-neutral-700 {
+  border-color: rgba(0, 0, 0, 0.08) !important;
 }
 
 /* Body class fallback */
 body.theme-liquid {
-  background: #0a0e1a !important;
+  background: #e8edf5 !important;
 }
 
 body.theme-liquid main {
