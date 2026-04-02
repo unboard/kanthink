@@ -454,6 +454,20 @@ export const channelChatThreads = sqliteTable('channel_chat_threads', {
   index('channel_chat_threads_channel_user_updated_idx').on(table.channelId, table.userId, table.updatedAt),
 ])
 
+// Operator chat threads (homepage conversations with Kan)
+export const operatorChatThreads = sqliteTable('operator_chat_threads', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text('title').default('New conversation'),
+  messages: safeJsonText<ChannelChatMessageJson[]>([])('messages').default([]),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('operator_chat_threads_user_idx').on(table.userId),
+  index('operator_chat_threads_user_updated_idx').on(table.userId, table.updatedAt),
+])
+
 // Email templates (AI-built, saveable)
 export const emailTemplates = sqliteTable('email_templates', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),

@@ -240,6 +240,19 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0025 — operator chat threads
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS operator_chat_threads (
+      id text PRIMARY KEY NOT NULL,
+      user_id text NOT NULL,
+      title text DEFAULT 'New conversation',
+      messages text DEFAULT '[]',
+      created_at integer,
+      updated_at integer,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE cascade
+    )`))
+  } catch {}
+
   // Data migration — rename Quick Save → Kan Bookmarks
   try {
     await db.run(sql.raw(`UPDATE channels SET name = 'Kan Bookmarks', description = 'Your personal bookmark channel. Save anything from the web — links, articles, ideas, snippets — and Kan will organize and comment on them. Use the browser bookmarklet (desktop) or share sheet (mobile) to save from anywhere.' WHERE is_quick_save = 1 AND name = 'Quick Save'`))

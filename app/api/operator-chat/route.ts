@@ -4,7 +4,7 @@ import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 import { db } from '@/lib/db';
-import { cards, columns } from '@/lib/db/schema';
+import { cards, columns, operatorChatThreads } from '@/lib/db/schema';
 import { eq, and, desc, asc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 
@@ -22,6 +22,7 @@ interface ChannelSummary {
 }
 
 interface OperatorChatRequest {
+  threadId?: string;
   message: string;
   imageUrls?: string[];
   history: { role: 'user' | 'assistant'; content: string }[];
@@ -277,7 +278,7 @@ export async function POST(request: Request) {
     await ensureSchema();
 
     const body: OperatorChatRequest = await request.json();
-    const { message, imageUrls, history, channels } = body;
+    const { threadId, message, imageUrls, history, channels } = body;
 
     if (!message && (!imageUrls || imageUrls.length === 0)) {
       return NextResponse.json({ error: 'Missing message' }, { status: 400 });
@@ -328,6 +329,33 @@ export async function POST(request: Request) {
     let actionResults: ActionResult[] | undefined;
     if (parsed.actions && parsed.actions.length > 0) {
       actionResults = await executeActions(parsed.actions, session.user.id);
+    }
+
+    // Persist messages to thread if threadId provided
+    if (threadId) {
+      try {
+        const thread = await db.query.operatorChatThreads.findFirst({
+          where: and(eq(operatorChatThreads.id, threadId), eq(operatorChatThreads.userId, session.user.id)),
+        });
+        if (thread) {
+          const existing = (thread.messages || []) as unknown[];
+          const now = new Date().toISOString();
+          const userMsg = { id: nanoid(), type: 'question' as const, content: message, createdAt: now };
+          const aiMsg = { id: nanoid(), type: 'ai_response' as const, content: parsed.response, createdAt: now };
+          const updated = [...existing, userMsg, aiMsg] as typeof thread.messages;
+
+          const updateData: Record<string, unknown> = { messages: updated, updatedAt: new Date() };
+
+          // Auto-title on first exchange
+          if (!thread.title || thread.title === 'New conversation') {
+            updateData.title = message.slice(0, 60) + (message.length > 60 ? '...' : '');
+          }
+
+          await db.update(operatorChatThreads).set(updateData).where(eq(operatorChatThreads.id, threadId));
+        }
+      } catch (e) {
+        console.error('Failed to persist operator thread:', e);
+      }
     }
 
     return NextResponse.json({

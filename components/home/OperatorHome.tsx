@@ -23,6 +23,13 @@ interface ChatMessage {
   timestamp: Date;
 }
 
+interface ThreadSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const GREETING_PROMPTS = [
   'What should I work on today?',
   'Summarize my workspace',
@@ -38,6 +45,20 @@ function parseKanthinkUrl(href: string | undefined): { type: 'card' | 'channel' 
   return { type: match[1] as 'card' | 'channel' | 'task', id: match[2] };
 }
 
+function formatThreadDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export function OperatorHome() {
   const router = useRouter();
   const channels = useStore((s) => s.channels);
@@ -46,6 +67,10 @@ export function OperatorHome() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [threadsLoaded, setThreadsLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -60,6 +85,58 @@ export function OperatorHome() {
 
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  // Create a new thread on mount
+  useEffect(() => {
+    if (threadId) return;
+    fetch('/api/operator-chat/threads', { method: 'POST' })
+      .then((r) => r.json())
+      .then((data) => setThreadId(data.id))
+      .catch(() => {});
+  }, [threadId]);
+
+  const loadThreads = useCallback(async () => {
+    try {
+      const res = await fetch('/api/operator-chat/threads');
+      if (res.ok) {
+        const data = await res.json();
+        setThreads(data.threads || []);
+        setThreadsLoaded(true);
+      }
+    } catch {}
+  }, []);
+
+  const openHistory = useCallback(() => {
+    setShowHistory(true);
+    if (!threadsLoaded) loadThreads();
+  }, [threadsLoaded, loadThreads]);
+
+  const loadThread = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/operator-chat/threads/${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const msgs: ChatMessage[] = (data.messages || []).map((m: { id: string; type: string; content: string; createdAt: string }) => ({
+        id: m.id,
+        role: m.type === 'question' ? 'user' as const : 'assistant' as const,
+        content: m.content,
+        timestamp: new Date(m.createdAt),
+      }));
+      setMessages(msgs);
+      setThreadId(id);
+      setShowHistory(false);
+    } catch {}
+  }, []);
+
+  const startNewThread = useCallback(async () => {
+    try {
+      const res = await fetch('/api/operator-chat/threads', { method: 'POST' });
+      const data = await res.json();
+      setThreadId(data.id);
+      setMessages([]);
+      setShowHistory(false);
+    } catch {}
   }, []);
 
   const buildChannelContext = useCallback(() => {
@@ -107,6 +184,7 @@ export function OperatorHome() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          threadId,
           message: text.trim(),
           history,
           channels: buildChannelContext(),
@@ -140,7 +218,7 @@ export function OperatorHome() {
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, buildChannelContext]);
+  }, [isLoading, messages, buildChannelContext, threadId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -185,7 +263,81 @@ export function OperatorHome() {
   const hasConversation = messages.length > 0;
 
   return (
-    <div className="flex h-full flex-col items-center">
+    <div className="flex h-full flex-col items-center relative">
+      {/* Top bar — new chat + history */}
+      <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+        {hasConversation && (
+          <button
+            onClick={startNewThread}
+            title="New conversation"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        )}
+        <button
+          onClick={openHistory}
+          title="Chat history"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+      </div>
+
+      {/* History drawer */}
+      {showHistory && (
+        <div className="absolute inset-0 z-20 flex justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowHistory(false)} />
+          <div className="relative w-full max-w-sm h-full bg-neutral-950 border-l border-neutral-800 overflow-y-auto animate-slide-in-right">
+            <div className="flex items-center justify-between px-4 py-4 border-b border-neutral-800 sticky top-0 bg-neutral-950 z-10">
+              <h2 className="text-sm font-medium text-white">Chat History</h2>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="text-neutral-400 hover:text-white transition-colors"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-2">
+              <button
+                onClick={startNewThread}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-violet-400 hover:bg-violet-500/10 transition-colors mb-1"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New conversation
+              </button>
+              {threads.filter(t => t.title !== 'New conversation' || t.id === threadId).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => loadThread(t.id)}
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                    t.id === threadId
+                      ? 'bg-neutral-800 text-white'
+                      : 'text-neutral-300 hover:bg-neutral-800/60'
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate">{t.title || 'New conversation'}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">{formatThreadDate(t.updatedAt)}</p>
+                  </div>
+                </button>
+              ))}
+              {threadsLoaded && threads.length === 0 && (
+                <p className="text-sm text-neutral-500 text-center py-8">No conversations yet</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={`flex w-full max-w-2xl flex-col ${hasConversation ? 'h-full' : 'flex-1 justify-center'} px-4`}>
 
         {/* Welcome state */}
