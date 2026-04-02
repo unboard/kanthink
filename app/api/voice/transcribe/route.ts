@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getOpenAIClientForUser } from '@/lib/ai/openai-client';
+import { getGoogleClientForVoice } from '@/lib/ai/google-voice';
 import { recordUsage } from '@/lib/usage';
 
 export const runtime = 'nodejs';
@@ -12,11 +13,6 @@ export async function POST(request: Request) {
   }
 
   const userId = session.user.id;
-  const result = await getOpenAIClientForUser(userId);
-
-  if (!result.client) {
-    return NextResponse.json({ error: result.error }, { status: 400 });
-  }
 
   try {
     const formData = await request.formData();
@@ -26,15 +22,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No audio file provided' }, { status: 400 });
     }
 
-    const transcription = await result.client.audio.transcriptions.create({
-      model: 'whisper-1',
-      file: audioFile,
-    });
+    // Try OpenAI first
+    const openaiResult = await getOpenAIClientForUser(userId);
+    if (openaiResult.client) {
+      const transcription = await openaiResult.client.audio.transcriptions.create({
+        model: 'whisper-1',
+        file: audioFile,
+      });
+      recordUsage(userId, 'voice-transcribe').catch(() => {});
+      return NextResponse.json({ text: transcription.text });
+    }
 
-    // Record usage (fire-and-forget)
-    recordUsage(userId, 'voice-transcribe').catch(() => {});
+    // Try Google/Gemini
+    const googleResult = await getGoogleClientForVoice(userId);
+    if (googleResult.client) {
+      const arrayBuffer = await audioFile.arrayBuffer();
+      const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+      const mimeType = audioFile.type || 'audio/webm';
 
-    return NextResponse.json({ text: transcription.text });
+      const response = await googleResult.client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType, data: base64Audio } },
+            { text: 'Transcribe the audio above. Return ONLY the transcribed text, nothing else. No quotes, no explanation, no prefixes.' },
+          ],
+        }],
+      });
+
+      const text = response.text?.trim() || '';
+      recordUsage(userId, 'voice-transcribe').catch(() => {});
+      return NextResponse.json({ text });
+    }
+
+    return NextResponse.json({ error: 'No AI provider configured for voice.' }, { status: 400 });
   } catch (error) {
     console.error('Transcription error:', error);
     return NextResponse.json(
