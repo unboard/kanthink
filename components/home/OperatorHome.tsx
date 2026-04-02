@@ -7,10 +7,19 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+interface ActionResult {
+  type: string;
+  success: boolean;
+  description: string;
+  cardId?: string;
+  channelId?: string;
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  actionResults?: ActionResult[];
   timestamp: Date;
 }
 
@@ -115,6 +124,7 @@ export function OperatorHome() {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: data.response,
+        actionResults: data.actionResults,
         timestamp: new Date(),
       };
 
@@ -222,6 +232,35 @@ export function OperatorHome() {
                       </div>
                     ) : (
                       <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    )}
+                    {/* Action results */}
+                    {msg.actionResults && msg.actionResults.length > 0 && (
+                      <div className="mt-3 space-y-1.5 border-t border-neutral-700/50 pt-3">
+                        {msg.actionResults.map((ar, i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs">
+                            {ar.success ? (
+                              <svg className="h-3.5 w-3.5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="h-3.5 w-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            )}
+                            <span className={ar.success ? 'text-green-300' : 'text-red-300'}>
+                              {ar.description}
+                            </span>
+                            {ar.success && ar.cardId && ar.channelId && (
+                              <button
+                                onClick={() => router.push(`/channel/${ar.channelId}/card/${ar.cardId}`)}
+                                className="text-violet-400 hover:underline ml-1"
+                              >
+                                View
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>

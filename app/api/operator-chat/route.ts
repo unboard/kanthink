@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
+import { nanoid } from 'nanoid';
 import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
+import { db } from '@/lib/db';
+import { cards, columns } from '@/lib/db/schema';
+import { eq, and, desc, asc } from 'drizzle-orm';
+import { ensureSchema } from '@/lib/db/ensure-schema';
 
 export const runtime = 'nodejs';
 
@@ -23,10 +28,27 @@ interface OperatorChatRequest {
   channels: ChannelSummary[];
 }
 
+interface OperatorAction {
+  type: 'add_note' | 'create_card' | 'update_summary';
+  cardId?: string;
+  channelId?: string;
+  columnName?: string;
+  title?: string;
+  content?: string;
+}
+
+interface ActionResult {
+  type: string;
+  success: boolean;
+  description: string;
+  cardId?: string;
+  channelId?: string;
+}
+
 function buildSystemPrompt(channels: ChannelSummary[]): string {
   const channelContext = channels.map((ch) => {
     const cols = ch.columns.map((col) => {
-      const cards = col.cards.length > 0
+      const cardList = col.cards.length > 0
         ? col.cards.map((c) => {
           let desc = `    - ${c.title} (id:${c.id})`;
           if (c.tags?.length) desc += ` [${c.tags.join(', ')}]`;
@@ -34,7 +56,7 @@ function buildSystemPrompt(channels: ChannelSummary[]): string {
           return desc;
         }).join('\n')
         : '    (empty)';
-      return `  ${col.name} (${col.cards.length}):\n${cards}`;
+      return `  ${col.name} (${col.cards.length}):\n${cardList}`;
     }).join('\n');
     const label = ch.isBookmarks ? '🔖' : '📋';
     return `${label} ${ch.name} (channelId:${ch.id})${ch.isBookmarks ? ' [BOOKMARKS CHANNEL]' : ''}${ch.description ? ` — ${ch.description}` : ''}\n${cols}`;
@@ -51,7 +73,7 @@ You are the user's central hub. They come to you to:
 - Get suggestions on what to work on next
 - Think through ideas and get feedback
 - Route new information to the right channel
-- Get summaries and overviews of their workspace
+- Take actions: create cards, add notes to card threads, update cards
 
 ## YOUR WORKSPACE (${channels.length} channels, ${totalCards} cards)
 
@@ -80,17 +102,41 @@ ALWAYS use clickable kanthink:// links when mentioning cards or channels:
 
 Never mention a card or channel by name without linking it. This is how users navigate from the operator.
 
+## ACTIONS
+
+When the user asks you to DO something (create a card, add a note to a thread, update a card), include actions in your response. Actions are executed immediately.
+
+Available actions:
+- **add_note**: Add a note/message to a card's thread. Use when the user wants to capture text, a summary, or conversation content onto a card.
+  - Requires: cardId, content (markdown)
+- **create_card**: Create a new card in a channel. Suggest the best channel and column based on context.
+  - Requires: channelId, columnName (exact column name from data), title, content (markdown, becomes the first message)
+- **update_summary**: Update a card's summary/description.
+  - Requires: cardId, content
+
+When in doubt about where to place something, suggest a location and explain your reasoning — then include the action. The user asked you to do it, so do it.
+
 ## RESPONSE FORMAT
 
 Respond with valid JSON:
 {
-  "response": "Your message (markdown supported with kanthink:// links)"
+  "response": "Your message (markdown supported with kanthink:// links)",
+  "actions": [
+    { "type": "add_note", "cardId": "CARD_ID", "content": "Note content in markdown" },
+    { "type": "create_card", "channelId": "CHANNEL_ID", "columnName": "Inbox", "title": "Card Title", "content": "First message content" },
+    { "type": "update_summary", "cardId": "CARD_ID", "content": "New summary text" }
+  ]
 }
 
-Always respond with valid JSON. The "response" field is required.`;
+The "actions" array is optional — only include it when the user asks you to do something. The "response" field is always required. Always respond with valid JSON.`;
 }
 
-function parseResponse(raw: string): { response: string } {
+interface ParsedResponse {
+  response: string;
+  actions?: OperatorAction[];
+}
+
+function parseResponse(raw: string): ParsedResponse {
   try {
     let json = raw.trim();
     if (json.startsWith('```json')) json = json.slice(7);
@@ -100,12 +146,125 @@ function parseResponse(raw: string): { response: string } {
 
     const parsed = JSON.parse(json);
     if (typeof parsed.response === 'string') {
-      return { response: parsed.response };
+      return {
+        response: parsed.response,
+        actions: Array.isArray(parsed.actions) ? parsed.actions : undefined,
+      };
     }
   } catch {
     // Fall through to plain text
   }
   return { response: raw };
+}
+
+async function executeActions(actions: OperatorAction[], userId: string): Promise<ActionResult[]> {
+  const results: ActionResult[] = [];
+
+  for (const action of actions) {
+    try {
+      if (action.type === 'add_note' && action.cardId && action.content) {
+        const card = await db.query.cards.findFirst({
+          where: eq(cards.id, action.cardId),
+        });
+        if (!card) {
+          results.push({ type: 'add_note', success: false, description: `Card not found: ${action.cardId}` });
+          continue;
+        }
+        const existingMessages = (card.messages || []) as unknown[];
+        const newMessage = {
+          id: nanoid(),
+          type: 'note' as const,
+          content: action.content,
+          createdAt: new Date().toISOString(),
+        };
+        const updatedMessages = [...existingMessages, newMessage] as typeof card.messages;
+        await db.update(cards)
+          .set({ messages: updatedMessages, updatedAt: new Date() })
+          .where(eq(cards.id, action.cardId));
+        results.push({
+          type: 'add_note',
+          success: true,
+          description: `Added note to card`,
+          cardId: action.cardId,
+          channelId: card.channelId,
+        });
+
+      } else if (action.type === 'create_card' && action.channelId && action.title) {
+        // Find the target column
+        const channelColumns = await db.query.columns.findMany({
+          where: eq(columns.channelId, action.channelId),
+          orderBy: [asc(columns.position)],
+        });
+        const targetCol = action.columnName
+          ? channelColumns.find(c => c.name === action.columnName)
+          : channelColumns[0];
+        if (!targetCol) {
+          results.push({ type: 'create_card', success: false, description: `Column "${action.columnName}" not found` });
+          continue;
+        }
+
+        // Get max position
+        const existingCards = await db.query.cards.findMany({
+          where: and(eq(cards.columnId, targetCol.id), eq(cards.isArchived, false)),
+          orderBy: [desc(cards.position)],
+          limit: 1,
+        });
+        const position = existingCards.length > 0 ? existingCards[0].position + 1 : 0;
+
+        const cardId = nanoid();
+        const now = new Date();
+        const messages = action.content ? [{
+          id: nanoid(),
+          type: 'note' as const,
+          content: action.content,
+          createdAt: now.toISOString(),
+        }] : [] as { id: string; type: 'note'; content: string; createdAt: string }[];
+
+        await db.insert(cards).values({
+          id: cardId,
+          channelId: action.channelId,
+          columnId: targetCol.id,
+          title: action.title,
+          messages,
+          source: 'ai',
+          position,
+          createdAt: now,
+          updatedAt: now,
+        });
+        results.push({
+          type: 'create_card',
+          success: true,
+          description: `Created card "${action.title}" in ${targetCol.name}`,
+          cardId,
+          channelId: action.channelId,
+        });
+
+      } else if (action.type === 'update_summary' && action.cardId && action.content) {
+        const card = await db.query.cards.findFirst({
+          where: eq(cards.id, action.cardId),
+        });
+        if (!card) {
+          results.push({ type: 'update_summary', success: false, description: `Card not found: ${action.cardId}` });
+          continue;
+        }
+        await db.update(cards)
+          .set({ summary: action.content, summaryUpdatedAt: new Date(), updatedAt: new Date() })
+          .where(eq(cards.id, action.cardId));
+        results.push({
+          type: 'update_summary',
+          success: true,
+          description: `Updated card summary`,
+          cardId: action.cardId,
+          channelId: card.channelId,
+        });
+      }
+    } catch (error) {
+      console.error(`Action ${action.type} failed:`, error);
+      results.push({ type: action.type, success: false, description: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}` });
+    }
+  }
+
+  return results;
 }
 
 export async function POST(request: Request) {
@@ -114,6 +273,8 @@ export async function POST(request: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    await ensureSchema();
 
     const body: OperatorChatRequest = await request.json();
     const { message, imageUrls, history, channels } = body;
@@ -163,7 +324,16 @@ export async function POST(request: Request) {
 
     const parsed = parseResponse(llmResponse.content);
 
-    return NextResponse.json(parsed);
+    // Execute actions if any
+    let actionResults: ActionResult[] | undefined;
+    if (parsed.actions && parsed.actions.length > 0) {
+      actionResults = await executeActions(parsed.actions, session.user.id);
+    }
+
+    return NextResponse.json({
+      response: parsed.response,
+      actionResults,
+    });
   } catch (error) {
     console.error('Operator chat error:', error);
     return NextResponse.json({ error: 'Failed to get AI response' }, { status: 500 });
