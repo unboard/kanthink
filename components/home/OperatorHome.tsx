@@ -6,7 +6,6 @@ import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 
 interface ChatMessage {
   id: string;
@@ -21,15 +20,6 @@ const GREETING_PROMPTS = [
   'Any cards that need attention?',
   'Help me think through an idea',
 ];
-
-// Allow kanthink:// protocol in sanitized markdown links
-const sanitizeSchema = {
-  ...defaultSchema,
-  protocols: {
-    ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), 'kanthink'],
-  },
-};
 
 /** Parse a kanthink:// URL */
 function parseKanthinkUrl(href: string | undefined): { type: 'card' | 'channel' | 'task'; id: string } | null {
@@ -154,16 +144,11 @@ export function OperatorHome() {
     const parsed = parseKanthinkUrl(href);
 
     if (!parsed) {
-      // External links with valid URLs open in new tab
-      if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-        return (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-            {children}
-          </a>
-        );
-      }
-      // Invalid/empty links (AI hallucinated a link) — render as styled text, not a navigating link
-      return <span className="text-neutral-200 font-medium">{children}</span>;
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+          {children}
+        </a>
+      );
     }
 
     const handleClick = () => {
@@ -230,7 +215,6 @@ export function OperatorHome() {
                       <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5">
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
                           components={{ a: renderLink }}
                         >
                           {msg.content}
