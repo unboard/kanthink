@@ -145,11 +145,15 @@ async function maybeDispatchEmail(input: CreateNotificationInput): Promise<void>
 
   if (input.type === 'task_assigned') {
     const taskId = data.taskId as string
+    const cardId = data.cardId as string | undefined
+    const taskUrl = cardId
+      ? `${baseUrl}/channel/${channelId}/card/${cardId}?task=${taskId}`
+      : `${baseUrl}/channel/${channelId}`
     sendTaskAssignedEmail(user.email, {
       assignerName,
       taskTitle: input.body,
       channelName,
-      taskUrl: `${baseUrl}/channel/${channelId}?task=${taskId}`,
+      taskUrl,
     }).catch(() => {})
   } else if (input.type === 'card_assigned') {
     const cardId = data.cardId as string

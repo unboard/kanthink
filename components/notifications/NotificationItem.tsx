@@ -71,7 +71,25 @@ function getNavigationUrl(notification: NotificationData): string | null {
   const channelId = data.channelId as string | undefined
   if (!channelId) return null
 
-  // For shroom_completed notifications, link to review drawer if available
+  // Card notifications → open card detail
+  if (data.cardId && (
+    notification.type === 'card_assigned' ||
+    notification.type === 'card_added_by_other' ||
+    notification.type === 'card_moved_by_other' ||
+    notification.type === 'mentioned_in_card'
+  )) {
+    return `/channel/${channelId}/card/${data.cardId}`
+  }
+
+  // Task notifications → open card with task hint, or channel for standalone tasks
+  if (data.taskId && notification.type === 'task_assigned') {
+    if (data.cardId) {
+      return `/channel/${channelId}/card/${data.cardId}?task=${data.taskId}`
+    }
+    return `/channel/${channelId}`
+  }
+
+  // Shroom notifications → open review drawer
   if (notification.type === 'shroom_completed' && data.instructionCardId) {
     return `/channel/${channelId}?review=${data.instructionCardId}`
   }

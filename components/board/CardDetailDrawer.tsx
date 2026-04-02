@@ -104,6 +104,7 @@ interface CardDetailDrawerProps {
   autoFocusTitle?: boolean;
   fullPage?: boolean;
   onNavigateBack?: () => void;
+  initialTaskId?: string;
 }
 
 function formatDate(dateString: string): string {
@@ -119,7 +120,7 @@ function formatDate(dateString: string): string {
 
 type ActiveTab = 'thread' | 'tasks' | 'info';
 
-export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack }: CardDetailDrawerProps) {
+export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack, initialTaskId }: CardDetailDrawerProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const [title, setTitle] = useState('');
@@ -295,6 +296,19 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardId, isOpen]);
+
+  // Auto-open task drawer when navigating from email/notification with ?task= param
+  useEffect(() => {
+    if (isOpen && initialTaskId && card) {
+      const task = tasks[initialTaskId];
+      if (task) {
+        setSelectedTask(task);
+        setIsTaskDrawerOpen(true);
+        setActiveTab('tasks');
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialTaskId, card?.id]);
 
   // Show title drawer when opening with autoFocusTitle (first time viewing new card)
   useEffect(() => {

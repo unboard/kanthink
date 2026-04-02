@@ -108,6 +108,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             data: {
               channelId,
               taskId,
+              cardId: task.cardId || undefined,
               assignerName: assigner?.name || 'Someone',
               channelName: channel?.name || 'a channel',
             },

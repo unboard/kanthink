@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
@@ -8,8 +8,10 @@ import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
 export default function CardPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const channelId = params.channelId as string;
   const cardId = params.cardId as string;
+  const taskId = searchParams.get('task') || undefined;
   const card = useStore((s) => s.cards[cardId]);
   const hasHydrated = useStore((s) => s._hasHydrated);
   const { isLoading: isServerLoading } = useServerSync();
@@ -32,6 +34,7 @@ export default function CardPage() {
         fullPage
         onClose={navigateBack}
         onNavigateBack={navigateBack}
+        initialTaskId={taskId}
       />
     );
   }
