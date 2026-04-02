@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
@@ -61,8 +62,10 @@ function formatThreadDate(dateStr: string): string {
 
 export function OperatorHome() {
   const router = useRouter();
+  const { data: session } = useSession();
   const channels = useStore((s) => s.channels);
   const cards = useStore((s) => s.cards);
+  const tasks = useStore((s) => s.tasks);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -155,10 +158,23 @@ export function OperatorHome() {
             title: c.title,
             summary: c.summary || undefined,
             tags: c.tags?.length ? c.tags : undefined,
+            assignedTo: c.assignedTo?.length ? c.assignedTo : undefined,
           })),
       })),
     }));
   }, [channelList, cards]);
+
+  const buildTaskContext = useCallback(() => {
+    return Object.values(tasks).map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      channelId: t.channelId,
+      cardId: t.cardId || undefined,
+      assignedTo: t.assignedTo?.length ? t.assignedTo : undefined,
+      dueDate: t.dueDate || undefined,
+    }));
+  }, [tasks]);
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -188,6 +204,8 @@ export function OperatorHome() {
           message: text.trim(),
           history,
           channels: buildChannelContext(),
+          tasks: buildTaskContext(),
+          user: session?.user ? { name: session.user.name, email: session.user.email } : undefined,
         }),
       });
 

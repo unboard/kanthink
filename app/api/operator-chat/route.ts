@@ -21,12 +21,24 @@ interface ChannelSummary {
   }[];
 }
 
+interface TaskSummary {
+  id: string;
+  title: string;
+  status: string;
+  channelId: string;
+  cardId?: string;
+  assignedTo?: string[];
+  dueDate?: string;
+}
+
 interface OperatorChatRequest {
   threadId?: string;
   message: string;
   imageUrls?: string[];
   history: { role: 'user' | 'assistant'; content: string }[];
   channels: ChannelSummary[];
+  tasks?: TaskSummary[];
+  user?: { name?: string | null; email?: string | null };
 }
 
 interface OperatorAction {
@@ -46,7 +58,12 @@ interface ActionResult {
   channelId?: string;
 }
 
-function buildSystemPrompt(channels: ChannelSummary[]): string {
+function buildSystemPrompt(
+  channels: ChannelSummary[],
+  tasks?: TaskSummary[],
+  user?: { name?: string | null; email?: string | null; id?: string },
+  membershipMap?: Record<string, string[]>,
+): string {
   const channelContext = channels.map((ch) => {
     const cols = ch.columns.map((col) => {
       const cardList = col.cards.length > 0
@@ -67,6 +84,51 @@ function buildSystemPrompt(channels: ChannelSummary[]): string {
     (sum, ch) => sum + ch.columns.reduce((s, col) => s + col.cards.length, 0), 0
   );
 
+  // Build task inventory
+  let taskSection = '';
+  if (tasks && tasks.length > 0) {
+    const assignedToUser = user?.id ? tasks.filter(t => t.assignedTo?.includes(user.id!)) : [];
+    const notDone = tasks.filter(t => t.status !== 'done');
+    const done = tasks.filter(t => t.status === 'done');
+
+    taskSection = `\n\n## TASKS (${tasks.length} total — ${done.length} done, ${notDone.length} not done)`;
+
+    if (user?.id && assignedToUser.length > 0) {
+      const myNotDone = assignedToUser.filter(t => t.status !== 'done');
+      taskSection += `\n\nAssigned to current user (${assignedToUser.length} total, ${myNotDone.length} not done):`;
+      for (const t of assignedToUser) {
+        const channelName = channels.find(c => c.id === t.channelId)?.name || '?';
+        taskSection += `\n  - "${t.title}" [${t.status}] in ${channelName}${t.dueDate ? ` (due: ${t.dueDate})` : ''}`;
+      }
+    }
+
+    if (notDone.length > 0) {
+      taskSection += `\n\nAll not-done tasks (${notDone.length}):`;
+      for (const t of notDone.slice(0, 50)) {
+        const channelName = channels.find(c => c.id === t.channelId)?.name || '?';
+        const assigned = t.assignedTo?.length ? ` [assigned: ${t.assignedTo.join(', ')}]` : '';
+        taskSection += `\n  - "${t.title}" [${t.status}] in ${channelName}${assigned}`;
+      }
+    }
+  }
+
+  // Build membership context
+  let membershipSection = '';
+  if (membershipMap && Object.keys(membershipMap).length > 0) {
+    membershipSection = '\n\n## CHANNEL MEMBERSHIP';
+    for (const ch of channels) {
+      const members = membershipMap[ch.id];
+      if (members && members.length > 0) {
+        membershipSection += `\n${ch.name}: ${members.join(', ')}`;
+      }
+    }
+  }
+
+  // User identity
+  const userSection = user?.name
+    ? `\n\n## CURRENT USER\nName: ${user.name}${user.email ? ` (${user.email})` : ''}${user.id ? `\nUser ID: ${user.id}` : ''}`
+    : '';
+
   return `You are Kan, the AI operator for Kanthink — a smart Kanban workspace.
 
 You are the user's central hub. They come to you to:
@@ -75,10 +137,11 @@ You are the user's central hub. They come to you to:
 - Think through ideas and get feedback
 - Route new information to the right channel
 - Take actions: create cards, add notes to card threads, update cards
+${userSection}
 
 ## YOUR WORKSPACE (${channels.length} channels, ${totalCards} cards)
 
-${channelContext || '(No channels yet)'}
+${channelContext || '(No channels yet)'}${taskSection}${membershipSection}
 
 ## KAN BOOKMARKS
 
@@ -278,10 +341,48 @@ export async function POST(request: Request) {
     await ensureSchema();
 
     const body: OperatorChatRequest = await request.json();
-    const { threadId, message, imageUrls, history, channels } = body;
+    const { threadId, message, imageUrls, history, channels: channelData, tasks: taskData, user: userData } = body;
 
     if (!message && (!imageUrls || imageUrls.length === 0)) {
       return NextResponse.json({ error: 'Missing message' }, { status: 400 });
+    }
+
+    // Query channel membership
+    let membershipMap: Record<string, string[]> = {};
+    try {
+      const { channelShares, channels: channelsTable, users: usersTable } = await import('@/lib/db/schema');
+      const shares = await db.query.channelShares.findMany({
+        columns: { channelId: true, userId: true },
+      });
+      // Also get channel owners
+      const ownedChannels = await db.query.channels.findMany({
+        columns: { id: true, ownerId: true },
+      });
+      // Get all relevant user names
+      const userIds = new Set<string>();
+      for (const s of shares) if (s.userId) userIds.add(s.userId);
+      for (const c of ownedChannels) if (c.ownerId) userIds.add(c.ownerId);
+      const allUsers = userIds.size > 0
+        ? await db.query.users.findMany({ columns: { id: true, name: true, email: true } })
+        : [];
+      const userNameMap = new Map(allUsers.map(u => [u.id, u.name || u.email || u.id]));
+
+      for (const c of ownedChannels) {
+        if (c.ownerId) {
+          membershipMap[c.id] = [userNameMap.get(c.ownerId) || c.ownerId + ' (owner)'];
+        }
+      }
+      for (const s of shares) {
+        if (s.userId && s.channelId) {
+          if (!membershipMap[s.channelId]) membershipMap[s.channelId] = [];
+          const name = userNameMap.get(s.userId) || s.userId;
+          if (!membershipMap[s.channelId].includes(name)) {
+            membershipMap[s.channelId].push(name);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load membership:', e);
     }
 
     const result = await getLLMClientForUser(session.user.id);
@@ -296,7 +397,12 @@ export async function POST(request: Request) {
     const usingOwnerKey = result.source === 'owner';
 
     const messages: LLMMessage[] = [
-      { role: 'system', content: buildSystemPrompt(channels) },
+      { role: 'system', content: buildSystemPrompt(
+        channelData,
+        taskData,
+        { ...userData, id: session.user.id },
+        membershipMap,
+      ) },
     ];
 
     // Add conversation history (last 20 messages)
