@@ -93,7 +93,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (assignedTo !== undefined && updatedTask) {
       const oldAssigned = (task.assignedTo as string[] | null) ?? []
       const newAssigned = (assignedTo as string[]) ?? []
-      const newlyAssigned = newAssigned.filter(id => !oldAssigned.includes(id) && id !== userId)
+      const newlyAssigned = newAssigned.filter(id => !oldAssigned.includes(id))
       if (newlyAssigned.length > 0) {
         const [assigner, channel] = await Promise.all([
           db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),

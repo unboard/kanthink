@@ -1,4 +1,4 @@
-import { Text, Link, Button } from '@react-email/components'
+import { Text, Button } from '@react-email/components'
 import { BaseLayout } from './components/BaseLayout'
 import * as React from 'react'
 
@@ -9,19 +9,26 @@ interface ChannelInviteProps {
 }
 
 export function ChannelInvite({ inviterName, channelName, signUpUrl }: ChannelInviteProps) {
+  // If the URL points to a specific channel, the user already has an account
+  const isExistingUser = signUpUrl.includes('/channel/')
+
   return (
     <BaseLayout previewText={`${inviterName} invited you to "${channelName}"`}>
-      <Text style={heading}>You've been invited</Text>
+      <Text style={heading}>
+        {isExistingUser ? 'Channel shared with you' : "You've been invited"}
+      </Text>
       <Text style={paragraph}>
-        <strong>{inviterName}</strong> invited you to collaborate on the channel{' '}
-        <strong>&ldquo;{channelName}&rdquo;</strong> in Kanthink.
+        <strong>{inviterName}</strong> {isExistingUser ? 'shared' : 'invited you to collaborate on'} the channel{' '}
+        <strong>&ldquo;{channelName}&rdquo;</strong> {isExistingUser ? 'with you' : 'in Kanthink'}.
       </Text>
       <Button href={signUpUrl} style={button}>
-        Accept Invite
+        {isExistingUser ? 'View Channel' : 'Accept Invite'}
       </Button>
-      <Text style={muted}>
-        If you weren&apos;t expecting this, you can safely ignore this email.
-      </Text>
+      {!isExistingUser && (
+        <Text style={muted}>
+          If you weren&apos;t expecting this, you can safely ignore this email.
+        </Text>
+      )}
     </BaseLayout>
   )
 }

@@ -101,7 +101,7 @@ function SaveContent() {
                 href={`/channel/${channelId}`}
                 className="inline-block mt-4 text-violet-400 hover:text-violet-300 text-sm underline underline-offset-2"
               >
-                Go to Quick Save channel
+                Go to Kan Bookmarks
               </a>
             )}
           </div>

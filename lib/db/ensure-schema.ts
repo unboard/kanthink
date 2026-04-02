@@ -240,6 +240,11 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Data migration — rename Quick Save → Kan Bookmarks
+  try {
+    await db.run(sql.raw(`UPDATE channels SET name = 'Kan Bookmarks', description = 'Your personal bookmark channel. Save anything from the web — links, articles, ideas, snippets — and Kan will organize and comment on them. Use the browser bookmarklet (desktop) or share sheet (mobile) to save from anywhere.' WHERE is_quick_save = 1 AND name = 'Quick Save'`))
+  } catch {}
+
   // Indexes — IF NOT EXISTS works for these
   const indexes = [
     `CREATE UNIQUE INDEX IF NOT EXISTS notification_preferences_user_idx ON notification_preferences (user_id)`,

@@ -9,6 +9,7 @@ interface ChannelSummary {
   id: string;
   name: string;
   description?: string;
+  isBookmarks?: boolean;
   columns: {
     name: string;
     cards: { id: string; title: string; summary?: string; tags?: string[] }[];
@@ -35,7 +36,8 @@ function buildSystemPrompt(channels: ChannelSummary[]): string {
         : '    (empty)';
       return `  ${col.name} (${col.cards.length}):\n${cards}`;
     }).join('\n');
-    return `📋 ${ch.name} (channelId:${ch.id})${ch.description ? ` — ${ch.description}` : ''}\n${cols}`;
+    const label = ch.isBookmarks ? '🔖' : '📋';
+    return `${label} ${ch.name} (channelId:${ch.id})${ch.isBookmarks ? ' [BOOKMARKS CHANNEL]' : ''}${ch.description ? ` — ${ch.description}` : ''}\n${cols}`;
   }).join('\n\n');
 
   const totalCards = channels.reduce(
@@ -54,6 +56,10 @@ You are the user's central hub. They come to you to:
 ## YOUR WORKSPACE (${channels.length} channels, ${totalCards} cards)
 
 ${channelContext || '(No channels yet)'}
+
+## KAN BOOKMARKS
+
+The channel marked [BOOKMARKS CHANNEL] is "Kan Bookmarks" — a special system channel where users save links, articles, and snippets from the web. When the user asks "what's in my bookmarks?" or "what have I saved?", look at this channel's cards. It's different from regular channels — it's a personal knowledge capture tool, not a project workspace.
 
 ## HOW TO RESPOND
 

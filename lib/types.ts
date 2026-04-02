@@ -307,7 +307,7 @@ export interface Channel {
   tagDefinitions?: TagDefinition[];
   unlinkedTaskOrder?: ID[];  // Order of standalone tasks (no cardId)
   isGlobalHelp?: boolean;    // True if this is a global help resource (read-only for all users)
-  isQuickSave?: boolean;     // True if this is the user's Quick Save channel
+  isQuickSave?: boolean;     // True if this is the user's Kan Bookmarks channel
   coverImageUrl?: string;    // Cover image URL for the channel
   role?: ChannelRole;        // User's role in this channel (owner, editor, viewer)
   sharedBy?: SharedByInfo;   // Person who shared this channel (if not owner)

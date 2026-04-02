@@ -149,7 +149,7 @@ async function maybeDispatchEmail(input: CreateNotificationInput): Promise<void>
       assignerName,
       taskTitle: input.body,
       channelName,
-      taskUrl: `${baseUrl}/channel/${channelId}`,
+      taskUrl: `${baseUrl}/channel/${channelId}?task=${taskId}`,
     }).catch(() => {})
   } else if (input.type === 'card_assigned') {
     const cardId = data.cardId as string
@@ -157,7 +157,7 @@ async function maybeDispatchEmail(input: CreateNotificationInput): Promise<void>
       assignerName,
       cardTitle: input.body,
       channelName,
-      cardUrl: `${baseUrl}/channel/${channelId}`,
+      cardUrl: `${baseUrl}/channel/${channelId}/card/${cardId}`,
     }).catch(() => {})
   }
 }

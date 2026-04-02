@@ -751,11 +751,11 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
           </div>
         </div>
 
-        {/* Quick Save Setup — only shown for Quick Save channels */}
+        {/* Kan Bookmarks Setup — only shown for bookmark channels */}
         {channel.isQuickSave && (
           <div className="pt-4">
             <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">
-              Quick Save Setup
+              Kan Bookmarks Setup
             </h3>
 
             {/* Android */}

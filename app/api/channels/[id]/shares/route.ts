@@ -222,18 +222,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       }).catch(() => {})
     }
 
-    // Send invite email for pending invites (user doesn't exist yet)
-    if (!existingUser) {
-      const inviter = await db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { name: true },
-      })
-      sendChannelInviteEmail(normalizedEmail, {
-        inviterName: inviter?.name || 'Someone',
-        channelName,
-        signUpUrl: `${process.env.NEXTAUTH_URL || 'https://kanthink.com'}`,
-      }).catch(() => {})
-    }
+    // Send invite email to all invited users
+    const inviter = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { name: true },
+    })
+    const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com'
+    sendChannelInviteEmail(normalizedEmail, {
+      inviterName: inviter?.name || 'Someone',
+      channelName,
+      signUpUrl: existingUser ? `${baseUrl}/channel/${channelId}` : baseUrl,
+    }).catch(() => {})
 
     return NextResponse.json(
       {

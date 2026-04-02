@@ -8,25 +8,27 @@ import { fetchUrlMetadata } from '@/lib/url-metadata'
 import { getLLMClientForUser } from '@/lib/ai/llm'
 import { nanoid } from 'nanoid'
 
-const QUICK_SAVE_COLUMNS = [
+const BOOKMARK_COLUMNS = [
   { name: 'Inbox', isAiTarget: true },
   { name: 'Read Later', isAiTarget: false },
   { name: 'Interesting', isAiTarget: false },
   { name: 'Archive', isAiTarget: false },
 ]
 
-const QUICK_SAVE_INSTRUCTIONS = `You are a bookmark analyst. When a user saves a URL or text snippet, provide brief, helpful commentary:
+const BOOKMARK_INSTRUCTIONS = `You are a bookmark analyst. When a user saves a URL or text snippet, provide brief, helpful commentary:
 - For articles/blog posts: summarize the key points and why it might be valuable
 - For tools/products: explain what it does and who it's for
 - For videos: describe the content and key takeaways if possible
 - For general text: provide context or related ideas
 Keep responses concise (2-3 sentences). Be genuinely helpful, not generic.`
 
+const BOOKMARK_DESCRIPTION = `Your personal bookmark channel. Save anything from the web — links, articles, ideas, snippets — and Kan will organize and comment on them. Use the browser bookmarklet (desktop) or share sheet (mobile) to save from anywhere.`
+
 /**
- * Find or create the user's Quick Save channel.
+ * Find or create the user's Kan Bookmarks channel.
  */
 async function getOrCreateQuickSaveChannel(userId: string) {
-  // Look for existing Quick Save channel
+  // Look for existing Kan Bookmarks channel
   const existing = await db.query.channels.findFirst({
     where: and(eq(channels.ownerId, userId), eq(channels.isQuickSave, true)),
   })
@@ -46,16 +48,16 @@ async function getOrCreateQuickSaveChannel(userId: string) {
   await db.insert(channels).values({
     id: channelId,
     ownerId: userId,
-    name: 'Quick Save',
-    description: 'Saved links, bookmarks, and snippets',
-    aiInstructions: QUICK_SAVE_INSTRUCTIONS,
+    name: 'Kan Bookmarks',
+    description: BOOKMARK_DESCRIPTION,
+    aiInstructions: BOOKMARK_INSTRUCTIONS,
     status: 'active',
     isQuickSave: true,
     createdAt: now,
     updatedAt: now,
   })
 
-  const columnInserts = QUICK_SAVE_COLUMNS.map((col, index) => ({
+  const columnInserts = BOOKMARK_COLUMNS.map((col, index) => ({
     id: nanoid(),
     channelId,
     name: col.name,
@@ -81,6 +83,44 @@ async function getOrCreateQuickSaveChannel(userId: string) {
     position: maxPosition + 1,
   })
 
+  // Add setup/education cards to the Inbox column
+  const inboxCol = columnInserts.find(c => c.isAiTarget) || columnInserts[0]
+  const setupCards = [
+    {
+      id: nanoid(),
+      channelId,
+      columnId: inboxCol.id,
+      title: 'How to save from your phone',
+      messages: [{
+        id: nanoid(),
+        type: 'note' as const,
+        content: `**Android:** Open kanthink.com in Chrome, tap the menu (⋮) and select "Install app". After that, any app's Share button will show Kanthink as an option.\n\n**iPhone:** Open kanthink.com in Safari, tap the Share icon, then "Add to Home Screen". To save links, copy the URL and paste it into a new card here — or use the bookmarklet below on Safari.`,
+        createdAt: now.toISOString(),
+      }],
+      source: 'manual' as const,
+      position: 0,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: nanoid(),
+      channelId,
+      columnId: inboxCol.id,
+      title: 'How to save from your computer',
+      messages: [{
+        id: nanoid(),
+        type: 'note' as const,
+        content: `**Browser bookmarklet:** Create a bookmark in your bookmarks bar, edit it, and replace the URL with this code:\n\n\`javascript:void(window.open('https://kanthink.com/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))\`\n\nName it "Save to Kanthink" — click it on any page to save the link here with AI commentary.\n\nYou can also find this code in the channel settings (gear icon).`,
+        createdAt: now.toISOString(),
+      }],
+      source: 'manual' as const,
+      position: 1,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ]
+  await db.insert(cards).values(setupCards)
+
   const createdChannel = await db.query.channels.findFirst({
     where: eq(channels.id, channelId),
   })
@@ -90,7 +130,7 @@ async function getOrCreateQuickSaveChannel(userId: string) {
 
 /**
  * POST /api/inbox
- * Save a URL, text, or both into the user's Quick Save channel.
+ * Save a URL, text, or both into the user's Kan Bookmarks channel.
  */
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -114,7 +154,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Get or create the Quick Save channel
+    // Get or create the Kan Bookmarks channel
     const { channel, columns: channelColumns } = await getOrCreateQuickSaveChannel(userId)
     const inboxColumn = channelColumns.find(c => c.isAiTarget) || channelColumns[0]
 
@@ -134,7 +174,7 @@ export async function POST(req: NextRequest) {
       }
     }
     if (!cardTitle) {
-      cardTitle = text ? text.slice(0, 80) + (text.length > 80 ? '...' : '') : 'Quick Save'
+      cardTitle = text ? text.slice(0, 80) + (text.length > 80 ? '...' : '') : 'Kan Bookmarks'
     }
 
     // Build initial message content
@@ -227,7 +267,7 @@ async function generateAICommentary(
       : `The user saved this note:\n\nTitle: ${title}\n${content}\n\nProvide brief, helpful commentary (2-3 sentences).`
 
     const response = await client.complete([
-      { role: 'system', content: QUICK_SAVE_INSTRUCTIONS },
+      { role: 'system', content: BOOKMARK_INSTRUCTIONS },
       { role: 'user', content: prompt },
     ])
 

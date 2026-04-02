@@ -51,7 +51,7 @@ export function OperatorHome() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const channelList = useMemo(() =>
-    Object.values(channels).filter((c) => !c.isGlobalHelp && !c.isQuickSave),
+    Object.values(channels).filter((c) => !c.isGlobalHelp),
     [channels]
   );
 
@@ -68,6 +68,7 @@ export function OperatorHome() {
       id: ch.id,
       name: ch.name,
       description: ch.description || undefined,
+      isBookmarks: ch.isQuickSave || undefined,
       columns: ch.columns.map((col) => ({
         name: col.name,
         cards: col.cardIds
