@@ -1,25 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { NewChannelOverlay } from '@/components/home/NewChannelOverlay';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
+import { OperatorHome } from '@/components/home/OperatorHome';
 import { signInWithGoogle } from '@/lib/actions/auth';
+import { useRouter } from 'next/navigation';
 
 const WELCOME_SEEN_KEY = 'kanthink-welcome-seen';
-
-function parseTimestamp(ts: string | undefined | null): number {
-  if (!ts) return 0;
-  const d = new Date(ts);
-  let ms = d.getTime();
-  if (!isNaN(ms)) return ms;
-  const num = Number(ts);
-  if (!isNaN(num)) return num < 4102444800 ? num * 1000 : num;
-  return 0;
-}
 
 export default function Home() {
   const router = useRouter();
@@ -29,7 +20,6 @@ export default function Home() {
   const [showKanHelp, setShowKanHelp] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [hasCheckedWelcome, setHasCheckedWelcome] = useState(false);
-  const [hasRedirected, setHasRedirected] = useState(false);
 
   const createChannel = useStore((s) => s.createChannel);
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
@@ -43,30 +33,21 @@ export default function Home() {
     (sessionStatus === 'authenticated' && !isServerLoading)
   );
 
-  // Redirect to the most recently modified channel
+  // Check welcome flow for new users with no channels
   useEffect(() => {
-    if (!isFullyLoaded || hasRedirected) return;
+    if (!isFullyLoaded || hasCheckedWelcome) return;
 
     const channelList = Object.values(channels)
       .filter(c => !c.isGlobalHelp && !c.isQuickSave);
 
-    if (channelList.length > 0) {
-      // Find the most recently updated channel
-      const sorted = channelList.sort((a, b) =>
-        parseTimestamp(b.updatedAt) - parseTimestamp(a.updatedAt)
-      );
-      setHasRedirected(true);
-      router.replace(`/channel/${sorted[0].id}`);
-      return;
-    }
-
-    // No channels — check welcome flow
-    const hasSeenWelcome = localStorage.getItem(WELCOME_SEEN_KEY);
-    if (!hasSeenWelcome) {
-      setShowWelcome(true);
+    if (channelList.length === 0) {
+      const hasSeenWelcome = localStorage.getItem(WELCOME_SEEN_KEY);
+      if (!hasSeenWelcome) {
+        setShowWelcome(true);
+      }
     }
     setHasCheckedWelcome(true);
-  }, [isFullyLoaded, channels, hasRedirected, router]);
+  }, [isFullyLoaded, channels, hasCheckedWelcome]);
 
   const handleWelcomeClose = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
@@ -98,8 +79,8 @@ export default function Home() {
     router.push(`/channel/${channel.id}`);
   };
 
-  // Loading state (while redirecting or loading data)
-  if (!isFullyLoaded || (!hasCheckedWelcome && !hasRedirected)) {
+  // Loading state
+  if (!isFullyLoaded || !hasCheckedWelcome) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500"></div>
@@ -107,13 +88,9 @@ export default function Home() {
     );
   }
 
-  // If we have channels, we're redirecting — show spinner
-  if (hasData) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500"></div>
-      </div>
-    );
+  // Authenticated user with channels: show operator homepage
+  if (hasData && sessionStatus === 'authenticated') {
+    return <OperatorHome />;
   }
 
   // No channels — show empty state with create option
