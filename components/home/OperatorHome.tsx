@@ -154,18 +154,22 @@ export function OperatorHome() {
     const parsed = parseKanthinkUrl(href);
 
     if (!parsed) {
-      return (
-        <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
-          {children}
-        </a>
-      );
+      // External links with valid URLs open in new tab
+      if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+        return (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+            {children}
+          </a>
+        );
+      }
+      // Invalid/empty links (AI hallucinated a link) — render as styled text, not a navigating link
+      return <span className="text-neutral-200 font-medium">{children}</span>;
     }
 
     const handleClick = () => {
       if (parsed.type === 'channel') {
         router.push(`/channel/${parsed.id}`);
       } else if (parsed.type === 'card') {
-        // Find the card's channel to build the full URL
         const card = cards[parsed.id];
         if (card) {
           router.push(`/channel/${card.channelId}/card/${parsed.id}`);
