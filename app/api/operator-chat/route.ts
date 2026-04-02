@@ -27,7 +27,7 @@ function buildSystemPrompt(channels: ChannelSummary[]): string {
     const cols = ch.columns.map((col) => {
       const cards = col.cards.length > 0
         ? col.cards.map((c) => {
-          let desc = `    - ${c.title}`;
+          let desc = `    - ${c.title} (id:${c.id})`;
           if (c.tags?.length) desc += ` [${c.tags.join(', ')}]`;
           if (c.summary) desc += ` — ${c.summary}`;
           return desc;
@@ -35,7 +35,7 @@ function buildSystemPrompt(channels: ChannelSummary[]): string {
         : '    (empty)';
       return `  ${col.name} (${col.cards.length}):\n${cards}`;
     }).join('\n');
-    return `📋 ${ch.name}${ch.description ? ` — ${ch.description}` : ''}\n${cols}`;
+    return `📋 ${ch.name} (channelId:${ch.id})${ch.description ? ` — ${ch.description}` : ''}\n${cols}`;
   }).join('\n\n');
 
   const totalCards = channels.reduce(
@@ -58,7 +58,7 @@ ${channelContext || '(No channels yet)'}
 ## HOW TO RESPOND
 
 - Be conversational, warm, and concise. You're a smart collaborator, not a formal assistant.
-- When referencing cards or channels, be specific — name them.
+- When referencing cards or channels, be specific — name them and ALWAYS link them.
 - If the user shares an idea, help them think it through. Suggest which channel it might belong in.
 - If asked "what should I work on?", look at cards across channels and suggest priorities.
 - If asked about a specific topic, search across all channels for relevant cards.
@@ -66,20 +66,25 @@ ${channelContext || '(No channels yet)'}
 - Don't list every card unless asked. Summarize and highlight what's important.
 - If you don't know something that isn't in the workspace data, say so honestly.
 
+## LINKING — CRITICAL
+
+ALWAYS use clickable kanthink:// links when mentioning cards, channels, or tasks:
+- Cards: [Card Title](kanthink://card/CARD_ID) — use the id from the data (shown as "id:XXX")
+- Channels: [Channel Name](kanthink://channel/CHANNEL_ID) — use the channelId from the data (shown as "channelId:XXX")
+
+Never mention a card or channel by name without linking it. This is how users navigate from the operator.
+
 ## RESPONSE FORMAT
 
 Respond with valid JSON:
 {
-  "response": "Your message (markdown supported)",
-  "suggestedChannel": "channel-id-if-relevant"
+  "response": "Your message (markdown supported with kanthink:// links)"
 }
-
-The "suggestedChannel" field is optional — include it only when you're recommending the user navigate to a specific channel (e.g., if their question is clearly about one channel's domain).
 
 Always respond with valid JSON. The "response" field is required.`;
 }
 
-function parseResponse(raw: string): { response: string; suggestedChannel?: string } {
+function parseResponse(raw: string): { response: string } {
   try {
     let json = raw.trim();
     if (json.startsWith('```json')) json = json.slice(7);
@@ -89,10 +94,7 @@ function parseResponse(raw: string): { response: string; suggestedChannel?: stri
 
     const parsed = JSON.parse(json);
     if (typeof parsed.response === 'string') {
-      return {
-        response: parsed.response,
-        suggestedChannel: typeof parsed.suggestedChannel === 'string' ? parsed.suggestedChannel : undefined,
-      };
+      return { response: parsed.response };
     }
   } catch {
     // Fall through to plain text

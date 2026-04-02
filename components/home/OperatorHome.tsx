@@ -1,17 +1,17 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  suggestedChannel?: string;
   timestamp: Date;
 }
 
@@ -21,6 +21,23 @@ const GREETING_PROMPTS = [
   'Any cards that need attention?',
   'Help me think through an idea',
 ];
+
+// Allow kanthink:// protocol in sanitized markdown links
+const sanitizeSchema = {
+  ...defaultSchema,
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href ?? []), 'kanthink'],
+  },
+};
+
+/** Parse a kanthink:// URL */
+function parseKanthinkUrl(href: string | undefined): { type: 'card' | 'channel' | 'task'; id: string } | null {
+  if (!href) return null;
+  const match = href.match(/^kanthink:\/\/(card|channel|task)\/(.+)$/);
+  if (!match) return null;
+  return { type: match[1] as 'card' | 'channel' | 'task', id: match[2] };
+}
 
 export function OperatorHome() {
   const router = useRouter();
@@ -33,14 +50,10 @@ export function OperatorHome() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const channelList = Object.values(channels).filter(
-    (c) => !c.isGlobalHelp && !c.isQuickSave
+  const channelList = useMemo(() =>
+    Object.values(channels).filter((c) => !c.isGlobalHelp && !c.isQuickSave),
+    [channels]
   );
-
-  // Recent cards across all channels (last 10 updated)
-  const recentCards = Object.values(cards)
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 8);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -111,7 +124,6 @@ export function OperatorHome() {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: data.response,
-        suggestedChannel: data.suggestedChannel,
         timestamp: new Date(),
       };
 
@@ -136,22 +148,47 @@ export function OperatorHome() {
     }
   };
 
-  const getChannelName = (channelId: string) => {
-    return channels[channelId]?.name || 'Unknown';
-  };
+  /** Handle kanthink:// and regular links in markdown */
+  const renderLink = useCallback(({ href, children }: { href?: string; children?: React.ReactNode }) => {
+    const parsed = parseKanthinkUrl(href);
 
-  const getCardChannelName = (card: typeof recentCards[0]) => {
-    return channels[card.channelId]?.name || '';
-  };
+    if (!parsed) {
+      return (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+          {children}
+        </a>
+      );
+    }
+
+    const handleClick = () => {
+      if (parsed.type === 'channel') {
+        router.push(`/channel/${parsed.id}`);
+      } else if (parsed.type === 'card') {
+        // Find the card's channel to build the full URL
+        const card = cards[parsed.id];
+        if (card) {
+          router.push(`/channel/${card.channelId}/card/${parsed.id}`);
+        }
+      }
+    };
+
+    return (
+      <button
+        onClick={handleClick}
+        className="text-violet-400 hover:underline font-medium cursor-pointer inline"
+      >
+        {children}
+      </button>
+    );
+  }, [router, cards]);
 
   const hasConversation = messages.length > 0;
 
   return (
     <div className="flex h-full flex-col items-center">
-      {/* Main content area */}
       <div className={`flex w-full max-w-2xl flex-col ${hasConversation ? 'h-full' : 'flex-1 justify-center'} px-4`}>
 
-        {/* Welcome state (before conversation starts) */}
+        {/* Welcome state */}
         {!hasConversation && (
           <div className="mb-8 text-center">
             <div className="mb-4 inline-flex">
@@ -186,23 +223,16 @@ export function OperatorHome() {
                   >
                     {msg.role === 'assistant' ? (
                       <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
+                          components={{ a: renderLink }}
+                        >
                           {msg.content}
                         </ReactMarkdown>
                       </div>
                     ) : (
                       <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                    )}
-                    {msg.suggestedChannel && (
-                      <button
-                        onClick={() => router.push(`/channel/${msg.suggestedChannel}`)}
-                        className="mt-2 flex items-center gap-1.5 rounded-lg bg-violet-500/20 px-3 py-1.5 text-xs text-violet-300 hover:bg-violet-500/30 transition-colors"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                        </svg>
-                        Go to {getChannelName(msg.suggestedChannel)}
-                      </button>
                     )}
                   </div>
                 </div>
@@ -229,7 +259,7 @@ export function OperatorHome() {
           </div>
         )}
 
-        {/* Prompt chips (before conversation) */}
+        {/* Prompt chips */}
         {!hasConversation && (
           <div className="mb-4 flex flex-wrap justify-center gap-2">
             {GREETING_PROMPTS.map((prompt) => (
@@ -273,56 +303,6 @@ export function OperatorHome() {
             </button>
           </div>
         </div>
-
-        {/* Below input: recent activity & channels (only in welcome state) */}
-        {!hasConversation && (
-          <div className="mt-8 grid gap-6 pb-8 sm:grid-cols-2">
-            {/* Recent cards */}
-            {recentCards.length > 0 && (
-              <div>
-                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500">
-                  Recent cards
-                </h3>
-                <div className="space-y-1">
-                  {recentCards.map((card) => (
-                    <button
-                      key={card.id}
-                      onClick={() => router.push(`/channel/${card.channelId}/card/${card.id}`)}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-300 transition-colors hover:bg-neutral-800/60"
-                    >
-                      <span className="flex-1 truncate">{card.title}</span>
-                      <span className="flex-shrink-0 text-xs text-neutral-600">{getCardChannelName(card)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Channels */}
-            {channelList.length > 0 && (
-              <div>
-                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500">
-                  Channels
-                </h3>
-                <div className="space-y-1">
-                  {channelList.slice(0, 8).map((ch) => (
-                    <button
-                      key={ch.id}
-                      onClick={() => router.push(`/channel/${ch.id}`)}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-300 transition-colors hover:bg-neutral-800/60"
-                    >
-                      <span className="h-2 w-2 rounded-full bg-violet-500/60 flex-shrink-0" />
-                      <span className="flex-1 truncate">{ch.name}</span>
-                      <span className="flex-shrink-0 text-xs text-neutral-600">
-                        {ch.columns.reduce((s, col) => s + col.cardIds.length, 0)} cards
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
