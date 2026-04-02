@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { type NotificationData, getCategoryForType } from '@/lib/notifications/types'
 import { useNav } from '@/components/providers/NavProvider'
+import { useStore } from '@/lib/store'
 
 interface NotificationItemProps {
   notification: NotificationData
@@ -64,7 +65,7 @@ function getRelativeTime(dateStr: string): string {
 }
 
 /** Build the best navigation URL from the notification data */
-function getNavigationUrl(notification: NotificationData): string | null {
+function getNavigationUrl(notification: NotificationData, tasks: Record<string, { cardId: string | null }>): string | null {
   const data = notification.data as Record<string, unknown> | null
   if (!data) return null
 
@@ -83,8 +84,10 @@ function getNavigationUrl(notification: NotificationData): string | null {
 
   // Task notifications → open card with task hint, or channel for standalone tasks
   if (data.taskId && notification.type === 'task_assigned') {
-    if (data.cardId) {
-      return `/channel/${channelId}/card/${data.cardId}?task=${data.taskId}`
+    // cardId may be in notification data (new) or look it up from store (retroactive)
+    const cardId = (data.cardId as string | undefined) || tasks[data.taskId as string]?.cardId
+    if (cardId) {
+      return `/channel/${channelId}/card/${cardId}?task=${data.taskId}`
     }
     return `/channel/${channelId}`
   }
@@ -122,20 +125,21 @@ function getTypeLabel(notification: NotificationData): string | null {
 export function NotificationItem({ notification, onRead }: NotificationItemProps) {
   const router = useRouter()
   const { closePanel } = useNav()
+  const tasks = useStore((s) => s.tasks)
 
   const handleClick = () => {
     if (!notification.isRead) {
       onRead(notification.id)
     }
 
-    const url = getNavigationUrl(notification)
+    const url = getNavigationUrl(notification, tasks)
     if (url) {
       closePanel()
       router.push(url)
     }
   }
 
-  const url = getNavigationUrl(notification)
+  const url = getNavigationUrl(notification, tasks)
   const typeLabel = getTypeLabel(notification)
 
   return (
