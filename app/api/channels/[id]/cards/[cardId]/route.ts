@@ -180,6 +180,54 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Detect @mentions in newly added messages and notify mentioned users
+    if (messages !== undefined && updatedCard) {
+      const oldMessages = (existingCard.messages || []) as Array<{ id: string; content?: string }>
+      const newMessages = (messages as Array<{ id: string; content?: string }>)
+      const oldIds = new Set(oldMessages.map(m => m.id))
+      const addedMessages = newMessages.filter(m => !oldIds.has(m.id))
+
+      // Parse @[Name](userId) mentions from new messages
+      const mentionRegex = /@\[([^\]]+)\]\(([^)]+)\)/g
+      const mentionedUserIds = new Set<string>()
+      let mentionMessagePreview = ''
+
+      for (const msg of addedMessages) {
+        if (!msg.content) continue
+        let match
+        while ((match = mentionRegex.exec(msg.content)) !== null) {
+          mentionedUserIds.add(match[2])
+        }
+        if (!mentionMessagePreview && msg.content) {
+          // Strip mention markup for preview
+          mentionMessagePreview = msg.content.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').slice(0, 200)
+        }
+      }
+
+      if (mentionedUserIds.size > 0) {
+        const [mentioner, channel] = await Promise.all([
+          db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),
+          db.query.channels.findFirst({ where: eq(channels.id, channelId), columns: { name: true } }),
+        ])
+        for (const mentionedId of mentionedUserIds) {
+          createNotification({
+            userId: mentionedId,
+            type: 'mentioned_in_card',
+            title: 'You were mentioned',
+            body: updatedCard.title,
+            data: {
+              channelId,
+              cardId,
+              mentionerName: mentioner?.name || 'Someone',
+              channelName: channel?.name || 'a channel',
+              cardTitle: updatedCard.title,
+              messagePreview: mentionMessagePreview,
+            },
+          }).catch(() => {})
+        }
+      }
+    }
+
     // Notify on card move (columnId change) in shared channels
     if (body.columnId !== undefined && body.columnId !== existingCard.columnId && updatedCard) {
       createNotificationForChannelMembers(channelId, userId, {

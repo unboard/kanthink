@@ -3,7 +3,7 @@ import { notifications, notificationPreferences, channelShares, channels, users 
 import { eq, and } from 'drizzle-orm'
 import { publishNotificationToUser } from '@/lib/sync/pusherServer'
 import type { NotificationType } from './types'
-import { sendTaskAssignedEmail, sendCardAssignedEmail } from '@/lib/emails/send'
+import { sendTaskAssignedEmail, sendCardAssignedEmail, sendMentionedInCardEmail } from '@/lib/emails/send'
 
 interface CreateNotificationInput {
   userId: string
@@ -57,8 +57,8 @@ export async function createNotification(input: CreateNotificationInput): Promis
       readAt: null,
     })
 
-    // Dispatch email for assignment notifications (respects email preference)
-    if (input.type === 'task_assigned' || input.type === 'card_assigned') {
+    // Dispatch email for assignment and mention notifications (respects email preference)
+    if (input.type === 'task_assigned' || input.type === 'card_assigned' || input.type === 'mentioned_in_card') {
       maybeDispatchEmail(input).catch(() => {})
     }
 
@@ -161,6 +161,18 @@ async function maybeDispatchEmail(input: CreateNotificationInput): Promise<void>
       assignerName,
       cardTitle: input.body,
       channelName,
+      cardUrl: `${baseUrl}/channel/${channelId}/card/${cardId}`,
+    }).catch(() => {})
+  } else if (input.type === 'mentioned_in_card') {
+    const cardId = data.cardId as string
+    const mentionerName = (data.mentionerName as string) || 'Someone'
+    const messagePreview = (data.messagePreview as string) || ''
+    const cardTitle = (data.cardTitle as string) || input.body
+    sendMentionedInCardEmail(user.email, {
+      mentionerName,
+      cardTitle,
+      channelName,
+      messagePreview,
       cardUrl: `${baseUrl}/channel/${channelId}/card/${cardId}`,
     }).catch(() => {})
   }

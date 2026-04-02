@@ -4,6 +4,7 @@ import { ChannelInvite } from './ChannelInvite'
 import { Welcome } from './Welcome'
 import { TaskAssigned } from './TaskAssigned'
 import { CardAssigned } from './CardAssigned'
+import { MentionedInCard } from './MentionedInCard'
 import { PaymentFailed } from './PaymentFailed'
 import { SubscriptionConfirmed } from './SubscriptionConfirmed'
 import { SubscriptionCanceled } from './SubscriptionCanceled'
@@ -106,6 +107,15 @@ export async function sendCardAssignedEmail(
   const override = await trySystemOverride('card-assigned', to, props)
   if (override !== null) return override
   return renderAndSend(to, `Card assigned: ${props.cardTitle}`, React.createElement(CardAssigned, props))
+}
+
+export async function sendMentionedInCardEmail(
+  to: string,
+  props: { mentionerName: string; cardTitle: string; channelName: string; messagePreview: string; cardUrl: string }
+): Promise<boolean> {
+  const override = await trySystemOverride('mentioned-in-card', to, props)
+  if (override !== null) return override
+  return renderAndSend(to, `${props.mentionerName} mentioned you in "${props.cardTitle}"`, React.createElement(MentionedInCard, props))
 }
 
 export async function sendPaymentFailedEmail(
