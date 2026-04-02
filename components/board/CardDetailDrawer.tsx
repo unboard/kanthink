@@ -135,7 +135,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
-  const [isImprovingTitle, setIsImprovingTitle] = useState(false);
+
   const [isPublishing, setIsPublishing] = useState(false);
   const [copiedPublicLink, setCopiedPublicLink] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement>(null);
@@ -453,7 +453,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
             className="flex-1 font-medium text-neutral-900 dark:text-white bg-transparent border-none outline-none placeholder-neutral-400 truncate"
             placeholder="Card title"
           />
-          {/* Improve title button removed from header — now below title */}
+
           {fullPage && card && (
             <div className="relative" ref={shareMenuRef}>
               <button
@@ -924,50 +924,6 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           )}
         </div>
 
-        {/* Improve title with Kan — positioned below header for better context */}
-        {card && title && title.length > 3 && (
-          <div className="flex-shrink-0 px-4 pb-1">
-            <button
-              disabled={isImprovingTitle}
-              onClick={async () => {
-                if (!card || isImprovingTitle) return;
-                setIsImprovingTitle(true);
-                const channel = channels[card.channelId];
-                try {
-                  const res = await fetch('/api/channels/actions/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      type: 'chat',
-                      channelName: channel?.name || '',
-                      channelDescription: '',
-                      prompt: `Rewrite this card title to be clearer, more actionable, and specific. Current title: "${title}". Card description/context: "${card.summary || card.messages?.[0]?.content?.slice(0, 200) || ''}". Return ONLY the improved title text, nothing else. No quotes, no explanation.`,
-                      cards: [],
-                    }),
-                  });
-                  if (res.ok) {
-                    const data = await res.json();
-                    const newTitle = data.content?.trim().replace(/^["']|["']$/g, '');
-                    if (newTitle && newTitle !== title) {
-                      handleTitleChange(newTitle);
-                    }
-                  }
-                } catch { /* silent fail */ }
-                setIsImprovingTitle(false);
-              }}
-              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs transition-colors ${
-                isImprovingTitle
-                  ? 'text-violet-500 bg-violet-50 dark:bg-violet-900/20 animate-pulse'
-                  : 'text-neutral-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20'
-              }`}
-            >
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              {isImprovingTitle ? 'Improving...' : 'Improve title'}
-            </button>
-          </div>
-        )}
 
         {/* Hidden file input for cover image */}
         <input
