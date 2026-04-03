@@ -287,8 +287,15 @@ export function OperatorHome() {
       const colDetails = ch.columns.map(col => {
         const colCards = col.cardIds.map(cid => cards[cid]).filter(Boolean);
         if (colCards.length === 0) return `  ${col.name}: (empty)`;
-        const cardList = colCards.slice(0, 5).map(c => `    - "${c.title}" (cardId: ${c.id})`).join('\n');
-        return `  ${col.name}:\n${cardList}${colCards.length > 5 ? `\n    ... and ${colCards.length - 5} more` : ''}`;
+        // Sort by updatedAt descending so most recent are first
+        const sorted = [...colCards].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        const cardList = sorted.slice(0, 8).map(c => {
+          const updated = new Date(c.updatedAt);
+          const created = new Date(c.createdAt);
+          const fmtDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `    - "${c.title}" (cardId: ${c.id}) modified: ${fmtDate(updated)}, created: ${fmtDate(created)}`;
+        }).join('\n');
+        return `  ${col.name} (${colCards.length} cards):\n${cardList}${colCards.length > 8 ? `\n    ... and ${colCards.length - 8} more` : ''}`;
       }).join('\n');
       return `📋 ${ch.name} (channelId: ${ch.id})${ch.isQuickSave ? ' [Bookmarks]' : ''}\n${colDetails}`;
     }).join('\n\n');
@@ -303,7 +310,9 @@ export function OperatorHome() {
       const taskLines = notDone.slice(0, 20).map(t => {
         const chName = channelList.find(c => c.id === t.channelId)?.name || '?';
         const cardTitle = t.cardId ? cards[t.cardId]?.title : null;
-        return `- "${t.title}" (taskId: ${t.id}) [${t.status}] in ${chName}${cardTitle ? ` on card "${cardTitle}"` : ''}${t.assignedTo?.includes(userId || '') ? ' [ASSIGNED TO YOU]' : ''}`;
+        const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const dates = `created: ${fmtDate(t.createdAt)}${t.updatedAt !== t.createdAt ? `, modified: ${fmtDate(t.updatedAt)}` : ''}`;
+        return `- "${t.title}" (taskId: ${t.id}) [${t.status}] in ${chName}${cardTitle ? ` on card "${cardTitle}"` : ''} ${dates}${t.assignedTo?.includes(userId || '') ? ' [ASSIGNED TO YOU]' : ''}`;
       }).join('\n');
       taskSection = `\n\nTASKS (${notDone.length} not done${myTasks.length > 0 ? `, ${myTasks.length} assigned to you` : ''}):\n${taskLines}`;
     }
@@ -315,6 +324,8 @@ Keep voice responses concise — 2-3 sentences max. Be conversational and warm.
 WORKSPACE (${channelList.length} channels):
 
 ${channelSummaries || '(no channels)'}${taskSection}
+
+Cards are listed most-recently-modified first within each column, with created and modified dates. You can answer questions like "what are the 3 most recently modified cards in X channel" or "what cards were created this week" by reading the dates above.
 
 IMPORTANT: When using tools, you MUST use the exact IDs shown above (taskId, cardId, channelId). Never guess or make up IDs.`;
   }, [channelList, cards, tasks, session]);
