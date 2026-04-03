@@ -36,6 +36,7 @@ import { AssigneePicker } from './AssigneePicker';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { useKeyboardOffset } from './ChatInput';
 import { nanoid } from 'nanoid';
+import { Pin } from 'lucide-react';
 
 interface SortableTaskItemProps {
   task: Task;
@@ -833,9 +834,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"
                       >
-                        <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 2h10l-2 5h3l-4 8v5h-4v-5L6 7h3L7 2z" />
-                        </svg>
+                        <Pin className="w-4 h-4 text-neutral-400" />
                         {card.pinnedAt ? 'Unpin' : 'Pin'}
                       </button>
 

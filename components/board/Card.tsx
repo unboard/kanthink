@@ -18,6 +18,7 @@ import { stripMentionMarkup } from './ChatMessage';
 import { SnoozePicker } from './SnoozePicker';
 import { useSelectionStore } from '@/lib/selectionStore';
 import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
+import { Pin } from 'lucide-react';
 
 const CARD_COLORS: Record<string, string> = {
   red: '#ef4444',
@@ -433,7 +434,7 @@ export function Card({ card }: CardProps) {
                     <svg className="w-3 h-3 text-neutral-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); handlePin(); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
-                    <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 2h10l-2 5h3l-4 8v5h-4v-5L6 7h3L7 2z" /></svg>
+                    <Pin className="w-5 h-5 text-neutral-400" />
                     {isPinned ? 'Unpin' : 'Pin'}
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); setShowReactSubmenu(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
@@ -663,9 +664,7 @@ export function Card({ card }: CardProps) {
                     onClick={(e) => { e.stopPropagation(); handlePin(); }}
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
                   >
-                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 2h10l-2 5h3l-4 8v5h-4v-5L6 7h3L7 2z" />
-                    </svg>
+                    <Pin className="w-4 h-4 text-neutral-400" />
                     {isPinned ? 'Unpin' : 'Pin'}
                   </button>
                   {/* React */}
@@ -726,9 +725,7 @@ export function Card({ card }: CardProps) {
           {isPinned && (
             <div className="mb-1.5">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
-                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 2h10l-2 5h3l-4 8v5h-4v-5L6 7h3L7 2z" />
-                </svg>
+                <Pin className="w-2.5 h-2.5" />
                 Pinned
               </span>
             </div>
