@@ -141,6 +141,36 @@ export async function POST(request: Request) {
         return NextResponse.json({ result: `Updated task "${task.title}" to ${args.status}`, taskId: task.id });
       }
 
+      case 'archive_card': {
+        const card = await findCard(args.cardId);
+        if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        await db.update(cards).set({ isArchived: true, updatedAt: new Date() }).where(eq(cards.id, card.id));
+        return NextResponse.json({ result: `Archived card "${card.title}"`, cardId: card.id });
+      }
+
+      case 'send_email': {
+        try {
+          const { sendTransactionalEmail } = await import('@/lib/customerio');
+          if (!sendTransactionalEmail) {
+            return NextResponse.json({ result: 'Email service not configured' });
+          }
+          const html = `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background: #7c3aed; height: 4px;"></div>
+              <div style="padding: 24px;">
+                ${args.body.split('\n').map((line: string) => line.trim() ? `<p style="margin: 0 0 12px; color: #3f3f46; font-size: 14px; line-height: 22px;">${line}</p>` : '<br/>').join('')}
+              </div>
+              <div style="padding: 16px 24px; border-top: 1px solid #e4e4e7; color: #a1a1aa; font-size: 12px;">
+                Sent via Kanthink
+              </div>
+            </div>`;
+          const sent = await sendTransactionalEmail({ to: args.to, subject: args.subject, html });
+          return NextResponse.json({ result: sent ? `Email sent to ${args.to}: "${args.subject}"` : 'Email sending failed' });
+        } catch (emailErr) {
+          return NextResponse.json({ result: `Email error: ${emailErr instanceof Error ? emailErr.message : 'Unknown'}` });
+        }
+      }
+
       default:
         return NextResponse.json({ result: `Unknown action: ${action}` });
     }

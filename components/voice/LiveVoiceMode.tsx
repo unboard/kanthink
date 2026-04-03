@@ -70,8 +70,31 @@ const TOOLS = [
           required: ['taskId', 'status'],
         },
       },
+      {
+        name: 'archive_card',
+        description: 'Archive a card (remove it from the board)',
+        parameters: {
+          type: 'OBJECT',
+          properties: { cardId: { type: 'STRING', description: 'Card ID or card title' } },
+          required: ['cardId'],
+        },
+      },
+      {
+        name: 'send_email',
+        description: 'Send an email to someone. Compose a professional email based on what the user describes.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            to: { type: 'STRING', description: 'Recipient email address' },
+            subject: { type: 'STRING', description: 'Email subject line' },
+            body: { type: 'STRING', description: 'Email body content (plain text or markdown)' },
+          },
+          required: ['to', 'subject', 'body'],
+        },
+      },
     ],
   },
+  { googleSearch: {} },
 ];
 
 interface ActionLog {
@@ -229,7 +252,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
                 responseModalities: ['AUDIO'],
                 speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
               },
-              systemInstruction: { parts: [{ text: (systemPrompt || 'You are Kan, a helpful AI assistant.') + '\n\nYou have tools to take actions. When the user asks you to do something (complete a task, create a card, etc.), USE the tools. Always confirm what you did after the tool executes.' }] },
+              systemInstruction: { parts: [{ text: (systemPrompt || 'You are Kan, a helpful AI assistant.') + '\n\nYou have tools to take actions and Google Search for real-time information. When the user asks you to do something, USE the tools. Available actions: complete tasks, create tasks, create cards, add notes to cards, archive cards, and send emails. You can also search the web for current information. Always confirm what you did after a tool executes.' }] },
               tools: TOOLS,
             },
           }));
