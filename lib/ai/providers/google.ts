@@ -3,14 +3,39 @@ import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteO
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
-function toGoogleContent(content: string | LLMContentPart[]): string | Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> {
+type GooglePart = { text: string } | { inlineData: { mimeType: string; data: string } };
+
+// Fetch an image URL and return it as base64 inline data for Gemini vision
+async function fetchImageAsInlineData(url: string): Promise<GooglePart | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || 'image/png';
+    const buffer = await res.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    return { inlineData: { mimeType: contentType, data: base64 } };
+  } catch {
+    return null;
+  }
+}
+
+async function toGoogleContent(content: string | LLMContentPart[]): Promise<string | GooglePart[]> {
   if (typeof content === 'string') return content;
-  return content.map((part) => {
+  const parts: GooglePart[] = [];
+  for (const part of content) {
     if (part.type === 'text') {
-      return { text: part.text };
+      parts.push({ text: part.text });
+    } else {
+      const inlined = await fetchImageAsInlineData(part.image_url.url);
+      if (inlined) {
+        parts.push(inlined);
+      } else {
+        // Fallback: mention the URL as text if fetch fails
+        parts.push({ text: `[Image that could not be loaded: ${part.image_url.url}]` });
+      }
     }
-    return { text: `[Image: ${part.image_url.url}]` };
-  });
+  }
+  return parts;
 }
 
 export function createGoogleProvider(apiKey: string, model?: string): LLMProvider {
@@ -24,12 +49,12 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
       const systemMessage = messages.find((m) => m.role === 'system');
       const nonSystemMessages = messages.filter((m) => m.role !== 'system');
 
-      const contents = nonSystemMessages.map((m) => ({
+      const contents = await Promise.all(nonSystemMessages.map(async (m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: typeof m.content === 'string'
           ? [{ text: m.content }]
-          : toGoogleContent(m.content) as Array<{ text: string }>,
-      }));
+          : await toGoogleContent(m.content) as GooglePart[],
+      })));
 
       const response = await client.models.generateContent({
         model: modelId,
