@@ -103,13 +103,19 @@ const TOOLS = [
       },
       {
         name: 'draft_email',
-        description: 'Draft an email for the user to review before sending. This does NOT send it — it creates a draft that appears on screen for the user to approve. Do NOT read the email content aloud — just say you are drafting it and the user will see it on screen.',
+        description: 'Draft an email for the user to review before sending. This does NOT send it — it creates a draft on screen. Do NOT read the email content aloud. If the user hasn\'t specified a style, briefly ask: "Would you like professional, casual, newsletter, or update style?" Available styles: professional (formal business), casual (friendly), newsletter (bold header banner), update (channel/project update with label).',
         parameters: {
           type: 'OBJECT',
           properties: {
             to: { type: 'STRING', description: 'Recipient email address' },
             subject: { type: 'STRING', description: 'Email subject line' },
-            body: { type: 'STRING', description: 'Email body in markdown. Use headers, bold, bullets etc.' },
+            body: { type: 'STRING', description: 'Email body in markdown. Use ## headers, **bold**, - bullets, > blockquotes, numbered lists for rich formatting.' },
+            style: { type: 'STRING', description: 'Email style: professional, casual, newsletter, or update' },
+            recipientName: { type: 'STRING', description: 'Recipient first name for greeting (optional)' },
+            cardTitle: { type: 'STRING', description: 'Title of a referenced Kanthink card (optional)' },
+            cardId: { type: 'STRING', description: 'ID of a referenced Kanthink card for linking (optional)' },
+            ctaText: { type: 'STRING', description: 'Call-to-action button text (optional)' },
+            ctaUrl: { type: 'STRING', description: 'Call-to-action button URL (optional)' },
           },
           required: ['to', 'subject', 'body'],
         },
@@ -124,6 +130,12 @@ interface EmailDraft {
   to: string;
   subject: string;
   body: string;
+  style: string;
+  recipientName?: string;
+  cardTitle?: string;
+  cardId?: string;
+  ctaText?: string;
+  ctaUrl?: string;
   status: 'drafting' | 'ready' | 'sending' | 'sent' | 'failed';
 }
 
@@ -290,7 +302,12 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       const res = await fetch('/api/voice/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send_email', args: { to: draft.to, subject: draft.subject, body: draft.body } }),
+        body: JSON.stringify({ action: 'send_email', args: {
+          to: draft.to, subject: draft.subject, body: draft.body,
+          style: draft.style, recipientName: draft.recipientName || '',
+          cardTitle: draft.cardTitle || '', cardId: draft.cardId || '',
+          ctaText: draft.ctaText || '', ctaUrl: draft.ctaUrl || '',
+        } }),
       });
       const data = await res.json();
       const success = !data.result.startsWith('Failed') && !data.result.startsWith('Email error');
@@ -310,9 +327,16 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     // Draft email — don't send, just show in UI
     if (name === 'draft_email') {
       const draftId = crypto.randomUUID();
-      const draft: EmailDraft = { id: draftId, to: args.to, subject: args.subject, body: args.body, status: 'ready' };
+      const style = args.style || 'professional';
+      const draft: EmailDraft = {
+        id: draftId, to: args.to, subject: args.subject, body: args.body,
+        style, recipientName: args.recipientName, cardTitle: args.cardTitle,
+        cardId: args.cardId, ctaText: args.ctaText, ctaUrl: args.ctaUrl,
+        status: 'ready',
+      };
       setActions(prev => [...prev, {
-        id: crypto.randomUUID(), action: 'draft_email', result: `Email draft ready for ${args.to}`,
+        id: crypto.randomUUID(), action: 'draft_email',
+        result: `${style} email draft ready for ${args.to}`,
         success: true, timestamp: new Date(), emailDraft: draft,
       }]);
       return `Email draft is ready on screen for the user to review and send. Do NOT read the email content aloud.`;
@@ -542,9 +566,12 @@ After any tool executes, always confirm what you did.` }] },
                         </svg>
                         <span className="text-xs text-neutral-400">To: <span className="text-neutral-200">{a.emailDraft.to}</span></span>
                       </div>
-                      {a.emailDraft.status === 'sent' && <span className="text-xs text-green-400">Sent</span>}
-                      {a.emailDraft.status === 'sending' && <span className="text-xs text-violet-400 animate-pulse">Sending...</span>}
-                      {a.emailDraft.status === 'failed' && <span className="text-xs text-red-400">Failed</span>}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">{a.emailDraft.style || 'professional'}</span>
+                        {a.emailDraft.status === 'sent' && <span className="text-xs text-green-400">Sent</span>}
+                        {a.emailDraft.status === 'sending' && <span className="text-xs text-violet-400 animate-pulse">Sending...</span>}
+                        {a.emailDraft.status === 'failed' && <span className="text-xs text-red-400">Failed</span>}
+                      </div>
                     </div>
                     <div className="px-4 py-3">
                       <p className="text-sm font-medium text-white mb-1">{a.emailDraft.subject}</p>

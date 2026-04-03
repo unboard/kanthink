@@ -215,22 +215,34 @@ export async function POST(request: Request) {
       case 'send_email': {
         try {
           const { sendTransactionalEmail } = await import('@/lib/customerio');
+          const { render } = await import('@react-email/render');
+          const React = await import('react');
+          const { VoiceComposed } = await import('@/lib/emails/VoiceComposed');
+
           if (!sendTransactionalEmail) {
             return NextResponse.json({ result: 'Email service not configured' });
           }
-          const html = `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
-              <div style="background: #7c3aed; height: 4px;"></div>
-              <div style="padding: 24px;">
-                ${args.body.split('\n').map((line: string) => line.trim() ? `<p style="margin: 0 0 12px; color: #3f3f46; font-size: 14px; line-height: 22px;">${line}</p>` : '<br/>').join('')}
-              </div>
-              <div style="padding: 16px 24px; border-top: 1px solid #e4e4e7; color: #a1a1aa; font-size: 12px;">
-                Sent via Kanthink
-              </div>
-            </div>`;
+
+          const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
+          const cardUrl = args.cardId ? `${baseUrl}/channel/${args.channelId || ''}/card/${args.cardId}` : undefined;
+          const senderName = session.user.name || 'Kanthink User';
+
+          const html = await render(React.createElement(VoiceComposed, {
+            style: (args.style || 'professional') as 'professional' | 'casual' | 'newsletter' | 'update',
+            senderName,
+            recipientName: args.recipientName || undefined,
+            subject: args.subject,
+            body: args.body,
+            cardTitle: args.cardTitle || undefined,
+            cardUrl,
+            ctaText: args.ctaText || undefined,
+            ctaUrl: args.ctaUrl || undefined,
+          }));
+
           const sent = await sendTransactionalEmail({ to: args.to, subject: args.subject, html });
           return NextResponse.json({ result: sent ? `Email sent to ${args.to}: "${args.subject}"` : 'Email sending failed' });
         } catch (emailErr) {
+          console.error('[Voice email]', emailErr);
           return NextResponse.json({ result: `Email error: ${emailErr instanceof Error ? emailErr.message : 'Unknown'}` });
         }
       }
