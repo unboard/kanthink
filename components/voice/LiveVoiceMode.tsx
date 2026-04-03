@@ -102,14 +102,14 @@ const TOOLS = [
         },
       },
       {
-        name: 'send_email',
-        description: 'Send an email to someone. Compose a professional email based on what the user describes.',
+        name: 'draft_email',
+        description: 'Draft an email for the user to review before sending. This does NOT send it — it creates a draft that appears on screen for the user to approve. Do NOT read the email content aloud — just say you are drafting it and the user will see it on screen.',
         parameters: {
           type: 'OBJECT',
           properties: {
             to: { type: 'STRING', description: 'Recipient email address' },
             subject: { type: 'STRING', description: 'Email subject line' },
-            body: { type: 'STRING', description: 'Email body content (plain text or markdown)' },
+            body: { type: 'STRING', description: 'Email body in markdown. Use headers, bold, bullets etc.' },
           },
           required: ['to', 'subject', 'body'],
         },
@@ -118,6 +118,14 @@ const TOOLS = [
   },
   { googleSearch: {} },
 ];
+
+interface EmailDraft {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  status: 'drafting' | 'ready' | 'sending' | 'sent' | 'failed';
+}
 
 interface CardPreview {
   id: string;
@@ -138,6 +146,7 @@ interface ActionLog {
   success: boolean;
   timestamp: Date;
   cardPreview?: CardPreview;
+  emailDraft?: EmailDraft;
 }
 
 interface LiveVoiceModeProps {
@@ -271,7 +280,44 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     src.connect(proc); proc.connect(ctx.destination);
   }, [interruptPlayback]);
 
+  const sendEmail = useCallback(async (draftId: string) => {
+    setActions(prev => prev.map(a =>
+      a.emailDraft?.id === draftId ? { ...a, emailDraft: { ...a.emailDraft!, status: 'sending' as const } } : a
+    ));
+    try {
+      const draft = actions.find(a => a.emailDraft?.id === draftId)?.emailDraft;
+      if (!draft) return;
+      const res = await fetch('/api/voice/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send_email', args: { to: draft.to, subject: draft.subject, body: draft.body } }),
+      });
+      const data = await res.json();
+      const success = !data.result.startsWith('Failed') && !data.result.startsWith('Email error');
+      setActions(prev => prev.map(a =>
+        a.emailDraft?.id === draftId
+          ? { ...a, emailDraft: { ...a.emailDraft!, status: success ? 'sent' as const : 'failed' as const }, result: data.result, success }
+          : a
+      ));
+    } catch {
+      setActions(prev => prev.map(a =>
+        a.emailDraft?.id === draftId ? { ...a, emailDraft: { ...a.emailDraft!, status: 'failed' as const } } : a
+      ));
+    }
+  }, [actions]);
+
   const executeAction = useCallback(async (name: string, args: Record<string, string>): Promise<string> => {
+    // Draft email — don't send, just show in UI
+    if (name === 'draft_email') {
+      const draftId = crypto.randomUUID();
+      const draft: EmailDraft = { id: draftId, to: args.to, subject: args.subject, body: args.body, status: 'ready' };
+      setActions(prev => [...prev, {
+        id: crypto.randomUUID(), action: 'draft_email', result: `Email draft ready for ${args.to}`,
+        success: true, timestamp: new Date(), emailDraft: draft,
+      }]);
+      return `Email draft is ready on screen for the user to review and send. Do NOT read the email content aloud.`;
+    }
+
     try {
       const res = await fetch('/api/voice/action', {
         method: 'POST',
@@ -332,6 +378,9 @@ NEVER call a tool based on:
 If you're unsure whether the user wants you to take an action, ASK first — don't just do it. Say "Would you like me to [action]?" and wait for confirmation.
 
 Google Search is the exception — you may use it freely when the user asks about current information, URLs, or research topics.
+
+EMAIL WORKFLOW:
+When the user asks to send an email, use the draft_email tool. This creates a draft on screen — it does NOT send it. Do NOT read the email content aloud. Just say something brief like "I've drafted that email — you can review it on screen and tap send when ready." The user must explicitly approve sending by tapping the Send button or saying "send the email."
 
 CONTENT FORMATTING:
 When creating notes, cards, or tasks with content, ALWAYS use rich markdown formatting. The app renders markdown so it looks great. Use:
@@ -483,8 +532,42 @@ After any tool executes, always confirm what you did.` }] },
           <div className="w-full max-w-sm space-y-2 mt-2 max-h-[40vh] overflow-y-auto">
             {actions.map(a => (
               <div key={a.id}>
-                {/* Card preview */}
-                {a.cardPreview ? (
+                {/* Email draft */}
+                {a.emailDraft ? (
+                  <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in">
+                    <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-4 w-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        <span className="text-xs text-neutral-400">To: <span className="text-neutral-200">{a.emailDraft.to}</span></span>
+                      </div>
+                      {a.emailDraft.status === 'sent' && <span className="text-xs text-green-400">Sent</span>}
+                      {a.emailDraft.status === 'sending' && <span className="text-xs text-violet-400 animate-pulse">Sending...</span>}
+                      {a.emailDraft.status === 'failed' && <span className="text-xs text-red-400">Failed</span>}
+                    </div>
+                    <div className="px-4 py-3">
+                      <p className="text-sm font-medium text-white mb-1">{a.emailDraft.subject}</p>
+                      <p className="text-xs text-neutral-400 line-clamp-3 whitespace-pre-wrap">{a.emailDraft.body.slice(0, 200)}{a.emailDraft.body.length > 200 ? '...' : ''}</p>
+                    </div>
+                    {a.emailDraft.status === 'ready' && (
+                      <div className="px-4 py-3 border-t border-neutral-800 flex gap-2">
+                        <button
+                          onClick={() => sendEmail(a.emailDraft!.id)}
+                          className="flex-1 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 transition-colors"
+                        >
+                          Send Email
+                        </button>
+                        <button
+                          onClick={() => setActions(prev => prev.filter(x => x.id !== a.id))}
+                          className="px-4 py-2 rounded-lg bg-neutral-800 text-neutral-300 text-sm hover:bg-neutral-700 transition-colors"
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : a.cardPreview ? (
                   <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in cursor-pointer hover:border-violet-500/50 transition-colors"
                     onClick={() => setExpandedCard(a.cardPreview!)}>
                     {a.cardPreview.coverImageUrl && (

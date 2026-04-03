@@ -317,7 +317,7 @@ export function OperatorHome() {
       taskSection = `\n\nTASKS (${notDone.length} not done${myTasks.length > 0 ? `, ${myTasks.length} assigned to you` : ''}):\n${taskLines}`;
     }
 
-    return `You are Kan, the AI operator for Kanthink. The user is ${session?.user?.name || 'the workspace owner'} (userId: ${session?.user?.id || 'unknown'}).
+    return `You are Kan, the AI operator for Kanthink. The user is ${session?.user?.name || 'the workspace owner'} (email: ${session?.user?.email || 'unknown'}).
 
 Keep voice responses concise — 2-3 sentences max. Be conversational and warm.
 
