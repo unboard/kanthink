@@ -58,11 +58,15 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
     async webSearch(query: string, systemPrompt?: string): Promise<LLMResponse> {
       const contents = [{ role: 'user' as const, parts: [{ text: query }] }];
 
+      const searchSystemPrompt = systemPrompt
+        ? `${systemPrompt}\n\nIMPORTANT: You have access to Google Search. Always use the search results to provide real, verified URLs. Never make up or guess URLs — only include URLs that come from the search results.`
+        : 'Search the web and provide helpful information with real, verified URLs from the search results. Never make up URLs.';
+
       const response = await client.models.generateContent({
         model: modelId,
         contents,
         config: {
-          systemInstruction: systemPrompt || undefined,
+          systemInstruction: searchSystemPrompt,
           tools: [{ googleSearch: {} }],
         },
       });

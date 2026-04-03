@@ -472,6 +472,9 @@ const SEARCH_INTENT_PATTERNS = [
   /\bwhat happened\b/i,
   /\bwhen did\b/i,
   /\bwhere can i\b/i,
+  /\b(links?|articles?|resources?|urls?)\b/i,
+  /\b(recommend|suggest|suggestions?)\b/i,
+  /\b(examples? of|tools? for|sites? for|websites?)\b/i,
 ];
 
 export function detectsSearchIntent(text: string): boolean {
