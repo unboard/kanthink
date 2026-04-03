@@ -1,11 +1,12 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
 
-export default function CardPage() {
+function CardContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -51,5 +52,17 @@ export default function CardPage() {
     <div className="flex h-full items-center justify-center">
       <p className="text-neutral-500">Card not found</p>
     </div>
+  );
+}
+
+export default function CardPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-full items-center justify-center">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500" />
+      </div>
+    }>
+      <CardContent />
+    </Suspense>
   );
 }
