@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { AudioLines } from 'lucide-react';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 
 interface ActionResult {
@@ -505,9 +506,7 @@ export function OperatorHome() {
                 title="Talk to Kan"
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728" />
-                </svg>
+                <AudioLines className="w-4 h-4" />
               </button>
               <button
                 onClick={() => sendMessage(input)}
