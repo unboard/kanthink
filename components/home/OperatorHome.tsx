@@ -281,6 +281,33 @@ export function OperatorHome() {
     );
   }, [router, cards]);
 
+  // Build voice system prompt with full workspace context
+  const voiceSystemPrompt = useMemo(() => {
+    const channelSummaries = channelList.map((ch) => {
+      const cardCount = ch.columns.reduce((s, col) => s + col.cardIds.length, 0);
+      const topCards = ch.columns.flatMap(col =>
+        col.cardIds.slice(0, 3).map(cid => cards[cid]?.title).filter(Boolean)
+      ).slice(0, 5);
+      return `- ${ch.name}${ch.isQuickSave ? ' [Bookmarks]' : ''} (${cardCount} cards)${topCards.length ? ': ' + topCards.join(', ') : ''}`;
+    }).join('\n');
+
+    const taskList = Object.values(tasks);
+    const userId = session?.user?.id;
+    const myTasks = userId ? taskList.filter(t => t.assignedTo?.includes(userId) && t.status !== 'done') : [];
+    const taskSummary = myTasks.length > 0
+      ? `\n\nYour open tasks (${myTasks.length}):\n` + myTasks.slice(0, 10).map(t => `- ${t.title} [${t.status}]`).join('\n')
+      : '';
+
+    return `You are Kan, the AI operator for Kanthink. The user is ${session?.user?.name || 'the workspace owner'}.
+
+Keep voice responses concise — 2-3 sentences max. Be conversational and warm.
+
+Their workspace has ${channelList.length} channels:
+${channelSummaries || '(no channels)'}${taskSummary}
+
+You can reference specific channels and cards by name. When the user asks about their work, tasks, bookmarks, or channels, use this context to give specific, helpful answers.`;
+  }, [channelList, cards, tasks, session]);
+
   const hasConversation = messages.length > 0;
 
   return (
@@ -313,7 +340,7 @@ export function OperatorHome() {
       <LiveVoiceMode
         isOpen={showVoiceMode}
         onClose={() => setShowVoiceMode(false)}
-        systemPrompt="You are Kan, the AI operator for Kanthink — a smart Kanban workspace. You help users think through ideas, discuss their work, and take action. Be conversational, warm, and concise. Keep responses short for voice — 2-3 sentences max."
+        systemPrompt={voiceSystemPrompt}
       />
 
       {/* History drawer */}

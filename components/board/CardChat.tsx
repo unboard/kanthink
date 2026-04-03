@@ -542,6 +542,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           onKeyboardBlur={handleKeyboardBlur}
           members={members}
           onOpenWhiteboard={() => setIsWhiteboardOpen(true)}
+          voiceContext={`You are Kan, an AI assistant for the card "${card.title}" in the "${channelName}" channel. ${channelDescription ? 'Channel: ' + channelDescription + '. ' : ''}The card has ${messages.length} messages in its thread. Keep voice responses to 2-3 sentences.`}
         />
       </div>
 

@@ -132,9 +132,11 @@ interface ChatInputProps {
   forceQuestionMode?: boolean;
   // Whiteboard support
   onOpenWhiteboard?: () => void;
+  // Voice context for live voice mode
+  voiceContext?: string;
 }
 
-export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard }: ChatInputProps) {
+export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext }: ChatInputProps) {
   const [mode, setMode] = useState<InputMode>(forceQuestionMode ? 'question' : 'note');
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
@@ -784,6 +786,7 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
           <LiveVoiceMode
             isOpen={showLiveVoice}
             onClose={() => setShowLiveVoice(false)}
+            systemPrompt={voiceContext}
           />
 
           {/* Send button - height matches single-line textarea */}

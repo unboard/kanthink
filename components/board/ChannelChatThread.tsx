@@ -404,6 +404,7 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
           onKeyboardFocus={handleKeyboardFocus}
           onKeyboardBlur={handleKeyboardBlur}
           forceQuestionMode
+          voiceContext={`You are Kan, an AI assistant for the "${channel.name}" channel in Kanthink. ${channel.description ? 'Description: ' + channel.description + '. ' : ''}It has ${channel.columns.length} columns with ${channel.columns.reduce((s: number, c: { cardIds: string[] }) => s + c.cardIds.length, 0)} total cards. Keep voice responses to 2-3 sentences.`}
         />
       </div>
     </div>
