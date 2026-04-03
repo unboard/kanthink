@@ -45,7 +45,7 @@ export async function GET() {
     return NextResponse.json({ error: 'No Google API key configured for voice.' }, { status: 400 });
   }
 
-  const model = 'gemini-2.5-flash-preview-native-audio-dialog';
+  const model = 'gemini-3.1-flash-live-preview';
   const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
   return NextResponse.json({ wsUrl, model });
