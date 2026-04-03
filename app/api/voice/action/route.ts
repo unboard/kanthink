@@ -141,6 +141,28 @@ export async function POST(request: Request) {
         return NextResponse.json({ result: `Updated task "${task.title}" to ${args.status}`, taskId: task.id });
       }
 
+      case 'show_card': {
+        const card = await findCard(args.cardId);
+        if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        const msgs = (card.messages || []) as Array<{ type: string; content: string }>;
+        const cardTasks = await db.query.tasks.findMany({ where: eq(tasks.cardId, card.id) });
+        const channel = await db.query.channels.findFirst({ where: eq(channels.id, card.channelId), columns: { name: true } });
+        return NextResponse.json({
+          result: `Showing card "${card.title}"`,
+          cardPreview: {
+            id: card.id,
+            title: card.title,
+            summary: card.summary,
+            channelName: channel?.name || '',
+            channelId: card.channelId,
+            messages: msgs.slice(-5).map(m => ({ type: m.type, content: m.content?.slice(0, 300) })),
+            tasks: cardTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
+            tags: card.tags,
+            coverImageUrl: card.coverImageUrl,
+          },
+        });
+      }
+
       case 'archive_card': {
         const card = await findCard(args.cardId);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });

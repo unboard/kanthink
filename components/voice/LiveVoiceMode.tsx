@@ -71,6 +71,15 @@ const TOOLS = [
         },
       },
       {
+        name: 'show_card',
+        description: 'Show a visual preview of a card so the user can see its details. Use when the user wants to view a card, see its content, or get more detail about it.',
+        parameters: {
+          type: 'OBJECT',
+          properties: { cardId: { type: 'STRING', description: 'Card ID or card title' } },
+          required: ['cardId'],
+        },
+      },
+      {
         name: 'archive_card',
         description: 'Archive a card (remove it from the board)',
         parameters: {
@@ -97,12 +106,25 @@ const TOOLS = [
   { googleSearch: {} },
 ];
 
+interface CardPreview {
+  id: string;
+  title: string;
+  summary?: string;
+  channelName: string;
+  channelId: string;
+  messages: { type: string; content: string }[];
+  tasks: { id: string; title: string; status: string }[];
+  tags?: string[];
+  coverImageUrl?: string;
+}
+
 interface ActionLog {
   id: string;
   action: string;
   result: string;
   success: boolean;
   timestamp: Date;
+  cardPreview?: CardPreview;
 }
 
 interface LiveVoiceModeProps {
@@ -216,7 +238,11 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         body: JSON.stringify({ action: name, args }),
       });
       const data = await res.json();
-      setActions(prev => [...prev, { id: crypto.randomUUID(), action: name, result: data.result, success: !data.result.startsWith('Failed'), timestamp: new Date() }]);
+      setActions(prev => [...prev, {
+        id: crypto.randomUUID(), action: name, result: data.result,
+        success: !data.result.startsWith('Failed'), timestamp: new Date(),
+        cardPreview: data.cardPreview,
+      }]);
       return data.result;
     } catch (err) {
       const msg = `Failed: ${err instanceof Error ? err.message : 'Unknown error'}`;
@@ -389,19 +415,59 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
 
         {/* Action log — visual feedback for tool calls */}
         {actions.length > 0 && (
-          <div className="w-full max-w-sm space-y-2 mt-2">
+          <div className="w-full max-w-sm space-y-2 mt-2 max-h-[40vh] overflow-y-auto">
             {actions.map(a => (
-              <div key={a.id} className="flex items-center gap-2 bg-neutral-900/80 border border-neutral-800 rounded-xl px-4 py-2.5 animate-slide-in">
-                {a.success ? (
-                  <svg className="h-4 w-4 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+              <div key={a.id}>
+                {/* Card preview */}
+                {a.cardPreview ? (
+                  <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in">
+                    {a.cardPreview.coverImageUrl && (
+                      <img src={a.cardPreview.coverImageUrl} alt="" className="w-full h-24 object-cover" />
+                    )}
+                    <div className="px-4 py-3">
+                      <p className="text-xs text-violet-400 mb-1">{a.cardPreview.channelName}</p>
+                      <p className="text-sm font-medium text-white">{a.cardPreview.title}</p>
+                      {a.cardPreview.summary && <p className="text-xs text-neutral-400 mt-1 line-clamp-2">{a.cardPreview.summary}</p>}
+                      {a.cardPreview.tags && a.cardPreview.tags.length > 0 && (
+                        <div className="flex gap-1 mt-2 flex-wrap">
+                          {a.cardPreview.tags.map(t => <span key={t} className="text-[10px] bg-neutral-800 text-neutral-300 px-1.5 py-0.5 rounded">{t}</span>)}
+                        </div>
+                      )}
+                      {a.cardPreview.tasks.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {a.cardPreview.tasks.map(t => (
+                            <div key={t.id} className="flex items-center gap-1.5 text-xs">
+                              <span className={`w-1.5 h-1.5 rounded-full ${t.status === 'done' ? 'bg-green-400' : t.status === 'in_progress' ? 'bg-blue-400' : 'bg-neutral-500'}`} />
+                              <span className={t.status === 'done' ? 'text-neutral-500 line-through' : 'text-neutral-300'}>{t.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {a.cardPreview.messages.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-neutral-800">
+                          <p className="text-[10px] text-neutral-500 mb-1">Recent thread</p>
+                          {a.cardPreview.messages.slice(-2).map((m, i) => (
+                            <p key={i} className="text-xs text-neutral-400 truncate">{m.content}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ) : (
-                  <svg className="h-4 w-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  /* Regular action result */
+                  <div className="flex items-center gap-2 bg-neutral-900/80 border border-neutral-800 rounded-xl px-4 py-2.5 animate-slide-in">
+                    {a.success ? (
+                      <svg className="h-4 w-4 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="h-4 w-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    )}
+                    <span className={`text-sm ${a.success ? 'text-green-300' : 'text-red-300'}`}>{a.result}</span>
+                  </div>
                 )}
-                <span className={`text-sm ${a.success ? 'text-green-300' : 'text-red-300'}`}>{a.result}</span>
               </div>
             ))}
           </div>
