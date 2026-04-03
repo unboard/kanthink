@@ -141,6 +141,48 @@ export async function POST(request: Request) {
         return NextResponse.json({ result: `Updated task "${task.title}" to ${args.status}`, taskId: task.id });
       }
 
+      case 'search_cards': {
+        // Resolve channel
+        let chId = args.channelId;
+        const ch = await db.query.channels.findFirst({ where: eq(channels.id, chId) });
+        if (!ch) {
+          const byName = await db.query.channels.findFirst({ where: like(channels.name, `%${chId}%`) });
+          if (byName) chId = byName.id;
+          else return NextResponse.json({ result: `Channel not found: "${args.channelId}"` });
+        }
+
+        const limit = parseInt(args.limit || '5') || 5;
+        let results;
+
+        if (args.query) {
+          // Search by keyword
+          results = await db.query.cards.findMany({
+            where: and(eq(cards.channelId, chId), eq(cards.isArchived, false), like(cards.title, `%${args.query}%`)),
+            orderBy: [desc(cards.updatedAt)],
+            limit,
+          });
+        } else {
+          // Most recent cards
+          results = await db.query.cards.findMany({
+            where: and(eq(cards.channelId, chId), eq(cards.isArchived, false)),
+            orderBy: [desc(cards.updatedAt)],
+            limit,
+          });
+        }
+
+        const channelName = ch?.name || (await db.query.channels.findFirst({ where: eq(channels.id, chId), columns: { name: true } }))?.name || chId;
+        const cardSummaries = results.map(c => {
+          const fmtDate = (d: Date | null) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '?';
+          return `- "${c.title}" (cardId: ${c.id}) — modified: ${fmtDate(c.updatedAt)}, created: ${fmtDate(c.createdAt)}${c.summary ? ` — ${c.summary}` : ''}`;
+        }).join('\n');
+
+        return NextResponse.json({
+          result: results.length > 0
+            ? `Found ${results.length} card(s) in "${channelName}"${args.query ? ` matching "${args.query}"` : ' (most recent)'}:\n${cardSummaries}`
+            : `No cards found in "${channelName}"${args.query ? ` matching "${args.query}"` : ''}`,
+        });
+      }
+
       case 'show_card': {
         const card = await findCard(args.cardId);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });

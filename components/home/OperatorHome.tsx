@@ -325,9 +325,9 @@ WORKSPACE (${channelList.length} channels):
 
 ${channelSummaries || '(no channels)'}${taskSection}
 
-Cards are listed most-recently-modified first within each column, with created and modified dates. You can answer questions like "what are the 3 most recently modified cards in X channel" or "what cards were created this week" by reading the dates above.
+Cards above are a snapshot from session start. IMPORTANT: If the user asks about a card you don't see, or asks about "most recent", "latest", "newest" cards, ALWAYS use the search_cards tool to query live data from the database. Don't say you can't see it — search for it.
 
-IMPORTANT: When using tools, you MUST use the exact IDs shown above (taskId, cardId, channelId). Never guess or make up IDs.`;
+When using tools, use the exact IDs shown above when available (taskId, cardId, channelId). For search_cards, you can pass a channel name instead of ID.`;
   }, [channelList, cards, tasks, session]);
 
   const hasConversation = messages.length > 0;

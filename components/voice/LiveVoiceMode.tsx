@@ -71,6 +71,19 @@ const TOOLS = [
         },
       },
       {
+        name: 'search_cards',
+        description: 'Search for cards in a channel by keyword, or get the most recent cards. Use this when the user asks about cards you cannot see in the initial context, or when they ask about recently added/modified cards.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            channelId: { type: 'STRING', description: 'Channel ID or channel name to search in' },
+            query: { type: 'STRING', description: 'Search keyword (optional — omit to get most recent cards)' },
+            limit: { type: 'STRING', description: 'Number of results to return (default: 5)' },
+          },
+          required: ['channelId'],
+        },
+      },
+      {
         name: 'show_card',
         description: 'Show a visual preview of a card so the user can see its details. Use when the user wants to view a card, see its content, or get more detail about it.',
         parameters: {
