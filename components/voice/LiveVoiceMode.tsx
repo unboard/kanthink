@@ -27,33 +27,33 @@ const TOOLS = [
             channelId: { type: 'STRING', description: 'Channel ID' },
             cardId: { type: 'STRING', description: 'Card ID (optional - omit for standalone task)' },
             title: { type: 'STRING', description: 'Task title' },
-            description: { type: 'STRING', description: 'Task description (optional)' },
+            description: { type: 'STRING', description: 'Task description in markdown. Use headers, bullets, bold, links etc. to structure it.' },
           },
           required: ['channelId', 'title'],
         },
       },
       {
         name: 'create_card',
-        description: 'Create a new card in a channel',
+        description: 'Create a new card in a channel with a rich first message',
         parameters: {
           type: 'OBJECT',
           properties: {
             channelId: { type: 'STRING', description: 'Channel ID' },
             columnName: { type: 'STRING', description: 'Column name (e.g. Inbox, Working On)' },
             title: { type: 'STRING', description: 'Card title' },
-            content: { type: 'STRING', description: 'Card content/first message (optional)' },
+            content: { type: 'STRING', description: 'Card first message in markdown. Use ## headers, **bold**, - bullet lists, 1. numbered lists, [links](url), > blockquotes to make it well-structured and readable.' },
           },
           required: ['channelId', 'title'],
         },
       },
       {
         name: 'add_note',
-        description: 'Add a note/message to a card thread',
+        description: 'Add a note/message to a card thread. Format the content as rich markdown.',
         parameters: {
           type: 'OBJECT',
           properties: {
             cardId: { type: 'STRING', description: 'Card ID' },
-            content: { type: 'STRING', description: 'Note content (markdown)' },
+            content: { type: 'STRING', description: 'Note content in markdown. Use headers (##), bold (**text**), bullet lists (- item), numbered lists (1. item), links [text](url), and blockquotes (> text) to structure the content nicely.' },
           },
           required: ['cardId', 'content'],
         },
@@ -332,6 +332,16 @@ NEVER call a tool based on:
 If you're unsure whether the user wants you to take an action, ASK first — don't just do it. Say "Would you like me to [action]?" and wait for confirmation.
 
 Google Search is the exception — you may use it freely when the user asks about current information, URLs, or research topics.
+
+CONTENT FORMATTING:
+When creating notes, cards, or tasks with content, ALWAYS use rich markdown formatting. The app renders markdown so it looks great. Use:
+- ## Headers for sections
+- **Bold** for emphasis
+- Bullet lists (- item) for multiple points
+- Numbered lists (1. item) for steps
+- [Links](url) for references
+- > Blockquotes for callouts
+Never write plain unformatted paragraphs — structure the content so it's scannable and well-organized.
 
 After any tool executes, always confirm what you did.` }] },
               tools: TOOLS,
