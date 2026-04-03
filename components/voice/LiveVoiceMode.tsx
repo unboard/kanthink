@@ -184,7 +184,9 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
 
         ws.onmessage = async (event) => {
           try {
-            const msg = JSON.parse(event.data);
+            // Browser WebSocket may receive Blob instead of string
+            const raw = typeof event.data === 'string' ? event.data : await event.data.text();
+            const msg = JSON.parse(raw);
             if (msg.setupComplete) {
               clearTimeout(timeout);
               setStatus('Requesting microphone...');

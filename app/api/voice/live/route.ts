@@ -6,8 +6,8 @@ export const runtime = 'nodejs';
 
 /**
  * GET /api/voice/live
- * Returns the Gemini Live API WebSocket URL with API key.
- * The client connects directly to Google's WebSocket.
+ * Returns the Gemini Live API WebSocket URL with API key for
+ * direct browser WebSocket connection.
  */
 export async function GET() {
   const session = await auth();
@@ -16,8 +16,6 @@ export async function GET() {
   }
 
   const userId = session.user.id;
-
-  // Resolve Google API key
   let apiKey: string | null = null;
 
   // 1. Check BYOK
@@ -32,13 +30,8 @@ export async function GET() {
     if (!usageCheck.allowed) {
       return NextResponse.json({ error: usageCheck.message }, { status: 403 });
     }
-
-    // 3. Owner key
-    if (process.env.OWNER_GOOGLE_API_KEY) {
-      apiKey = process.env.OWNER_GOOGLE_API_KEY;
-    } else if (process.env.GOOGLE_API_KEY) {
-      apiKey = process.env.GOOGLE_API_KEY;
-    }
+    if (process.env.OWNER_GOOGLE_API_KEY) apiKey = process.env.OWNER_GOOGLE_API_KEY;
+    else if (process.env.GOOGLE_API_KEY) apiKey = process.env.GOOGLE_API_KEY;
   }
 
   if (!apiKey) {
