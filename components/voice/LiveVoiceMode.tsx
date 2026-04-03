@@ -189,6 +189,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const playCtxRef = useRef<AudioContext | null>(null);
   const nextPlayRef = useRef(0);
   const activeRef = useRef(false);
+  const activeSources = useRef<AudioBufferSourceNode[]>([]);
 
   const stop = useCallback(() => {
     activeRef.current = false;
@@ -203,6 +204,14 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     procRef.current = null; analyserRef.current = null; playCtxRef.current = null;
     nextPlayRef.current = 0;
     setConnected(false); setIsAiSpeaking(false); setMicLevel(0);
+  }, []);
+
+  // Stop all queued AI audio (for interruption)
+  const interruptPlayback = useCallback(() => {
+    for (const s of activeSources.current) { try { s.stop(); } catch {} }
+    activeSources.current = [];
+    nextPlayRef.current = 0;
+    setIsAiSpeaking(false);
   }, []);
 
   const playChunk = useCallback((b64: string) => {
@@ -221,8 +230,12 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     src.buffer = buf; src.connect(ctx.destination);
     const t = Math.max(ctx.currentTime, nextPlayRef.current);
     src.start(t); nextPlayRef.current = t + buf.duration;
+    activeSources.current.push(src);
     setIsAiSpeaking(true);
-    src.onended = () => { if (nextPlayRef.current <= ctx.currentTime + 0.05) setIsAiSpeaking(false); };
+    src.onended = () => {
+      activeSources.current = activeSources.current.filter(s => s !== src);
+      if (activeSources.current.length === 0) setIsAiSpeaking(false);
+    };
   }, []);
 
   const startMic = useCallback((ws: WebSocket, stream: MediaStream) => {
@@ -232,7 +245,21 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     const analyser = ctx.createAnalyser(); analyser.fftSize = 256;
     analyserRef.current = analyser; src.connect(analyser);
     const arr = new Uint8Array(analyser.frequencyBinCount);
-    const tick = () => { if (!activeRef.current) return; analyser.getByteFrequencyData(arr); let s = 0; for (let i = 0; i < arr.length; i++) s += arr[i]; setMicLevel(s / arr.length / 255); animRef.current = requestAnimationFrame(tick); };
+    let speechFrames = 0;
+    const tick = () => {
+      if (!activeRef.current) return;
+      analyser.getByteFrequencyData(arr);
+      let s = 0; for (let i = 0; i < arr.length; i++) s += arr[i];
+      const level = s / arr.length / 255;
+      setMicLevel(level);
+      // Voice activity detection — interrupt AI when user speaks
+      if (level > 0.15) { speechFrames++; } else { speechFrames = Math.max(0, speechFrames - 1); }
+      if (speechFrames > 8 && activeSources.current.length > 0) {
+        interruptPlayback();
+        speechFrames = 0;
+      }
+      animRef.current = requestAnimationFrame(tick);
+    };
     tick();
     const proc = ctx.createScriptProcessor(4096, 1, 1);
     procRef.current = proc;
@@ -242,7 +269,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       ws.send(JSON.stringify({ realtimeInput: { audio: { data: float32ToBase64PCM16(resample(data, ctx.sampleRate, 16000)), mimeType: 'audio/pcm;rate=16000' } } }));
     };
     src.connect(proc); proc.connect(ctx.destination);
-  }, []);
+  }, [interruptPlayback]);
 
   const executeAction = useCallback(async (name: string, args: Record<string, string>): Promise<string> => {
     try {
@@ -515,8 +542,8 @@ After any tool executes, always confirm what you did.` }] },
 
       {/* Expanded card detail overlay — read-only, voice stays active */}
       {expandedCard && (
-        <div className="absolute inset-0 z-20 flex items-end justify-center" onClick={() => setExpandedCard(null)}>
-          <div className="w-full max-w-lg max-h-[75vh] bg-neutral-900 border-t border-neutral-700 rounded-t-2xl overflow-y-auto animate-slide-up"
+        <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/30" onClick={() => setExpandedCard(null)}>
+          <div className="w-full max-w-lg h-[85vh] bg-neutral-900 border-t border-neutral-700 rounded-t-2xl overflow-y-auto animate-slide-up"
             onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="sticky top-0 bg-neutral-900 border-b border-neutral-800 px-4 py-3 flex items-center justify-between z-10">
