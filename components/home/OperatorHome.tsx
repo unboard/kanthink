@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 
 interface ActionResult {
   type: string;
@@ -74,6 +75,7 @@ export function OperatorHome() {
   const [showHistory, setShowHistory] = useState(false);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [threadsLoaded, setThreadsLoaded] = useState(false);
+  const [showVoiceMode, setShowVoiceMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -282,8 +284,17 @@ export function OperatorHome() {
 
   return (
     <div className="flex h-full flex-col items-center relative">
-      {/* Top bar — new chat + history */}
+      {/* Top bar — voice + new chat + history */}
       <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+        <button
+          onClick={() => setShowVoiceMode(true)}
+          title="Talk to Kan"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+        </button>
         {hasConversation && (
           <button
             onClick={startNewThread}
@@ -305,6 +316,13 @@ export function OperatorHome() {
           </svg>
         </button>
       </div>
+
+      {/* Live voice mode overlay */}
+      <LiveVoiceMode
+        isOpen={showVoiceMode}
+        onClose={() => setShowVoiceMode(false)}
+        systemPrompt="You are Kan, the AI operator for Kanthink — a smart Kanban workspace. You help users think through ideas, discuss their work, and take action. Be conversational, warm, and concise. Keep responses short for voice — 2-3 sentences max."
+      />
 
       {/* History drawer */}
       {showHistory && (
