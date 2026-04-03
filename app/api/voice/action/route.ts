@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { cards, columns, tasks } from '@/lib/db/schema';
+import { cards, channels, columns, tasks } from '@/lib/db/schema';
 import { eq, and, desc, asc, like } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 
@@ -51,12 +51,31 @@ export async function POST(request: Request) {
 
       case 'create_task': {
         const id = nanoid();
-        const now = new Date().toISOString();
         const nowDate = new Date();
+
+        // Resolve cardId — might be an ID or a card name
+        let resolvedCardId: string | null = null;
+        if (args.cardId) {
+          const card = await findCard(args.cardId);
+          resolvedCardId = card?.id || null;
+        }
+
+        // Resolve channelId — might be an ID or channel name
+        let resolvedChannelId = args.channelId;
+        if (args.channelId) {
+          const ch = await db.query.channels.findFirst({ where: eq(channels.id, args.channelId) });
+          if (!ch) {
+            // Try by name
+            const { channels: channelsTable } = await import('@/lib/db/schema');
+            const byName = await db.query.channels.findFirst({ where: like(channelsTable.name, `%${args.channelId}%`) });
+            if (byName) resolvedChannelId = byName.id;
+          }
+        }
+
         await db.insert(tasks).values({
           id,
-          channelId: args.channelId,
-          cardId: args.cardId || null,
+          channelId: resolvedChannelId,
+          cardId: resolvedCardId,
           title: args.title,
           description: args.description || '',
           status: 'not_started',
@@ -64,7 +83,7 @@ export async function POST(request: Request) {
           createdAt: nowDate,
           updatedAt: nowDate,
         });
-        return NextResponse.json({ result: `Created task "${args.title}"`, taskId: id });
+        return NextResponse.json({ result: `Created task "${args.title}"${resolvedCardId ? '' : ' (standalone)'}`, taskId: id });
       }
 
       case 'add_note': {
@@ -78,8 +97,16 @@ export async function POST(request: Request) {
       }
 
       case 'create_card': {
+        // Resolve channelId from name if needed
+        let cardChannelId = args.channelId;
+        const chCheck = await db.query.channels.findFirst({ where: eq(channels.id, args.channelId) });
+        if (!chCheck) {
+          const byName = await db.query.channels.findFirst({ where: like(channels.name, `%${args.channelId}%`) });
+          if (byName) cardChannelId = byName.id;
+        }
+
         const channelCols = await db.query.columns.findMany({
-          where: eq(columns.channelId, args.channelId),
+          where: eq(columns.channelId, cardChannelId),
           orderBy: [asc(columns.position)],
         });
         const col = args.columnName
@@ -98,7 +125,7 @@ export async function POST(request: Request) {
         const messages = args.content ? [{ id: nanoid(), type: 'note' as const, content: args.content, createdAt: now.toISOString() }] : [];
 
         await db.insert(cards).values({
-          id, channelId: args.channelId, columnId: col.id, title: args.title,
+          id, channelId: cardChannelId, columnId: col.id, title: args.title,
           messages: messages as typeof cards.$inferInsert.messages,
           source: 'ai', position: pos, createdAt: now, updatedAt: now,
         });
