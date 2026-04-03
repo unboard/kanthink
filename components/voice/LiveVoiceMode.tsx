@@ -194,6 +194,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     setError(null);
 
     try {
+      // Step 1: Get WebSocket URL from server
       const res = await fetch('/api/voice/live');
       if (!res.ok) {
         const data = await res.json();
@@ -201,11 +202,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       }
       const { wsUrl, model } = await res.json();
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-      streamRef.current = stream;
-
+      // Step 2: Connect WebSocket first (doesn't need mic permission)
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -228,15 +225,28 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         }));
       };
 
-      ws.onmessage = (event) => {
+      ws.onmessage = async (event) => {
         try {
           const msg = JSON.parse(event.data);
 
           if (msg.setupComplete) {
             setupDoneRef.current = true;
             isConnectedRef.current = true;
-            setState('connected');
-            startMicrophoneStreaming(ws, stream);
+
+            // Step 3: Request mic AFTER WebSocket is ready
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({
+                audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+              });
+              streamRef.current = stream;
+              setState('connected');
+              startMicrophoneStreaming(ws, stream);
+            } catch (micErr) {
+              console.error('[Voice] Mic error:', micErr);
+              setError('Microphone access denied');
+              setState('error');
+              cleanup();
+            }
             return;
           }
 
@@ -248,7 +258,6 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
             }
           }
 
-          // Log errors from server
           if (msg.error) {
             console.error('[Voice] Server error:', msg.error);
             setError(msg.error.message || 'Server error');
@@ -261,16 +270,19 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
 
       ws.onerror = (e) => {
         console.error('[Voice] WebSocket error:', e);
-        setError('Connection error');
+        setError('Connection failed — check your network');
         setState('error');
         cleanup();
       };
 
       ws.onclose = (e) => {
-        console.log('[Voice] WebSocket closed:', e.code, e.reason);
         if (isConnectedRef.current) {
           cleanup();
           setState('idle');
+        } else if (state === 'connecting') {
+          setError(`Connection closed (${e.code})`);
+          setState('error');
+          cleanup();
         }
       };
     } catch (err) {
@@ -279,7 +291,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       setState('error');
       cleanup();
     }
-  }, [systemPrompt, cleanup, playAudioChunk, startMicrophoneStreaming, voiceName]);
+  }, [systemPrompt, cleanup, playAudioChunk, startMicrophoneStreaming, voiceName, state]);
 
   const endSession = useCallback(() => {
     cleanup();
