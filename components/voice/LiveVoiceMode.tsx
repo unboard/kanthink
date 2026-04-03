@@ -136,7 +136,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       const data = e.inputBuffer.getChannelData(0);
       const re = resampleAudio(data, ctx.sampleRate, 16000);
       ws.send(JSON.stringify({
-        realtimeInput: { mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: float32ToBase64PCM16(re) }] },
+        realtimeInput: { audio: { data: float32ToBase64PCM16(re), mimeType: 'audio/pcm;rate=16000' } },
       }));
     };
     src.connect(proc);
