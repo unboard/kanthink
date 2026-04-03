@@ -281,31 +281,42 @@ export function OperatorHome() {
     );
   }, [router, cards]);
 
-  // Build voice system prompt with full workspace context
+  // Build voice system prompt with full workspace context including IDs for tool calls
   const voiceSystemPrompt = useMemo(() => {
     const channelSummaries = channelList.map((ch) => {
-      const cardCount = ch.columns.reduce((s, col) => s + col.cardIds.length, 0);
-      const topCards = ch.columns.flatMap(col =>
-        col.cardIds.slice(0, 3).map(cid => cards[cid]?.title).filter(Boolean)
-      ).slice(0, 5);
-      return `- ${ch.name}${ch.isQuickSave ? ' [Bookmarks]' : ''} (${cardCount} cards)${topCards.length ? ': ' + topCards.join(', ') : ''}`;
-    }).join('\n');
+      const colDetails = ch.columns.map(col => {
+        const colCards = col.cardIds.map(cid => cards[cid]).filter(Boolean);
+        if (colCards.length === 0) return `  ${col.name}: (empty)`;
+        const cardList = colCards.slice(0, 5).map(c => `    - "${c.title}" (cardId: ${c.id})`).join('\n');
+        return `  ${col.name}:\n${cardList}${colCards.length > 5 ? `\n    ... and ${colCards.length - 5} more` : ''}`;
+      }).join('\n');
+      return `📋 ${ch.name} (channelId: ${ch.id})${ch.isQuickSave ? ' [Bookmarks]' : ''}\n${colDetails}`;
+    }).join('\n\n');
 
     const taskList = Object.values(tasks);
+    const notDone = taskList.filter(t => t.status !== 'done');
     const userId = session?.user?.id;
-    const myTasks = userId ? taskList.filter(t => t.assignedTo?.includes(userId) && t.status !== 'done') : [];
-    const taskSummary = myTasks.length > 0
-      ? `\n\nYour open tasks (${myTasks.length}):\n` + myTasks.slice(0, 10).map(t => `- ${t.title} [${t.status}]`).join('\n')
-      : '';
+    const myTasks = userId ? notDone.filter(t => t.assignedTo?.includes(userId)) : [];
 
-    return `You are Kan, the AI operator for Kanthink. The user is ${session?.user?.name || 'the workspace owner'}.
+    let taskSection = '';
+    if (notDone.length > 0) {
+      const taskLines = notDone.slice(0, 20).map(t => {
+        const chName = channelList.find(c => c.id === t.channelId)?.name || '?';
+        const cardTitle = t.cardId ? cards[t.cardId]?.title : null;
+        return `- "${t.title}" (taskId: ${t.id}) [${t.status}] in ${chName}${cardTitle ? ` on card "${cardTitle}"` : ''}${t.assignedTo?.includes(userId || '') ? ' [ASSIGNED TO YOU]' : ''}`;
+      }).join('\n');
+      taskSection = `\n\nTASKS (${notDone.length} not done${myTasks.length > 0 ? `, ${myTasks.length} assigned to you` : ''}):\n${taskLines}`;
+    }
+
+    return `You are Kan, the AI operator for Kanthink. The user is ${session?.user?.name || 'the workspace owner'} (userId: ${session?.user?.id || 'unknown'}).
 
 Keep voice responses concise — 2-3 sentences max. Be conversational and warm.
 
-Their workspace has ${channelList.length} channels:
-${channelSummaries || '(no channels)'}${taskSummary}
+WORKSPACE (${channelList.length} channels):
 
-You can reference specific channels and cards by name. When the user asks about their work, tasks, bookmarks, or channels, use this context to give specific, helpful answers.`;
+${channelSummaries || '(no channels)'}${taskSection}
+
+IMPORTANT: When using tools, you MUST use the exact IDs shown above (taskId, cardId, channelId). Never guess or make up IDs.`;
   }, [channelList, cards, tasks, session]);
 
   const hasConversation = messages.length > 0;

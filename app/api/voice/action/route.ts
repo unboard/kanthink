@@ -3,8 +3,26 @@ import { nanoid } from 'nanoid';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { cards, columns, tasks } from '@/lib/db/schema';
-import { eq, and, desc, asc } from 'drizzle-orm';
+import { eq, and, desc, asc, like } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
+
+/** Find a task by ID, or fallback to title search if ID doesn't match */
+async function findTask(taskId: string) {
+  // Try exact ID first
+  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+  if (task) return task;
+  // Fallback: maybe Gemini passed a title instead of ID
+  const byTitle = await db.query.tasks.findFirst({ where: like(tasks.title, `%${taskId}%`) });
+  return byTitle;
+}
+
+/** Find a card by ID, or fallback to title search */
+async function findCard(cardId: string) {
+  const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId) });
+  if (card) return card;
+  const byTitle = await db.query.cards.findFirst({ where: like(cards.title, `%${cardId}%`) });
+  return byTitle;
+}
 
 export const runtime = 'nodejs';
 
@@ -25,10 +43,10 @@ export async function POST(request: Request) {
   try {
     switch (action) {
       case 'complete_task': {
-        const task = await db.query.tasks.findFirst({ where: eq(tasks.id, args.taskId) });
-        if (!task) return NextResponse.json({ result: 'Task not found' });
-        await db.update(tasks).set({ status: 'done', completedAt: new Date(), updatedAt: new Date() }).where(eq(tasks.id, args.taskId));
-        return NextResponse.json({ result: `Completed task "${task.title}"`, taskId: args.taskId });
+        const task = await findTask(args.taskId);
+        if (!task) return NextResponse.json({ result: `Task not found: "${args.taskId}"` });
+        await db.update(tasks).set({ status: 'done', completedAt: new Date(), updatedAt: new Date() }).where(eq(tasks.id, task.id));
+        return NextResponse.json({ result: `Completed task "${task.title}"`, taskId: task.id });
       }
 
       case 'create_task': {
@@ -50,13 +68,13 @@ export async function POST(request: Request) {
       }
 
       case 'add_note': {
-        const card = await db.query.cards.findFirst({ where: eq(cards.id, args.cardId) });
-        if (!card) return NextResponse.json({ result: 'Card not found' });
+        const card = await findCard(args.cardId);
+        if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
         const msgs = (card.messages || []) as unknown[];
         const newMsg = { id: nanoid(), type: 'note' as const, content: args.content, createdAt: new Date().toISOString() };
         const updated = [...msgs, newMsg] as typeof card.messages;
-        await db.update(cards).set({ messages: updated, updatedAt: new Date() }).where(eq(cards.id, args.cardId));
-        return NextResponse.json({ result: `Added note to "${card.title}"`, cardId: args.cardId });
+        await db.update(cards).set({ messages: updated, updatedAt: new Date() }).where(eq(cards.id, card.id));
+        return NextResponse.json({ result: `Added note to "${card.title}"`, cardId: card.id });
       }
 
       case 'create_card': {
@@ -88,12 +106,12 @@ export async function POST(request: Request) {
       }
 
       case 'update_task_status': {
-        const task = await db.query.tasks.findFirst({ where: eq(tasks.id, args.taskId) });
-        if (!task) return NextResponse.json({ result: 'Task not found' });
+        const task = await findTask(args.taskId);
+        if (!task) return NextResponse.json({ result: `Task not found: "${args.taskId}"` });
         const updates: Record<string, unknown> = { status: args.status, updatedAt: new Date() };
         if (args.status === 'done') updates.completedAt = new Date();
-        await db.update(tasks).set(updates).where(eq(tasks.id, args.taskId));
-        return NextResponse.json({ result: `Updated task "${task.title}" to ${args.status}`, taskId: args.taskId });
+        await db.update(tasks).set(updates).where(eq(tasks.id, task.id));
+        return NextResponse.json({ result: `Updated task "${task.title}" to ${args.status}`, taskId: task.id });
       }
 
       default:
