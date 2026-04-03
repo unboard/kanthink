@@ -523,30 +523,31 @@ export async function POST(request: Request) {
         ? convertToStoredActions(parsed.actions)
         : undefined;
 
-      // Check for image generation intent
+      // Check for image generation intent — uses /api/generate-image which supports both providers
       let generatedImageUrls: string[] | undefined;
       if (detectImageGenerationIntent(questionContent)) {
-        const openaiKey = await getOpenAIKeyForUser(userId);
-        if (openaiKey) {
+        try {
           const imagePrompt = extractImagePrompt(questionContent);
-          const imageResult = await generateImage(openaiKey, imagePrompt);
-          if ('url' in imageResult) {
-            // Download the image and upload to Cloudinary for persistence
-            try {
-              const imageResponse = await fetch(imageResult.url);
-              const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
-              const cloudinaryResult = await uploadImageToCloudinary(imageBuffer, { cardId: body.cardId || 'chat-image' });
-              generatedImageUrls = [cloudinaryResult.url];
-            } catch {
-              // If Cloudinary upload fails, use the temporary OpenAI URL
-              generatedImageUrls = [imageResult.url];
+          const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
+          const imgRes = await fetch(`${baseUrl}/api/generate-image`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cookie': request.headers.get('cookie') || '',
+            },
+            body: JSON.stringify({ prompt: imagePrompt }),
+          });
+          if (imgRes.ok) {
+            const imgData = await imgRes.json();
+            if (imgData.url) {
+              generatedImageUrls = [imgData.url];
             }
           } else {
-            // Add error info to the response
-            parsed.response = `${parsed.response}\n\n(Image generation error: ${imageResult.error})`;
+            const imgErr = await imgRes.json().catch(() => ({ error: 'Image generation failed' }));
+            parsed.response = `${parsed.response}\n\n(Image generation error: ${imgErr.error})`;
           }
-        } else {
-          parsed.response = `${parsed.response}\n\n(Image generation requires an OpenAI API key. Add one in Settings > AI.)`;
+        } catch (imgError) {
+          parsed.response = `${parsed.response}\n\n(Image generation failed: ${imgError instanceof Error ? imgError.message : 'Unknown error'})`;
         }
       }
 

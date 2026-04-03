@@ -9,9 +9,6 @@ function toGoogleContent(content: string | LLMContentPart[]): string | Array<{ t
     if (part.type === 'text') {
       return { text: part.text };
     }
-    // For images, Gemini expects inline data or file URI
-    // URL images need to be fetched and converted to base64
-    // For now, we'll just include a text placeholder - image support can be enhanced later
     return { text: `[Image: ${part.image_url.url}]` };
   });
 }
@@ -24,11 +21,9 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
     name: 'google',
 
     async complete(messages: LLMMessage[], options?: LLMCompleteOptions): Promise<LLMResponse> {
-      // Extract system message if present
       const systemMessage = messages.find((m) => m.role === 'system');
       const nonSystemMessages = messages.filter((m) => m.role !== 'system');
 
-      // Build contents array for Gemini
       const contents = nonSystemMessages.map((m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: typeof m.content === 'string'
@@ -51,6 +46,43 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
 
       return {
         content,
+        usage: response.usageMetadata
+          ? {
+              inputTokens: response.usageMetadata.promptTokenCount || 0,
+              outputTokens: response.usageMetadata.candidatesTokenCount || 0,
+            }
+          : undefined,
+      };
+    },
+
+    async webSearch(query: string, systemPrompt?: string): Promise<LLMResponse> {
+      const contents = [{ role: 'user' as const, parts: [{ text: query }] }];
+
+      const response = await client.models.generateContent({
+        model: modelId,
+        contents,
+        config: {
+          systemInstruction: systemPrompt || undefined,
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      const content = response.text || '';
+
+      // Extract grounding metadata for citations
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const groundingMeta = (response.candidates?.[0] as any)?.groundingMetadata;
+      const webSearchResults = groundingMeta?.groundingChunks
+        ?.filter((chunk: { web?: { uri: string; title: string } }) => chunk.web)
+        .map((chunk: { web: { uri: string; title: string } }) => ({
+          url: chunk.web.uri,
+          title: chunk.web.title || '',
+          snippet: '',
+        })) || [];
+
+      return {
+        content,
+        webSearchResults,
         usage: response.usageMetadata
           ? {
               inputTokens: response.usageMetadata.promptTokenCount || 0,

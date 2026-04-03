@@ -28,7 +28,7 @@ export interface LLMCompleteOptions {
 export interface LLMProvider {
   name: string;
   complete(messages: LLMMessage[], options?: LLMCompleteOptions): Promise<LLMResponse>;
-  // Optional web search capability (OpenAI only for now)
+  // Optional web search capability
   webSearch?(query: string, systemPrompt?: string): Promise<LLMResponse>;
 }
 

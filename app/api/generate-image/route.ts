@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { getOpenAIClientForUser } from '@/lib/ai/openai-client'
+import { getGoogleClientForVoice } from '@/lib/ai/google-voice'
 import { uploadImageToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary'
 
 export async function POST(request: Request) {
@@ -23,39 +24,80 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Provide a prompt or context' }, { status: 400 })
   }
 
-  // Get OpenAI client
-  const { client, error } = await getOpenAIClientForUser(session.user.id)
-  if (!client) {
-    return NextResponse.json({ error: error || 'OpenAI API key required for image generation.' }, { status: 400 })
+  // Try OpenAI first (DALL-E)
+  const openaiResult = await getOpenAIClientForUser(session.user.id)
+  if (openaiResult.client) {
+    try {
+      const response = await openaiResult.client.images.generate({
+        model: 'dall-e-3',
+        prompt: imagePrompt,
+        n: 1,
+        size: type === 'card' ? '1792x1024' : '1024x1024',
+        quality: 'standard',
+      })
+
+      const imageUrl = response.data?.[0]?.url
+      if (!imageUrl) {
+        return NextResponse.json({ error: 'No image generated' }, { status: 500 })
+      }
+
+      return await uploadAndReturn(imageUrl)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Image generation failed'
+      console.error('OpenAI image generation error:', message)
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
   }
 
-  try {
-    const response = await client.images.generate({
-      model: 'dall-e-3',
-      prompt: imagePrompt,
-      n: 1,
-      size: type === 'card' ? '1792x1024' : '1024x1024',
-      quality: 'standard',
-    })
+  // Try Google/Gemini image generation
+  const googleResult = await getGoogleClientForVoice(session.user.id)
+  if (googleResult.client) {
+    try {
+      const response = await googleResult.client.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: imagePrompt,
+        config: {
+          numberOfImages: 1,
+        },
+      })
 
-    const imageUrl = response.data?.[0]?.url
-    if (!imageUrl) {
-      return NextResponse.json({ error: 'No image generated' }, { status: 500 })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const images = (response as any).generatedImages
+      if (!images || images.length === 0) {
+        return NextResponse.json({ error: 'No image generated' }, { status: 500 })
+      }
+
+      const imageData = images[0].image?.imageBytes
+      if (imageData) {
+        const buffer = Buffer.from(imageData, 'base64')
+
+        if (isCloudinaryConfigured()) {
+          const result = await uploadImageToCloudinary(buffer, {})
+          return NextResponse.json({ url: result.url })
+        }
+
+        // Return as data URL if no Cloudinary
+        const dataUrl = `data:image/png;base64,${imageData}`
+        return NextResponse.json({ url: dataUrl })
+      }
+
+      return NextResponse.json({ error: 'No image data returned' }, { status: 500 })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Image generation failed'
+      console.error('Gemini image generation error:', message)
+      return NextResponse.json({ error: message }, { status: 500 })
     }
-
-    // Upload to Cloudinary if configured (so the URL is permanent)
-    if (isCloudinaryConfigured()) {
-      const imageRes = await fetch(imageUrl)
-      const buffer = Buffer.from(await imageRes.arrayBuffer())
-      const result = await uploadImageToCloudinary(buffer, {})
-      return NextResponse.json({ url: result.url })
-    }
-
-    // Return the temporary OpenAI URL
-    return NextResponse.json({ url: imageUrl })
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Image generation failed'
-    console.error('Image generation error:', message)
-    return NextResponse.json({ error: message }, { status: 500 })
   }
+
+  return NextResponse.json({ error: 'No AI provider configured for image generation.' }, { status: 400 })
+}
+
+async function uploadAndReturn(imageUrl: string) {
+  if (isCloudinaryConfigured()) {
+    const imageRes = await fetch(imageUrl)
+    const buffer = Buffer.from(await imageRes.arrayBuffer())
+    const result = await uploadImageToCloudinary(buffer, {})
+    return NextResponse.json({ url: result.url })
+  }
+  return NextResponse.json({ url: imageUrl })
 }

@@ -284,17 +284,8 @@ export function OperatorHome() {
 
   return (
     <div className="flex h-full flex-col items-center relative">
-      {/* Top bar — voice + new chat + history */}
+      {/* Top bar — new chat + history */}
       <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
-        <button
-          onClick={() => setShowVoiceMode(true)}
-          title="Talk to Kan"
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-          </svg>
-        </button>
         {hasConversation && (
           <button
             onClick={startNewThread}
@@ -508,15 +499,26 @@ export function OperatorHome() {
                 t.style.height = Math.min(t.scrollHeight, 120) + 'px';
               }}
             />
-            <button
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || isLoading}
-              className="m-2 flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white transition-colors hover:bg-violet-700 disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1 m-2">
+              <button
+                onClick={() => setShowVoiceMode(true)}
+                title="Talk to Kan"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728" />
+                </svg>
+              </button>
+              <button
+                onClick={() => sendMessage(input)}
+                disabled={!input.trim() || isLoading}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white transition-colors hover:bg-violet-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
