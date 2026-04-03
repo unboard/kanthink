@@ -42,7 +42,14 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
         },
       });
 
-      const content = response.text || '';
+      let content = '';
+      try {
+        content = response.text || '';
+      } catch {
+        // response.text can throw if response was blocked or has no candidates
+        const candidate = response.candidates?.[0];
+        content = candidate?.content?.parts?.map((p: { text?: string }) => p.text || '').join('') || '';
+      }
 
       return {
         content,

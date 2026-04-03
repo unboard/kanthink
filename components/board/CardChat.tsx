@@ -181,8 +181,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         }
 
         const data = await response.json();
-        // Pass actions to addAIResponse
-        addAIResponse(card.id, message.id, data.response, data.actions, data.imageUrls);
+        // Pass actions to addAIResponse — guard against undefined content
+        addAIResponse(card.id, message.id, data.response || 'Sorry, I couldn\'t generate a response.', data.actions, data.imageUrls);
 
         // Optionally trigger summary update
         if (messages.length >= 3 && (messages.length % 3 === 0 || !card.summary)) {
