@@ -109,7 +109,7 @@ const TOOLS = [
           properties: {
             to: { type: 'STRING', description: 'Recipient email address' },
             subject: { type: 'STRING', description: 'Email subject line' },
-            body: { type: 'STRING', description: 'Email body in markdown. Use ## headers, **bold**, - bullets, > blockquotes, numbered lists for rich formatting.' },
+            body: { type: 'STRING', description: 'Email body. Use ## for section headers, - for bullet lists, > for callout quotes, and numbered lists. Bold with **text**. Write naturally — the template handles formatting.' },
             style: { type: 'STRING', description: 'Email style: professional, casual, newsletter, or update' },
             recipientName: { type: 'STRING', description: 'Recipient first name for greeting (optional)' },
             cardTitle: { type: 'STRING', description: 'Title of a referenced Kanthink card (optional)' },
@@ -197,6 +197,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const [showSettings, setShowSettings] = useState(false);
   const [actions, setActions] = useState<ActionLog[]>([]);
   const [expandedCard, setExpandedCard] = useState<CardPreview | null>(null);
+  const [expandedEmail, setExpandedEmail] = useState<EmailDraft | null>(null);
   const [voiceName, setVoiceName] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
   );
@@ -404,7 +405,13 @@ If you're unsure whether the user wants you to take an action, ASK first — don
 Google Search is the exception — you may use it freely when the user asks about current information, URLs, or research topics.
 
 EMAIL WORKFLOW:
-When the user asks to send an email, use the draft_email tool. This creates a draft on screen — it does NOT send it. Do NOT read the email content aloud. Just say something brief like "I've drafted that email — you can review it on screen and tap send when ready." The user must explicitly approve sending by tapping the Send button or saying "send the email."
+Before drafting an email, make sure you understand:
+1. The recipient (who is it going to?)
+2. The intent/purpose (what's the goal of this email?)
+3. The style — unless clearly implied, briefly ask: "Should this be professional, casual, newsletter-style, or a project update?"
+Only skip asking if the user has clearly communicated all three.
+
+When drafting, use the draft_email tool. This creates a visual draft on screen — it does NOT send it. Do NOT read the email content aloud. Just say "I've drafted that — you can review and send it on screen." Write the body using clean prose, not raw markdown syntax. Use headers and structure naturally — avoid showing asterisks or markdown characters in the email text.
 
 CONTENT FORMATTING:
 When creating notes, cards, or tasks with content, ALWAYS use rich markdown formatting. The app renders markdown so it looks great. Use:
@@ -573,9 +580,10 @@ After any tool executes, always confirm what you did.` }] },
                         {a.emailDraft.status === 'failed' && <span className="text-xs text-red-400">Failed</span>}
                       </div>
                     </div>
-                    <div className="px-4 py-3">
+                    <div className="px-4 py-3 cursor-pointer hover:bg-neutral-800/50 transition-colors" onClick={() => setExpandedEmail(a.emailDraft!)}>
                       <p className="text-sm font-medium text-white mb-1">{a.emailDraft.subject}</p>
-                      <p className="text-xs text-neutral-400 line-clamp-3 whitespace-pre-wrap">{a.emailDraft.body.slice(0, 200)}{a.emailDraft.body.length > 200 ? '...' : ''}</p>
+                      <p className="text-xs text-neutral-400 line-clamp-2">{a.emailDraft.body.replace(/[#*>\-]/g, '').slice(0, 120)}...</p>
+                      <p className="text-[10px] text-neutral-500 mt-1">Tap to preview full email</p>
                     </div>
                     {a.emailDraft.status === 'ready' && (
                       <div className="px-4 py-3 border-t border-neutral-800 flex gap-2">
@@ -659,6 +667,52 @@ After any tool executes, always confirm what you did.` }] },
           </button>
         )}
       </div>
+
+      {/* Expanded email preview overlay */}
+      {expandedEmail && (
+        <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/30" onClick={() => setExpandedEmail(null)}>
+          <div className="w-full max-w-lg h-[85vh] bg-neutral-900 border-t border-neutral-700 rounded-t-2xl overflow-y-auto animate-slide-up"
+            onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-neutral-900 border-b border-neutral-800 px-4 py-3 flex items-center justify-between z-10">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="h-4 w-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs text-neutral-400">To: {expandedEmail.to}</span>
+                  <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">{expandedEmail.style}</span>
+                </div>
+                <p className="text-sm font-semibold text-white truncate">{expandedEmail.subject}</p>
+              </div>
+              <button onClick={() => setExpandedEmail(null)} className="p-1.5 text-neutral-400 hover:text-white">
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-4 py-4">
+              {expandedEmail.body.split('\n').map((line, i) => {
+                const t = line.trim();
+                if (!t) return <br key={i} />;
+                if (t.startsWith('## ')) return <p key={i} className="text-base font-semibold text-white mt-4 mb-2">{t.slice(3)}</p>;
+                if (t.startsWith('# ')) return <p key={i} className="text-lg font-bold text-white mt-4 mb-2">{t.slice(2)}</p>;
+                if (t.startsWith('- ') || t.startsWith('• ')) return <p key={i} className="text-sm text-neutral-300 pl-4 mb-1">• {t.slice(2)}</p>;
+                if (/^\d+\.\s/.test(t)) return <p key={i} className="text-sm text-neutral-300 pl-4 mb-1">{t}</p>;
+                if (t.startsWith('> ')) return <p key={i} className="text-sm text-neutral-400 italic border-l-2 border-violet-500 pl-3 my-2">{t.slice(2)}</p>;
+                return <p key={i} className="text-sm text-neutral-300 mb-2">{t}</p>;
+              })}
+            </div>
+            {expandedEmail.status === 'ready' && (
+              <div className="sticky bottom-0 bg-neutral-900 border-t border-neutral-800 px-4 py-3 flex gap-2">
+                <button onClick={() => { sendEmail(expandedEmail.id); setExpandedEmail(null); }}
+                  className="flex-1 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Send Email</button>
+                <button onClick={() => { setActions(prev => prev.filter(x => x.emailDraft?.id !== expandedEmail.id)); setExpandedEmail(null); }}
+                  className="px-4 py-2.5 rounded-lg bg-neutral-800 text-neutral-300 text-sm hover:bg-neutral-700">Discard</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Expanded card detail overlay — read-only, voice stays active */}
       {expandedCard && (

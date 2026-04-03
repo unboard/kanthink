@@ -17,24 +17,45 @@ interface VoiceComposedProps {
   cardUrl?: string
 }
 
+/** Parse inline markdown (**bold**, *italic*, [links](url)) into React elements */
+function parseInline(text: string, key: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let idx = 0;
+  const regex = /\*\*(.+?)\*\*|\*(.+?)\*|\[(.+?)\]\((.+?)\)/g;
+  let match;
+  let lastIndex = 0;
+  while ((match = regex.exec(remaining)) !== null) {
+    if (match.index > lastIndex) parts.push(remaining.slice(lastIndex, match.index));
+    if (match[1]) parts.push(<strong key={`${key}-b${idx++}`}>{match[1]}</strong>);
+    else if (match[2]) parts.push(<em key={`${key}-i${idx++}`}>{match[2]}</em>);
+    else if (match[3] && match[4]) parts.push(<Link key={`${key}-l${idx++}`} href={match[4]} style={{ color: '#7c3aed', textDecoration: 'underline' }}>{match[3]}</Link>);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < remaining.length) parts.push(remaining.slice(lastIndex));
+  return parts.length === 1 && typeof parts[0] === 'string' ? parts[0] : <>{parts}</>;
+}
+
 function parseBody(body: string): React.ReactNode[] {
   return body.split('\n').map((line, i) => {
     const trimmed = line.trim();
     if (!trimmed) return <br key={i} />;
     // Headers
-    if (trimmed.startsWith('## ')) return <Heading key={i} as="h2" style={h2Style}>{trimmed.slice(3)}</Heading>;
-    if (trimmed.startsWith('# ')) return <Heading key={i} as="h1" style={h1Style}>{trimmed.slice(2)}</Heading>;
+    if (trimmed.startsWith('## ')) return <Heading key={i} as="h2" style={h2Style}>{parseInline(trimmed.slice(3), `h${i}`)}</Heading>;
+    if (trimmed.startsWith('# ')) return <Heading key={i} as="h1" style={h1Style}>{parseInline(trimmed.slice(2), `h${i}`)}</Heading>;
     // Bullet items
     if (trimmed.startsWith('- ') || trimmed.startsWith('• '))
-      return <Text key={i} style={bulletStyle}>{trimmed.slice(2)}</Text>;
+      return <Text key={i} style={bulletStyle}>• {parseInline(trimmed.slice(2), `b${i}`)}</Text>;
     // Numbered items
-    if (/^\d+\.\s/.test(trimmed))
-      return <Text key={i} style={bulletStyle}>{trimmed}</Text>;
+    if (/^\d+\.\s/.test(trimmed)) {
+      const numEnd = trimmed.indexOf('. ') + 2;
+      return <Text key={i} style={bulletStyle}>{trimmed.slice(0, numEnd)}{parseInline(trimmed.slice(numEnd), `n${i}`)}</Text>;
+    }
     // Blockquote
     if (trimmed.startsWith('> '))
-      return <Text key={i} style={quoteStyle}>{trimmed.slice(2)}</Text>;
+      return <Text key={i} style={quoteStyle}>{parseInline(trimmed.slice(2), `q${i}`)}</Text>;
     // Regular paragraph
-    return <Text key={i} style={paragraphStyle}>{trimmed}</Text>;
+    return <Text key={i} style={paragraphStyle}>{parseInline(trimmed, `p${i}`)}</Text>;
   });
 }
 
