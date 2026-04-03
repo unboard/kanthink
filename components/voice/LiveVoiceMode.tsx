@@ -278,7 +278,21 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
                 responseModalities: ['AUDIO'],
                 speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
               },
-              systemInstruction: { parts: [{ text: (systemPrompt || 'You are Kan, a helpful AI assistant.') + '\n\nYou have tools to take actions and Google Search for real-time information. When the user asks you to do something, USE the tools. Available actions: complete tasks, create tasks, create cards, add notes to cards, archive cards, and send emails. You can also search the web for current information. Always confirm what you did after a tool executes.' }] },
+              systemInstruction: { parts: [{ text: (systemPrompt || 'You are Kan, a helpful AI assistant.') + `
+
+TOOL USE RULES — CRITICAL:
+You have tools available, but ONLY use them when the user EXPLICITLY asks you to take an action. Examples of explicit requests: "mark that task complete", "create a card for this", "archive that card", "send an email to Bob".
+
+NEVER call a tool based on:
+- Your own interpretation of what might be helpful
+- Conversational context that wasn't a direct request
+- Assumptions about what the user wants done
+
+If you're unsure whether the user wants you to take an action, ASK first — don't just do it. Say "Would you like me to [action]?" and wait for confirmation.
+
+Google Search is the exception — you may use it freely when the user asks about current information, URLs, or research topics.
+
+After any tool executes, always confirm what you did.` }] },
               tools: TOOLS,
             },
           }));
