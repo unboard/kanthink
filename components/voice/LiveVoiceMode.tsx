@@ -91,8 +91,9 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   }, []);
 
   const playChunk = useCallback((b64: string) => {
-    if (!playCtxRef.current) playCtxRef.current = new AudioContext({ sampleRate: 24000 });
+    if (!playCtxRef.current) return; // should already be created by start()
     const ctx = playCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume();
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -146,6 +147,14 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     setError(null);
     setStatus('Fetching session...');
     activeRef.current = true;
+
+    // Create playback AudioContext NOW during user gesture so mobile doesn't block it
+    if (!playCtxRef.current) {
+      playCtxRef.current = new AudioContext({ sampleRate: 24000 });
+    }
+    if (playCtxRef.current.state === 'suspended') {
+      await playCtxRef.current.resume();
+    }
 
     try {
       // 1. Get WebSocket URL
