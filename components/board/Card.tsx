@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useSortable } from '@dnd-kit/sortable';
@@ -19,6 +19,30 @@ import { SnoozePicker } from './SnoozePicker';
 import { useSelectionStore } from '@/lib/selectionStore';
 import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
 import { Pin } from 'lucide-react';
+
+class CardDrawerErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error) { console.error('[CardDrawer crash]', error.message, error.stack); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-4 text-red-400 text-sm">
+          <p className="font-medium">Card drawer crashed</p>
+          <p className="text-red-500/70 text-xs mt-1">{this.state.error.message}</p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="mt-2 text-xs text-violet-400 underline"
+          >Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const CARD_COLORS: Record<string, string> = {
   red: '#ef4444',
@@ -865,11 +889,13 @@ export function Card({ card }: CardProps) {
         </div>
         </div>{/* End card content padding wrapper */}
       </div>
-      <CardDetailDrawer
-        card={card}
-        isOpen={isCardDrawerOpen}
-        onClose={() => setIsCardDrawerOpen(false)}
-      />
+      <CardDrawerErrorBoundary>
+        <CardDetailDrawer
+          card={card}
+          isOpen={isCardDrawerOpen}
+          onClose={() => setIsCardDrawerOpen(false)}
+        />
+      </CardDrawerErrorBoundary>
       <TaskDrawer
         task={selectedTask}
         autoFocusTitle={autoFocusTaskTitle}
