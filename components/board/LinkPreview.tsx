@@ -138,7 +138,7 @@ export function LinkPreview({ url, onDismiss }: { url: string; onDismiss?: () =>
               />
             )}
             <span className="text-[10px] text-neutral-400 dark:text-neutral-500 truncate">
-              {data.siteName || new URL(url).hostname}
+              {data.siteName || (() => { try { return new URL(url).hostname; } catch { return url; } })()}
             </span>
           </div>
           <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200 line-clamp-1 group-hover:text-violet-600 dark:group-hover:text-violet-400">
@@ -160,6 +160,10 @@ export function LinkPreview({ url, onDismiss }: { url: string; onDismiss?: () =>
 export function extractUrls(text: string): string[] {
   const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
   const matches = text.match(urlRegex) || [];
+  // Clean trailing punctuation/markdown artifacts and validate
+  const cleaned = matches
+    .map(u => u.replace(/[)>:*_,;.!?]+$/, ''))
+    .filter(u => { try { new URL(u); return true; } catch { return false; } });
   // Deduplicate and limit to 3
-  return [...new Set(matches)].slice(0, 3);
+  return [...new Set(cleaned)].slice(0, 3);
 }
