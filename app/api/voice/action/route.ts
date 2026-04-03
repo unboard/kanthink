@@ -155,7 +155,7 @@ export async function POST(request: Request) {
             summary: card.summary,
             channelName: channel?.name || '',
             channelId: card.channelId,
-            messages: msgs.slice(-5).map(m => ({ type: m.type, content: m.content?.slice(0, 300) })),
+            messages: msgs.map(m => ({ type: m.type, content: m.content })),
             tasks: cardTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
             tags: card.tags,
             coverImageUrl: card.coverImageUrl,
