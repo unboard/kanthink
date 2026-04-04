@@ -142,7 +142,8 @@ async function main() {
 
   const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
   const html = buildBugBotReportHtml(tasks, date)
-  const subject = `Kan Bug Bot Report — ${date}`
+  // Use consistent subject so Gmail threads all reports together
+  const subject = 'Kan Work Report'
 
   // Send via Customer.IO
   const cioApi = new APIClient(process.env.CUSTOMERIO_TRANSACTIONAL_API_KEY as string, { region: RegionUS })
