@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { SporeBackground } from '@/components/ambient/SporeBackground';
+import { VoiceSpores } from './VoiceSpores';
 
 const VOICE_OPTIONS = [
   { id: 'Kore', label: 'Kore' }, { id: 'Puck', label: 'Puck' },
@@ -565,17 +565,12 @@ After any tool executes, always confirm what you did.` }] },
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950">
-      {/* Ambient spore background — more alive during voice mode */}
-      <SporeBackground
-        className="absolute inset-0 z-0 pointer-events-none overflow-hidden"
-        id="voice-spores"
-      />
-      {/* Subtle gradient glow at edges */}
-      <div className={`absolute inset-0 pointer-events-none transition-opacity duration-1000 ${isAiSpeaking ? 'opacity-60' : 'opacity-30'}`}
+      {/* Voice-specific spore particles — more particles, higher opacity, reactive to AI speaking */}
+      <VoiceSpores isSpeaking={isAiSpeaking} />
+      {/* Gradient glow at edges */}
+      <div className={`absolute inset-0 pointer-events-none transition-opacity duration-700 ${isAiSpeaking ? 'opacity-80' : 'opacity-40'}`}
         style={{
-          background: isAiSpeaking
-            ? 'radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.15) 0%, transparent 50%), radial-gradient(ellipse at 50% 100%, rgba(6,182,212,0.15) 0%, transparent 50%)'
-            : 'radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.08) 0%, transparent 50%), radial-gradient(ellipse at 50% 100%, rgba(6,182,212,0.08) 0%, transparent 50%)',
+          background: 'radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.2) 0%, transparent 50%), radial-gradient(ellipse at 50% 100%, rgba(6,182,212,0.2) 0%, transparent 50%), radial-gradient(ellipse at 0% 50%, rgba(167,139,250,0.1) 0%, transparent 40%), radial-gradient(ellipse at 100% 50%, rgba(34,211,238,0.1) 0%, transparent 40%)',
         }}
       />
 
