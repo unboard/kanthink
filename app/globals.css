@@ -168,39 +168,6 @@ body {
   animation: slide-in-right 0.2s ease-out;
 }
 
-/* Voice mode rotating border — uses a spinning oversized gradient behind a mask */
-@keyframes voice-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-.voice-border-glow {
-  position: relative;
-  overflow: hidden;
-  border-radius: 16px;
-}
-.voice-border-glow::before {
-  content: '';
-  position: absolute;
-  inset: -50%;
-  background: conic-gradient(#7c3aed, #06b6d4, #7c3aed, #a855f7, #7c3aed);
-  animation: voice-spin 4s linear infinite;
-}
-.voice-border-glow::after {
-  content: '';
-  position: absolute;
-  inset: 2px;
-  border-radius: 14px;
-  background: #171717;
-}
-.voice-border-glow.speaking::before {
-  background: conic-gradient(#7c3aed, #06b6d4, #22c55e, #a855f7, #7c3aed, #06b6d4, #7c3aed);
-  animation: voice-spin 2s linear infinite;
-}
-.voice-border-glow.speaking::after {
-  inset: 3px;
-  border-radius: 13px;
-}
-
 /* Mobile bottom sheet animation */
 @keyframes slide-up {
   from {
