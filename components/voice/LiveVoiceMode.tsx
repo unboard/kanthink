@@ -73,7 +73,7 @@ const TOOLS = [
       },
       {
         name: 'search_cards',
-        description: 'Search for cards in a channel by keyword, or get the most recent cards. Use this when the user asks about cards you cannot see in the initial context, or when they ask about recently added/modified cards.',
+        description: 'Search for cards in a specific channel by keyword, or get the most recent cards in a channel. ONLY use when the user explicitly asks to find or look up cards in a specific channel. Do NOT use for general questions like "what is going on" or "what should I work on" — answer those from the context you already have.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -622,26 +622,24 @@ After any tool executes, always confirm what you did.` }] },
           </div>
         )}
 
-        {/* Center area — only shows loading/error or action feed */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+        {/* Main body — scrollable, shows loading/error + action feed */}
+        <div className="flex-1 overflow-y-auto px-2 py-4">
           {status && !error && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-2 py-8">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
               <p className="text-sm text-neutral-400">{status}</p>
             </div>
           )}
           {error && (
-            <div className="space-y-2 text-center">
+            <div className="flex flex-col items-center justify-center gap-2 py-8">
               <p className="text-sm text-red-400">{error}</p>
               <button onClick={start} className="text-xs text-violet-400 hover:underline">Try again</button>
             </div>
           )}
-        </div>
 
-        {/* Action log — visual feedback for tool calls */}
-        {actions.length > 0 && (
-          <div className="w-full max-w-sm space-y-2 mt-2 max-h-[40vh] overflow-y-auto">
-            {actions.map(a => (
+          {/* Action feed — only shows mutations and previews, not search results */}
+          <div className="space-y-3">
+            {actions.filter(a => !['search_cards'].includes(a.action)).map(a => (
               <div key={a.id}>
                 {/* Email draft */}
                 {a.emailDraft ? (
@@ -721,24 +719,28 @@ After any tool executes, always confirm what you did.` }] },
                     </div>
                   </div>
                 ) : (
-                  /* Regular action result */
-                  <div className="flex items-center gap-2 bg-neutral-900/80 border border-neutral-800 rounded-xl px-4 py-2.5 animate-slide-in">
+                  /* Regular action result — card style */
+                  <div className="flex items-start gap-3 bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 animate-slide-in">
                     {a.success ? (
-                      <svg className="h-4 w-4 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
+                      <div className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
+                        <svg className="h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
                     ) : (
-                      <svg className="h-4 w-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                      <div className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
+                        <svg className="h-3 w-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </div>
                     )}
-                    <span className={`text-sm ${a.success ? 'text-green-300' : 'text-red-300'}`}>{a.result}</span>
+                    <span className={`text-sm ${a.success ? 'text-white' : 'text-red-300'}`}>{a.result}</span>
                   </div>
                 )}
               </div>
             ))}
           </div>
-        )}
+        </div>
 
         {/* Bottom buttons — Mute + Stop */}
         {connected && (

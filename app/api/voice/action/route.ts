@@ -172,7 +172,7 @@ export async function POST(request: Request) {
 
         const channelName = ch?.name || (await db.query.channels.findFirst({ where: eq(channels.id, chId), columns: { name: true } }))?.name || chId;
         const cardSummaries = results.map(c => {
-          const fmtDate = (d: Date | null) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '?';
+          const fmtDate = (d: Date | null) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' }) : '?';
           return `- "${c.title}" (cardId: ${c.id}) — modified: ${fmtDate(c.updatedAt)}, created: ${fmtDate(c.createdAt)}${c.summary ? ` — ${c.summary}` : ''}`;
         }).join('\n');
 
