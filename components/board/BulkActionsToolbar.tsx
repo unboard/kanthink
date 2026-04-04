@@ -20,10 +20,13 @@ export function BulkActionsToolbar({ channel }: BulkActionsToolbarProps) {
   const deleteCard = useStore((s) => s.deleteCard);
   const addTagToCard = useStore((s) => s.addTagToCard);
   const removeTagFromCard = useStore((s) => s.removeTagFromCard);
+  const mergeCards = useStore((s) => s.mergeCards);
+  const cards = useStore((s) => s.cards);
 
   const [showMovePicker, setShowMovePicker] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
   const moveRef = useRef<HTMLDivElement>(null);
   const tagRef = useRef<HTMLDivElement>(null);
 
@@ -164,6 +167,59 @@ export function BulkActionsToolbar({ channel }: BulkActionsToolbarProps) {
           </div>
         )}
       </div>
+
+      {/* Merge */}
+      {count >= 2 && (
+        <>
+          <button
+            onClick={async () => {
+              if (isMerging) return;
+              setIsMerging(true);
+              const ids = Array.from(selectedCardIds);
+              const primaryId = ids[0];
+              const mergeIds = ids.slice(1);
+
+              // Generate AI title from card titles
+              let aiTitle: string | undefined;
+              try {
+                const titles = ids.map(id => cards[id]?.title).filter(Boolean);
+                const res = await fetch('/api/channels/actions/generate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    type: 'chat',
+                    channelName: channel.name,
+                    channelDescription: '',
+                    prompt: `These cards are being merged into one. Generate a single concise title (1-8 words) that captures the combined topic. Card titles: ${titles.join(', ')}. Return ONLY the title text, nothing else.`,
+                    cards: [],
+                  }),
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  aiTitle = data.content?.trim().replace(/^["']|["']$/g, '');
+                }
+              } catch { /* use primary title as fallback */ }
+
+              mergeCards(primaryId, mergeIds, aiTitle);
+              clearSelection();
+              setIsMerging(false);
+            }}
+            disabled={isMerging}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-violet-500/20 text-violet-400 transition-colors disabled:opacity-50"
+            title="Merge selected cards"
+          >
+            {isMerging ? (
+              <div className="w-4 h-4 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+              </svg>
+            )}
+            {isMerging ? 'Merging...' : 'Merge'}
+          </button>
+          <div className="w-px h-5 bg-white/20 dark:bg-black/20 mx-1" />
+        </>
+      )}
 
       {/* Archive */}
       <button

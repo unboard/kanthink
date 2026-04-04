@@ -91,6 +91,7 @@ interface KanthinkState {
   // Card actions
   createCard: (channelId: ID, columnId: ID, input: CardInput, source?: 'manual' | 'ai', createdByInstructionId?: ID) => Card;
   updateCard: (id: ID, updates: Partial<Omit<Card, 'id' | 'channelId' | 'createdAt' | 'source'>>) => void;
+  mergeCards: (primaryCardId: ID, cardIdsToMerge: ID[], newTitle?: string) => void;
   deleteCard: (id: ID) => void;
   deleteAllCardsInColumn: (channelId: ID, columnId: ID) => void;
   sortColumnCards: (channelId: ID, columnId: ID, sortedCardIds: ID[]) => void;
@@ -1180,6 +1181,109 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs
         broadcastAndPublish({ type: 'card:update', id, updates });
+      },
+
+      mergeCards: (primaryCardId, cardIdsToMerge, newTitle) => {
+        const state = get();
+        const primaryCard = state.cards[primaryCardId];
+        if (!primaryCard) return;
+
+        // Collect all data from cards being merged
+        const allMessages = [...primaryCard.messages];
+        const allTags = new Set(primaryCard.tags || []);
+        let coverImage = primaryCard.coverImageUrl;
+
+        for (const mergeId of cardIdsToMerge) {
+          const card = state.cards[mergeId];
+          if (!card) continue;
+
+          // Add a separator note for merged content
+          allMessages.push({
+            id: nanoid(),
+            type: 'note' as const,
+            content: `--- Merged from "${card.title}" ---`,
+            createdAt: now(),
+          });
+
+          // Add all messages from the merged card
+          for (const msg of card.messages) {
+            allMessages.push({ ...msg });
+          }
+
+          // Merge tags
+          if (card.tags) card.tags.forEach(t => allTags.add(t));
+
+          // Use first available cover image
+          if (!coverImage && card.coverImageUrl) coverImage = card.coverImageUrl;
+        }
+
+        // Update primary card with merged data
+        const updates = {
+          title: newTitle || primaryCard.title,
+          messages: allMessages,
+          tags: Array.from(allTags),
+          coverImageUrl: coverImage || undefined,
+          updatedAt: now(),
+        };
+
+        // Move tasks from merged cards to primary card
+        const taskUpdates: Record<string, { cardId: string }> = {};
+        for (const mergeId of cardIdsToMerge) {
+          const cardTasks = Object.values(state.tasks).filter(t => t.cardId === mergeId);
+          for (const task of cardTasks) {
+            taskUpdates[task.id] = { cardId: primaryCardId };
+          }
+        }
+
+        set((s) => {
+          const updatedCards = { ...s.cards };
+          // Update primary card
+          updatedCards[primaryCardId] = { ...updatedCards[primaryCardId], ...updates };
+
+          // Delete merged cards and remove from columns
+          const updatedChannels = { ...s.channels };
+          for (const mergeId of cardIdsToMerge) {
+            const card = updatedCards[mergeId];
+            if (card) {
+              const ch = updatedChannels[card.channelId];
+              if (ch) {
+                updatedChannels[card.channelId] = {
+                  ...ch,
+                  columns: ch.columns.map(col => ({
+                    ...col,
+                    cardIds: col.cardIds.filter(id => id !== mergeId),
+                  })),
+                };
+              }
+            }
+            delete updatedCards[mergeId];
+          }
+
+          // Update tasks
+          const updatedTasks = { ...s.tasks };
+          for (const [taskId, update] of Object.entries(taskUpdates)) {
+            if (updatedTasks[taskId]) {
+              updatedTasks[taskId] = { ...updatedTasks[taskId], ...update };
+            }
+          }
+
+          return { cards: updatedCards, channels: updatedChannels, tasks: updatedTasks };
+        });
+
+        // Sync primary card update
+        sync.syncCardUpdate(primaryCard.channelId, primaryCardId, updates);
+
+        // Delete merged cards on server
+        for (const mergeId of cardIdsToMerge) {
+          sync.syncCardDelete(primaryCard.channelId, mergeId);
+        }
+
+        // Sync task reassignments
+        for (const [taskId, update] of Object.entries(taskUpdates)) {
+          sync.syncTaskUpdate(primaryCard.channelId, taskId, update);
+        }
+
+        broadcastAndPublish({ type: 'card:update', id: primaryCardId, updates });
       },
 
       deleteCard: (id) => {
