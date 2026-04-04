@@ -564,24 +564,32 @@ After any tool executes, always confirm what you did.` }] },
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950">
-      {/* Animated border container */}
-      <div className={`voice-border-glow ${isAiSpeaking ? 'speaking' : ''} absolute inset-2 sm:inset-4 rounded-2xl`}>
-        <div className="absolute inset-0 rounded-2xl bg-neutral-900" />
-      </div>
+      {/* Animated rotating gradient border */}
+      <div className={`voice-border-glow ${isAiSpeaking ? 'speaking' : ''} absolute inset-2 sm:inset-4`} />
 
       {/* Content */}
-      <div className="relative z-10 flex flex-col h-full w-full px-4 pt-4 pb-4 safe-area-bottom" style={{ maxWidth: '100%' }}>
-        {/* Top bar — logo + voice label + settings */}
-        <div className="flex items-center gap-3 px-2">
+      <div className="relative z-10 flex flex-col h-full w-full px-6 pt-5 pb-4 safe-area-bottom" style={{ maxWidth: '100%' }}>
+        {/* Top bar — logo + status label + settings */}
+        <div className="flex items-center gap-3">
           <KanthinkIcon size={32} className="text-white" />
-          <div className="flex items-center gap-1.5 bg-neutral-800 rounded-full px-3 py-1.5">
-            <div className="flex items-center gap-1 h-4">
-              {bars.map((s, i) => (
-                <div key={i} className={`w-1 rounded-full transition-all duration-75 ${isAiSpeaking ? 'bg-violet-400' : isMuted ? 'bg-red-400/50' : 'bg-neutral-400'}`}
-                  style={{ height: `${Math.max(3, s * 16)}px` }} />
-              ))}
-            </div>
-            <span className="text-xs text-neutral-300 ml-1">Voice</span>
+          <div className="flex items-center gap-1.5 bg-neutral-800/80 rounded-full px-3 py-1.5">
+            {connected && !isMuted && (
+              <div className="flex items-center gap-0.5 h-4">
+                {bars.map((s, i) => (
+                  <div key={i} className={`w-1 rounded-full transition-all duration-75 ${isAiSpeaking ? 'bg-violet-400' : 'bg-cyan-400'}`}
+                    style={{ height: `${Math.max(3, s * 16)}px` }} />
+                ))}
+              </div>
+            )}
+            {isMuted && (
+              <svg className="h-3.5 w-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+              </svg>
+            )}
+            <span className={`text-xs ml-1 ${isMuted ? 'text-red-400' : isAiSpeaking ? 'text-violet-300' : 'text-neutral-300'}`}>
+              {!connected ? 'Connecting...' : isMuted ? 'Muted' : isAiSpeaking ? 'Kan is speaking' : 'Listening'}
+            </span>
           </div>
           <button onClick={() => setShowSettings(!showSettings)}
             className="p-2 text-neutral-400 hover:text-white rounded-full hover:bg-neutral-800 transition-colors">
@@ -607,7 +615,7 @@ After any tool executes, always confirm what you did.` }] },
           </div>
         )}
 
-        {/* Center area — status + actions */}
+        {/* Center area — only shows loading/error or action feed */}
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           {status && !error && (
             <div className="flex items-center gap-2">
@@ -615,9 +623,6 @@ After any tool executes, always confirm what you did.` }] },
               <p className="text-sm text-neutral-400">{status}</p>
             </div>
           )}
-          {connected && !isAiSpeaking && !status && !isMuted && <p className="text-sm text-neutral-500">Listening...</p>}
-          {connected && !isAiSpeaking && isMuted && <p className="text-sm text-red-400/70">Muted</p>}
-          {connected && isAiSpeaking && <p className="text-sm text-violet-400">Kan is speaking</p>}
           {error && (
             <div className="space-y-2 text-center">
               <p className="text-sm text-red-400">{error}</p>
