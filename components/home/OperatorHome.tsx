@@ -421,7 +421,7 @@ When using tools, use the exact IDs shown above when available (taskId, cardId, 
         {!hasConversation && (
           <div className="mb-8 text-center">
             <div className="mb-4 inline-flex">
-              <KanthinkIcon size={48} className="text-violet-400" />
+              <KanthinkIcon size={48} className="text-white" />
             </div>
             <h1 className="mb-2 text-2xl font-semibold text-white">
               What&apos;s on your mind?
