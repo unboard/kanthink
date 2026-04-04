@@ -173,9 +173,18 @@ function markdownToHtml(markdown: string): string {
   }
 }
 
+function stripCodeBlocks(text: string): string {
+  let s = text.trim();
+  if (s.startsWith('```json')) s = s.slice(7);
+  else if (s.startsWith('```')) s = s.slice(3);
+  if (s.endsWith('```')) s = s.slice(0, -3);
+  return s.trim();
+}
+
 function parseResponse(content: string): CardInput[] {
   try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    const cleaned = stripCodeBlocks(content);
+    const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       console.warn('No JSON array found in LLM response');
       return [];

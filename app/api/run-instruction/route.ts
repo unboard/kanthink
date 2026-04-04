@@ -424,9 +424,18 @@ ${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\
   };
 }
 
+function stripCodeBlocks(text: string): string {
+  let s = text.trim();
+  if (s.startsWith('```json')) s = s.slice(7);
+  else if (s.startsWith('```')) s = s.slice(3);
+  if (s.endsWith('```')) s = s.slice(0, -3);
+  return s.trim();
+}
+
 function parseGenerateResponse(content: string): CardInput[] {
   try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    const cleaned = stripCodeBlocks(content);
+    const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       console.warn('No JSON array found in LLM response');
       return [];
@@ -481,7 +490,8 @@ interface ModifyResponseCard {
 
 function parseModifyResponse(content: string): ModifyResponseCard[] {
   try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    const cleaned = stripCodeBlocks(content);
+    const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       console.warn('No JSON array found in LLM response');
       return [];
@@ -609,7 +619,8 @@ If no cards should be moved, return an empty array: []`;
 
 function parseMoveResponse(content: string): Array<{ cardId: string; destinationColumnId: string; reason?: string }> {
   try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    const cleaned = stripCodeBlocks(content);
+    const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       console.warn('No JSON array found in LLM response');
       return [];
@@ -832,7 +843,8 @@ function parseMultiStepResponse(content: string): {
 
   try {
     // Find the JSON object in the response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const cleaned = stripCodeBlocks(content);
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.warn('No JSON object found in multi-step response');
       return result;
