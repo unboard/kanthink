@@ -198,6 +198,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const [actions, setActions] = useState<ActionLog[]>([]);
   const [expandedCard, setExpandedCard] = useState<CardPreview | null>(null);
   const [expandedEmail, setExpandedEmail] = useState<EmailDraft | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
   const [voiceName, setVoiceName] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
   );
@@ -550,56 +551,72 @@ After any tool executes, always confirm what you did.` }] },
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
+  const toggleMute = useCallback(() => {
+    if (streamRef.current) {
+      const track = streamRef.current.getAudioTracks()[0];
+      if (track) { track.enabled = !track.enabled; setIsMuted(!track.enabled); }
+    }
+  }, []);
+
   if (!isOpen) return null;
 
   const bars = Array.from({ length: 5 }, (_, i) => Math.max(0.15, micLevel * (1 - Math.abs(i - 2) * 0.2)));
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-neutral-950/95 backdrop-blur-sm">
-      <button onClick={() => { stop(); onClose(); }} className="absolute top-4 right-4 p-2 text-neutral-500 hover:text-white z-10">
-        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-      </button>
-      <button onClick={() => setShowSettings(!showSettings)} className="absolute top-4 left-4 p-2 text-neutral-500 hover:text-white z-10">
-        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-      </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950">
+      {/* Animated border container */}
+      <div className={`voice-border-glow ${isAiSpeaking ? 'speaking' : ''} absolute inset-2 sm:inset-4 rounded-2xl`}>
+        <div className="absolute inset-0 rounded-2xl bg-neutral-900" />
+      </div>
 
-      {showSettings && (
-        <div className="absolute top-14 left-4 bg-neutral-900 border border-neutral-700 rounded-xl p-4 w-56 z-10">
-          <p className="text-xs text-neutral-400 font-medium mb-2">Voice</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {VOICE_OPTIONS.map(v => (
-              <button key={v.id} onClick={() => { setVoiceName(v.id); localStorage.setItem(VOICE_KEY, v.id); }}
-                className={`px-2 py-1.5 rounded-lg text-xs ${voiceName === v.id ? 'bg-violet-600 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'}`}
-              >{v.label}</button>
-            ))}
+      {/* Content */}
+      <div className="relative z-10 flex flex-col h-full w-full px-4 pt-4 pb-4 safe-area-bottom" style={{ maxWidth: '100%' }}>
+        {/* Top bar — logo + voice label + settings */}
+        <div className="flex items-center gap-3 px-2">
+          <KanthinkIcon size={32} className="text-white" />
+          <div className="flex items-center gap-1.5 bg-neutral-800 rounded-full px-3 py-1.5">
+            <div className="flex items-center gap-1 h-4">
+              {bars.map((s, i) => (
+                <div key={i} className={`w-1 rounded-full transition-all duration-75 ${isAiSpeaking ? 'bg-violet-400' : isMuted ? 'bg-red-400/50' : 'bg-neutral-400'}`}
+                  style={{ height: `${Math.max(3, s * 16)}px` }} />
+              ))}
+            </div>
+            <span className="text-xs text-neutral-300 ml-1">Voice</span>
           </div>
-          <p className="text-[10px] text-neutral-500 mt-3">Changes apply on next session</p>
+          <button onClick={() => setShowSettings(!showSettings)}
+            className="p-2 text-neutral-400 hover:text-white rounded-full hover:bg-neutral-800 transition-colors">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
         </div>
-      )}
 
-      <div className="flex flex-col items-center gap-6">
-        <div className="relative">
-          <div className={`absolute inset-0 rounded-full blur-3xl transition-all duration-300 ${connected ? isAiSpeaking ? 'bg-violet-500/50 scale-[2]' : 'bg-violet-500/20 scale-150' : 'bg-transparent'}`} />
-          <KanthinkIcon size={72} className={`relative transition-colors duration-300 ${connected ? 'text-violet-400' : 'text-neutral-500'}`} />
-        </div>
-
-        {connected && (
-          <div className="flex items-center gap-1 h-10">
-            {bars.map((s, i) => (
-              <div key={i} className={`w-1.5 rounded-full transition-all duration-75 ${isAiSpeaking ? 'bg-violet-400' : 'bg-neutral-400'}`}
-                style={{ height: `${Math.max(6, s * 40)}px` }} />
-            ))}
+        {/* Settings dropdown */}
+        {showSettings && (
+          <div className="absolute top-16 left-6 bg-neutral-800 border border-neutral-700 rounded-xl p-4 w-56 z-20">
+            <p className="text-xs text-neutral-400 font-medium mb-2">Voice</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {VOICE_OPTIONS.map(v => (
+                <button key={v.id} onClick={() => { setVoiceName(v.id); localStorage.setItem(VOICE_KEY, v.id); }}
+                  className={`px-2 py-1.5 rounded-lg text-xs ${voiceName === v.id ? 'bg-violet-600 text-white' : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'}`}
+                >{v.label}</button>
+              ))}
+            </div>
+            <p className="text-[10px] text-neutral-500 mt-3">Changes apply on next session</p>
           </div>
         )}
 
-        <div>
+        {/* Center area — status + actions */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
           {status && !error && (
             <div className="flex items-center gap-2">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
               <p className="text-sm text-neutral-400">{status}</p>
             </div>
           )}
-          {connected && !isAiSpeaking && !status && <p className="text-sm text-neutral-400">Listening...</p>}
+          {connected && !isAiSpeaking && !status && !isMuted && <p className="text-sm text-neutral-500">Listening...</p>}
+          {connected && !isAiSpeaking && isMuted && <p className="text-sm text-red-400/70">Muted</p>}
           {connected && isAiSpeaking && <p className="text-sm text-violet-400">Kan is speaking</p>}
           {error && (
             <div className="space-y-2 text-center">
@@ -711,11 +728,33 @@ After any tool executes, always confirm what you did.` }] },
           </div>
         )}
 
+        {/* Bottom buttons — Mute + Stop */}
         {connected && (
-          <button onClick={() => { stop(); onClose(); }}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-700 active:scale-95 transition-all mt-2">
-            <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
-          </button>
+          <div className="flex gap-3 px-4 pb-2">
+            <button onClick={toggleMute}
+              className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-medium transition-colors ${
+                isMuted ? 'bg-red-600/20 text-red-400 border border-red-500/30' : 'bg-neutral-800 text-neutral-300 border border-neutral-700 hover:bg-neutral-700'
+              }`}>
+              {isMuted ? (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              )}
+              {isMuted ? 'Unmute' : 'Mute'}
+            </button>
+            <button onClick={() => { stop(); onClose(); }}
+              className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-neutral-800 text-neutral-300 border border-neutral-700 hover:bg-neutral-700 text-sm font-medium transition-colors">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Stop
+            </button>
+          </div>
         )}
       </div>
 

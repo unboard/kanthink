@@ -168,6 +168,37 @@ body {
   animation: slide-in-right 0.2s ease-out;
 }
 
+/* Voice mode rotating border */
+@keyframes voice-border-rotate {
+  0% { --voice-angle: 0deg; }
+  100% { --voice-angle: 360deg; }
+}
+@property --voice-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.voice-border-glow {
+  position: relative;
+}
+.voice-border-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 2px;
+  background: conic-gradient(from var(--voice-angle), #7c3aed, #06b6d4, #7c3aed, #a855f7, #7c3aed);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: voice-border-rotate 4s linear infinite;
+}
+.voice-border-glow.speaking::before {
+  padding: 3px;
+  background: conic-gradient(from var(--voice-angle), #7c3aed, #06b6d4, #22c55e, #7c3aed, #a855f7, #06b6d4, #7c3aed);
+  animation: voice-border-rotate 2s linear infinite;
+}
+
 /* Mobile bottom sheet animation */
 @keyframes slide-up {
   from {
