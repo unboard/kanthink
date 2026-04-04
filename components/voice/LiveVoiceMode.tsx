@@ -241,27 +241,35 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   }, []);
 
   const playChunk = useCallback((b64: string) => {
-    if (!playCtxRef.current) return;
+    // Recreate AudioContext if it was closed or doesn't exist
+    if (!playCtxRef.current || playCtxRef.current.state === 'closed') {
+      playCtxRef.current = new AudioContext({ sampleRate: 24000 });
+    }
     const ctx = playCtxRef.current;
     if (ctx.state === 'suspended') ctx.resume();
-    const bin = atob(b64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const i16 = new Int16Array(bytes.buffer);
-    const f32 = new Float32Array(i16.length);
-    for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 0x8000;
-    const buf = ctx.createBuffer(1, f32.length, 24000);
-    buf.getChannelData(0).set(f32);
-    const src = ctx.createBufferSource();
-    src.buffer = buf; src.connect(ctx.destination);
-    const t = Math.max(ctx.currentTime, nextPlayRef.current);
-    src.start(t); nextPlayRef.current = t + buf.duration;
-    activeSources.current.push(src);
-    setIsAiSpeaking(true);
-    src.onended = () => {
-      activeSources.current = activeSources.current.filter(s => s !== src);
-      if (activeSources.current.length === 0) setIsAiSpeaking(false);
-    };
+
+    try {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const i16 = new Int16Array(bytes.buffer);
+      const f32 = new Float32Array(i16.length);
+      for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 0x8000;
+      const buf = ctx.createBuffer(1, f32.length, 24000);
+      buf.getChannelData(0).set(f32);
+      const src = ctx.createBufferSource();
+      src.buffer = buf; src.connect(ctx.destination);
+      const t = Math.max(ctx.currentTime, nextPlayRef.current);
+      src.start(t); nextPlayRef.current = t + buf.duration;
+      activeSources.current.push(src);
+      setIsAiSpeaking(true);
+      src.onended = () => {
+        activeSources.current = activeSources.current.filter(s => s !== src);
+        if (activeSources.current.length === 0) setIsAiSpeaking(false);
+      };
+    } catch (e) {
+      console.error('[Voice playback]', e);
+    }
   }, []);
 
   const startMic = useCallback((ws: WebSocket, stream: MediaStream) => {
@@ -520,6 +528,27 @@ After any tool executes, always confirm what you did.` }] },
     return () => stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Re-acquire wake lock and resume audio when page becomes visible again
+  useEffect(() => {
+    const handleVisibility = async () => {
+      if (document.visibilityState === 'visible' && activeRef.current) {
+        // Re-acquire wake lock (it gets released when page goes hidden)
+        if ('wakeLock' in navigator && !wakeLockRef.current) {
+          navigator.wakeLock.request('screen').then(lock => { wakeLockRef.current = lock; }).catch(() => {});
+        }
+        // Resume audio context if suspended
+        if (playCtxRef.current?.state === 'suspended') {
+          playCtxRef.current.resume().catch(() => {});
+        }
+        if (audioCtxRef.current?.state === 'suspended') {
+          audioCtxRef.current.resume().catch(() => {});
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
 
   if (!isOpen) return null;
 
