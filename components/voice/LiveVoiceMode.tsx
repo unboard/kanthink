@@ -212,6 +212,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const nextPlayRef = useRef(0);
   const activeRef = useRef(false);
   const activeSources = useRef<AudioBufferSourceNode[]>([]);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   const stop = useCallback(() => {
     activeRef.current = false;
@@ -225,6 +226,9 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     wsRef.current = null; streamRef.current = null; audioCtxRef.current = null;
     procRef.current = null; analyserRef.current = null; playCtxRef.current = null;
     nextPlayRef.current = 0;
+    // Release screen wake lock
+    wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
     setConnected(false); setIsAiSpeaking(false); setMicLevel(0);
   }, []);
 
@@ -350,6 +354,20 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         body: JSON.stringify({ action: name, args }),
       });
       const data = await res.json();
+
+      // After card-modifying actions, refresh expanded card preview if open
+      if (expandedCard && data.cardId && ['add_note', 'create_task', 'archive_card'].includes(name)) {
+        try {
+          const refreshRes = await fetch('/api/voice/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'show_card', args: { cardId: data.cardId } }),
+          });
+          const refreshData = await refreshRes.json();
+          if (refreshData.cardPreview) setExpandedCard(refreshData.cardPreview);
+        } catch { /* best effort */ }
+      }
+
       setActions(prev => [...prev, {
         id: crypto.randomUUID(), action: name, result: data.result,
         success: !data.result.startsWith('Failed'), timestamp: new Date(),
@@ -361,10 +379,14 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       setActions(prev => [...prev, { id: crypto.randomUUID(), action: name, result: msg, success: false, timestamp: new Date() }]);
       return msg;
     }
-  }, []);
+  }, [expandedCard]);
 
   const start = useCallback(async () => {
     setError(null); setStatus('Fetching session...'); setActions([]);
+    // Acquire screen wake lock to prevent screen from going black
+    if ('wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').then(lock => { wakeLockRef.current = lock; }).catch(() => {});
+    }
     activeRef.current = true;
     if (!playCtxRef.current) playCtxRef.current = new AudioContext({ sampleRate: 24000 });
     if (playCtxRef.current.state === 'suspended') await playCtxRef.current.resume();

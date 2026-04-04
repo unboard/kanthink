@@ -297,7 +297,9 @@ export function OperatorHome() {
         }).join('\n');
         return `  ${col.name} (${colCards.length} cards):\n${cardList}${colCards.length > 8 ? `\n    ... and ${colCards.length - 8} more` : ''}`;
       }).join('\n');
-      return `📋 ${ch.name} (channelId: ${ch.id})${ch.isQuickSave ? ' [Bookmarks]' : ''}\n${colDetails}`;
+      const desc = ch.description ? `\n  Description: ${ch.description.slice(0, 150)}` : '';
+      const instructions = ch.aiInstructions ? `\n  AI Instructions: ${ch.aiInstructions.slice(0, 150)}` : '';
+      return `📋 ${ch.name} (channelId: ${ch.id})${ch.isQuickSave ? ' [Bookmarks]' : ''}${desc}${instructions}\n${colDetails}`;
     }).join('\n\n');
 
     const taskList = Object.values(tasks);
