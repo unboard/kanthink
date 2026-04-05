@@ -5,7 +5,6 @@ import type { CardMessageType, ChannelMember, Card as CardType } from '@/lib/typ
 import { useStore } from '@/lib/store';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { VoiceMicButton } from '@/components/ui/VoiceMicButton';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { AudioLines } from 'lucide-react';
 import { MentionDropdown } from './MentionDropdown';
@@ -766,12 +765,6 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
               </div>
             )}
           </div>
-
-          {/* Voice input button */}
-          <VoiceMicButton
-            onTranscription={(text) => setContent((prev) => prev ? prev + ' ' + text : text)}
-            size="sm"
-          />
 
           {/* Live voice conversation button */}
           <button
