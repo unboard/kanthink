@@ -97,6 +97,29 @@ export async function exportEvents(params: {
   return events;
 }
 
+/** Look up user profile emails by distinct_ids */
+async function lookupEmails(distinctIds: string[]): Promise<Record<string, string>> {
+  const emailMap: Record<string, string> = {};
+  // Query in batches of 20 to avoid overloading
+  for (let i = 0; i < Math.min(distinctIds.length, 60); i++) {
+    try {
+      const body = new URLSearchParams();
+      body.set('distinct_id', distinctIds[i]);
+      const res = await fetch('https://mixpanel.com/api/2.0/engage', {
+        method: 'POST',
+        headers: { Authorization: getAuth(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const props = data.results?.[0]?.['$properties'] || {};
+        if (props.email) emailMap[distinctIds[i]] = props.email;
+      }
+    } catch { /* skip */ }
+  }
+  return emailMap;
+}
+
 /** High-level query function for AI chat — takes natural language intent and returns formatted data */
 export async function queryForChat(question: string): Promise<string> {
   if (!isMixpanelConfigured()) return '';
@@ -110,8 +133,11 @@ export async function queryForChat(question: string): Promise<string> {
 
     const lowerQ = question.toLowerCase();
 
+    // Detect user/email queries
+    const wantsEmails = /emails?|users?|customers?|who ordered|who bought|show me.*(people|customers|users)/.test(lowerQ);
+
     // Detect specific event queries
-    const eventMatch = lowerQ.match(/print.?orders?|orders?|revenue|sales/);
+    const eventMatch = lowerQ.match(/print.?orders?|orders?|revenue|sales|emails?|users?|customers?/);
     if (eventMatch) {
       // Query print_order with breakdown
       const segData = await querySegmentation({
@@ -138,6 +164,7 @@ export async function queryForChat(question: string): Promise<string> {
       let totalRevenue = 0;
       let totalQuantity = 0;
       const categories: Record<string, number> = {};
+      const orderDetails: Array<{ distinctId: string; total: number; id: string; category: string; date: number }> = [];
 
       for (const evt of rawEvents) {
         const props = evt.properties;
@@ -145,13 +172,39 @@ export async function queryForChat(question: string): Promise<string> {
         if (dedupKey && seen.has(dedupKey)) continue;
         if (dedupKey) seen.add(dedupKey);
 
-        if (props.total) totalRevenue += Number(props.total) || 0;
+        const total = Number(props.total) || 0;
+        if (total) totalRevenue += total;
         const jobs = props.jobs as Array<{ category?: string; quantity?: number }> | undefined;
+        let cat = '';
         if (Array.isArray(jobs)) {
           for (const job of jobs) {
-            if (job.category) categories[job.category] = (categories[job.category] || 0) + 1;
+            if (job.category) { categories[job.category] = (categories[job.category] || 0) + 1; cat = job.category; }
             if (job.quantity) totalQuantity += job.quantity;
           }
+        }
+        orderDetails.push({
+          distinctId: props.distinct_id as string,
+          total,
+          id: (props.id as string) || '',
+          category: cat,
+          date: (props.date as number) || (props.time as number) || 0,
+        });
+      }
+
+      // Look up emails if requested
+      let emailSection = '';
+      if (wantsEmails && orderDetails.length > 0) {
+        const uniqueIds = [...new Set(orderDetails.map(o => o.distinctId))];
+        const emailMap = await lookupEmails(uniqueIds);
+        const ordersWithEmails = orderDetails.map(o => ({
+          ...o,
+          email: emailMap[o.distinctId] || 'unknown',
+        }));
+
+        emailSection = `\nOrder details with customer emails:\n`;
+        for (const o of ordersWithEmails) {
+          const d = o.date ? new Date(o.date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
+          emailSection += `  ${o.email} | Order #${o.id} | ${o.category} | $${o.total.toFixed(2)} | ${d}\n`;
         }
       }
 
@@ -169,6 +222,9 @@ export async function queryForChat(question: string): Promise<string> {
           context += `  ${cat}: ${count} orders\n`;
         }
       }
+
+      // Include email details if requested
+      if (emailSection) context += emailSection;
 
       // Include chart directive
       context += `\n\`\`\`chart\n${JSON.stringify({
