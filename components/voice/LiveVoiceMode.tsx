@@ -212,6 +212,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const [expandedCard, setExpandedCard] = useState<CardPreview | null>(null);
   const [expandedEmail, setExpandedEmail] = useState<EmailDraft | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [voiceName, setVoiceName] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
   );
@@ -227,6 +228,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const activeRef = useRef(false);
   const activeSources = useRef<AudioBufferSourceNode[]>([]);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const processingNodesRef = useRef<{ osc1: OscillatorNode; osc2: OscillatorNode; gain: GainNode } | null>(null);
 
   const stop = useCallback(() => {
     activeRef.current = false;
@@ -240,10 +242,73 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     wsRef.current = null; streamRef.current = null; audioCtxRef.current = null;
     procRef.current = null; analyserRef.current = null; playCtxRef.current = null;
     nextPlayRef.current = 0;
+    // Stop processing sound if active
+    if (processingNodesRef.current) {
+      try { processingNodesRef.current.osc1.stop(); processingNodesRef.current.osc2.stop(); } catch {}
+      processingNodesRef.current = null;
+    }
     // Release screen wake lock
     wakeLockRef.current?.release().catch(() => {});
     wakeLockRef.current = null;
-    setConnected(false); setIsAiSpeaking(false); setMicLevel(0);
+    setConnected(false); setIsAiSpeaking(false); setIsProcessing(false); setMicLevel(0);
+  }, []);
+
+  // Subtle processing tone — plays during tool execution
+  const startProcessingSound = useCallback(() => {
+    try {
+      const ctx = playCtxRef.current;
+      if (!ctx || ctx.state === 'closed') return;
+      // Clean up any existing processing sound
+      if (processingNodesRef.current) {
+        try { processingNodesRef.current.osc1.stop(); processingNodesRef.current.osc2.stop(); } catch {}
+        processingNodesRef.current = null;
+      }
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 0.5); // Very quiet
+      gain.connect(ctx.destination);
+      // Low sine — calm ambient hum
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(220, ctx.currentTime);
+      // Slow LFO sweep for subtle movement
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(0.3, ctx.currentTime);
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.setValueAtTime(15, ctx.currentTime);
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc1.frequency);
+      lfo.start();
+      osc1.connect(gain);
+      osc1.start();
+      // Higher harmonic — airy texture
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(660, ctx.currentTime);
+      const gain2 = ctx.createGain();
+      gain2.gain.setValueAtTime(0.015, ctx.currentTime);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start();
+      processingNodesRef.current = { osc1, osc2, gain };
+    } catch { /* best effort */ }
+  }, []);
+
+  const stopProcessingSound = useCallback(() => {
+    if (!processingNodesRef.current) return;
+    try {
+      const ctx = playCtxRef.current;
+      const { osc1, osc2, gain } = processingNodesRef.current;
+      if (ctx && ctx.state !== 'closed') {
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+        osc1.stop(ctx.currentTime + 0.4);
+        osc2.stop(ctx.currentTime + 0.4);
+      } else {
+        osc1.stop(); osc2.stop();
+      }
+    } catch {}
+    processingNodesRef.current = null;
   }, []);
 
   // Stop all queued AI audio (for interruption)
@@ -502,6 +567,8 @@ After any tool executes, always confirm what you did.` }] },
 
             // Tool call from Gemini
             if (msg.toolCall?.functionCalls) {
+              setIsProcessing(true);
+              startProcessingSound();
               for (const call of msg.toolCall.functionCalls) {
                 const result = await executeAction(call.name, call.args || {});
                 // Send tool response back to Gemini
@@ -515,6 +582,8 @@ After any tool executes, always confirm what you did.` }] },
                   },
                 }));
               }
+              stopProcessingSound();
+              setIsProcessing(false);
             }
 
             if (msg.error) {
@@ -580,7 +649,7 @@ After any tool executes, always confirm what you did.` }] },
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950">
       {/* Voice-specific spore particles — more particles, higher opacity, reactive to AI speaking */}
-      <VoiceSpores isSpeaking={isAiSpeaking} />
+      <VoiceSpores isSpeaking={isAiSpeaking} isProcessing={isProcessing} />
       {/* Gradient glow at edges */}
       <div className={`absolute inset-0 pointer-events-none transition-opacity duration-700 ${isAiSpeaking ? 'opacity-80' : 'opacity-40'}`}
         style={{
@@ -609,7 +678,7 @@ After any tool executes, always confirm what you did.` }] },
               </svg>
             )}
             <span className={`text-xs ml-1 ${isMuted ? 'text-red-400' : isAiSpeaking ? 'text-violet-300' : 'text-neutral-300'}`}>
-              {!connected ? 'Connecting...' : isMuted ? 'Muted' : isAiSpeaking ? 'Kan is speaking' : 'Listening'}
+              {!connected ? 'Connecting...' : isMuted ? 'Muted' : isProcessing ? 'Processing...' : isAiSpeaking ? 'Kan is speaking' : 'Listening'}
             </span>
           </div>
           <button onClick={() => setShowSettings(!showSettings)}

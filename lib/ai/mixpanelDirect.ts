@@ -178,7 +178,7 @@ export async function queryForChat(question: string): Promise<string> {
       const seen = new Set<string>();
       let totalRevenue = 0;
       let totalQuantity = 0;
-      const orderDetails: Array<{ distinctId: string; total: number; id: string; categories: string[]; date: number }> = [];
+      const orderDetails: Array<{ distinctId: string; resolvedId: string; total: number; id: string; categories: string[]; date: number }> = [];
 
       for (const evt of rawEvents) {
         const props = evt.properties;
@@ -203,10 +203,16 @@ export async function queryForChat(question: string): Promise<string> {
           if (!matchesCat) continue;
         }
 
+        // Resolve device IDs: $device:xxx -> use $distinct_id_before_identity as the canonical user ID
+        const did = props.distinct_id as string;
+        const resolvedId = did.startsWith('$device:')
+          ? (props.$distinct_id_before_identity as string || did)
+          : did;
+
         totalRevenue += total;
         totalQuantity += qty;
         orderDetails.push({
-          distinctId: props.distinct_id as string,
+          distinctId: did, resolvedId,
           total, id: (props.id as string) || '',
           categories: cats,
           date: (props.date as number) || (props.time as number) || 0,
@@ -216,12 +222,12 @@ export async function queryForChat(question: string): Promise<string> {
       const totalOrders = orderDetails.length;
       const catLabel = categoryFilter ? categoryFilter.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ') : 'Print';
 
-      // Look up emails if requested (batch the lookups)
+      // Look up emails if requested — use resolved IDs (canonical user IDs, not device IDs)
       if (wantsEmails && orderDetails.length > 0) {
-        const uniqueIds = Array.from(new Set(orderDetails.map(o => o.distinctId)));
+        const uniqueIds = Array.from(new Set(orderDetails.map(o => o.resolvedId)));
         const emailMap = await lookupEmails(uniqueIds);
         for (const o of orderDetails) {
-          (o as Record<string, unknown>).email = emailMap[o.distinctId] || 'unknown';
+          (o as Record<string, unknown>).email = emailMap[o.resolvedId] || emailMap[o.distinctId] || 'unknown';
         }
       }
 
