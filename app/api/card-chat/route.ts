@@ -460,28 +460,37 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    // Check if channel has data sources connected
+    // Check if channel has data sources connected, or use direct Mixpanel API
     let mixpanelContext = '';
     let dataSourceContext = '';
-    if (channelId) {
+
+    // Try direct Mixpanel API first (always available if env configured)
+    try {
+      const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
+      if (isMixpanelConfigured()) {
+        mixpanelContext = await queryForChat(questionContent);
+        if (mixpanelContext) useWebSearch = false;
+      }
+    } catch (err) {
+      console.error('[Card Chat] Direct Mixpanel error:', err);
+    }
+
+    // Fall back to MCP-based query if direct didn't return data
+    if (!mixpanelContext && channelId) {
       try {
         const sources = await getChannelDataSources(channelId);
         dataSourceContext = buildDataSourcePromptContext(sources);
-
-        // If Mixpanel is connected, ALWAYS query it — not just on @mixpanel mentions
-        // This prevents hallucination on follow-up questions
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
         if (hasMixpanel) {
-          useWebSearch = false; // real data beats web search
+          useWebSearch = false;
           try {
-            // Pass conversation history + LLM client so Mixpanel can construct correct queries
             const mpMessages: MixpanelChatMessage[] = (context.previousMessages || []).map(m => ({
               type: m.type,
               content: m.content,
             }));
             mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages, llm);
           } catch (err) {
-            console.error('[Card Chat] Mixpanel query error:', err);
+            console.error('[Card Chat] MCP Mixpanel error:', err);
           }
         }
       } catch { /* non-critical */ }

@@ -94,6 +94,17 @@ const TOOLS = [
         },
       },
       {
+        name: 'query_mixpanel',
+        description: 'Query Mixpanel analytics data. Use when the user asks about orders, revenue, events, metrics, analytics, or data from MyCreativeShop. Returns data with a chart visualization.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            question: { type: 'STRING', description: 'The analytics question (e.g. "how many print orders this week", "total revenue", "top events")' },
+          },
+          required: ['question'],
+        },
+      },
+      {
         name: 'archive_card',
         description: 'Archive a card (remove it from the board)',
         parameters: {

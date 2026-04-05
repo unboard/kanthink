@@ -214,6 +214,19 @@ export async function POST(request: Request) {
         });
       }
 
+      case 'query_mixpanel': {
+        try {
+          const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
+          if (!isMixpanelConfigured()) {
+            return NextResponse.json({ result: 'Mixpanel not configured. Add MIXPANEL_API_SECRET to environment.' });
+          }
+          const data = await queryForChat(args.question || 'top events');
+          return NextResponse.json({ result: data || 'No Mixpanel data found for that query.' });
+        } catch (err) {
+          return NextResponse.json({ result: `Mixpanel error: ${err instanceof Error ? err.message : 'Unknown'}` });
+        }
+      }
+
       case 'archive_card': {
         const card = await findCard(args.cardId);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });

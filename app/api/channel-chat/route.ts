@@ -375,15 +375,22 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    // Always query Mixpanel when connected — prevents hallucination on follow-ups
+    // Query Mixpanel — try direct API first, fall back to MCP
     let mixpanelContext = '';
-    if (channelId) {
+    try {
+      const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
+      if (isMixpanelConfigured()) {
+        mixpanelContext = await queryForChat(questionContent);
+        if (mixpanelContext) useWebSearch = false;
+      }
+    } catch { /* non-critical */ }
+
+    if (!mixpanelContext && channelId) {
       try {
         const sources = await getChannelDataSources(channelId);
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
         if (hasMixpanel) {
           useWebSearch = false;
-          // Pass thread messages + LLM client so Mixpanel can construct correct queries
           const mpMessages: MixpanelChatMessage[] = (context.threadMessages || []).map(m => ({
             type: m.type,
             content: m.content,
