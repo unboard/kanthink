@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { VoiceSpores } from './VoiceSpores';
+import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
 
 const VOICE_OPTIONS = [
   { id: 'Kore', label: 'Kore' }, { id: 'Puck', label: 'Puck' },
@@ -375,6 +376,8 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         body: JSON.stringify({ action: name, args }),
       });
       const data = await res.json();
+      // Use voiceResult (without chart JSON) for what Gemini speaks, but full result for UI
+      const voiceReturn = data.voiceResult || data.result;
 
       // After card-modifying actions, refresh expanded card preview if open
       if (expandedCard && data.cardId && ['add_note', 'create_task', 'archive_card'].includes(name)) {
@@ -394,7 +397,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         success: !data.result.startsWith('Failed'), timestamp: new Date(),
         cardPreview: data.cardPreview,
       }]);
-      return data.result;
+      return voiceReturn;
     } catch (err) {
       const msg = `Failed: ${err instanceof Error ? err.message : 'Unknown error'}`;
       setActions(prev => [...prev, { id: crypto.randomUUID(), action: name, result: msg, success: false, timestamp: new Date() }]);
@@ -730,23 +733,39 @@ After any tool executes, always confirm what you did.` }] },
                     </div>
                   </div>
                 ) : (
-                  /* Regular action result — card style */
-                  <div className="flex items-start gap-3 bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 animate-slide-in">
-                    {a.success ? (
-                      <div className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
-                        <svg className="h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
+                  /* Regular action result — card style with chart support */
+                  (() => {
+                    const parsed = parseChartDirectives(a.result);
+                    const charts = parsed.charts;
+                    const cleanText = parsed.cleanText.trim();
+                    return (
+                      <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl animate-slide-in overflow-hidden">
+                        {cleanText && (
+                          <div className="flex items-start gap-3 px-4 py-3">
+                            {a.success ? (
+                              <div className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center">
+                                <svg className="h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
+                            ) : (
+                              <div className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
+                                <svg className="h-3 w-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </div>
+                            )}
+                            <span className={`text-sm ${a.success ? 'text-white' : 'text-red-300'}`}>{cleanText.slice(0, 500)}{cleanText.length > 500 ? '...' : ''}</span>
+                          </div>
+                        )}
+                        {charts.map((chart, ci) => (
+                          <div key={ci} className="px-2 pb-3">
+                            <KanChart config={chart} />
+                          </div>
+                        ))}
                       </div>
-                    ) : (
-                      <div className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
-                        <svg className="h-3 w-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </div>
-                    )}
-                    <span className={`text-sm ${a.success ? 'text-white' : 'text-red-300'}`}>{a.result}</span>
-                  </div>
+                    );
+                  })()
                 )}
               </div>
             ))}
