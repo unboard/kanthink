@@ -226,24 +226,92 @@ export async function queryForChat(question: string): Promise<string> {
       // Include email details if requested
       if (emailSection) context += emailSection;
 
-      // Include chart directive
+      // --- CHARTS ---
+
+      // 1. Daily orders bar chart
       context += `\n\`\`\`chart\n${JSON.stringify({
         type: 'bar',
-        title: 'Print Orders (Last 7 Days)',
+        title: 'Print Orders by Day',
         data: dailyCounts,
         color: 'violet',
         label: 'Orders',
       })}\n\`\`\`\n`;
 
+      // 2. Product category pie chart
+      if (Object.keys(categories).length > 0) {
+        const catData = Object.entries(categories)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([label, value]) => ({ label, value }));
+        context += `\n\`\`\`chart\n${JSON.stringify({
+          type: 'pie',
+          title: 'Orders by Product Category',
+          data: catData,
+          color: 'blue',
+          label: 'Orders',
+        })}\n\`\`\`\n`;
+      }
+
+      // 3. Revenue by category bar chart (horizontal feel)
+      if (Object.keys(categories).length > 0) {
+        // Calculate revenue per category from raw events
+        const catRevenue: Record<string, number> = {};
+        for (const evt of rawEvents) {
+          const props = evt.properties;
+          const dedupKey = (props.$insert_id as string) || (props.id as string) || '';
+          const jobs = props.jobs as Array<{ category?: string; total?: number }> | undefined;
+          if (Array.isArray(jobs)) {
+            for (const job of jobs) {
+              if (job.category && job.total) {
+                catRevenue[job.category] = (catRevenue[job.category] || 0) + job.total;
+              }
+            }
+          }
+        }
+        if (Object.keys(catRevenue).length > 0) {
+          const revData = Object.entries(catRevenue)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }));
+          context += `\n\`\`\`chart\n${JSON.stringify({
+            type: 'bar',
+            title: 'Revenue by Product Category',
+            data: revData,
+            color: 'green',
+            label: 'Revenue ($)',
+          })}\n\`\`\`\n`;
+        }
+      }
+
       return context;
     }
 
-    // Generic: return top events summary
+    // Generic: return top events summary with charts
     const topEvents = await getTopEvents(8);
     let context = `MIXPANEL DATA — Top Events (last 30 days):\n`;
     for (const evt of topEvents) {
       context += `  ${evt.event}: ${evt.amount.toLocaleString()}\n`;
     }
+
+    // Bar chart for top events
+    const eventData = topEvents.map(e => ({ label: e.event, value: e.amount }));
+    context += `\n\`\`\`chart\n${JSON.stringify({
+      type: 'bar',
+      title: 'Top Events (Last 30 Days)',
+      data: eventData,
+      color: 'violet',
+      label: 'Events',
+    })}\n\`\`\`\n`;
+
+    // Pie chart for event distribution
+    context += `\n\`\`\`chart\n${JSON.stringify({
+      type: 'donut',
+      title: 'Event Distribution',
+      data: eventData.slice(0, 6),
+      color: 'blue',
+      label: 'Events',
+    })}\n\`\`\`\n`;
+
     return context;
 
   } catch (err) {
