@@ -121,16 +121,30 @@ export async function queryForChat(question: string): Promise<string> {
         unit: 'day',
       });
 
-      // Also get raw events for totals
-      const rawEvents = await exportEvents({ event: 'print_order', fromDate, toDate, limit: 500 });
+      // Build daily counts from segmentation (de-duplicated by Mixpanel)
+      const dailyCounts = Object.entries(segData.values.print_order || {})
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, count]) => ({
+          label: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }),
+          value: count,
+        }));
 
-      // Calculate totals
+      // Total orders = sum of daily segmentation counts (accurate, de-duped)
+      const totalOrders = dailyCounts.reduce((sum, d) => sum + d.value, 0);
+
+      // Get raw events for revenue/category breakdown, de-duped by insert_id
+      const rawEvents = await exportEvents({ event: 'print_order', fromDate, toDate, limit: 1000 });
+      const seen = new Set<string>();
       let totalRevenue = 0;
       let totalQuantity = 0;
       const categories: Record<string, number> = {};
 
       for (const evt of rawEvents) {
         const props = evt.properties;
+        const dedupKey = (props.$insert_id as string) || (props.id as string) || '';
+        if (dedupKey && seen.has(dedupKey)) continue;
+        if (dedupKey) seen.add(dedupKey);
+
         if (props.total) totalRevenue += Number(props.total) || 0;
         const jobs = props.jobs as Array<{ category?: string; quantity?: number }> | undefined;
         if (Array.isArray(jobs)) {
@@ -141,16 +155,8 @@ export async function queryForChat(question: string): Promise<string> {
         }
       }
 
-      // Build daily counts for chart
-      const dailyCounts = Object.entries(segData.values.print_order || {})
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, count]) => ({
-          label: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }),
-          value: count,
-        }));
-
       let context = `MIXPANEL DATA (${fromDate} to ${toDate}):\n`;
-      context += `Print Orders: ${rawEvents.length} total orders\n`;
+      context += `Print Orders: ${totalOrders} total orders\n`;
       context += `Total Revenue: $${totalRevenue.toFixed(2)}\n`;
       context += `Total Quantity: ${totalQuantity.toLocaleString()}\n`;
       context += `\nDaily breakdown:\n`;
