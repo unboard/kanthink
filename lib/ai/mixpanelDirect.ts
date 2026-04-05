@@ -97,27 +97,64 @@ export async function exportEvents(params: {
   return events;
 }
 
-/** Look up user profile emails by distinct_ids */
+/** Look up user profile emails by distinct_ids using a single bulk Engage query */
 async function lookupEmails(distinctIds: string[]): Promise<Record<string, string>> {
   const emailMap: Record<string, string> = {};
-  // Query in batches of 20 to avoid overloading
-  for (let i = 0; i < Math.min(distinctIds.length, 60); i++) {
-    try {
-      const body = new URLSearchParams();
-      body.set('distinct_id', distinctIds[i]);
-      const res = await fetch('https://mixpanel.com/api/2.0/engage', {
-        method: 'POST',
-        headers: { Authorization: getAuth(), 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body.toString(),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const props = data.results?.[0]?.['$properties'] || {};
-        if (props.email) emailMap[distinctIds[i]] = props.email;
+  if (distinctIds.length === 0) return emailMap;
+
+  try {
+    // Build a single Engage query that filters by distinct_id list
+    // The Engage API supports a 'where' clause with OR conditions
+    const orClauses = distinctIds.slice(0, 100).map(id =>
+      `properties["$distinct_id"] == "${id}"`
+    ).join(' or ');
+
+    const body = new URLSearchParams();
+    body.set('where', orClauses);
+    body.set('output_properties', JSON.stringify(['$email', '$first_name', '$last_name']));
+    body.set('page_size', '1000');
+
+    const res = await fetch('https://mixpanel.com/api/2.0/engage', {
+      method: 'POST',
+      headers: { Authorization: getAuth(), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const results = data.results || [];
+      for (const profile of results) {
+        const props = profile['$properties'] || {};
+        const did = profile['$distinct_id'] || props['$distinct_id'];
+        const email = props['$email'] || props.email;
+        if (did && email) emailMap[did] = email;
       }
-    } catch { /* skip */ }
-  }
+    }
+  } catch { /* skip — emails are best-effort */ }
+
   return emailMap;
+}
+
+/** Detect a specific product category from the question */
+function detectCategory(question: string): string | null {
+  const lq = question.toLowerCase();
+  const categories = [
+    'pocket folder', 'business card', 'postcard_eddm', 'postcard', 'yard sign',
+    'door hanger', 'brochure', 'flyer', 'poster', 'foam board', 'banner',
+    'retractable banner', 'ticket', 'card', 'kpop cup sleeve', 'kpop ticket',
+    'kpop hand banner', 'kpop fabric slogan',
+  ];
+  for (const cat of categories) {
+    if (lq.includes(cat)) return cat;
+  }
+  // Fuzzy: "pocket folders" → "Pocket Folder"
+  const fuzzy = lq.match(/(\w+\s?\w*)\s*orders?/);
+  if (fuzzy) {
+    const term = fuzzy[1].trim();
+    const match = categories.find(c => c.includes(term) || term.includes(c.split(' ')[0]));
+    if (match) return match;
+  }
+  return null;
 }
 
 /** High-level query function for AI chat — takes natural language intent and returns formatted data */
@@ -125,46 +162,23 @@ export async function queryForChat(question: string): Promise<string> {
   if (!isMixpanelConfigured()) return '';
 
   try {
-    // Get date range (default last 7 days)
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const toDate = now.toISOString().split('T')[0];
     const fromDate = weekAgo.toISOString().split('T')[0];
 
     const lowerQ = question.toLowerCase();
+    const wantsEmails = /emails?|users?|customers?|who ordered|who bought|who placed|show me.*(people|customers|users)/.test(lowerQ);
+    const categoryFilter = detectCategory(lowerQ);
 
-    // Detect user/email queries
-    const wantsEmails = /emails?|users?|customers?|who ordered|who bought|show me.*(people|customers|users)/.test(lowerQ);
-
-    // Detect specific event queries
-    const eventMatch = lowerQ.match(/print.?orders?|orders?|revenue|sales|emails?|users?|customers?/);
+    const eventMatch = lowerQ.match(/print.?orders?|orders?|revenue|sales|emails?|users?|customers?|pocket|business card|postcard|yard sign|door hanger|brochure|flyer/);
     if (eventMatch) {
-      // Query print_order with breakdown
-      const segData = await querySegmentation({
-        event: 'print_order',
-        fromDate,
-        toDate,
-        unit: 'day',
-      });
-
-      // Build daily counts from segmentation (de-duplicated by Mixpanel)
-      const dailyCounts = Object.entries(segData.values.print_order || {})
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, count]) => ({
-          label: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }),
-          value: count,
-        }));
-
-      // Total orders = sum of daily segmentation counts (accurate, de-duped)
-      const totalOrders = dailyCounts.reduce((sum, d) => sum + d.value, 0);
-
-      // Get raw events for revenue/category breakdown, de-duped by insert_id
+      // Get raw events, de-dupe, and filter by category if specified
       const rawEvents = await exportEvents({ event: 'print_order', fromDate, toDate, limit: 1000 });
       const seen = new Set<string>();
       let totalRevenue = 0;
       let totalQuantity = 0;
-      const categories: Record<string, number> = {};
-      const orderDetails: Array<{ distinctId: string; total: number; id: string; category: string; date: number }> = [];
+      const orderDetails: Array<{ distinctId: string; total: number; id: string; categories: string[]; date: number }> = [];
 
       for (const evt of rawEvents) {
         const props = evt.properties;
@@ -173,114 +187,77 @@ export async function queryForChat(question: string): Promise<string> {
         if (dedupKey) seen.add(dedupKey);
 
         const total = Number(props.total) || 0;
-        if (total) totalRevenue += total;
-        const jobs = props.jobs as Array<{ category?: string; quantity?: number }> | undefined;
-        let cat = '';
+        const jobs = props.jobs as Array<{ category?: string; quantity?: number; total?: number }> | undefined;
+        const cats: string[] = [];
+        let qty = 0;
         if (Array.isArray(jobs)) {
           for (const job of jobs) {
-            if (job.category) { categories[job.category] = (categories[job.category] || 0) + 1; cat = job.category; }
-            if (job.quantity) totalQuantity += job.quantity;
+            if (job.category) cats.push(job.category);
+            if (job.quantity) qty += job.quantity;
           }
         }
+
+        // Filter by category if user asked for a specific one
+        if (categoryFilter) {
+          const matchesCat = cats.some(c => c.toLowerCase().includes(categoryFilter));
+          if (!matchesCat) continue;
+        }
+
+        totalRevenue += total;
+        totalQuantity += qty;
         orderDetails.push({
           distinctId: props.distinct_id as string,
-          total,
-          id: (props.id as string) || '',
-          category: cat,
+          total, id: (props.id as string) || '',
+          categories: cats,
           date: (props.date as number) || (props.time as number) || 0,
         });
       }
 
-      // Look up emails if requested
-      let emailSection = '';
+      const totalOrders = orderDetails.length;
+      const catLabel = categoryFilter ? categoryFilter.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ') : 'Print';
+
+      // Look up emails if requested (batch the lookups)
       if (wantsEmails && orderDetails.length > 0) {
-        const uniqueIds = [...new Set(orderDetails.map(o => o.distinctId))];
+        const uniqueIds = Array.from(new Set(orderDetails.map(o => o.distinctId)));
         const emailMap = await lookupEmails(uniqueIds);
-        const ordersWithEmails = orderDetails.map(o => ({
-          ...o,
-          email: emailMap[o.distinctId] || 'unknown',
-        }));
-
-        emailSection = `\nOrder details with customer emails:\n`;
-        for (const o of ordersWithEmails) {
-          const d = o.date ? new Date(o.date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
-          emailSection += `  ${o.email} | Order #${o.id} | ${o.category} | $${o.total.toFixed(2)} | ${d}\n`;
+        for (const o of orderDetails) {
+          (o as Record<string, unknown>).email = emailMap[o.distinctId] || 'unknown';
         }
       }
 
+      // Build context — focused on what was asked
       let context = `MIXPANEL DATA (${fromDate} to ${toDate}):\n`;
-      context += `Print Orders: ${totalOrders} total orders\n`;
-      context += `Total Revenue: $${totalRevenue.toFixed(2)}\n`;
-      context += `Total Quantity: ${totalQuantity.toLocaleString()}\n`;
-      context += `\nDaily breakdown:\n`;
-      for (const d of dailyCounts) {
-        context += `  ${d.label}: ${d.value} orders\n`;
-      }
-      if (Object.keys(categories).length > 0) {
-        context += `\nProduct categories:\n`;
-        for (const [cat, count] of Object.entries(categories).sort((a, b) => b[1] - a[1])) {
-          context += `  ${cat}: ${count} orders\n`;
+      context += `${catLabel} Orders: ${totalOrders}\n`;
+      context += `Revenue: $${totalRevenue.toFixed(2)}\n`;
+      if (totalQuantity) context += `Quantity: ${totalQuantity.toLocaleString()}\n`;
+
+      // Include order details with emails if requested
+      if (wantsEmails) {
+        context += `\nOrder details:\n`;
+        for (const o of orderDetails) {
+          const email = (o as Record<string, unknown>).email as string || 'unknown';
+          const d = o.date ? new Date(o.date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
+          context += `  ${email} | Order #${o.id} | ${o.categories.join(', ')} | $${o.total.toFixed(2)} | ${d}\n`;
         }
       }
 
-      // Include email details if requested
-      if (emailSection) context += emailSection;
+      // ONE chart — the most relevant one for the question
+      if (!wantsEmails && totalOrders > 0) {
+        // For category-specific queries: bar chart of daily counts
+        const dailyMap: Record<string, number> = {};
+        for (const o of orderDetails) {
+          const d = o.date ? new Date(o.date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
+          dailyMap[d] = (dailyMap[d] || 0) + 1;
+        }
+        const dailyData = Object.entries(dailyMap).map(([label, value]) => ({ label, value }));
 
-      // --- CHARTS ---
-
-      // 1. Daily orders bar chart
-      context += `\n\`\`\`chart\n${JSON.stringify({
-        type: 'bar',
-        title: 'Print Orders by Day',
-        data: dailyCounts,
-        color: 'violet',
-        label: 'Orders',
-      })}\n\`\`\`\n`;
-
-      // 2. Product category pie chart
-      if (Object.keys(categories).length > 0) {
-        const catData = Object.entries(categories)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 10)
-          .map(([label, value]) => ({ label, value }));
         context += `\n\`\`\`chart\n${JSON.stringify({
-          type: 'pie',
-          title: 'Orders by Product Category',
-          data: catData,
-          color: 'blue',
+          type: 'bar',
+          title: `${catLabel} Orders by Day`,
+          data: dailyData,
+          color: 'violet',
           label: 'Orders',
         })}\n\`\`\`\n`;
-      }
-
-      // 3. Revenue by category bar chart (horizontal feel)
-      if (Object.keys(categories).length > 0) {
-        // Calculate revenue per category from raw events
-        const catRevenue: Record<string, number> = {};
-        for (const evt of rawEvents) {
-          const props = evt.properties;
-          const dedupKey = (props.$insert_id as string) || (props.id as string) || '';
-          const jobs = props.jobs as Array<{ category?: string; total?: number }> | undefined;
-          if (Array.isArray(jobs)) {
-            for (const job of jobs) {
-              if (job.category && job.total) {
-                catRevenue[job.category] = (catRevenue[job.category] || 0) + job.total;
-              }
-            }
-          }
-        }
-        if (Object.keys(catRevenue).length > 0) {
-          const revData = Object.entries(catRevenue)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 8)
-            .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }));
-          context += `\n\`\`\`chart\n${JSON.stringify({
-            type: 'bar',
-            title: 'Revenue by Product Category',
-            data: revData,
-            color: 'green',
-            label: 'Revenue ($)',
-          })}\n\`\`\`\n`;
-        }
       }
 
       return context;
