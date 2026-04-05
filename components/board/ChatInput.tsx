@@ -428,9 +428,12 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
       );
     }
 
+    // Auto-switch to question mode when @mixpanel is mentioned (notes don't trigger AI)
+    const submitMode = (mode === 'note' && mentionsMap['mixpanel']) ? 'question' : mode;
+
     onSubmit(
       finalContent,
-      mode,
+      submitMode,
       imageUrls.length > 0 ? imageUrls : undefined
     );
     setContent('');
