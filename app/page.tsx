@@ -27,7 +27,11 @@ export default function Home() {
   const hasHydrated = useStore((s) => s._hasHydrated);
 
   const hasData = Object.keys(channels).length > 0;
-  const isFullyLoaded = hasHydrated && (
+  // Data is ready when we know the final channel state:
+  // - channels exist locally (fast path from localStorage)
+  // - user is unauthenticated (no server data to wait for)
+  // - server fetch completed for authenticated users
+  const isDataReady = hasHydrated && (
     hasData ||
     sessionStatus === 'unauthenticated' ||
     (sessionStatus === 'authenticated' && !isServerLoading)
@@ -35,7 +39,7 @@ export default function Home() {
 
   // Check welcome flow for new users with no channels
   useEffect(() => {
-    if (!isFullyLoaded || hasCheckedWelcome) return;
+    if (!isDataReady || hasCheckedWelcome) return;
 
     const channelList = Object.values(channels)
       .filter(c => !c.isGlobalHelp && !c.isQuickSave);
@@ -47,7 +51,7 @@ export default function Home() {
       }
     }
     setHasCheckedWelcome(true);
-  }, [isFullyLoaded, channels, hasCheckedWelcome]);
+  }, [isDataReady, channels, hasCheckedWelcome]);
 
   const handleWelcomeClose = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
@@ -79,8 +83,8 @@ export default function Home() {
     router.push(`/channel/${channel.id}`);
   };
 
-  // Loading state
-  if (!isFullyLoaded || !hasCheckedWelcome) {
+  // Loading state — show skeleton while hydrating or waiting for auth
+  if (!hasHydrated || sessionStatus === 'loading') {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500"></div>
@@ -88,12 +92,26 @@ export default function Home() {
     );
   }
 
-  // Authenticated user with channels: show operator homepage
-  if (hasData && sessionStatus === 'authenticated') {
-    return <OperatorHome />;
+  // Authenticated user: always show OperatorHome (it works fine while channels load)
+  // This prevents a flash of the old "No channels" empty state during server fetch
+  if (sessionStatus === 'authenticated') {
+    return (
+      <>
+        <OperatorHome />
+        <ConversationalWelcome
+          isOpen={showWelcome}
+          onClose={handleWelcomeClose}
+          onCreate={handleConversationalCreate}
+          isSignedIn={true}
+          signInAction={signInWithGoogle}
+          signInRedirectTo="/"
+          existingChannelNames={Object.values(channels).map(c => c.name)}
+        />
+      </>
+    );
   }
 
-  // No channels — show empty state with create option
+  // Unauthenticated — show empty state with create option
   return (
     <div className="h-full">
       <div className="relative flex h-full items-center justify-center">
@@ -127,7 +145,7 @@ export default function Home() {
         isOpen={showKanHelp}
         onClose={() => setShowKanHelp(false)}
         onCreate={handleConversationalCreate}
-        isSignedIn={!!session}
+        isSignedIn={false}
         signInAction={signInWithGoogle}
         signInRedirectTo="/"
         isWelcome={false}
@@ -138,7 +156,7 @@ export default function Home() {
         isOpen={showWelcome}
         onClose={handleWelcomeClose}
         onCreate={handleConversationalCreate}
-        isSignedIn={!!session}
+        isSignedIn={false}
         signInAction={signInWithGoogle}
         signInRedirectTo="/"
         existingChannelNames={Object.values(channels).map(c => c.name)}

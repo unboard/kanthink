@@ -24,11 +24,26 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useStore } from '@/lib/store';
+import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { Button } from '@/components/ui';
 import { NavPanel } from './NavPanel';
 import { useNav } from '@/components/providers/NavProvider';
 import { FolderShareDrawer } from '@/components/sharing/FolderShareDrawer';
 import type { Channel, Folder } from '@/lib/types';
+
+const SKELETON_WIDTHS = [88, 72, 104, 64, 96];
+
+function ChannelSkeletons() {
+  return (
+    <div className="space-y-1 animate-pulse">
+      {SKELETON_WIDTHS.map((w, i) => (
+        <div key={i} className="flex items-center gap-2 rounded-md px-2 py-1.5">
+          <div className="h-4 rounded bg-neutral-800" style={{ width: w }} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Prefixes to distinguish item types in dnd-kit
 const CHANNEL_PREFIX = 'channel:';
@@ -582,6 +597,7 @@ export function ChannelsPanel() {
   const reorderFolders = useStore((s) => s.reorderFolders);
   const reorderChannelInFolder = useStore((s) => s.reorderChannelInFolder);
   const hasHydrated = useStore((s) => s._hasHydrated);
+  const { isLoading: isServerLoading } = useServerSync();
 
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -720,8 +736,8 @@ export function ChannelsPanel() {
     <>
       <NavPanel panelKey="channels" title="Channels" width="sm">
         <div className="p-2">
-          {!hasHydrated ? (
-            <div className="px-2 py-1 text-sm text-neutral-400">Loading...</div>
+          {!hasHydrated || (isServerLoading && Object.keys(channels).length === 0) ? (
+            <ChannelSkeletons />
           ) : (
             <DndContext
               sensors={sensors}
