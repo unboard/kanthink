@@ -464,7 +464,7 @@ export function ChatMessage({
           </div>
         ) : message.content ? (() => {
           // Parse chart directives from AI responses
-          const { cleanText, charts } = isAI ? parseChartDirectives(message.content) : { cleanText: message.content, charts: [] };
+          const { cleanText, charts, tables } = isAI ? parseChartDirectives(message.content) : { cleanText: message.content, charts: [], tables: [] };
           return (
             <>
               {cleanText && (
@@ -486,6 +486,29 @@ export function ChatMessage({
                   {renderContentWithMentions(cleanText, { onOpenCard, onOpenTask })}
                 </div>
               )}
+              {tables.map((table, i) => (
+                <div key={`t${i}`} className="mt-2 overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+                  {table.title && <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 px-3 py-2 border-b border-neutral-200 dark:border-neutral-700">{table.title}</p>}
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-neutral-50 dark:bg-neutral-800/60">
+                        {table.columns.map(col => (
+                          <th key={col} className="px-3 py-2 text-left text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap capitalize">{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {table.rows.map((row, ri) => (
+                        <tr key={ri} className="border-t border-neutral-100 dark:border-neutral-800/50">
+                          {table.columns.map(col => (
+                            <td key={col} className="px-3 py-1.5 text-neutral-700 dark:text-neutral-200 whitespace-nowrap">{row[col] || '—'}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
               {charts.map((chart, i) => (
                 <KanChart key={i} config={chart} />
               ))}

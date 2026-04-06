@@ -268,9 +268,16 @@ export function KanChart({ config }: { config: ChartConfig }) {
 
 // ── Parse chart directives from AI response text ──────────────────
 // Format: ```chart\n{json}\n```
-export function parseChartDirectives(text: string): { cleanText: string; charts: ChartConfig[] } {
+export interface TableConfig {
+  title?: string;
+  columns: string[];
+  rows: Record<string, string>[];
+}
+
+export function parseChartDirectives(text: string): { cleanText: string; charts: ChartConfig[]; tables: TableConfig[] } {
   const charts: ChartConfig[] = [];
-  const cleanText = text.replace(/```chart\n([\s\S]*?)```/g, (_, json) => {
+  const tables: TableConfig[] = [];
+  let cleanText = text.replace(/```chart\n([\s\S]*?)```/g, (_, json) => {
     try {
       const config = JSON.parse(json);
       if (config.data && Array.isArray(config.data)) {
@@ -280,5 +287,15 @@ export function parseChartDirectives(text: string): { cleanText: string; charts:
     return '';
   });
 
-  return { cleanText: cleanText.trim(), charts };
+  cleanText = cleanText.replace(/```table\n([\s\S]*?)```/g, (_, json) => {
+    try {
+      const config = JSON.parse(json);
+      if (config.columns && config.rows) {
+        tables.push(config);
+      }
+    } catch { /* ignore invalid table JSON */ }
+    return '';
+  });
+
+  return { cleanText: cleanText.trim(), charts, tables };
 }

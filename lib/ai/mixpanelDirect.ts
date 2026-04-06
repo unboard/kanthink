@@ -237,21 +237,24 @@ export async function queryForChat(question: string): Promise<string> {
       context += `Revenue: $${totalRevenue.toFixed(2)}\n`;
       if (totalQuantity) context += `Quantity: ${totalQuantity.toLocaleString()}\n`;
 
-      // Include order details — with emails if available
+      // Include order details — with emails if available, as a structured table
       if (wantsEmails) {
         if (!hasAnyEmail) {
-          context += `\nNote: Customer emails are not available — Mixpanel user profiles for these orders don't have email set. The tracking pipeline needs to link user identity to order events.\n`;
+          context += `\nNote: Customer emails are not available for these orders.\n`;
         }
-        context += `\nOrder details:\n`;
-        for (const o of orderDetails) {
-          const email = (o as Record<string, unknown>).email as string;
+        const tableRows = orderDetails.map(o => {
+          const email = (o as Record<string, unknown>).email as string || '';
           const d = o.date ? new Date(o.date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
-          if (email) {
-            context += `  ${email} | Order #${o.id} | ${o.categories.join(', ')} | $${o.total.toFixed(2)} | ${d}\n`;
-          } else {
-            context += `  Order #${o.id} | ${o.categories.join(', ')} | $${o.total.toFixed(2)} | ${d}\n`;
-          }
-        }
+          const cats = o.categories.length > 2 ? o.categories.slice(0, 2).join(', ') + ` +${o.categories.length - 2}` : o.categories.join(', ');
+          return hasAnyEmail
+            ? { email: email || '—', order: `#${o.id}`, product: cats, total: `$${o.total.toFixed(2)}`, date: d }
+            : { order: `#${o.id}`, product: cats, total: `$${o.total.toFixed(2)}`, date: d };
+        });
+        context += `\n\`\`\`table\n${JSON.stringify({
+          title: `${catLabel} Order Details`,
+          columns: hasAnyEmail ? ['email', 'order', 'product', 'total', 'date'] : ['order', 'product', 'total', 'date'],
+          rows: tableRows,
+        })}\n\`\`\`\n`;
       }
 
       // ONE chart — the most relevant one for the question

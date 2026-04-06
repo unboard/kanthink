@@ -168,6 +168,17 @@ body {
   animation: slide-in-right 0.2s ease-out;
 }
 
+/* Voice bar animation — audio equalizer effect */
+@keyframes voice-bar {
+  0%, 100% { height: 3px; }
+  25% { height: 12px; }
+  50% { height: 6px; }
+  75% { height: 14px; }
+}
+.animate-voice-bar {
+  animation: voice-bar 0.8s ease-in-out infinite;
+}
+
 /* Mobile bottom sheet animation */
 @keyframes slide-up {
   from {

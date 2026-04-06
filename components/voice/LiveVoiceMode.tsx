@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { VoiceSpores } from './VoiceSpores';
-import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
+import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
 
 const VOICE_OPTIONS = [
   { id: 'Kore', label: 'Kore' }, { id: 'Puck', label: 'Puck' },
@@ -200,6 +200,41 @@ function resample(input: Float32Array, from: number, to: number): Float32Array {
 }
 
 const VOICE_KEY = 'kanthink-voice-name';
+
+function VoiceTable({ config }: { config: TableConfig }) {
+  return (
+    <div className="px-3 pb-3">
+      {config.title && <p className="text-xs font-medium text-neutral-400 px-1 mb-2">{config.title}</p>}
+      <div className="overflow-x-auto rounded-lg border border-neutral-800">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-neutral-800/60">
+              {config.columns.map(col => (
+                <th key={col} className="px-3 py-2 text-left text-neutral-400 font-medium whitespace-nowrap capitalize">
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {config.rows.map((row, i) => (
+              <tr key={i} className="border-t border-neutral-800/50 hover:bg-neutral-800/30">
+                {config.columns.map(col => (
+                  <td key={col} className="px-3 py-2 text-neutral-200 whitespace-nowrap">
+                    {row[col] || '—'}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {config.rows.length > 15 && (
+        <p className="text-[10px] text-neutral-500 mt-1 px-1">Showing first 15 of {config.rows.length} rows</p>
+      )}
+    </div>
+  );
+}
 
 export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModeProps) {
   const [status, setStatus] = useState('');
@@ -666,8 +701,11 @@ After any tool executes, always confirm what you did.` }] },
             {connected && !isMuted && (
               <div className="flex items-center gap-0.5 h-4">
                 {bars.map((s, i) => (
-                  <div key={i} className={`w-1 rounded-full transition-all duration-75 ${isAiSpeaking ? 'bg-violet-400' : 'bg-cyan-400'}`}
-                    style={{ height: `${Math.max(3, s * 16)}px` }} />
+                  <div key={i} className={`w-1 rounded-full ${isAiSpeaking ? 'bg-violet-400 animate-voice-bar' : 'bg-cyan-400 transition-all duration-75'}`}
+                    style={isAiSpeaking
+                      ? { animationDelay: `${i * 0.12}s` }
+                      : { height: `${Math.max(3, s * 16)}px` }
+                    } />
                 ))}
               </div>
             )}
@@ -802,10 +840,11 @@ After any tool executes, always confirm what you did.` }] },
                     </div>
                   </div>
                 ) : (
-                  /* Regular action result — card style with chart support */
+                  /* Regular action result — card style with chart/table support */
                   (() => {
                     const parsed = parseChartDirectives(a.result);
                     const charts = parsed.charts;
+                    const tables = parsed.tables || [];
                     const cleanText = parsed.cleanText.trim();
                     return (
                       <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl animate-slide-in overflow-hidden">
@@ -827,6 +866,9 @@ After any tool executes, always confirm what you did.` }] },
                             <span className={`text-sm ${a.success ? 'text-white' : 'text-red-300'}`}>{cleanText.slice(0, 500)}{cleanText.length > 500 ? '...' : ''}</span>
                           </div>
                         )}
+                        {tables.map((table, ti) => (
+                          <VoiceTable key={ti} config={table} />
+                        ))}
                         {charts.map((chart, ci) => (
                           <div key={ci} className="px-2 pb-3">
                             <KanChart config={chart} />
