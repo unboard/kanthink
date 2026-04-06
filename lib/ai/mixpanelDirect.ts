@@ -97,40 +97,38 @@ export async function exportEvents(params: {
   return events;
 }
 
-/** Look up user profile emails by distinct_ids using a single bulk Engage query */
+/** Look up user profile emails by distinct_ids using the Engage API.
+ *  Uses the distinct_id param which handles identity resolution internally
+ *  (works for both regular UUIDs and $device: prefixed IDs). */
 async function lookupEmails(distinctIds: string[]): Promise<Record<string, string>> {
   const emailMap: Record<string, string> = {};
   if (distinctIds.length === 0) return emailMap;
 
-  try {
-    // Build a single Engage query that filters by distinct_id list
-    // The Engage API supports a 'where' clause with OR conditions
-    const orClauses = distinctIds.slice(0, 100).map(id =>
-      `properties["$distinct_id"] == "${id}"`
-    ).join(' or ');
+  // Look up in parallel batches of 5 (Mixpanel allows 5 concurrent queries)
+  const ids = distinctIds.slice(0, 50);
+  const batchSize = 5;
 
-    const body = new URLSearchParams();
-    body.set('where', orClauses);
-    body.set('output_properties', JSON.stringify(['$email', '$first_name', '$last_name']));
-    body.set('page_size', '1000');
-
-    const res = await fetch('https://mixpanel.com/api/2.0/engage', {
-      method: 'POST',
-      headers: { Authorization: getAuth(), 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const results = data.results || [];
-      for (const profile of results) {
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const batch = ids.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map(async (id) => {
+        const body = new URLSearchParams();
+        body.set('distinct_id', id);
+        const res = await fetch('https://mixpanel.com/api/2.0/engage', {
+          method: 'POST',
+          headers: { Authorization: getAuth(), 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const profile = data.results?.[0];
+        if (!profile) return;
         const props = profile['$properties'] || {};
-        const did = profile['$distinct_id'] || props['$distinct_id'];
-        const email = props['$email'] || props.email;
-        if (did && email) emailMap[did] = email;
-      }
-    }
-  } catch { /* skip — emails are best-effort */ }
+        const email = props.email || props['$email'];
+        if (email) emailMap[id] = email;
+      })
+    );
+  }
 
   return emailMap;
 }
@@ -222,13 +220,13 @@ export async function queryForChat(question: string): Promise<string> {
       const totalOrders = orderDetails.length;
       const catLabel = categoryFilter ? categoryFilter.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ') : 'Print';
 
-      // Look up emails if requested — use resolved IDs (canonical user IDs, not device IDs)
+      // Look up emails — use original distinct_id (Engage API handles identity resolution internally)
       let hasAnyEmail = false;
       if (wantsEmails && orderDetails.length > 0) {
-        const uniqueIds = Array.from(new Set(orderDetails.map(o => o.resolvedId)));
+        const uniqueIds = Array.from(new Set(orderDetails.map(o => o.distinctId)));
         const emailMap = await lookupEmails(uniqueIds);
         for (const o of orderDetails) {
-          const email = emailMap[o.resolvedId] || emailMap[o.distinctId] || '';
+          const email = emailMap[o.distinctId] || '';
           if (email) hasAnyEmail = true;
           (o as Record<string, unknown>).email = email;
         }
