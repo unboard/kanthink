@@ -99,35 +99,34 @@ export async function exportEvents(params: {
 
 /** Look up user profile emails by distinct_ids using the Engage API.
  *  Uses the distinct_id param which handles identity resolution internally
- *  (works for both regular UUIDs and $device: prefixed IDs). */
+ *  (works for both regular UUIDs and $device: prefixed IDs).
+ *  Limited to 15 lookups to stay within Mixpanel's 60 queries/hour rate limit. */
 async function lookupEmails(distinctIds: string[]): Promise<Record<string, string>> {
   const emailMap: Record<string, string> = {};
   if (distinctIds.length === 0) return emailMap;
 
-  // Look up in parallel batches of 5 (Mixpanel allows 5 concurrent queries)
-  const ids = distinctIds.slice(0, 50);
-  const batchSize = 5;
+  // Limit to 15 unique IDs to stay within rate limits (60/hr, shared with other queries)
+  const ids = distinctIds.slice(0, 15);
 
-  for (let i = 0; i < ids.length; i += batchSize) {
-    const batch = ids.slice(i, i + batchSize);
-    const results = await Promise.allSettled(
-      batch.map(async (id) => {
-        const body = new URLSearchParams();
-        body.set('distinct_id', id);
-        const res = await fetch('https://mixpanel.com/api/2.0/engage', {
-          method: 'POST',
-          headers: { Authorization: getAuth(), 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString(),
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        const profile = data.results?.[0];
-        if (!profile) return;
-        const props = profile['$properties'] || {};
-        const email = props.email || props['$email'];
-        if (email) emailMap[id] = email;
-      })
-    );
+  // Look up sequentially to avoid 5-concurrent-query limit issues
+  for (const id of ids) {
+    try {
+      const body = new URLSearchParams();
+      body.set('distinct_id', id);
+      const res = await fetch('https://mixpanel.com/api/2.0/engage', {
+        method: 'POST',
+        headers: { Authorization: getAuth(), 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+      if (res.status === 429) break; // Rate limited — stop making more calls
+      if (!res.ok) continue;
+      const data = await res.json();
+      const profile = data.results?.[0];
+      if (!profile) continue;
+      const props = profile['$properties'] || {};
+      const email = props.email || props['$email'];
+      if (email) emailMap[id] = email;
+    } catch { /* skip */ }
   }
 
   return emailMap;
