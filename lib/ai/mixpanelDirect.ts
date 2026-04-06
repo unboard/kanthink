@@ -6,6 +6,10 @@
 const API_SECRET = process.env.MIXPANEL_API_SECRET;
 const PROJECT_ID = process.env.MIXPANEL_PROJECT_ID;
 
+// In-memory email cache — survives across requests within the same serverless invocation
+// TTL: 1 hour (matches Mixpanel's rate limit window)
+const emailCache: { map: Record<string, string>; expires: number } = { map: {}, expires: 0 };
+
 function getAuth(): string {
   if (!API_SECRET) throw new Error('MIXPANEL_API_SECRET not configured');
   return 'Basic ' + Buffer.from(API_SECRET + ':').toString('base64');
@@ -100,13 +104,30 @@ export async function exportEvents(params: {
 /** Look up user profile emails by distinct_ids using the Engage API.
  *  Uses the distinct_id param which handles identity resolution internally.
  *  Runs in parallel batches of 5 (Mixpanel's concurrent limit).
- *  Rate limit: 60 queries/hour — supports all orders in a single user query. */
+ *  Caches results in-memory for 1 hour to avoid burning rate limits. */
 async function lookupEmails(distinctIds: string[]): Promise<Record<string, string>> {
   const emailMap: Record<string, string> = {};
   if (distinctIds.length === 0) return emailMap;
 
-  const ids = distinctIds.slice(0, 55); // Leave headroom in the 60/hr limit
-  const batchSize = 5; // Mixpanel concurrent query limit
+  // Refresh cache if expired
+  if (Date.now() > emailCache.expires) {
+    emailCache.map = {};
+    emailCache.expires = Date.now() + 60 * 60 * 1000; // 1 hour
+  }
+
+  // Check cache first — only look up IDs we haven't seen
+  const uncachedIds: string[] = [];
+  for (const id of distinctIds) {
+    if (emailCache.map[id]) {
+      emailMap[id] = emailCache.map[id];
+    } else {
+      uncachedIds.push(id);
+    }
+  }
+
+  // Look up uncached IDs in parallel batches of 5
+  const ids = uncachedIds.slice(0, 55);
+  const batchSize = 5;
   let rateLimited = false;
 
   for (let i = 0; i < ids.length && !rateLimited; i += batchSize) {
@@ -129,7 +150,10 @@ async function lookupEmails(distinctIds: string[]): Promise<Record<string, strin
           if (!profile) return;
           const props = profile['$properties'] || {};
           const email = props.email || props['$email'];
-          if (email) emailMap[id] = email;
+          if (email) {
+            emailMap[id] = email;
+            emailCache.map[id] = email; // Cache it
+          }
         } catch { /* skip */ }
       })
     );

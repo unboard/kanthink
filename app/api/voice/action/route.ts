@@ -223,9 +223,12 @@ export async function POST(request: Request) {
           const fullData = await queryForChat(args.question || 'top events');
           if (!fullData) return NextResponse.json({ result: 'No Mixpanel data found for that query.' });
 
-          // Return full data (with chart directives) for UI rendering
-          // Also return a clean version (without chart JSON) for voice to speak
-          const voiceText = fullData.replace(/```chart\n[\s\S]*?```/g, '').replace(/\n{2,}/g, '\n').trim();
+          // Return full data (with chart/table directives) for UI rendering
+          // Also return a clean version (without chart/table JSON) for voice to speak
+          const voiceText = fullData
+            .replace(/```chart\n[\s\S]*?```/g, '')
+            .replace(/```table\n[\s\S]*?```/g, '')
+            .replace(/\n{2,}/g, '\n').trim();
           return NextResponse.json({ result: fullData, voiceResult: voiceText });
         } catch (err) {
           return NextResponse.json({ result: `Mixpanel error: ${err instanceof Error ? err.message : 'Unknown'}` });
