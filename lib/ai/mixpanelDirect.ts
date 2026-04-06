@@ -223,11 +223,14 @@ export async function queryForChat(question: string): Promise<string> {
       const catLabel = categoryFilter ? categoryFilter.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ') : 'Print';
 
       // Look up emails if requested — use resolved IDs (canonical user IDs, not device IDs)
+      let hasAnyEmail = false;
       if (wantsEmails && orderDetails.length > 0) {
         const uniqueIds = Array.from(new Set(orderDetails.map(o => o.resolvedId)));
         const emailMap = await lookupEmails(uniqueIds);
         for (const o of orderDetails) {
-          (o as Record<string, unknown>).email = emailMap[o.resolvedId] || emailMap[o.distinctId] || 'unknown';
+          const email = emailMap[o.resolvedId] || emailMap[o.distinctId] || '';
+          if (email) hasAnyEmail = true;
+          (o as Record<string, unknown>).email = email;
         }
       }
 
@@ -237,13 +240,20 @@ export async function queryForChat(question: string): Promise<string> {
       context += `Revenue: $${totalRevenue.toFixed(2)}\n`;
       if (totalQuantity) context += `Quantity: ${totalQuantity.toLocaleString()}\n`;
 
-      // Include order details with emails if requested
+      // Include order details — with emails if available
       if (wantsEmails) {
+        if (!hasAnyEmail) {
+          context += `\nNote: Customer emails are not available — Mixpanel user profiles for these orders don't have email set. The tracking pipeline needs to link user identity to order events.\n`;
+        }
         context += `\nOrder details:\n`;
         for (const o of orderDetails) {
-          const email = (o as Record<string, unknown>).email as string || 'unknown';
+          const email = (o as Record<string, unknown>).email as string;
           const d = o.date ? new Date(o.date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
-          context += `  ${email} | Order #${o.id} | ${o.categories.join(', ')} | $${o.total.toFixed(2)} | ${d}\n`;
+          if (email) {
+            context += `  ${email} | Order #${o.id} | ${o.categories.join(', ')} | $${o.total.toFixed(2)} | ${d}\n`;
+          } else {
+            context += `  Order #${o.id} | ${o.categories.join(', ')} | $${o.total.toFixed(2)} | ${d}\n`;
+          }
         }
       }
 
