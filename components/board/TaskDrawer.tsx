@@ -243,12 +243,12 @@ export function TaskDrawer({
 
         const data = await response.json();
 
-        // Add AI response as a note from "Kan"
+        // Add AI response as a note from "Kan" (with generated images if any)
         addTaskNote(task.id, data.response, {
           id: 'kan',
           name: 'Kan',
           image: 'https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg',
-        });
+        }, data.imageUrls);
         setTimeout(() => notesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
       } catch (error) {
         setAIError(error instanceof Error ? error.message : 'Failed to get AI response');

@@ -51,6 +51,7 @@ interface CardChatRequest {
   channelId?: string;
   questionContent: string;
   imageUrls?: string[];
+  imageSettings?: { aspectRatio?: string; quality?: string };
   context: {
     cardTitle: string;
     channelName: string;
@@ -127,7 +128,7 @@ function buildPrompt(
 Your capabilities:
 - Answer questions about cards, tasks, and the board
 - Create tasks and manage tags via actions
-- Generate images when asked (via DALL-E) — you CAN create images directly within Kanthink
+- Generate images when asked (via Gemini Imagen) — you CAN create images directly within Kanthink
 - Analyze images and whiteboards shared in the conversation
 - Search the web for current information when relevant
 
@@ -289,41 +290,8 @@ function convertToStoredActions(actions: ProposedAction[]): StoredAction[] {
   return result;
 }
 
-/**
- * Detect if the user is asking for image generation
- */
-function detectImageGenerationIntent(text: string): boolean {
-  if (!text) return false
-  const lower = text.toLowerCase()
-  const patterns = [
-    'generate an image', 'generate image', 'create an image', 'create image',
-    'make an image', 'make image', 'draw me', 'draw a', 'draw an',
-    'generate a picture', 'create a picture', 'make a picture',
-    'generate art', 'create art', 'make art',
-    'generate a photo', 'create a photo',
-    'generate illustration', 'create illustration',
-    'image of', 'picture of', 'illustration of',
-    'dall-e', 'dalle',
-  ]
-  return patterns.some(p => lower.includes(p))
-}
-
-/**
- * Extract the image prompt from the user's message
- */
-function extractImagePrompt(text: string): string {
-  // Remove common prefixes to get the actual prompt
-  const prefixes = [
-    /^(can you |please |could you |hey kan,? |kan,? )/i,
-    /^(generate|create|make|draw) (an?|me an?|the) (image|picture|illustration|art|photo) (of |for |showing |that shows |with |depicting )/i,
-    /^(generate|create|make|draw) (an?|me an?) (image|picture|illustration|art|photo)\s*/i,
-  ]
-  let prompt = text
-  for (const prefix of prefixes) {
-    prompt = prompt.replace(prefix, '')
-  }
-  return prompt.trim() || text
-}
+// Image detection imported from shared utility
+import { detectImageGenerationIntent, extractImagePrompt } from '@/lib/ai/imageDetection'
 
 /**
  * Generate an image using OpenAI's DALL-E API
@@ -376,7 +344,7 @@ async function getOpenAIKeyForUser(userId: string | undefined): Promise<string |
 export async function POST(request: Request) {
   try {
     const body: CardChatRequest = await request.json();
-    const { questionContent, channelId, imageUrls, context } = body;
+    const { questionContent, channelId, imageUrls, imageSettings, context } = body;
 
     // Validate required fields
     if ((!questionContent && (!imageUrls || imageUrls.length === 0)) || !context) {
@@ -544,7 +512,11 @@ export async function POST(request: Request) {
               'Content-Type': 'application/json',
               'Cookie': request.headers.get('cookie') || '',
             },
-            body: JSON.stringify({ prompt: imagePrompt }),
+            body: JSON.stringify({
+              prompt: imagePrompt,
+              aspectRatio: imageSettings?.aspectRatio || '1:1',
+              quality: imageSettings?.quality || 'standard',
+            }),
           });
           if (imgRes.ok) {
             const imgData = await imgRes.json();

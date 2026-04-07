@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import { getLLMClientForUser, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
+import { detectImageGenerationIntent, extractImagePrompt } from '@/lib/ai/imageDetection';
 import { db } from '@/lib/db';
 import { cards, columns, operatorChatThreads } from '@/lib/db/schema';
 import { eq, and, desc, asc } from 'drizzle-orm';
@@ -35,6 +36,7 @@ interface OperatorChatRequest {
   threadId?: string;
   message: string;
   imageUrls?: string[];
+  imageSettings?: { aspectRatio?: string; quality?: string };
   history: { role: 'user' | 'assistant'; content: string }[];
   channels: ChannelSummary[];
   tasks?: TaskSummary[];
@@ -341,7 +343,7 @@ export async function POST(request: Request) {
     await ensureSchema();
 
     const body: OperatorChatRequest = await request.json();
-    const { threadId, message, imageUrls, history, channels: channelData, tasks: taskData, user: userData } = body;
+    const { threadId, message, imageUrls, imageSettings, history, channels: channelData, tasks: taskData, user: userData } = body;
 
     if (!message && (!imageUrls || imageUrls.length === 0)) {
       return NextResponse.json({ error: 'Missing message' }, { status: 400 });
@@ -464,9 +466,39 @@ export async function POST(request: Request) {
       }
     }
 
+    // Check for image generation intent
+    let generatedImageUrls: string[] | undefined;
+    if (detectImageGenerationIntent(message)) {
+      try {
+        const imagePrompt = extractImagePrompt(message);
+        const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
+        const imgRes = await fetch(`${baseUrl}/api/generate-image`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cookie': request.headers.get('cookie') || '',
+          },
+          body: JSON.stringify({
+            prompt: imagePrompt,
+            aspectRatio: imageSettings?.aspectRatio || '1:1',
+            quality: imageSettings?.quality || 'standard',
+          }),
+        });
+        if (imgRes.ok) {
+          const imgData = await imgRes.json();
+          if (imgData.url) {
+            generatedImageUrls = [imgData.url];
+          }
+        }
+      } catch (imgError) {
+        console.error('Operator chat image generation error:', imgError);
+      }
+    }
+
     return NextResponse.json({
       response: parsed.response,
       actionResults,
+      imageUrls: generatedImageUrls,
     });
   } catch (error) {
     console.error('Operator chat error:', error);

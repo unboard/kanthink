@@ -4,6 +4,7 @@ import type { TaskNote } from '@/lib/types';
 import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+import { detectImageGenerationIntent, extractImagePrompt } from '@/lib/ai/imageDetection';
 
 const ANON_COOKIE_NAME = 'kanthink_anon_id';
 
@@ -13,6 +14,7 @@ interface TaskChatRequest {
   taskId: string;
   questionContent: string;
   imageUrls?: string[];
+  imageSettings?: { aspectRatio?: string; quality?: string };
   context: {
     taskTitle: string;
     taskStatus: string;
@@ -52,6 +54,8 @@ Guidelines:
 - Keep responses concise and actionable
 - Focus on helping with the specific task
 - You can suggest next steps, provide information, or help break down the work
+- Generate images when asked — you CAN create images directly within Kanthink
+- When users ask to generate, create, or draw an image, acknowledge that you can do this
 - Respond in plain text or markdown (not JSON)`;
 
   const messages: LLMMessage[] = [
@@ -91,7 +95,7 @@ Guidelines:
 export async function POST(request: Request) {
   try {
     const body: TaskChatRequest = await request.json();
-    const { questionContent, imageUrls, context } = body;
+    const { questionContent, imageUrls, imageSettings, context } = body;
 
     if ((!questionContent && (!imageUrls || imageUrls.length === 0)) || !context) {
       return NextResponse.json(
@@ -160,9 +164,39 @@ export async function POST(request: Request) {
         }
       }
 
+      // Check for image generation intent
+      let generatedImageUrls: string[] | undefined;
+      if (detectImageGenerationIntent(questionContent)) {
+        try {
+          const imagePrompt = extractImagePrompt(questionContent);
+          const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
+          const imgRes = await fetch(`${baseUrl}/api/generate-image`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cookie': request.headers.get('cookie') || '',
+            },
+            body: JSON.stringify({
+              prompt: imagePrompt,
+              aspectRatio: imageSettings?.aspectRatio || '1:1',
+              quality: imageSettings?.quality || 'standard',
+            }),
+          });
+          if (imgRes.ok) {
+            const imgData = await imgRes.json();
+            if (imgData.url) {
+              generatedImageUrls = [imgData.url];
+            }
+          }
+        } catch (imgError) {
+          console.error('Task chat image generation error:', imgError);
+        }
+      }
+
       const response = NextResponse.json({
         success: true,
         response: llmResponse.content,
+        imageUrls: generatedImageUrls,
       });
 
       if (anonId) {

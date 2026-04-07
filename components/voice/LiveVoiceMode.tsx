@@ -133,6 +133,18 @@ const TOOLS = [
           required: ['to', 'subject', 'body'],
         },
       },
+      {
+        name: 'generate_image',
+        description: 'Generate an image using AI. Creates a visual image preview on screen. Do NOT describe the generated image in detail — just confirm you\'re generating it and let the visual card appear.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            prompt: { type: 'STRING', description: 'Detailed image description/prompt' },
+            aspectRatio: { type: 'STRING', description: 'Aspect ratio: 1:1 (default), 3:4, 4:3, 9:16, 16:9' },
+          },
+          required: ['prompt'],
+        },
+      },
     ],
   },
   { googleSearch: {} },
@@ -164,6 +176,15 @@ interface CardPreview {
   coverImageUrl?: string;
 }
 
+interface ImageGenCard {
+  id: string;
+  prompt: string;
+  aspectRatio: string;
+  imageUrl?: string;
+  status: 'generating' | 'ready' | 'failed';
+  error?: string;
+}
+
 interface ActionLog {
   id: string;
   action: string;
@@ -172,6 +193,7 @@ interface ActionLog {
   timestamp: Date;
   cardPreview?: CardPreview;
   emailDraft?: EmailDraft;
+  imageGen?: ImageGenCard;
 }
 
 interface LiveVoiceModeProps {
@@ -244,6 +266,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const [micLevel, setMicLevel] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [actions, setActions] = useState<ActionLog[]>([]);
+  const hasGeneratingImages = actions.some(a => a.imageGen?.status === 'generating');
   const [expandedCard, setExpandedCard] = useState<CardPreview | null>(null);
   const [expandedEmail, setExpandedEmail] = useState<EmailDraft | null>(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -469,6 +492,64 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       return `Email draft is ready on screen for the user to review and send. Do NOT read the email content aloud.`;
     }
 
+    // Generate image — fire and forget, update UI when done
+    if (name === 'generate_image') {
+      const genId = crypto.randomUUID();
+      const card: ImageGenCard = {
+        id: genId,
+        prompt: args.prompt,
+        aspectRatio: args.aspectRatio || '1:1',
+        status: 'generating',
+      };
+      setActions(prev => [...prev, {
+        id: crypto.randomUUID(), action: 'generate_image',
+        result: 'Generating image...',
+        success: true, timestamp: new Date(), imageGen: card,
+      }]);
+
+      // Fire and forget — update state when done
+      fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: args.prompt, aspectRatio: args.aspectRatio || '1:1' }),
+      }).then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setActions(prev => {
+            const updated = prev.map(a =>
+              a.imageGen?.id === genId
+                ? { ...a, imageGen: { ...a.imageGen!, imageUrl: data.url, status: 'ready' as const } }
+                : a
+            );
+            // Auto-attach to any pending email draft
+            const emailAction = updated.find(a => a.emailDraft?.status === 'ready');
+            if (emailAction?.emailDraft && data.url) {
+              return updated.map(a =>
+                a.emailDraft?.id === emailAction.emailDraft!.id
+                  ? { ...a, emailDraft: { ...a.emailDraft!, body: a.emailDraft!.body + `\n\n![Generated image](${data.url})` } }
+                  : a
+              );
+            }
+            return updated;
+          });
+        } else {
+          setActions(prev => prev.map(a =>
+            a.imageGen?.id === genId
+              ? { ...a, imageGen: { ...a.imageGen!, status: 'failed' as const, error: 'Generation failed' } }
+              : a
+          ));
+        }
+      }).catch(() => {
+        setActions(prev => prev.map(a =>
+          a.imageGen?.id === genId
+            ? { ...a, imageGen: { ...a.imageGen!, status: 'failed' as const, error: 'Generation failed' } }
+            : a
+        ));
+      });
+
+      return 'Image is being generated — the user will see it on screen when ready.';
+    }
+
     try {
       const res = await fetch('/api/voice/action', {
         method: 'POST',
@@ -558,6 +639,11 @@ Before drafting an email, make sure you understand:
 Only skip asking if the user has clearly communicated all three.
 
 When drafting, use the draft_email tool. This creates a visual draft on screen — it does NOT send it. Do NOT read the email content aloud. Just say "I've drafted that — you can review and send it on screen." Write the body using clean prose, not raw markdown syntax. Use headers and structure naturally — avoid showing asterisks or markdown characters in the email text.
+
+IMAGE GENERATION:
+When the user asks you to create, generate, or draw an image, use the generate_image tool. Provide a detailed, descriptive prompt. Do NOT describe the generated image verbally — just say "I'm generating that for you" and let the visual card appear. If they specify an orientation (landscape, portrait, square), map to the appropriate aspectRatio (16:9, 9:16, 1:1 etc.).
+
+When the user asks to create an email with images, use BOTH draft_email and generate_image tools. The image will be automatically attached to the email when it finishes generating.
 
 CONTENT FORMATTING:
 When creating notes, cards, or tasks with content, ALWAYS use rich markdown formatting. The app renders markdown so it looks great. Use:
@@ -762,6 +848,39 @@ After any tool executes, always confirm what you did.` }] },
           <div className="space-y-3">
             {actions.filter(a => !['search_cards'].includes(a.action)).map(a => (
               <div key={a.id}>
+                {/* Generated image */}
+                {a.imageGen ? (
+                  <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in">
+                    <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <svg className="h-4 w-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                        </svg>
+                        <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">{a.imageGen.aspectRatio}</span>
+                      </div>
+                      <div>
+                        {a.imageGen.status === 'generating' && <span className="text-xs text-violet-400 animate-pulse">Generating...</span>}
+                        {a.imageGen.status === 'ready' && <span className="text-xs text-green-400">Ready</span>}
+                        {a.imageGen.status === 'failed' && <span className="text-xs text-red-400">Failed</span>}
+                      </div>
+                    </div>
+                    {a.imageGen.status === 'generating' ? (
+                      <div className="px-4 py-12 flex items-center justify-center">
+                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+                      </div>
+                    ) : a.imageGen.imageUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={a.imageGen.imageUrl} alt={a.imageGen.prompt} className="w-full" />
+                    ) : a.imageGen.error ? (
+                      <div className="px-4 py-6 text-center text-sm text-red-400">{a.imageGen.error}</div>
+                    ) : null}
+                    {a.imageGen.status === 'ready' && (
+                      <div className="px-4 py-3 border-t border-neutral-800">
+                        <p className="text-xs text-neutral-400 truncate">{a.imageGen.prompt}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
                 {/* Email draft */}
                 {a.emailDraft ? (
                   <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in">
@@ -788,9 +907,12 @@ After any tool executes, always confirm what you did.` }] },
                       <div className="px-4 py-3 border-t border-neutral-800 flex gap-2">
                         <button
                           onClick={() => sendEmail(a.emailDraft!.id)}
-                          className="flex-1 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 transition-colors"
+                          disabled={hasGeneratingImages}
+                          className={`flex-1 py-2 rounded-lg text-white text-sm font-medium transition-colors ${
+                            hasGeneratingImages ? 'bg-neutral-700 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-700'
+                          }`}
                         >
-                          Send Email
+                          {hasGeneratingImages ? 'Waiting for images...' : 'Send Email'}
                         </button>
                         <button
                           onClick={() => setActions(prev => prev.filter(x => x.id !== a.id))}
@@ -950,7 +1072,9 @@ After any tool executes, always confirm what you did.` }] },
             {expandedEmail.status === 'ready' && (
               <div className="sticky bottom-0 bg-neutral-900 border-t border-neutral-800 px-4 py-3 flex gap-2">
                 <button onClick={() => { sendEmail(expandedEmail.id); setExpandedEmail(null); }}
-                  className="flex-1 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Send Email</button>
+                  disabled={hasGeneratingImages}
+                  className={`flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-colors ${hasGeneratingImages ? 'bg-neutral-700 cursor-not-allowed' : 'bg-violet-600 hover:bg-violet-700'}`}>
+                  {hasGeneratingImages ? 'Waiting for images...' : 'Send Email'}</button>
                 <button onClick={() => { setActions(prev => prev.filter(x => x.emailDraft?.id !== expandedEmail.id)); setExpandedEmail(null); }}
                   className="px-4 py-2.5 rounded-lg bg-neutral-800 text-neutral-300 text-sm hover:bg-neutral-700">Discard</button>
               </div>

@@ -8,6 +8,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { AudioLines } from 'lucide-react';
 import { MentionDropdown } from './MentionDropdown';
+import { detectImageGenerationIntent } from '@/lib/ai/imageDetection';
 
 // Keyword highlighting for question mode
 const KEYWORD_CONFIG = {
@@ -118,8 +119,13 @@ interface CardMentionState {
   startIndex: number; // cursor position of '#'
 }
 
+interface ImageSettings {
+  aspectRatio: '1:1' | '3:4' | '4:3' | '9:16' | '16:9';
+  quality: 'standard' | 'hd';
+}
+
 interface ChatInputProps {
-  onSubmit: (content: string, type: CardMessageType, imageUrls?: string[]) => void;
+  onSubmit: (content: string, type: CardMessageType, imageUrls?: string[], imageSettings?: ImageSettings) => void;
   isLoading?: boolean;
   placeholder?: string;
   cardId?: string;
@@ -149,6 +155,8 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
   const [cardMention, setCardMention] = useState<CardMentionState>({ isActive: false, query: '', startIndex: 0 });
   const [cardMentionSelectedIndex, setCardMentionSelectedIndex] = useState(0);
   const [cardMentionsMap, setCardMentionsMap] = useState<Record<string, string>>({}); // title -> cardId
+  const [imageSettings, setImageSettings] = useState<ImageSettings>({ aspectRatio: '1:1', quality: 'standard' });
+  const [showImageSettings, setShowImageSettings] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -348,6 +356,18 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
     }
   }, [content]);
 
+  // Detect image generation intent in question mode
+  useEffect(() => {
+    if (mode !== 'question' && !forceQuestionMode) {
+      setShowImageSettings(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setShowImageSettings(detectImageGenerationIntent(content));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [content, mode, forceQuestionMode]);
+
   const handleUploadFile = useCallback(async (file: File) => {
     const tempId = URL.createObjectURL(file);
     setStagedImages((prev) => [...prev, { url: tempId, isLoading: true, file }]);
@@ -434,12 +454,14 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
     onSubmit(
       finalContent,
       submitMode,
-      imageUrls.length > 0 ? imageUrls : undefined
+      imageUrls.length > 0 ? imageUrls : undefined,
+      showImageSettings ? imageSettings : undefined
     );
     setContent('');
     setMentionsMap({});
     setCardMentionsMap({});
     setStagedImages([]);
+    setShowImageSettings(false);
     setNeedsScroll(false);
     clearError();
 
@@ -640,6 +662,43 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
           <div className="mb-2 text-xs text-red-500 flex items-center gap-1">
             <span>{uploadError}</span>
             <button onClick={clearError} className="underline">Dismiss</button>
+          </div>
+        )}
+
+        {/* Image generation settings picker */}
+        {showImageSettings && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-neutral-100 dark:bg-neutral-800/80 px-3 py-2">
+            <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-medium mr-1">Aspect</span>
+            {(['1:1', '3:4', '4:3', '9:16', '16:9'] as const).map((ratio) => (
+              <button
+                key={ratio}
+                type="button"
+                onClick={() => setImageSettings(s => ({ ...s, aspectRatio: ratio }))}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                  imageSettings.aspectRatio === ratio
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-600'
+                }`}
+              >
+                {ratio}
+              </button>
+            ))}
+            <span className="text-neutral-300 dark:text-neutral-600 mx-1">|</span>
+            <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-medium mr-1">Quality</span>
+            {(['standard', 'hd'] as const).map((q) => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => setImageSettings(s => ({ ...s, quality: q }))}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                  imageSettings.quality === q
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-600'
+                }`}
+              >
+                {q === 'standard' ? '1K' : '2K'}
+              </button>
+            ))}
           </div>
         )}
 

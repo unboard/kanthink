@@ -23,6 +23,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   actionResults?: ActionResult[];
+  imageUrls?: string[];
   timestamp: Date;
 }
 
@@ -224,6 +225,7 @@ export function OperatorHome() {
         role: 'assistant',
         content: data.response,
         actionResults: data.actionResults,
+        imageUrls: data.imageUrls,
         timestamp: new Date(),
       };
 
@@ -463,6 +465,17 @@ When using tools, use the exact IDs shown above when available (taskId, cardId, 
                       </div>
                     ) : (
                       <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    )}
+                    {/* Generated images */}
+                    {msg.imageUrls && msg.imageUrls.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {msg.imageUrls.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-neutral-700 hover:border-violet-500 transition-colors">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={url} alt="Generated image" className="max-w-[280px] max-h-[280px] object-cover" />
+                          </a>
+                        ))}
+                      </div>
                     )}
                     {/* Action results */}
                     {msg.actionResults && msg.actionResults.length > 0 && (

@@ -4,13 +4,22 @@ import { getOpenAIClientForUser } from '@/lib/ai/openai-client'
 import { getGoogleClientForVoice } from '@/lib/ai/google-voice'
 import { uploadImageToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary'
 
+// Map aspect ratios to DALL-E sizes for fallback
+const DALLE_SIZE_MAP: Record<string, '1024x1024' | '1792x1024' | '1024x1792'> = {
+  '1:1': '1024x1024',
+  '4:3': '1792x1024',
+  '16:9': '1792x1024',
+  '3:4': '1024x1792',
+  '9:16': '1024x1792',
+}
+
 export async function POST(request: Request) {
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { prompt, context, type } = await request.json()
+  const { prompt, context, type, aspectRatio = '1:1', quality = 'standard' } = await request.json()
 
   // Build the image prompt based on context
   let imagePrompt: string
@@ -24,16 +33,56 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Provide a prompt or context' }, { status: 400 })
   }
 
-  // Try OpenAI first (DALL-E)
+  // Try Google/Gemini Imagen first (primary)
+  const googleResult = await getGoogleClientForVoice(session.user.id)
+  if (googleResult.client) {
+    try {
+      const response = await googleResult.client.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: imagePrompt,
+        config: {
+          numberOfImages: 1,
+          aspectRatio: aspectRatio,
+        },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const images = (response as any).generatedImages
+      if (!images || images.length === 0) {
+        // Fall through to DALL-E
+        console.warn('Imagen returned no images, trying DALL-E fallback')
+      } else {
+        const imageData = images[0].image?.imageBytes
+        if (imageData) {
+          const buffer = Buffer.from(imageData, 'base64')
+          if (isCloudinaryConfigured()) {
+            const result = await uploadImageToCloudinary(buffer, {})
+            return NextResponse.json({ url: result.url })
+          }
+          const dataUrl = `data:image/png;base64,${imageData}`
+          return NextResponse.json({ url: dataUrl })
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Imagen generation failed'
+      console.warn('Imagen error, trying DALL-E fallback:', message)
+    }
+  }
+
+  // Fallback to OpenAI DALL-E
   const openaiResult = await getOpenAIClientForUser(session.user.id)
   if (openaiResult.client) {
     try {
+      const dalleSize = quality === 'hd'
+        ? (DALLE_SIZE_MAP[aspectRatio] || '1792x1024')
+        : (DALLE_SIZE_MAP[aspectRatio] || '1024x1024')
+
       const response = await openaiResult.client.images.generate({
         model: 'dall-e-3',
         prompt: imagePrompt,
         n: 1,
-        size: type === 'card' ? '1792x1024' : '1024x1024',
-        quality: 'standard',
+        size: dalleSize,
+        quality: quality === 'hd' ? 'hd' : 'standard',
       })
 
       const imageUrl = response.data?.[0]?.url
@@ -44,47 +93,7 @@ export async function POST(request: Request) {
       return await uploadAndReturn(imageUrl)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Image generation failed'
-      console.error('OpenAI image generation error:', message)
-      return NextResponse.json({ error: message }, { status: 500 })
-    }
-  }
-
-  // Try Google/Gemini image generation
-  const googleResult = await getGoogleClientForVoice(session.user.id)
-  if (googleResult.client) {
-    try {
-      const response = await googleResult.client.models.generateImages({
-        model: 'imagen-3.0-generate-002',
-        prompt: imagePrompt,
-        config: {
-          numberOfImages: 1,
-        },
-      })
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const images = (response as any).generatedImages
-      if (!images || images.length === 0) {
-        return NextResponse.json({ error: 'No image generated' }, { status: 500 })
-      }
-
-      const imageData = images[0].image?.imageBytes
-      if (imageData) {
-        const buffer = Buffer.from(imageData, 'base64')
-
-        if (isCloudinaryConfigured()) {
-          const result = await uploadImageToCloudinary(buffer, {})
-          return NextResponse.json({ url: result.url })
-        }
-
-        // Return as data URL if no Cloudinary
-        const dataUrl = `data:image/png;base64,${imageData}`
-        return NextResponse.json({ url: dataUrl })
-      }
-
-      return NextResponse.json({ error: 'No image data returned' }, { status: 500 })
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Image generation failed'
-      console.error('Gemini image generation error:', message)
+      console.error('DALL-E image generation error:', message)
       return NextResponse.json({ error: message }, { status: 500 })
     }
   }
