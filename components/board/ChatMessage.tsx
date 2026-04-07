@@ -308,7 +308,12 @@ export function ChatMessage({
   const [editContent, setEditContent] = useState(message.content);
   const [theaterIndex, setTheaterIndex] = useState<number | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [dismissedUrls, setDismissedUrls] = useState<Set<string>>(new Set());
+  const [dismissedUrls, setDismissedUrls] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(`kanthink-dismissed-previews-${message.id}`);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
   const editRef = useRef<HTMLTextAreaElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
@@ -523,7 +528,11 @@ export function ChatMessage({
           <LinkPreview
             key={linkUrl}
             url={linkUrl}
-            onDismiss={() => setDismissedUrls((prev) => new Set([...prev, linkUrl]))}
+            onDismiss={() => setDismissedUrls((prev) => {
+              const next = new Set([...prev, linkUrl]);
+              try { localStorage.setItem(`kanthink-dismissed-previews-${message.id}`, JSON.stringify([...next])); } catch {}
+              return next;
+            })}
           />
         ))}
 
