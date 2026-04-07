@@ -46,6 +46,36 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   }
 }
 
+/** PATCH /api/operator-chat/threads/:threadId — update thread title/messages */
+export async function PATCH(req: NextRequest, { params }: RouteParams) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    await ensureSchema();
+    const { threadId } = await params;
+    const body = await req.json();
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.title !== undefined) updates.title = body.title;
+    if (body.messages !== undefined) updates.messages = body.messages;
+
+    await db.update(operatorChatThreads)
+      .set(updates)
+      .where(and(
+        eq(operatorChatThreads.id, threadId),
+        eq(operatorChatThreads.userId, session.user.id),
+      ));
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('Update operator thread error:', error);
+    return NextResponse.json({ error: 'Failed to update thread' }, { status: 500 });
+  }
+}
+
 /** DELETE /api/operator-chat/threads/:threadId — delete a thread */
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {

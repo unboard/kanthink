@@ -279,6 +279,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const [showSettings, setShowSettings] = useState(false);
   const [actions, setActions] = useState<ActionLog[]>([]);
   const hasGeneratingImages = actions.some(a => a.imageGen?.status === 'generating');
+  const threadIdRef = useRef<string | null>(null);
   const [expandedCard, setExpandedCard] = useState<CardPreview | null>(null);
   const [expandedEmail, setExpandedEmail] = useState<EmailDraft | null>(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -741,9 +742,76 @@ After any tool executes, always confirm what you did.` }] },
     }
   }, [voiceName, systemPrompt, stop, playChunk, startMic, executeAction, connected]);
 
+  // Save voice session to operator chat thread on close
+  const saveSession = useCallback(async (sessionActions: ActionLog[]) => {
+    if (sessionActions.length === 0) return;
+    try {
+      // Create a thread
+      const res = await fetch('/api/operator-chat/threads', { method: 'POST' });
+      if (!res.ok) return;
+      const { id: threadId } = await res.json();
+
+      // Build messages from actions
+      const now = new Date().toISOString();
+      const messages = sessionActions.map(a => {
+        let content = '';
+        const imageUrls: string[] = [];
+
+        if (a.emailDraft) {
+          const sent = a.emailDraft.status === 'sent' ? ' (sent)' : '';
+          content = `**Email${sent}** to ${a.emailDraft.to}\n**Subject:** ${a.emailDraft.subject}\n\n${a.emailDraft.body.slice(0, 200)}${a.emailDraft.body.length > 200 ? '...' : ''}`;
+        } else if (a.imageGen) {
+          content = `**Image generated** (${a.imageGen.aspectRatio})\n${a.imageGen.prompt}`;
+          if (a.imageGen.imageUrl) imageUrls.push(a.imageGen.imageUrl);
+          if (a.imageGen.status === 'failed') content = `**Image failed:** ${a.imageGen.error || 'Unknown error'}`;
+        } else {
+          content = `**${a.action}:** ${a.result}`;
+        }
+
+        return {
+          id: crypto.randomUUID(),
+          type: 'ai_response' as const,
+          content,
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+          authorId: 'kan',
+          authorName: 'Kan',
+          createdAt: a.timestamp.toISOString(),
+        };
+      });
+
+      // Title from first action
+      const first = sessionActions[0];
+      const title = first.emailDraft
+        ? `Voice: Email to ${first.emailDraft.to}`
+        : first.imageGen
+        ? 'Voice: Image generation'
+        : `Voice: ${first.action}`;
+
+      // Save via PATCH
+      await fetch(`/api/operator-chat/threads/${threadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.slice(0, 60),
+          messages: [
+            { id: crypto.randomUUID(), type: 'question', content: 'Voice session', createdAt: now },
+            ...messages,
+          ],
+        }),
+      }).catch(() => {});
+    } catch {
+      // Best-effort save
+    }
+  }, []);
+
   useEffect(() => {
-    if (isOpen) start();
-    else { stop(); setStatus(''); setError(null); setActions([]); }
+    if (isOpen) { start(); threadIdRef.current = null; }
+    else {
+      // Save session before clearing
+      const currentActions = actions;
+      if (currentActions.length > 0) saveSession(currentActions);
+      stop(); setStatus(''); setError(null); setActions([]);
+    }
     return () => stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
