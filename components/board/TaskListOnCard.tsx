@@ -28,10 +28,11 @@ export function TaskListOnCard({
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
   const { members } = useChannelMembers(channelId);
 
-  // Filter and limit tasks for display
+  // Filter and limit tasks for display — always hide archived
+  const nonArchivedTasks = tasks.filter((t) => !t.isArchived);
   const visibleTasks = hideCompleted
-    ? tasks.filter((t) => t.status !== 'done')
-    : tasks;
+    ? nonArchivedTasks.filter((t) => t.status !== 'done')
+    : nonArchivedTasks;
 
   const displayTasks = visibleTasks.slice(0, maxVisible);
   const hiddenCount = visibleTasks.length - displayTasks.length;

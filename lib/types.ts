@@ -215,6 +215,7 @@ export interface Task {
   assignedTo?: string[];
   dueDate?: string;
   snoozedUntil?: string;  // ISO timestamp — task hidden from board until this time
+  isArchived?: boolean;   // Archived tasks are hidden from default views
 }
 
 // Smart snippet types for actionable AI responses

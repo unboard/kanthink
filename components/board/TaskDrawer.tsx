@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
-import type { Task, TaskStatus, TaskNote, CardMessage, CardMessageType } from '@/lib/types';
+import type { Task, TaskStatus, TaskNote, Card, CardMessage, CardMessageType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
@@ -41,6 +41,7 @@ interface TaskDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenCard?: () => void;
+  onPromotedToCard?: (card: Card) => void;
 }
 
 function formatDate(dateString: string): string {
@@ -65,6 +66,7 @@ export function TaskDrawer({
   isOpen,
   onClose,
   onOpenCard,
+  onPromotedToCard,
 }: TaskDrawerProps) {
   const [title, setTitle] = useState('');
   const [isDirty, setIsDirty] = useState(false);
@@ -92,6 +94,7 @@ export function TaskDrawer({
   const deleteTask = useStore((s) => s.deleteTask);
   const toggleTaskAssignee = useStore((s) => s.toggleTaskAssignee);
   const promoteTaskToCard = useStore((s) => s.promoteTaskToCard);
+  const unarchiveTask = useStore((s) => s.unarchiveTask);
   const moveTaskToCard = useStore((s) => s.moveTaskToCard);
   const moveTaskToColumn = useStore((s) => s.moveTaskToColumn);
   const removeTaskFromColumn = useStore((s) => s.removeTaskFromColumn);
@@ -271,6 +274,7 @@ export function TaskDrawer({
   const currentNotes = freshTask?.notes ?? task.notes ?? [];
   const currentAssignees = freshTask?.assignedTo ?? task.assignedTo ?? [];
   const currentDueDate = freshTask?.dueDate ?? task.dueDate;
+  const isArchived = freshTask?.isArchived ?? task.isArchived ?? false;
 
   // Status dropdown colors
   const statusColors: Record<TaskStatus, string> = {
@@ -326,32 +330,50 @@ export function TaskDrawer({
               <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
                 <button
                   onClick={() => {
-                    promoteTaskToCard(task.id);
+                    const newCard = promoteTaskToCard(task.id);
                     setIsMenuOpen(false);
-                    onClose();
+                    if (newCard && onPromotedToCard) {
+                      onPromotedToCard(newCard);
+                    } else {
+                      onClose();
+                    }
                   }}
                   className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
                 >
                   Promote to card
                 </button>
-                <button
-                  onClick={() => {
-                    setIsMovingTask(true);
-                    setIsMenuOpen(false);
-                  }}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                >
-                  Move to card
-                </button>
-                <button
-                  onClick={() => {
-                    setIsMovingToColumn(true);
-                    setIsMenuOpen(false);
-                  }}
-                  className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                >
-                  Move to column
-                </button>
+                {isArchived ? (
+                  <button
+                    onClick={() => {
+                      unarchiveTask(task.id);
+                      setIsMenuOpen(false);
+                    }}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                  >
+                    Unarchive
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsMovingTask(true);
+                        setIsMenuOpen(false);
+                      }}
+                      className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                    >
+                      Move to card
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsMovingToColumn(true);
+                        setIsMenuOpen(false);
+                      }}
+                      className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                    >
+                      Move to column
+                    </button>
+                  </>
+                )}
                 <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
                 <button
                   onClick={() => {
@@ -376,6 +398,19 @@ export function TaskDrawer({
             </svg>
           </button>
         </div>
+
+        {/* Archived banner */}
+        {isArchived && (
+          <div className="flex-shrink-0 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 flex items-center justify-between">
+            <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Archived</span>
+            <button
+              onClick={() => unarchiveTask(task.id)}
+              className="text-xs text-amber-700 dark:text-amber-400 hover:underline"
+            >
+              Unarchive
+            </button>
+          </div>
+        )}
 
         {/* Row 2: Status + Assignees + Due date — wraps on mobile */}
         <div className="flex-shrink-0 px-4 py-2 border-b border-neutral-100 dark:border-neutral-800 flex flex-wrap items-center gap-2">

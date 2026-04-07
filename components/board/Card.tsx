@@ -64,6 +64,7 @@ export function Card({ card }: CardProps) {
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [promotedCard, setPromotedCard] = useState<CardType | null>(null);
   const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCardMenu, setShowCardMenu] = useState(false);
@@ -911,7 +912,22 @@ export function Card({ card }: CardProps) {
           setAutoFocusTaskTitle(false);
           setIsCardDrawerOpen(true);
         }}
+        onPromotedToCard={(newCard) => {
+          setIsTaskDrawerOpen(false);
+          setSelectedTask(null);
+          setAutoFocusTaskTitle(false);
+          setPromotedCard(newCard);
+        }}
       />
+      {promotedCard && (
+        <CardDrawerErrorBoundary>
+          <CardDetailDrawer
+            card={promotedCard}
+            isOpen={true}
+            onClose={() => setPromotedCard(null)}
+          />
+        </CardDrawerErrorBoundary>
+      )}
       <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} size="sm">
         <div className="p-6 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">

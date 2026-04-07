@@ -126,6 +126,8 @@ interface KanthinkState {
   removeTaskFromColumn: (taskId: ID) => void;
   hideCompletedTasks: (channelId: ID, columnId: ID) => void;
   unhideTask: (channelId: ID, columnId: ID, taskId: ID) => void;
+  archiveTask: (taskId: ID) => void;
+  unarchiveTask: (taskId: ID) => void;
 
   // Task note actions
   addTaskNote: (taskId: ID, content: string, author?: { id: string; name: string; image?: string }, imageUrls?: string[], whiteboards?: { id: string; snapshot: string; snapshotImageUrl?: string }[]) => TaskNote | null;
@@ -2690,6 +2692,133 @@ export const useStore = create<KanthinkState>()(
         broadcastAndPublish({ type: 'column:unhideTask', channelId, columnId, taskId });
       },
 
+      archiveTask: (taskId) => {
+        const task = get().tasks[taskId];
+        if (!task) return;
+
+        const timestamp = now();
+        const channelId = task.channelId;
+        const isColumnTask = task.columnId && !task.cardId;
+
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+
+          const updates: Partial<typeof state> = {
+            tasks: {
+              ...state.tasks,
+              [taskId]: {
+                ...t,
+                isArchived: true,
+                status: 'done' as const,
+                completedAt: t.completedAt ?? timestamp,
+                updatedAt: timestamp,
+              },
+            },
+          };
+
+          // For standalone column tasks, move to backsideTaskIds
+          if (isColumnTask) {
+            const ch = state.channels[channelId];
+            if (ch) {
+              const updatedColumns = ch.columns.map((col) => {
+                if (col.id !== task.columnId) return col;
+                return {
+                  ...col,
+                  taskIds: (col.taskIds ?? []).filter((id) => id !== taskId),
+                  itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== taskId),
+                  backsideTaskIds: [...(col.backsideTaskIds ?? []), taskId],
+                };
+              });
+              updates.channels = {
+                ...state.channels,
+                [channelId]: { ...ch, columns: updatedColumns, updatedAt: timestamp },
+              };
+            }
+          }
+
+          return updates;
+        });
+
+        // Sync
+        sync.syncTaskUpdate(channelId, taskId, {
+          isArchived: true,
+          status: 'done',
+          completedAt: timestamp,
+          position: isColumnTask ? -1 : undefined,
+        });
+
+        broadcastAndPublish({ type: 'task:archive', id: taskId });
+      },
+
+      unarchiveTask: (taskId) => {
+        const task = get().tasks[taskId];
+        if (!task) return;
+
+        const timestamp = now();
+        const channelId = task.channelId;
+        const isColumnTask = task.columnId && !task.cardId;
+
+        set((state) => {
+          const t = state.tasks[taskId];
+          if (!t) return state;
+
+          const updates: Partial<typeof state> = {
+            tasks: {
+              ...state.tasks,
+              [taskId]: {
+                ...t,
+                isArchived: false,
+                status: 'not_started' as const,
+                completedAt: undefined,
+                updatedAt: timestamp,
+              },
+            },
+          };
+
+          // For standalone column tasks, move back from backsideTaskIds
+          if (isColumnTask) {
+            const ch = state.channels[channelId];
+            if (ch) {
+              const updatedColumns = ch.columns.map((col) => {
+                if (col.id !== task.columnId) return col;
+                return {
+                  ...col,
+                  taskIds: [...(col.taskIds ?? []), taskId],
+                  itemOrder: [...(col.itemOrder ?? col.cardIds), taskId],
+                  backsideTaskIds: (col.backsideTaskIds ?? []).filter((id) => id !== taskId),
+                };
+              });
+              updates.channels = {
+                ...state.channels,
+                [channelId]: { ...ch, columns: updatedColumns, updatedAt: timestamp },
+              };
+            }
+          }
+
+          return updates;
+        });
+
+        // Sync position
+        let newPosition: number | undefined;
+        if (isColumnTask) {
+          const updatedCol = get().channels[channelId]?.columns.find((c) => c.id === task.columnId);
+          if (updatedCol) {
+            const order = updatedCol.itemOrder ?? updatedCol.cardIds;
+            newPosition = order.indexOf(taskId);
+          }
+        }
+
+        sync.syncTaskUpdate(channelId, taskId, {
+          isArchived: false,
+          status: 'not_started',
+          completedAt: null,
+          position: newPosition ?? undefined,
+        });
+
+        broadcastAndPublish({ type: 'task:unarchive', id: taskId });
+      },
+
       moveTaskToCard: (taskId, newCardId) => {
         const task = get().tasks[taskId];
         if (!task) return;
@@ -2993,34 +3122,53 @@ export const useStore = create<KanthinkState>()(
         const channel = get().channels[task.channelId];
         if (!channel) return null;
 
-        // Find the first column (Inbox) to place the new card
-        const targetColumn = channel.columns[0];
+        // Smart column placement: standalone column tasks stay in their column,
+        // card-owned tasks go to first column (Inbox)
+        const targetColumn = (task.columnId && !task.cardId)
+          ? channel.columns.find((c) => c.id === task.columnId) ?? channel.columns[0]
+          : channel.columns[0];
         if (!targetColumn) return null;
 
-        // Create the card
+        // Build messages from description + all task notes (preserving order)
+        const messages: CardMessage[] = [];
+        if (task.description) {
+          messages.push({
+            id: nanoid(),
+            type: 'note' as const,
+            content: task.description,
+            createdAt: task.createdAt,
+          });
+        }
+        for (const note of task.notes ?? []) {
+          messages.push({
+            id: nanoid(),
+            type: 'note' as const,
+            content: note.content,
+            imageUrls: note.imageUrls,
+            whiteboards: note.whiteboards,
+            authorId: note.authorId,
+            authorName: note.authorName,
+            authorImage: note.authorImage,
+            createdAt: note.createdAt,
+          });
+        }
+
         const cardId = nanoid();
         const timestamp = now();
         const card: Card = {
           id: cardId,
           channelId: task.channelId,
           title: task.title,
-          messages: task.description
-            ? [{
-                id: nanoid(),
-                type: 'note' as const,
-                content: task.description,
-                createdAt: timestamp,
-              }]
-            : [],
+          messages,
           source: 'manual',
           assignedTo: task.assignedTo ?? [],
           createdAt: timestamp,
           updatedAt: timestamp,
         };
 
-        // Add card to the column and mark task as done
         const columnId = targetColumn.id;
         const position = targetColumn.cardIds.length;
+        const isColumnTask = task.columnId && !task.cardId;
 
         set((state) => {
           const ch = state.channels[task.channelId];
@@ -3036,47 +3184,62 @@ export const useStore = create<KanthinkState>()(
             return col;
           });
 
+          // Also remove standalone column task from taskIds/itemOrder and archive it
+          const finalColumns = isColumnTask
+            ? updatedColumns.map((col) => {
+                if (col.id !== task.columnId) return col;
+                return {
+                  ...col,
+                  taskIds: (col.taskIds ?? []).filter((id) => id !== taskId),
+                  itemOrder: (col.itemOrder ?? col.cardIds).filter((id) => id !== taskId),
+                  backsideTaskIds: [...(col.backsideTaskIds ?? []), taskId],
+                };
+              })
+            : updatedColumns;
+
           return {
             cards: { ...state.cards, [cardId]: card },
             channels: {
               ...state.channels,
-              [task.channelId]: { ...ch, columns: updatedColumns, updatedAt: timestamp },
+              [task.channelId]: { ...ch, columns: finalColumns, updatedAt: timestamp },
             },
             tasks: {
               ...state.tasks,
               [taskId]: {
                 ...t,
+                isArchived: true,
                 status: 'done' as const,
-                completedAt: timestamp,
+                completedAt: t.completedAt ?? timestamp,
                 updatedAt: timestamp,
               },
             },
           };
         });
 
-        // Sync card creation and task completion to server
+        // Sync card creation
         sync.syncCardCreate(task.channelId, cardId, {
           columnId,
           title: task.title,
           source: 'manual',
           position,
         });
-        // Sync assignedTo on the newly created card
         if (card.assignedTo && card.assignedTo.length > 0) {
           sync.syncCardUpdate(task.channelId, cardId, { assignedTo: card.assignedTo });
         }
-        // Sync the description as initial message
-        if (task.description) {
-          sync.syncCardUpdate(task.channelId, cardId, { messages: card.messages });
+        if (messages.length > 0) {
+          sync.syncCardUpdate(task.channelId, cardId, { messages });
         }
+        // Archive the task
         sync.syncTaskUpdate(task.channelId, taskId, {
+          isArchived: true,
           status: 'done',
           completedAt: timestamp,
+          position: isColumnTask ? -1 : undefined,
         });
 
         // Broadcast
         broadcastAndPublish({ type: 'card:create', card, columnId, position });
-        broadcastAndPublish({ type: 'task:complete', id: taskId, completedAt: timestamp });
+        broadcastAndPublish({ type: 'task:archive', id: taskId });
 
         return card;
       },

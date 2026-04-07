@@ -130,6 +130,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
+  const [promotedCard, setPromotedCard] = useState<Card | null>(null);
   const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isInstructionHistoryOpen, setIsInstructionHistoryOpen] = useState(false);
@@ -435,10 +436,12 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const cardTasks = (card.taskIds ?? [])
     .map((id) => tasks[id])
     .filter(Boolean) as Task[];
+  const archivedCount = cardTasks.filter((t) => t.isArchived).length;
+  const nonArchivedTasks = cardTasks.filter((t) => !t.isArchived);
   const visibleTasks = card.hideCompletedTasks
-    ? cardTasks.filter((t) => t.status !== 'done')
-    : cardTasks;
-  const completedCount = cardTasks.filter((t) => t.status === 'done').length;
+    ? nonArchivedTasks.filter((t) => t.status !== 'done')
+    : nonArchivedTasks;
+  const completedCount = nonArchivedTasks.filter((t) => t.status === 'done').length;
 
   // Get spawned channels for this card
   const spawnedChannels = (card.spawnedChannelIds ?? [])
@@ -1075,6 +1078,11 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         {card.hideCompletedTasks ? 'Show completed' : 'Hide completed'}
                       </button>
                     )}
+                    {archivedCount > 0 && (
+                      <span className="text-xs text-neutral-400">
+                        {archivedCount} archived
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1538,7 +1546,21 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           setSelectedTask(null);
           setAutoFocusTaskTitle(false);
         }}
+        onPromotedToCard={(newCard) => {
+          setIsTaskDrawerOpen(false);
+          setSelectedTask(null);
+          setAutoFocusTaskTitle(false);
+          setPromotedCard(newCard);
+        }}
       />
+
+      {promotedCard && (
+        <CardDetailDrawer
+          card={promotedCard}
+          isOpen={true}
+          onClose={() => setPromotedCard(null)}
+        />
+      )}
 
       {/* Mini title drawer - appears on first card view */}
       {showTitleDrawer && (

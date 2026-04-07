@@ -286,6 +286,10 @@ export function ChannelChatDrawer({ channel, isOpen, onClose }: ChannelChatDrawe
           setOverlayTask(null);
           if (cardId) setOverlayCardId(cardId);
         } : undefined}
+        onPromotedToCard={(newCard) => {
+          setOverlayTask(null);
+          setOverlayCardId(newCard.id);
+        }}
       />
     </>
   );

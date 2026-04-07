@@ -80,6 +80,8 @@ export async function ensureSchema() {
     `ALTER TABLE content_pages ADD type text`,
     `ALTER TABLE content_pages ADD html_content text`,
     `ALTER TABLE content_pages ADD created_at integer`,
+    // Migration 0025 — task archiving
+    `ALTER TABLE tasks ADD is_archived integer DEFAULT 0`,
   ]
 
   for (const stmt of alterStatements) {

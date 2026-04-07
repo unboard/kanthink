@@ -240,6 +240,9 @@ export const tasks = sqliteTable('tasks', {
   // Snooze
   snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }),
 
+  // Archive
+  isArchived: integer('is_archived', { mode: 'boolean' }).default(false),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [

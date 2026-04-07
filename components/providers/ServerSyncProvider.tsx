@@ -316,6 +316,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             dueDate: task.dueDate,
             completedAt: task.completedAt,
             snoozedUntil: task.snoozedUntil,
+            isArchived: task.isArchived,
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
           }

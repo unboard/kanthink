@@ -653,6 +653,43 @@ export function applyBroadcastEvent(
       })
       break
 
+    case 'task:archive':
+      set((state) => {
+        const task = state.tasks[event.id]
+        if (!task) return state
+        return {
+          tasks: {
+            ...state.tasks,
+            [event.id]: {
+              ...task,
+              isArchived: true,
+              status: 'done',
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
+    case 'task:unarchive':
+      set((state) => {
+        const task = state.tasks[event.id]
+        if (!task) return state
+        return {
+          tasks: {
+            ...state.tasks,
+            [event.id]: {
+              ...task,
+              isArchived: false,
+              status: 'not_started',
+              completedAt: undefined,
+              updatedAt: now(),
+            },
+          },
+        }
+      })
+      break
+
     case 'task:toggleStatus':
       set((state) => {
         const task = state.tasks[event.id]

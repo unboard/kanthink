@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { Task } from '@/lib/types';
+import type { Task, Card } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { TaskCheckbox } from './TaskCheckbox';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { TaskDrawer } from './TaskDrawer';
+import { CardDetailDrawer } from './CardDetailDrawer';
 
 interface ColumnTaskItemProps {
   task: Task;
@@ -16,6 +17,7 @@ interface ColumnTaskItemProps {
 
 export function ColumnTaskItem({ task }: ColumnTaskItemProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [promotedCard, setPromotedCard] = useState<Card | null>(null);
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
   const { members } = useChannelMembers(task.channelId);
 
@@ -93,7 +95,19 @@ export function ColumnTaskItem({ task }: ColumnTaskItemProps) {
         task={task}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
+        onPromotedToCard={(card) => {
+          setIsDrawerOpen(false);
+          setPromotedCard(card);
+        }}
       />
+
+      {promotedCard && (
+        <CardDetailDrawer
+          card={promotedCard}
+          isOpen={true}
+          onClose={() => setPromotedCard(null)}
+        />
+      )}
     </>
   );
 }

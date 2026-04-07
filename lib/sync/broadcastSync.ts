@@ -61,6 +61,8 @@ export type BroadcastEvent =
   | { type: 'task:update'; id: ID; updates: Partial<Task> }
   | { type: 'task:delete'; id: ID; cardId: ID | null; channelId: ID }
   | { type: 'task:complete'; id: ID; completedAt: string }
+  | { type: 'task:archive'; id: ID }
+  | { type: 'task:unarchive'; id: ID }
   | { type: 'task:toggleStatus'; id: ID; status: string; completedAt: string | undefined }
   | { type: 'task:reorder'; cardId: ID; fromIndex: number; toIndex: number }
   | { type: 'task:reorderUnlinked'; channelId: ID; fromIndex: number; toIndex: number }

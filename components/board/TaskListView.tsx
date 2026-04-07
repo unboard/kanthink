@@ -20,13 +20,14 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { useSession } from 'next-auth/react';
-import type { Task, TaskStatus, ID } from '@/lib/types';
+import type { Task, TaskStatus, Card, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { SortableTaskRow } from './SortableTaskRow';
 import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
 import { TaskFilterDrawer } from './TaskFilterDrawer';
+import { CardDetailDrawer } from './CardDetailDrawer';
 import { AssigneeAvatars } from './AssigneeAvatars';
 
 interface TaskListViewProps {
@@ -215,6 +216,7 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [autoFocusTaskTitle, setAutoFocusTaskTitle] = useState(false);
+  const [promotedCard, setPromotedCard] = useState<Card | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const { data: session } = useSession();
@@ -265,8 +267,9 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
   }, [tasks, channelId, filterCardIds]);
 
   // Apply filters (status + assignee are independent, empty Set = show all)
+  // Always exclude archived tasks from the main view
   const filteredTasks = useMemo(() => {
-    let result = channelTasks;
+    let result = channelTasks.filter((t) => !t.isArchived);
 
     if (statusFilters.size > 0) {
       result = result.filter((t) => statusFilters.has(t.status));
@@ -824,7 +827,19 @@ export function TaskListView({ channelId, filterCardIds }: TaskListViewProps) {
         isOpen={isTaskDrawerOpen}
         onClose={handleCloseDrawer}
         onOpenCard={handleCloseDrawer}
+        onPromotedToCard={(newCard) => {
+          handleCloseDrawer();
+          setPromotedCard(newCard);
+        }}
       />
+
+      {promotedCard && (
+        <CardDetailDrawer
+          card={promotedCard}
+          isOpen={true}
+          onClose={() => setPromotedCard(null)}
+        />
+      )}
 
       <TaskFilterDrawer
         isOpen={isFilterDrawerOpen}
