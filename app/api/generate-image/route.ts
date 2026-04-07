@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { PersonGeneration } from '@google/genai'
+import { GoogleGenAI, PersonGeneration } from '@google/genai'
 import { auth } from '@/lib/auth'
 import { getOpenAIClientForUser } from '@/lib/ai/openai-client'
 import { getGoogleClientForVoice } from '@/lib/ai/google-voice'
@@ -34,11 +34,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Provide a prompt or context' }, { status: 400 })
   }
 
-  // Try Google/Gemini Imagen first (primary)
+  // Try Google/Gemini Imagen first (primary) — check BYOK, then owner/env keys
   const googleResult = await getGoogleClientForVoice(session.user.id)
-  if (googleResult.client) {
+  const googleClient = googleResult.client
+    || (process.env.OWNER_GOOGLE_API_KEY ? new GoogleGenAI({ apiKey: process.env.OWNER_GOOGLE_API_KEY }) : null)
+    || (process.env.GOOGLE_API_KEY ? new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY }) : null)
+  if (googleClient) {
     try {
-      const response = await googleResult.client.models.generateImages({
+      const response = await googleClient.models.generateImages({
         model: 'imagen-3.0-generate-002',
         prompt: imagePrompt,
         config: {
@@ -71,15 +74,18 @@ export async function POST(request: Request) {
     }
   }
 
-  // Fallback to OpenAI DALL-E
+  // Fallback to OpenAI DALL-E (check BYOK first, then owner/env keys)
   const openaiResult = await getOpenAIClientForUser(session.user.id)
-  if (openaiResult.client) {
+  const openaiClient = openaiResult.client
+    || (process.env.OWNER_OPENAI_API_KEY ? new (await import('openai')).default({ apiKey: process.env.OWNER_OPENAI_API_KEY }) : null)
+    || (process.env.OPENAI_API_KEY ? new (await import('openai')).default({ apiKey: process.env.OPENAI_API_KEY }) : null)
+  if (openaiClient) {
     try {
       const dalleSize = quality === 'hd'
         ? (DALLE_SIZE_MAP[aspectRatio] || '1792x1024')
         : (DALLE_SIZE_MAP[aspectRatio] || '1024x1024')
 
-      const response = await openaiResult.client.images.generate({
+      const response = await openaiClient.images.generate({
         model: 'dall-e-3',
         prompt: imagePrompt,
         n: 1,
