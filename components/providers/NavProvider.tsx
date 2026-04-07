@@ -92,6 +92,10 @@ export function NavProvider({ children }: NavProviderProps) {
   }, [activePanel]);
 
   const openPanel = useCallback((panel: NavPanelType) => {
+    // On mobile, blur the active element to dismiss the keyboard
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setActivePanel(panel);
   }, []);
 
@@ -100,7 +104,12 @@ export function NavProvider({ children }: NavProviderProps) {
   }, []);
 
   const togglePanel = useCallback((panel: NavPanelType) => {
-    setActivePanel((current) => (current === panel ? null : panel));
+    setActivePanel((current) => {
+      if (current !== panel && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      return current === panel ? null : panel;
+    });
   }, []);
 
   const openNewChannel = useCallback(() => {
