@@ -115,6 +115,18 @@ const TOOLS = [
         },
       },
       {
+        name: 'move_card',
+        description: 'Move a card to a different column within its channel. Use when the user says "move X to Y column".',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            cardId: { type: 'STRING', description: 'Card ID or card title' },
+            columnName: { type: 'STRING', description: 'Target column name (e.g. "Done", "In Progress", "Inbox")' },
+          },
+          required: ['cardId', 'columnName'],
+        },
+      },
+      {
         name: 'draft_email',
         description: 'Draft an email for the user to review before sending. This does NOT send it — it creates a draft on screen. Do NOT read the email content aloud. If the user hasn\'t specified a style, briefly ask: "Would you like professional, casual, newsletter, or update style?" Available styles: professional (formal business), casual (friendly), newsletter (bold header banner), update (channel/project update with label).',
         parameters: {
@@ -876,8 +888,20 @@ After any tool executes, always confirm what you did.` }] },
                       <div className="px-4 py-6 text-center text-sm text-red-400">{a.imageGen.error}</div>
                     ) : null}
                     {a.imageGen.status === 'ready' && (
-                      <div className="px-4 py-3 border-t border-neutral-800">
-                        <p className="text-xs text-neutral-400 truncate">{a.imageGen.prompt}</p>
+                      <div className="px-4 py-3 border-t border-neutral-800 flex items-center justify-between gap-2">
+                        <p className="text-xs text-neutral-400 truncate flex-1">{a.imageGen.prompt}</p>
+                        <a
+                          href={a.imageGen.imageUrl}
+                          download={`kan-image-${a.imageGen.id.slice(0, 8)}.png`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-700 hover:bg-neutral-600 text-neutral-300 text-xs transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Save
+                        </a>
                       </div>
                     )}
                   </div>

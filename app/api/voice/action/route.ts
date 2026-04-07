@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { cards, channels, columns, tasks } from '@/lib/db/schema';
-import { eq, and, desc, asc, like } from 'drizzle-orm';
+import { eq, and, desc, asc, gt, like, sql } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 
 /** Find a task by ID, or fallback to title search if ID doesn't match */
@@ -240,6 +240,59 @@ export async function POST(request: Request) {
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
         await db.update(cards).set({ isArchived: true, updatedAt: new Date() }).where(eq(cards.id, card.id));
         return NextResponse.json({ result: `Archived card "${card.title}"`, cardId: card.id });
+      }
+
+      case 'move_card': {
+        const card = await findCard(args.cardId);
+        if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+
+        // Find the target column by name within the card's channel
+        const channelCols = await db.query.columns.findMany({
+          where: eq(columns.channelId, card.channelId),
+        });
+        const targetCol = channelCols.find(c =>
+          c.name.toLowerCase() === (args.columnName || '').toLowerCase()
+        );
+        if (!targetCol) {
+          const available = channelCols.map(c => c.name).join(', ');
+          return NextResponse.json({ result: `Column "${args.columnName}" not found. Available columns: ${available}` });
+        }
+
+        if (card.columnId === targetCol.id) {
+          return NextResponse.json({ result: `Card "${card.title}" is already in "${targetCol.name}"` });
+        }
+
+        // Get next position in target column
+        const maxPosResult = await db
+          .select({ maxPos: sql<number>`COALESCE(MAX(${cards.position}), -1)` })
+          .from(cards)
+          .where(and(eq(cards.columnId, targetCol.id), eq(cards.isArchived, false)));
+        const toPosition = (maxPosResult[0]?.maxPos ?? -1) + 1;
+
+        // Shift positions in the old column
+        if (card.columnId) {
+          await db
+            .update(cards)
+            .set({ position: sql`${cards.position} - 1` })
+            .where(and(
+              eq(cards.columnId, card.columnId),
+              eq(cards.isArchived, card.isArchived ?? false),
+              gt(cards.position, card.position)
+            ));
+        }
+
+        // Move the card
+        await db.update(cards).set({
+          columnId: targetCol.id,
+          position: toPosition,
+          updatedAt: new Date(),
+        }).where(eq(cards.id, card.id));
+
+        return NextResponse.json({
+          result: `Moved "${card.title}" to "${targetCol.name}"`,
+          cardId: card.id,
+          channelId: card.channelId,
+        });
       }
 
       case 'send_email': {
