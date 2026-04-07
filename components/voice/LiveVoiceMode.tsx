@@ -533,9 +533,10 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
             return updated;
           });
         } else {
+          const errData = await res.json().catch(() => ({ error: 'Generation failed' }));
           setActions(prev => prev.map(a =>
             a.imageGen?.id === genId
-              ? { ...a, imageGen: { ...a.imageGen!, status: 'failed' as const, error: 'Generation failed' } }
+              ? { ...a, imageGen: { ...a.imageGen!, status: 'failed' as const, error: errData.error || 'Generation failed' } }
               : a
           ));
         }

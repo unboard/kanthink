@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { PersonGeneration } from '@google/genai'
 import { auth } from '@/lib/auth'
 import { getOpenAIClientForUser } from '@/lib/ai/openai-client'
 import { getGoogleClientForVoice } from '@/lib/ai/google-voice'
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
         config: {
           numberOfImages: 1,
           aspectRatio: aspectRatio,
+          personGeneration: PersonGeneration.ALLOW_ADULT,
         },
       })
 
