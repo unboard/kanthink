@@ -309,6 +309,46 @@ export async function queryForChat(question: string): Promise<string> {
       return context;
     }
 
+    // Try to detect a specific event name in the question (e.g., "editor_subscribe", "page_view")
+    const specificEventMatch = lowerQ.match(/(?:event\s+)?[`"']?(\w+_\w+)[`"']?/);
+    if (specificEventMatch) {
+      const eventName = specificEventMatch[1];
+      const rawEvents = await exportEvents({ event: eventName, fromDate, toDate, limit: 500 });
+
+      if (rawEvents.length > 0) {
+        // Build daily counts
+        const dailyMap: Record<string, number> = {};
+        for (const evt of rawEvents) {
+          const ts = (evt.properties.time as number) || 0;
+          const d = ts ? new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
+          dailyMap[d] = (dailyMap[d] || 0) + 1;
+        }
+        const dailyData = Object.entries(dailyMap).map(([label, value]) => ({ label, value }));
+
+        let context = `MIXPANEL DATA for "${eventName}" (${fromDate} to ${toDate}):\n`;
+        context += `Total events: ${rawEvents.length}\n`;
+
+        // Show top properties
+        const propSample = rawEvents[0]?.properties || {};
+        const propKeys = Object.keys(propSample).filter(k => !k.startsWith('$') && k !== 'time' && k !== 'mp_lib').slice(0, 8);
+        if (propKeys.length > 0) {
+          context += `Properties available: ${propKeys.join(', ')}\n`;
+        }
+
+        context += `\n\`\`\`chart\n${JSON.stringify({
+          type: 'bar',
+          title: `${eventName} by Day`,
+          data: dailyData,
+          color: 'violet',
+          label: 'Events',
+        })}\n\`\`\`\n`;
+
+        return context;
+      } else {
+        return `MIXPANEL DATA: No events found for "${eventName}" in the last 7 days (${fromDate} to ${toDate}). This event may not exist, may not be tracked, or may have zero occurrences in this period.`;
+      }
+    }
+
     // Generic: return top events summary with charts
     const topEvents = await getTopEvents(8);
     let context = `MIXPANEL DATA — Top Events (last 30 days):\n`;
