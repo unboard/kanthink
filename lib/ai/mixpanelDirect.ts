@@ -6,9 +6,9 @@
 const API_SECRET = process.env.MIXPANEL_API_SECRET;
 const PROJECT_ID = process.env.MIXPANEL_PROJECT_ID;
 
-// In-memory email cache — survives across requests within the same serverless invocation
-// TTL: 1 hour (matches Mixpanel's rate limit window)
+// In-memory caches — survive across requests within the same serverless invocation
 const emailCache: { map: Record<string, string>; expires: number } = { map: {}, expires: 0 };
+const propertyValuesCache: Record<string, { values: string[]; expires: number }> = {};
 
 function getAuth(): string {
   if (!API_SECRET) throw new Error('MIXPANEL_API_SECRET not configured');
@@ -39,6 +39,52 @@ export async function getEventProperties(event: string): Promise<string[]> {
   return Object.keys(data);
 }
 
+/** Get top values for a specific property on an event (cached 5 min) */
+export async function getPropertyValues(event: string, property: string, limit = 20): Promise<string[]> {
+  const cacheKey = `${event}:${property}`;
+  const cached = propertyValuesCache[cacheKey];
+  if (cached && Date.now() < cached.expires) return cached.values;
+
+  const urlParams = new URLSearchParams({
+    event: event,
+    name: `properties["${property}"]`,
+    limit: String(limit),
+    type: 'general',
+  });
+  const res = await fetch(`https://mixpanel.com/api/2.0/events/properties/values?${urlParams}`, {
+    headers: { Authorization: getAuth() },
+  });
+  if (!res.ok) throw new Error(`Mixpanel API ${res.status}`);
+  const values: string[] = await res.json();
+  propertyValuesCache[cacheKey] = { values, expires: Date.now() + 5 * 60 * 1000 };
+  return values;
+}
+
+/** Parse property filter from natural language (e.g., "where screen is checkout") */
+function parsePropertyFilter(question: string): { property: string; value: string } | null {
+  const lq = question.toLowerCase();
+  const patterns = [
+    /where\s+(\w+)\s+(?:is|=|==|equals?)\s+["']?([^"'\s,]+)["']?/i,
+    /filter(?:ed)?\s+(?:by|on)\s+(\w+)\s*[=:]\s*["']?([^"'\s,]+)["']?/i,
+    /(\w+)\s*==\s*["']?([^"'\s,]+)["']?/i,
+    /(?:property|prop)\s+(\w+)\s+(?:is|=|equals?)\s+["']?([^"'\s,]+)["']?/i,
+  ];
+  for (const p of patterns) {
+    const m = lq.match(p);
+    if (m) {
+      const prop = m[1].replace(/[^a-zA-Z0-9_]/g, '');
+      const val = m[2].replace(/[^a-zA-Z0-9_\-. ]/g, '');
+      if (prop && val) return { property: prop, value: val };
+    }
+  }
+  return null;
+}
+
+/** Build Mixpanel JQL where clause from parsed filter */
+function buildWhereClause(filter: { property: string; value: string }): string {
+  return `properties["${filter.property}"] == "${filter.value}"`;
+}
+
 /** Segmentation query — event counts over time with optional property breakdown */
 export async function querySegmentation(params: {
   event: string;
@@ -46,6 +92,7 @@ export async function querySegmentation(params: {
   toDate: string;
   unit?: 'day' | 'week' | 'month';
   property?: string; // property to break down by
+  where?: string; // JQL filter expression
   limit?: number;
 }): Promise<{
   series: string[];
@@ -61,6 +108,9 @@ export async function querySegmentation(params: {
   if (params.property) {
     urlParams.set('on', `properties["${params.property}"]`);
     urlParams.set('limit', String(params.limit || 10));
+  }
+  if (params.where) {
+    urlParams.set('where', params.where);
   }
 
   const res = await fetch(`https://mixpanel.com/api/2.0/segmentation?${urlParams}`, {
@@ -79,6 +129,7 @@ export async function exportEvents(params: {
   event: string;
   fromDate: string;
   toDate: string;
+  where?: string; // JQL filter expression
   limit?: number;
 }): Promise<Array<{ event: string; properties: Record<string, unknown> }>> {
   const urlParams = new URLSearchParams({
@@ -86,6 +137,9 @@ export async function exportEvents(params: {
     to_date: params.toDate,
     event: JSON.stringify([params.event]),
   });
+  if (params.where) {
+    urlParams.set('where', params.where);
+  }
 
   const res = await fetch(`https://data.mixpanel.com/api/2.0/export?${urlParams}`, {
     headers: { Authorization: getAuth() },
@@ -184,15 +238,38 @@ function detectCategory(question: string): string | null {
   return null;
 }
 
+export interface QueryOptions {
+  action?: 'query' | 'list_properties' | 'list_values';
+  event?: string;
+  property?: string;
+  value?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
 /** High-level query function for AI chat — takes natural language intent and returns formatted data */
-export async function queryForChat(question: string): Promise<string> {
+export async function queryForChat(question: string, options?: QueryOptions): Promise<string> {
   if (!isMixpanelConfigured()) return '';
 
   try {
+    // Handle structured action modes
+    if (options?.action === 'list_properties' && options.event) {
+      const props = await getEventProperties(options.event);
+      const filtered = props.filter(p => !p.startsWith('$') && p !== 'mp_lib');
+      if (filtered.length === 0) return `No custom properties found for "${options.event}".`;
+      return `MIXPANEL PROPERTIES for "${options.event}":\n${filtered.map(p => `  • ${p}`).join('\n')}\n\nAsk about any property to see its values, or filter by a specific property and value.`;
+    }
+
+    if (options?.action === 'list_values' && options.event && options.property) {
+      const values = await getPropertyValues(options.event, options.property);
+      if (values.length === 0) return `No values found for property "${options.property}" on "${options.event}".`;
+      return `MIXPANEL VALUES for "${options.property}" on "${options.event}":\n${values.map(v => `  • ${v}`).join('\n')}\n\nWant me to filter ${options.event} events where ${options.property} is one of these values?`;
+    }
+
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const toDate = now.toISOString().split('T')[0];
-    const fromDate = weekAgo.toISOString().split('T')[0];
+    const toDate = options?.toDate || now.toISOString().split('T')[0];
+    const fromDate = options?.fromDate || weekAgo.toISOString().split('T')[0];
 
     const lowerQ = question.toLowerCase();
     const wantsEmails = /emails?|users?|customers?|who ordered|who bought|who placed|show me.*(people|customers|users)/.test(lowerQ);
@@ -309,11 +386,22 @@ export async function queryForChat(question: string): Promise<string> {
       return context;
     }
 
-    // Try to detect a specific event name in the question (e.g., "editor_subscribe", "page_view")
-    const specificEventMatch = lowerQ.match(/(?:event\s+)?[`"']?(\w+_\w+)[`"']?/);
-    if (specificEventMatch) {
-      const eventName = specificEventMatch[1];
-      const rawEvents = await exportEvents({ event: eventName, fromDate, toDate, limit: 500 });
+    // Try to detect a specific event name in the question or options
+    const eventName = options?.event || lowerQ.match(/(?:event\s+)?[`"']?(\w+_\w+)[`"']?/)?.[1];
+    if (eventName) {
+      // Check for property filter in question or options
+      const filter = options?.value && options?.property
+        ? { property: options.property, value: options.value }
+        : parsePropertyFilter(question);
+      const whereClause = filter ? buildWhereClause(filter) : undefined;
+
+      const rawEvents = await exportEvents({ event: eventName, fromDate, toDate, where: whereClause, limit: 500 });
+
+      // Also fetch available properties for discovery
+      let availableProps: string[] = [];
+      try {
+        availableProps = (await getEventProperties(eventName)).filter(p => !p.startsWith('$') && p !== 'mp_lib');
+      } catch { /* non-critical */ }
 
       if (rawEvents.length > 0) {
         // Build daily counts
@@ -325,19 +413,19 @@ export async function queryForChat(question: string): Promise<string> {
         }
         const dailyData = Object.entries(dailyMap).map(([label, value]) => ({ label, value }));
 
-        let context = `MIXPANEL DATA for "${eventName}" (${fromDate} to ${toDate}):\n`;
+        const filterLabel = filter ? ` (filtered: ${filter.property} = "${filter.value}")` : '';
+        let context = `MIXPANEL DATA for "${eventName}"${filterLabel} (${fromDate} to ${toDate}):\n`;
         context += `Total events: ${rawEvents.length}\n`;
 
-        // Show top properties
-        const propSample = rawEvents[0]?.properties || {};
-        const propKeys = Object.keys(propSample).filter(k => !k.startsWith('$') && k !== 'time' && k !== 'mp_lib').slice(0, 8);
-        if (propKeys.length > 0) {
-          context += `Properties available: ${propKeys.join(', ')}\n`;
+        // Show available properties for drill-down
+        if (availableProps.length > 0) {
+          context += `\nAvailable properties to drill into: ${availableProps.join(', ')}\n`;
+          context += `(Ask about any property to see its values, or filter by property = value)\n`;
         }
 
         context += `\n\`\`\`chart\n${JSON.stringify({
           type: 'bar',
-          title: `${eventName} by Day`,
+          title: `${eventName}${filterLabel} by Day`,
           data: dailyData,
           color: 'violet',
           label: 'Events',
@@ -345,7 +433,17 @@ export async function queryForChat(question: string): Promise<string> {
 
         return context;
       } else {
-        return `MIXPANEL DATA: No events found for "${eventName}" in the last 7 days (${fromDate} to ${toDate}). This event may not exist, may not be tracked, or may have zero occurrences in this period.`;
+        const filterNote = filter ? ` with filter ${filter.property} = "${filter.value}"` : '';
+        let context = `MIXPANEL DATA: No events found for "${eventName}"${filterNote} (${fromDate} to ${toDate}).`;
+        if (filter) {
+          context += ` Try without the filter, or ask what values exist for the "${filter.property}" property.`;
+        } else {
+          context += ` This event may not exist, may not be tracked, or may have zero occurrences in this period.`;
+        }
+        if (availableProps.length > 0) {
+          context += `\nAvailable properties: ${availableProps.join(', ')}`;
+        }
+        return context;
       }
     }
 

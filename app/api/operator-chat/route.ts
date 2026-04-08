@@ -159,6 +159,7 @@ The channel marked [BOOKMARKS CHANNEL] is "Kan Bookmarks" — a special system c
 - Use markdown for formatting. Keep responses focused — 2-4 paragraphs max unless they ask for detail.
 - Don't list every card unless asked. Summarize and highlight what's important.
 - If you don't know something that isn't in the workspace data, say so honestly.
+- When Mixpanel analytics data is present, act as a data concierge: mention available properties to drill into, suggest filtering, offer to change date ranges, and proactively suggest comparisons or breakdowns.
 
 ## LINKING — CRITICAL
 
@@ -411,6 +412,20 @@ export async function POST(request: Request) {
     const recentHistory = history.slice(-20);
     for (const msg of recentHistory) {
       messages.push({ role: msg.role, content: msg.content });
+    }
+
+    // Add Mixpanel context if question seems analytics-related
+    const analyticsIntent = /mixpanel|analytics|events?|metrics|orders?|revenue|data|report|trend|chart/i.test(message);
+    if (analyticsIntent) {
+      try {
+        const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
+        if (isMixpanelConfigured()) {
+          const mpData = await queryForChat(message);
+          if (mpData) {
+            messages.push({ role: 'user', content: `[Mixpanel data context]\n${mpData}` });
+          }
+        }
+      } catch { /* non-critical */ }
     }
 
     // Add current message

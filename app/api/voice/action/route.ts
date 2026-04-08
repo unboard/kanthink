@@ -220,11 +220,32 @@ export async function POST(request: Request) {
           if (!isMixpanelConfigured()) {
             return NextResponse.json({ result: 'Mixpanel not configured. Add MIXPANEL_API_SECRET to environment.' });
           }
-          const fullData = await queryForChat(args.question || 'top events');
+
+          // Parse date range if provided
+          let fromDate: string | undefined;
+          let toDate: string | undefined;
+          if (args.dateRange) {
+            const dr = args.dateRange;
+            if (dr.includes(':')) {
+              [fromDate, toDate] = dr.split(':');
+            } else {
+              const now = new Date();
+              toDate = now.toISOString().split('T')[0];
+              const days = dr === 'last_90_days' ? 90 : dr === 'last_30_days' ? 30 : 7;
+              fromDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            }
+          }
+
+          const fullData = await queryForChat(args.question || 'top events', {
+            action: (args.action as 'query' | 'list_properties' | 'list_values') || undefined,
+            event: args.event || undefined,
+            property: args.property || undefined,
+            value: args.value || undefined,
+            fromDate,
+            toDate,
+          });
           if (!fullData) return NextResponse.json({ result: 'No Mixpanel data found for that query.' });
 
-          // Return full data (with chart/table directives) for UI rendering
-          // Also return a clean version (without chart/table JSON) for voice to speak
           const voiceText = fullData
             .replace(/```chart\n[\s\S]*?```/g, '')
             .replace(/```table\n[\s\S]*?```/g, '')

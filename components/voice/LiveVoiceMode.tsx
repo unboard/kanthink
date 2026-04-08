@@ -96,11 +96,16 @@ const TOOLS = [
       },
       {
         name: 'query_mixpanel',
-        description: 'Query Mixpanel analytics data. Use when the user asks about orders, revenue, events, metrics, analytics, or data from MyCreativeShop. Returns data with a chart visualization.',
+        description: 'Query Mixpanel analytics data. Use conversationally: show overview first, then suggest properties to drill into. Use action="list_properties" to discover what properties an event has. Use action="list_values" to see values for a property. Filter with property + value params.',
         parameters: {
           type: 'OBJECT',
           properties: {
-            question: { type: 'STRING', description: 'The analytics question (e.g. "how many print orders this week", "total revenue", "top events")' },
+            question: { type: 'STRING', description: 'The analytics question in natural language' },
+            action: { type: 'STRING', description: 'Action: "query" (default), "list_properties" (show properties for an event), "list_values" (show values for a property)' },
+            event: { type: 'STRING', description: 'Specific event name (e.g., editor_subscribe, print_order)' },
+            property: { type: 'STRING', description: 'Property name to filter by or inspect values of' },
+            value: { type: 'STRING', description: 'Property value to filter on' },
+            dateRange: { type: 'STRING', description: 'Date range: last_7_days, last_30_days, last_90_days, or YYYY-MM-DD:YYYY-MM-DD' },
           },
           required: ['question'],
         },
@@ -653,6 +658,17 @@ Before drafting an email, make sure you understand:
 Only skip asking if the user has clearly communicated all three.
 
 When drafting, use the draft_email tool. This creates a visual draft on screen — it does NOT send it. Do NOT read the email content aloud. Just say "I've drafted that — you can review and send it on screen." Write the body using clean prose, not raw markdown syntax. Use headers and structure naturally — avoid showing asterisks or markdown characters in the email text.
+
+ANALYTICS DATA EXPLORATION:
+When the user asks about analytics, events, or Mixpanel data, act as a data concierge:
+1. First query the event to show an overview (count + daily chart)
+2. Mention the available properties: "I can break this down by screen, plan_type, or source — which one interests you?"
+3. If they pick a property, use action="list_values" to show what values exist
+4. If they pick a value, filter the query with property + value params
+5. Always mention the date range and offer to change it: "This shows the last 7 days — want a different range?"
+6. Suggest comparisons: "Want me to compare this to the previous period?"
+7. If the user isn't sure of the exact event name, show the top events list and help them find it
+Be proactive — don't just answer, guide them to insights.
 
 IMAGE GENERATION:
 When the user asks you to create, generate, or draw an image, use the generate_image tool. Provide a detailed, descriptive prompt. Do NOT describe the generated image verbally — just say "I'm generating that for you" and let the visual card appear. If they specify an orientation (landscape, portrait, square), map to the appropriate aspectRatio (16:9, 9:16, 1:1 etc.).
