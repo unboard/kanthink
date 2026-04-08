@@ -22,9 +22,10 @@ interface CardChatProps {
   channelName: string;
   channelDescription: string;
   tagDefinitions?: TagDefinition[];
+  tabBar?: React.ReactNode;
 }
 
-export function CardChat({ card, channelName, channelDescription, tagDefinitions = [] }: CardChatProps) {
+export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar }: CardChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
@@ -535,6 +536,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         className="absolute left-0 right-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
         style={{ bottom: keyboardOffset > 0 ? `${Math.max(0, keyboardOffset - 60)}px` : 0 }}
       >
+        {tabBar}
         <ChatInput
           onSubmit={handleSubmit}
           isLoading={isAILoading}
