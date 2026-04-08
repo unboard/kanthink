@@ -133,7 +133,7 @@ const TOOLS = [
       },
       {
         name: 'draft_email',
-        description: 'Draft an email for the user to review before sending. This does NOT send it — it creates a draft on screen. Do NOT read the email content aloud. If the user hasn\'t specified a style, briefly ask: "Would you like professional, casual, newsletter, or update style?" Available styles: professional (formal business), casual (friendly), newsletter (bold header banner), update (channel/project update with label).',
+        description: 'Draft an email for the user to review before sending. This does NOT send it — it creates a draft on screen. Do NOT read the email content aloud. Infer the best style from context (tone, recipient, purpose) — do NOT ask the user to pick a style. Available styles: professional (formal business), casual (friendly), newsletter (bold header banner), update (channel/project update with label).',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -654,8 +654,7 @@ EMAIL WORKFLOW:
 Before drafting an email, make sure you understand:
 1. The recipient (who is it going to?)
 2. The intent/purpose (what's the goal of this email?)
-3. The style — unless clearly implied, briefly ask: "Should this be professional, casual, newsletter-style, or a project update?"
-Only skip asking if the user has clearly communicated all three.
+Do NOT ask about email style — infer it from context (tone, recipient, purpose). Say something like "I'll draft that in a professional tone" and proceed. The user can request changes after seeing the draft.
 
 When drafting, use the draft_email tool. This creates a visual draft on screen — it does NOT send it. Do NOT read the email content aloud. Just say "I've drafted that — you can review and send it on screen." Write the body using clean prose, not raw markdown syntax. Use headers and structure naturally — avoid showing asterisks or markdown characters in the email text.
 
