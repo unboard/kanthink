@@ -289,6 +289,17 @@ function VoiceTable({ config }: { config: TableConfig }) {
   );
 }
 
+/** Isolated wrapper to prevent store re-renders from affecting voice audio */
+function VoiceCardDrawer({ cardId, onClose }: { cardId: string; onClose: () => void }) {
+  const card = useStore((s) => s.cards[cardId]);
+  return <CardDetailDrawer card={card ?? null} isOpen={true} onClose={onClose} />;
+}
+
+function VoiceTaskDrawer({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+  const task = useStore((s) => s.tasks[taskId]);
+  return <TaskDrawer task={task ?? null} isOpen={true} onClose={onClose} />;
+}
+
 export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModeProps) {
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -303,8 +314,6 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [expandedEmail, setExpandedEmail] = useState<EmailDraft | null>(null);
   const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
-  const storeCards = useStore((s) => s.cards);
-  const storeTasks = useStore((s) => s.tasks);
   const [isMuted, setIsMuted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [voiceName, setVoiceName] = useState(() =>
@@ -1318,20 +1327,12 @@ After any tool executes, always confirm what you did.` }] },
       {/* Expanded card detail overlay — read-only, voice stays active */}
       {/* Full card detail drawer (real component, live data) */}
       {expandedCardId && (
-        <CardDetailDrawer
-          card={storeCards[expandedCardId] ?? null}
-          isOpen={true}
-          onClose={() => setExpandedCardId(null)}
-        />
+        <VoiceCardDrawer cardId={expandedCardId} onClose={() => setExpandedCardId(null)} />
       )}
 
       {/* Full task detail drawer */}
       {expandedTaskId && (
-        <TaskDrawer
-          task={storeTasks[expandedTaskId] ?? null}
-          isOpen={true}
-          onClose={() => setExpandedTaskId(null)}
-        />
+        <VoiceTaskDrawer taskId={expandedTaskId} onClose={() => setExpandedTaskId(null)} />
       )}
     </div>
   );
