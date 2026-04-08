@@ -443,6 +443,32 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
     : nonArchivedTasks;
   const completedCount = nonArchivedTasks.filter((t) => t.status === 'done').length;
 
+  // Tab navigation tiles (reused across Thread, Tasks, and Info tabs)
+  const tabTiles = (
+    <div className="flex gap-2 px-3 pb-2">
+      {([
+        { key: 'thread' as const, label: 'Thread', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /> },
+        { key: 'tasks' as const, label: `Tasks${cardTasks.length > 0 ? ` ${completedCount}/${cardTasks.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /> },
+        { key: 'info' as const, label: 'Info', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
+      ]).map((tab) => (
+        <button
+          key={tab.key}
+          onClick={() => setActiveTab(tab.key)}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+            activeTab === tab.key
+              ? 'bg-violet-500/15 border-violet-500/30 text-violet-300'
+              : 'bg-neutral-800/80 border-neutral-700 text-neutral-400 hover:bg-neutral-700/80 hover:text-neutral-300'
+          }`}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {tab.icon}
+          </svg>
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
   // Get spawned channels for this card
   const spawnedChannels = (card.spawnedChannelIds ?? [])
     .map((id) => channels[id])
@@ -985,36 +1011,14 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 channelName={channels[card.channelId]?.name ?? 'Unknown Channel'}
                 channelDescription={channels[card.channelId]?.description ?? ''}
                 tagDefinitions={channels[card.channelId]?.tagDefinitions ?? []}
-                tabBar={
-                  <div className="flex gap-2 px-3 pb-2">
-                    {([
-                      { key: 'thread' as const, label: 'Thread', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /> },
-                      { key: 'tasks' as const, label: `Tasks${cardTasks.length > 0 ? ` ${completedCount}/${cardTasks.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /> },
-                      { key: 'info' as const, label: 'Info', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
-                    ]).map((tab) => (
-                      <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
-                          activeTab === tab.key
-                            ? 'bg-violet-500/15 border-violet-500/30 text-violet-300'
-                            : 'bg-neutral-800/80 border-neutral-700 text-neutral-400 hover:bg-neutral-700/80 hover:text-neutral-300'
-                        }`}
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          {tab.icon}
-                        </svg>
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                }
+                tabBar={tabTiles}
               />
             </div>
           )}
 
           {/* Tasks Tab */}
           {activeTab === 'tasks' && (
+            <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto">
               {/* Task progress bar */}
               {cardTasks.length > 0 && (
@@ -1110,22 +1114,29 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                   </p>
                 )}
 
-                {/* Add task button */}
+              </div>
+            </div>
+            {/* Bottom bar: tabs + task input */}
+            <div className="flex-shrink-0 bg-white dark:bg-neutral-900 pt-2">
+              {tabTiles}
+              <div className="px-3 pb-3">
                 <button
                   onClick={handleAddTaskClick}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-dashed border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:border-violet-300 hover:text-violet-600 dark:hover:border-violet-700 dark:hover:text-violet-400 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-500 hover:border-violet-300 hover:text-violet-600 dark:hover:border-violet-600 dark:hover:text-violet-400 transition-colors"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  <span className="text-sm">Add task</span>
+                  <span className="text-sm">Add a task...</span>
                 </button>
               </div>
+            </div>
             </div>
           )}
 
           {/* Info Tab */}
           {activeTab === 'info' && (
+            <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto">
               {/* Cover image */}
               {card.coverImageUrl && (
@@ -1497,6 +1508,11 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                     </div>
                   </div>
               )}
+            </div>
+            {/* Bottom bar: tabs */}
+            <div className="flex-shrink-0 bg-white dark:bg-neutral-900 pt-2 pb-3">
+              {tabTiles}
+            </div>
             </div>
           )}
         </div>
