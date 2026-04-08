@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
+import { TaskDrawer } from '@/components/board/TaskDrawer';
 import { VoiceSpores } from './VoiceSpores';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
 
@@ -187,6 +190,7 @@ interface CardPreview {
   summary?: string;
   channelName: string;
   channelId: string;
+  columnName?: string;
   messages: { type: string; content: string }[];
   tasks: { id: string; title: string; status: string }[];
   tags?: string[];
@@ -295,8 +299,12 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const [actions, setActions] = useState<ActionLog[]>([]);
   const hasGeneratingImages = actions.some(a => a.imageGen?.status === 'generating');
   const threadIdRef = useRef<string | null>(null);
-  const [expandedCard, setExpandedCard] = useState<CardPreview | null>(null);
+  const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [expandedEmail, setExpandedEmail] = useState<EmailDraft | null>(null);
+  const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
+  const storeCards = useStore((s) => s.cards);
+  const storeTasks = useStore((s) => s.tasks);
   const [isMuted, setIsMuted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [voiceName, setVoiceName] = useState(() =>
@@ -579,6 +587,37 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       return 'Image is being generated — the user will see it on screen when ready.';
     }
 
+    // Async Mixpanel queries — don't block voice while fetching data
+    if (name === 'query_mixpanel') {
+      const queryId = crypto.randomUUID();
+      setActions(prev => [...prev, {
+        id: queryId, action: 'query_mixpanel',
+        result: 'Fetching analytics data...',
+        success: true, timestamp: new Date(),
+      }]);
+
+      fetch('/api/voice/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: name, args }),
+      }).then(async (res) => {
+        const data = await res.json();
+        setActions(prev => prev.map(a =>
+          a.id === queryId
+            ? { ...a, result: data.result || 'No data found.' }
+            : a
+        ));
+      }).catch(() => {
+        setActions(prev => prev.map(a =>
+          a.id === queryId
+            ? { ...a, result: 'Query failed.', success: false }
+            : a
+        ));
+      });
+
+      return 'I\'m pulling up that data now — it\'ll appear on screen in a moment.';
+    }
+
     try {
       const res = await fetch('/api/voice/action', {
         method: 'POST',
@@ -588,19 +627,6 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       const data = await res.json();
       // Use voiceResult (without chart JSON) for what Gemini speaks, but full result for UI
       const voiceReturn = data.voiceResult || data.result;
-
-      // After card-modifying actions, refresh expanded card preview if open
-      if (expandedCard && data.cardId && ['add_note', 'create_task', 'archive_card'].includes(name)) {
-        try {
-          const refreshRes = await fetch('/api/voice/action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'show_card', args: { cardId: data.cardId } }),
-          });
-          const refreshData = await refreshRes.json();
-          if (refreshData.cardPreview) setExpandedCard(refreshData.cardPreview);
-        } catch { /* best effort */ }
-      }
 
       setActions(prev => [...prev, {
         id: crypto.randomUUID(), action: name, result: data.result,
@@ -614,7 +640,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       setActions(prev => [...prev, { id: crypto.randomUUID(), action: name, result: msg, success: false, timestamp: new Date() }]);
       return msg;
     }
-  }, [expandedCard]);
+  }, []);
 
   const start = useCallback(async () => {
     setError(null); setStatus('Fetching session...'); setActions([]);
@@ -830,6 +856,25 @@ After any tool executes, always confirm what you did.` }] },
     }
   }, []);
 
+  // Fetch rendered email HTML when preview opens
+  useEffect(() => {
+    if (!expandedEmail) { setEmailPreviewHtml(null); return; }
+    fetch('/api/voice/email-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: expandedEmail.subject,
+        body: expandedEmail.body,
+        style: expandedEmail.style,
+        recipientName: expandedEmail.recipientName,
+        cardTitle: expandedEmail.cardTitle,
+        cardId: expandedEmail.cardId,
+        ctaText: expandedEmail.ctaText,
+        ctaUrl: expandedEmail.ctaUrl,
+      }),
+    }).then(r => r.json()).then(d => setEmailPreviewHtml(d.html)).catch(() => {});
+  }, [expandedEmail]);
+
   useEffect(() => {
     if (isOpen) { start(); threadIdRef.current = null; }
     else {
@@ -1043,7 +1088,8 @@ After any tool executes, always confirm what you did.` }] },
                     )}
                   </div>
                 ) : a.taskPreview ? (
-                  <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in">
+                  <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in cursor-pointer hover:border-violet-500/50 transition-colors"
+                    onClick={() => setExpandedTaskId(a.taskPreview!.id)}>
                     {/* Task created banner */}
                     <div className="px-4 py-2 border-b border-neutral-800 flex items-center gap-2">
                       <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1100,7 +1146,7 @@ After any tool executes, always confirm what you did.` }] },
                   </div>
                 ) : a.cardPreview ? (
                   <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in cursor-pointer hover:border-violet-500/50 transition-colors"
-                    onClick={() => setExpandedCard(a.cardPreview!)}>
+                    onClick={() => setExpandedCardId(a.cardPreview!.id)}>
                     {/* Card created banner */}
                     {a.action === 'create_card' && (
                       <div className="px-4 py-2 border-b border-neutral-800 flex items-center gap-2">
@@ -1115,7 +1161,7 @@ After any tool executes, always confirm what you did.` }] },
                     )}
                     <div className="px-4 py-3">
                       <div className="flex items-center justify-between">
-                        <p className="text-xs text-violet-400 mb-1">{a.cardPreview.channelName}</p>
+                        <p className="text-xs text-violet-400 mb-1">{a.cardPreview.channelName}{a.cardPreview.columnName ? ` › ${a.cardPreview.columnName}` : ''}</p>
                         <p className="text-[10px] text-neutral-500">Tap to expand</p>
                       </div>
                       <p className="text-sm font-medium text-white">{a.cardPreview.title}</p>
@@ -1222,9 +1268,9 @@ After any tool executes, always confirm what you did.` }] },
       {/* Expanded email preview overlay */}
       {expandedEmail && (
         <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/30" onClick={() => setExpandedEmail(null)}>
-          <div className="w-full max-w-lg h-[85vh] bg-neutral-900 border-t border-neutral-700 rounded-t-2xl overflow-y-auto animate-slide-up"
+          <div className="w-full max-w-lg h-[85vh] bg-neutral-900 border-t border-neutral-700 rounded-t-2xl flex flex-col animate-slide-up"
             onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-neutral-900 border-b border-neutral-800 px-4 py-3 flex items-center justify-between z-10">
+            <div className="flex-shrink-0 bg-neutral-900 border-b border-neutral-800 px-4 py-3 flex items-center justify-between z-10">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <svg className="h-4 w-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1241,17 +1287,19 @@ After any tool executes, always confirm what you did.` }] },
                 </svg>
               </button>
             </div>
-            <div className="px-4 py-4">
-              {expandedEmail.body.split('\n').map((line, i) => {
-                const t = line.trim();
-                if (!t) return <br key={i} />;
-                if (t.startsWith('## ')) return <p key={i} className="text-base font-semibold text-white mt-4 mb-2">{t.slice(3)}</p>;
-                if (t.startsWith('# ')) return <p key={i} className="text-lg font-bold text-white mt-4 mb-2">{t.slice(2)}</p>;
-                if (t.startsWith('- ') || t.startsWith('• ')) return <p key={i} className="text-sm text-neutral-300 pl-4 mb-1">• {t.slice(2)}</p>;
-                if (/^\d+\.\s/.test(t)) return <p key={i} className="text-sm text-neutral-300 pl-4 mb-1">{t}</p>;
-                if (t.startsWith('> ')) return <p key={i} className="text-sm text-neutral-400 italic border-l-2 border-violet-500 pl-3 my-2">{t.slice(2)}</p>;
-                return <p key={i} className="text-sm text-neutral-300 mb-2">{t}</p>;
-              })}
+            <div className="flex-1 overflow-hidden">
+              {emailPreviewHtml ? (
+                <iframe
+                  srcDoc={emailPreviewHtml}
+                  className="w-full h-full border-0"
+                  sandbox="allow-same-origin"
+                  title="Email preview"
+                />
+              ) : (
+                <div className="flex items-center justify-center py-12">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+                </div>
+              )}
             </div>
             {expandedEmail.status === 'ready' && (
               <div className="sticky bottom-0 bg-neutral-900 border-t border-neutral-800 px-4 py-3 flex gap-2">
@@ -1268,89 +1316,22 @@ After any tool executes, always confirm what you did.` }] },
       )}
 
       {/* Expanded card detail overlay — read-only, voice stays active */}
-      {expandedCard && (
-        <div className="absolute inset-0 z-20 flex items-end justify-center bg-black/30" onClick={() => setExpandedCard(null)}>
-          <div className="w-full max-w-lg h-[85vh] bg-neutral-900 border-t border-neutral-700 rounded-t-2xl overflow-y-auto animate-slide-up"
-            onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div className="sticky top-0 bg-neutral-900 border-b border-neutral-800 px-4 py-3 flex items-center justify-between z-10">
-              <div className="min-w-0">
-                <p className="text-xs text-violet-400">{expandedCard.channelName}</p>
-                <p className="text-sm font-semibold text-white truncate">{expandedCard.title}</p>
-              </div>
-              <button onClick={() => setExpandedCard(null)} className="p-1.5 text-neutral-400 hover:text-white">
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-            </div>
+      {/* Full card detail drawer (real component, live data) */}
+      {expandedCardId && (
+        <CardDetailDrawer
+          card={storeCards[expandedCardId] ?? null}
+          isOpen={true}
+          onClose={() => setExpandedCardId(null)}
+        />
+      )}
 
-            {expandedCard.coverImageUrl && (
-              <img src={expandedCard.coverImageUrl} alt="" className="w-full h-32 object-cover" />
-            )}
-
-            <div className="px-4 py-4 space-y-4">
-              {/* Summary */}
-              {expandedCard.summary && (
-                <p className="text-sm text-neutral-300">{expandedCard.summary}</p>
-              )}
-
-              {/* Tags */}
-              {expandedCard.tags && expandedCard.tags.length > 0 && (
-                <div className="flex gap-1.5 flex-wrap">
-                  {expandedCard.tags.map(t => (
-                    <span key={t} className="text-xs bg-neutral-800 text-neutral-300 px-2 py-1 rounded-md">{t}</span>
-                  ))}
-                </div>
-              )}
-
-              {/* Tasks */}
-              {expandedCard.tasks.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 mb-2">Tasks ({expandedCard.tasks.filter(t => t.status === 'done').length}/{expandedCard.tasks.length} done)</p>
-                  <div className="space-y-1.5">
-                    {expandedCard.tasks.map(t => (
-                      <div key={t.id} className="flex items-center gap-2">
-                        <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
-                          t.status === 'done' ? 'bg-green-500/20 border-green-500 text-green-400' : 'border-neutral-600'
-                        }`}>
-                          {t.status === 'done' && '✓'}
-                        </span>
-                        <span className={`text-sm ${t.status === 'done' ? 'text-neutral-500 line-through' : 'text-neutral-200'}`}>{t.title}</span>
-                        {t.status !== 'done' && t.status !== 'not_started' && (
-                          <span className="text-[10px] text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded">{t.status.replace('_', ' ')}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Thread messages */}
-              {expandedCard.messages.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 mb-2">Thread ({expandedCard.messages.length} messages)</p>
-                  <div className="space-y-3">
-                    {expandedCard.messages.map((m, i) => (
-                      <div key={i} className={`rounded-lg px-3 py-2 text-sm ${
-                        m.type === 'ai_response'
-                          ? 'bg-violet-500/10 border border-violet-500/20 text-neutral-300'
-                          : m.type === 'question'
-                            ? 'bg-blue-500/10 border border-blue-500/20 text-neutral-300'
-                            : 'bg-neutral-800 text-neutral-300'
-                      }`}>
-                        <p className="text-[10px] text-neutral-500 mb-1">
-                          {m.type === 'ai_response' ? 'Kan' : m.type === 'question' ? 'Question' : 'Note'}
-                        </p>
-                        <p className="whitespace-pre-wrap text-xs leading-relaxed">{m.content}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Full task detail drawer */}
+      {expandedTaskId && (
+        <TaskDrawer
+          task={storeTasks[expandedTaskId] ?? null}
+          isOpen={true}
+          onClose={() => setExpandedTaskId(null)}
+        />
       )}
     </div>
   );

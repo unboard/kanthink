@@ -150,6 +150,7 @@ export async function POST(request: Request) {
             summary: undefined,
             channelName: channelInfo?.name || '',
             channelId: cardChannelId,
+            columnName: col.name,
             messages: messages.map(m => ({ type: m.type, content: m.content })),
             tasks: [],
             tags: undefined,
@@ -212,11 +213,24 @@ export async function POST(request: Request) {
       case 'show_card': {
         let card = await findCard(args.cardId);
 
-        // If card not found, check if it's a task name — find the parent card
+        // If card not found, check if it's a task name
         if (!card) {
           const task = await findTask(args.cardId);
           if (task && task.cardId) {
             card = await db.query.cards.findFirst({ where: eq(cards.id, task.cardId) });
+          } else if (task) {
+            // Standalone task — return taskPreview instead of cardPreview
+            return NextResponse.json({
+              result: `Showing task "${task.title}"`,
+              taskPreview: {
+                id: task.id,
+                title: task.title,
+                status: task.status || 'not_started',
+                description: task.description || '',
+                cardId: null,
+                channelId: task.channelId,
+              },
+            });
           }
           if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
         }
@@ -224,6 +238,7 @@ export async function POST(request: Request) {
         const msgs = (card.messages || []) as Array<{ type: string; content: string }>;
         const cardTasks = await db.query.tasks.findMany({ where: eq(tasks.cardId, card.id) });
         const channel = await db.query.channels.findFirst({ where: eq(channels.id, card.channelId), columns: { name: true } });
+        const col = card.columnId ? await db.query.columns.findFirst({ where: eq(columns.id, card.columnId), columns: { name: true } }) : null;
         return NextResponse.json({
           result: `Showing card "${card.title}"`,
           cardPreview: {
@@ -232,6 +247,7 @@ export async function POST(request: Request) {
             summary: card.summary,
             channelName: channel?.name || '',
             channelId: card.channelId,
+            columnName: col?.name,
             messages: msgs.map(m => ({ type: m.type, content: m.content })),
             tasks: cardTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
             tags: card.tags,

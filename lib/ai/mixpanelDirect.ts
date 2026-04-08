@@ -375,7 +375,7 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
         const dailyData = Object.entries(dailyMap).map(([label, value]) => ({ label, value }));
 
         context += `\n\`\`\`chart\n${JSON.stringify({
-          type: 'bar',
+          type: 'line',
           title: `${catLabel} Orders by Day`,
           data: dailyData,
           color: 'violet',
@@ -424,7 +424,7 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
         }
 
         context += `\n\`\`\`chart\n${JSON.stringify({
-          type: 'bar',
+          type: 'line',
           title: `${eventName}${filterLabel} by Day`,
           data: dailyData,
           color: 'violet',
