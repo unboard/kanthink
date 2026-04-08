@@ -83,7 +83,18 @@ export async function POST(request: Request) {
           createdAt: nowDate,
           updatedAt: nowDate,
         });
-        return NextResponse.json({ result: `Created task "${args.title}"${resolvedCardId ? '' : ' (standalone)'}`, taskId: id });
+        return NextResponse.json({
+          result: `Created task "${args.title}"${resolvedCardId ? '' : ' (standalone)'}`,
+          taskId: id,
+          taskPreview: {
+            id,
+            title: args.title,
+            status: 'not_started',
+            description: args.description || '',
+            cardId: resolvedCardId,
+            channelId: resolvedChannelId,
+          },
+        });
       }
 
       case 'add_note': {
@@ -129,7 +140,22 @@ export async function POST(request: Request) {
           messages: messages as typeof cards.$inferInsert.messages,
           source: 'ai', position: pos, createdAt: now, updatedAt: now,
         });
-        return NextResponse.json({ result: `Created card "${args.title}" in ${col.name}`, cardId: id });
+        const channelInfo = await db.query.channels.findFirst({ where: eq(channels.id, cardChannelId), columns: { name: true } });
+        return NextResponse.json({
+          result: `Created card "${args.title}" in ${col.name}`,
+          cardId: id,
+          cardPreview: {
+            id,
+            title: args.title,
+            summary: undefined,
+            channelName: channelInfo?.name || '',
+            channelId: cardChannelId,
+            messages: messages.map(m => ({ type: m.type, content: m.content })),
+            tasks: [],
+            tags: undefined,
+            coverImageUrl: undefined,
+          },
+        });
       }
 
       case 'update_task_status': {

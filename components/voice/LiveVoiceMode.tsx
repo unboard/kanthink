@@ -202,6 +202,15 @@ interface ImageGenCard {
   error?: string;
 }
 
+interface TaskPreview {
+  id: string;
+  title: string;
+  status: string;
+  description?: string;
+  cardId?: string | null;
+  channelId?: string;
+}
+
 interface ActionLog {
   id: string;
   action: string;
@@ -209,6 +218,7 @@ interface ActionLog {
   success: boolean;
   timestamp: Date;
   cardPreview?: CardPreview;
+  taskPreview?: TaskPreview;
   emailDraft?: EmailDraft;
   imageGen?: ImageGenCard;
 }
@@ -596,6 +606,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         id: crypto.randomUUID(), action: name, result: data.result,
         success: !data.result.startsWith('Failed'), timestamp: new Date(),
         cardPreview: data.cardPreview,
+        taskPreview: data.taskPreview,
       }]);
       return voiceReturn;
     } catch (err) {
@@ -1031,9 +1042,74 @@ After any tool executes, always confirm what you did.` }] },
                       </div>
                     )}
                   </div>
+                ) : a.taskPreview ? (
+                  <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in">
+                    {/* Task created banner */}
+                    <div className="px-4 py-2 border-b border-neutral-800 flex items-center gap-2">
+                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-xs font-medium text-green-400">Task created</span>
+                    </div>
+                    <div className="px-4 py-3 flex items-center gap-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const statuses = ['not_started', 'in_progress', 'on_hold', 'done'];
+                          const currentIdx = statuses.indexOf(a.taskPreview!.status);
+                          const nextStatus = statuses[(currentIdx + 1) % statuses.length];
+                          // Update task status via API
+                          fetch('/api/voice/action', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ action: 'update_task_status', args: { taskId: a.taskPreview!.id, status: nextStatus } }),
+                          }).then(() => {
+                            setActions(prev => prev.map(act =>
+                              act.taskPreview?.id === a.taskPreview!.id
+                                ? { ...act, taskPreview: { ...act.taskPreview!, status: nextStatus } }
+                                : act
+                            ));
+                          }).catch(() => {});
+                        }}
+                        className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                          a.taskPreview.status === 'done'
+                            ? 'bg-green-500 border-green-500'
+                            : a.taskPreview.status === 'in_progress'
+                            ? 'border-blue-400 bg-blue-400/20'
+                            : a.taskPreview.status === 'on_hold'
+                            ? 'border-amber-400 bg-amber-400/20'
+                            : 'border-neutral-500'
+                        }`}
+                      >
+                        {a.taskPreview.status === 'done' && (
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium ${a.taskPreview.status === 'done' ? 'text-neutral-500 line-through' : 'text-white'}`}>
+                          {a.taskPreview.title}
+                        </p>
+                        {a.taskPreview.description && (
+                          <p className="text-xs text-neutral-400 mt-0.5 line-clamp-2">{a.taskPreview.description}</p>
+                        )}
+                        <p className="text-[10px] text-neutral-500 mt-1 capitalize">{a.taskPreview.status.replace('_', ' ')}</p>
+                      </div>
+                    </div>
+                  </div>
                 ) : a.cardPreview ? (
                   <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in cursor-pointer hover:border-violet-500/50 transition-colors"
                     onClick={() => setExpandedCard(a.cardPreview!)}>
+                    {/* Card created banner */}
+                    {a.action === 'create_card' && (
+                      <div className="px-4 py-2 border-b border-neutral-800 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="text-xs font-medium text-green-400">Card created</span>
+                      </div>
+                    )}
                     {a.cardPreview.coverImageUrl && (
                       <img src={a.cardPreview.coverImageUrl} alt="" className="w-full h-24 object-cover" />
                     )}
