@@ -400,69 +400,13 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       {/* Messages area - extra bottom padding so content scrolls behind input */}
       <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-3">
         {messages.length === 0 ? (
-          <div className="flex flex-col h-full">
-            {/* Spacer to push suggestions toward bottom */}
-            <div className="flex-1" />
-            {/* Empty state suggestions - positioned near the input */}
-            <div className="px-1 pb-4 space-y-2">
-              <button
-                onClick={() => {
-                  // Switch to note mode and activate input
-                  const noteBtn = document.querySelector('[data-mode="note"]') as HTMLButtonElement;
-                  noteBtn?.click();
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
-              >
-                <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">
-                  <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Add a note</p>
-                  <p className="text-xs text-neutral-400 dark:text-neutral-500">Jot down thoughts or information</p>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  // Switch to question mode and activate input
-                  const askKanBtn = document.querySelector('[data-mode="question"]') as HTMLButtonElement;
-                  askKanBtn?.click();
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors group"
-              >
-                <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center flex-shrink-0 group-hover:bg-violet-200 dark:group-hover:bg-violet-900/60 transition-colors">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
-                    alt="Kan"
-                    className="w-5 h-5"
-                  />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-violet-700 dark:text-violet-300">Ask Kan</p>
-                  <p className="text-xs text-violet-500 dark:text-violet-400">Get AI help with this card</p>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  // Trigger the file input in ChatInput
-                  const fileInput = document.querySelector('input[type="file"][accept*="image"]') as HTMLInputElement;
-                  fileInput?.click();
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
-              >
-                <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">
-                  <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Upload images</p>
-                  <p className="text-xs text-neutral-400 dark:text-neutral-500">Attach photos or screenshots</p>
-                </div>
-              </button>
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <div className="w-10 h-10 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-2">
+              <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
             </div>
+            <p className="text-sm text-neutral-400 dark:text-neutral-500">No messages yet</p>
           </div>
         ) : (
           messages.map((message) => (
@@ -536,6 +480,65 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         className="absolute left-0 right-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
         style={{ bottom: keyboardOffset > 0 ? `${Math.max(0, keyboardOffset - 60)}px` : 0 }}
       >
+        {/* Quick suggestions - shown above tab nav when thread is empty */}
+        {messages.length === 0 && (
+          <div className="px-3 pb-2 space-y-1">
+            <button
+              onClick={() => {
+                const noteBtn = document.querySelector('[data-mode="note"]') as HTMLButtonElement;
+                noteBtn?.click();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
+            >
+              <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">
+                <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Add a note</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500">Jot down thoughts or information</p>
+              </div>
+            </button>
+            <button
+              onClick={() => {
+                const askKanBtn = document.querySelector('[data-mode="question"]') as HTMLButtonElement;
+                askKanBtn?.click();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors group"
+            >
+              <div className="w-7 h-7 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center flex-shrink-0 group-hover:bg-violet-200 dark:group-hover:bg-violet-900/60 transition-colors">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
+                  alt="Kan"
+                  className="w-4 h-4"
+                />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-violet-700 dark:text-violet-300">Ask Kan</p>
+                <p className="text-xs text-violet-500 dark:text-violet-400">Get AI help with this card</p>
+              </div>
+            </button>
+            <button
+              onClick={() => {
+                const fileInput = document.querySelector('input[type="file"][accept*="image"]') as HTMLInputElement;
+                fileInput?.click();
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
+            >
+              <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">
+                <svg className="w-3.5 h-3.5 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Upload images</p>
+                <p className="text-xs text-neutral-400 dark:text-neutral-500">Attach photos or screenshots</p>
+              </div>
+            </button>
+          </div>
+        )}
         {tabBar}
         <ChatInput
           onSubmit={handleSubmit}
