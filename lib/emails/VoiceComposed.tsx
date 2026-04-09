@@ -1,4 +1,4 @@
-import { Text, Button, Hr, Link, Section, Heading } from '@react-email/components'
+import { Text, Button, Hr, Link, Section, Heading, Img } from '@react-email/components'
 import { BaseLayout } from './components/BaseLayout'
 import * as React from 'react'
 
@@ -40,6 +40,11 @@ function parseBody(body: string): React.ReactNode[] {
   return body.split('\n').map((line, i) => {
     const trimmed = line.trim();
     if (!trimmed) return <br key={i} />;
+    // Inline image: ![alt](url)
+    const imgMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    if (imgMatch) {
+      return <Img key={i} src={imgMatch[2]} alt={imgMatch[1] || 'Image'} width="480" style={{ display: 'block', maxWidth: '100%', margin: '8px 0', borderRadius: '6px' }} />;
+    }
     // Headers
     if (trimmed.startsWith('## ')) return <Heading key={i} as="h2" style={h2Style}>{parseInline(trimmed.slice(3), `h${i}`)}</Heading>;
     if (trimmed.startsWith('# ')) return <Heading key={i} as="h1" style={h1Style}>{parseInline(trimmed.slice(2), `h${i}`)}</Heading>;

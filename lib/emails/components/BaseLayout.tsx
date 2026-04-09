@@ -83,7 +83,7 @@ export function BaseLayout({ previewText, tokens, children }: BaseLayoutProps) {
               <tr>
                 <td style={{ verticalAlign: 'middle', paddingRight: '10px' }}>
                   <Img
-                    src="https://res.cloudinary.com/dcht3dytz/image/upload/f_png,w_64,h_64/v1769532115/kanthink-icon_pbne7q.svg"
+                    src="https://res.cloudinary.com/dcht3dytz/image/upload/f_png,w_64,h_64,e_colorize:100,co_white/v1769532115/kanthink-icon_pbne7q.svg"
                     width="32"
                     height="32"
                     alt="Kan"
