@@ -668,8 +668,11 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       const { wsUrl, model } = await res.json();
       if (!wsUrl) throw new Error('No WebSocket URL returned');
 
-      setStatus('Connecting...');
-      await new Promise<void>((resolve, reject) => {
+      // Retry logic for transient WebSocket errors (e.g. 1011 server errors)
+      const MAX_RETRIES = 2;
+      const connectWs = (attempt: number): Promise<void> => new Promise<void>((resolve, reject) => {
+        if (!activeRef.current) { reject(new Error('Cancelled')); return; }
+        setStatus(attempt > 0 ? `Reconnecting (attempt ${attempt + 1})...` : 'Connecting...');
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
         const timeout = setTimeout(() => { ws.close(); reject(new Error('Connection timed out')); }, 10000);
@@ -798,6 +801,24 @@ After any tool executes, always confirm what you did.` }] },
           else stop();
         };
       });
+
+      // Retry with backoff for transient server errors
+      let lastError: Error | null = null;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          await connectWs(attempt);
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error('Unknown error');
+          // Only retry on server-side WebSocket errors (1011, 1013, etc.) or connection failures
+          const isRetryable = /Disconnected \(10(1[1-5])\)|Connection failed|timed out/i.test(lastError.message);
+          if (!isRetryable || attempt >= MAX_RETRIES || !activeRef.current) break;
+          // Brief delay before retry
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        }
+      }
+      if (lastError) throw lastError;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       setStatus(''); stop();
