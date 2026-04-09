@@ -312,6 +312,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const threadIdRef = useRef<string | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const actionFeedRef = useRef<HTMLDivElement>(null);
   const [expandedEmail, setExpandedEmail] = useState<EmailDraft | null>(null);
   const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -865,6 +866,13 @@ After any tool executes, always confirm what you did.` }] },
     }
   }, []);
 
+  // Auto-scroll action feed when new actions appear
+  useEffect(() => {
+    if (actions.length > 0 && actionFeedRef.current) {
+      setTimeout(() => actionFeedRef.current?.scrollTo({ top: actionFeedRef.current.scrollHeight, behavior: 'smooth' }), 100);
+    }
+  }, [actions.length]);
+
   // Fetch rendered email HTML when preview opens
   useEffect(() => {
     if (!expandedEmail) { setEmailPreviewHtml(null); return; }
@@ -991,7 +999,7 @@ After any tool executes, always confirm what you did.` }] },
         )}
 
         {/* Main body — scrollable, shows loading/error + action feed */}
-        <div className="flex-1 overflow-y-auto px-2 py-4">
+        <div ref={actionFeedRef} className="flex-1 overflow-y-auto px-2 py-4">
           {status && !error && (
             <div className="flex items-center justify-center gap-2 py-8">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
