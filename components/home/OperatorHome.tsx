@@ -16,6 +16,35 @@ interface ActionResult {
   description: string;
   cardId?: string;
   channelId?: string;
+  taskId?: string;
+  cardPreview?: {
+    id: string;
+    title: string;
+    summary?: string;
+    channelName: string;
+    channelId: string;
+    columnName?: string;
+    messages: { type: string; content: string }[];
+    tasks: { id: string; title: string; status: string }[];
+    tags?: string[];
+    coverImageUrl?: string;
+  };
+  taskPreview?: {
+    id: string;
+    title: string;
+    status: string;
+    description?: string;
+    cardId?: string | null;
+    channelId?: string;
+  };
+  emailDraft?: {
+    to: string;
+    subject: string;
+    body: string;
+    style: string;
+    recipientName?: string;
+  };
+  imageUrl?: string;
 }
 
 interface ChatMessage {
@@ -522,28 +551,91 @@ When using tools, use the exact IDs shown above when available (taskId, cardId, 
                     )}
                     {/* Action results */}
                     {msg.actionResults && msg.actionResults.length > 0 && (
-                      <div className="mt-3 space-y-1.5 border-t border-neutral-700/50 pt-3">
+                      <div className="mt-3 space-y-2 border-t border-neutral-700/50 pt-3">
                         {msg.actionResults.map((ar, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs">
-                            {ar.success ? (
-                              <svg className="h-3.5 w-3.5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            ) : (
-                              <svg className="h-3.5 w-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            )}
-                            <span className={ar.success ? 'text-green-300' : 'text-red-300'}>
-                              {ar.description}
-                            </span>
-                            {ar.success && ar.cardId && ar.channelId && (
+                          <div key={i}>
+                            {/* Card preview */}
+                            {ar.cardPreview ? (
                               <button
-                                onClick={() => router.push(`/channel/${ar.channelId}/card/${ar.cardId}`)}
-                                className="text-violet-400 hover:underline ml-1"
+                                onClick={() => router.push(`/channel/${ar.cardPreview!.channelId}/card/${ar.cardPreview!.id}`)}
+                                className="w-full text-left rounded-lg border border-neutral-700 bg-neutral-800/50 p-3 hover:border-violet-500/50 transition-colors"
                               >
-                                View
+                                <div className="flex items-center gap-1.5 text-[10px] text-neutral-400 mb-1">
+                                  <span>{ar.cardPreview.channelName}</span>
+                                  {ar.cardPreview.columnName && <><span>›</span><span>{ar.cardPreview.columnName}</span></>}
+                                </div>
+                                <p className="text-sm font-medium text-white">{ar.cardPreview.title}</p>
+                                {ar.cardPreview.summary && <p className="text-xs text-neutral-400 mt-0.5 line-clamp-2">{ar.cardPreview.summary}</p>}
+                                {ar.cardPreview.tags && ar.cardPreview.tags.length > 0 && (
+                                  <div className="flex gap-1 mt-1.5">{ar.cardPreview.tags.map(t => <span key={t} className="text-[10px] bg-neutral-700 text-neutral-300 px-1.5 py-0.5 rounded">{t}</span>)}</div>
+                                )}
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                  <svg className="h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                  <span className="text-[11px] text-green-300">{ar.description}</span>
+                                  <span className="text-[11px] text-violet-400 ml-auto">View</span>
+                                </div>
                               </button>
+                            ) : ar.taskPreview ? (
+                              /* Task preview */
+                              <div className="rounded-lg border border-neutral-700 bg-neutral-800/50 p-3">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                                    ar.taskPreview.status === 'done' ? 'bg-green-400' :
+                                    ar.taskPreview.status === 'in_progress' ? 'bg-blue-400' :
+                                    ar.taskPreview.status === 'on_hold' ? 'bg-amber-400' : 'bg-neutral-500'
+                                  }`} />
+                                  <p className="text-sm font-medium text-white">{ar.taskPreview.title}</p>
+                                </div>
+                                {ar.taskPreview.description && <p className="text-xs text-neutral-400 mt-1 ml-[18px] line-clamp-2">{ar.taskPreview.description}</p>}
+                                <div className="flex items-center gap-1.5 mt-1.5 ml-[18px]">
+                                  <span className="text-[10px] bg-neutral-700 text-neutral-300 px-1.5 py-0.5 rounded">{ar.taskPreview.status.replace('_', ' ')}</span>
+                                  <svg className="h-3 w-3 text-green-400 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                  <span className="text-[11px] text-green-300">{ar.description}</span>
+                                </div>
+                              </div>
+                            ) : ar.emailDraft ? (
+                              /* Email sent confirmation */
+                              <div className="rounded-lg border border-neutral-700 bg-neutral-800/50 p-3">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <svg className="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                  <span className="text-xs text-neutral-400">To: <span className="text-neutral-200">{ar.emailDraft.to}</span></span>
+                                  <span className="text-[10px] bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded ml-auto">{ar.emailDraft.style}</span>
+                                </div>
+                                <p className="text-sm font-medium text-white mb-1">{ar.emailDraft.subject}</p>
+                                <p className="text-xs text-neutral-400 line-clamp-2">{ar.emailDraft.body}</p>
+                                <div className="flex items-center gap-1.5 mt-2">
+                                  {ar.success ? (
+                                    <><svg className="h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg><span className="text-[11px] text-green-300">{ar.description}</span></>
+                                  ) : (
+                                    <><svg className="h-3 w-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg><span className="text-[11px] text-red-300">{ar.description}</span></>
+                                  )}
+                                </div>
+                              </div>
+                            ) : ar.imageUrl ? (
+                              /* Generated image */
+                              <div className="rounded-lg border border-neutral-700 bg-neutral-800/50 overflow-hidden">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <a href={ar.imageUrl} target="_blank" rel="noopener noreferrer">
+                                  <img src={ar.imageUrl} alt="Generated image" className="w-full max-h-[300px] object-cover" />
+                                </a>
+                                <div className="flex items-center gap-1.5 px-3 py-2">
+                                  <svg className="h-3 w-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                  <span className="text-[11px] text-green-300">{ar.description}</span>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Default action result */
+                              <div className="flex items-center gap-2 text-xs">
+                                {ar.success ? (
+                                  <svg className="h-3.5 w-3.5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                ) : (
+                                  <svg className="h-3.5 w-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                )}
+                                <span className={ar.success ? 'text-green-300' : 'text-red-300'}>{ar.description}</span>
+                                {ar.success && ar.cardId && ar.channelId && (
+                                  <button onClick={() => router.push(`/channel/${ar.channelId}/card/${ar.cardId}`)} className="text-violet-400 hover:underline ml-1">View</button>
+                                )}
+                              </div>
                             )}
                           </div>
                         ))}

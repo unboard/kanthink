@@ -44,12 +44,37 @@ interface OperatorChatRequest {
 }
 
 interface OperatorAction {
-  type: 'add_note' | 'create_card' | 'update_summary';
+  type: string;
   cardId?: string;
   channelId?: string;
   columnName?: string;
   title?: string;
   content?: string;
+  // Task fields
+  taskId?: string;
+  status?: string;
+  description?: string;
+  // Email fields
+  to?: string;
+  subject?: string;
+  body?: string;
+  style?: string;
+  recipientName?: string;
+  ctaText?: string;
+  ctaUrl?: string;
+  // Search/show
+  query?: string;
+  limit?: string;
+  // Image
+  prompt?: string;
+  aspectRatio?: string;
+  // Mixpanel
+  question?: string;
+  action?: string;
+  event?: string;
+  property?: string;
+  value?: string;
+  dateRange?: string;
 }
 
 interface ActionResult {
@@ -58,6 +83,35 @@ interface ActionResult {
   description: string;
   cardId?: string;
   channelId?: string;
+  taskId?: string;
+  cardPreview?: {
+    id: string;
+    title: string;
+    summary?: string;
+    channelName: string;
+    channelId: string;
+    columnName?: string;
+    messages: { type: string; content: string }[];
+    tasks: { id: string; title: string; status: string }[];
+    tags?: string[];
+    coverImageUrl?: string;
+  };
+  taskPreview?: {
+    id: string;
+    title: string;
+    status: string;
+    description?: string;
+    cardId?: string | null;
+    channelId?: string;
+  };
+  emailDraft?: {
+    to: string;
+    subject: string;
+    body: string;
+    style: string;
+    recipientName?: string;
+  };
+  imageUrl?: string;
 }
 
 function buildSystemPrompt(
@@ -171,17 +225,44 @@ Never mention a card or channel by name without linking it. This is how users na
 
 ## ACTIONS
 
-When the user asks you to DO something (create a card, add a note to a thread, update a card), include actions in your response. Actions are executed immediately.
+When the user asks you to DO something, include actions in your response. Actions are executed immediately. Only use actions when the user EXPLICITLY asks you to take an action.
 
 Available actions:
-- **add_note**: Add a note/message to a card's thread. Use when the user wants to capture text, a summary, or conversation content onto a card.
+
+**Cards:**
+- **create_card**: Create a new card in a channel.
+  - Requires: channelId, title. Optional: columnName (default: first column), content (markdown, becomes first message)
+- **add_note**: Add a note/message to a card's thread.
   - Requires: cardId, content (markdown)
-- **create_card**: Create a new card in a channel. Suggest the best channel and column based on context.
-  - Requires: channelId, columnName (exact column name from data), title, content (markdown, becomes the first message)
 - **update_summary**: Update a card's summary/description.
   - Requires: cardId, content
+- **move_card**: Move a card to a different column within its channel.
+  - Requires: cardId, columnName (exact name)
+- **archive_card**: Archive a card (remove from board).
+  - Requires: cardId
+- **search_cards**: Search cards by keyword or get recent cards.
+  - Requires: channelId. Optional: query (search term), limit (default 5)
+- **show_card**: Show full details of a card.
+  - Requires: cardId
 
-When in doubt about where to place something, suggest a location and explain your reasoning — then include the action. The user asked you to do it, so do it.
+**Tasks:**
+- **create_task**: Create a new task, optionally linked to a card.
+  - Requires: channelId, title. Optional: cardId, description (markdown)
+- **complete_task**: Mark a task as done.
+  - Requires: taskId
+- **update_task_status**: Change a task's status (not_started, in_progress, on_hold, done).
+  - Requires: taskId, status
+
+**Email:**
+- **send_email**: Draft and send an email via Customer.io.
+  - Requires: to (email address), subject, body (clean prose, NOT markdown). Optional: style (professional/casual/newsletter/update, default professional), recipientName, ctaText, ctaUrl
+  - Do NOT ask about email style — infer it from context. Just draft and send.
+
+**Analytics:**
+- **query_mixpanel**: Query Mixpanel analytics data.
+  - Requires: question. Optional: action (query/list_properties/list_values), event, property, value, dateRange
+
+When in doubt about where to place something, suggest a location and explain your reasoning — then include the action.
 
 ## RESPONSE FORMAT
 
@@ -189,9 +270,9 @@ Respond with valid JSON:
 {
   "response": "Your message (markdown supported with kanthink:// links)",
   "actions": [
-    { "type": "add_note", "cardId": "CARD_ID", "content": "Note content in markdown" },
-    { "type": "create_card", "channelId": "CHANNEL_ID", "columnName": "Inbox", "title": "Card Title", "content": "First message content" },
-    { "type": "update_summary", "cardId": "CARD_ID", "content": "New summary text" }
+    { "type": "create_card", "channelId": "ID", "title": "Title", "content": "First message" },
+    { "type": "send_email", "to": "user@example.com", "subject": "Subject", "body": "Email body text" },
+    { "type": "create_task", "channelId": "ID", "title": "Task title" }
   ]
 }
 
@@ -224,106 +305,74 @@ function parseResponse(raw: string): ParsedResponse {
   return { response: raw };
 }
 
-async function executeActions(actions: OperatorAction[], userId: string): Promise<ActionResult[]> {
+/** Execute action via the voice action API (shared backend) */
+async function executeVoiceAction(
+  actionType: string,
+  args: Record<string, string>,
+  cookie: string,
+): Promise<{ result: string; cardId?: string; channelId?: string; taskId?: string; cardPreview?: ActionResult['cardPreview']; taskPreview?: ActionResult['taskPreview'] }> {
+  const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
+  const res = await fetch(`${baseUrl}/api/voice/action`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
+    body: JSON.stringify({ action: actionType, args }),
+  });
+  return res.json();
+}
+
+async function executeActions(actions: OperatorAction[], userId: string, cookie: string): Promise<ActionResult[]> {
   const results: ActionResult[] = [];
 
   for (const action of actions) {
     try {
+      // Legacy actions handled directly (original 3)
       if (action.type === 'add_note' && action.cardId && action.content) {
-        const card = await db.query.cards.findFirst({
-          where: eq(cards.id, action.cardId),
-        });
-        if (!card) {
-          results.push({ type: 'add_note', success: false, description: `Card not found: ${action.cardId}` });
-          continue;
-        }
+        const card = await db.query.cards.findFirst({ where: eq(cards.id, action.cardId) });
+        if (!card) { results.push({ type: 'add_note', success: false, description: `Card not found: ${action.cardId}` }); continue; }
         const existingMessages = (card.messages || []) as unknown[];
-        const newMessage = {
-          id: nanoid(),
-          type: 'note' as const,
-          content: action.content,
-          createdAt: new Date().toISOString(),
-        };
-        const updatedMessages = [...existingMessages, newMessage] as typeof card.messages;
-        await db.update(cards)
-          .set({ messages: updatedMessages, updatedAt: new Date() })
-          .where(eq(cards.id, action.cardId));
-        results.push({
-          type: 'add_note',
-          success: true,
-          description: `Added note to card`,
-          cardId: action.cardId,
-          channelId: card.channelId,
-        });
-
-      } else if (action.type === 'create_card' && action.channelId && action.title) {
-        // Find the target column
-        const channelColumns = await db.query.columns.findMany({
-          where: eq(columns.channelId, action.channelId),
-          orderBy: [asc(columns.position)],
-        });
-        const targetCol = action.columnName
-          ? channelColumns.find(c => c.name === action.columnName)
-          : channelColumns[0];
-        if (!targetCol) {
-          results.push({ type: 'create_card', success: false, description: `Column "${action.columnName}" not found` });
-          continue;
-        }
-
-        // Get max position
-        const existingCards = await db.query.cards.findMany({
-          where: and(eq(cards.columnId, targetCol.id), eq(cards.isArchived, false)),
-          orderBy: [desc(cards.position)],
-          limit: 1,
-        });
-        const position = existingCards.length > 0 ? existingCards[0].position + 1 : 0;
-
-        const cardId = nanoid();
-        const now = new Date();
-        const messages = action.content ? [{
-          id: nanoid(),
-          type: 'note' as const,
-          content: action.content,
-          createdAt: now.toISOString(),
-        }] : [] as { id: string; type: 'note'; content: string; createdAt: string }[];
-
-        await db.insert(cards).values({
-          id: cardId,
-          channelId: action.channelId,
-          columnId: targetCol.id,
-          title: action.title,
-          messages,
-          source: 'ai',
-          position,
-          createdAt: now,
-          updatedAt: now,
-        });
-        results.push({
-          type: 'create_card',
-          success: true,
-          description: `Created card "${action.title}" in ${targetCol.name}`,
-          cardId,
-          channelId: action.channelId,
-        });
+        const newMessage = { id: nanoid(), type: 'note' as const, content: action.content, createdAt: new Date().toISOString() };
+        await db.update(cards).set({ messages: [...existingMessages, newMessage] as typeof card.messages, updatedAt: new Date() }).where(eq(cards.id, action.cardId));
+        results.push({ type: 'add_note', success: true, description: `Added note to card`, cardId: action.cardId, channelId: card.channelId });
 
       } else if (action.type === 'update_summary' && action.cardId && action.content) {
-        const card = await db.query.cards.findFirst({
-          where: eq(cards.id, action.cardId),
-        });
-        if (!card) {
-          results.push({ type: 'update_summary', success: false, description: `Card not found: ${action.cardId}` });
-          continue;
+        const card = await db.query.cards.findFirst({ where: eq(cards.id, action.cardId) });
+        if (!card) { results.push({ type: 'update_summary', success: false, description: `Card not found: ${action.cardId}` }); continue; }
+        await db.update(cards).set({ summary: action.content, summaryUpdatedAt: new Date(), updatedAt: new Date() }).where(eq(cards.id, action.cardId));
+        results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
+
+      // New actions routed through voice action API
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'move_card', 'send_email', 'query_mixpanel'].includes(action.type)) {
+        // Build args from action fields
+        const args: Record<string, string> = {};
+        for (const [key, val] of Object.entries(action)) {
+          if (key !== 'type' && val != null) args[key] = String(val);
         }
-        await db.update(cards)
-          .set({ summary: action.content, summaryUpdatedAt: new Date(), updatedAt: new Date() })
-          .where(eq(cards.id, action.cardId));
-        results.push({
-          type: 'update_summary',
-          success: true,
-          description: `Updated card summary`,
-          cardId: action.cardId,
-          channelId: card.channelId,
-        });
+        const data = await executeVoiceAction(action.type, args, cookie);
+        const success = !data.result.startsWith('Failed') && !data.result.includes('not found') && !data.result.includes('not configured');
+
+        const result: ActionResult = {
+          type: action.type,
+          success,
+          description: data.result,
+          cardId: data.cardId,
+          channelId: data.channelId,
+          taskId: data.taskId,
+          cardPreview: data.cardPreview,
+          taskPreview: data.taskPreview,
+        };
+
+        // For send_email, attach draft info for display
+        if (action.type === 'send_email' && action.to && action.subject) {
+          result.emailDraft = {
+            to: action.to,
+            subject: action.subject,
+            body: action.body || '',
+            style: action.style || 'professional',
+            recipientName: action.recipientName,
+          };
+        }
+
+        results.push(result);
       }
     } catch (error) {
       console.error(`Action ${action.type} failed:`, error);
@@ -451,7 +500,30 @@ export async function POST(request: Request) {
     // Execute actions if any
     let actionResults: ActionResult[] | undefined;
     if (parsed.actions && parsed.actions.length > 0) {
-      actionResults = await executeActions(parsed.actions, session.user.id);
+      const cookie = request.headers.get('cookie') || '';
+      // Handle generate_image actions separately (needs image API, not voice action API)
+      const imageActions = parsed.actions.filter(a => a.type === 'generate_image');
+      const otherActions = parsed.actions.filter(a => a.type !== 'generate_image');
+      actionResults = otherActions.length > 0 ? await executeActions(otherActions, session.user.id, cookie) : [];
+
+      for (const imgAction of imageActions) {
+        try {
+          const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
+          const imgRes = await fetch(`${baseUrl}/api/generate-image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
+            body: JSON.stringify({ prompt: imgAction.prompt, aspectRatio: imgAction.aspectRatio || '1:1' }),
+          });
+          if (imgRes.ok) {
+            const imgData = await imgRes.json();
+            actionResults.push({ type: 'generate_image', success: true, description: `Generated image`, imageUrl: imgData.url });
+          } else {
+            actionResults.push({ type: 'generate_image', success: false, description: 'Image generation failed' });
+          }
+        } catch {
+          actionResults.push({ type: 'generate_image', success: false, description: 'Image generation failed' });
+        }
+      }
     }
 
     // Persist messages to thread if threadId provided
