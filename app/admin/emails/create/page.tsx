@@ -6,6 +6,49 @@ import Link from 'next/link'
 import type { EmailConfig } from '@/lib/emails/dynamicRenderer'
 import { emailRegistry } from '@/lib/emails/registry'
 import { VoiceMicButton } from '@/components/ui/VoiceMicButton'
+import type { EmailNode, EmailElement } from '@/lib/emails/dynamicRenderer'
+
+/** Walk an email AST, find Img nodes with [GENERATE_IMAGE: ...] src, generate real images */
+async function resolveGeneratedImages(body: EmailNode[]): Promise<{ resolved: EmailNode[]; count: number }> {
+  let count = 0
+
+  async function walk(node: EmailNode): Promise<EmailNode> {
+    if (typeof node === 'string' || node === null || node === undefined) return node
+    if (Array.isArray(node)) {
+      return Promise.all(node.map(walk))
+    }
+
+    const el = node as EmailElement
+    const children = el.children !== undefined ? await walk(el.children) : undefined
+
+    if (el.type === 'Img' && typeof el.props?.src === 'string') {
+      const match = (el.props.src as string).match(/^\[GENERATE_IMAGE:\s*(.+)\]$/)
+      if (match) {
+        try {
+          const res = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: match[1], aspectRatio: '16:9' }),
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data.url) {
+              count++
+              return { ...el, props: { ...el.props, src: data.url }, children } as EmailElement
+            }
+          }
+        } catch {
+          // Keep placeholder if generation fails
+        }
+      }
+    }
+
+    return children !== undefined ? { ...el, children } as EmailElement : el
+  }
+
+  const resolved = await Promise.all(body.map(walk)) as EmailNode[]
+  return { resolved, count }
+}
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -26,6 +69,7 @@ export default function EmailBuilderPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [generatingImages, setGeneratingImages] = useState(false)
   const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null)
   const [previewHtml, setPreviewHtml] = useState<string | null>(null)
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop')
@@ -162,7 +206,22 @@ export default function EmailBuilderPage() {
       }])
 
       if (data.emailConfig) {
-        setEmailConfig(data.emailConfig)
+        // Resolve any [GENERATE_IMAGE: ...] placeholders in the template
+        const hasImagePlaceholders = JSON.stringify(data.emailConfig.body).includes('[GENERATE_IMAGE:')
+        if (hasImagePlaceholders) {
+          // Show template immediately with placeholders, then replace with real images
+          setEmailConfig(data.emailConfig)
+          setGeneratingImages(true)
+          resolveGeneratedImages(data.emailConfig.body)
+            .then(({ resolved, count }) => {
+              if (count > 0) {
+                setEmailConfig({ ...data.emailConfig, body: resolved })
+              }
+            })
+            .finally(() => setGeneratingImages(false))
+        } else {
+          setEmailConfig(data.emailConfig)
+        }
         // Default template name to subject if not set
         if (!templateName) {
           setTemplateName(data.emailConfig.subject)
@@ -480,6 +539,15 @@ export default function EmailBuilderPage() {
 
           {/* Preview area */}
           <div className="flex-1 flex items-start justify-center p-6 overflow-auto">
+            {generatingImages && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-full shadow-lg">
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Generating images…
+              </div>
+            )}
             {previewHtml ? (
               <iframe
                 srcDoc={previewHtml}

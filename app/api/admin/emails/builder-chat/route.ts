@@ -62,6 +62,12 @@ Each node is one of:
 React Email: Text, Heading (use "as" prop for h1-h6), Link (href), Button (href), Section, Row, Column, Img (src, alt, width, height), Hr, Markdown
 HTML: table, thead, tbody, tr, th, td, div, span, strong, em, br, p, a
 
+## Images
+
+When the user wants a generated image in the email, use an Img node with a special placeholder src:
+\`{ "type": "Img", "props": { "src": "[GENERATE_IMAGE: description of the image you want]", "alt": "description", "width": 480, "height": 280 } }\`
+The system will automatically detect \`[GENERATE_IMAGE: ...]\` placeholders, call an AI image generator, and replace them with real image URLs. Use descriptive prompts for best results. Keep image dimensions reasonable for email (max width 480px).
+
 ## Design tokens
 
 Violet accent #7c3aed | Dark #18181b | Body text #3f3f46 | Muted #71717a | Surface #fafafa | Border #e4e4e7
