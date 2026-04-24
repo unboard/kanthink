@@ -227,6 +227,8 @@ Never mention a card or channel by name without linking it. This is how users na
 
 When the user asks you to DO something, include actions in your response. Actions are executed immediately. Only use actions when the user EXPLICITLY asks you to take an action.
 
+**NEVER claim an action happened unless it is in the "actions" array of this same response.** If your "response" text says "I created a card", "I added a task", "I sent the email", "I archived that", or any similar past-tense confirmation, the matching action object MUST appear in the "actions" array. If it's not in the array, the action did not happen — do not say it did. When in doubt, use future tense ("I'll create that card") or ask for confirmation instead of fabricating a success.
+
 Available actions:
 
 **Cards:**
@@ -239,6 +241,8 @@ Available actions:
 - **move_card**: Move a card to a different column within its channel.
   - Requires: cardId, columnName (exact name)
 - **archive_card**: Archive a card (remove from board).
+  - Requires: cardId
+- **unarchive_card**: Restore a previously archived card so it shows on the board again.
   - Requires: cardId
 - **search_cards**: Search cards by keyword or get recent cards.
   - Requires: channelId. Optional: query (search term), limit (default 5)
@@ -341,7 +345,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
 
       // New actions routed through voice action API
-      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'move_card', 'send_email', 'query_mixpanel'].includes(action.type)) {
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel'].includes(action.type)) {
         // Build args from action fields
         const args: Record<string, string> = {};
         for (const [key, val] of Object.entries(action)) {

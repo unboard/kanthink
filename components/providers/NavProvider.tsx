@@ -20,7 +20,8 @@ interface NavContextValue {
   togglePanel: (panel: NavPanelType) => void;
   isMobile: boolean;
   showNewChannel: boolean;
-  openNewChannel: () => void;
+  newChannelTargetFolderId: string | null;
+  openNewChannel: (targetFolderId?: string | null) => void;
   closeNewChannel: () => void;
 }
 
@@ -42,6 +43,7 @@ export function NavProvider({ children }: NavProviderProps) {
   const [activePanel, setActivePanel] = useState<NavPanelType>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [showNewChannel, setShowNewChannel] = useState(false);
+  const [newChannelTargetFolderId, setNewChannelTargetFolderId] = useState<string | null>(null);
 
   // Check for mobile on mount and resize
   useEffect(() => {
@@ -112,13 +114,15 @@ export function NavProvider({ children }: NavProviderProps) {
     });
   }, []);
 
-  const openNewChannel = useCallback(() => {
+  const openNewChannel = useCallback((targetFolderId: string | null = null) => {
     setActivePanel(null);
+    setNewChannelTargetFolderId(targetFolderId);
     setShowNewChannel(true);
   }, []);
 
   const closeNewChannel = useCallback(() => {
     setShowNewChannel(false);
+    setNewChannelTargetFolderId(null);
   }, []);
 
   return (
@@ -130,6 +134,7 @@ export function NavProvider({ children }: NavProviderProps) {
         togglePanel,
         isMobile,
         showNewChannel,
+        newChannelTargetFolderId,
         openNewChannel,
         closeNewChannel,
       }}

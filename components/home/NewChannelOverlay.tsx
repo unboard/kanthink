@@ -16,9 +16,10 @@ interface NewChannelOverlayProps {
   isOpen: boolean
   onClose: () => void
   onKanHelp: () => void
+  targetFolderId?: string | null
 }
 
-export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOverlayProps) {
+export function NewChannelOverlay({ isOpen, onClose, onKanHelp, targetFolderId }: NewChannelOverlayProps) {
   const router = useRouter()
   const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | 'all' | 'kan'>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -32,6 +33,7 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
   const addMessage = useStore((s) => s.addMessage)
   const createTask = useStore((s) => s.createTask)
   const updateTask = useStore((s) => s.updateTask)
+  const moveChannelToFolder = useStore((s) => s.moveChannelToFolder)
 
   const handleClose = useCallback(() => {
     setSelectedCategory('all')
@@ -63,10 +65,14 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
           })) || [],
       })
 
+      if (targetFolderId) {
+        moveChannelToFolder(channel.id, targetFolderId)
+      }
+
       handleClose()
       router.push(`/channel/${channel.id}`)
     },
-    [createChannelWithStructure, handleClose, router]
+    [createChannelWithStructure, handleClose, router, targetFolderId, moveChannelToFolder]
   )
 
   const handleQuickStart = useCallback(() => {
@@ -109,6 +115,10 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
             })
           ) || [],
       })
+
+      if (targetFolderId) {
+        moveChannelToFolder(newChannel.id, targetFolderId)
+      }
 
       if (data.cards && Array.isArray(data.cards)) {
         const columnNameToId = new Map(
@@ -170,6 +180,8 @@ export function NewChannelOverlay({ isOpen, onClose, onKanHelp }: NewChannelOver
     updateTask,
     handleClose,
     router,
+    targetFolderId,
+    moveChannelToFolder,
   ])
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

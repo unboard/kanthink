@@ -245,6 +245,26 @@ export interface QueryOptions {
   value?: string;
   fromDate?: string;
   toDate?: string;
+  /** Optional preferred chart type. When omitted, auto-selects. */
+  chartType?: 'line' | 'bar' | 'pie' | 'donut' | 'value';
+}
+
+type AutoChartHint = 'pie' | 'bar' | 'line' | 'value' | undefined;
+
+function detectChartHint(question: string): AutoChartHint {
+  const q = question.toLowerCase();
+  if (/\b(pie|donut|share|proportion|split|distribution|breakdown|by category|by product|by type|percent|%)\b/.test(q)) return 'pie';
+  if (/\b(how many|total|sum|count)\b/.test(q) && !/\b(per|each|by|across)\b/.test(q)) return 'value';
+  if (/\b(trend|over time|per day|by day|daily|weekly|monthly|timeline|history)\b/.test(q)) return 'line';
+  if (/\b(top|rank|compare|versus|vs\.?|which)\b/.test(q)) return 'bar';
+  return undefined;
+}
+
+function resolveChartType(options: QueryOptions | undefined, question: string, fallback: 'line' | 'bar' | 'pie' | 'donut' | 'value'): 'line' | 'bar' | 'pie' | 'donut' | 'value' {
+  if (options?.chartType) return options.chartType;
+  const hint = detectChartHint(question);
+  if (hint) return hint;
+  return fallback;
 }
 
 /** High-level query function for AI chat — takes natural language intent and returns formatted data */
@@ -366,7 +386,19 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
 
       // ONE chart — the most relevant one for the question
       if (!wantsEmails && totalOrders > 0) {
-        // For category-specific queries: bar chart of daily counts
+        const chartType = resolveChartType(options, question, 'line');
+
+        // Build category breakdown for pie/donut charts
+        const categoryMap: Record<string, number> = {};
+        for (const o of orderDetails) {
+          const cat = o.categories[0] || 'Other';
+          categoryMap[cat] = (categoryMap[cat] || 0) + 1;
+        }
+        const categoryData = Object.entries(categoryMap)
+          .map(([label, value]) => ({ label, value }))
+          .sort((a, b) => b.value - a.value);
+
+        // Build daily breakdown for line/bar charts
         const dailyMap: Record<string, number> = {};
         for (const o of orderDetails) {
           const d = o.date ? new Date(o.date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
@@ -374,13 +406,34 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
         }
         const dailyData = Object.entries(dailyMap).map(([label, value]) => ({ label, value }));
 
-        context += `\n\`\`\`chart\n${JSON.stringify({
-          type: 'line',
-          title: `${catLabel} Orders by Day`,
-          data: dailyData,
-          color: 'violet',
-          label: 'Orders',
-        })}\n\`\`\`\n`;
+        if (chartType === 'pie' || chartType === 'donut') {
+          // Breakdown view — use categories if we have more than one, else fall back to daily
+          const pieData = categoryData.length > 1 ? categoryData : dailyData;
+          const pieTitle = categoryData.length > 1 ? `${catLabel} Orders by Category` : `${catLabel} Orders by Day`;
+          context += `\n\`\`\`chart\n${JSON.stringify({
+            type: chartType,
+            title: pieTitle,
+            data: pieData,
+            color: 'violet',
+            label: 'Orders',
+          })}\n\`\`\`\n`;
+        } else if (chartType === 'value') {
+          context += `\n\`\`\`chart\n${JSON.stringify({
+            type: 'value',
+            title: `${catLabel} Orders`,
+            data: [{ label: 'Orders', value: totalOrders }],
+            color: 'violet',
+            label: 'Orders',
+          })}\n\`\`\`\n`;
+        } else {
+          context += `\n\`\`\`chart\n${JSON.stringify({
+            type: chartType,
+            title: `${catLabel} Orders by Day`,
+            data: dailyData,
+            color: 'violet',
+            label: 'Orders',
+          })}\n\`\`\`\n`;
+        }
       }
 
       return context;
@@ -423,13 +476,24 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
           context += `(Ask about any property to see its values, or filter by property = value)\n`;
         }
 
-        context += `\n\`\`\`chart\n${JSON.stringify({
-          type: 'line',
-          title: `${eventName}${filterLabel} by Day`,
-          data: dailyData,
-          color: 'violet',
-          label: 'Events',
-        })}\n\`\`\`\n`;
+        const chartType = resolveChartType(options, question, 'line');
+        if (chartType === 'value') {
+          context += `\n\`\`\`chart\n${JSON.stringify({
+            type: 'value',
+            title: `${eventName}${filterLabel}`,
+            data: [{ label: 'Events', value: rawEvents.length }],
+            color: 'violet',
+            label: 'Events',
+          })}\n\`\`\`\n`;
+        } else {
+          context += `\n\`\`\`chart\n${JSON.stringify({
+            type: chartType,
+            title: `${eventName}${filterLabel} by Day`,
+            data: dailyData,
+            color: 'violet',
+            label: 'Events',
+          })}\n\`\`\`\n`;
+        }
 
         return context;
       } else {

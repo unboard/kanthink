@@ -858,7 +858,7 @@ export function ChannelsPanel() {
               variant="ghost"
               size="sm"
               className="flex-1 justify-start"
-              onClick={openNewChannel}
+              onClick={() => openNewChannel()}
             >
               + Channel
             </Button>

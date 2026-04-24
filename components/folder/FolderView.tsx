@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useStore } from '@/lib/store'
 import { ChannelRow } from '@/components/home/ChannelRow'
 import { FolderShareDrawer } from '@/components/sharing/FolderShareDrawer'
+import { useNav } from '@/components/providers/NavProvider'
 import type { Folder, Task, ID, Channel, Card } from '@/lib/types'
 
 function parseTimestamp(ts: string | undefined | null): number {
@@ -67,14 +68,11 @@ export function FolderView({ folder }: FolderViewProps) {
   const channels = useStore((s) => s.channels)
   const tasks = useStore((s) => s.tasks)
   const cards = useStore((s) => s.cards)
-  const createChannel = useStore((s) => s.createChannel)
-  const moveChannelToFolder = useStore((s) => s.moveChannelToFolder)
+  const { openNewChannel } = useNav()
   const [showShareDrawer, setShowShareDrawer] = useState(false)
 
   const handleCreateChannel = () => {
-    const newChannel = createChannel({ name: 'New Channel' })
-    moveChannelToFolder(newChannel.id, folder.id)
-    router.push(`/channel/${newChannel.id}`)
+    openNewChannel(folder.id)
   }
 
   const folderChannels = useMemo(() => {

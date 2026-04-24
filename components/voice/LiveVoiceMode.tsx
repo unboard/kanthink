@@ -99,7 +99,7 @@ const TOOLS = [
       },
       {
         name: 'query_mixpanel',
-        description: 'Query Mixpanel analytics data. Use conversationally: show overview first, then suggest properties to drill into. Use action="list_properties" to discover what properties an event has. Use action="list_values" to see values for a property. Filter with property + value params.',
+        description: 'Query Mixpanel analytics data. Use conversationally: show overview first, then suggest properties to drill into. Use action="list_properties" to discover what properties an event has. Use action="list_values" to see values for a property. Filter with property + value params. Pass chartType when the user asks for a specific visualization (e.g. "pie chart of orders by category") — otherwise omit and a sensible default is picked.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -109,6 +109,7 @@ const TOOLS = [
             property: { type: 'STRING', description: 'Property name to filter by or inspect values of' },
             value: { type: 'STRING', description: 'Property value to filter on' },
             dateRange: { type: 'STRING', description: 'Date range: last_7_days, last_30_days, last_90_days, or YYYY-MM-DD:YYYY-MM-DD' },
+            chartType: { type: 'STRING', description: 'Optional preferred chart type: "line" (trends over time), "bar" (category comparison), "pie"/"donut" (proportional breakdown of parts in a whole), "value" (single metric). Use "pie" when the user asks for a breakdown, distribution, share, or split of a total.' },
           },
           required: ['question'],
         },
@@ -119,6 +120,15 @@ const TOOLS = [
         parameters: {
           type: 'OBJECT',
           properties: { cardId: { type: 'STRING', description: 'Card ID or card title' } },
+          required: ['cardId'],
+        },
+      },
+      {
+        name: 'unarchive_card',
+        description: 'Unarchive a previously archived card so it shows up on the board again. Use when the user says "unarchive X", "bring back X", or "restore X".',
+        parameters: {
+          type: 'OBJECT',
+          properties: { cardId: { type: 'STRING', description: 'Card ID or card title (search matches archived cards too)' } },
           required: ['cardId'],
         },
       },
@@ -333,6 +343,8 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const activeSources = useRef<AudioBufferSourceNode[]>([]);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const processingNodesRef = useRef<{ osc1: OscillatorNode; osc2: OscillatorNode; gain: GainNode } | null>(null);
+  // Latest resumption handle from Gemini — used to transparently resume if the transport drops.
+  const resumptionHandleRef = useRef<string | null>(null);
 
   const stop = useCallback(() => {
     activeRef.current = false;
@@ -512,6 +524,21 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
           ? { ...a, emailDraft: { ...a.emailDraft!, status: success ? 'sent' as const : 'failed' as const }, result: data.result, success }
           : a
       ));
+
+      // Let Kan know the user just sent the draft so it doesn't keep treating the email as pending.
+      // turnComplete: false so the context is absorbed silently without triggering an unprompted reply.
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const note = success
+          ? `[System] The user just pressed Send on the draft email to ${draft.to} (subject "${draft.subject}"). It has been delivered. Treat the send_email action as complete for the rest of this conversation and don't ask about it again unless the user brings it up.`
+          : `[System] The user pressed Send on the draft email to ${draft.to} but delivery failed.`;
+        ws.send(JSON.stringify({
+          clientContent: {
+            turns: [{ role: 'user', parts: [{ text: note }] }],
+            turnComplete: false,
+          },
+        }));
+      }
     } catch {
       setActions(prev => prev.map(a =>
         a.emailDraft?.id === draftId ? { ...a, emailDraft: { ...a.emailDraft!, status: 'failed' as const } } : a
@@ -686,6 +713,14 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
                 responseModalities: ['AUDIO'],
                 speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
               },
+              // Keep long back-and-forth conversations alive past Gemini's default audio-session cap
+              // by compressing older context into a sliding window.
+              contextWindowCompression: { slidingWindow: {} },
+              // Ask the server for resumption handles so we can reconnect mid-conversation if the
+              // transport drops before the user intentionally ends the session.
+              sessionResumption: resumptionHandleRef.current
+                ? { handle: resumptionHandleRef.current }
+                : {},
               systemInstruction: { parts: [{ text: (systemPrompt || 'You are Kan, a helpful AI assistant.') + `
 
 TOOL USE RULES — CRITICAL:
@@ -734,7 +769,9 @@ When creating notes, cards, or tasks with content, ALWAYS use rich markdown form
 - > Blockquotes for callouts
 Never write plain unformatted paragraphs — structure the content so it's scannable and well-organized.
 
-After any tool executes, always confirm what you did.` }] },
+After any tool executes, always confirm what you did.
+
+NEVER claim you completed an action unless you actually called the corresponding tool and saw it succeed. Do not say "I created that card", "I added the task", "I archived it", or any similar past-tense confirmation unless the tool was invoked and returned a result. If the user asks for an action and you haven't called the tool yet, say what you're about to do ("I'll create that card now") — then call the tool. Fabricating a success message is worse than asking for clarification.` }] },
               tools: TOOLS,
             },
           }));
@@ -784,6 +821,17 @@ After any tool executes, always confirm what you did.` }] },
               }
               stopProcessingSound();
               setIsProcessing(false);
+            }
+
+            // Track the resumption handle so we can reconnect transparently if the socket drops.
+            if (msg.sessionResumptionUpdate?.resumable && msg.sessionResumptionUpdate?.newHandle) {
+              resumptionHandleRef.current = msg.sessionResumptionUpdate.newHandle;
+            }
+
+            // Gemini warns us ~60s before it tears down the connection for rotation. We don't need
+            // to do anything beyond logging — sessionResumption + ws.onclose auto-retry handle it.
+            if (msg.goAway?.timeLeft) {
+              console.info('[Voice] Server rotating session in', msg.goAway.timeLeft);
             }
 
             if (msg.error) {

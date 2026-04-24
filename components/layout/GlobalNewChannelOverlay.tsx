@@ -10,11 +10,13 @@ import { useStore } from '@/lib/store';
 
 export function GlobalNewChannelOverlay() {
   const router = useRouter();
-  const { showNewChannel, closeNewChannel } = useNav();
+  const { showNewChannel, newChannelTargetFolderId, closeNewChannel } = useNav();
   const [showKanHelp, setShowKanHelp] = useState(false);
+  const [kanHelpTargetFolderId, setKanHelpTargetFolderId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const createChannel = useStore((s) => s.createChannel);
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
+  const moveChannelToFolder = useStore((s) => s.moveChannelToFolder);
   const channels = useStore((s) => s.channels);
   const existingChannelNames = Object.values(channels).map(c => c.name);
 
@@ -39,6 +41,10 @@ export function GlobalNewChannelOverlay() {
         aiInstructions: result.instructions,
       });
     }
+    if (kanHelpTargetFolderId) {
+      moveChannelToFolder(channel.id, kanHelpTargetFolderId);
+    }
+    setKanHelpTargetFolderId(null);
     setShowKanHelp(false);
     router.push(`/channel/${channel.id}`);
   };
@@ -50,7 +56,9 @@ export function GlobalNewChannelOverlay() {
       <NewChannelOverlay
         isOpen={showNewChannel}
         onClose={closeNewChannel}
+        targetFolderId={newChannelTargetFolderId}
         onKanHelp={() => {
+          setKanHelpTargetFolderId(newChannelTargetFolderId);
           closeNewChannel();
           setShowKanHelp(true);
         }}

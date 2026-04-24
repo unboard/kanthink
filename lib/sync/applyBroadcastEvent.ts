@@ -1347,6 +1347,7 @@ export function applyBroadcastEvent(
             ...state.channels,
             [event.channelId]: {
               ...channel,
+              aiInstructions: event.revision.instructions,
               instructionHistory: [...(channel.instructionHistory ?? []), revision],
               updatedAt: now(),
             },

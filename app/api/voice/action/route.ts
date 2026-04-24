@@ -285,6 +285,7 @@ export async function POST(request: Request) {
             value: args.value || undefined,
             fromDate,
             toDate,
+            chartType: (args.chartType as 'line' | 'bar' | 'pie' | 'donut' | 'value') || undefined,
           });
           if (!fullData) return NextResponse.json({ result: 'No Mixpanel data found for that query.' });
 
@@ -303,6 +304,22 @@ export async function POST(request: Request) {
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
         await db.update(cards).set({ isArchived: true, updatedAt: new Date() }).where(eq(cards.id, card.id));
         return NextResponse.json({ result: `Archived card "${card.title}"`, cardId: card.id });
+      }
+
+      case 'unarchive_card': {
+        const card = await findCard(args.cardId);
+        if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        if (!card.isArchived) {
+          return NextResponse.json({ result: `Card "${card.title}" is not archived`, cardId: card.id });
+        }
+        // Restore to the end of its column so it doesn't collide with existing positions
+        const maxPosResult = await db
+          .select({ maxPos: sql<number>`COALESCE(MAX(${cards.position}), -1)` })
+          .from(cards)
+          .where(and(eq(cards.columnId, card.columnId), eq(cards.isArchived, false)));
+        const nextPosition = (maxPosResult[0]?.maxPos ?? -1) + 1;
+        await db.update(cards).set({ isArchived: false, position: nextPosition, updatedAt: new Date() }).where(eq(cards.id, card.id));
+        return NextResponse.json({ result: `Unarchived card "${card.title}"`, cardId: card.id });
       }
 
       case 'move_card': {

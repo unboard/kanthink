@@ -227,9 +227,31 @@ export function OperatorHome() {
     setIsLoading(true);
 
     try {
+      // Fold past action outcomes into assistant history so Kan remembers what actually
+      // happened (e.g. emails sent, cards archived) instead of treating every turn as
+      // unacted-upon context. Keep the summary short — one line per successful action.
+      const summarizeActionResults = (results?: ActionResult[]): string => {
+        if (!results || results.length === 0) return '';
+        const lines = results
+          .filter(r => r.success)
+          .map(r => {
+            if (r.type === 'send_email') return `[action: send_email — sent to ${r.emailDraft?.to || 'recipient'}]`;
+            if (r.type === 'create_card' && r.cardPreview) return `[action: create_card — "${r.cardPreview.title}"]`;
+            if (r.type === 'create_task' && r.taskPreview) return `[action: create_task — "${r.taskPreview.title}"]`;
+            if (r.type === 'archive_card' && r.cardPreview) return `[action: archive_card — "${r.cardPreview.title}"]`;
+            if (r.type === 'unarchive_card' && r.cardPreview) return `[action: unarchive_card — "${r.cardPreview.title}"]`;
+            if (r.type === 'move_card' && r.cardPreview) return `[action: move_card — "${r.cardPreview.title}" to ${r.cardPreview.columnName || 'column'}]`;
+            if (r.type === 'complete_task' && r.taskPreview) return `[action: complete_task — "${r.taskPreview.title}"]`;
+            return `[action: ${r.type} — ${r.description || 'succeeded'}]`;
+          });
+        return lines.length > 0 ? `\n\n${lines.join('\n')}` : '';
+      };
+
       const history = messages.map((m) => ({
         role: m.role,
-        content: m.content,
+        content: m.role === 'assistant'
+          ? m.content + summarizeActionResults(m.actionResults)
+          : m.content,
       }));
 
       const res = await fetch('/api/operator-chat', {

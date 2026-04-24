@@ -805,7 +805,7 @@ function ChannelsList({ onClose }: { onClose: () => void }) {
         <div className="flex-shrink-0 sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-4">
           <div className="flex items-center gap-2">
             <button
-              onClick={openNewChannel}
+              onClick={() => openNewChannel()}
               className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white font-medium transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
