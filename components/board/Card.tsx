@@ -468,6 +468,32 @@ export function Card({ card }: CardProps) {
                     <span className="w-5 h-5 flex items-center justify-center text-sm">😀</span>
                     React
                   </button>
+                  {/* Color — mirrors the desktop dropdown so the left-border tint is reachable on mobile too */}
+                  <div className="px-3 py-3">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">Color</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {card.color && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); updateCard(card.id, { color: undefined }); setShowCardMenu(false); }}
+                          className="w-7 h-7 rounded-full border-2 border-neutral-300 dark:border-neutral-600 flex items-center justify-center hover:border-neutral-500"
+                          title="Remove color"
+                        >
+                          <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                      {Object.entries(CARD_COLORS).map(([name, hex]) => (
+                        <button
+                          key={name}
+                          onClick={(e) => { e.stopPropagation(); updateCard(card.id, { color: name }); setShowCardMenu(false); }}
+                          className={`w-7 h-7 rounded-full border-2 transition-transform active:scale-95 ${card.color === name ? 'border-white dark:border-neutral-200 ring-1 ring-offset-1 ring-neutral-400' : 'border-transparent'}`}
+                          style={{ backgroundColor: hex }}
+                          title={name}
+                        />
+                      ))}
+                    </div>
+                  </div>
                   <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1 mx-2" />
                   <button onClick={(e) => { e.stopPropagation(); handleDuplicate(); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
                     <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
