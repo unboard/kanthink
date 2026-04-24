@@ -101,7 +101,7 @@ export async function POST(request: Request) {
         const card = await findCard(args.cardId);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
         const msgs = (card.messages || []) as unknown[];
-        const newMsg = { id: nanoid(), type: 'note' as const, content: args.content, createdAt: new Date().toISOString() };
+        const newMsg = { id: nanoid(), type: 'ai_response' as const, content: args.content, createdAt: new Date().toISOString() };
         const updated = [...msgs, newMsg] as typeof card.messages;
         await db.update(cards).set({ messages: updated, updatedAt: new Date() }).where(eq(cards.id, card.id));
         return NextResponse.json({ result: `Added note to "${card.title}"`, cardId: card.id });
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
         const pos = existing.length > 0 ? existing[0].position + 1 : 0;
         const id = nanoid();
         const now = new Date();
-        const messages = args.content ? [{ id: nanoid(), type: 'note' as const, content: args.content, createdAt: now.toISOString() }] : [];
+        const messages = args.content ? [{ id: nanoid(), type: 'ai_response' as const, content: args.content, createdAt: now.toISOString() }] : [];
 
         await db.insert(cards).values({
           id, channelId: cardChannelId, columnId: col.id, title: args.title,

@@ -330,7 +330,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
         const card = await db.query.cards.findFirst({ where: eq(cards.id, action.cardId) });
         if (!card) { results.push({ type: 'add_note', success: false, description: `Card not found: ${action.cardId}` }); continue; }
         const existingMessages = (card.messages || []) as unknown[];
-        const newMessage = { id: nanoid(), type: 'note' as const, content: action.content, createdAt: new Date().toISOString() };
+        const newMessage = { id: nanoid(), type: 'ai_response' as const, content: action.content, createdAt: new Date().toISOString() };
         await db.update(cards).set({ messages: [...existingMessages, newMessage] as typeof card.messages, updatedAt: new Date() }).where(eq(cards.id, action.cardId));
         results.push({ type: 'add_note', success: true, description: `Added note to card`, cardId: action.cardId, channelId: card.channelId });
 
@@ -463,8 +463,10 @@ export async function POST(request: Request) {
       messages.push({ role: msg.role, content: msg.content });
     }
 
-    // Add Mixpanel context if question seems analytics-related
-    const analyticsIntent = /mixpanel|analytics|events?|metrics|orders?|revenue|data|report|trend|chart/i.test(message);
+    // Add Mixpanel context only when the user explicitly asks for it.
+    // Operator chat is workspace-wide and has no per-channel data-source gate,
+    // so we require an explicit mention to avoid leaking analytics into unrelated chats.
+    const analyticsIntent = /\bmixpanel\b|@mixpanel/i.test(message);
     if (analyticsIntent) {
       try {
         const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
