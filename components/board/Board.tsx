@@ -44,6 +44,7 @@ import { ReviewDrawer } from './ReviewDrawer';
 import { TaskListView } from './TaskListView';
 import { FocusColumnView } from './FocusColumnView';
 import { CardListView } from './CardListView';
+import { CompactCardsContext } from './CompactCardsContext';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ChannelActionsDrawer } from './ChannelActionsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
@@ -99,6 +100,7 @@ export function Board({ channel }: BoardProps) {
   const [showShroomChatDrawer, setShowShroomChatDrawer] = useState(false);
   const [isChannelChatOpen, setIsChannelChatOpen] = useState(false);
   const [showDescriptionBanner, setShowDescriptionBanner] = useState(false);
+  const [compactCards, setCompactCards] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -133,6 +135,22 @@ export function Board({ channel }: BoardProps) {
     window.addEventListener('description-banner-toggle', read);
     return () => window.removeEventListener('description-banner-toggle', read);
   }, [channel.id]);
+
+  // Read per-channel compact-card preference (default: off). Each channel is independent
+  // so bird-logging can be compact while task-heavy channels stay full-size.
+  useEffect(() => {
+    setCompactCards(localStorage.getItem(`channel-compact-${channel.id}`) === '1');
+  }, [channel.id]);
+
+  const toggleCompactCards = () => {
+    setCompactCards((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(`channel-compact-${channel.id}`, next ? '1' : '0');
+      } catch { /* storage full or disabled */ }
+      return next;
+    });
+  };
 
   // Clear card selection when channel changes or view mode changes
   const clearSelection = useSelectionStore((s) => s.clearSelection);
@@ -1197,6 +1215,7 @@ export function Board({ channel }: BoardProps) {
   }, [pendingShroomAction, instructionCards]);
 
   return (
+    <CompactCardsContext.Provider value={compactCards}>
     <div className="flex h-full flex-col">
       {/* Cursor presence overlay - shows other users' cursors */}
       {isServerMode && (
@@ -1315,6 +1334,24 @@ export function Board({ channel }: BoardProps) {
               </button>
             )}
           </div>
+          {/* Compact cards toggle — only meaningful in board/focus views where cards actually render */}
+          {(viewMode === 'board' || viewMode === 'focus') && (
+            <button
+              onClick={toggleCompactCards}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md border transition-colors flex-shrink-0 ${
+                compactCards
+                  ? 'bg-violet-500/10 dark:bg-violet-500/15 border-violet-500/40 text-violet-600 dark:text-violet-300'
+                  : 'bg-neutral-100 dark:bg-neutral-800 border-transparent text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+              }`}
+              title={compactCards ? 'Switch to detailed cards' : 'Switch to compact cards (titles only)'}
+              aria-pressed={compactCards}
+            >
+              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <span className="hidden xs:inline">Compact</span>
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Channel members with online/offline status */}
@@ -1735,5 +1772,6 @@ export function Board({ channel }: BoardProps) {
       {/* Bulk card actions toolbar — appears when cards are selected */}
       <BulkActionsToolbar channel={channel} />
     </div>
+    </CompactCardsContext.Provider>
   );
 }

@@ -375,27 +375,32 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    // Query Mixpanel — try direct API first, fall back to MCP
+    // Mixpanel context — only fetch when the user has explicitly asked for analytics.
+    // Having the integration connected is NOT enough; otherwise every unrelated chat turn
+    // would pull in Mixpanel data and confuse the response.
     let mixpanelContext = '';
-    try {
-      const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
-      if (isMixpanelConfigured()) {
-        mixpanelContext = await queryForChat(questionContent);
-        if (mixpanelContext) useWebSearch = false;
-      }
-    } catch { /* non-critical */ }
-
-    if (!mixpanelContext && channelId) {
+    if (channelId && detectsMixpanelIntent(questionContent)) {
       try {
         const sources = await getChannelDataSources(channelId);
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
+
         if (hasMixpanel) {
           useWebSearch = false;
-          const mpMessages: MixpanelChatMessage[] = (context.threadMessages || []).map(m => ({
-            type: m.type,
-            content: m.content,
-          }));
-          mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages, llm);
+
+          try {
+            const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
+            if (isMixpanelConfigured()) {
+              mixpanelContext = await queryForChat(questionContent);
+            }
+          } catch { /* non-critical */ }
+
+          if (!mixpanelContext) {
+            const mpMessages: MixpanelChatMessage[] = (context.threadMessages || []).map(m => ({
+              type: m.type,
+              content: m.content,
+            }));
+            mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages, llm);
+          }
         }
       } catch { /* non-critical */ }
     }

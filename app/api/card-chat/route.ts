@@ -429,37 +429,41 @@ export async function POST(request: Request) {
       console.error('Web tools load error:', error);
     }
 
-    // Check if channel has data sources connected, or use direct Mixpanel API
+    // Mixpanel context — only fetch when the user explicitly asks for analytics.
+    // We still build the generic dataSourceContext for every turn (that just lists what's
+    // connected and is safe), but the expensive + distracting Mixpanel query is gated on intent.
     let mixpanelContext = '';
     let dataSourceContext = '';
 
-    // Try direct Mixpanel API first (always available if env configured)
-    try {
-      const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
-      if (isMixpanelConfigured()) {
-        mixpanelContext = await queryForChat(questionContent);
-        if (mixpanelContext) useWebSearch = false;
-      }
-    } catch (err) {
-      console.error('[Card Chat] Direct Mixpanel error:', err);
-    }
-
-    // Fall back to MCP-based query if direct didn't return data
-    if (!mixpanelContext && channelId) {
+    if (channelId) {
       try {
         const sources = await getChannelDataSources(channelId);
         dataSourceContext = buildDataSourcePromptContext(sources);
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
-        if (hasMixpanel) {
+
+        if (hasMixpanel && detectsMixpanelIntent(questionContent)) {
           useWebSearch = false;
+
+          // Prefer direct API; fall back to MCP-based query.
           try {
-            const mpMessages: MixpanelChatMessage[] = (context.previousMessages || []).map(m => ({
-              type: m.type,
-              content: m.content,
-            }));
-            mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages, llm);
+            const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
+            if (isMixpanelConfigured()) {
+              mixpanelContext = await queryForChat(questionContent);
+            }
           } catch (err) {
-            console.error('[Card Chat] MCP Mixpanel error:', err);
+            console.error('[Card Chat] Direct Mixpanel error:', err);
+          }
+
+          if (!mixpanelContext) {
+            try {
+              const mpMessages: MixpanelChatMessage[] = (context.previousMessages || []).map(m => ({
+                type: m.type,
+                content: m.content,
+              }));
+              mixpanelContext = await queryMixpanelForChat(channelId, questionContent, mpMessages, llm);
+            } catch (err) {
+              console.error('[Card Chat] MCP Mixpanel error:', err);
+            }
           }
         }
       } catch { /* non-critical */ }
