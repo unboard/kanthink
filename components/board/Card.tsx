@@ -18,7 +18,6 @@ import { stripMentionMarkup } from './ChatMessage';
 import { SnoozePicker } from './SnoozePicker';
 import { useSelectionStore } from '@/lib/selectionStore';
 import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
-import { useCompactCards } from './CompactCardsContext';
 import { Pin } from 'lucide-react';
 
 class CardDrawerErrorBoundary extends React.Component<
@@ -93,7 +92,6 @@ export function Card({ card }: CardProps) {
   const isSelectionMode = useSelectionStore((s) => s.isSelectionMode);
   const toggleCard = useSelectionStore((s) => s.toggleCard);
   const isMobile = useIsMobile();
-  const compact = useCompactCards();
 
   // Long-press to enter selection mode on mobile (800ms, no movement)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -261,7 +259,7 @@ export function Card({ card }: CardProps) {
         `}
       >
         {/* Cover image */}
-        {card.coverImageUrl && !compact && (
+        {card.coverImageUrl && (
           <div className="overflow-hidden rounded-t-md">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -315,9 +313,9 @@ export function Card({ card }: CardProps) {
           </button>
         </div>
 
-        {/* Card content with padding — tighter in compact mode */}
+        {/* Card content with padding */}
         <div
-          className={`relative ${compact ? 'py-1.5 px-2.5' : 'p-3'}`}
+          className="relative p-3"
           onTouchStart={handleTouchStartForSelection}
           onTouchMove={handleTouchMoveForSelection}
           onTouchEnd={handleTouchEndForSelection}
@@ -775,7 +773,7 @@ export function Card({ card }: CardProps) {
         {/* Clickable content area — in selection mode, tap toggles selection */}
         <div onClick={() => { if (isSelectionMode) { toggleCard(card.id); } else { setIsCardDrawerOpen(true); } }}>
           {/* Pinned chip */}
-          {isPinned && !compact && (
+          {isPinned && (
             <div className="mb-1.5">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
                 <Pin className="w-2.5 h-2.5" />
@@ -784,7 +782,7 @@ export function Card({ card }: CardProps) {
             </div>
           )}
           {/* Snoozed badge */}
-          {card.snoozedUntil && new Date(card.snoozedUntil) > new Date() && !compact && (
+          {card.snoozedUntil && new Date(card.snoozedUntil) > new Date() && (
             <div className="mb-1.5 flex items-center gap-1 text-blue-500 dark:text-blue-400">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -795,7 +793,7 @@ export function Card({ card }: CardProps) {
             </div>
           )}
           {/* Tags - above title (hide "Processing" tag when agent is active) */}
-          {!compact && (card.tags ?? []).filter(t => !(card.isProcessing && t === 'Processing')).length > 0 && (
+          {(card.tags ?? []).filter(t => !(card.isProcessing && t === 'Processing')).length > 0 && (
             <div className="mb-1.5 flex flex-wrap gap-1 pr-12">
               {(card.tags ?? []).filter(t => !(card.isProcessing && t === 'Processing')).map((tagName) => {
                 const colorInfo = getTagColorInfo(tagName);
@@ -812,17 +810,17 @@ export function Card({ card }: CardProps) {
             </div>
           )}
 
-          <h4 className={`text-sm font-medium text-neutral-900 dark:text-white pr-6 ${compact ? 'truncate' : ''}`}>
+          <h4 className="text-sm font-medium text-neutral-900 dark:text-white pr-6">
             {card.title}
           </h4>
-          {contentPreview && !compact && (
+          {contentPreview && (
             <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
               {contentPreview}
             </p>
           )}
         </div>
 
-        {(card.assignedTo ?? []).length > 0 && !compact && (
+        {(card.assignedTo ?? []).length > 0 && (
           <div className="mt-2" onClick={() => setIsCardDrawerOpen(true)}>
             <AssigneeAvatars
               userIds={card.assignedTo!}
@@ -833,7 +831,7 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Task progress bar */}
-        {cardTasks.length > 0 && !compact && (
+        {cardTasks.length > 0 && (
           <div className="mt-2" onClick={() => setIsCardDrawerOpen(true)}>
             <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
               <span>{cardTasks.filter(t => t.status === 'done').length}/{cardTasks.length} tasks</span>
@@ -849,7 +847,7 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Published indicator */}
-        {card.isPublic && !compact && (
+        {card.isPublic && (
           <div className="mt-2 flex items-center gap-1 text-green-600 dark:text-green-400">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -859,7 +857,7 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Reactions */}
-        {(card.reactions ?? []).length > 0 && !compact && (
+        {(card.reactions ?? []).length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
             {(card.reactions ?? []).map((r) => (
               <button
@@ -897,27 +895,25 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
-        {!compact && (
-          <div>
-            <TaskListOnCard
-              cardId={card.id}
-              channelId={card.channelId}
-              tasks={cardTasks}
-              hideCompleted={card.hideCompletedTasks}
-              onTaskClick={(task) => {
-                setSelectedTask(task);
-                setAutoFocusTaskTitle(false);
-                setIsTaskDrawerOpen(true);
-              }}
-              onAddTaskClick={() => {
-                const newTask = createTask(card.channelId, card.id, { title: 'Untitled', createdBy: session?.user?.id ?? undefined });
-                setSelectedTask(newTask);
-                setAutoFocusTaskTitle(true);
-                setIsTaskDrawerOpen(true);
-              }}
-            />
-          </div>
-        )}
+        <div>
+          <TaskListOnCard
+            cardId={card.id}
+            channelId={card.channelId}
+            tasks={cardTasks}
+            hideCompleted={card.hideCompletedTasks}
+            onTaskClick={(task) => {
+              setSelectedTask(task);
+              setAutoFocusTaskTitle(false);
+              setIsTaskDrawerOpen(true);
+            }}
+            onAddTaskClick={() => {
+              const newTask = createTask(card.channelId, card.id, { title: 'Untitled', createdBy: session?.user?.id ?? undefined });
+              setSelectedTask(newTask);
+              setAutoFocusTaskTitle(true);
+              setIsTaskDrawerOpen(true);
+            }}
+          />
+        </div>
         </div>{/* End card content padding wrapper */}
       </div>
       <CardDrawerErrorBoundary>

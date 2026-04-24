@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 interface MobileMenuDrawerProps {
   isOpen: boolean;
@@ -60,7 +61,12 @@ export function MobileMenuDrawer({ isOpen, onClose, children, title }: MobileMen
 
   if (!isOpen && !isAnimating) return null;
 
-  return (
+  // Portal to body so the drawer escapes any ancestor stacking contexts (z-indexed
+  // parents, `transform`ed cards from dnd-kit, etc). Without this the drawer can be
+  // visually trapped below sibling elements like the card's selection checkbox.
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-[100] md:hidden">
       {/* Backdrop — tap to close */}
       <div
@@ -110,7 +116,8 @@ export function MobileMenuDrawer({ isOpen, onClose, children, title }: MobileMen
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
