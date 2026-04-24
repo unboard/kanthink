@@ -1231,8 +1231,16 @@ NEVER claim you completed an action unless you actually called the corresponding
                     </div>
                   </div>
                 ) : a.cardPreview ? (
-                  <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in cursor-pointer hover:border-violet-500/50 transition-colors"
-                    onClick={() => setExpandedCardId(a.cardPreview!.id)}>
+                  <div className="relative bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in hover:border-violet-500/50 transition-colors">
+                    {/* Full-card hit target — absolute button sits above all content so taps
+                        on the title, whitespace, tags, etc. all open the card. Content
+                        beneath stays visually normal; only the click routing moves up here. */}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedCardId(a.cardPreview!.id)}
+                      aria-label={`Open card ${a.cardPreview.title}`}
+                      className="absolute inset-0 z-10 w-full h-full cursor-pointer"
+                    />
                     {/* Card created banner */}
                     {a.action === 'create_card' && (
                       <div className="px-4 py-2 border-b border-neutral-800 flex items-center gap-2">
