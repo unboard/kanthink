@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
@@ -11,6 +11,7 @@ import { fetchShares } from '@/lib/api/client';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
 import { nanoid } from 'nanoid';
+import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 
 const WhiteboardEditor = dynamic(
   () => import('./WhiteboardEditor').then(mod => ({ default: mod.WhiteboardEditor })),
@@ -55,6 +56,29 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const addTagToCard = useStore((s) => s.addTagToCard);
   const removeTagFromCard = useStore((s) => s.removeTagFromCard);
   const tasks = useStore((s) => s.tasks);
+  const channels = useStore((s) => s.channels);
+  const folders = useStore((s) => s.folders);
+  const folderOrder = useStore((s) => s.folderOrder);
+  const channelOrder = useStore((s) => s.channelOrder);
+
+  const voiceSystemPrompt = useMemo(() => {
+    const channelList = Object.values(channels).filter((c) => !c.isGlobalHelp);
+    return buildVoiceSystemPrompt({
+      channelList,
+      cards,
+      tasks,
+      folders,
+      folderOrder,
+      channelOrder,
+      session,
+      focus: {
+        channelId: card.channelId,
+        channelName,
+        cardId: card.id,
+        cardTitle: card.title,
+      },
+    });
+  }, [channels, cards, tasks, folders, folderOrder, channelOrder, session, card.channelId, card.id, card.title, channelName]);
 
   // Get tasks for this card
   const cardTasks = (card.taskIds ?? [])
@@ -548,7 +572,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           onKeyboardBlur={handleKeyboardBlur}
           members={members}
           onOpenWhiteboard={() => setIsWhiteboardOpen(true)}
-          voiceContext={`You are Kan, an AI assistant for the card "${card.title}" in the "${channelName}" channel. ${channelDescription ? 'Channel: ' + channelDescription + '. ' : ''}The card has ${messages.length} messages in its thread. Keep voice responses to 2-3 sentences.`}
+          voiceContext={voiceSystemPrompt}
         />
       </div>
 

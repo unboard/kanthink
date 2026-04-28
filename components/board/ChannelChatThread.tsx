@@ -21,6 +21,7 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput, useKeyboardOffset } from './ChatInput';
 import { ChannelActionSnippet, resolveColumnId, resolveCardId } from './ChannelActionSnippet';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 
 interface ChannelChatThreadProps {
   thread: ThreadType;
@@ -63,6 +64,24 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
   const addTagToCard = useStore((s) => s.addTagToCard);
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
+  const channels = useStore((s) => s.channels);
+  const folders = useStore((s) => s.folders);
+  const folderOrder = useStore((s) => s.folderOrder);
+  const channelOrder = useStore((s) => s.channelOrder);
+
+  const voiceSystemPrompt = useMemo(() => {
+    const channelList = Object.values(channels).filter((c) => !c.isGlobalHelp);
+    return buildVoiceSystemPrompt({
+      channelList,
+      cards,
+      tasks,
+      folders,
+      folderOrder,
+      channelOrder,
+      session,
+      focus: { channelId: channel.id, channelName: channel.name },
+    });
+  }, [channels, cards, tasks, folders, folderOrder, channelOrder, session, channel.id, channel.name]);
 
   const messages = useMemo(() => thread.messages ?? [], [thread.messages]);
 
@@ -404,7 +423,7 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
           onKeyboardFocus={handleKeyboardFocus}
           onKeyboardBlur={handleKeyboardBlur}
           forceQuestionMode
-          voiceContext={`You are Kan, an AI assistant for the "${channel.name}" channel in Kanthink. ${channel.description ? 'Description: ' + channel.description + '. ' : ''}It has ${channel.columns.length} columns with ${channel.columns.reduce((s: number, c: { cardIds: string[] }) => s + c.cardIds.length, 0)} total cards. Keep voice responses to 2-3 sentences.`}
+          voiceContext={voiceSystemPrompt}
         />
       </div>
     </div>
