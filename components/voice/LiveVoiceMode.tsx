@@ -25,16 +25,17 @@ const TOOLS = [
       },
       {
         name: 'create_task',
-        description: 'Create a new task in a channel, optionally on a card',
+        description: 'Create a new task. PREFER create_card for most user requests — only use create_task when the user explicitly says "task", "to-do", "todo", or "checklist item", or when adding a sub-task under an existing card. Tasks are short, status-tracked checklist items; cards are first-class kanban units with a thread, properties, and richer content. ALWAYS provide a description (the user has complained about empty tasks). For standalone tasks (no cardId), ALWAYS provide columnName so the task lands in a visible column on the board.',
         parameters: {
           type: 'OBJECT',
           properties: {
             channelId: { type: 'STRING', description: 'Channel ID' },
-            cardId: { type: 'STRING', description: 'Card ID (optional - omit for standalone task)' },
-            title: { type: 'STRING', description: 'Task title' },
-            description: { type: 'STRING', description: 'Task description in markdown. Use headers, bullets, bold, links etc. to structure it.' },
+            cardId: { type: 'STRING', description: 'Parent card ID. Omit for a standalone task — but if omitted you MUST pass columnName.' },
+            columnName: { type: 'STRING', description: 'Column to place a standalone task in (e.g. "Inbox", "This Week"). Required when cardId is omitted; ignored when cardId is set. If you are not sure which column, ask the user.' },
+            title: { type: 'STRING', description: 'Short, action-oriented task title.' },
+            description: { type: 'STRING', description: 'REQUIRED in practice — write a 1-3 sentence description in markdown explaining what the task involves and why. Use **bold**, bullet lists, or links if helpful. Never leave this empty.' },
           },
-          required: ['channelId', 'title'],
+          required: ['channelId', 'title', 'description'],
         },
       },
       {
@@ -758,6 +759,12 @@ IMAGE GENERATION:
 When the user asks you to create, generate, or draw an image, use the generate_image tool. Provide a detailed, descriptive prompt. Do NOT describe the generated image verbally — just say "I'm generating that for you" and let the visual card appear. If they specify an orientation (landscape, portrait, square), map to the appropriate aspectRatio (16:9, 9:16, 1:1 etc.).
 
 When the user asks to create an email with images, use BOTH draft_email and generate_image tools. The image will be automatically attached to the email when it finishes generating.
+
+CARDS vs TASKS — DEFAULT TO CARDS:
+When the user asks you to capture something — an idea, a bug, a feature, a note, a thing to look into — create a CARD, not a task. Cards are the primary kanban unit; they have a thread, can be moved between columns, and gain context over time. Only call create_task when:
+- The user literally says "task", "to-do", "todo", or "checklist item", OR
+- You are breaking down an existing card into sub-items (cardId is set).
+For standalone tasks, you MUST pass columnName so it lands on the board — never create a task without a column or a parent card. ALWAYS write a real description for tasks (1-3 sentences explaining what it involves). Empty-description tasks are a known regression and a user complaint.
 
 CONTENT FORMATTING:
 When creating notes, cards, or tasks with content, ALWAYS use rich markdown formatting. The app renders markdown so it looks great. Use:

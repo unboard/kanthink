@@ -72,12 +72,36 @@ export async function POST(request: Request) {
           }
         }
 
+        // For standalone tasks (no parent card), resolve columnName so the task
+        // shows up in a visible column on the board. Fall back to the first column
+        // if the model didn't pass one — never create an orphaned standalone task.
+        let resolvedColumnId: string | null = null;
+        if (!resolvedCardId) {
+          const channelCols = await db.query.columns.findMany({
+            where: eq(columns.channelId, resolvedChannelId),
+            orderBy: [asc(columns.position)],
+          });
+          if (channelCols.length > 0) {
+            const requested = args.columnName?.trim().toLowerCase();
+            const match = requested
+              ? channelCols.find(c => c.name.toLowerCase() === requested)
+                  ?? channelCols.find(c => c.name.toLowerCase().includes(requested))
+              : undefined;
+            resolvedColumnId = (match ?? channelCols[0]).id;
+          }
+        }
+
+        // Description is strongly expected — fall back to the title so the task is
+        // never blank, but log when the model omits it so we can keep tightening the prompt.
+        const description = args.description?.trim() || `Created from voice mode: ${args.title}`;
+
         await db.insert(tasks).values({
           id,
           channelId: resolvedChannelId,
           cardId: resolvedCardId,
+          columnId: resolvedColumnId,
           title: args.title,
-          description: args.description || '',
+          description,
           status: 'not_started',
           createdBy: session.user.id,
           createdAt: nowDate,
@@ -90,7 +114,7 @@ export async function POST(request: Request) {
             id,
             title: args.title,
             status: 'not_started',
-            description: args.description || '',
+            description,
             cardId: resolvedCardId,
             channelId: resolvedChannelId,
           },
