@@ -6,6 +6,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
 import { TaskDrawer } from '@/components/board/TaskDrawer';
 import { VoiceSpores } from './VoiceSpores';
+import { SwipeToDismiss } from './SwipeToDismiss';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
 
 const VOICE_OPTIONS = [
@@ -942,10 +943,14 @@ NEVER claim you completed an action unless you actually called the corresponding
     }
   }, []);
 
-  // Auto-scroll action feed when new actions appear
+  // Auto-scroll action feed when new actions appear. Use instant scroll (not smooth)
+  // so the card preview lands at its final position before the user can tap it. The
+  // previous smooth-scroll-after-100ms combined with the card's slide-in animation
+  // meant the tap target kept moving for ~400ms after the card appeared, causing
+  // taps to miss right after creation.
   useEffect(() => {
     if (actions.length > 0 && actionFeedRef.current) {
-      setTimeout(() => actionFeedRef.current?.scrollTo({ top: actionFeedRef.current.scrollHeight, behavior: 'smooth' }), 100);
+      actionFeedRef.current.scrollTo({ top: actionFeedRef.current.scrollHeight });
     }
   }, [actions.length]);
 
@@ -1092,7 +1097,7 @@ NEVER claim you completed an action unless you actually called the corresponding
           {/* Action feed — only shows mutations and previews, not search results */}
           <div className="space-y-3">
             {actions.filter(a => !['search_cards'].includes(a.action)).map(a => (
-              <div key={a.id}>
+              <SwipeToDismiss key={a.id} onDismiss={() => setActions(prev => prev.filter(x => x.id !== a.id))}>
                 {/* Generated image */}
                 {a.imageGen ? (
                   <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in">
@@ -1331,7 +1336,7 @@ NEVER claim you completed an action unless you actually called the corresponding
                     );
                   })()
                 )}
-              </div>
+              </SwipeToDismiss>
             ))}
           </div>
         </div>

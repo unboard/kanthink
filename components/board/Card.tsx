@@ -126,9 +126,14 @@ export function Card({ card }: CardProps) {
     }
   }, []);
 
-  // Close card menu on click outside
+  // Close card menu on click outside (desktop only — the MobileMenuDrawer is portaled
+  // to document.body, so cardMenuRef.contains(target) is always false for taps inside
+  // it. On mobile that race fires setShowCardMenu(false) on mousedown, which slides
+  // the bottom sheet off-screen before the button's click event lands — making
+  // Delete/Archive/etc. silently no-op. The drawer has its own backdrop that handles
+  // outside taps, so we don't need this listener on mobile.
   useEffect(() => {
-    if (!showCardMenu) return;
+    if (!showCardMenu || isMobile) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (cardMenuRef.current && !cardMenuRef.current.contains(e.target as Node)) {
         setShowCardMenu(false);
@@ -137,7 +142,7 @@ export function Card({ card }: CardProps) {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showCardMenu]);
+  }, [showCardMenu, isMobile]);
 
   // Get tasks for this card
   const cardTasks = (card.taskIds ?? [])

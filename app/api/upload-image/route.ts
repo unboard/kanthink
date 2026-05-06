@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { uploadImageToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary';
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+// Match Vercel's serverless body-size limit so large requests fail with our friendly
+// JSON error rather than the platform's bare 413. Clients are expected to compress
+// before upload — see lib/hooks/useImageUpload.ts.
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 export async function POST(request: Request) {
