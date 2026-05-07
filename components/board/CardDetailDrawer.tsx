@@ -30,6 +30,7 @@ import { Drawer } from '@/components/ui';
 import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
 import { CardChat } from './CardChat';
+import { PlaygroundView } from '@/components/playground/PlaygroundView';
 import { TagPicker, getTagStyles } from './TagPicker';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
@@ -1003,8 +1004,13 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {/* Thread Tab */}
-          {activeTab === 'thread' && (
+          {/* Thread Tab — Playground mode swaps the chat for the build-and-preview UI */}
+          {activeTab === 'thread' && card.cardType === 'playground' && (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <PlaygroundView card={card} />
+            </div>
+          )}
+          {activeTab === 'thread' && card.cardType !== 'playground' && (
             <div className="flex-1 min-h-0 flex flex-col">
               <CardChat
                 card={card}
