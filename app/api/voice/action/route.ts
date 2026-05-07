@@ -263,8 +263,32 @@ export async function POST(request: Request) {
         const cardTasks = await db.query.tasks.findMany({ where: eq(tasks.cardId, card.id) });
         const channel = await db.query.channels.findFirst({ where: eq(channels.id, card.channelId), columns: { name: true } });
         const col = card.columnId ? await db.query.columns.findFirst({ where: eq(columns.id, card.columnId), columns: { name: true } }) : null;
+
+        // Include full card content in the text result so voice mode can actually
+        // read it aloud — previously only the title was returned, so "read this card"
+        // had nothing to read. Visual preview still renders from cardPreview below.
+        const contentLines: string[] = [];
+        contentLines.push(`Card: "${card.title}"`);
+        if (channel?.name) contentLines.push(`Channel: ${channel.name}${col?.name ? ` › ${col.name}` : ''}`);
+        if (card.tags && card.tags.length > 0) contentLines.push(`Tags: ${card.tags.join(', ')}`);
+        if (card.summary) contentLines.push(`Summary: ${card.summary}`);
+        if (msgs.length > 0) {
+          const labelFor = (t: string) => t === 'question' ? 'User asked' : t === 'ai_response' ? 'Kan' : 'Note';
+          const body = msgs
+            .map(m => `[${labelFor(m.type)}] ${(m.content || '').trim()}`)
+            .filter(line => line.length > 0)
+            .join('\n\n');
+          contentLines.push(`Thread (${msgs.length} message${msgs.length === 1 ? '' : 's'}):\n${body}`);
+        } else {
+          contentLines.push('Thread: (empty)');
+        }
+        if (cardTasks.length > 0) {
+          const taskLines = cardTasks.map(t => `- ${t.title} [${t.status || 'not_started'}]`).join('\n');
+          contentLines.push(`Tasks:\n${taskLines}`);
+        }
+
         return NextResponse.json({
-          result: `Showing card "${card.title}"`,
+          result: contentLines.join('\n\n'),
           cardPreview: {
             id: card.id,
             title: card.title,

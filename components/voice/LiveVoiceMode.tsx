@@ -92,7 +92,7 @@ const TOOLS = [
       },
       {
         name: 'show_card',
-        description: 'Show a visual preview of a card so the user can see its details. Use when the user wants to view a card, see its content, or get more detail about it.',
+        description: 'Open a card and return its full content (title, summary, every thread message, tasks, tags). Use this whenever the user wants to view, read, or hear a card — including "read me this card", "what does that card say", "open this card", or any request for card details. The tool result includes the actual thread text so you can read it aloud verbatim.',
         parameters: {
           type: 'OBJECT',
           properties: { cardId: { type: 'STRING', description: 'Card ID or card title' } },
