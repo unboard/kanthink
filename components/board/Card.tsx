@@ -789,8 +789,13 @@ export function Card({ card }: CardProps) {
           )}
         </div>
 
-        {/* Clickable content area — in selection mode, tap toggles selection */}
-        <div onClick={() => { if (isSelectionMode) { toggleCard(card.id); } else { setIsCardDrawerOpen(true); } }}>
+        {/* Clickable content area — in selection mode, tap toggles selection.
+            active:* gives instant tactile feedback so taps feel responsive while the
+            (heavy) drawer mounts on the next frame. */}
+        <div
+          className="transition-opacity duration-75 active:opacity-60"
+          onClick={() => { if (isSelectionMode) { toggleCard(card.id); } else { setIsCardDrawerOpen(true); } }}
+        >
           {/* Pinned chip */}
           {isPinned && (
             <div className="mb-1.5">

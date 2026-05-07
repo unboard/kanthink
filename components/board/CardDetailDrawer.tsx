@@ -185,9 +185,31 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [showImagePrompt, setShowImagePrompt] = useState(false);
   const [imagePromptText, setImagePromptText] = useState('');
+  // Defer the heavy CardChat / PlaygroundView render until after the drawer's
+  // slide-in animation has had a frame to start. This makes taps on cards feel
+  // instant even when the thread component is large.
+  const [contentReady, setContentReady] = useState(false);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile: uploadCoverFile } = useImageUpload({ cardId: card?.id });
+
+  useEffect(() => {
+    if (!isOpen) {
+      setContentReady(false);
+      return;
+    }
+    // Two rAFs: first frame paints the drawer chrome + skeleton, second frame
+    // mounts the heavy content. Net delay ~16-32ms — invisible to the user but
+    // huge for perceived responsiveness.
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setContentReady(true));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, [isOpen, card?.id]);
 
   const generateCoverImage = async (customPrompt?: string) => {
     if (!card) return;
@@ -894,6 +916,21 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         React
                       </button>
 
+                      {/* Turn into / Open Playground */}
+                      <button
+                        onClick={() => {
+                          updateCard(card.id, { cardType: card.cardType === 'playground' ? undefined : 'playground' });
+                          setShowCardMenu(false);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+                        </svg>
+                        {card.cardType === 'playground' ? 'Exit Playground' : 'Turn into Playground'}
+                      </button>
+                      <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
+
                       {/* Archive */}
                       <button
                         onClick={() => {
@@ -1004,13 +1041,20 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {/* Thread Tab — Playground mode swaps the chat for the build-and-preview UI */}
-          {activeTab === 'thread' && card.cardType === 'playground' && (
+          {/* Thread Tab — Playground mode swaps the chat for the build-and-preview UI.
+              Both heavy components are gated on contentReady so the drawer slide-in
+              starts immediately and the thread/preview mounts a frame later. */}
+          {activeTab === 'thread' && !contentReady && (
+            <div className="flex-1 min-h-0 flex items-center justify-center">
+              <div className="h-5 w-5 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin" />
+            </div>
+          )}
+          {activeTab === 'thread' && contentReady && card.cardType === 'playground' && (
             <div className="flex-1 min-h-0 flex flex-col">
               <PlaygroundView card={card} />
             </div>
           )}
-          {activeTab === 'thread' && card.cardType !== 'playground' && (
+          {activeTab === 'thread' && contentReady && card.cardType !== 'playground' && (
             <div className="flex-1 min-h-0 flex flex-col">
               <CardChat
                 card={card}
