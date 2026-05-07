@@ -1622,8 +1622,11 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
     );
   }
 
+  // Playground mode needs the full viewport — chat + iframe preview is too cramped at 'lg'.
+  const drawerWidth = card.cardType === 'playground' ? 'full' : 'lg';
+
   return (
-    <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating hideCloseButton>
+    <Drawer isOpen={isOpen} onClose={handleClose} width={drawerWidth} floating hideCloseButton>
       {content}
     </Drawer>
   );

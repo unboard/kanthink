@@ -6,17 +6,19 @@ interface DrawerProps {
   isOpen: boolean;
   onClose: () => void;
   children: ReactNode;
-  width?: 'md' | 'lg' | 'xl';
+  width?: 'md' | 'lg' | 'xl' | 'full';
   floating?: boolean;
   title?: string;
   hideCloseButton?: boolean;
 }
 
-// On mobile, drawers are full-width. On larger screens, use max-width
+// On mobile, drawers are full-width. On larger screens, use max-width.
+// 'full' uses the whole viewport — used by features that need the canvas, like Playground mode.
 const widthClasses = {
   md: 'w-full sm:max-w-md',
   lg: 'w-full sm:max-w-2xl',
   xl: 'w-full sm:max-w-4xl',
+  full: 'w-screen max-w-none',
 };
 
 export function Drawer({ isOpen, onClose, children, width = 'lg', floating = false, hideCloseButton = false }: DrawerProps) {

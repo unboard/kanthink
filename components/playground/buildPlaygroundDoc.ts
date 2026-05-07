@@ -66,10 +66,13 @@ export function buildPlaygroundDoc(code: string, options?: { title?: string }): 
   });
 </script>
 <script type="text/babel" data-type="module" data-presets="react">
-import * as ReactNS from 'react';
+// IMPORTANT: alias namespace import to "React" so Babel's classic JSX runtime
+// (which emits React.createElement / React.Fragment calls) resolves correctly
+// when the user code uses bare named imports like \`import { useState } from 'react'\`.
+import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 
-class __KPG_ErrorBoundary extends ReactNS.Component {
+class __KPG_ErrorBoundary extends React.Component {
   constructor(p) { super(p); this.state = { error: null }; }
   static getDerivedStateFromError(err) { return { error: err }; }
   componentDidCatch(err, info) {
@@ -77,9 +80,9 @@ class __KPG_ErrorBoundary extends ReactNS.Component {
   }
   render() {
     if (this.state.error) {
-      return ReactNS.createElement('div', { className: 'p-6 text-sm text-red-700 bg-red-50' },
-        ReactNS.createElement('div', { className: 'font-semibold mb-1' }, 'The app crashed.'),
-        ReactNS.createElement('pre', { className: 'whitespace-pre-wrap text-xs opacity-75' }, (this.state.error && this.state.error.message) || String(this.state.error))
+      return React.createElement('div', { className: 'p-6 text-sm text-red-700 bg-red-50' },
+        React.createElement('div', { className: 'font-semibold mb-1' }, 'The app crashed.'),
+        React.createElement('pre', { className: 'whitespace-pre-wrap text-xs opacity-75' }, (this.state.error && this.state.error.message) || String(this.state.error))
       );
     }
     return this.props.children;
@@ -92,8 +95,8 @@ ${cleanCode}
 
 const __kpg_root = createRoot(document.getElementById('root'));
 __kpg_root.render(
-  ReactNS.createElement(__KPG_ErrorBoundary, null,
-    ReactNS.createElement(typeof App !== 'undefined' ? App : (() => ReactNS.createElement('div', { className: 'p-6 text-neutral-500' }, 'No App component exported.')), null)
+  React.createElement(__KPG_ErrorBoundary, null,
+    React.createElement(typeof App !== 'undefined' ? App : (() => React.createElement('div', { className: 'p-6 text-neutral-500' }, 'No App component exported.')), null)
   )
 );
 </script>
