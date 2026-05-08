@@ -805,6 +805,18 @@ export function Card({ card }: CardProps) {
               </span>
             </div>
           )}
+          {/* Playground badge — gradient pill so it pops against the card surface.
+              Wrapping click already opens the drawer; the badge just signals capability. */}
+          {card.cardType === 'playground' && (
+            <div className="mb-1.5">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 shadow-sm shadow-violet-500/30">
+                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09z" />
+                </svg>
+                Playground
+              </span>
+            </div>
+          )}
           {/* Snoozed badge */}
           {card.snoozedUntil && new Date(card.snoozedUntil) > new Date() && (
             <div className="mb-1.5 flex items-center gap-1 text-blue-500 dark:text-blue-400">
