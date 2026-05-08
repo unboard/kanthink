@@ -77,8 +77,23 @@ const handleUpload = async (e) => {
 
 The helper accepts JPEG, PNG, WebP, GIF up to ~4MB. It returns \`{ url, publicId, width, height }\`. Persist the url in localStorage / state — it's a stable CDN URL that survives across sessions.
 
+EDIT PRESERVATION (CRITICAL — read every iteration):
+You are editing existing code, NOT redesigning the app. The user expects that when they ask for a small change, ONLY that small change happens. Drift kills trust faster than bugs do.
+
+Rules:
+1. Identify exactly what the user is asking to change. Then change ONLY that.
+2. Everything that was NOT mentioned in the user request must come through to your output unchanged — same Tailwind classes, same copy, same component structure, same colors, same layout, same state shape, same variable names, same comments. Treat unmentioned elements as locked.
+3. If the user says "change the button color to red", you change one className on one button. You do NOT also tighten spacing, swap fonts, restructure layouts, rename state, or reword copy elsewhere.
+4. If the user describes a small interaction tweak ("the timer should pause on click"), you add or modify the minimum logic needed. The visual layout, palette, typography, and copy stay byte-for-byte identical.
+5. NEVER "improve" parts the user didn't mention, even if you spot something you'd do differently. Their existing choices are intentional.
+6. Before writing your output, do a mental diff: which lines must change to fulfill the request? If your diff is bigger than the request implies, you're drifting — go back and shrink it.
+7. If the user's request truly does require widespread change (e.g. "completely redesign", "start over", "use a different layout style"), then yes, rewrite freely. Otherwise, surgical edits only.
+8. The "notes" field should describe the specific change you made, not a redesign summary. "Made the Save button blue" — not "Refined the visual hierarchy and adjusted the action bar."
+
+This rule applies on EVERY iteration after the first generation. The first generation is your one chance to make broad design choices; from then on, every change is a precision edit.
+
 ERROR FEEDBACK PROTOCOL:
-If the user message includes a section "PREVIOUS ERROR:", you have a runtime error from your last iteration. Fix that error specifically. If the same error appeared in two consecutive turns, REWRITE THE WHOLE APP from the original goal in a different way. Do not iterate on broken code more than twice.
+If the user message includes a section "PREVIOUS ERROR:", you have a runtime error from your last iteration. Fix that error specifically — touch only what's needed to resolve the error, leave everything else exactly as it was. If the same error appeared in two consecutive turns, REWRITE THE WHOLE APP from the original goal in a different way. Do not iterate on broken code more than twice.
 
 CONVERSATIONAL TONE:
 The "notes" field is shown in chat. Write it like a teammate, not a changelog.
@@ -178,14 +193,22 @@ export async function POST(request: Request) {
     ? `\n\nThe user attached ${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} below — use them for visual reference (style, layout, colors, content).`
     : '';
 
+  // Iteration mode emits a stronger preservation reminder right next to the user
+  // request — Gemini ignores subtle hints when the user prompt is the most recent
+  // signal, so we put the rule adjacent to what they're acting on.
+  const isIteration = !!currentCode;
+  const iterationReminder = isIteration
+    ? '\n\n⚠️ THIS IS AN EDIT, NOT A REDESIGN. Change only what the request asks. Everything else in the current code must come through unchanged — same classes, copy, structure, colors, behavior. If your diff is bigger than the request implies, you are drifting — shrink it.'
+    : '';
+
   const userMessage = [
     `ORIGINAL GOAL (card title): ${card.title}`,
     currentCode
-      ? `CURRENT CODE:\n\`\`\`jsx\n${currentCode}\n\`\`\``
-      : 'CURRENT CODE: (none yet — this is the first generation)',
+      ? `CURRENT CODE (this is your starting point — preserve it except for what the user asks to change):\n\`\`\`jsx\n${currentCode}\n\`\`\``
+      : 'CURRENT CODE: (none yet — this is the first generation, design freely)',
     `RECENT THREAD CONTEXT:\n${threadContext}`,
     body.lastError ? `PREVIOUS ERROR:\n${body.lastError}` : '',
-    `USER REQUEST:\n${body.prompt}${imageNote}`,
+    `USER REQUEST:\n${body.prompt}${imageNote}${iterationReminder}`,
   ].filter(Boolean).join('\n\n');
 
   // Resolve which Gemini model to call. Validate against the allow-list so a bad
