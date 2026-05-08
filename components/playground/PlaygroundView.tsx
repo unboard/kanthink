@@ -120,11 +120,19 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
   const selectedModel = getPlaygroundModel(modelId);
   const lastUsage = typeData.lastUsage;
 
-  // Drag handle: while held, recompute chatWidth as a percentage of the split container.
+  // Keep the latest chatWidth in a ref so the mouseup persistence reads the
+  // current value without forcing the drag effect to re-attach listeners on
+  // every frame. Re-attaching mid-drag was causing dropped move/up events.
+  const chatWidthRef = useRef(chatWidth);
+  useEffect(() => { chatWidthRef.current = chatWidth; }, [chatWidth]);
+
+  // Drag handle: attach window listeners ONCE per drag (deps: only isResizing).
+  // While held, the iframe gets pointer-events:none via `isResizing` so the
+  // browser doesn't hand the cursor to the iframe and steal our mousemove/up.
   useEffect(() => {
     if (!isResizing) return;
+    const container = splitRef.current;
     const onMove = (e: MouseEvent) => {
-      const container = splitRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
       const pct = ((e.clientX - rect.left) / rect.width) * 100;
@@ -134,20 +142,24 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     const onUp = () => {
       setIsResizing(false);
       try {
-        window.localStorage.setItem(CHAT_WIDTH_KEY, String(chatWidth));
+        window.localStorage.setItem(CHAT_WIDTH_KEY, String(chatWidthRef.current));
       } catch { /* noop */ }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    // Window blur guards against losing the mouseup if the cursor leaves the
+    // viewport (drag onto another monitor / native dialog) — release the drag.
+    window.addEventListener('blur', onUp);
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', onUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizing, chatWidth]);
+  }, [isResizing]);
 
   // Persist final width once the drag ends (also handled in onUp above for safety).
   useEffect(() => {
@@ -665,6 +677,9 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
           srcDoc={srcDoc}
           sandbox="allow-scripts allow-modals allow-popups allow-forms"
           allow="autoplay; clipboard-write"
+          // pointerEvents:none while resizing prevents the iframe from
+          // capturing mouse events and breaking the parent's drag listeners.
+          style={isResizing ? { pointerEvents: 'none' } : undefined}
           className="w-full h-full border-0 bg-white"
           title="Playground preview"
         />

@@ -27,9 +27,18 @@ export function buildPlaygroundDoc(
   // absolute origin so the helper works from inside an opaque-origin iframe.
   const uploadUrl = (options?.uploadUrl || '/api/playground/upload').replace(/[<>"]/g, '');
   // Strip an accidental opening markdown fence if Gemini ever leaks one.
+  // Also strip any `import React ...` lines: the iframe's wrapper already does
+  // `import * as React from 'react'` so user code that re-imports React would
+  // hit "Identifier 'React' has already been declared".
   const cleanCode = code
     .replace(/^```(?:jsx|tsx|js|javascript|typescript)?\s*\n?/i, '')
-    .replace(/\n?```\s*$/i, '');
+    .replace(/\n?```\s*$/i, '')
+    // `import React, { useState } from 'react';`  →  `import { useState } from 'react';`
+    .replace(/^\s*import\s+React\s*,\s*\{([^}]+)\}\s*from\s*['"]react['"]\s*;?\s*$/gm, "import {$1} from 'react';")
+    // `import React from 'react';`               →  removed
+    .replace(/^\s*import\s+React\s+from\s*['"]react['"]\s*;?\s*$/gm, '')
+    // `import * as React from 'react';`          →  removed
+    .replace(/^\s*import\s+\*\s+as\s+React\s+from\s*['"]react['"]\s*;?\s*$/gm, '');
 
   return `<!DOCTYPE html>
 <html lang="en">

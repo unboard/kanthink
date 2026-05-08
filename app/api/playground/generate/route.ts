@@ -44,7 +44,7 @@ const SYSTEM_PROMPT = `You generate complete single-file React applications that
 
 CODE RULES (strict — your output runs unmodified):
 1. ONE file. Output JSX (NOT TypeScript types — plain modern React).
-2. Imports allowed: react, react-dom/client, lucide-react. Nothing else. Use esm.sh-friendly named imports.
+2. Imports allowed: react (named imports only — useState/useEffect/etc.), lucide-react. NEVER write \`import React from 'react'\` or \`import * as React from 'react'\` — React is already in scope as a global from the host runtime; redeclaring it will fail with "Identifier 'React' has already been declared". Use \`import { useState, useEffect } from 'react';\` only when you need named hooks. Don't import react-dom — the runtime mounts your App component automatically.
 3. Default-export a single component named App. The host runtime mounts <App/> to #root.
 4. Use functional components and hooks only. No class components.
 5. Style with Tailwind utility classes only. No <style> tags. No CSS-in-JS.
