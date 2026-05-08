@@ -21,8 +21,10 @@ import {
   X,
   Cpu,
   ChevronDown,
+  ImagePlus,
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
+import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import {
   PLAYGROUND_MODELS,
   DEFAULT_PLAYGROUND_MODEL_ID,
@@ -63,6 +65,12 @@ interface IframeError {
   stack?: string;
 }
 
+interface StagedImage {
+  id: string;
+  url: string;       // Cloudinary URL once uploaded; tempId while uploading
+  uploading: boolean;
+}
+
 const STARTER_PROMPTS = [
   { label: 'Flyer maker for restaurants', prompt: 'A flyer maker for restaurants with a template picker (3 styles: classic, modern, playful), an editor with text fields for restaurant name, tagline, hours, address, and a downloadable preview.' },
   { label: 'Pomodoro with calming gradient', prompt: 'A focus timer with a calming animated gradient background, big circular countdown, start/pause/reset, and a tally of completed sessions saved to localStorage.' },
@@ -101,10 +109,13 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     return DEFAULT_PLAYGROUND_MODEL_ID;
   });
   const [showModelMenu, setShowModelMenu] = useState(false);
+  const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
   const splitRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile } = useImageUpload({ cardId: card.id });
 
   const selectedModel = getPlaygroundModel(modelId);
   const lastUsage = typeData.lastUsage;
@@ -167,7 +178,11 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
 
   const srcDoc = useMemo(() => {
     if (!code) return null;
-    return buildPlaygroundDoc(code, { title: typeData.codeTitle || cardFromStore.title });
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return buildPlaygroundDoc(code, {
+      title: typeData.codeTitle || cardFromStore.title,
+      uploadUrl: `${origin}/api/playground/upload`,
+    });
   }, [code, typeData.codeTitle, cardFromStore.title]);
 
   // Listen for runtime errors from inside the iframe.
@@ -207,11 +222,55 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [cardFromStore.messages?.length, isGenerating]);
 
+  const handleUploadFile = useCallback(async (file: File) => {
+    const tempId = nanoid();
+    const objectUrl = URL.createObjectURL(file);
+    setStagedImages((prev) => [...prev, { id: tempId, url: objectUrl, uploading: true }]);
+    try {
+      const result = await uploadFile(file);
+      setStagedImages((prev) =>
+        prev.map((img) => (img.id === tempId ? { id: tempId, url: result.url, uploading: false } : img))
+      );
+      // Keep the temporary blob URL alive until React swaps to the real URL.
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : 'Image upload failed');
+      setStagedImages((prev) => prev.filter((img) => img.id !== tempId));
+      URL.revokeObjectURL(objectUrl);
+    }
+  }, [uploadFile]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) handleUploadFile(file);
+      }
+    }
+  }, [handleUploadFile]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).filter((f) => f.type.startsWith('image/')).slice(0, 5).forEach(handleUploadFile);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeStagedImage = (id: string) => {
+    setStagedImages((prev) => prev.filter((img) => img.id !== id));
+  };
+
   const generate = useCallback(async (userPrompt: string, includeError: boolean) => {
-    if (!userPrompt.trim() || isGenerating) return;
+    if ((!userPrompt.trim() && stagedImages.length === 0) || isGenerating) return;
+    // Don't fire while images are still uploading.
+    if (stagedImages.some((img) => img.uploading)) return;
     setIsGenerating(true);
     setGenError(null);
     try {
+      const imageUrls = stagedImages.filter((img) => !img.uploading).map((img) => img.url);
       const res = await fetch('/api/playground/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -220,6 +279,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
           prompt: userPrompt,
           lastError: includeError ? iframeError?.message : undefined,
           modelId,
+          imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
         }),
       });
       const data = await res.json();
@@ -235,12 +295,13 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
         ...(data.snapshot.summary ? { summary: data.snapshot.summary } : {}),
       });
       setPrompt('');
+      setStagedImages([]);
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Network error');
     } finally {
       setIsGenerating(false);
     }
-  }, [card.id, isGenerating, iframeError, updateCard, generationCount, modelId]);
+  }, [card.id, isGenerating, iframeError, updateCard, generationCount, modelId, stagedImages]);
 
   const handleSubmit = () => generate(prompt, false);
   const handleAutoFix = () => {
@@ -372,7 +433,20 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
                       <span className="text-[10px] font-semibold uppercase tracking-wide">Kan</span>
                     </div>
                   )}
-                  <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                  {m.imageUrls && m.imageUrls.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {m.imageUrls.map((url) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={url}
+                          src={url}
+                          alt="Attached"
+                          className="w-24 h-24 object-cover rounded-lg border border-white/20"
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {m.content && <div className="whitespace-pre-wrap break-words">{m.content}</div>}
                 </div>
               </div>
             ))}
@@ -428,11 +502,39 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
       {/* Composer */}
       <div className="flex-shrink-0 border-t border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 sm:px-5 py-3">
         <div className="max-w-2xl mx-auto">
+          {stagedImages.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {stagedImages.map((img) => (
+                <div key={img.id} className="relative group">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.url}
+                    alt="Attached"
+                    className="w-16 h-16 object-cover rounded-lg border border-neutral-200 dark:border-neutral-700"
+                  />
+                  {img.uploading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-lg">
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeStagedImage(img.id)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-neutral-900 dark:bg-neutral-700 text-white flex items-center justify-center shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label="Remove image"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="relative rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 focus-within:border-violet-400 focus-within:ring-4 focus-within:ring-violet-500/10 transition-all shadow-sm">
             <textarea
               ref={textareaRef}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
@@ -442,11 +544,29 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
               placeholder={hasCode ? 'Describe a change…' : 'What do you want to build?'}
               rows={2}
               disabled={isGenerating}
-              className="w-full resize-none rounded-2xl bg-transparent px-4 py-3 pr-12 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none disabled:opacity-50"
+              className="w-full resize-none rounded-2xl bg-transparent px-4 py-3 pr-20 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none disabled:opacity-50"
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
             />
             <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isGenerating}
+              title="Attach images (or paste from clipboard)"
+              className="absolute bottom-2.5 right-12 h-8 w-8 rounded-full text-neutral-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 flex items-center justify-center transition-colors disabled:opacity-40"
+              aria-label="Attach image"
+            >
+              <ImagePlus className="w-4 h-4" />
+            </button>
+            <button
               onClick={handleSubmit}
-              disabled={!prompt.trim() || isGenerating}
+              disabled={(!prompt.trim() && stagedImages.length === 0) || isGenerating || stagedImages.some((img) => img.uploading)}
               className="absolute bottom-2.5 right-2.5 h-8 w-8 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white flex items-center justify-center shadow-md shadow-violet-600/30 hover:shadow-lg hover:shadow-violet-600/40 hover:from-violet-700 hover:to-fuchsia-700 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:bg-none disabled:shadow-none disabled:cursor-not-allowed transition-all"
               aria-label="Send"
             >

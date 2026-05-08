@@ -7,12 +7,25 @@
  * - Tailwind utility classes work (Play CDN).
  * - Code is compiled in-browser by Babel standalone (data-type="module").
  *
- * The script tag block calls `mountPlayground(App)` which wraps user content in
- * an error boundary and forwards runtime errors to the parent window via
- * `postMessage({ type: 'kpg_error', ... })`.
+ * The script tag block wraps user content in an error boundary, forwards runtime
+ * errors to the parent window via `postMessage({ type: 'kpg_error', ... })`, and
+ * exposes `window.kanthinkUpload(file)` for image/file storage via Cloudinary.
+ *
+ * @param code  User-generated JSX (the `App` component).
+ * @param options.title       Document title shown in the tab.
+ * @param options.uploadUrl   Absolute URL to POST uploads to. The iframe runs with
+ *                            an opaque origin (no allow-same-origin) so it cannot
+ *                            resolve relative URLs — the parent must bake in the
+ *                            full origin at build time.
  */
-export function buildPlaygroundDoc(code: string, options?: { title?: string }): string {
+export function buildPlaygroundDoc(
+  code: string,
+  options?: { title?: string; uploadUrl?: string }
+): string {
   const title = (options?.title || 'Kanthink Playground').replace(/[<>]/g, '');
+  // Default to a relative path; PlaygroundView / public-play page will pass the
+  // absolute origin so the helper works from inside an opaque-origin iframe.
+  const uploadUrl = (options?.uploadUrl || '/api/playground/upload').replace(/[<>"]/g, '');
   // Strip an accidental opening markdown fence if Gemini ever leaks one.
   const cleanCode = code
     .replace(/^```(?:jsx|tsx|js|javascript|typescript)?\s*\n?/i, '')
@@ -64,6 +77,26 @@ export function buildPlaygroundDoc(code: string, options?: { title?: string }): 
   window.addEventListener('load', function() {
     try { parent.postMessage({ type: 'kpg_ready' }, '*'); } catch(_) {}
   });
+
+  // Cloudinary upload helper — generated apps use this for any image/file storage.
+  // Absolute URL baked in at srcdoc build time; parent origin is unreachable from
+  // here because the iframe runs with an opaque origin (no allow-same-origin).
+  var __KPG_UPLOAD_URL = ${JSON.stringify(uploadUrl)};
+  window.kanthinkUpload = function(file) {
+    if (!file) return Promise.reject(new Error('No file provided'));
+    if (!(file instanceof File || file instanceof Blob)) {
+      return Promise.reject(new Error('kanthinkUpload expects a File or Blob.'));
+    }
+    var fd = new FormData();
+    fd.append('file', file);
+    return fetch(__KPG_UPLOAD_URL, { method: 'POST', body: fd, mode: 'cors' })
+      .then(function(res) {
+        return res.json().then(function(data) {
+          if (!res.ok) throw new Error(data && data.error ? data.error : 'Upload failed (' + res.status + ')');
+          return data;
+        });
+      });
+  };
 </script>
 <script type="text/babel" data-type="module" data-presets="react">
 // IMPORTANT: alias namespace import to "React" so Babel's classic JSX runtime

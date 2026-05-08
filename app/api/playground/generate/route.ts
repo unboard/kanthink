@@ -56,6 +56,27 @@ CODE RULES (strict — your output runs unmodified):
 11. Multiple "screens" should use view state in one file, e.g. const [view, setView] = useState('home') with conditional rendering. Do NOT split into multiple files.
 12. Prefer beautiful, realistic-feeling screens over fully-working logic. Use placeholder data and clear "Coming soon" labels for unimplemented features. This is a prototype tool.
 
+IMAGE & FILE STORAGE (Cloudinary, already wired up):
+The host runtime exposes \`window.kanthinkUpload(file)\` for uploading images to the Kanthink Cloudinary account. ALWAYS use this helper for any "upload an image", "user avatar", "photo upload", "attach a file", or "save image" feature. Do NOT use base64 data URLs in localStorage for images (they bloat storage and break with large files). Do NOT prompt users to set up their own storage.
+
+Usage:
+\`\`\`jsx
+const handleUpload = async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    const { url, width, height } = await window.kanthinkUpload(file);
+    // url is a permanent https Cloudinary URL — save it however you persist state
+    setImageUrl(url);
+  } catch (err) {
+    setError(err.message);
+  }
+};
+// JSX: <input type="file" accept="image/*" onChange={handleUpload} />
+\`\`\`
+
+The helper accepts JPEG, PNG, WebP, GIF up to ~4MB. It returns \`{ url, publicId, width, height }\`. Persist the url in localStorage / state — it's a stable CDN URL that survives across sessions.
+
 ERROR FEEDBACK PROTOCOL:
 If the user message includes a section "PREVIOUS ERROR:", you have a runtime error from your last iteration. Fix that error specifically. If the same error appeared in two consecutive turns, REWRITE THE WHOLE APP from the original goal in a different way. Do not iterate on broken code more than twice.
 
@@ -83,6 +104,24 @@ interface GenerateRequest {
   lastError?: string;
   // Optional: caller can choose a model. Falls back to the default.
   modelId?: string;
+  // Optional: image URLs (Cloudinary) attached to this prompt for visual context.
+  imageUrls?: string[];
+}
+
+/** Fetch an image URL and return it as Gemini-compatible inline base64 data. */
+async function fetchImageAsInlineData(
+  url: string
+): Promise<{ inlineData: { mimeType: string; data: string } } | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || 'image/png';
+    const buffer = await res.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    return { inlineData: { mimeType: contentType, data: base64 } };
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request: Request) {
@@ -134,6 +173,11 @@ export async function POST(request: Request) {
         .join('\n')
     : '(no prior messages)';
 
+  const attachedImages = (body.imageUrls || []).slice(0, 6); // hard cap on images per call
+  const imageNote = attachedImages.length > 0
+    ? `\n\nThe user attached ${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} below — use them for visual reference (style, layout, colors, content).`
+    : '';
+
   const userMessage = [
     `ORIGINAL GOAL (card title): ${card.title}`,
     currentCode
@@ -141,7 +185,7 @@ export async function POST(request: Request) {
       : 'CURRENT CODE: (none yet — this is the first generation)',
     `RECENT THREAD CONTEXT:\n${threadContext}`,
     body.lastError ? `PREVIOUS ERROR:\n${body.lastError}` : '',
-    `USER REQUEST:\n${body.prompt}`,
+    `USER REQUEST:\n${body.prompt}${imageNote}`,
   ].filter(Boolean).join('\n\n');
 
   // Resolve which Gemini model to call. Validate against the allow-list so a bad
@@ -153,12 +197,19 @@ export async function POST(request: Request) {
 
   const client = new GoogleGenAI({ apiKey });
 
+  // Resolve attached images into inlineData parts so Gemini can see them.
+  const imageParts: Array<{ inlineData: { mimeType: string; data: string } }> = [];
+  for (const url of attachedImages) {
+    const part = await fetchImageAsInlineData(url);
+    if (part) imageParts.push(part);
+  }
+
   let parsed: { title: string; summary: string; code: string; notes: string } | null = null;
   let usage: { promptTokenCount?: number; candidatesTokenCount?: number } | null = null;
   try {
     const response = await client.models.generateContent({
       model: model.id,
-      contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+      contents: [{ role: 'user', parts: [{ text: userMessage }, ...imageParts] }],
       config: {
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: 'application/json',
@@ -212,6 +263,7 @@ export async function POST(request: Request) {
     id: nanoid(),
     type: 'question' as const,
     content: body.prompt,
+    imageUrls: attachedImages.length > 0 ? attachedImages : undefined,
     authorId: session.user.id,
     createdAt: new Date().toISOString(),
   };

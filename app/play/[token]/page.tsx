@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { cards } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
 import { PublicPlaygroundFrame } from './PublicPlaygroundFrame';
@@ -49,7 +50,16 @@ export default async function PlayPage({ params }: PageProps) {
   }
 
   const title = typeData.codeTitle || card.title || 'Kanthink Playground';
-  const srcDoc = buildPlaygroundDoc(typeData.code, { title });
+  // Resolve the deployment origin from request headers so the iframe's upload
+  // helper has an absolute URL it can call across the opaque-origin boundary.
+  const h = await headers();
+  const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
+  const proto = h.get('x-forwarded-proto') ?? 'https';
+  const origin = host ? `${proto}://${host}` : '';
+  const srcDoc = buildPlaygroundDoc(typeData.code, {
+    title,
+    uploadUrl: `${origin}/api/playground/upload`,
+  });
 
   return <PublicPlaygroundFrame srcDoc={srcDoc} title={title} />;
 }
