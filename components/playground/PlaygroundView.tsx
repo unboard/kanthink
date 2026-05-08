@@ -319,22 +319,50 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setGenError(data.error || 'Generation failed');
-        // Roll the optimistic message back so the thread doesn't show a ghost.
+
+      // Read as text first so we can give a friendly error when the gateway
+      // returns HTML (504/502) or any non-JSON body — JSON.parse on HTML throws
+      // a cryptic "Unexpected token A, 'An error o...'" that's useless to users.
+      const responseText = await res.text();
+      let data: { error?: string; typeData?: unknown; messages?: unknown; snapshot?: { title?: string; summary?: string } } | null = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok || !data) {
+        let friendly: string;
+        if (res.status === 504 || res.status === 502) {
+          friendly = 'Generation took too long and timed out. Try a smaller change, or switch to a faster model like Gemini 2.5 Flash.';
+        } else if (res.status === 408) {
+          friendly = 'Request timed out. Try again, or switch to a faster model.';
+        } else if (data?.error) {
+          friendly = data.error;
+        } else if (!data) {
+          friendly = `Server returned an unexpected response (${res.status}). Try again.`;
+        } else {
+          friendly = `Generation failed (${res.status}).`;
+        }
+        setGenError(friendly);
         updateCard(card.id, { messages: messagesBeforeSend });
         return;
       }
+
+      const dataMessages = data.messages as unknown[] | undefined;
       updateCard(card.id, {
         cardType: 'playground',
-        typeData: data.typeData,
-        messages: data.messages, // server response already includes the user msg
-        ...(data.snapshot.title && generationCount === 0 ? { title: data.snapshot.title } : {}),
-        ...(data.snapshot.summary ? { summary: data.snapshot.summary } : {}),
+        typeData: data.typeData as Card['typeData'],
+        ...(dataMessages ? { messages: dataMessages as Card['messages'] } : {}),
+        ...(data.snapshot?.title && generationCount === 0 ? { title: data.snapshot.title } : {}),
+        ...(data.snapshot?.summary ? { summary: data.snapshot.summary } : {}),
       });
     } catch (err) {
-      setGenError(err instanceof Error ? err.message : 'Network error');
+      const msg = err instanceof Error ? err.message : 'Network error';
+      // Failed fetches (no response, DNS, offline) — distinguish from server error.
+      setGenError(msg.includes('Failed to fetch') || msg.includes('NetworkError')
+        ? 'Network error. Check your connection and try again.'
+        : msg);
       updateCard(card.id, { messages: messagesBeforeSend });
     } finally {
       setIsGenerating(false);

@@ -15,7 +15,10 @@ import {
 } from '@/lib/playground/models';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
+// cleanly exceed 60s; bumping to the Vercel Pro plan max prevents 504 gateway
+// timeouts from killing in-flight calls before Gemini responds.
+export const maxDuration = 300;
 
 interface PlaygroundUsage {
   modelId: string;
