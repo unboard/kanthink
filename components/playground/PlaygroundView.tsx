@@ -19,15 +19,31 @@ import {
   Eye,
   Wand2,
   X,
+  Cpu,
+  ChevronDown,
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
+import {
+  PLAYGROUND_MODELS,
+  DEFAULT_PLAYGROUND_MODEL_ID,
+  getPlaygroundModel,
+  formatCost,
+} from '@/lib/playground/models';
 
 interface PlaygroundViewProps {
   card: Card;
   onClose?: () => void;
 }
 
+interface PlaygroundUsage {
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
 const CHAT_WIDTH_KEY = 'kanthink_playground_chat_width';
+const MODEL_PREF_KEY = 'kanthink_playground_model';
 const CHAT_WIDTH_MIN = 22;
 const CHAT_WIDTH_MAX = 70;
 const CHAT_WIDTH_DEFAULT = 36;
@@ -38,6 +54,8 @@ interface PlaygroundTypeData {
   codeSummary?: string;
   generationCount?: number;
   lastNotes?: string;
+  lastUsage?: PlaygroundUsage;
+  lastModelId?: string;
 }
 
 interface IframeError {
@@ -76,9 +94,20 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     return Number.isFinite(parsed) && parsed >= CHAT_WIDTH_MIN && parsed <= CHAT_WIDTH_MAX ? parsed : CHAT_WIDTH_DEFAULT;
   });
   const [isResizing, setIsResizing] = useState(false);
+  const [modelId, setModelId] = useState<string>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PLAYGROUND_MODEL_ID;
+    const saved = window.localStorage.getItem(MODEL_PREF_KEY);
+    if (saved && PLAYGROUND_MODELS.some(m => m.id === saved)) return saved;
+    return DEFAULT_PLAYGROUND_MODEL_ID;
+  });
+  const [showModelMenu, setShowModelMenu] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const modelMenuRef = useRef<HTMLDivElement>(null);
+
+  const selectedModel = getPlaygroundModel(modelId);
+  const lastUsage = typeData.lastUsage;
 
   // Drag handle: while held, recompute chatWidth as a percentage of the split container.
   useEffect(() => {
@@ -116,6 +145,25 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
       window.localStorage.setItem(CHAT_WIDTH_KEY, String(chatWidth));
     } catch { /* noop */ }
   }, [chatWidth, isResizing]);
+
+  // Persist model preference whenever it changes.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MODEL_PREF_KEY, modelId);
+    } catch { /* noop */ }
+  }, [modelId]);
+
+  // Close the model picker when the user taps outside it.
+  useEffect(() => {
+    if (!showModelMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
+        setShowModelMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showModelMenu]);
 
   const srcDoc = useMemo(() => {
     if (!code) return null;
@@ -171,6 +219,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
           cardId: card.id,
           prompt: userPrompt,
           lastError: includeError ? iframeError?.message : undefined,
+          modelId,
         }),
       });
       const data = await res.json();
@@ -191,7 +240,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     } finally {
       setIsGenerating(false);
     }
-  }, [card.id, isGenerating, iframeError, updateCard, generationCount]);
+  }, [card.id, isGenerating, iframeError, updateCard, generationCount, modelId]);
 
   const handleSubmit = () => generate(prompt, false);
   const handleAutoFix = () => {
@@ -404,9 +453,62 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
               {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
             </button>
           </div>
-          <p className="mt-2 text-[10px] text-neutral-400 dark:text-neutral-500 text-center">
-            Each change runs Gemini 2.5 Pro · ~$0.02 each · Apps run in a sandbox · Data stored in your browser
-          </p>
+          {/* Footer: model picker chip on the left, last-cost on the right. */}
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="relative" ref={modelMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowModelMenu((v) => !v)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium text-neutral-600 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                title="Choose the model"
+              >
+                <Cpu className="w-3 h-3" />
+                {selectedModel.label.replace('Gemini ', '')}
+                <ChevronDown className="w-3 h-3 opacity-60" />
+              </button>
+              {showModelMenu && (
+                <div className="absolute bottom-full mb-1.5 left-0 w-64 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl z-30 overflow-hidden">
+                  <div className="px-3 py-2 border-b border-neutral-100 dark:border-neutral-800">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Model</p>
+                  </div>
+                  {PLAYGROUND_MODELS.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => { setModelId(m.id); setShowModelMenu(false); }}
+                      className={`w-full text-left px-3 py-2 transition-colors ${
+                        m.id === modelId
+                          ? 'bg-violet-50 dark:bg-violet-900/20'
+                          : 'hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-xs font-semibold ${m.id === modelId ? 'text-violet-700 dark:text-violet-300' : 'text-neutral-800 dark:text-neutral-200'}`}>
+                          {m.label}
+                        </span>
+                        {m.id === modelId && <Check className="w-3.5 h-3.5 text-violet-600" />}
+                      </div>
+                      <p className="text-[10.5px] text-neutral-500 mt-0.5">{m.blurb}</p>
+                      <p className="text-[10px] text-neutral-400 mt-0.5 font-mono">
+                        ${m.pricing.input.toFixed(2)}/M in · ${m.pricing.output.toFixed(2)}/M out
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="text-[10px] text-neutral-400 dark:text-neutral-500 text-right leading-tight">
+              {lastUsage ? (
+                <>
+                  Last change <span className="font-semibold text-neutral-600 dark:text-neutral-300">{formatCost(lastUsage.costUsd)}</span>
+                  <span className="opacity-70"> · {lastUsage.inputTokens.toLocaleString()} in / {lastUsage.outputTokens.toLocaleString()} out</span>
+                </>
+              ) : (
+                <>Sandboxed iframe · localStorage only</>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

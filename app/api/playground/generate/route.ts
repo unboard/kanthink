@@ -7,9 +7,22 @@ import { eq } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { getUserByokConfigWithError } from '@/lib/usage';
 import { nanoid } from 'nanoid';
+import {
+  PLAYGROUND_MODELS,
+  DEFAULT_PLAYGROUND_MODEL_ID,
+  getPlaygroundModel,
+  computeGenerationCost,
+} from '@/lib/playground/models';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+
+interface PlaygroundUsage {
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
 
 interface PlaygroundTypeData {
   code?: string;
@@ -17,6 +30,8 @@ interface PlaygroundTypeData {
   codeSummary?: string;
   generationCount?: number;
   lastNotes?: string;
+  lastUsage?: PlaygroundUsage;
+  lastModelId?: string;
 }
 
 const SYSTEM_PROMPT = `You generate complete single-file React applications that run in a sandboxed iframe with this exact runtime:
@@ -66,6 +81,8 @@ interface GenerateRequest {
   prompt: string;
   // Optional: if the iframe captured a runtime error, include it so Gemini can fix.
   lastError?: string;
+  // Optional: caller can choose a model. Falls back to the default.
+  modelId?: string;
 }
 
 export async function POST(request: Request) {
@@ -127,20 +144,27 @@ export async function POST(request: Request) {
     `USER REQUEST:\n${body.prompt}`,
   ].filter(Boolean).join('\n\n');
 
+  // Resolve which Gemini model to call. Validate against the allow-list so a bad
+  // client param can't make us hit an unsupported endpoint.
+  const requestedModelId = body.modelId && PLAYGROUND_MODELS.some(m => m.id === body.modelId)
+    ? body.modelId
+    : DEFAULT_PLAYGROUND_MODEL_ID;
+  const model = getPlaygroundModel(requestedModelId);
+
   const client = new GoogleGenAI({ apiKey });
 
   let parsed: { title: string; summary: string; code: string; notes: string } | null = null;
   let usage: { promptTokenCount?: number; candidatesTokenCount?: number } | null = null;
   try {
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-pro',
+      model: model.id,
       contents: [{ role: 'user', parts: [{ text: userMessage }] }],
       config: {
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
         maxOutputTokens: 16000,
-        thinkingConfig: { thinkingBudget: 8000 },
+        thinkingConfig: model.thinkingBudget > 0 ? { thinkingBudget: model.thinkingBudget } : undefined,
       },
     });
     const text = response.text || '';
@@ -163,12 +187,23 @@ export async function POST(request: Request) {
   // Persist:
   // 1. Latest snapshot in typeData (fast read for preview + public render)
   // 2. A short ai_response message in the thread so the conversation looks natural
+  const inputTokens = usage?.promptTokenCount ?? 0;
+  const outputTokens = usage?.candidatesTokenCount ?? 0;
+  const lastUsage: PlaygroundUsage = {
+    modelId: model.id,
+    inputTokens,
+    outputTokens,
+    costUsd: computeGenerationCost(model.id, inputTokens, outputTokens),
+  };
+
   const newTypeData: PlaygroundTypeData = {
     code: parsed.code,
     codeTitle: parsed.title,
     codeSummary: parsed.summary,
     generationCount: generationCount + 1,
     lastNotes: parsed.notes,
+    lastUsage,
+    lastModelId: model.id,
   };
 
   // Build the new thread: append user prompt + Kan's notes
@@ -217,5 +252,6 @@ export async function POST(request: Request) {
     typeData: newTypeData,
     messages: newMessages,
     usage,
+    lastUsage,
   });
 }
