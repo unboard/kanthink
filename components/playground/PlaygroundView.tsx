@@ -467,33 +467,57 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
                 <ChevronDown className="w-3 h-3 opacity-60" />
               </button>
               {showModelMenu && (
-                <div className="absolute bottom-full mb-1.5 left-0 w-64 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl z-30 overflow-hidden">
-                  <div className="px-3 py-2 border-b border-neutral-100 dark:border-neutral-800">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Model</p>
-                  </div>
-                  {PLAYGROUND_MODELS.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => { setModelId(m.id); setShowModelMenu(false); }}
-                      className={`w-full text-left px-3 py-2 transition-colors ${
-                        m.id === modelId
-                          ? 'bg-violet-50 dark:bg-violet-900/20'
-                          : 'hover:bg-neutral-50 dark:hover:bg-neutral-800'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={`text-xs font-semibold ${m.id === modelId ? 'text-violet-700 dark:text-violet-300' : 'text-neutral-800 dark:text-neutral-200'}`}>
-                          {m.label}
-                        </span>
-                        {m.id === modelId && <Check className="w-3.5 h-3.5 text-violet-600" />}
+                <div className="absolute bottom-full mb-1.5 left-0 w-72 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl z-30 overflow-hidden max-h-[70vh] overflow-y-auto">
+                  {(['stable', 'preview'] as const).map((group) => {
+                    const items = PLAYGROUND_MODELS.filter((m) =>
+                      group === 'preview' ? m.isPreview : !m.isPreview
+                    );
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={group}>
+                        <div className="px-3 py-2 border-b border-neutral-100 dark:border-neutral-800 sticky top-0 bg-white dark:bg-neutral-900">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                            {group === 'stable' ? 'Stable' : 'Preview'}
+                          </p>
+                        </div>
+                        {items.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => { setModelId(m.id); setShowModelMenu(false); }}
+                            className={`w-full text-left px-3 py-2 transition-colors ${
+                              m.id === modelId
+                                ? 'bg-violet-50 dark:bg-violet-900/20'
+                                : 'hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`text-xs font-semibold truncate ${m.id === modelId ? 'text-violet-700 dark:text-violet-300' : 'text-neutral-800 dark:text-neutral-200'}`}>
+                                  {m.label}
+                                </span>
+                                {m.isDefault && (
+                                  <span className="text-[9px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded">
+                                    Default
+                                  </span>
+                                )}
+                                {m.isPreview && (
+                                  <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                                    Preview
+                                  </span>
+                                )}
+                              </div>
+                              {m.id === modelId && <Check className="w-3.5 h-3.5 text-violet-600 flex-shrink-0" />}
+                            </div>
+                            <p className="text-[10.5px] text-neutral-500 mt-0.5">{m.blurb}</p>
+                            <p className="text-[10px] text-neutral-400 mt-0.5 font-mono">
+                              ${m.pricing.input.toFixed(2)}/M in · ${m.pricing.output.toFixed(2)}/M out
+                            </p>
+                          </button>
+                        ))}
                       </div>
-                      <p className="text-[10.5px] text-neutral-500 mt-0.5">{m.blurb}</p>
-                      <p className="text-[10px] text-neutral-400 mt-0.5 font-mono">
-                        ${m.pricing.input.toFixed(2)}/M in · ${m.pricing.output.toFixed(2)}/M out
-                      </p>
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
