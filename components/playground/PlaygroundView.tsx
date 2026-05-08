@@ -279,16 +279,41 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     if ((!userPrompt.trim() && stagedImages.length === 0) || isGenerating) return;
     // Don't fire while images are still uploading.
     if (stagedImages.some((img) => img.uploading)) return;
+
+    // Snapshot what we're about to send, then clear the input immediately so the
+    // user gets instant feedback. Their message is also pushed into the thread
+    // optimistically below — we don't want them staring at their own text in the
+    // textarea for 15 seconds while Gemini thinks.
+    const imageUrls = stagedImages.filter((img) => !img.uploading).map((img) => img.url);
+    const trimmedPrompt = userPrompt.trim();
+
+    setPrompt('');
+    setStagedImages([]);
     setIsGenerating(true);
     setGenError(null);
+
+    // Optimistic user message — gets replaced when the server response lands
+    // with the canonical thread (which includes this same message + Kan's reply).
+    const optimisticId = `__optimistic_${nanoid()}`;
+    const optimisticMessage = {
+      id: optimisticId,
+      type: 'question' as const,
+      content: trimmedPrompt,
+      imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+      createdAt: new Date().toISOString(),
+    };
+    const messagesBeforeSend = cardFromStore.messages || [];
+    updateCard(card.id, {
+      messages: [...messagesBeforeSend, optimisticMessage],
+    });
+
     try {
-      const imageUrls = stagedImages.filter((img) => !img.uploading).map((img) => img.url);
       const res = await fetch('/api/playground/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cardId: card.id,
-          prompt: userPrompt,
+          prompt: trimmedPrompt,
           lastError: includeError ? iframeError?.message : undefined,
           modelId,
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
@@ -297,23 +322,24 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
       const data = await res.json();
       if (!res.ok) {
         setGenError(data.error || 'Generation failed');
+        // Roll the optimistic message back so the thread doesn't show a ghost.
+        updateCard(card.id, { messages: messagesBeforeSend });
         return;
       }
       updateCard(card.id, {
         cardType: 'playground',
         typeData: data.typeData,
-        messages: data.messages,
+        messages: data.messages, // server response already includes the user msg
         ...(data.snapshot.title && generationCount === 0 ? { title: data.snapshot.title } : {}),
         ...(data.snapshot.summary ? { summary: data.snapshot.summary } : {}),
       });
-      setPrompt('');
-      setStagedImages([]);
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Network error');
+      updateCard(card.id, { messages: messagesBeforeSend });
     } finally {
       setIsGenerating(false);
     }
-  }, [card.id, isGenerating, iframeError, updateCard, generationCount, modelId, stagedImages]);
+  }, [card.id, cardFromStore.messages, isGenerating, iframeError, updateCard, generationCount, modelId, stagedImages]);
 
   const handleSubmit = () => generate(prompt, false);
   const handleAutoFix = () => {
