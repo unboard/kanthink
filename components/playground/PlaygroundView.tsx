@@ -18,12 +18,19 @@ import {
   MessageSquareText,
   Eye,
   Wand2,
+  X,
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 
 interface PlaygroundViewProps {
   card: Card;
+  onClose?: () => void;
 }
+
+const CHAT_WIDTH_KEY = 'kanthink_playground_chat_width';
+const CHAT_WIDTH_MIN = 22;
+const CHAT_WIDTH_MAX = 70;
+const CHAT_WIDTH_DEFAULT = 36;
 
 interface PlaygroundTypeData {
   code?: string;
@@ -45,7 +52,7 @@ const STARTER_PROMPTS = [
   { label: 'Memory match game', prompt: 'A 4x4 memory match game with animal emoji tiles, flip animation, move counter, and a celebratory confetti burst on win.' },
 ];
 
-export function PlaygroundView({ card }: PlaygroundViewProps) {
+export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
   const updateCard = useStore((s) => s.updateCard);
   const cardFromStore = useStore((s) => s.cards[card.id]) || card;
 
@@ -62,8 +69,53 @@ export function PlaygroundView({ card }: PlaygroundViewProps) {
   const [copied, setCopied] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'chat' | 'preview'>('chat');
+  const [chatWidth, setChatWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return CHAT_WIDTH_DEFAULT;
+    const saved = window.localStorage.getItem(CHAT_WIDTH_KEY);
+    const parsed = saved ? parseFloat(saved) : NaN;
+    return Number.isFinite(parsed) && parsed >= CHAT_WIDTH_MIN && parsed <= CHAT_WIDTH_MAX ? parsed : CHAT_WIDTH_DEFAULT;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const splitRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Drag handle: while held, recompute chatWidth as a percentage of the split container.
+  useEffect(() => {
+    if (!isResizing) return;
+    const onMove = (e: MouseEvent) => {
+      const container = splitRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.max(CHAT_WIDTH_MIN, Math.min(CHAT_WIDTH_MAX, pct));
+      setChatWidth(clamped);
+    };
+    const onUp = () => {
+      setIsResizing(false);
+      try {
+        window.localStorage.setItem(CHAT_WIDTH_KEY, String(chatWidth));
+      } catch { /* noop */ }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, chatWidth]);
+
+  // Persist final width once the drag ends (also handled in onUp above for safety).
+  useEffect(() => {
+    if (isResizing) return;
+    try {
+      window.localStorage.setItem(CHAT_WIDTH_KEY, String(chatWidth));
+    } catch { /* noop */ }
+  }, [chatWidth, isResizing]);
 
   const srcDoc = useMemo(() => {
     if (!code) return null;
@@ -214,6 +266,15 @@ export function PlaygroundView({ card }: PlaygroundViewProps) {
         >
           {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            title="Close"
+            className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -412,58 +473,80 @@ export function PlaygroundView({ card }: PlaygroundViewProps) {
     <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-950">
       {Header}
 
-      {/* Desktop: side-by-side. Mobile: tabbed. */}
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-        {/* Mobile tab switcher (hidden on md+) */}
-        <div className="md:hidden flex-shrink-0 flex border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 pt-2">
-          <button
-            onClick={() => setMobileTab('chat')}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
-              mobileTab === 'chat'
-                ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
-                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
-            }`}
-          >
-            <MessageSquareText className="w-3.5 h-3.5" />
-            Chat
-          </button>
-          <button
-            onClick={() => setMobileTab('preview')}
-            disabled={!hasCode}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
-              mobileTab === 'preview'
-                ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
-                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 disabled:opacity-40'
-            }`}
-          >
-            <Eye className="w-3.5 h-3.5" />
-            Preview
-            {generationCount > 0 && <span className="ml-0.5 text-[9px] text-neutral-400">v{generationCount}</span>}
-          </button>
-          <div className="ml-auto self-center pb-1.5">
-            {mobileTab === 'preview' && hasCode && (
-              <button
-                onClick={() => setIsFullscreen(true)}
-                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <Maximize2 className="w-3 h-3" />
-                Full
-              </button>
-            )}
-          </div>
+      {/* Mobile tab switcher (hidden on md+) */}
+      <div className="md:hidden flex-shrink-0 flex border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 pt-2">
+        <button
+          onClick={() => setMobileTab('chat')}
+          className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
+            mobileTab === 'chat'
+              ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
+              : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+          }`}
+        >
+          <MessageSquareText className="w-3.5 h-3.5" />
+          Chat
+        </button>
+        <button
+          onClick={() => setMobileTab('preview')}
+          disabled={!hasCode}
+          className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
+            mobileTab === 'preview'
+              ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
+              : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 disabled:opacity-40'
+          }`}
+        >
+          <Eye className="w-3.5 h-3.5" />
+          Preview
+          {generationCount > 0 && <span className="ml-0.5 text-[9px] text-neutral-400">v{generationCount}</span>}
+        </button>
+        <div className="ml-auto self-center pb-1.5">
+          {mobileTab === 'preview' && hasCode && (
+            <button
+              onClick={() => setIsFullscreen(true)}
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              <Maximize2 className="w-3 h-3" />
+              Full
+            </button>
+          )}
         </div>
+      </div>
 
-        {/* Chat (desktop: left rail, mobile: full when active) */}
-        <div className={`md:flex md:flex-col md:w-[42%] md:max-w-xl md:min-w-[340px] md:border-r md:border-neutral-200 md:dark:border-neutral-800 flex-1 min-h-0 ${
-          mobileTab === 'chat' ? 'flex' : 'hidden md:flex'
-        }`}>
+      {/* Desktop: side-by-side with draggable divider. Mobile: tabbed (chat OR preview). */}
+      <div ref={splitRef} className="flex-1 min-h-0 flex flex-col md:flex-row">
+        {/* Chat (desktop: resizable left rail, mobile: full when active).
+            CSS var lets us drive the desktop width inline while keeping mobile full-bleed. */}
+        <div
+          className={`flex-col min-h-0 md:flex md:flex-shrink-0 md:flex-grow-0 md:border-r md:border-neutral-200 md:dark:border-neutral-800 w-full md:w-[var(--kpg-chat-w)] ${
+            mobileTab === 'chat' ? 'flex flex-1' : 'hidden md:flex'
+          }`}
+          style={{ '--kpg-chat-w': `${chatWidth}%` } as React.CSSProperties}
+        >
           {ChatPane}
         </div>
 
-        {/* Preview (desktop: right side, mobile: full when active) */}
-        <div className={`flex-1 min-h-0 ${
-          mobileTab === 'preview' ? 'flex flex-col' : 'hidden md:flex md:flex-col'
-        }`}>
+        {/* Drag handle (desktop only). Sits on top of the split with a wider hit zone for easier grabbing. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat panel"
+          tabIndex={0}
+          onMouseDown={(e) => { e.preventDefault(); setIsResizing(true); }}
+          onDoubleClick={() => setChatWidth(CHAT_WIDTH_DEFAULT)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') setChatWidth((w) => Math.max(CHAT_WIDTH_MIN, w - 2));
+            if (e.key === 'ArrowRight') setChatWidth((w) => Math.min(CHAT_WIDTH_MAX, w + 2));
+          }}
+          className={`hidden md:flex flex-shrink-0 w-1.5 -mx-0.5 cursor-col-resize group items-center justify-center ${
+            isResizing ? 'bg-violet-500/40' : 'hover:bg-violet-500/15'
+          } transition-colors`}
+          title="Drag to resize · Double-click to reset"
+        >
+          <div className={`h-10 w-0.5 rounded-full ${isResizing ? 'bg-violet-500' : 'bg-neutral-300 dark:bg-neutral-700 group-hover:bg-violet-400'}`} />
+        </div>
+
+        {/* Preview (desktop: right side flex-1, mobile: full when active) */}
+        <div className={`flex-1 min-h-0 ${mobileTab === 'preview' ? 'flex flex-col' : 'hidden md:flex md:flex-col'}`}>
           {PreviewPane}
         </div>
       </div>

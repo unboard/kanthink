@@ -500,8 +500,9 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const content = (
     <>
       <div className={`flex flex-col ${fullPage ? 'h-full' : 'h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]'}`}>
-        {/* Compact Header - sticky on mobile */}
-        <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3">
+        {/* Compact Header - sticky on mobile. Hidden in playground mode because
+            PlaygroundView renders its own polished header with title + actions. */}
+        <div className={`flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3 ${card.cardType === 'playground' ? 'hidden' : ''}`}>
           {fullPage && onNavigateBack && (
             <button
               onClick={onNavigateBack}
@@ -1027,8 +1028,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           }}
         />
 
-        {/* Cover image - full page only */}
-        {fullPage && card.coverImageUrl && (
+        {/* Cover image - full page only (skip in playground mode — preview owns the canvas) */}
+        {fullPage && card.coverImageUrl && card.cardType !== 'playground' && (
           <div className="flex-shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -1051,7 +1052,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           )}
           {activeTab === 'thread' && contentReady && card.cardType === 'playground' && (
             <div className="flex-1 min-h-0 flex flex-col">
-              <PlaygroundView card={card} />
+              <PlaygroundView card={card} onClose={handleClose} />
             </div>
           )}
           {activeTab === 'thread' && contentReady && card.cardType !== 'playground' && (
