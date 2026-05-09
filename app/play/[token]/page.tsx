@@ -4,6 +4,7 @@ import { eq, and } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
+import { signCardToken } from '@/lib/playground/cardToken';
 import { PublicPlaygroundFrame } from './PublicPlaygroundFrame';
 import type { Metadata } from 'next';
 
@@ -15,6 +16,7 @@ interface PlaygroundTypeData {
   code?: string;
   codeTitle?: string;
   codeSummary?: string;
+  cardToken?: string;
 }
 
 export const dynamic = 'force-dynamic';
@@ -59,6 +61,10 @@ export default async function PlayPage({ params }: PageProps) {
   const srcDoc = buildPlaygroundDoc(typeData.code, {
     title,
     uploadUrl: `${origin}/api/playground/upload`,
+    aiUrl: `${origin}/api/playground/ai`,
+    // Mint a fresh token if the card doesn't have one persisted yet (older
+    // playgrounds created before AI proxy existed).
+    cardToken: typeData.cardToken || signCardToken(card.id),
   });
 
   return <PublicPlaygroundFrame srcDoc={srcDoc} title={title} />;

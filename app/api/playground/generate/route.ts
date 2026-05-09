@@ -13,6 +13,7 @@ import {
   getPlaygroundModel,
   computeGenerationCost,
 } from '@/lib/playground/models';
+import { signCardToken } from '@/lib/playground/cardToken';
 
 export const runtime = 'nodejs';
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
@@ -35,6 +36,7 @@ interface PlaygroundTypeData {
   lastNotes?: string;
   lastUsage?: PlaygroundUsage;
   lastModelId?: string;
+  cardToken?: string;
 }
 
 const SYSTEM_PROMPT = `You generate complete single-file React applications that run in a sandboxed iframe with this exact runtime:
@@ -58,6 +60,46 @@ CODE RULES (strict — your output runs unmodified):
 10. If the user describes something that needs a real backend (auth, multi-user sync, server storage), build the most useful localStorage-only version and add a one-line comment // BACKEND: <what would be needed>
 11. Multiple "screens" should use view state in one file, e.g. const [view, setView] = useState('home') with conditional rendering. Do NOT split into multiple files.
 12. Prefer beautiful, realistic-feeling screens over fully-working logic. Use placeholder data and clear "Coming soon" labels for unimplemented features. This is a prototype tool.
+
+AI / LLM CALLS INSIDE THE APP (Gemini, owner's BYOK):
+The host runtime exposes \`window.kanthinkAI.generate(opts)\` for any AI feature in your app — vision (analyze a photo), text generation, classification, structured output, etc. NEVER hardcode a model name like "gemini-1.5-vision" or "gemini-pro" — those are stale. NEVER call the Gemini API directly from the app. Always use this helper, which routes through the playground owner's connected Gemini account and gives them access to current models.
+
+Available models (pick one based on the task):
+- 'gemini-2.5-pro'  — strongest reasoning + vision (default if you don't pass model)
+- 'gemini-2.5-flash' — fast, cheap, still great for vision and routine tasks
+- 'gemini-2.5-flash-lite' — cheapest, no thinking budget
+- 'gemini-3.1-pro-preview' — frontier reasoning (preview)
+- 'gemini-3-flash-preview' — frontier-class fast (preview)
+- 'gemini-3.1-flash-lite' — cheapest 3.x
+
+Usage:
+\`\`\`jsx
+// Plain text generation
+const { text } = await window.kanthinkAI.generate({
+  prompt: 'Suggest 5 names for a coffee shop in Brooklyn.',
+  model: 'gemini-2.5-flash',
+});
+
+// Vision — pass a Cloudinary image URL (from kanthinkUpload) or a data URL
+const { text } = await window.kanthinkAI.generate({
+  prompt: 'What bird is in this photo? Give species, confidence, and 2 fun facts.',
+  imageUrl: cloudinaryUrl,  // returned by window.kanthinkUpload
+  model: 'gemini-2.5-pro',
+});
+
+// Structured output — pass a JSON schema, you get back parsed JSON
+const { json } = await window.kanthinkAI.generate({
+  prompt: 'Extract todos from: Buy milk, schedule dentist, finish report.',
+  jsonSchema: {
+    type: 'OBJECT',
+    properties: { todos: { type: 'ARRAY', items: { type: 'STRING' } } },
+    required: ['todos'],
+  },
+});
+console.log(json.todos);  // ['Buy milk', 'schedule dentist', 'finish report']
+\`\`\`
+
+The helper returns \`{ text, json?, model, usage? }\`. Default model is gemini-2.5-pro. For vision-heavy or complex reasoning, use 2.5-pro or 3.1-pro-preview. For fast classification or simple text, use 2.5-flash. Always wrap calls in try/catch and surface a friendly message on failure.
 
 IMAGE & FILE STORAGE (Cloudinary, already wired up):
 The host runtime exposes \`window.kanthinkUpload(file)\` for uploading images to the Kanthink Cloudinary account. ALWAYS use this helper for any "upload an image", "user avatar", "photo upload", "attach a file", or "save image" feature. Do NOT use base64 data URLs in localStorage for images (they bloat storage and break with large files). Do NOT prompt users to set up their own storage.
@@ -281,6 +323,9 @@ export async function POST(request: Request) {
     lastNotes: parsed.notes,
     lastUsage,
     lastModelId: model.id,
+    // Stable HMAC of the card id, used by the iframe runtime to authenticate
+    // window.kanthinkAI calls back to /api/playground/ai. Same value every time.
+    cardToken: typeData.cardToken || signCardToken(body.cardId),
   };
 
   // Build the new thread: append user prompt + Kan's notes

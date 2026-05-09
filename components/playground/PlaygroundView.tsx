@@ -58,6 +58,7 @@ interface PlaygroundTypeData {
   lastNotes?: string;
   lastUsage?: PlaygroundUsage;
   lastModelId?: string;
+  cardToken?: string;
 }
 
 interface IframeError {
@@ -194,8 +195,10 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     return buildPlaygroundDoc(code, {
       title: typeData.codeTitle || cardFromStore.title,
       uploadUrl: `${origin}/api/playground/upload`,
+      aiUrl: `${origin}/api/playground/ai`,
+      cardToken: typeData.cardToken,
     });
-  }, [code, typeData.codeTitle, cardFromStore.title]);
+  }, [code, typeData.codeTitle, typeData.cardToken, cardFromStore.title]);
 
   // Listen for runtime errors from inside the iframe.
   useEffect(() => {

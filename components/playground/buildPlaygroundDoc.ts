@@ -20,12 +20,19 @@
  */
 export function buildPlaygroundDoc(
   code: string,
-  options?: { title?: string; uploadUrl?: string }
+  options?: {
+    title?: string;
+    uploadUrl?: string;
+    aiUrl?: string;
+    cardToken?: string;
+  }
 ): string {
   const title = (options?.title || 'Kanthink Playground').replace(/[<>]/g, '');
   // Default to a relative path; PlaygroundView / public-play page will pass the
   // absolute origin so the helper works from inside an opaque-origin iframe.
   const uploadUrl = (options?.uploadUrl || '/api/playground/upload').replace(/[<>"]/g, '');
+  const aiUrl = (options?.aiUrl || '/api/playground/ai').replace(/[<>"]/g, '');
+  const cardToken = (options?.cardToken || '').replace(/[<>"]/g, '');
   // Strip an accidental opening markdown fence if Gemini ever leaks one.
   // Also strip any `import React ...` lines: the iframe's wrapper already does
   // `import * as React from 'react'` so user code that re-imports React would
@@ -105,6 +112,53 @@ export function buildPlaygroundDoc(
           return data;
         });
       });
+  };
+
+  // AI helper — generated apps use this for any AI/LLM feature (vision, text gen,
+  // structured output). Routes through the card owner's BYOK key so the apps you
+  // build use the same Gemini account as your code-gen calls.
+  var __KPG_AI_URL = ${JSON.stringify(aiUrl)};
+  var __KPG_CARD_TOKEN = ${JSON.stringify(cardToken)};
+  window.kanthinkAI = {
+    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite'],
+    /**
+     * Generate text from Gemini using the playground owner's AI account.
+     * @param {Object} opts
+     * @param {string} opts.prompt - the user-facing prompt
+     * @param {string} [opts.system] - optional system instruction
+     * @param {string} [opts.model] - one of kanthinkAI.models (default: gemini-2.5-pro)
+     * @param {string} [opts.imageUrl] - public image URL to send as vision input
+     * @param {string} [opts.imageData] - data:image/...;base64,... vision input
+     * @param {Object} [opts.jsonSchema] - Gemini responseSchema for structured output
+     * @param {number} [opts.maxOutputTokens]
+     * @returns Promise<{ text: string, json?: any, model: string, usage?: {inputTokens, outputTokens} }>
+     */
+    generate: function(opts) {
+      if (!opts || typeof opts !== 'object') return Promise.reject(new Error('kanthinkAI.generate requires an options object.'));
+      if (!opts.prompt) return Promise.reject(new Error('kanthinkAI.generate requires opts.prompt.'));
+      if (!__KPG_CARD_TOKEN) return Promise.reject(new Error('AI is not available in this playground (no card token).'));
+      var payload = {
+        cardToken: __KPG_CARD_TOKEN,
+        prompt: opts.prompt,
+        system: opts.system,
+        model: opts.model,
+        imageUrl: opts.imageUrl,
+        imageData: opts.imageData,
+        jsonSchema: opts.jsonSchema,
+        maxOutputTokens: opts.maxOutputTokens
+      };
+      return fetch(__KPG_AI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        mode: 'cors'
+      }).then(function(res) {
+        return res.json().then(function(data) {
+          if (!res.ok) throw new Error(data && data.error ? data.error : 'AI call failed (' + res.status + ')');
+          return data;
+        });
+      });
+    }
   };
 </script>
 <script type="text/babel" data-type="module" data-presets="react">
