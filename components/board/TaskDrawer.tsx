@@ -290,6 +290,19 @@ export function TaskDrawer({
         {/* Row 1: Breadcrumb title + Close + 3-dot menu */}
         <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-2 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
           <div className="flex-1 flex items-center gap-1 min-w-0">
+            {/* Channel breadcrumb — anchors the task to its source so isolated views
+                (e.g. opened from voice mode) don't feel decoupled from the workspace. */}
+            {channelId && channels[channelId] && (
+              <>
+                <a
+                  href={`/channel/${channelId}`}
+                  className="flex-shrink-0 text-xs text-violet-500 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300 hover:underline truncate max-w-[120px]"
+                >
+                  {channels[channelId].name}
+                </a>
+                <span className="flex-shrink-0 text-neutral-300 dark:text-neutral-600 text-xs">›</span>
+              </>
+            )}
             {parentCard && (
               <>
                 <button
@@ -298,7 +311,7 @@ export function TaskDrawer({
                 >
                   {parentCard.title}
                 </button>
-                <span className="flex-shrink-0 text-neutral-300 dark:text-neutral-600 text-sm">/</span>
+                <span className="flex-shrink-0 text-neutral-300 dark:text-neutral-600 text-sm">›</span>
               </>
             )}
             <input

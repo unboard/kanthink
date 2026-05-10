@@ -349,7 +349,11 @@ function MobileNav() {
 
 export function MiniNav() {
   const pathname = usePathname();
-  if (pathname.startsWith('/marketplace') || pathname.startsWith('/public')) return null;
+  if (
+    pathname.startsWith('/marketplace') ||
+    pathname.startsWith('/public') ||
+    pathname.startsWith('/play')  // public playground apps own the full viewport
+  ) return null;
 
   return (
     <>

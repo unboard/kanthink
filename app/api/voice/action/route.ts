@@ -192,6 +192,38 @@ export async function POST(request: Request) {
         return NextResponse.json({ result: `Updated task "${task.title}" to ${args.status}`, taskId: task.id });
       }
 
+      case 'update_task': {
+        const task = await findTask(args.taskId);
+        if (!task) return NextResponse.json({ result: `Task not found: "${args.taskId}"` });
+        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        const changedFields: string[] = [];
+        if (typeof args.title === 'string' && args.title.trim().length > 0 && args.title.trim() !== task.title) {
+          updates.title = args.title.trim();
+          changedFields.push('title');
+        }
+        if (typeof args.description === 'string' && args.description !== (task.description ?? '')) {
+          updates.description = args.description;
+          changedFields.push('description');
+        }
+        if (changedFields.length === 0) {
+          return NextResponse.json({ result: `No changes to apply on task "${task.title}".`, taskId: task.id });
+        }
+        await db.update(tasks).set(updates).where(eq(tasks.id, task.id));
+        const newTitle = (updates.title as string | undefined) ?? task.title;
+        return NextResponse.json({
+          result: `Updated ${changedFields.join(' and ')} on task "${newTitle}"`,
+          taskId: task.id,
+          taskPreview: {
+            id: task.id,
+            title: newTitle,
+            status: task.status || 'not_started',
+            description: (updates.description as string | undefined) ?? task.description ?? '',
+            cardId: task.cardId,
+            channelId: task.channelId,
+          },
+        });
+      }
+
       case 'search_cards': {
         // Resolve channel
         let chId = args.channelId;

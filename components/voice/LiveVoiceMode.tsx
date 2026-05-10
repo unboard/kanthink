@@ -78,6 +78,19 @@ const TOOLS = [
         },
       },
       {
+        name: 'update_task',
+        description: 'Directly edit a task\'s title or description/notes. Use this when the user asks to "rename" a task, "update the description", "change the wording", or otherwise modify the task content itself — NOT when they want to add a separate note or comment. Pass only the fields you intend to change.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            taskId: { type: 'STRING', description: 'Task ID or task title to find' },
+            title: { type: 'STRING', description: 'New task title (optional — only include if updating)' },
+            description: { type: 'STRING', description: 'New task description in markdown (optional — only include if updating). Replaces the existing description entirely.' },
+          },
+          required: ['taskId'],
+        },
+      },
+      {
         name: 'search_cards',
         description: 'Search for cards in a specific channel by keyword, or get the most recent cards in a channel. ONLY use when the user explicitly asks to find or look up cards in a specific channel. Do NOT use for general questions like "what is going on" or "what should I work on" — answer those from the context you already have.',
         parameters: {
@@ -313,6 +326,11 @@ function VoiceTaskDrawer({ taskId, onClose }: { taskId: string; onClose: () => v
 }
 
 export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModeProps) {
+  // Subscribe to the store so task previews can resolve their parent card +
+  // channel names for the breadcrumb chip. Single subscription, not selectors,
+  // since voice mode is a small set of users and re-renders here are cheap.
+  const storeChannels = useStore((s) => s.channels);
+  const storeCards = useStore((s) => s.cards);
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -1188,12 +1206,25 @@ NEVER claim you completed an action unless you actually called the corresponding
                 ) : a.taskPreview ? (
                   <div className="bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in cursor-pointer hover:border-violet-500/50 transition-colors"
                     onClick={() => setExpandedTaskId(a.taskPreview!.id)}>
-                    {/* Task created banner */}
+                    {/* Task created banner — includes a Channel › Card breadcrumb so the user
+                        sees which card / channel a voice-created task belongs to. */}
                     <div className="px-4 py-2 border-b border-neutral-800 flex items-center gap-2">
-                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
-                      <span className="text-xs font-medium text-green-400">Task created</span>
+                      <span className="text-xs font-medium text-green-400 flex-shrink-0">Task created</span>
+                      {(() => {
+                        const channelName = a.taskPreview.channelId ? storeChannels[a.taskPreview.channelId]?.name : null;
+                        const parentCardTitle = a.taskPreview.cardId ? storeCards[a.taskPreview.cardId]?.title : null;
+                        if (!channelName && !parentCardTitle) return null;
+                        return (
+                          <span className="text-[10px] text-neutral-500 truncate ml-auto">
+                            {channelName ? <span className="text-violet-400">{channelName}</span> : null}
+                            {channelName && parentCardTitle ? <span className="mx-1 text-neutral-600">›</span> : null}
+                            {parentCardTitle ? <span className="text-neutral-300">{parentCardTitle}</span> : null}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div className="px-4 py-3 flex items-center gap-3">
                       <button
