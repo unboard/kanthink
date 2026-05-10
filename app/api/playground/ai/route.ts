@@ -5,7 +5,7 @@ import { cards, users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { decryptIfNeeded } from '@/lib/crypto';
 import { verifyCardToken } from '@/lib/playground/cardToken';
-import { PLAYGROUND_MODELS, DEFAULT_PLAYGROUND_MODEL_ID, getPlaygroundModel } from '@/lib/playground/models';
+import { PLAYGROUND_MODELS, FALLBACK_GENERATION_MODEL_ID, getPlaygroundModel } from '@/lib/playground/models';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -88,9 +88,11 @@ export async function POST(request: Request) {
     ));
   }
 
-  const requestedModel = body.model && PLAYGROUND_MODELS.some(m => m.id === body.model)
+  // Fall back to the frontier model if caller didn't specify (or specified 'auto',
+  // which is a virtual id only meaningful for the code-gen route's edit-type routing).
+  const requestedModel = body.model && PLAYGROUND_MODELS.some(m => m.id === body.model && !m.isAuto)
     ? body.model
-    : DEFAULT_PLAYGROUND_MODEL_ID;
+    : FALLBACK_GENERATION_MODEL_ID;
   const model = getPlaygroundModel(requestedModel);
 
   // Build the parts. Text first, then any image.

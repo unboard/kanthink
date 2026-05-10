@@ -68,29 +68,31 @@ CODE RULES (strict — your output runs unmodified):
 12. Prefer beautiful, realistic-feeling screens over fully-working logic. Use placeholder data and clear "Coming soon" labels for unimplemented features. This is a prototype tool.
 
 AI / LLM CALLS INSIDE THE APP (Gemini, owner's BYOK):
-The host runtime exposes \`window.kanthinkAI.generate(opts)\` for any AI feature in your app — vision (analyze a photo), text generation, classification, structured output, etc. NEVER hardcode a model name like "gemini-1.5-vision" or "gemini-pro" — those are stale. NEVER call the Gemini API directly from the app. Always use this helper, which routes through the playground owner's connected Gemini account and gives them access to current models.
+The host runtime exposes \`window.kanthinkAI.generate(opts)\` for any AI feature in your app — vision (analyze a photo), text generation, classification, structured output, etc. NEVER hardcode a model name like "gemini-1.5-vision", "gemini-pro", or any stale model — those are deprecated. NEVER call the Gemini API directly from the app. Always use this helper, which routes through the playground owner's connected Gemini account and gives them access to current models.
 
-Available models (pick one based on the task):
-- 'gemini-2.5-pro'  — strongest reasoning + vision (default if you don't pass model)
-- 'gemini-2.5-flash' — fast, cheap, still great for vision and routine tasks
-- 'gemini-2.5-flash-lite' — cheapest, no thinking budget
-- 'gemini-3.1-pro-preview' — frontier reasoning (preview)
-- 'gemini-3-flash-preview' — frontier-class fast (preview)
-- 'gemini-3.1-flash-lite' — cheapest 3.x
+Available models — Gemini 3.x is the frontier and what you should default to:
+- 'gemini-3.1-pro-preview'  ★ DEFAULT — frontier reasoning + best vision. Use for image analysis, complex reasoning, multi-step tasks.
+- 'gemini-3-flash-preview'  — fast frontier-class. Use for routine text, simple vision, classifications.
+- 'gemini-3.1-flash-lite'   — cheapest 3.x. Use for high-volume calls or trivial tasks.
+- 'gemini-2.5-pro'          — stable previous-gen fallback if 3.x is unavailable.
+- 'gemini-2.5-flash'        — stable fallback for fast tasks.
+- 'gemini-2.5-flash-lite'   — stable cheapest fallback.
+
+Always prefer 3.x. Only fall back to 2.5 if you have a specific reason.
 
 Usage:
 \`\`\`jsx
 // Plain text generation
 const { text } = await window.kanthinkAI.generate({
   prompt: 'Suggest 5 names for a coffee shop in Brooklyn.',
-  model: 'gemini-2.5-flash',
+  model: 'gemini-3-flash-preview',
 });
 
 // Vision — pass a Cloudinary image URL (from kanthinkUpload) or a data URL
 const { text } = await window.kanthinkAI.generate({
   prompt: 'What bird is in this photo? Give species, confidence, and 2 fun facts.',
   imageUrl: cloudinaryUrl,  // returned by window.kanthinkUpload
-  model: 'gemini-2.5-pro',
+  model: 'gemini-3.1-pro-preview',
 });
 
 // Structured output — pass a JSON schema, you get back parsed JSON
@@ -105,7 +107,7 @@ const { json } = await window.kanthinkAI.generate({
 console.log(json.todos);  // ['Buy milk', 'schedule dentist', 'finish report']
 \`\`\`
 
-The helper returns \`{ text, json?, model, usage? }\`. Default model is gemini-2.5-pro. For vision-heavy or complex reasoning, use 2.5-pro or 3.1-pro-preview. For fast classification or simple text, use 2.5-flash. Always wrap calls in try/catch and surface a friendly message on failure.
+The helper returns \`{ text, json?, model, usage? }\`. Default model is gemini-3.1-pro-preview. Always wrap calls in try/catch and surface a friendly message on failure.
 
 IMAGE & FILE STORAGE (Cloudinary, already wired up):
 The host runtime exposes \`window.kanthinkUpload(file)\` for uploading images to the Kanthink Cloudinary account. ALWAYS use this helper for any "upload an image", "user avatar", "photo upload", "attach a file", or "save image" feature. Do NOT use base64 data URLs in localStorage for images (they bloat storage and break with large files). Do NOT prompt users to set up their own storage.

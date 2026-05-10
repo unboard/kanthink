@@ -120,7 +120,8 @@ export function buildPlaygroundDoc(
   var __KPG_AI_URL = ${JSON.stringify(aiUrl)};
   var __KPG_CARD_TOKEN = ${JSON.stringify(cardToken)};
   window.kanthinkAI = {
-    models: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite'],
+    // Frontier 3.x first (recommended). 2.5 family kept as stable fallbacks.
+    models: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
     /**
      * Generate text from Gemini using the playground owner's AI account.
      * @param {Object} opts
