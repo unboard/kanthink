@@ -10,10 +10,14 @@ import { nanoid } from 'nanoid';
 import {
   PLAYGROUND_MODELS,
   DEFAULT_PLAYGROUND_MODEL_ID,
+  AUTO_MODEL_ID,
+  FALLBACK_GENERATION_MODEL_ID,
   getPlaygroundModel,
+  resolveActiveModelId,
   computeGenerationCost,
 } from '@/lib/playground/models';
 import { signCardToken } from '@/lib/playground/cardToken';
+import { runPreflight } from '@/lib/playground/preflight';
 
 export const runtime = 'nodejs';
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
@@ -37,6 +41,8 @@ interface PlaygroundTypeData {
   lastUsage?: PlaygroundUsage;
   lastModelId?: string;
   cardToken?: string;
+  /** Running list of established design decisions, kept terse, re-injected on each iteration. */
+  designNotes?: string;
 }
 
 const SYSTEM_PROMPT = `You generate complete single-file React applications that run in a sandboxed iframe with this exact runtime:
@@ -140,6 +146,11 @@ This rule applies on EVERY iteration after the first generation. The first gener
 ERROR FEEDBACK PROTOCOL:
 If the user message includes a section "PREVIOUS ERROR:", you have a runtime error from your last iteration. Fix that error specifically — touch only what's needed to resolve the error, leave everything else exactly as it was. If the same error appeared in two consecutive turns, REWRITE THE WHOLE APP from the original goal in a different way. Do not iterate on broken code more than twice.
 
+DESIGN NOTES (memory across iterations):
+If the user message contains "ESTABLISHED DESIGN DECISIONS:" treat that list as locked. Those are choices the user has already accepted. Don't re-derive them. Don't drift from them. If the current request asks to change one of them, update only that decision and keep the rest.
+
+After generating, you must also output an updated "designNotes" string capturing the current set of established design decisions — palette, typography, layout pattern, copy tone, behaviors, anything load-bearing. Be terse: bullet lines, no fluff. This is a memory store, not documentation. Carry forward everything from the input ESTABLISHED DESIGN DECISIONS that's still true, drop anything the user just changed, add anything new this turn confirms.
+
 CONVERSATIONAL TONE:
 The "notes" field is shown in chat. Write it like a teammate, not a changelog.
 "Made the cards bigger and added a flip animation" — not "Updated card styling and added transform CSS."
@@ -153,8 +164,9 @@ const RESPONSE_SCHEMA = {
     summary: { type: Type.STRING, description: 'One sentence describing what the app does' },
     code: { type: Type.STRING, description: 'Complete single-file JSX. Default-export App component. No types, no markdown fences.' },
     notes: { type: Type.STRING, description: 'One conversational sentence about what changed in this iteration. Empty for first generation.' },
+    designNotes: { type: Type.STRING, description: 'Updated terse bullet list of established design decisions to carry forward to future iterations. Carry forward what is still true, update what changed this turn.' },
   },
-  required: ['title', 'summary', 'code', 'notes'],
+  required: ['title', 'summary', 'code', 'notes', 'designNotes'],
 };
 
 interface GenerateRequest {
@@ -238,12 +250,67 @@ export async function POST(request: Request) {
     ? `\n\nThe user attached ${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} below — use them for visual reference (style, layout, colors, content).`
     : '';
 
-  // Iteration mode emits a stronger preservation reminder right next to the user
-  // request — Gemini ignores subtle hints when the user prompt is the most recent
-  // signal, so we put the rule adjacent to what they're acting on.
   const isIteration = !!currentCode;
+
+  // -- Preflight: on iterations, decide whether to ASK or ACT, and classify the edit type
+  //    so we can route to the right model when the user picked 'Auto'. First generations
+  //    skip preflight to keep the initial momentum.
+  const preflight = isIteration
+    ? await runPreflight({
+        apiKey,
+        prompt: body.prompt,
+        cardTitle: card.title,
+        cardSummary: card.summary || undefined,
+        hasCurrentCode: true,
+        recentThread: threadContext,
+        designNotes: typeData.designNotes,
+      })
+    : { decision: 'ACT' as const, editType: 'first' as const, rationale: 'first generation' };
+
+  // Short-circuit: when preflight asks for clarification, append the questions as a Kan
+  // message and don't burn a full generation. The user can answer in chat next turn.
+  if (preflight.decision === 'ASK' && preflight.questions && preflight.questions.length > 0) {
+    const questionsText = preflight.questions.length === 1
+      ? `Quick question before I make this change: ${preflight.questions[0]}`
+      : `Quick questions before I make this change:\n\n${preflight.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
+
+    const existingMessagesForAsk = (card.messages || []) as unknown as Array<Record<string, unknown>>;
+    const userMessageObj = {
+      id: nanoid(),
+      type: 'question' as const,
+      content: body.prompt,
+      imageUrls: attachedImages.length > 0 ? attachedImages : undefined,
+      authorId: session.user.id,
+      createdAt: new Date().toISOString(),
+    };
+    const aiMessageObj = {
+      id: nanoid(),
+      type: 'ai_response' as const,
+      content: questionsText,
+      createdAt: new Date().toISOString(),
+    };
+    const updatedMessages = [...existingMessagesForAsk, userMessageObj, aiMessageObj];
+    await db.update(cards).set({
+      messages: updatedMessages as unknown as typeof cards.$inferInsert.messages,
+      updatedAt: new Date(),
+    }).where(eq(cards.id, body.cardId));
+
+    return NextResponse.json({
+      success: true,
+      clarification: { questions: preflight.questions, rationale: preflight.rationale },
+      messages: updatedMessages,
+      typeData,  // unchanged
+    });
+  }
+
+  // Build the prompt for full generation. Inject designNotes verbatim so the
+  // model treats prior decisions as locked unless this turn's request changes them.
+  const designNotesBlock = typeData.designNotes
+    ? `ESTABLISHED DESIGN DECISIONS (locked unless this request changes one):\n${typeData.designNotes}`
+    : '';
+
   const iterationReminder = isIteration
-    ? '\n\n⚠️ THIS IS AN EDIT, NOT A REDESIGN. Change only what the request asks. Everything else in the current code must come through unchanged — same classes, copy, structure, colors, behavior. If your diff is bigger than the request implies, you are drifting — shrink it.'
+    ? `\n\n⚠️ THIS IS AN EDIT, NOT A REDESIGN. Edit type (preflight): ${preflight.editType}. Change only what the request asks. Everything else in the current code must come through unchanged — same classes, copy, structure, colors, behavior. If your diff is bigger than the request implies, you are drifting — shrink it.`
     : '';
 
   const userMessage = [
@@ -251,17 +318,22 @@ export async function POST(request: Request) {
     currentCode
       ? `CURRENT CODE (this is your starting point — preserve it except for what the user asks to change):\n\`\`\`jsx\n${currentCode}\n\`\`\``
       : 'CURRENT CODE: (none yet — this is the first generation, design freely)',
+    designNotesBlock,
     `RECENT THREAD CONTEXT:\n${threadContext}`,
     body.lastError ? `PREVIOUS ERROR:\n${body.lastError}` : '',
     `USER REQUEST:\n${body.prompt}${imageNote}${iterationReminder}`,
   ].filter(Boolean).join('\n\n');
 
   // Resolve which Gemini model to call. Validate against the allow-list so a bad
-  // client param can't make us hit an unsupported endpoint.
+  // client param can't make us hit an unsupported endpoint. 'auto' is virtual —
+  // resolveActiveModelId routes to Pro/Flash based on the preflight edit type.
   const requestedModelId = body.modelId && PLAYGROUND_MODELS.some(m => m.id === body.modelId)
     ? body.modelId
     : DEFAULT_PLAYGROUND_MODEL_ID;
-  const model = getPlaygroundModel(requestedModelId);
+  const activeModelId = requestedModelId === AUTO_MODEL_ID
+    ? resolveActiveModelId(AUTO_MODEL_ID, preflight.editType)
+    : requestedModelId;
+  const model = getPlaygroundModel(activeModelId === AUTO_MODEL_ID ? FALLBACK_GENERATION_MODEL_ID : activeModelId);
 
   const client = new GoogleGenAI({ apiKey });
 
@@ -272,7 +344,7 @@ export async function POST(request: Request) {
     if (part) imageParts.push(part);
   }
 
-  let parsed: { title: string; summary: string; code: string; notes: string } | null = null;
+  let parsed: { title: string; summary: string; code: string; notes: string; designNotes?: string } | null = null;
   let usage: { promptTokenCount?: number; candidatesTokenCount?: number } | null = null;
   try {
     const response = await client.models.generateContent({
@@ -326,6 +398,11 @@ export async function POST(request: Request) {
     // Stable HMAC of the card id, used by the iframe runtime to authenticate
     // window.kanthinkAI calls back to /api/playground/ai. Same value every time.
     cardToken: typeData.cardToken || signCardToken(body.cardId),
+    // Persistent design memory — model returns updated bullet list each turn,
+    // we re-inject it on the next iteration so old decisions don't fade.
+    designNotes: typeof parsed.designNotes === 'string' && parsed.designNotes.trim().length > 0
+      ? parsed.designNotes.trim()
+      : typeData.designNotes,
   };
 
   // Build the new thread: append user prompt + Kan's notes

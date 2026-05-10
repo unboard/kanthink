@@ -14,9 +14,21 @@ export interface PlaygroundModel {
   thinkingBudget: number;
   isPreview?: boolean;
   isDefault?: boolean;
+  isAuto?: boolean; // virtual option that routes per-edit
 }
 
+export const AUTO_MODEL_ID = 'auto';
+
 export const PLAYGROUND_MODELS: PlaygroundModel[] = [
+  {
+    id: AUTO_MODEL_ID,
+    label: 'Auto',
+    blurb: 'Cosmetic edits → Flash (fast/cheap). Structural edits → Pro (best quality).',
+    pricing: { input: 0, output: 0 },
+    thinkingBudget: 0,
+    isAuto: true,
+    isDefault: true,
+  },
   // === Stable (2.5 family) ============================================
   {
     id: 'gemini-2.5-pro',
@@ -24,7 +36,6 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
     blurb: 'Best stable default for code. Reliable.',
     pricing: { input: 1.25, output: 10.0 },
     thinkingBudget: 8000,
-    isDefault: true,
   },
   {
     id: 'gemini-2.5-flash',
@@ -68,10 +79,37 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
   },
 ];
 
-export const DEFAULT_PLAYGROUND_MODEL_ID = 'gemini-2.5-pro';
+export const DEFAULT_PLAYGROUND_MODEL_ID = AUTO_MODEL_ID;
+
+/** Real model used for code generation. 'auto' is virtual — never call Gemini with this id. */
+export const FALLBACK_GENERATION_MODEL_ID = 'gemini-2.5-pro';
 
 export function getPlaygroundModel(id: string | undefined | null): PlaygroundModel {
-  return PLAYGROUND_MODELS.find((m) => m.id === id) || PLAYGROUND_MODELS[0];
+  return PLAYGROUND_MODELS.find((m) => m.id === id) || PLAYGROUND_MODELS.find((m) => m.id === FALLBACK_GENERATION_MODEL_ID)!;
+}
+
+/**
+ * Resolve the actual model to call given the user's choice and an optional edit type.
+ * 'auto' routes:
+ *   cosmetic   → Flash (fast/cheap; tiny visual tweaks)
+ *   behavior   → Pro   (touches logic; needs reasoning)
+ *   structural → Pro   (layout / new components / state changes)
+ *   redesign   → Pro
+ *   first      → Pro   (first generation gets the best model)
+ */
+export type EditType = 'cosmetic' | 'behavior' | 'structural' | 'redesign' | 'first';
+
+export function resolveActiveModelId(
+  selectedId: string | undefined | null,
+  editType?: EditType
+): string {
+  if (selectedId && selectedId !== AUTO_MODEL_ID) return selectedId;
+  // Auto routing
+  if (!editType || editType === 'first' || editType === 'structural' || editType === 'redesign' || editType === 'behavior') {
+    return 'gemini-2.5-pro';
+  }
+  if (editType === 'cosmetic') return 'gemini-2.5-flash';
+  return FALLBACK_GENERATION_MODEL_ID;
 }
 
 /** Calculate the USD cost of a single generation given a model id and token usage. */
