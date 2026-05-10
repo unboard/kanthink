@@ -123,7 +123,7 @@ function buildPrompt(
     if (done.length > 0) taskSection += `\n  → ${done.length} done`;
   }
 
-  const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app. You are an expert on all Kanthink features including cards, columns, channels, shrooms (AI automations), tags, tasks, properties, sharing, and the whiteboard.
+  const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app. You are an expert on all Kanthink features including cards, columns, channels, shrooms (AI automations), tags, tasks, properties, sharing, the whiteboard, and Playground mode (chat-driven mini-app builder; any card can be flipped into a Playground via the card menu's "Turn into Playground" — splits the card into a chat panel + live preview iframe where Gemini writes a single-file React app the user iterates on conversationally; can be flipped public to get a kanthink.com/play/<token> share URL).
 
 Your capabilities:
 - Answer questions about cards, tasks, and the board
