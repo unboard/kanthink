@@ -189,6 +189,68 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     return () => document.removeEventListener('mousedown', onDown);
   }, [showModelMenu]);
 
+  // Generation watcher — handles the case where the user's phone locks or the
+  // tab gets suspended mid-generation and the original fetch loses its socket.
+  // The server-side function keeps running and writes to the DB regardless;
+  // we just need to poll to pick up the result when the client comes back.
+  // Polls every 4s while generating, and immediately on tab visibility regain.
+  // Hard cap at 5 minutes to avoid runaway pollers.
+  const generationStartGenCount = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isGenerating) {
+      generationStartGenCount.current = null;
+      return;
+    }
+    // Snapshot the gen count when we entered the generating state so we know
+    // when the server has actually completed a NEW generation.
+    if (generationStartGenCount.current === null) {
+      generationStartGenCount.current = generationCount;
+    }
+
+    let stopped = false;
+    const startTime = Date.now();
+    const MAX_WATCH_MS = 5 * 60 * 1000;
+
+    const poll = async () => {
+      if (stopped) return;
+      if (Date.now() - startTime > MAX_WATCH_MS) {
+        stopped = true;
+        return;
+      }
+      try {
+        const res = await fetch(`/api/playground/status/${card.id}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const newTypeData = data.typeData as PlaygroundTypeData | null;
+        const newGenCount = newTypeData?.generationCount ?? 0;
+        if (newGenCount > (generationStartGenCount.current ?? 0)) {
+          // Server completed a new generation while we were polling — apply it.
+          updateCard(card.id, {
+            cardType: 'playground',
+            typeData: newTypeData as Card['typeData'],
+            messages: data.messages as Card['messages'],
+            ...(data.title ? { title: data.title } : {}),
+            ...(data.summary ? { summary: data.summary } : {}),
+          });
+          setIsGenerating(false);
+          setGenError(null);
+          stopped = true;
+        }
+      } catch {
+        // Polling failures are silent — we'll try again next tick.
+      }
+    };
+
+    const interval = setInterval(poll, 4000);
+    const onVisibility = () => { if (document.visibilityState === 'visible') void poll(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isGenerating, generationCount, card.id, updateCard]);
+
   const srcDoc = useMemo(() => {
     if (!code) return null;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -337,7 +399,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
       if (!res.ok || !data) {
         let friendly: string;
         if (res.status === 504 || res.status === 502) {
-          friendly = 'Generation took too long and timed out. Try a smaller change, or switch to a faster model like Gemini 2.5 Flash.';
+          friendly = 'Generation took too long and timed out. Try a smaller change, or switch to a faster model like Gemini 3 Flash.';
         } else if (res.status === 408) {
           friendly = 'Request timed out. Try again, or switch to a faster model.';
         } else if (data?.error) {
@@ -349,6 +411,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
         }
         setGenError(friendly);
         updateCard(card.id, { messages: messagesBeforeSend });
+        setIsGenerating(false);
         return;
       }
 
@@ -360,14 +423,26 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
         ...(data.snapshot?.title && generationCount === 0 ? { title: data.snapshot.title } : {}),
         ...(data.snapshot?.summary ? { summary: data.snapshot.summary } : {}),
       });
+      setIsGenerating(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Network error';
-      // Failed fetches (no response, DNS, offline) — distinguish from server error.
-      setGenError(msg.includes('Failed to fetch') || msg.includes('NetworkError')
-        ? 'Network error. Check your connection and try again.'
-        : msg);
+      // A "Failed to fetch" / "NetworkError" with the page in flight typically
+      // means the tab got suspended (mobile screen-off) or briefly disconnected.
+      // The server-side Gemini call keeps running and the DB write completes
+      // independently — the watcher above will reconcile when the tab returns.
+      // So we DON'T roll back the optimistic message and we DON'T flip isGenerating
+      // off — the watcher polls every 4s and on visibility regain.
+      const isLikelyTransient = msg.includes('Failed to fetch')
+        || msg.includes('NetworkError')
+        || msg.includes('aborted')
+        || msg.includes('network')
+        || msg.includes('connection');
+      if (isLikelyTransient) {
+        return; // watcher takes over
+      }
+      // Real failure (e.g. immediate auth/quota error) — roll back, surface error.
+      setGenError(msg);
       updateCard(card.id, { messages: messagesBeforeSend });
-    } finally {
       setIsGenerating(false);
     }
   }, [card.id, cardFromStore.messages, isGenerating, iframeError, updateCard, generationCount, modelId, stagedImages]);
