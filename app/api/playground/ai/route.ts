@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Modality } from '@google/genai';
 import { db } from '@/lib/db';
 import { cards, users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
@@ -12,12 +12,17 @@ export const maxDuration = 120;
 
 const MAX_OUTPUT_TOKENS = 4000;
 const MAX_PROMPT_LENGTH = 16000;
+// Gemini's image-gen model (Nano Banana). Used when mode === 'image'. Not in
+// PLAYGROUND_MODELS because it's not a code-gen option for users — it's only
+// reachable from inside generated apps via window.kanthinkAI.generateImage().
+const IMAGE_MODEL_ID = 'gemini-2.5-flash-image-preview';
 
 interface AIRequest {
   cardToken: string;
   prompt: string;
   system?: string;
   model?: string;
+  mode?: 'text' | 'image';  // 'image' routes to Nano Banana for image gen / edit
   imageUrl?: string;       // public URL we'll fetch and inline
   imageData?: string;      // data:image/...;base64,... — passed through
   jsonSchema?: object;     // when provided, asks for JSON output
@@ -88,12 +93,17 @@ export async function POST(request: Request) {
     ));
   }
 
+  const isImageMode = body.mode === 'image';
+
   // Fall back to the frontier model if caller didn't specify (or specified 'auto',
   // which is a virtual id only meaningful for the code-gen route's edit-type routing).
-  const requestedModel = body.model && PLAYGROUND_MODELS.some(m => m.id === body.model && !m.isAuto)
-    ? body.model
-    : FALLBACK_GENERATION_MODEL_ID;
-  const model = getPlaygroundModel(requestedModel);
+  // Image mode always uses the dedicated image-gen model regardless of body.model.
+  const resolvedModelId = isImageMode
+    ? IMAGE_MODEL_ID
+    : (body.model && PLAYGROUND_MODELS.some(m => m.id === body.model && !m.isAuto)
+        ? body.model
+        : FALLBACK_GENERATION_MODEL_ID);
+  const model = isImageMode ? null : getPlaygroundModel(resolvedModelId);
 
   // Build the parts. Text first, then any image.
   const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [{ text: body.prompt }];
@@ -119,8 +129,52 @@ export async function POST(request: Request) {
 
   const client = new GoogleGenAI({ apiKey });
   try {
+    if (isImageMode) {
+      // Image gen / edit via Nano Banana. Returns inline image bytes in the
+      // candidate parts; we surface the first image as a data URL.
+      const response = await client.models.generateContent({
+        model: resolvedModelId,
+        contents: [{ role: 'user', parts }],
+        config: {
+          responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
+      });
+      const candidateParts = response.candidates?.[0]?.content?.parts ?? [];
+      let dataUrl: string | null = null;
+      let mimeType: string | null = null;
+      let text = '';
+      for (const p of candidateParts) {
+        if (p.inlineData?.data && p.inlineData.mimeType?.startsWith('image/')) {
+          dataUrl = `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`;
+          mimeType = p.inlineData.mimeType;
+          break;
+        }
+      }
+      for (const p of candidateParts) {
+        if (typeof p.text === 'string') text += p.text;
+      }
+      if (!dataUrl) {
+        return cors(NextResponse.json(
+          { error: 'Image model returned no image. Try a different prompt or be more specific.' },
+          { status: 502 }
+        ));
+      }
+      return cors(NextResponse.json({
+        dataUrl,
+        mimeType,
+        text: text || undefined,
+        model: resolvedModelId,
+        usage: response.usageMetadata
+          ? {
+              inputTokens: response.usageMetadata.promptTokenCount,
+              outputTokens: response.usageMetadata.candidatesTokenCount,
+            }
+          : null,
+      }));
+    }
+
     const response = await client.models.generateContent({
-      model: model.id,
+      model: resolvedModelId,
       contents: [{ role: 'user', parts }],
       config: {
         systemInstruction: body.system,
@@ -130,7 +184,7 @@ export async function POST(request: Request) {
         // accept any object and pass through; bad schemas will fail the call.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         responseSchema: body.jsonSchema as any,
-        thinkingConfig: model.thinkingBudget > 0
+        thinkingConfig: model && model.thinkingBudget > 0
           ? { thinkingBudget: Math.min(model.thinkingBudget, 4000) }
           : undefined,
       },
@@ -143,7 +197,7 @@ export async function POST(request: Request) {
     return cors(NextResponse.json({
       text,
       json,
-      model: model.id,
+      model: resolvedModelId,
       usage: response.usageMetadata
         ? {
             inputTokens: response.usageMetadata.promptTokenCount,

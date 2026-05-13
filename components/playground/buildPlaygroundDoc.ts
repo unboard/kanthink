@@ -78,6 +78,55 @@ export function buildPlaygroundDoc(
 <div id="root"></div>
 <div id="__kpg_error"><span class="label">Runtime error</span><pre id="__kpg_error_msg" style="white-space:pre-wrap;margin:0;"></pre></div>
 <script>
+  // Storage shim — this iframe runs with an opaque origin (no allow-same-origin),
+  // so reading window.localStorage / sessionStorage throws SecurityError. Without
+  // this shim, almost every generated app crashes on first render with:
+  //   "Failed to read the 'localStorage' property from 'Window': The document is
+  //    sandboxed and lacks the 'allow-same-origin' flag."
+  // We probe each storage API and, if it throws, install a same-shape in-memory
+  // replacement so generated apps run cleanly. State is per-session (lost on
+  // iframe reload), which is fine for prototype playgrounds.
+  (function() {
+    function probeWorks(name) {
+      try {
+        var s = window[name];
+        s.setItem('__kpg_probe', '1');
+        s.removeItem('__kpg_probe');
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    function makeStorage() {
+      var store = Object.create(null);
+      var storage = {
+        getItem: function(k) {
+          k = String(k);
+          return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null;
+        },
+        setItem: function(k, v) { store[String(k)] = String(v); },
+        removeItem: function(k) { delete store[String(k)]; },
+        clear: function() { for (var k in store) delete store[k]; },
+        key: function(i) {
+          var keys = Object.keys(store);
+          return i < keys.length ? keys[i] : null;
+        }
+      };
+      Object.defineProperty(storage, 'length', {
+        get: function() { return Object.keys(store).length; }
+      });
+      return storage;
+    }
+    ['localStorage', 'sessionStorage'].forEach(function(name) {
+      if (probeWorks(name)) return;
+      try {
+        Object.defineProperty(window, name, { configurable: true, value: makeStorage() });
+      } catch (_) {
+        try { window[name] = makeStorage(); } catch(__) {}
+      }
+    });
+  })();
+
   // Forward errors to the parent so the chat can offer auto-fix.
   function __kpg_reportError(err) {
     var msg = err && (err.message || err.reason || String(err)) || 'Unknown error';
@@ -156,6 +205,42 @@ export function buildPlaygroundDoc(
       }).then(function(res) {
         return res.json().then(function(data) {
           if (!res.ok) throw new Error(data && data.error ? data.error : 'AI call failed (' + res.status + ')');
+          return data;
+        });
+      });
+    },
+    /**
+     * Generate (or edit) an image with Gemini's image model (Nano Banana).
+     * Use for: "draw X", "make me a picture of Y", AI avatars, illustration apps,
+     * style transfer, photo edits ("turn this into a watercolor").
+     *
+     * @param {Object} opts
+     * @param {string} opts.prompt - what to draw / how to edit the input image
+     * @param {string} [opts.imageUrl] - optional input image URL to edit/transform
+     * @param {string} [opts.imageData] - optional data: URL input image
+     * @returns Promise<{ dataUrl: string, mimeType: string, text?: string, model: string }>
+     *          dataUrl is a base64 data: URL ready to drop into <img src> or
+     *          to pass to window.kanthinkUpload to convert to a permanent CDN URL.
+     */
+    generateImage: function(opts) {
+      if (!opts || typeof opts !== 'object') return Promise.reject(new Error('kanthinkAI.generateImage requires an options object.'));
+      if (!opts.prompt) return Promise.reject(new Error('kanthinkAI.generateImage requires opts.prompt.'));
+      if (!__KPG_CARD_TOKEN) return Promise.reject(new Error('AI is not available in this playground (no card token).'));
+      var payload = {
+        cardToken: __KPG_CARD_TOKEN,
+        mode: 'image',
+        prompt: opts.prompt,
+        imageUrl: opts.imageUrl,
+        imageData: opts.imageData
+      };
+      return fetch(__KPG_AI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        mode: 'cors'
+      }).then(function(res) {
+        return res.json().then(function(data) {
+          if (!res.ok) throw new Error(data && data.error ? data.error : 'Image generation failed (' + res.status + ')');
           return data;
         });
       });
