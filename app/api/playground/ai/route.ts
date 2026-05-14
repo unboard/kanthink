@@ -12,10 +12,15 @@ export const maxDuration = 120;
 
 const MAX_OUTPUT_TOKENS = 4000;
 const MAX_PROMPT_LENGTH = 16000;
-// Gemini's image-gen model (Nano Banana). Used when mode === 'image'. Not in
-// PLAYGROUND_MODELS because it's not a code-gen option for users — it's only
-// reachable from inside generated apps via window.kanthinkAI.generateImage().
-const IMAGE_MODEL_ID = 'gemini-2.5-flash-image-preview';
+// Gemini's image-gen model. Used when mode === 'image'. Not in PLAYGROUND_MODELS
+// because it's not a code-gen option for users — it's only reachable from inside
+// generated apps via window.kanthinkAI.generateImage().
+//
+// gemini-3.1-flash-image-preview = "Nano Banana 2", frontier image model.
+// On not-found / unavailable we fall back to gemini-2.5-flash-image (GA "Nano Banana"),
+// so users on accounts without preview access still get image gen.
+const IMAGE_MODEL_PRIMARY = 'gemini-3.1-flash-image-preview';
+const IMAGE_MODEL_FALLBACK = 'gemini-2.5-flash-image';
 
 interface AIRequest {
   cardToken: string;
@@ -97,9 +102,9 @@ export async function POST(request: Request) {
 
   // Fall back to the frontier model if caller didn't specify (or specified 'auto',
   // which is a virtual id only meaningful for the code-gen route's edit-type routing).
-  // Image mode always uses the dedicated image-gen model regardless of body.model.
+  // Image mode is handled in its own branch below and uses dedicated image-gen models.
   const resolvedModelId = isImageMode
-    ? IMAGE_MODEL_ID
+    ? IMAGE_MODEL_PRIMARY
     : (body.model && PLAYGROUND_MODELS.some(m => m.id === body.model && !m.isAuto)
         ? body.model
         : FALLBACK_GENERATION_MODEL_ID);
@@ -131,14 +136,31 @@ export async function POST(request: Request) {
   try {
     if (isImageMode) {
       // Image gen / edit via Nano Banana. Returns inline image bytes in the
-      // candidate parts; we surface the first image as a data URL.
-      const response = await client.models.generateContent({
-        model: resolvedModelId,
-        contents: [{ role: 'user', parts }],
-        config: {
-          responseModalities: [Modality.IMAGE, Modality.TEXT],
-        },
-      });
+      // candidate parts; we surface the first image as a data URL. If the
+      // frontier preview model is unavailable on this API key, fall back to
+      // the GA model so the feature still works.
+      const callImageModel = async (modelId: string) => {
+        return client.models.generateContent({
+          model: modelId,
+          contents: [{ role: 'user', parts }],
+          config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
+        });
+      };
+
+      let modelUsed = IMAGE_MODEL_PRIMARY;
+      let response;
+      try {
+        response = await callImageModel(IMAGE_MODEL_PRIMARY);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (/NOT_FOUND|404|is not found|not supported/i.test(msg)) {
+          modelUsed = IMAGE_MODEL_FALLBACK;
+          response = await callImageModel(IMAGE_MODEL_FALLBACK);
+        } else {
+          throw err;
+        }
+      }
+
       const candidateParts = response.candidates?.[0]?.content?.parts ?? [];
       let dataUrl: string | null = null;
       let mimeType: string | null = null;
@@ -163,7 +185,7 @@ export async function POST(request: Request) {
         dataUrl,
         mimeType,
         text: text || undefined,
-        model: resolvedModelId,
+        model: modelUsed,
         usage: response.usageMetadata
           ? {
               inputTokens: response.usageMetadata.promptTokenCount,
