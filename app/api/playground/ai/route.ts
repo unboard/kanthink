@@ -228,7 +228,16 @@ export async function POST(request: Request) {
         : null,
     }));
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'AI call failed';
+    const raw = err instanceof Error ? err.message : 'AI call failed';
+    // Google's SDK throws with .message set to the raw JSON error envelope —
+    // e.g. '{"error":{"code":404,"message":"models/X is not found...","status":"NOT_FOUND"}}'.
+    // Generated apps tend to render err.message verbatim, which leaks ugly JSON
+    // into the UI. Extract the human "message" field when present.
+    let msg = raw;
+    const m = raw.match(/"message"\s*:\s*"((?:\\.|[^"\\])+)"/);
+    if (m) {
+      try { msg = JSON.parse('"' + m[1] + '"'); } catch { msg = m[1]; }
+    }
     return cors(NextResponse.json({ error: msg }, { status: 502 }));
   }
 }
