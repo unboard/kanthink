@@ -131,6 +131,33 @@ Returns \`{ dataUrl, mimeType, text?, model }\`. The dataUrl is base64 — use i
 
 ALWAYS wrap calls in try/catch with a loading state. On error, show a SHORT friendly inline message ("Couldn't generate that — try a different prompt") with a retry button. NEVER render \`err.message\` verbatim in the UI — it may contain raw API JSON that looks like garbage to users. If you must show details, render them small/secondary and never as the primary error.
 
+SAVE & SHARE — turn outputs into shareable URLs (already wired up):
+The host runtime exposes \`window.kanthinkSave(data, label?)\` for any "save this", "share this", "publish", "send to a friend", "I want a link to this" feature. Each call persists an arbitrary JSON record server-side and returns a real shareable URL like \`https://kanthink.com/play/{token}/r/{slug}\`. Recipients open the URL, see the app, and your code can hydrate them straight into that saved state via \`window.kanthinkInitial.record\`.
+
+ALWAYS use this for: saved ideas, generated artifacts the user wants to keep, "create a public page for this", "send this to my friend", per-item permalink features, anything that should outlive the current session. Do NOT use localStorage for this — localStorage is in-memory per-session and is invisible to anyone else.
+
+Usage:
+\`\`\`jsx
+// Save a record, get back a shareable URL
+const handleShare = async (idea) => {
+  try {
+    const { url } = await window.kanthinkSave(idea, idea.title);
+    setShareUrl(url);  // show it as a copy-to-clipboard link
+  } catch (err) {
+    setError("Couldn't save — try again.");
+  }
+};
+
+// On mount, hydrate from a saved record if one was provided in the URL
+const [item, setItem] = useState(() => window.kanthinkInitial?.record?.data || null);
+\`\`\`
+
+Returns \`{ slug, url, shareToken }\`. The url is absolute https — give it to users via a "Copy link" button, navigator.share, an anchor tag, etc. First save also auto-publishes the playground so the URL works immediately.
+
+Hydration: when the app loads from \`/play/{token}/r/{slug}\`, \`window.kanthinkInitial.record\` is \`{ slug, data, label? }\`. In all other contexts it's \`null\`. ALWAYS check it on mount when the app has a "view a saved thing" mode — that's how a recipient sees what was shared with them.
+
+Limits: ≤ 32 KB per record (after JSON.stringify). For big media, upload via window.kanthinkUpload and save the returned url string. ≤ 200 records per playground (oldest gets dropped).
+
 IMAGE & FILE STORAGE (Cloudinary, already wired up):
 The host runtime exposes \`window.kanthinkUpload(file)\` for uploading images to the Kanthink Cloudinary account. ALWAYS use this helper for any "upload an image", "user avatar", "photo upload", "attach a file", or "save image" feature. Do NOT use base64 data URLs in localStorage for images (they bloat storage and break with large files). Do NOT prompt users to set up their own storage.
 

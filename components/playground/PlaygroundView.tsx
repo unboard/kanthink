@@ -258,6 +258,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
       title: typeData.codeTitle || cardFromStore.title,
       uploadUrl: `${origin}/api/playground/upload`,
       aiUrl: `${origin}/api/playground/ai`,
+      saveUrl: `${origin}/api/playground/save`,
       cardToken: typeData.cardToken,
     });
   }, [code, typeData.codeTitle, typeData.cardToken, cardFromStore.title]);

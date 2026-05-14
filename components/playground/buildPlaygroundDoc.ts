@@ -24,7 +24,14 @@ export function buildPlaygroundDoc(
     title?: string;
     uploadUrl?: string;
     aiUrl?: string;
+    saveUrl?: string;
     cardToken?: string;
+    /**
+     * If set, baked into `window.kanthinkInitial.record` so the app can hydrate
+     * from a specific saved record (used by /play/{token}/r/{slug}). Apps in the
+     * editor view receive `null`.
+     */
+    initialRecord?: { slug: string; data: unknown; label?: string } | null;
   }
 ): string {
   const title = (options?.title || 'Kanthink Playground').replace(/[<>]/g, '');
@@ -32,7 +39,9 @@ export function buildPlaygroundDoc(
   // absolute origin so the helper works from inside an opaque-origin iframe.
   const uploadUrl = (options?.uploadUrl || '/api/playground/upload').replace(/[<>"]/g, '');
   const aiUrl = (options?.aiUrl || '/api/playground/ai').replace(/[<>"]/g, '');
+  const saveUrl = (options?.saveUrl || '/api/playground/save').replace(/[<>"]/g, '');
   const cardToken = (options?.cardToken || '').replace(/[<>"]/g, '');
+  const initialRecord = options?.initialRecord ?? null;
   // Strip an accidental opening markdown fence if Gemini ever leaks one.
   // Also strip any `import React ...` lines: the iframe's wrapper already does
   // `import * as React from 'react'` so user code that re-imports React would
@@ -143,6 +152,17 @@ export function buildPlaygroundDoc(
     try { parent.postMessage({ type: 'kpg_ready' }, '*'); } catch(_) {}
   });
 
+  // HMAC card token baked at build time — proves to /api/playground/{ai,save}
+  // which card this iframe is authorized to read/write. The iframe runs in an
+  // opaque-origin sandbox so it has no cookies; this token is the auth.
+  var __KPG_CARD_TOKEN = ${JSON.stringify(cardToken)};
+
+  // Initial record hydration — when this iframe is rendered from
+  // /play/{token}/r/{slug}, the host bakes the saved record here so the
+  // generated app can read it synchronously on mount. Null in the editor
+  // view and on the unscoped public page.
+  window.kanthinkInitial = ${JSON.stringify({ record: initialRecord })};
+
   // Cloudinary upload helper — generated apps use this for any image/file storage.
   // Absolute URL baked in at srcdoc build time; parent origin is unreachable from
   // here because the iframe runs with an opaque origin (no allow-same-origin).
@@ -163,11 +183,40 @@ export function buildPlaygroundDoc(
       });
   };
 
+  // Saved-record helper — generated apps use this to persist arbitrary JSON
+  // server-side and get back a shareable per-record URL.
+  var __KPG_SAVE_URL = ${JSON.stringify(saveUrl)};
+  window.kanthinkSave = function(data, label) {
+    if (!__KPG_CARD_TOKEN) return Promise.reject(new Error('Save is not available in this playground (no card token).'));
+    if (data === undefined || data === null) return Promise.reject(new Error('kanthinkSave requires data.'));
+    var payload = {
+      cardToken: __KPG_CARD_TOKEN,
+      data: data,
+      label: typeof label === 'string' ? label : undefined
+    };
+    return fetch(__KPG_SAVE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      mode: 'cors'
+    }).then(function(res) {
+      return res.json().then(function(j) {
+        if (!res.ok) throw new Error(j && j.error ? j.error : 'Save failed (' + res.status + ')');
+        // Promote relative url → absolute https url using the parent origin
+        // baked into __KPG_SAVE_URL. The iframe's own origin is opaque so we
+        // can't read it from location.
+        if (j && typeof j.url === 'string' && j.url.charAt(0) === '/') {
+          try { j.url = new URL(__KPG_SAVE_URL).origin + j.url; } catch(_) {}
+        }
+        return j;
+      });
+    });
+  };
+
   // AI helper — generated apps use this for any AI/LLM feature (vision, text gen,
   // structured output). Routes through the card owner's BYOK key so the apps you
   // build use the same Gemini account as your code-gen calls.
   var __KPG_AI_URL = ${JSON.stringify(aiUrl)};
-  var __KPG_CARD_TOKEN = ${JSON.stringify(cardToken)};
   window.kanthinkAI = {
     // Frontier 3.x first (recommended). 2.5 family kept as stable fallbacks.
     models: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
