@@ -352,7 +352,8 @@ export function MiniNav() {
   if (
     pathname.startsWith('/marketplace') ||
     pathname.startsWith('/public') ||
-    pathname.startsWith('/play')  // public playground apps own the full viewport
+    pathname.startsWith('/play') ||  // public playground apps own the full viewport
+    pathname.startsWith('/wildwood')  // the Wildwood game owns the full viewport
   ) return null;
 
   return (

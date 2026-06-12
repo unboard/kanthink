@@ -1727,7 +1727,7 @@ export function MobileBottomSheet() {
   }, [activePanel]);
 
   // Don't render on marketplace pages or when not visible
-  if (sheetPathname.startsWith('/marketplace') || sheetPathname.startsWith('/public') || sheetPathname.startsWith('/play') || !isVisible) {
+  if (sheetPathname.startsWith('/marketplace') || sheetPathname.startsWith('/public') || sheetPathname.startsWith('/play') || sheetPathname.startsWith('/wildwood') || !isVisible) {
     return null;
   }
 
