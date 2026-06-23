@@ -61,3 +61,52 @@ export async function uploadImageToCloudinary(
     uploadStream.end(buffer);
   });
 }
+
+// ===== /record — signed direct-to-Cloudinary video uploads =====
+// Recordings can be large (tens of MB), so the browser uploads straight to
+// Cloudinary. We only sign the request server-side so api_secret never ships
+// to the client and the upload params can't be tampered with.
+
+export interface VideoUploadSignature {
+  signature: string;
+  timestamp: number;
+  apiKey: string;
+  cloudName: string;
+  folder: string;
+}
+
+export function signVideoUpload(options: { folder: string }): VideoUploadSignature {
+  const timestamp = Math.floor(Date.now() / 1000);
+  // Only the params Cloudinary signs (alphabetical) — must match the form the
+  // client sends exactly, or Cloudinary rejects with "Invalid Signature".
+  const signature = cloudinary.utils.api_sign_request(
+    { folder: options.folder, timestamp },
+    process.env.CLOUDINARY_API_SECRET as string
+  );
+
+  return {
+    signature,
+    timestamp,
+    apiKey: process.env.CLOUDINARY_API_KEY as string,
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME as string,
+    folder: options.folder,
+  };
+}
+
+export async function destroyVideo(publicId: string): Promise<void> {
+  await cloudinary.uploader.destroy(publicId, { resource_type: 'video', invalidate: true });
+}
+
+/**
+ * Build a delivery URL for a recording. We force mp4/h264 so the <video> tag
+ * plays everywhere (recordings are captured as webm, which Safari can't play).
+ * Cloudinary transcodes on first request and caches the result.
+ */
+export function recordingDeliveryUrl(publicId: string): string {
+  return cloudinary.url(publicId, {
+    resource_type: 'video',
+    secure: true,
+    format: 'mp4',
+    transformation: [{ quality: 'auto' }],
+  });
+}

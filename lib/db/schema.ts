@@ -727,3 +727,47 @@ export const contentPages = sqliteTable('content_pages', {
 
 export type DbContentPage = typeof contentPages.$inferSelect
 export type NewDbContentPage = typeof contentPages.$inferInsert
+
+// ===== /record — screen + webcam demo recordings =====
+
+// A loading-mask covers a time range of the video in the player (non-destructive edit).
+export interface RecordingMaskJson {
+  id: string
+  start: number          // seconds
+  end: number            // seconds
+  style: 'cover' | 'blur'
+  label?: string         // text shown on a 'cover' mask
+}
+
+// editSpec is applied at playback time by the watch player — fully reversible.
+export interface RecordingEditSpecJson {
+  trimStart: number       // seconds; 0 = from beginning
+  trimEnd: number | null  // seconds; null = to end
+  masks: RecordingMaskJson[]
+}
+
+export const recordings = sqliteTable('recordings', {
+  id: text('id').primaryKey(),                 // nanoid, used in the share URL
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text('title').notNull().default('Untitled recording'),
+
+  // Cloudinary video asset
+  cloudinaryPublicId: text('cloudinary_public_id').notNull(),
+  cloudinaryUrl: text('cloudinary_url').notNull(),
+
+  durationMs: integer('duration_ms').notNull().default(0),
+  width: integer('width').notNull().default(0),
+  height: integer('height').notNull().default(0),
+  aspectRatio: text('aspect_ratio').default('16:9'),  // label: '16:9' | '9:16' | '1:1' | '4:3'
+
+  editSpec: safeJsonText<RecordingEditSpecJson>({ trimStart: 0, trimEnd: null, masks: [] })('edit_spec')
+    .default({ trimStart: 0, trimEnd: null, masks: [] }),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('recordings_owner_idx').on(table.ownerId),
+])
+
+export type DbRecording = typeof recordings.$inferSelect
+export type NewDbRecording = typeof recordings.$inferInsert

@@ -82,6 +82,15 @@ export async function ensureSchema() {
     `ALTER TABLE content_pages ADD created_at integer`,
     // Migration 0025 — task archiving
     `ALTER TABLE tasks ADD is_archived integer DEFAULT 0`,
+    // Migration 0026 — recordings (/record) individual columns for migration guard
+    `ALTER TABLE recordings ADD title text DEFAULT 'Untitled recording'`,
+    `ALTER TABLE recordings ADD cloudinary_public_id text`,
+    `ALTER TABLE recordings ADD cloudinary_url text`,
+    `ALTER TABLE recordings ADD duration_ms integer DEFAULT 0`,
+    `ALTER TABLE recordings ADD width integer DEFAULT 0`,
+    `ALTER TABLE recordings ADD height integer DEFAULT 0`,
+    `ALTER TABLE recordings ADD aspect_ratio text DEFAULT '16:9'`,
+    `ALTER TABLE recordings ADD edit_spec text`,
   ]
 
   for (const stmt of alterStatements) {
@@ -242,6 +251,25 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0026 — recordings (/record screen + webcam demos)
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS recordings (
+      id text PRIMARY KEY NOT NULL,
+      owner_id text NOT NULL,
+      title text DEFAULT 'Untitled recording',
+      cloudinary_public_id text NOT NULL,
+      cloudinary_url text NOT NULL,
+      duration_ms integer DEFAULT 0,
+      width integer DEFAULT 0,
+      height integer DEFAULT 0,
+      aspect_ratio text DEFAULT '16:9',
+      edit_spec text,
+      created_at integer,
+      updated_at integer,
+      FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE cascade
+    )`))
+  } catch {}
+
   // Migration 0025 — operator chat threads
   try {
     await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS operator_chat_threads (
@@ -287,6 +315,8 @@ export async function ensureSchema() {
     // Migration 0012 indexes
     `CREATE INDEX IF NOT EXISTS channel_data_sources_channel_idx ON channel_data_sources (channel_id)`,
     `CREATE INDEX IF NOT EXISTS channel_data_sources_channel_provider_idx ON channel_data_sources (channel_id, provider)`,
+    // Migration 0026 indexes
+    `CREATE INDEX IF NOT EXISTS recordings_owner_idx ON recordings (owner_id)`,
   ]
 
   for (const idx of indexes) {
