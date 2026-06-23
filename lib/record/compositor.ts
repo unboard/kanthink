@@ -38,34 +38,52 @@ function drawContain(ctx: CanvasRenderingContext2D, m: Media, r: Rect) {
 }
 
 /**
- * Draw the webcam into rect as a digital camera zoom (magnifies the image
- * content, frame stays the same and stays filled):
- *   zoom = 1  → fills the frame (cover), native framing
- *   zoom > 1  → magnifies / crops in tighter
- *   zoom < 1  → pulls back to reveal more of the camera frame (e.g. hands)
- * When pulled back past the native frame the sharp image no longer fills the
- * rect, so (for opaque frames) we back-fill with a blurred cover of the same
- * feed — never empty margins. For transparent cutouts, bgFill is false so the
- * background shows through.
+ * Draw the webcam into rect as a digital camera zoom — the image always FILLS
+ * the frame; zoom changes how much of the source you see, not the picture size.
+ *
+ * mode 'cover' (opaque frames): sample a centered region of the source that
+ * matches the frame aspect, scaled to fill. zoom=1 (minimum) shows the largest
+ * such region (the whole frame, furthest out); zoom>1 samples a smaller region
+ * (closer in). No margins, ever.
+ *
+ * mode 'contain' (cutout sticker): the source has a transparent background, so
+ * fit the whole frame inside rect (transparent margins let the screen show
+ * through); zoom>1 magnifies the subject.
  */
-function drawCam(ctx: CanvasRenderingContext2D, m: Media, r: Rect, zoom: number, bgFill: boolean) {
+function drawCam(
+  ctx: CanvasRenderingContext2D,
+  m: Media,
+  r: Rect,
+  zoom: number,
+  mode: 'cover' | 'contain'
+) {
   const { w: mw, h: mh } = mediaSize(m);
   if (!mw || !mh) return;
-  const coverScale = Math.max(r.w / mw, r.h / mh);
-  const scale = coverScale * zoom;
-  const dw = mw * scale;
-  const dh = mh * scale;
-  const fills = dw >= r.w - 0.5 && dh >= r.h - 0.5;
+  const z = Math.max(1, zoom);
 
-  if (!fills && bgFill) {
-    const cdw = mw * coverScale;
-    const cdh = mh * coverScale;
-    ctx.save();
-    ctx.filter = `blur(${Math.max(6, r.w * 0.05)}px)`;
-    ctx.drawImage(m, r.x + (r.w - cdw) / 2, r.y + (r.h - cdh) / 2, cdw, cdh);
-    ctx.restore();
+  if (mode === 'contain') {
+    const scale = Math.min(r.w / mw, r.h / mh) * z;
+    const dw = mw * scale;
+    const dh = mh * scale;
+    ctx.drawImage(m, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
+    return;
   }
-  ctx.drawImage(m, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
+
+  // cover: largest centered source region matching the frame aspect (zoom=1),
+  // shrinking toward the center as zoom increases.
+  const destAspect = r.w / r.h;
+  let baseSW: number;
+  let baseSH: number;
+  if (mw / mh > destAspect) {
+    baseSH = mh;
+    baseSW = mh * destAspect;
+  } else {
+    baseSW = mw;
+    baseSH = mw / destAspect;
+  }
+  const sw = baseSW / z;
+  const sh = baseSH / z;
+  ctx.drawImage(m, (mw - sw) / 2, (mh - sh) / 2, sw, sh, r.x, r.y, r.w, r.h);
 }
 
 function shapePath(ctx: CanvasRenderingContext2D, r: Rect, shape: StudioConfig['shape']) {
@@ -193,8 +211,8 @@ export class Compositor {
       ctx.shadowColor = 'rgba(0,0,0,0.35)';
       ctx.shadowBlur = s * 0.06;
       ctx.shadowOffsetY = s * 0.02;
-      // Cutout has a transparent background — let it show through, no back-fill.
-      drawCam(ctx, source, rect, config.zoom, false);
+      // Cutout has a transparent background — keep the whole subject, transparent margins.
+      drawCam(ctx, source, rect, config.zoom, 'contain');
       ctx.restore();
       return;
     }
@@ -213,7 +231,7 @@ export class Compositor {
     ctx.save();
     shapePath(ctx, rect, config.shape);
     ctx.clip();
-    drawCam(ctx, source, rect, config.zoom, true);
+    drawCam(ctx, source, rect, config.zoom, 'cover');
     ctx.restore();
 
     // White border ring.
@@ -246,7 +264,7 @@ export class Compositor {
       ctx.fillStyle = grad;
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
-    drawCam(ctx, source, rect, config.zoom, config.effect !== 'cutout');
+    drawCam(ctx, source, rect, config.zoom, config.effect === 'cutout' ? 'contain' : 'cover');
     ctx.restore();
   }
 }
