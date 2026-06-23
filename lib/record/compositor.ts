@@ -38,17 +38,33 @@ function drawContain(ctx: CanvasRenderingContext2D, m: Media, r: Rect) {
 }
 
 /**
- * Draw the webcam into rect. zoom=1 fills the rect (object-fit: cover, cropping
- * overflow); zoom<1 scales the frame down and centers it so more of the camera
- * view is visible (revealing margins); zoom>1 crops in tighter. The caller clips
- * to the bubble shape, so any margins fall outside the visible frame.
+ * Draw the webcam into rect as a digital camera zoom (magnifies the image
+ * content, frame stays the same and stays filled):
+ *   zoom = 1  → fills the frame (cover), native framing
+ *   zoom > 1  → magnifies / crops in tighter
+ *   zoom < 1  → pulls back to reveal more of the camera frame (e.g. hands)
+ * When pulled back past the native frame the sharp image no longer fills the
+ * rect, so (for opaque frames) we back-fill with a blurred cover of the same
+ * feed — never empty margins. For transparent cutouts, bgFill is false so the
+ * background shows through.
  */
-function drawCam(ctx: CanvasRenderingContext2D, m: Media, r: Rect, zoom: number) {
+function drawCam(ctx: CanvasRenderingContext2D, m: Media, r: Rect, zoom: number, bgFill: boolean) {
   const { w: mw, h: mh } = mediaSize(m);
   if (!mw || !mh) return;
-  const scale = Math.max(r.w / mw, r.h / mh) * zoom;
+  const coverScale = Math.max(r.w / mw, r.h / mh);
+  const scale = coverScale * zoom;
   const dw = mw * scale;
   const dh = mh * scale;
+  const fills = dw >= r.w - 0.5 && dh >= r.h - 0.5;
+
+  if (!fills && bgFill) {
+    const cdw = mw * coverScale;
+    const cdh = mh * coverScale;
+    ctx.save();
+    ctx.filter = `blur(${Math.max(6, r.w * 0.05)}px)`;
+    ctx.drawImage(m, r.x + (r.w - cdw) / 2, r.y + (r.h - cdh) / 2, cdw, cdh);
+    ctx.restore();
+  }
   ctx.drawImage(m, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
 }
 
@@ -177,7 +193,8 @@ export class Compositor {
       ctx.shadowColor = 'rgba(0,0,0,0.35)';
       ctx.shadowBlur = s * 0.06;
       ctx.shadowOffsetY = s * 0.02;
-      drawCam(ctx, source, rect, config.zoom);
+      // Cutout has a transparent background — let it show through, no back-fill.
+      drawCam(ctx, source, rect, config.zoom, false);
       ctx.restore();
       return;
     }
@@ -196,7 +213,7 @@ export class Compositor {
     ctx.save();
     shapePath(ctx, rect, config.shape);
     ctx.clip();
-    drawCam(ctx, source, rect, config.zoom);
+    drawCam(ctx, source, rect, config.zoom, true);
     ctx.restore();
 
     // White border ring.
@@ -229,7 +246,7 @@ export class Compositor {
       ctx.fillStyle = grad;
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
-    drawCam(ctx, source, rect, config.zoom);
+    drawCam(ctx, source, rect, config.zoom, config.effect !== 'cutout');
     ctx.restore();
   }
 }
