@@ -351,48 +351,37 @@ export class Compositor {
 // ===== Audio mixing + enhancement =====
 
 /**
- * "Soften" chain to tame harsh/fatiguing mic audio (e.g. bright headset mics).
- * Adds low-mid warmth, dips the harsh presence band, cuts sibilant top with a
- * de-ess shelf, rolls off the brittle high end, and compresses to even out
- * peaks. Tuned to be clearly audible. Returns the tail node.
+ * Gentle "soften" chain to take the edge off harsh mic audio: a mild high-shelf
+ * cut, a small presence dip, a high low-pass, and light compression. Returns
+ * the tail node.
  */
-export function softenMic(ctx: AudioContext, source: AudioNode): AudioNode {
-  // Body/warmth so the voice doesn't sound thin once the top is rolled off.
-  const warmth = ctx.createBiquadFilter();
-  warmth.type = 'lowshelf';
-  warmth.frequency.value = 220;
-  warmth.gain.value = 2.5;
+function softenMic(ctx: AudioContext, source: AudioNode): AudioNode {
+  const shelf = ctx.createBiquadFilter();
+  shelf.type = 'highshelf';
+  shelf.frequency.value = 5500;
+  shelf.gain.value = -6;
 
-  // Dip the harsh/fatiguing presence band.
   const presence = ctx.createBiquadFilter();
   presence.type = 'peaking';
-  presence.frequency.value = 3500;
-  presence.Q.value = 1.2;
-  presence.gain.value = -5;
+  presence.frequency.value = 3200;
+  presence.Q.value = 1;
+  presence.gain.value = -4;
 
-  // De-ess: pull down sibilance and brittle highs.
-  const deess = ctx.createBiquadFilter();
-  deess.type = 'highshelf';
-  deess.frequency.value = 6000;
-  deess.gain.value = -9;
-
-  // Remove the brittle very-top while keeping speech clarity (< 8 kHz).
   const lowpass = ctx.createBiquadFilter();
   lowpass.type = 'lowpass';
-  lowpass.frequency.value = 10000;
+  lowpass.frequency.value = 13000;
   lowpass.Q.value = 0.7;
 
   const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -26;
+  comp.threshold.value = -24;
   comp.knee.value = 30;
-  comp.ratio.value = 3.5;
-  comp.attack.value = 0.004;
+  comp.ratio.value = 3;
+  comp.attack.value = 0.003;
   comp.release.value = 0.25;
 
-  source.connect(warmth);
-  warmth.connect(presence);
-  presence.connect(deess);
-  deess.connect(lowpass);
+  source.connect(shelf);
+  shelf.connect(presence);
+  presence.connect(lowpass);
   lowpass.connect(comp);
   return comp;
 }

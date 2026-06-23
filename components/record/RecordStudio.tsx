@@ -6,11 +6,11 @@ import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
   Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Trash2, Copy, ExternalLink,
-  Captions, AudioLines, Headphones,
+  Captions, AudioLines,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
-  Compositor, buildRecordingAudio, softenMic, startRecording, type ActiveRecording, type CompositorState,
+  Compositor, buildRecordingAudio, startRecording, type ActiveRecording, type CompositorState,
 } from '@/lib/record/compositor';
 import { publishRecording } from '@/lib/record/upload';
 import { useSpeechCaptions } from '@/lib/record/useSpeechCaptions';
@@ -44,7 +44,6 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const [micId, setMicId] = useState<string>('');
   const [micEnabled, setMicEnabled] = useState(true);
   const [includeBrowserAudio, setIncludeBrowserAudio] = useState(false);
-  const [monitoring, setMonitoring] = useState(false);
 
   const [hasWebcam, setHasWebcam] = useState(false);
   const [hasScreen, setHasScreen] = useState(false);
@@ -68,7 +67,6 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const screenStreamRef = useRef<MediaStream | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const monitorCtxRef = useRef<AudioContext | null>(null);
   const recordingRef = useRef<ActiveRecording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -113,7 +111,6 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       screenStreamRef.current?.getTracks().forEach((t) => t.stop());
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
       audioCtxRef.current?.close().catch(() => {});
-      monitorCtxRef.current?.close().catch(() => {});
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
@@ -186,38 +183,6 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       setError('Could not access the microphone.');
     }
   }, [refreshDevices]);
-
-  // ----- Live headphone monitoring (hear the softened mic in real time) -----
-  const stopMonitor = useCallback(() => {
-    monitorCtxRef.current?.close().catch(() => {});
-    monitorCtxRef.current = null;
-  }, []);
-
-  const startMonitor = useCallback(() => {
-    stopMonitor();
-    if (!micStreamRef.current) return;
-    const ctx = new AudioContext();
-    monitorCtxRef.current = ctx;
-    const src = ctx.createMediaStreamSource(micStreamRef.current);
-    const tail = config.enhanceAudio ? softenMic(ctx, src) : src;
-    tail.connect(ctx.destination);
-  }, [config.enhanceAudio, stopMonitor]);
-
-  const toggleMonitor = useCallback(async () => {
-    if (monitoring) {
-      setMonitoring(false);
-      stopMonitor();
-      return;
-    }
-    if (!micStreamRef.current) await acquireMic(micId || undefined);
-    setMonitoring(true);
-    startMonitor();
-  }, [monitoring, micId, acquireMic, startMonitor, stopMonitor]);
-
-  // Rebuild the monitor chain when softening is toggled while monitoring.
-  useEffect(() => {
-    if (monitoring) startMonitor();
-  }, [config.enhanceAudio, monitoring, startMonitor]);
 
   const shareScreen = useCallback(async () => {
     setError(null);
@@ -502,15 +467,8 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                   active={config.enhanceAudio}
                   onClick={() => setConfig((c) => ({ ...c, enhanceAudio: !c.enhanceAudio }))}
                 />
-                <ToggleRow
-                  icon={<Headphones className="h-4 w-4" />}
-                  label={monitoring ? 'Monitoring (live)' : 'Monitor in headphones'}
-                  active={monitoring}
-                  onClick={toggleMonitor}
-                />
                 <p className="text-[11px] text-neutral-500">
-                  Softening rolls off the harsh top end and compresses peaks. Turn on monitoring
-                  (headphones only — avoids feedback) to hear it live and A/B the toggle.
+                  Takes a little edge off bright/harsh mics. Test with a short clip.
                 </p>
               </Group>
 
