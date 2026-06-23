@@ -37,14 +37,19 @@ function drawContain(ctx: CanvasRenderingContext2D, m: Media, r: Rect) {
   ctx.drawImage(m, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
 }
 
-/** Fill rect with media, cropping overflow (object-fit: cover). */
-function drawCover(ctx: CanvasRenderingContext2D, m: Media, r: Rect) {
+/**
+ * Draw the webcam into rect. zoom=1 fills the rect (object-fit: cover, cropping
+ * overflow); zoom<1 scales the frame down and centers it so more of the camera
+ * view is visible (revealing margins); zoom>1 crops in tighter. The caller clips
+ * to the bubble shape, so any margins fall outside the visible frame.
+ */
+function drawCam(ctx: CanvasRenderingContext2D, m: Media, r: Rect, zoom: number) {
   const { w: mw, h: mh } = mediaSize(m);
   if (!mw || !mh) return;
-  const scale = Math.max(r.w / mw, r.h / mh);
-  const sx = (mw - r.w / scale) / 2;
-  const sy = (mh - r.h / scale) / 2;
-  ctx.drawImage(m, sx, sy, r.w / scale, r.h / scale, r.x, r.y, r.w, r.h);
+  const scale = Math.max(r.w / mw, r.h / mh) * zoom;
+  const dw = mw * scale;
+  const dh = mh * scale;
+  ctx.drawImage(m, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
 }
 
 function shapePath(ctx: CanvasRenderingContext2D, r: Rect, shape: StudioConfig['shape']) {
@@ -172,7 +177,7 @@ export class Compositor {
       ctx.shadowColor = 'rgba(0,0,0,0.35)';
       ctx.shadowBlur = s * 0.06;
       ctx.shadowOffsetY = s * 0.02;
-      drawCover(ctx, source, rect);
+      drawCam(ctx, source, rect, config.zoom);
       ctx.restore();
       return;
     }
@@ -191,7 +196,7 @@ export class Compositor {
     ctx.save();
     shapePath(ctx, rect, config.shape);
     ctx.clip();
-    drawCover(ctx, source, rect);
+    drawCam(ctx, source, rect, config.zoom);
     ctx.restore();
 
     // White border ring.
@@ -224,7 +229,7 @@ export class Compositor {
       ctx.fillStyle = grad;
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
-    drawCover(ctx, source, rect);
+    drawCam(ctx, source, rect, config.zoom);
     ctx.restore();
   }
 }

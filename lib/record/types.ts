@@ -39,6 +39,7 @@ export interface StudioConfig {
   template: LayoutTemplate;
   aspect: AspectRatio;
   borderWidth: number;       // px in canvas space for the bubble white border
+  zoom: number;              // webcam zoom: 1 = fill (cover), <1 zooms out to reveal more of the frame
   showWebcam: boolean;
 }
 
@@ -48,6 +49,7 @@ export const DEFAULT_CONFIG: StudioConfig = {
   template: 'overlay',
   aspect: '16:9',
   borderWidth: 6,
+  zoom: 1,
   showWebcam: true,
 };
 

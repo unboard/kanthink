@@ -466,6 +466,20 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                     className="mt-1 w-full accent-emerald-500"
                   />
                 </label>
+                <label className="block text-xs text-neutral-400">
+                  <span className="flex justify-between">
+                    <span>Camera zoom</span>
+                    <span className="text-neutral-500">{Math.round(config.zoom * 100)}%</span>
+                  </span>
+                  <input
+                    type="range" min={0.5} max={1.5} step={0.02} value={config.zoom}
+                    onChange={(e) => setConfig((c) => ({ ...c, zoom: Number(e.target.value) }))}
+                    className="mt-1 w-full accent-emerald-500"
+                  />
+                  <span className="mt-0.5 flex justify-between text-[10px] text-neutral-600">
+                    <span>Zoom out</span><span>Zoom in</span>
+                  </span>
+                </label>
               </Group>
 
               {/* AI effects */}
