@@ -3,7 +3,7 @@
 // cutout sticker, or a split-screen panel) into a canvas, which is then
 // captured into a MediaRecorder together with the mixed audio.
 
-import { ASPECT_DIMS, type BubblePlacement, type StudioConfig } from './types';
+import { ASPECT_DIMS, BUBBLE_ASPECT, type BubblePlacement, type StudioConfig } from './types';
 import { WebcamEffectProcessor } from './segmentation';
 
 export interface CompositorState {
@@ -53,6 +53,8 @@ function shapePath(ctx: CanvasRenderingContext2D, r: Rect, shape: StudioConfig['
     ctx.arc(r.x + r.w / 2, r.y + r.h / 2, Math.min(r.w, r.h) / 2, 0, Math.PI * 2);
   } else if (shape === 'rounded') {
     ctx.roundRect(r.x, r.y, r.w, r.h, Math.min(r.w, r.h) * 0.18);
+  } else if (shape === 'rectangle') {
+    ctx.roundRect(r.x, r.y, r.w, r.h, Math.min(r.w, r.h) * 0.12);
   } else {
     ctx.rect(r.x, r.y, r.w, r.h);
   }
@@ -156,10 +158,12 @@ export class Compositor {
     W: number,
     H: number
   ) {
-    const s = bubble.size * H;
+    const h = bubble.size * H;
+    const w = h * BUBBLE_ASPECT[config.shape];
+    const s = Math.min(w, h);
     const cx = bubble.x * W;
     const cy = bubble.y * H;
-    const rect: Rect = { x: cx - s / 2, y: cy - s / 2, w: s, h: s };
+    const rect: Rect = { x: cx - w / 2, y: cy - h / 2, w, h };
     const source = this.camSource(video, config);
 
     if (config.effect === 'cutout') {

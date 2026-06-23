@@ -1,6 +1,15 @@
 // Shared types for the /record studio.
 
-export type BubbleShape = 'circle' | 'rounded' | 'square';
+export type BubbleShape = 'circle' | 'rounded' | 'square' | 'rectangle';
+
+// Width-to-height ratio of the webcam bubble per shape. Square-ish shapes are
+// 1:1; 'rectangle' is a wider 16:9 frame so gestures near the edges aren't cut off.
+export const BUBBLE_ASPECT: Record<BubbleShape, number> = {
+  circle: 1,
+  rounded: 1,
+  square: 1,
+  rectangle: 16 / 9,
+};
 export type CamEffect = 'none' | 'blur' | 'cutout';
 export type LayoutTemplate = 'overlay' | 'split-50' | 'split-33';
 export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3';

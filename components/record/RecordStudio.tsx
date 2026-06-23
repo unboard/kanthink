@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
-  Square, SquareDashed, Sparkles, Layout, Loader2, Trash2, Copy, ExternalLink,
+  Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Trash2, Copy, ExternalLink,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
@@ -13,7 +13,7 @@ import {
 } from '@/lib/record/compositor';
 import { publishRecording } from '@/lib/record/upload';
 import {
-  ASPECT_DIMS, DEFAULT_BUBBLE, DEFAULT_CONFIG,
+  ASPECT_DIMS, BUBBLE_ASPECT, DEFAULT_BUBBLE, DEFAULT_CONFIG,
   type AspectRatio, type BubblePlacement, type BubbleShape,
   type CamEffect, type LayoutTemplate, type StudioConfig,
 } from '@/lib/record/types';
@@ -276,14 +276,15 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width;
     const ny = (e.clientY - rect.top) / rect.height;
-    // canvas aspect: size is fraction of height; treat bubble as a circle in normalized-y space.
-    const dx = (nx - bubble.x) * (rect.width / rect.height);
-    const dy = ny - bubble.y;
-    if (Math.hypot(dx, dy) <= bubble.size / 2 + 0.04) {
+    // Bubble height is a fraction of canvas height; width follows the shape aspect.
+    // Box hit-test (with a little padding) so wider shapes can be grabbed at the edges.
+    const halfHy = bubble.size / 2;
+    const halfWx = (bubble.size * BUBBLE_ASPECT[config.shape] * (rect.height / rect.width)) / 2;
+    if (Math.abs(nx - bubble.x) <= halfWx + 0.04 && Math.abs(ny - bubble.y) <= halfHy + 0.04) {
       dragRef.current.dragging = true;
       e.currentTarget.setPointerCapture(e.pointerId);
     }
-  }, [config.template, config.showWebcam, bubble]);
+  }, [config.template, config.showWebcam, config.shape, bubble]);
 
   const onCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!dragRef.current.dragging) return;
@@ -450,8 +451,9 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                 <SegRow
                   options={[
                     { value: 'circle', label: 'Circle', icon: <Circle className="h-4 w-4" /> },
-                    { value: 'rounded', label: 'Rounded', icon: <SquareDashed className="h-4 w-4" /> },
+                    { value: 'rounded', label: 'Round', icon: <SquareDashed className="h-4 w-4" /> },
                     { value: 'square', label: 'Square', icon: <Square className="h-4 w-4" /> },
+                    { value: 'rectangle', label: 'Wide', icon: <RectangleHorizontal className="h-4 w-4" /> },
                   ]}
                   value={config.shape}
                   onChange={(v) => setConfig((c) => ({ ...c, shape: v as BubbleShape }))}
