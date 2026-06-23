@@ -6,16 +6,19 @@ import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
   Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Trash2, Copy, ExternalLink,
+  Captions, AudioLines,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
-  Compositor, mixAudioStreams, startRecording, type ActiveRecording, type CompositorState,
+  Compositor, buildRecordingAudio, startRecording, type ActiveRecording, type CompositorState,
 } from '@/lib/record/compositor';
 import { publishRecording } from '@/lib/record/upload';
+import { useSpeechCaptions } from '@/lib/record/useSpeechCaptions';
 import {
   ASPECT_DIMS, BUBBLE_ASPECT, DEFAULT_BUBBLE, DEFAULT_CONFIG,
   type AspectRatio, type BubblePlacement, type BubbleShape,
   type CamEffect, type LayoutTemplate, type StudioConfig,
+  type SubtitleBackground, type SubtitlePosition, type SubtitleSize,
 } from '@/lib/record/types';
 
 type Phase = 'setup' | 'recording' | 'review' | 'publishing';
@@ -67,17 +70,27 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const recordingRef = useRef<ActiveRecording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Live captions: written to a ref (high frequency) so they don't re-render.
+  const captionRef = useRef('');
+
   // Live state object the compositor reads (kept in a ref so the loop sees latest).
   const stateRef = useRef<CompositorState>({
-    config, bubble, screenVideo: null, webcamVideo: null,
+    config, bubble, screenVideo: null, webcamVideo: null, caption: '',
   });
   useEffect(() => {
     stateRef.current = {
       config, bubble,
       screenVideo: screenVideoRef.current,
       webcamVideo: webcamVideoRef.current,
+      caption: captionRef.current,
     };
   }, [config, bubble]);
+
+  const setCaption = useCallback((t: string) => {
+    captionRef.current = t;
+    stateRef.current.caption = t;
+  }, []);
+  const { supported: captionsSupported } = useSpeechCaptions(config.subtitles.enabled, setCaption);
 
   // ----- Compositor lifecycle -----
   useEffect(() => {
@@ -152,8 +165,14 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const acquireMic = useCallback(async (deviceId?: string) => {
     try {
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      // Browser-level cleanup helps tame harsh/noisy headset mics.
+      const enhanceConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      };
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+        audio: deviceId ? { deviceId: { exact: deviceId }, ...enhanceConstraints } : enhanceConstraints,
         video: false,
       });
       micStreamRef.current = stream;
@@ -210,20 +229,18 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
 
     const audioCtx = new AudioContext();
     audioCtxRef.current = audioCtx;
-    const sources: MediaStream[] = [];
-    if (micEnabled && micStreamRef.current) sources.push(micStreamRef.current);
-    if (includeBrowserAudio && screenStreamRef.current) {
-      const a = screenStreamRef.current.getAudioTracks();
-      if (a.length) sources.push(new MediaStream(a));
-    }
-    const mixed = mixAudioStreams(audioCtx, sources);
+    const audio = buildRecordingAudio(audioCtx, {
+      mic: micEnabled ? micStreamRef.current : null,
+      browser: includeBrowserAudio ? screenStreamRef.current : null,
+      enhance: config.enhanceAudio,
+    });
 
-    recordingRef.current = startRecording(canvasRef.current, mixed, 30);
+    recordingRef.current = startRecording(canvasRef.current, audio, 30);
     setElapsed(0);
     setPhase('recording');
     const startedAt = Date.now();
     timerRef.current = setInterval(() => setElapsed(Date.now() - startedAt), 200);
-  }, [hasScreen, micEnabled, includeBrowserAudio]);
+  }, [hasScreen, micEnabled, includeBrowserAudio, config.enhanceAudio]);
 
   const finishRecording = useCallback(async () => {
     if (!recordingRef.current) return;
@@ -444,6 +461,15 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                   active={includeBrowserAudio}
                   onClick={() => setIncludeBrowserAudio((v) => !v)}
                 />
+                <ToggleRow
+                  icon={<AudioLines className="h-4 w-4" />}
+                  label="Soften harsh mic audio"
+                  active={config.enhanceAudio}
+                  onClick={() => setConfig((c) => ({ ...c, enhanceAudio: !c.enhanceAudio }))}
+                />
+                <p className="text-[11px] text-neutral-500">
+                  Tames bright/harsh headset mics (high-end roll-off + compression). Test with a short clip.
+                </p>
               </Group>
 
               {/* Webcam style */}
@@ -496,6 +522,65 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                 <p className="text-[11px] text-neutral-500">
                   Runs in your browser. First use loads a small model — give it a couple seconds.
                 </p>
+              </Group>
+
+              {/* Subtitles */}
+              <Group label={<span className="flex items-center gap-1"><Captions className="h-3.5 w-3.5" /> Subtitles</span>}>
+                <ToggleRow
+                  icon={<Captions className="h-4 w-4" />}
+                  label={config.subtitles.enabled ? 'Live captions on' : 'Live captions off'}
+                  active={config.subtitles.enabled}
+                  onClick={() => setConfig((c) => ({ ...c, subtitles: { ...c.subtitles, enabled: !c.subtitles.enabled } }))}
+                />
+                {config.subtitles.enabled && (
+                  <>
+                    {!captionsSupported && (
+                      <p className="text-[11px] text-amber-400">Live captions need Chrome or Edge.</p>
+                    )}
+                    <SegRow
+                      options={[
+                        { value: 'bottom', label: 'Bottom' },
+                        { value: 'center', label: 'Center' },
+                        { value: 'top', label: 'Top' },
+                      ]}
+                      value={config.subtitles.position}
+                      onChange={(v) => setConfig((c) => ({ ...c, subtitles: { ...c.subtitles, position: v as SubtitlePosition } }))}
+                    />
+                    <SegRow
+                      options={[
+                        { value: 'sm', label: 'Small' },
+                        { value: 'md', label: 'Medium' },
+                        { value: 'lg', label: 'Large' },
+                      ]}
+                      value={config.subtitles.size}
+                      onChange={(v) => setConfig((c) => ({ ...c, subtitles: { ...c.subtitles, size: v as SubtitleSize } }))}
+                    />
+                    <SegRow
+                      options={[
+                        { value: 'dark', label: 'Bar' },
+                        { value: 'pill', label: 'Pill' },
+                        { value: 'none', label: 'None' },
+                      ]}
+                      value={config.subtitles.background}
+                      onChange={(v) => setConfig((c) => ({ ...c, subtitles: { ...c.subtitles, background: v as SubtitleBackground } }))}
+                    />
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-neutral-400">Color</span>
+                      {['#ffffff', '#fde047', '#34d399', '#111111'].map((col) => (
+                        <button
+                          key={col}
+                          onClick={() => setConfig((c) => ({ ...c, subtitles: { ...c.subtitles, color: col } }))}
+                          className={`h-6 w-6 rounded-full border-2 ${config.subtitles.color === col ? 'border-emerald-400' : 'border-neutral-700'}`}
+                          style={{ backgroundColor: col }}
+                          aria-label={`Caption color ${col}`}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-neutral-500">
+                      Auto-transcribes your speech and burns it into the recording.
+                    </p>
+                  </>
+                )}
               </Group>
 
               {/* Layout */}

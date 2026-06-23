@@ -33,6 +33,18 @@ export interface BubblePlacement {
   size: number;    // bubble height as a fraction of canvas height, ~0.15..0.6
 }
 
+export type SubtitlePosition = 'bottom' | 'top' | 'center';
+export type SubtitleSize = 'sm' | 'md' | 'lg';
+export type SubtitleBackground = 'none' | 'dark' | 'pill';
+
+export interface SubtitleStyle {
+  enabled: boolean;
+  position: SubtitlePosition;
+  size: SubtitleSize;
+  color: string;
+  background: SubtitleBackground;
+}
+
 export interface StudioConfig {
   shape: BubbleShape;
   effect: CamEffect;
@@ -41,6 +53,8 @@ export interface StudioConfig {
   borderWidth: number;       // px in canvas space for the bubble white border
   zoom: number;              // webcam zoom: 1 = fill (cover), <1 zooms out to reveal more of the frame
   showWebcam: boolean;
+  subtitles: SubtitleStyle;
+  enhanceAudio: boolean;     // soften harsh mic audio with a Web Audio filter chain
 }
 
 export const DEFAULT_CONFIG: StudioConfig = {
@@ -51,6 +65,14 @@ export const DEFAULT_CONFIG: StudioConfig = {
   borderWidth: 6,
   zoom: 1,
   showWebcam: true,
+  subtitles: {
+    enabled: false,
+    position: 'bottom',
+    size: 'md',
+    color: '#ffffff',
+    background: 'dark',
+  },
+  enhanceAudio: true,
 };
 
 export const DEFAULT_BUBBLE: BubblePlacement = {
