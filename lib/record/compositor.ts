@@ -131,7 +131,7 @@ function drawCaption(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  const maxWidth = W * 0.82;
+  const maxWidth = W * 0.4; // keep captions to a narrow column, not full width
   const lines = wrapCaption(ctx, text, maxWidth);
   if (lines.length === 0) return;
 
@@ -351,37 +351,48 @@ export class Compositor {
 // ===== Audio mixing + enhancement =====
 
 /**
- * "Soften" chain to tame harsh mic audio (e.g. bright bluetooth headset mics):
- * high-shelf cut on the harsh top end, a presence dip around 3 kHz, a gentle
- * low-pass, and a compressor to even out peaks. Returns the tail node.
+ * "Soften" chain to tame harsh/fatiguing mic audio (e.g. bright headset mics).
+ * Adds low-mid warmth, dips the harsh presence band, cuts sibilant top with a
+ * de-ess shelf, rolls off the brittle high end, and compresses to even out
+ * peaks. Tuned to be clearly audible. Returns the tail node.
  */
-function softenMic(ctx: AudioContext, source: AudioNode): AudioNode {
-  const shelf = ctx.createBiquadFilter();
-  shelf.type = 'highshelf';
-  shelf.frequency.value = 5500;
-  shelf.gain.value = -6;
+export function softenMic(ctx: AudioContext, source: AudioNode): AudioNode {
+  // Body/warmth so the voice doesn't sound thin once the top is rolled off.
+  const warmth = ctx.createBiquadFilter();
+  warmth.type = 'lowshelf';
+  warmth.frequency.value = 220;
+  warmth.gain.value = 2.5;
 
+  // Dip the harsh/fatiguing presence band.
   const presence = ctx.createBiquadFilter();
   presence.type = 'peaking';
-  presence.frequency.value = 3200;
-  presence.Q.value = 1;
-  presence.gain.value = -4;
+  presence.frequency.value = 3500;
+  presence.Q.value = 1.2;
+  presence.gain.value = -5;
 
+  // De-ess: pull down sibilance and brittle highs.
+  const deess = ctx.createBiquadFilter();
+  deess.type = 'highshelf';
+  deess.frequency.value = 6000;
+  deess.gain.value = -9;
+
+  // Remove the brittle very-top while keeping speech clarity (< 8 kHz).
   const lowpass = ctx.createBiquadFilter();
   lowpass.type = 'lowpass';
-  lowpass.frequency.value = 13000;
+  lowpass.frequency.value = 10000;
   lowpass.Q.value = 0.7;
 
   const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -24;
+  comp.threshold.value = -26;
   comp.knee.value = 30;
-  comp.ratio.value = 3;
-  comp.attack.value = 0.003;
+  comp.ratio.value = 3.5;
+  comp.attack.value = 0.004;
   comp.release.value = 0.25;
 
-  source.connect(shelf);
-  shelf.connect(presence);
-  presence.connect(lowpass);
+  source.connect(warmth);
+  warmth.connect(presence);
+  presence.connect(deess);
+  deess.connect(lowpass);
   lowpass.connect(comp);
   return comp;
 }

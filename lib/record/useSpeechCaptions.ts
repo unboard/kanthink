@@ -54,7 +54,19 @@ export function useSpeechCaptions(enabled: boolean, onCaption: (text: string) =>
       const from = Math.max(0, e.results.length - 4);
       for (let i = from; i < e.results.length; i++) text += `${e.results[i][0].transcript} `;
       const words = text.trim().split(/\s+/).filter(Boolean);
-      onCaptionRef.current(words.slice(-14).join(' '));
+
+      // Show only a short trailing phrase (a "batch") so captions stay small and
+      // readable rather than a long scrolling line.
+      const CHAR_BUDGET = 32;
+      const chunk: string[] = [];
+      let len = 0;
+      for (let i = words.length - 1; i >= 0; i--) {
+        const add = words[i].length + (chunk.length ? 1 : 0);
+        if (len + add > CHAR_BUDGET && chunk.length) break;
+        chunk.unshift(words[i]);
+        len += add;
+      }
+      onCaptionRef.current(chunk.join(' '));
     };
     rec.onend = () => {
       if (activeRef.current) { try { rec.start(); } catch { /* already started */ } }
