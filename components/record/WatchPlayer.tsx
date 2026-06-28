@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  Play, Pause, Maximize, Copy, Check, Download, Scissors, Plus,
-  Trash2, Save, X, Loader2,
+  Play, Pause, Maximize, Check, Download, Scissors, Plus,
+  Trash2, Save, X, Loader2, MoreVertical, ChevronLeft, Link2,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import type { RecordingEditSpecJson, RecordingMaskJson } from '@/lib/db/schema';
@@ -21,6 +21,7 @@ interface RecordingData {
 }
 
 export default function WatchPlayer({ recording, isOwner }: { recording: RecordingData; isOwner: boolean }) {
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -33,6 +34,19 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [title, setTitle] = useState(recording.title);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [controlsShown, setControlsShown] = useState(true);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Orientation drives how the video fills the viewport. Stored width/height can be
+  // 0 on older recordings, so seed from the aspectRatio label and refine once the
+  // real video metadata loads.
+  const [isPortrait, setIsPortrait] = useState(
+    recording.height > recording.width ||
+      recording.aspectRatio === '9:16' ||
+      recording.aspectRatio === '3:4'
+  );
 
   const start = spec.trimStart;
   const end = spec.trimEnd ?? duration;
@@ -58,6 +72,7 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
     const v = videoRef.current;
     if (!v) return;
     if (isFinite(v.duration) && v.duration > 0) setDuration(v.duration);
+    if (v.videoWidth > 0 && v.videoHeight > 0) setIsPortrait(v.videoHeight > v.videoWidth);
     v.currentTime = start;
   }, [start]);
 
@@ -125,99 +140,74 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
     wrapRef.current?.requestFullscreen?.().catch(() => {});
   }, []);
 
+  const del = useCallback(async () => {
+    if (!confirm('Delete this recording? This cannot be undone.')) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/record/${recording.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        router.push('/record');
+      } else {
+        setDeleting(false);
+        alert('Could not delete this recording.');
+      }
+    } catch {
+      setDeleting(false);
+      alert('Could not delete this recording.');
+    }
+  }, [recording.id, router]);
+
+  // Reveal controls on interaction, then auto-hide while playing.
+  const pokeControls = useCallback(() => {
+    setControlsShown(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    if (playing && !menuOpen) {
+      hideTimer.current = setTimeout(() => setControlsShown(false), 2800);
+    }
+  }, [playing, menuOpen]);
+
+  useEffect(() => {
+    pokeControls();
+    return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
+  }, [pokeControls]);
+
   // progress within trimmed window
   const progress = Math.min(1, Math.max(0, (current - start) / span));
 
-  return (
-    <main className="min-h-screen bg-[#0b0b0c] text-neutral-200">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
-        <Link href="/record" className="flex items-center gap-2">
-          <KanthinkIcon size={20} className="text-emerald-400" />
-          <span className="font-semibold">Kan Record</span>
-        </Link>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={copyLink}
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-800"
-          >
-            {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-            {copied ? 'Copied' : 'Copy link'}
-          </button>
-          <a
-            href={recording.cloudinaryUrl}
-            download
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-800"
-          >
-            <Download className="h-4 w-4" /> Download
-          </a>
-          {isOwner && !editing && (
-            <button
-              onClick={() => setEditing(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-black hover:bg-emerald-400"
-            >
-              <Scissors className="h-4 w-4" /> Edit
-            </button>
-          )}
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-5xl p-5">
-        {isOwner && editing ? (
+  // ===== Editor layout (owner only) — scrollable, with trim/mask tools =====
+  if (isOwner && editing) {
+    return (
+      <main className="min-h-[100dvh] bg-[#0b0b0c] text-neutral-200">
+        <div className="mx-auto max-w-3xl p-5">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="mb-3 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-lg font-semibold outline-none focus:border-emerald-500"
           />
-        ) : (
-          <h1 className="mb-3 text-lg font-semibold">{title}</h1>
-        )}
 
-        {/* Player */}
-        <div ref={wrapRef} className="relative overflow-hidden rounded-xl border border-neutral-800 bg-black">
-          <video
-            ref={videoRef}
-            src={recording.cloudinaryUrl}
-            playsInline
-            onClick={togglePlay}
-            onTimeUpdate={onTimeUpdate}
-            onLoadedMetadata={onLoadedMeta}
-            onEnded={() => setPlaying(false)}
-            className="w-full"
-          />
-
-          {/* Loading-mask overlay (viewer mode) */}
-          {activeMask && <MaskOverlay mask={activeMask} />}
-
-          {/* Custom control bar */}
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3">
-            <div
-              className="group mb-2 h-1.5 cursor-pointer rounded-full bg-white/25"
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                const frac = (e.clientX - r.left) / r.width;
-                seekTo(start + frac * span);
-              }}
-            >
-              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress * 100}%` }} />
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              <button onClick={togglePlay}>
-                {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-              </button>
-              <span className="tabular-nums text-neutral-300">
-                {fmt(Math.max(0, current - start))} / {fmt(span)}
-              </span>
-              <button onClick={goFullscreen} className="ml-auto">
-                <Maximize className="h-5 w-5" />
-              </button>
+          <div className="relative overflow-hidden rounded-xl border border-neutral-800 bg-black">
+            <video
+              ref={videoRef}
+              src={recording.cloudinaryUrl}
+              playsInline
+              onClick={togglePlay}
+              onTimeUpdate={onTimeUpdate}
+              onLoadedMetadata={onLoadedMeta}
+              onEnded={() => setPlaying(false)}
+              className="mx-auto max-h-[60vh] w-auto"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+              <div className="flex items-center gap-3 text-sm">
+                <button onClick={togglePlay}>
+                  {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                </button>
+                <span className="tabular-nums text-neutral-300">
+                  {fmt(Math.max(0, current - start))} / {fmt(span)}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Editor */}
-        {isOwner && editing && (
           <Editor
             duration={duration}
             current={current}
@@ -228,9 +218,7 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
             updateMask={updateMask}
             removeMask={removeMask}
           />
-        )}
 
-        {isOwner && editing && (
           <div className="mt-4 flex gap-2">
             <button
               onClick={save}
@@ -247,7 +235,139 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
               <X className="h-4 w-4" /> Cancel
             </button>
           </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ===== Immersive watch layout — fills the viewport, minimal chrome =====
+  return (
+    <main
+      ref={wrapRef}
+      className="relative h-[100dvh] w-screen overflow-hidden bg-black text-white"
+      onMouseMove={pokeControls}
+    >
+      {/* Video — fills the viewport, portrait recordings fill the vertical space */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <video
+          ref={videoRef}
+          src={recording.cloudinaryUrl}
+          playsInline
+          onClick={() => { togglePlay(); pokeControls(); }}
+          onTimeUpdate={onTimeUpdate}
+          onLoadedMetadata={onLoadedMeta}
+          onEnded={() => { setPlaying(false); setControlsShown(true); }}
+          className={isPortrait ? 'h-full w-full object-contain' : 'max-h-full w-full object-contain'}
+        />
+      </div>
+
+      {/* Loading-mask overlay (viewer mode) */}
+      {activeMask && <MaskOverlay mask={activeMask} />}
+
+      {/* Center play button when paused */}
+      {!playing && !activeMask && (
+        <button
+          onClick={() => { togglePlay(); pokeControls(); }}
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/45 p-5 backdrop-blur-sm transition hover:bg-black/60"
+          aria-label="Play"
+        >
+          <Play className="h-9 w-9 translate-x-0.5 fill-white" />
+        </button>
+      )}
+
+      {/* Top overlay: back + owner 3-dot menu */}
+      <div
+        className={`absolute inset-x-0 top-0 z-10 flex items-start justify-between bg-gradient-to-b from-black/50 to-transparent p-3 transition-opacity duration-300 ${
+          controlsShown ? 'opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+      >
+        <button
+          onClick={() => router.push('/record')}
+          className="rounded-full bg-black/30 p-2 backdrop-blur-sm transition hover:bg-black/50"
+          aria-label="Back"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+
+        {isOwner && (
+          <div className="relative">
+            <button
+              onClick={() => setMenuOpen((o) => !o)}
+              className="rounded-full bg-black/30 p-2 backdrop-blur-sm transition hover:bg-black/50"
+              aria-label="More options"
+            >
+              <MoreVertical className="h-5 w-5" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 z-20 mt-2 w-44 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/95 text-sm shadow-xl backdrop-blur">
+                  <button
+                    onClick={() => { setMenuOpen(false); setEditing(true); }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800"
+                  >
+                    <Scissors className="h-4 w-4 text-neutral-400" /> Edit &amp; trim
+                  </button>
+                  <a
+                    href={recording.cloudinaryUrl}
+                    download
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800"
+                  >
+                    <Download className="h-4 w-4 text-neutral-400" /> Download
+                  </a>
+                  <button
+                    onClick={del}
+                    disabled={deleting}
+                    className="flex w-full items-center gap-2.5 border-t border-neutral-800 px-3.5 py-2.5 text-left text-red-400 hover:bg-neutral-800 disabled:opacity-50"
+                  >
+                    {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         )}
+      </div>
+
+      {/* Bottom overlay: title + engagement controls */}
+      <div
+        className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 pb-4 pt-10 transition-opacity duration-300 ${
+          controlsShown ? 'opacity-100' : 'pointer-events-none opacity-0'
+        }`}
+      >
+        <h1 className="mb-2 line-clamp-2 text-sm font-medium text-white/90 drop-shadow">{title}</h1>
+        <div
+          className="group mb-2 h-1.5 cursor-pointer rounded-full bg-white/25"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            const frac = (e.clientX - r.left) / r.width;
+            seekTo(start + frac * span);
+          }}
+        >
+          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress * 100}%` }} />
+        </div>
+        <div className="flex items-center gap-3 text-sm">
+          <button onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
+            {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+          </button>
+          <span className="tabular-nums text-neutral-200">
+            {fmt(Math.max(0, current - start))} / {fmt(span)}
+          </span>
+          <button
+            onClick={copyLink}
+            className="ml-auto flex items-center gap-1.5 text-neutral-200 hover:text-white"
+            aria-label="Copy link"
+          >
+            {copied ? <Check className="h-5 w-5 text-emerald-400" /> : <Link2 className="h-5 w-5" />}
+          </button>
+          <button onClick={goFullscreen} aria-label="Fullscreen" className="text-neutral-200 hover:text-white">
+            <Maximize className="h-5 w-5" />
+          </button>
+        </div>
       </div>
     </main>
   );
