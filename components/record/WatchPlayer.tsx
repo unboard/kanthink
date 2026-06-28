@@ -241,10 +241,13 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
   }
 
   // ===== Immersive watch layout — fills the viewport, minimal chrome =====
+  // Fixed + dynamic-viewport height pins the player to the visible viewport so it
+  // escapes the app's scroll container; controls always sit at the visible bottom
+  // edge (above the mobile browser address bar), never requiring a scroll.
   return (
     <main
       ref={wrapRef}
-      className="relative h-[100dvh] w-screen overflow-hidden bg-black text-white"
+      className="fixed inset-x-0 top-0 z-50 h-[100dvh] overflow-hidden bg-black text-white"
       onMouseMove={pokeControls}
     >
       {/* Video — fills the viewport, portrait recordings fill the vertical space */}
@@ -277,7 +280,8 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
 
       {/* Top overlay: back + owner 3-dot menu */}
       <div
-        className={`absolute inset-x-0 top-0 z-10 flex items-start justify-between bg-gradient-to-b from-black/50 to-transparent p-3 transition-opacity duration-300 ${
+        style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+        className={`absolute inset-x-0 top-0 z-10 flex items-start justify-between bg-gradient-to-b from-black/50 to-transparent px-3 pb-6 transition-opacity duration-300 ${
           controlsShown ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
@@ -335,7 +339,8 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
 
       {/* Bottom overlay: title + engagement controls */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-4 pb-4 pt-10 transition-opacity duration-300 ${
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-4 pt-12 transition-opacity duration-300 ${
           controlsShown ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
