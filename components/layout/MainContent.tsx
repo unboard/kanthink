@@ -19,7 +19,14 @@ export function MainContent({ children }: MainContentProps) {
 
   // No bottom padding on card pages (mobile nav is hidden, card has its own tabs)
   const isCardPage = /\/channel\/[^/]+\/card\//.test(pathname);
-  const needsBottomPadding = isMobile && !isCardPage;
+  // Full-viewport routes hide the mobile nav entirely, so they must not reserve
+  // the bottom-nav padding (it would push their 100dvh content into a scroll).
+  const isFullViewport =
+    pathname.startsWith('/watch') ||
+    pathname.startsWith('/play') ||
+    pathname.startsWith('/wildwood') ||
+    pathname.startsWith('/rescue');
+  const needsBottomPadding = isMobile && !isCardPage && !isFullViewport;
 
   return (
     <div
