@@ -316,9 +316,16 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   }, []);
   const onCanvasPointerUp = useCallback(() => { dragRef.current.dragging = false; }, []);
 
-  const aspectStyle = useMemo(() => {
+  // Size the preview so it fits within BOTH the available width and the viewport
+  // height. Width is the smallest of: the column width, a max cap, and the width
+  // implied by the height budget for this aspect ratio. Height follows from the
+  // aspect ratio, so the box always matches what's recorded (keeps drag math sound).
+  const stageStyle = useMemo(() => {
     const d = ASPECT_DIMS[config.aspect];
-    return { aspectRatio: `${d.width} / ${d.height}` };
+    return {
+      aspectRatio: `${d.width} / ${d.height}`,
+      width: `min(100%, 56rem, calc((100dvh - 12rem) * ${d.width} / ${d.height}))`,
+    } as React.CSSProperties;
   }, [config.aspect]);
 
   const canRecord = hasScreen && phase === 'setup';
@@ -345,14 +352,13 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       <div className="grid lg:grid-cols-[1fr_340px] gap-0">
         {/* ===== Stage ===== */}
         <section className="p-5">
-          <div className="relative mx-auto w-full max-w-4xl">
+          <div className="relative mx-auto" style={stageStyle}>
             <canvas
               ref={canvasRef}
-              style={aspectStyle}
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onCanvasPointerMove}
               onPointerUp={onCanvasPointerUp}
-              className="w-full rounded-xl border border-neutral-800 bg-black touch-none"
+              className="absolute inset-0 h-full w-full rounded-xl border border-neutral-800 bg-black touch-none"
             />
             {!hasScreen && phase === 'setup' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
