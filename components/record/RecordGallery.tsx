@@ -4,9 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Play, Pause, Maximize, X, Link2, Check, MoreVertical, Trash2,
-  ImageIcon, Sparkles, Loader2, Film, Plus, Camera, Clapperboard,
+  ImageIcon, Sparkles, Loader2, Film, Plus, Camera, Clapperboard, Pencil,
 } from 'lucide-react';
-import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
 interface Recording {
   id: string;
@@ -68,10 +67,7 @@ export default function RecordGallery() {
   return (
     <main className="min-h-screen bg-[#0b0b0c] text-neutral-200">
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-neutral-800 bg-[#0b0b0c]/90 px-5 py-3 backdrop-blur">
-        <div className="flex items-center gap-2">
-          <KanthinkIcon size={22} className="text-emerald-400" />
-          <span className="font-semibold">Recordings</span>
-        </div>
+        <span className="font-semibold">Recordings</span>
         <Link
           href="/record"
           className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3.5 py-2 text-sm font-medium text-black hover:bg-emerald-400"
@@ -144,8 +140,22 @@ function GalleryCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(rec.title);
   const [r, h] = ratio(rec);
   const watchUrl = typeof window !== 'undefined' ? `${window.location.origin}/watch/${rec.id}` : `/watch/${rec.id}`;
+
+  const saveName = async () => {
+    const next = nameDraft.trim();
+    setRenaming(false);
+    if (!next || next === rec.title) { setNameDraft(rec.title); return; }
+    await fetch(`/api/record/${rec.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: next }),
+    });
+    onChanged();
+  };
 
   const copy = () => {
     navigator.clipboard.writeText(watchUrl);
@@ -218,6 +228,12 @@ function GalleryCard({
                 className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/95 text-sm shadow-xl backdrop-blur"
                 onClick={(e) => e.stopPropagation()}
               >
+                <button
+                  onClick={() => { setNameDraft(rec.title); setRenaming(true); setMenuOpen(false); }}
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800"
+                >
+                  <Pencil className="h-4 w-4 text-neutral-400" /> Rename
+                </button>
                 <button onClick={() => { onEditThumb(); setMenuOpen(false); }} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800">
                   <ImageIcon className="h-4 w-4 text-neutral-400" /> Edit thumbnail
                 </button>
@@ -238,7 +254,21 @@ function GalleryCard({
 
       {/* Title + meta */}
       <div className="mt-3 px-0.5">
-        <h3 className="line-clamp-2 text-sm font-medium leading-snug text-neutral-100">{rec.title}</h3>
+        {renaming ? (
+          <input
+            autoFocus
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={saveName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveName();
+              if (e.key === 'Escape') { setNameDraft(rec.title); setRenaming(false); }
+            }}
+            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm font-medium text-neutral-100 outline-none focus:border-emerald-500"
+          />
+        ) : (
+          <h3 className="truncate text-sm font-medium text-neutral-100">{rec.title}</h3>
+        )}
         <p className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500">
           <span>{fmtDate(rec.createdAt)}</span>
           {rec.durationMs > 0 && (<><span aria-hidden>·</span><span className="tabular-nums">{fmtDuration(rec.durationMs)}</span></>)}
