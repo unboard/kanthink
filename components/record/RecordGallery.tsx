@@ -418,6 +418,21 @@ function ThumbnailEditor({ rec, onClose, onSaved }: { rec: Recording; onClose: (
   const useCurrentFrame = () => patch({ thumbTime: Math.round(current) });
   const useFirstFrame = () => patch({ thumbTime: 0 });
 
+  // Scrub the preview instantly: fastSeek snaps to the nearest keyframe without
+  // waiting for an exact-frame decode, so dragging feels like moving through the
+  // video. The Cloudinary thumbnail is only rendered later, on "Use this frame".
+  const seekPreview = (t: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    const media = v as HTMLMediaElement & { fastSeek?: (time: number) => void };
+    if (typeof media.fastSeek === 'function') {
+      try { media.fastSeek(t); } catch { v.currentTime = t; }
+    } else {
+      v.currentTime = t;
+    }
+    setCurrent(t);
+  };
+
   const generate = async () => {
     setGenerating(true);
     setAiError(null);
@@ -481,13 +496,12 @@ function ThumbnailEditor({ rec, onClose, onSaved }: { rec: Recording; onClose: (
                   src={rec.cloudinaryUrl}
                   playsInline
                   muted
-                  preload="metadata"
+                  preload="auto"
                   onLoadedMetadata={(e) => {
                     const v = e.currentTarget;
                     if (isFinite(v.duration)) setDuration(v.duration);
                     v.currentTime = rec.thumbTime || 0;
                   }}
-                  onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
                   className="absolute inset-0 h-full w-full object-contain"
                 />
               </div>
@@ -498,12 +512,7 @@ function ThumbnailEditor({ rec, onClose, onSaved }: { rec: Recording; onClose: (
                   max={Math.max(0.1, duration)}
                   step={0.1}
                   value={Math.min(current, duration || 0)}
-                  onChange={(e) => {
-                    const t = Number(e.target.value);
-                    const v = videoRef.current;
-                    if (v) v.currentTime = t;
-                    setCurrent(t);
-                  }}
+                  onChange={(e) => seekPreview(Number(e.target.value))}
                   className="w-full accent-emerald-500"
                 />
                 <div className="mt-1 flex justify-between text-xs text-neutral-500">
