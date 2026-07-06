@@ -386,6 +386,7 @@ function ThumbnailEditor({ rec, onClose, onSaved }: { rec: Recording; onClose: (
   const [tab, setTab] = useState<Tab>('scene');
   const [current, setCurrent] = useState(rec.thumbTime || 0);
   const [duration, setDuration] = useState(rec.durationMs / 1000 || 0);
+  const [seeking, setSeeking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [r, h] = ratio(rec);
 
@@ -418,19 +419,22 @@ function ThumbnailEditor({ rec, onClose, onSaved }: { rec: Recording; onClose: (
   const useCurrentFrame = () => patch({ thumbTime: Math.round(current) });
   const useFirstFrame = () => patch({ thumbTime: 0 });
 
-  // Scrub the preview instantly: fastSeek snaps to the nearest keyframe without
-  // waiting for an exact-frame decode, so dragging feels like moving through the
-  // video. The Cloudinary thumbnail is only rendered later, on "Use this frame".
-  const seekPreview = (t: number) => {
+  // The timestamp/handle track the drag instantly (pendingRef + current), but we
+  // only seek the remote video once, on release — seeking a network MP4 costs a
+  // round-trip, so seeking on every tick thrashes it. While the frame catches up
+  // we show a spinner over the preview. The Cloudinary thumbnail is only rendered
+  // later, on "Use this frame".
+  const pendingRef = useRef(current);
+  const commitSeek = (t: number) => {
     const v = videoRef.current;
-    if (!v) return;
+    if (!v || Math.abs(v.currentTime - t) < 0.05) return;
+    setSeeking(true);
     const media = v as HTMLMediaElement & { fastSeek?: (time: number) => void };
     if (typeof media.fastSeek === 'function') {
       try { media.fastSeek(t); } catch { v.currentTime = t; }
     } else {
       v.currentTime = t;
     }
-    setCurrent(t);
   };
 
   const generate = async () => {
@@ -502,8 +506,17 @@ function ThumbnailEditor({ rec, onClose, onSaved }: { rec: Recording; onClose: (
                     if (isFinite(v.duration)) setDuration(v.duration);
                     v.currentTime = rec.thumbTime || 0;
                   }}
-                  className="absolute inset-0 h-full w-full object-contain"
+                  onSeeking={() => setSeeking(true)}
+                  onSeeked={() => setSeeking(false)}
+                  className={`absolute inset-0 h-full w-full object-contain transition ${seeking ? 'blur-[1px] brightness-75' : ''}`}
                 />
+                {seeking && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-xs text-white backdrop-blur-sm">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading frame…
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <input
@@ -512,7 +525,9 @@ function ThumbnailEditor({ rec, onClose, onSaved }: { rec: Recording; onClose: (
                   max={Math.max(0.1, duration)}
                   step={0.1}
                   value={Math.min(current, duration || 0)}
-                  onChange={(e) => seekPreview(Number(e.target.value))}
+                  onChange={(e) => { const t = Number(e.target.value); pendingRef.current = t; setCurrent(t); }}
+                  onPointerUp={() => commitSeek(pendingRef.current)}
+                  onKeyUp={() => commitSeek(pendingRef.current)}
                   className="w-full accent-emerald-500"
                 />
                 <div className="mt-1 flex justify-between text-xs text-neutral-500">
