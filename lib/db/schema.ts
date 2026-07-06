@@ -760,6 +760,11 @@ export const recordings = sqliteTable('recordings', {
   height: integer('height').notNull().default(0),
   aspectRatio: text('aspect_ratio').default('16:9'),  // label: '16:9' | '9:16' | '1:1' | '4:3'
 
+  // Thumbnail: if thumbUrl is set (AI-generated / custom image) it wins; otherwise
+  // the gallery derives a video frame from Cloudinary at thumbTime seconds (0 = first frame).
+  thumbUrl: text('thumb_url'),
+  thumbTime: integer('thumb_time').notNull().default(0),
+
   editSpec: safeJsonText<RecordingEditSpecJson>({ trimStart: 0, trimEnd: null, masks: [] })('edit_spec')
     .default({ trimStart: 0, trimEnd: null, masks: [] }),
 

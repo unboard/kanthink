@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
-  Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Trash2, Copy, ExternalLink,
+  Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Film, ArrowRight,
   Captions, AudioLines,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -337,7 +337,12 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
           <KanthinkIcon size={22} className="text-emerald-400" />
           <span className="font-semibold">Kan Record</span>
         </div>
-        <Link href="/" className="text-sm text-neutral-400 hover:text-neutral-200">Back to board</Link>
+        <div className="flex items-center gap-4">
+          <Link href="/record/gallery" className="flex items-center gap-1.5 text-sm text-neutral-300 hover:text-white">
+            <Film className="h-4 w-4" /> Recordings
+          </Link>
+          <Link href="/" className="text-sm text-neutral-400 hover:text-neutral-200">Back to board</Link>
+        </div>
       </header>
 
       {!cloudinaryReady && (
@@ -623,12 +628,21 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       {/* ===== My recordings ===== */}
       {recordings.length > 0 && phase === 'setup' && (
         <section className="border-t border-neutral-800 p-5">
-          <h2 className="mb-3 text-sm font-semibold text-neutral-400">Your recordings</h2>
-          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {recordings.map((r) => (
-              <RecordingCard key={r.id} rec={r} onDeleted={loadRecordings} />
-            ))}
-          </ul>
+          <Link
+            href="/record/gallery"
+            className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/40 px-5 py-4 transition hover:border-neutral-700 hover:bg-neutral-900"
+          >
+            <div className="flex items-center gap-3">
+              <Film className="h-5 w-5 text-emerald-400" />
+              <div>
+                <div className="text-sm font-medium text-neutral-100">Your recordings</div>
+                <div className="text-xs text-neutral-500">
+                  {recordings.length} video{recordings.length === 1 ? '' : 's'} · open the gallery to play, share & set thumbnails
+                </div>
+              </div>
+            </div>
+            <ArrowRight className="h-4 w-4 text-neutral-500" />
+          </Link>
         </section>
       )}
 
@@ -702,45 +716,6 @@ function ReviewPanel(props: {
         After publishing you can trim and add loading-screen covers on the watch page.
       </p>
     </div>
-  );
-}
-
-function RecordingCard({ rec, onDeleted }: { rec: RecordingRow; onDeleted: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const watchUrl = typeof window !== 'undefined' ? `${window.location.origin}/watch/${rec.id}` : `/watch/${rec.id}`;
-
-  const del = async () => {
-    if (!confirm('Delete this recording?')) return;
-    setBusy(true);
-    await fetch(`/api/record/${rec.id}`, { method: 'DELETE' });
-    onDeleted();
-  };
-
-  return (
-    <li className="rounded-lg border border-neutral-800 bg-neutral-900/40 p-3">
-      <div className="truncate text-sm font-medium">{rec.title}</div>
-      <div className="mt-1 text-xs text-neutral-500">
-        {formatTime(rec.durationMs)} · {rec.aspectRatio || '16:9'}
-      </div>
-      <div className="mt-2 flex items-center gap-2 text-xs">
-        <Link href={`/watch/${rec.id}`} className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300">
-          <ExternalLink className="h-3.5 w-3.5" /> Open
-        </Link>
-        <button
-          onClick={() => navigator.clipboard.writeText(watchUrl)}
-          className="flex items-center gap-1 text-neutral-400 hover:text-neutral-200"
-        >
-          <Copy className="h-3.5 w-3.5" /> Copy link
-        </button>
-        <button
-          onClick={del}
-          disabled={busy}
-          className="ml-auto flex items-center gap-1 text-neutral-500 hover:text-red-400"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </li>
   );
 }
 

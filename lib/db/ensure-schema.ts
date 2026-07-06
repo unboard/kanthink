@@ -91,6 +91,9 @@ export async function ensureSchema() {
     `ALTER TABLE recordings ADD height integer DEFAULT 0`,
     `ALTER TABLE recordings ADD aspect_ratio text DEFAULT '16:9'`,
     `ALTER TABLE recordings ADD edit_spec text`,
+    // Migration 0027 — recording thumbnails (first frame / scene frame / AI image)
+    `ALTER TABLE recordings ADD thumb_url text`,
+    `ALTER TABLE recordings ADD thumb_time integer DEFAULT 0`,
   ]
 
   for (const stmt of alterStatements) {
@@ -263,6 +266,8 @@ export async function ensureSchema() {
       width integer DEFAULT 0,
       height integer DEFAULT 0,
       aspect_ratio text DEFAULT '16:9',
+      thumb_url text,
+      thumb_time integer DEFAULT 0,
       edit_spec text,
       created_at integer,
       updated_at integer,

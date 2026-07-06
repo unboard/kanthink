@@ -110,3 +110,24 @@ export function recordingDeliveryUrl(publicId: string): string {
     transformation: [{ quality: 'auto' }],
   });
 }
+
+/**
+ * Build a JPG thumbnail from a video frame. `timeSec` picks the moment to grab
+ * (0 = first frame), so this covers both the default thumbnail and any
+ * user-chosen scene frame without storing an image. Cloudinary renders and
+ * caches the frame on first request.
+ */
+export function recordingFrameUrl(
+  publicId: string,
+  opts?: { timeSec?: number; width?: number }
+): string {
+  return cloudinary.url(publicId, {
+    resource_type: 'video',
+    secure: true,
+    format: 'jpg',
+    transformation: [
+      { start_offset: String(Math.max(0, opts?.timeSec ?? 0)) },
+      { width: opts?.width ?? 640, crop: 'limit', quality: 'auto' },
+    ],
+  });
+}

@@ -70,6 +70,17 @@ export async function PATCH(
     const spec = sanitizeEditSpec(body.editSpec);
     if (spec) update.editSpec = spec;
   }
+  // Thumbnail: an explicit image URL (AI/custom), or null to fall back to a frame.
+  if ('thumbUrl' in body) {
+    update.thumbUrl =
+      typeof body.thumbUrl === 'string' && body.thumbUrl.trim() ? body.thumbUrl.trim() : null;
+  }
+  if ('thumbTime' in body) {
+    update.thumbTime = Math.max(0, Math.round(Number(body.thumbTime) || 0));
+    // Choosing a scene frame implies dropping any custom image, unless one was
+    // explicitly provided in the same request.
+    if (!('thumbUrl' in body)) update.thumbUrl = null;
+  }
 
   await db.update(recordings).set(update).where(eq(recordings.id, id));
   return NextResponse.json({ ok: true });
