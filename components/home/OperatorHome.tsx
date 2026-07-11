@@ -11,7 +11,10 @@ import { AudioLines } from 'lucide-react';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 import { FreshTicker } from '@/components/home/FreshTicker';
-import { SproutSearch } from '@/components/home/SproutSearch';
+import { SproutSearch, type SproutResult } from '@/components/home/SproutSearch';
+import { ChannelPreviewDrawer } from '@/components/home/ChannelPreviewDrawer';
+import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
+import { TaskDrawer } from '@/components/board/TaskDrawer';
 
 interface ActionResult {
   type: string;
@@ -106,6 +109,9 @@ export function OperatorHome() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [threadsLoaded, setThreadsLoaded] = useState(false);
   const [showVoiceMode, setShowVoiceMode] = useState(false);
+  const [previewCardId, setPreviewCardId] = useState<string | null>(null);
+  const [previewTaskId, setPreviewTaskId] = useState<string | null>(null);
+  const [previewChannelId, setPreviewChannelId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -293,6 +299,13 @@ export function OperatorHome() {
     }
   }, [isLoading, messages, buildChannelContext, threadId]);
 
+  /** Open search results in place — drawers instead of navigation */
+  const handleSproutSelect = useCallback((r: SproutResult) => {
+    if (r.type === 'card') setPreviewCardId(r.id);
+    else if (r.type === 'channel') setPreviewChannelId(r.id);
+    else setPreviewTaskId(r.id);
+  }, []);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -372,6 +385,24 @@ export function OperatorHome() {
         isOpen={showVoiceMode}
         onClose={() => setShowVoiceMode(false)}
         systemPrompt={voiceSystemPrompt}
+      />
+
+      {/* Search result previews — channel first so card/task drawers stack on top */}
+      <ChannelPreviewDrawer
+        channelId={previewChannelId}
+        isOpen={!!previewChannelId}
+        onClose={() => setPreviewChannelId(null)}
+        onOpenCard={(cardId) => setPreviewCardId(cardId)}
+      />
+      <CardDetailDrawer
+        card={previewCardId ? cards[previewCardId] ?? null : null}
+        isOpen={!!previewCardId}
+        onClose={() => setPreviewCardId(null)}
+      />
+      <TaskDrawer
+        task={previewTaskId ? tasks[previewTaskId] ?? null : null}
+        isOpen={!!previewTaskId}
+        onClose={() => setPreviewTaskId(null)}
       />
 
       {/* History drawer */}
@@ -608,7 +639,7 @@ export function OperatorHome() {
 
         {/* Input area */}
         <div className={`relative ${hasConversation ? 'pb-4' : ''}`}>
-          <SproutSearch query={input} />
+          <SproutSearch query={input} onSelect={handleSproutSelect} />
           <div className="rounded-2xl border border-neutral-700/80 bg-neutral-900 shadow-xl shadow-black/30 transition-colors focus-within:border-violet-500/60">
             <textarea
               ref={inputRef}

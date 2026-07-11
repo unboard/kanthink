@@ -1,12 +1,11 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 
-type SproutType = 'channel' | 'card' | 'task';
+export type SproutType = 'channel' | 'card' | 'task';
 
-interface SproutResult {
+export interface SproutResult {
   id: string;
   type: SproutType;
   title: string;
@@ -33,10 +32,10 @@ function scoreMatch(text: string | undefined, q: string): number {
 
 /**
  * Live workspace search that sprouts matching channels, cards, and tasks
- * above the chat composer as the user types.
+ * above the chat composer as the user types. Selection is handed to the
+ * parent so results can open in place (drawer/preview) without navigating.
  */
-export function SproutSearch({ query }: { query: string }) {
-  const router = useRouter();
+export function SproutSearch({ query, onSelect }: { query: string; onSelect: (result: SproutResult) => void }) {
   const channels = useStore((s) => s.channels);
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
@@ -110,7 +109,7 @@ export function SproutSearch({ query }: { query: string }) {
       {results.map((r, i) => (
         <button
           key={r.id}
-          onClick={() => router.push(r.href)}
+          onClick={() => onSelect(r)}
           className="animate-sprout flex items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900/95 py-1.5 pl-2.5 pr-3.5 shadow-lg shadow-black/50 backdrop-blur transition-colors hover:border-violet-500/60 hover:bg-neutral-800"
           style={{ animationDelay: `${i * 45}ms` }}
         >
