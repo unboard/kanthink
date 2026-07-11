@@ -10,6 +10,8 @@ import remarkGfm from 'remark-gfm';
 import { AudioLines } from 'lucide-react';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
+import { FreshTicker } from '@/components/home/FreshTicker';
+import { SproutSearch } from '@/components/home/SproutSearch';
 
 interface ActionResult {
   type: string;
@@ -429,12 +431,12 @@ export function OperatorHome() {
         </div>
       )}
 
-      <div className={`flex w-full max-w-2xl flex-col ${hasConversation ? 'h-full' : 'flex-1 justify-center'} px-4`}>
+      <div className={`flex w-full max-w-3xl flex-col ${hasConversation ? 'h-full' : 'flex-1 justify-center'} px-4`}>
 
         {/* Welcome state */}
         {!hasConversation && (
           <div className="mb-8 text-center">
-            <div className="mb-4 inline-flex">
+            <div className="mb-4 inline-flex" style={{ animation: 'kan-float 5s ease-in-out infinite' }}>
               <KanthinkIcon size={48} className="text-white" />
             </div>
             <h1 className="mb-2 text-2xl font-semibold text-white">
@@ -604,9 +606,9 @@ export function OperatorHome() {
           </div>
         )}
 
-        {/* Prompt chips */}
+        {/* Prompt chips — fade out while searching so sprout results have the stage */}
         {!hasConversation && (
-          <div className="mb-4 flex flex-wrap justify-center gap-2">
+          <div className={`mb-4 flex flex-wrap justify-center gap-2 transition-opacity duration-200 ${input.trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             {GREETING_PROMPTS.map((prompt) => (
               <button
                 key={prompt}
@@ -619,41 +621,55 @@ export function OperatorHome() {
           </div>
         )}
 
+        {/* Fresh ticker — recent workspace activity */}
+        {!hasConversation && (
+          <div className={`transition-opacity duration-200 ${input.trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+            <FreshTicker />
+          </div>
+        )}
+
         {/* Input area */}
-        <div className={`${hasConversation ? 'pb-4' : ''}`}>
-          <div className="relative flex items-end rounded-2xl border border-neutral-700 bg-neutral-900 focus-within:border-violet-500/50 transition-colors">
+        <div className={`relative ${hasConversation ? 'pb-4' : ''}`}>
+          <SproutSearch query={input} />
+          <div className="rounded-2xl border border-neutral-700/80 bg-neutral-900 shadow-xl shadow-black/30 transition-colors focus-within:border-violet-500/60">
             <textarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Ask Kan anything..."
-              rows={1}
-              className="flex-1 resize-none bg-transparent px-4 py-3.5 text-sm text-white placeholder:text-neutral-500 focus:outline-none"
-              style={{ maxHeight: 120 }}
+              rows={2}
+              className="w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] text-white placeholder:text-neutral-500 focus:outline-none"
+              style={{ maxHeight: 200 }}
               onInput={(e) => {
                 const t = e.target as HTMLTextAreaElement;
                 t.style.height = 'auto';
-                t.style.height = Math.min(t.scrollHeight, 120) + 'px';
+                t.style.height = Math.min(t.scrollHeight, 200) + 'px';
               }}
             />
-            <div className="flex items-center gap-1 m-2">
-              <button
-                onClick={() => setShowVoiceMode(true)}
-                title="Talk to Kan"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
-              >
-                <AudioLines className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => sendMessage(input)}
-                disabled={!input.trim() || isLoading}
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white transition-colors hover:bg-violet-700 disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </button>
+            <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
+              <span className="hidden truncate pl-2 text-[11px] text-neutral-600 sm:block">
+                Kan can search your workspace, create cards, and take action
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => setShowVoiceMode(true)}
+                  title="Talk to Kan"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-700 text-neutral-300 transition-colors hover:border-violet-500/60 hover:text-violet-300"
+                >
+                  <AudioLines className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => sendMessage(input)}
+                  disabled={!input.trim() || isLoading}
+                  title="Send"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19V5m-7 7l7-7 7 7" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
