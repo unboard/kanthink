@@ -426,9 +426,9 @@ export function OperatorHome() {
 
       <div className={`flex w-full max-w-3xl flex-col ${hasConversation ? 'h-full' : 'flex-1 justify-center'} px-4`}>
 
-        {/* Welcome state */}
+        {/* Welcome state — fades out while searching so sprout results don't overlap it */}
         {!hasConversation && (
-          <div className="mb-8 text-center">
+          <div className={`mb-8 text-center transition-opacity duration-200 ${input.trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             <div className="mb-4 inline-flex" style={{ animation: 'kan-float 5s ease-in-out infinite' }}>
               <KanthinkIcon size={48} className="text-white" />
             </div>
