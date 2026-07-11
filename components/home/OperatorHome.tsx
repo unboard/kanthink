@@ -66,13 +66,6 @@ interface ThreadSummary {
   updatedAt: string;
 }
 
-const GREETING_PROMPTS = [
-  'What should I work on today?',
-  'Summarize my workspace',
-  'Any cards that need attention?',
-  'Help me think through an idea',
-];
-
 /** Parse a kanthink:// URL */
 function parseKanthinkUrl(href: string | undefined): { type: 'card' | 'channel' | 'task'; id: string } | null {
   if (!href) return null;
@@ -603,21 +596,6 @@ export function OperatorHome() {
 
               <div ref={messagesEndRef} />
             </div>
-          </div>
-        )}
-
-        {/* Prompt chips — fade out while searching so sprout results have the stage */}
-        {!hasConversation && (
-          <div className={`mb-4 flex flex-wrap justify-center gap-2 transition-opacity duration-200 ${input.trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-            {GREETING_PROMPTS.map((prompt) => (
-              <button
-                key={prompt}
-                onClick={() => sendMessage(prompt)}
-                className="rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2 text-sm text-neutral-300 transition-colors hover:border-violet-500 hover:text-violet-300 hover:bg-violet-500/10"
-              >
-                {prompt}
-              </button>
-            ))}
           </div>
         )}
 
