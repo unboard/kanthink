@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { usePeekTrigger, type PeekTarget } from '@/components/home/PeekPreview';
 
 type FreshItemType = 'channel' | 'card' | 'task';
 
@@ -34,8 +35,9 @@ function timeAgo(dateStr: string): string {
 }
 
 /** Breaking-news style marquee of the most recently added items in the workspace */
-export function FreshTicker() {
+export function FreshTicker({ onPeek }: { onPeek?: (target: PeekTarget | null) => void }) {
   const router = useRouter();
+  const peek = usePeekTrigger(onPeek);
   const channels = useStore((s) => s.channels);
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
@@ -116,7 +118,12 @@ export function FreshTicker() {
           {rendered.map((item, i) => (
             <button
               key={`${item.id}-${i}`}
-              onClick={() => router.push(item.href)}
+              onClick={() => {
+                peek.leave();
+                router.push(item.href);
+              }}
+              onMouseEnter={(e) => peek.enter(item.type, item.id, e)}
+              onMouseLeave={peek.leave}
               className="flex flex-shrink-0 items-center gap-1.5 px-3 py-1 text-xs transition-colors"
             >
               <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${TYPE_DOT[item.type]}`} />

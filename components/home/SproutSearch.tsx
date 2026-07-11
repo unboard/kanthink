@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { useStore } from '@/lib/store';
+import { usePeekTrigger, type PeekTarget } from '@/components/home/PeekPreview';
 
 export type SproutType = 'channel' | 'card' | 'task';
 
@@ -35,7 +36,16 @@ function scoreMatch(text: string | undefined, q: string): number {
  * above the chat composer as the user types. Selection is handed to the
  * parent so results can open in place (drawer/preview) without navigating.
  */
-export function SproutSearch({ query, onSelect }: { query: string; onSelect: (result: SproutResult) => void }) {
+export function SproutSearch({
+  query,
+  onSelect,
+  onPeek,
+}: {
+  query: string;
+  onSelect: (result: SproutResult) => void;
+  onPeek?: (target: PeekTarget | null) => void;
+}) {
+  const peek = usePeekTrigger(onPeek);
   const channels = useStore((s) => s.channels);
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
@@ -109,7 +119,12 @@ export function SproutSearch({ query, onSelect }: { query: string; onSelect: (re
       {results.map((r, i) => (
         <button
           key={r.id}
-          onClick={() => onSelect(r)}
+          onClick={() => {
+            peek.leave();
+            onSelect(r);
+          }}
+          onMouseEnter={(e) => peek.enter(r.type, r.id, e)}
+          onMouseLeave={peek.leave}
           className="animate-sprout flex items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900/95 py-1.5 pl-2.5 pr-3.5 shadow-lg shadow-black/50 backdrop-blur transition-colors hover:border-violet-500/60 hover:bg-neutral-800"
           style={{ animationDelay: `${i * 45}ms` }}
         >

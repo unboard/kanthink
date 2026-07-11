@@ -213,6 +213,18 @@ body {
   .animate-ticker { animation: none; }
 }
 
+/* Peek previews — content drifts slowly to the far end and back, holding at each end */
+@keyframes peek-scroll {
+  0%, 12% { transform: translate(0, 0); }
+  88%, 100% { transform: translate(var(--peek-x, 0px), var(--peek-y, 0px)); }
+}
+.animate-peek-scroll {
+  animation: peek-scroll var(--peek-duration, 14s) linear infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-peek-scroll { animation: none; }
+}
+
 /* Sprout search results — pop up like mushrooms above the composer */
 @keyframes sprout-up {
   0% { opacity: 0; transform: translateY(12px) scale(0.4); }

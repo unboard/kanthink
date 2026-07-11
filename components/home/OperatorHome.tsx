@@ -13,6 +13,7 @@ import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 import { FreshTicker } from '@/components/home/FreshTicker';
 import { SproutSearch, type SproutResult } from '@/components/home/SproutSearch';
 import { ChannelPreviewDrawer } from '@/components/home/ChannelPreviewDrawer';
+import { PeekPreview, type PeekTarget } from '@/components/home/PeekPreview';
 import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
 import { TaskDrawer } from '@/components/board/TaskDrawer';
 
@@ -112,6 +113,7 @@ export function OperatorHome() {
   const [previewCardId, setPreviewCardId] = useState<string | null>(null);
   const [previewTaskId, setPreviewTaskId] = useState<string | null>(null);
   const [previewChannelId, setPreviewChannelId] = useState<string | null>(null);
+  const [peek, setPeek] = useState<PeekTarget | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -301,10 +303,16 @@ export function OperatorHome() {
 
   /** Open search results in place — drawers instead of navigation */
   const handleSproutSelect = useCallback((r: SproutResult) => {
+    setPeek(null);
     if (r.type === 'card') setPreviewCardId(r.id);
     else if (r.type === 'channel') setPreviewChannelId(r.id);
     else setPreviewTaskId(r.id);
   }, []);
+
+  // Hide any hover peek when the search query changes — its anchor may be gone
+  useEffect(() => {
+    setPeek(null);
+  }, [input]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -404,6 +412,9 @@ export function OperatorHome() {
         isOpen={!!previewTaskId}
         onClose={() => setPreviewTaskId(null)}
       />
+
+      {/* Hover peek — read-only floating preview for ticker + search results */}
+      <PeekPreview target={peek} />
 
       {/* History drawer */}
       {showHistory && (
@@ -633,13 +644,13 @@ export function OperatorHome() {
         {/* Fresh ticker — recent workspace activity */}
         {!hasConversation && (
           <div className={`transition-opacity duration-200 ${input.trim() ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-            <FreshTicker />
+            <FreshTicker onPeek={setPeek} />
           </div>
         )}
 
         {/* Input area */}
         <div className={`relative ${hasConversation ? 'pb-4' : ''}`}>
-          <SproutSearch query={input} onSelect={handleSproutSelect} />
+          <SproutSearch query={input} onSelect={handleSproutSelect} onPeek={setPeek} />
           <div className="rounded-2xl border border-neutral-700/80 bg-neutral-900 shadow-xl shadow-black/30 transition-colors focus-within:border-violet-500/60">
             <textarea
               ref={inputRef}
