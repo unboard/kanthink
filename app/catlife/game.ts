@@ -17,6 +17,7 @@ import type {
 } from './types';
 import { persistSave } from './save';
 import { mulberry32, hash2 } from './rng';
+import { PlaydateNet, seedFromCode, type PlaydateMember, type RemoteState } from './net';
 
 const GRAVITY = -24;
 const PLAYER_RADIUS = 0.45;
@@ -40,6 +41,20 @@ interface FollowerKitten {
   heading: number;
   hopVy: number;
   hopY: number;
+}
+
+interface RemoteCat {
+  member: PlaydateMember;
+  spec: CatSpec | null;
+  avatar: CatAvatar | null;
+  nameTag: THREE.Sprite | null;
+  kittens: { spec: CatSpec; avatar: CatAvatar; x: number; z: number; heading: number }[];
+  // interpolation targets
+  tx: number; tz: number; ty: number; th: number;
+  x: number; z: number; y: number; h: number;
+  action: import('./types').CatAction;
+  speed: number;
+  lastSeen: number;
 }
 
 interface Particle {
@@ -128,6 +143,11 @@ export class Game {
   // cat tower trial
   private towerDoneAt = -999;
 
+  // playdate multiplayer
+  readonly playdate: { code: string } | null;
+  private net: PlaydateNet | null = null;
+  private remotes = new Map<string, RemoteCat>();
+
   // duel
   private duel: DuelState | null = null;
   private duelRival: RivalCat | null = null;
@@ -174,9 +194,10 @@ export class Game {
   private lastFrame = 0;
   private stepAcc = 0;
 
-  constructor(canvas: HTMLCanvasElement, save: SaveData, events: GameEvents) {
+  constructor(canvas: HTMLCanvasElement, save: SaveData, events: GameEvents, playdate?: { code: string } | null) {
     this.save = save;
     this.events = events;
+    this.playdate = playdate ?? null;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -191,21 +212,32 @@ export class Game {
     this.scene.fog = new THREE.Fog('#cfe3ee', 70, 260);
     this.camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 2000);
 
-    this.world = new World(save.seed, this.scene);
-    this.world.spawnYarn(save.wave, save.collectedYarn, save.goldenDone);
-
-    // buildings from save
-    for (const b of save.buildings) this.world.addBuilding(b);
+    // playdates happen on a shared island seeded from the room code —
+    // the same world generates on every tablet that enters the code
+    const worldSeed = this.playdate ? seedFromCode(this.playdate.code) : save.seed;
+    this.world = new World(worldSeed, this.scene);
+    if (this.playdate) {
+      this.world.spawnYarn(0, [], []); // fresh shared yarn, nobody's home progress
+    } else {
+      this.world.spawnYarn(save.wave, save.collectedYarn, save.goldenDone);
+      for (const b of save.buildings) this.world.addBuilding(b);
+    }
 
     // player avatar at camp
     const spec = save.cats.find((c) => c.id === save.activeCatId) ?? save.cats[0];
     this.spawnPlayer(spec);
 
-    this.spawnRivals();
     this.syncKittens();
-    this.syncFamily();
-    this.spawnWanderers();
-    this.spawnToys();
+    if (!this.playdate) {
+      // rival clans, romance, rescues and toys live on your home island;
+      // a playdate island is a quiet playground for the kids' cats
+      this.spawnRivals();
+      this.syncFamily();
+      this.spawnWanderers();
+      this.spawnToys();
+    } else {
+      this.connectPlaydate();
+    }
 
     // agility gate highlight ring
     this.gateRing = new THREE.Mesh(
@@ -289,6 +321,8 @@ export class Game {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('resize', this.onResize);
+    this.net?.dispose();
+    for (const id of [...this.remotes.keys()]) this.removeRemote(id);
     for (const f of this.followers) f.avatar.dispose();
     for (const ck of this.campKittens) ck.avatar.dispose();
     for (const w of this.wanderers) w.avatar.dispose();
@@ -970,6 +1004,211 @@ export class Game {
     }
   }
 
+  // ——— playdate multiplayer ———
+
+  private connectPlaydate() {
+    if (!this.playdate) return;
+    const spec = this.player.spec;
+    this.net = new PlaydateNet(this.playdate.code, spec.name, this.save.activeCatId, {
+      onConnected: () => {
+        this.toast(`Playdate ${this.playdate!.code} — waiting for family to join! 👯`);
+        this.net?.sendSpec(this.player.spec, this.save.kittens.slice(0, 2));
+        this.events.onPlaydateMembers?.(this.net?.getMembers() ?? []);
+      },
+      onMembers: (members) => this.events.onPlaydateMembers?.(members),
+      onJoin: (m) => {
+        this.toast(`${m.name} joined the playdate! 💛`);
+        this.audio.catJoin();
+        // introduce ourselves to the newcomer
+        setTimeout(() => this.net?.sendSpec(this.player.spec, this.save.kittens.slice(0, 2)), 400);
+      },
+      onLeave: (m) => {
+        this.toast(`${m.name} went home. 👋`);
+        this.removeRemote(m.id);
+      },
+      onSpec: (id, spec2, kittens) => this.upsertRemote(id, spec2, kittens),
+      onState: (id, s) => {
+        const r = this.remotes.get(id);
+        if (!r) return;
+        r.tx = s.x; r.tz = s.z; r.ty = s.y; r.th = s.h;
+        r.action = s.a;
+        r.speed = s.s;
+        r.lastSeen = this.elapsed;
+      },
+      onMeow: (id, pitch) => {
+        const r = this.remotes.get(id);
+        if (!r?.avatar) return;
+        r.avatar.meow();
+        r.avatar.showEmote('music', 1.2);
+        const d = Math.hypot(r.x - this.px, r.z - this.pz);
+        this.audio.meow(pitch, Math.max(0.08, Math.min(0.5, 1.2 - d / 50)));
+      },
+      onYarnCollect: (id, yarnId) => {
+        const y = this.world.yarn.find((yy) => yy.id === yarnId);
+        if (y && !y.collected) {
+          y.collected = true;
+          y.mesh.visible = false;
+          const r = this.remotes.get(id);
+          this.burst(y.x, y.mesh.position.y, y.z, '#e05d7e', 10);
+          if (r) this.toast(`${r.member.name} found a yarn ball! 🧶`);
+        }
+      },
+      onError: (msg) => this.toast(msg),
+    });
+  }
+
+  private upsertRemote(id: string, spec: CatSpec, kittenSpecs: CatSpec[]) {
+    let r = this.remotes.get(id);
+    const member = this.net?.getMembers().find((m) => m.id === id) ?? { id, name: spec.name, color: '#e8c34a' };
+    if (!r) {
+      r = {
+        member, spec: null, avatar: null, nameTag: null, kittens: [],
+        tx: this.px + 3, tz: this.pz + 3, ty: this.py, th: 0,
+        x: this.px + 3, z: this.pz + 3, y: this.py, h: 0,
+        action: 'idle', speed: 0, lastSeen: this.elapsed,
+      };
+      this.remotes.set(id, r);
+    }
+    // (re)build their avatar — also fires when they switch cats
+    if (r.avatar) {
+      this.scene.remove(r.avatar.root);
+      r.avatar.dispose();
+    }
+    for (const k of r.kittens) {
+      this.scene.remove(k.avatar.root);
+      k.avatar.dispose();
+    }
+    r.kittens = [];
+    r.spec = spec;
+    r.avatar = new CatAvatar(spec);
+    r.avatar.root.position.set(r.x, r.y, r.z);
+    this.scene.add(r.avatar.root);
+    // floating name tag so sisters can find each other
+    if (r.nameTag) this.scene.remove(r.nameTag);
+    r.nameTag = this.makeNameTag(member.name, member.color);
+    this.scene.add(r.nameTag);
+    for (const ks of kittenSpecs.slice(0, 2)) {
+      const avatar = new CatAvatar(ks, { kitten: true });
+      avatar.root.position.set(r.x + 1, r.y, r.z + 1);
+      this.scene.add(avatar.root);
+      r.kittens.push({ spec: ks, avatar, x: r.x + 1, z: r.z + 1, heading: 0 });
+    }
+  }
+
+  private removeRemote(id: string) {
+    const r = this.remotes.get(id);
+    if (!r) return;
+    if (r.avatar) {
+      this.scene.remove(r.avatar.root);
+      r.avatar.dispose();
+    }
+    if (r.nameTag) this.scene.remove(r.nameTag);
+    for (const k of r.kittens) {
+      this.scene.remove(k.avatar.root);
+      k.avatar.dispose();
+    }
+    this.remotes.delete(id);
+  }
+
+  private makeNameTag(name: string, color: string): THREE.Sprite {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const ctx = c.getContext('2d')!;
+    ctx.font = 'bold 30px system-ui, sans-serif';
+    const w = Math.min(240, ctx.measureText(name).width + 44);
+    const x0 = (256 - w) / 2;
+    ctx.fillStyle = 'rgba(30,28,20,0.75)';
+    ctx.beginPath();
+    ctx.roundRect(x0, 8, w, 48, 24);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x0 + 24, 32, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fdf6ea';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, x0 + 42, 34);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    sprite.scale.set(2.2, 0.55, 1);
+    return sprite;
+  }
+
+  private updateRemotes(dt: number) {
+    if (!this.playdate) return;
+
+    // broadcast our own state (net throttles internally)
+    this.net?.sendState({
+      x: Math.round(this.px * 100) / 100,
+      z: Math.round(this.pz * 100) / 100,
+      y: Math.round(this.py * 100) / 100,
+      h: Math.round(this.heading * 100) / 100,
+      a: this.player.action,
+      s: Math.round(this.player.moveSpeed * 10) / 10,
+    });
+
+    const k = Math.min(1, dt * 6);
+    for (const r of this.remotes.values()) {
+      if (!r.avatar) continue;
+      // interpolate toward their reported state
+      r.x += (r.tx - r.x) * k;
+      r.z += (r.tz - r.z) * k;
+      r.y += (r.ty - r.y) * k;
+      let dh = r.th - r.h;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      r.h += dh * k;
+      r.avatar.root.position.set(r.x, r.y, r.z);
+      r.avatar.root.rotation.y = r.h;
+      r.avatar.setAction(r.action);
+      r.avatar.moveSpeed = r.speed;
+      r.avatar.update(dt, this.elapsed + r.x);
+      if (r.nameTag) {
+        r.nameTag.position.set(r.x, r.y + 1.5, r.z);
+      }
+      // their kittens trail behind them, just like on their own screen
+      r.kittens.forEach((kit, i) => {
+        const back = r.h + Math.PI;
+        const tx = r.x + Math.sin(back) * (1.3 + i * 0.8);
+        const tz = r.z + Math.cos(back) * (1.3 + i * 0.8);
+        const d = Math.hypot(tx - kit.x, tz - kit.z);
+        if (d > 0.3) {
+          const a = Math.atan2(tx - kit.x, tz - kit.z);
+          const sp = Math.min(9, d * 2.4);
+          kit.x += Math.sin(a) * sp * dt;
+          kit.z += Math.cos(a) * sp * dt;
+          kit.heading = a;
+          kit.avatar.setAction(sp > 4.2 ? 'run' : 'walk');
+          kit.avatar.moveSpeed = sp;
+        } else {
+          kit.avatar.setAction(r.action === 'sneak' ? 'sneak' : 'idle');
+          kit.avatar.moveSpeed = 0;
+        }
+        kit.avatar.root.position.set(kit.x, this.world.heightAt(kit.x, kit.z), kit.z);
+        kit.avatar.root.rotation.y = kit.heading;
+        kit.avatar.update(dt, this.elapsed + i);
+      });
+    }
+  }
+
+  /** direction to the nearest playdate friend — so the kids can find each other */
+  private friendCompass(): { angle: number; dist: number; name: string } | null {
+    let best: RemoteCat | null = null;
+    let bd = Infinity;
+    for (const r of this.remotes.values()) {
+      if (!r.avatar) continue;
+      const d = Math.hypot(r.x - this.px, r.z - this.pz);
+      if (d < bd) { bd = d; best = r; }
+    }
+    if (!best) return null;
+    return {
+      angle: Math.atan2(best.x - this.px, best.z - this.pz) - this.camYaw,
+      dist: bd,
+      name: best.member.name,
+    };
+  }
+
   // ——— kitten tree rescue ———
 
   private spawnRescue() {
@@ -1110,6 +1349,7 @@ export class Game {
     this.player.meow();
     this.player.showEmote('music', 1.2);
     this.audio.meow(spec.voicePitch);
+    this.net?.sendMeow(spec.voicePitch);
     // nearby cats meow back (staggered) — and the hiding kitten answers loudly
     let delay = 500;
     for (const r of this.rivals) {
@@ -1982,6 +2222,10 @@ export class Game {
   // ——— build mode ———
 
   enterBuildMode() {
+    if (this.playdate) {
+      this.toast('Building happens on your home island — leave the playdate to build! 🏕');
+      return false;
+    }
     const d = Math.hypot(this.px - this.world.playerCamp.x, this.pz - this.world.playerCamp.z);
     if (d > 45) {
       this.toast('Build near your camp — follow the 🏕 compass home!');
@@ -2084,7 +2328,8 @@ export class Game {
     if (!spec) return;
     this.save.activeCatId = catId;
     this.spawnPlayer(spec);
-    this.syncFamily(); // camp clanmates change when the active cat changes
+    if (!this.playdate) this.syncFamily(); // camp clanmates change when the active cat changes
+    this.net?.sendSpec(spec, this.save.kittens.slice(0, 2));
     this.persist();
     this.events.onSaveChanged();
     this.emitHud(true);
@@ -2218,11 +2463,14 @@ export class Game {
       this.updateContext();
       this.updateRivals(dt);
       this.updateFollowers(dt);
-      this.updateRescue(dt);
-      this.updateStray(dt);
-      this.updateWanderers(dt);
-      this.updateFamily(dt);
-      this.updateToys(dt);
+      if (!this.playdate) {
+        this.updateRescue(dt);
+        this.updateStray(dt);
+        this.updateWanderers(dt);
+        this.updateFamily(dt);
+        this.updateToys(dt);
+      }
+      this.updateRemotes(dt);
       this.updateChallenge(dt);
       this.updateAgility(dt);
       this.updateBuildGhost();
@@ -2482,11 +2730,19 @@ export class Game {
       if (Math.hypot(y.x - this.px, y.z - this.pz) < 1.25 && dy < 1.6) {
         y.collected = true;
         y.mesh.visible = false;
+        this.net?.sendYarnCollect(y.id);
         if (y.golden) {
           this.audio.goldenPickup();
           this.burst(y.x, y.mesh.position.y, y.z, '#ffd54a', 24);
           this.addXp(5);
-          this.offerChallenge(y.id);
+          if (this.playdate) {
+            // no solo challenges on a playdate island — golden yarn is just gold
+            this.save.yarn += 5;
+            this.save.totalYarn += 5;
+            this.toast('Golden yarn! +5 🧶✨');
+          } else {
+            this.offerChallenge(y.id);
+          }
         } else if (y.surprise) {
           // the pink yarn egg cracks open — what's inside?!
           this.save.collectedYarn.push(y.id);
@@ -2509,7 +2765,7 @@ export class Game {
             this.toast('The surprise yarn was extra thick — 3 yarn! 🧶✨');
           }
         } else {
-          this.save.collectedYarn.push(y.id);
+          if (!this.playdate) this.save.collectedYarn.push(y.id); // playdate yarn never pollutes home progress
           this.save.yarn++;
           this.save.totalYarn++;
           this.addXp(2);
@@ -2524,7 +2780,11 @@ export class Game {
 
     // yarn wave respawn when picked clean
     const normalsLeft = this.world.yarn.filter((y) => !y.golden && !y.collected).length;
-    if (normalsLeft <= 4) {
+    if (normalsLeft <= 4 && this.playdate) {
+      // fresh shared wave without touching anyone's home save
+      this.world.spawnYarn((Date.now() / 60000) | 0, [], []);
+      this.toast('Fresh yarn has appeared across the island! 🧶✨');
+    } else if (normalsLeft <= 4) {
       this.save.wave++;
       this.save.collectedYarn = [];
       this.world.spawnYarn(this.save.wave, [], this.save.goldenDone);
@@ -2896,6 +3156,7 @@ export class Game {
           }
         : null,
       kittens: this.save.kittens.length,
+      friend: this.friendCompass(),
     };
     this.events.onHud(hud);
   }

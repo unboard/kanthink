@@ -135,6 +135,7 @@ export interface HudState {
   camp: { angle: number; dist: number }; // direction home (camera-relative)
   rescue: { angle: number; dist: number } | null; // kitten-in-tree direction
   kittens: number;   // rescued kitten count
+  friend: { angle: number; dist: number; name: string } | null; // nearest playdate friend
 }
 
 export interface ToastMsg {
@@ -184,4 +185,5 @@ export interface GameEvents {
   onChallenge: (c: ChallengeState | null) => void;
   onSaveChanged: () => void;     // yarn/cats/etc changed; UI screens re-read save
   onCelebrate: (kind: 'recruit' | 'levelup' | 'build' | 'rankup', text: string) => void;
+  onPlaydateMembers?: (members: { id: string; name: string; color: string }[]) => void;
 }

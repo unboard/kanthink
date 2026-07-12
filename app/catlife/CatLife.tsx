@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { Game } from './game';
+import { makeRoomCode, normalizeRoomCode, type PlaydateMember } from './net';
 import CatViewer from './CatViewer';
 import { loadSave, newSave, persistSave, clearSave } from './save';
 import {
@@ -172,8 +173,10 @@ function PlayScreen({ save }: { save: SaveData }) {
   const [duel, setDuel] = useState<DuelState | null>(null);
   const [challenge, setChallenge] = useState<ChallengeState | null>(null);
   const [celebrate, setCelebrate] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | 'guide' | 'build' | 'clan' | 'settings'>(null);
+  const [overlay, setOverlay] = useState<null | 'guide' | 'build' | 'clan' | 'settings' | 'playdate'>(null);
   const [, setSaveTick] = useState(0); // bump to re-read save in overlays
+  const [playdateCode, setPlaydateCode] = useState<string | null>(null);
+  const [playdateMembers, setPlaydateMembers] = useState<PlaydateMember[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -194,15 +197,18 @@ function PlayScreen({ save }: { save: SaveData }) {
         confetti({ particleCount: kind === 'recruit' || kind === 'rankup' ? 160 : 80, spread: 75, origin: { y: 0.35 } });
         setTimeout(() => setCelebrate(null), 4200);
       },
-    });
+      onPlaydateMembers: setPlaydateMembers,
+    }, playdateCode ? { code: playdateCode } : null);
     gameRef.current = game;
     game.start();
     return () => {
       game.dispose();
       gameRef.current = null;
+      setPlaydateMembers([]);
     };
+    // rebuilding the whole game world is exactly what entering/leaving a playdate means
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [playdateCode]);
 
   const game = gameRef.current;
 
@@ -218,7 +224,7 @@ function PlayScreen({ save }: { save: SaveData }) {
       <CameraDragLayer gameRef={gameRef} />
 
       {/* HUD */}
-      {hud && <TopHud hud={hud} onOpen={setOverlay} gameRef={gameRef} />}
+      {hud && <TopHud hud={hud} onOpen={setOverlay} gameRef={gameRef} playdateCount={playdateCode ? playdateMembers.length : -1} />}
       {hud?.agility && <AgilityHud a={hud.agility} onCancel={() => gameRef.current?.cancelAgility()} />}
 
       {/* controls */}
@@ -240,6 +246,15 @@ function PlayScreen({ save }: { save: SaveData }) {
       {overlay === 'guide' && game && <GuideOverlay game={game} onClose={() => setOverlay(null)} />}
       {overlay === 'clan' && game && <ClanOverlay game={game} onClose={() => setOverlay(null)} />}
       {overlay === 'settings' && game && <SettingsOverlay game={game} onClose={() => setOverlay(null)} />}
+      {overlay === 'playdate' && (
+        <PlaydateOverlay
+          code={playdateCode}
+          members={playdateMembers}
+          onStart={(code) => { setPlaydateCode(code); setOverlay(null); }}
+          onLeave={() => { setPlaydateCode(null); setOverlay(null); }}
+          onClose={() => setOverlay(null)}
+        />
+      )}
 
       {/* duel + challenge */}
       {duel && game && <DuelOverlay duel={duel} game={game} />}
@@ -451,11 +466,12 @@ function ctxIcon(kind: string): string {
 // ————————————————— top HUD —————————————————
 
 function TopHud({
-  hud, onOpen, gameRef,
+  hud, onOpen, gameRef, playdateCount,
 }: {
   hud: HudState;
-  onOpen: (o: 'guide' | 'build' | 'clan' | 'settings') => void;
+  onOpen: (o: 'guide' | 'build' | 'clan' | 'settings' | 'playdate') => void;
   gameRef: React.RefObject<Game | null>;
+  playdateCount: number; // -1 = not in a playdate
 }) {
   const t = hud.timeOfDay;
   const isDay = t > 0.25 && t < 0.75;
@@ -487,6 +503,15 @@ function TopHud({
         {/* status chips */}
         {hud.swimming && <Pill text="🌊 swimming" />}
         {hud.climbing && <Pill text="🌲 climbing" />}
+        {/* friend compass — find your sister's cat! */}
+        {hud.friend && hud.friend.dist > 12 && (
+          <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
+            style={{ background: '#dcebfb', color: INK, border: '1.5px solid #9ec3e8' }}>
+            👯
+            <span style={{ display: 'inline-block', transform: `rotate(${hud.friend.angle}rad)` }}>⬆️</span>
+            <span className="text-[10px]">{hud.friend.name} · {Math.round(hud.friend.dist)}m</span>
+          </span>
+        )}
         {/* kitten rescue compass — a kitten is stuck in a tree! */}
         {hud.rescue && (
           <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
@@ -509,6 +534,17 @@ function TopHud({
           style={{ background: isDay ? '#cfe6f7' : '#1c2340', border: `1.5px solid ${LINE}` }}>
           {isDay ? '☀️' : '🌙'}
         </div>
+        <button
+          className="flex h-11 items-center gap-1 rounded-full px-3 text-lg shadow-lg active:scale-90"
+          style={{
+            background: playdateCount >= 0 ? '#dcebfb' : 'rgba(253,250,241,0.94)',
+            border: `1.5px solid ${playdateCount >= 0 ? '#9ec3e8' : LINE}`,
+          }}
+          aria-label="Playdate"
+          onPointerDown={(e) => { e.stopPropagation(); onOpen('playdate'); }}
+        >
+          👯{playdateCount >= 0 && <span className="text-xs font-bold" style={{ color: INK }}>{playdateCount + 1}</span>}
+        </button>
         <IconBtn icon="🔨" label="Build" onPress={() => {
           if (gameRef.current?.enterBuildMode()) onOpen('build');
         }} />
@@ -1184,6 +1220,118 @@ function ClanOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
           onPointerDown={onClose}>
           Close
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ————————————————— playdate —————————————————
+
+function PlaydateOverlay({
+  code, members, onStart, onLeave, onClose,
+}: {
+  code: string | null;
+  members: PlaydateMember[];
+  onStart: (code: string) => void;
+  onLeave: () => void;
+  onClose: () => void;
+}) {
+  const [joinInput, setJoinInput] = useState('');
+  const [mode, setMode] = useState<'menu' | 'join'>('menu');
+
+  return (
+    <div className="absolute inset-0 z-40 grid place-items-center p-4" style={{ background: 'rgba(20,18,10,0.45)' }}>
+      <div className="w-full max-w-md rounded-3xl border p-6 text-center shadow-2xl" style={{ background: CARD, borderColor: '#9ec3e8', color: INK }}>
+        <h2 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>👯 Playdate</h2>
+
+        {code ? (
+          <>
+            <p className="mt-1 text-sm" style={{ color: INK_SOFT }}>Tell your sister the secret code:</p>
+            <div className="mx-auto mt-2 w-fit rounded-2xl border-2 border-dashed px-8 py-3 text-4xl font-bold tracking-[0.3em]"
+              style={{ borderColor: '#9ec3e8', fontFamily: 'var(--font-fraunces)', background: '#eef5fc' }}>
+              {code}
+            </div>
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: INK_SOFT }}>
+                On this island ({members.length + 1})
+              </p>
+              <div className="mt-1 flex flex-wrap justify-center gap-1.5">
+                <Chip text="You 🐱" tone="gold" />
+                {members.map((m) => (
+                  <span key={m.id} className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                    style={{ background: '#dcebfb', color: INK }}>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: m.color }} />
+                    {m.name}
+                  </span>
+                ))}
+                {members.length === 0 && (
+                  <span className="text-xs italic" style={{ color: INK_SOFT }}>waiting for family to join…</span>
+                )}
+              </div>
+            </div>
+            <p className="mt-3 text-[11px]" style={{ color: INK_SOFT }}>
+              Follow the 👯 arrow to find each other! Yarn you collect here goes home with you.
+            </p>
+            <div className="mt-3 flex justify-center gap-2">
+              <button className="rounded-full px-6 py-3 font-bold text-white active:scale-95" style={{ background: INK }} onPointerDown={onClose}>
+                Back to playing
+              </button>
+              <button className="rounded-full border px-5 py-3 font-bold active:scale-95" style={{ borderColor: '#e0b4b4', color: ROSE }} onPointerDown={onLeave}>
+                Leave playdate
+              </button>
+            </div>
+          </>
+        ) : mode === 'menu' ? (
+          <>
+            <p className="mt-1 text-sm" style={{ color: INK_SOFT, fontFamily: 'var(--font-spectral)' }}>
+              Play on the same island as your family — each on your own tablet!
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button className="rounded-2xl py-4 text-lg font-bold text-white shadow active:scale-95"
+                style={{ background: GREEN, fontFamily: 'var(--font-fraunces)' }}
+                onPointerDown={() => onStart(makeRoomCode())}>
+                Start a playdate 🏝
+              </button>
+              <button className="rounded-2xl border-2 py-4 text-lg font-bold shadow active:scale-95"
+                style={{ borderColor: '#9ec3e8', color: INK, fontFamily: 'var(--font-fraunces)' }}
+                onPointerDown={() => setMode('join')}>
+                I have a code!
+              </button>
+            </div>
+            <button className="mt-3 text-sm underline" style={{ color: INK_SOFT }} onPointerDown={onClose}>
+              maybe later
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="mt-1 text-sm" style={{ color: INK_SOFT }}>Type the secret code:</p>
+            <input
+              value={joinInput}
+              onChange={(e) => setJoinInput(e.target.value.toUpperCase())}
+              placeholder="PURR42"
+              maxLength={8}
+              autoFocus
+              className="mt-2 w-full rounded-2xl border-2 px-4 py-3 text-center text-3xl font-bold tracking-[0.25em] outline-none"
+              style={{ borderColor: '#9ec3e8', fontFamily: 'var(--font-fraunces)', background: '#eef5fc' }}
+            />
+            <div className="mt-3 flex justify-center gap-2">
+              <button
+                className="rounded-full px-8 py-3 font-bold text-white active:scale-95 disabled:opacity-40"
+                style={{ background: GREEN }}
+                disabled={!normalizeRoomCode(joinInput)}
+                onPointerDown={() => {
+                  const norm = normalizeRoomCode(joinInput);
+                  if (norm) onStart(norm);
+                }}>
+                Join! 🐾
+              </button>
+              <button className="rounded-full border px-5 py-3 font-bold active:scale-95" style={{ borderColor: LINE, color: INK_SOFT }}
+                onPointerDown={() => setMode('menu')}>
+                Back
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
