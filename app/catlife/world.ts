@@ -9,10 +9,12 @@ import { WORLD_SIZE, WATER_LEVEL, RIVAL_CLANS, BUILDABLES } from './data';
 import type { BuildingInstance } from './types';
 
 export interface TreeInfo { id: string; x: number; z: number; trunkH: number; r: number; perchY: number }
-export interface RockInfo { x: number; z: number; r: number }
+export interface RockInfo { x: number; z: number; r: number; topY?: number } // topY set = you can stand on it
+export interface Platform { x: number; z: number; r: number; topY: number }
 export interface DigMound { id: string; x: number; z: number; dug: boolean; mesh: THREE.Mesh }
 export interface YarnBall {
   id: string; x: number; z: number; y: number; golden: boolean;
+  surprise?: boolean; // pink yarn "eggs" crack open with a prize inside
   spot: 'ground' | 'tree' | 'islet' | 'hill';
   mesh: THREE.Group; collected: boolean;
 }
@@ -43,6 +45,8 @@ export class World {
 
   trees: TreeInfo[] = [];
   rocks: RockInfo[] = [];
+  platforms: Platform[] = [];
+  towerTop: Platform | null = null; // the Cat Tower Trial summit
   digMounds: DigMound[] = [];
   yarn: YarnBall[] = [];
   camps: CampInfo[] = [];
@@ -87,6 +91,7 @@ export class World {
 
   private yarnTexNormal: THREE.CanvasTexture;
   private yarnTexGold: THREE.CanvasTexture;
+  private yarnTexSurprise!: THREE.CanvasTexture;
 
   constructor(seed: number, scene: THREE.Scene) {
     this.seed = seed;
@@ -137,6 +142,7 @@ export class World {
     this.buildDigMounds(rng);
     this.buildCamps();
     this.buildAgilityCourse();
+    this.buildTowerTrial();
     this.buildCritters(rng);
 
     const leaves = this.buildLeaves(rng);
@@ -149,6 +155,7 @@ export class World {
 
     this.yarnTexNormal = this.paintYarnTexture('#e05d7e', '#b23a5a');
     this.yarnTexGold = this.paintYarnTexture('#f5cf58', '#c99a1e');
+    this.yarnTexSurprise = this.paintYarnTexture('#f5c3d8', '#d489ac');
 
     this.hemi = new THREE.HemisphereLight('#bfd9ff', '#8a9a6a', 0.75);
     this.group.add(this.hemi);
@@ -850,12 +857,18 @@ export class World {
       const h = this.heightAt(x, z);
       if (h < 0.8 || this.nearPad(x, z, 2)) continue;
       const r = 0.5 + rng() * 1.8;
+      const sy = r * (0.6 + rng() * 0.5);
       q.setFromEuler(new THREE.Euler(rng() * 0.5, rng() * Math.PI, rng() * 0.5));
-      m.compose(new THREE.Vector3(x, h + r * 0.15, z), q, vs.set(r, r * (0.6 + rng() * 0.5), r));
+      m.compose(new THREE.Vector3(x, h + r * 0.15, z), q, vs.set(r, sy, r));
       rocksMesh.setMatrixAt(ri, m);
       col.setHSL(0.1, 0.05 + rng() * 0.06, 0.42 + rng() * 0.2);
       rocksMesh.setColorAt(ri, col);
-      if (r > 0.9) this.rocks.push({ x, z, r: r * 0.9 });
+      if (r > 0.9) {
+        // big rocks are jump-on-able
+        const topY = h + r * 0.15 + sy * 0.72;
+        this.rocks.push({ x, z, r: r * 0.9, topY });
+        this.platforms.push({ x, z, r: r * 0.78, topY });
+      }
       ri++;
     }
     rocksMesh.count = ri;
@@ -908,14 +921,16 @@ export class World {
         m.compose(new THREE.Vector3(x, h + 0.3, z), q, vs);
         logs.setMatrixAt(li, m);
         logs.setColorAt(li, col);
-        this.rocks.push({ x, z, r: 0.9 });
+        this.rocks.push({ x, z, r: 0.9, topY: h + 0.62 });
+        this.platforms.push({ x, z, r: 1.1, topY: h + 0.62 });
         li++;
       } else if (si < 16) {
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI);
         m.compose(new THREE.Vector3(x, h + 0.26, z), q, vs);
         stumps.setMatrixAt(si, m);
         stumps.setColorAt(si, col);
-        this.rocks.push({ x, z, r: 0.6 });
+        this.rocks.push({ x, z, r: 0.6, topY: h + 0.54 });
+        this.platforms.push({ x, z, r: 0.55, topY: h + 0.54 });
         si++;
       }
     }
@@ -1132,30 +1147,32 @@ export class World {
     const collected = new Set(collectedIds);
     const gDone = new Set(goldenDone);
 
+    let mkCount = 0;
     const mk = (id: string, x: number, z: number, y: number, golden: boolean, spot: YarnBall['spot']) => {
       if (collected.has(id) || (golden && gDone.has(id))) return;
+      const surprise = !golden && ++mkCount % 6 === 0; // pink surprise eggs
       const grp = new THREE.Group();
       const ball = new THREE.Mesh(
-        new THREE.SphereGeometry(golden ? 0.42 : 0.34, 14, 10),
+        new THREE.SphereGeometry(golden ? 0.42 : surprise ? 0.4 : 0.34, 14, 10),
         new THREE.MeshStandardMaterial({
-          map: golden ? this.yarnTexGold : this.yarnTexNormal,
+          map: golden ? this.yarnTexGold : surprise ? this.yarnTexSurprise : this.yarnTexNormal,
           roughness: 0.7,
-          emissive: golden ? '#8a6a10' : '#000000',
-          emissiveIntensity: golden ? 0.5 : 0,
+          emissive: golden ? '#8a6a10' : surprise ? '#6e2a4a' : '#000000',
+          emissiveIntensity: golden ? 0.5 : surprise ? 0.3 : 0,
         })
       );
       ball.castShadow = true;
       grp.add(ball);
-      if (golden) {
+      if (golden || surprise) {
         const glow = new THREE.Mesh(
           new THREE.SphereGeometry(0.62, 12, 8),
-          new THREE.MeshBasicMaterial({ color: '#ffe27a', transparent: true, opacity: 0.18 })
+          new THREE.MeshBasicMaterial({ color: golden ? '#ffe27a' : '#ffc8de', transparent: true, opacity: 0.16 })
         );
         grp.add(glow);
       }
       grp.position.set(x, y, z);
       this.group.add(grp);
-      this.yarn.push({ id, x, z, y, golden, spot, mesh: grp, collected: false });
+      this.yarn.push({ id, x, z, y, golden, surprise, spot, mesh: grp, collected: false });
     };
 
     for (let i = 0; i < 3; i++) {
@@ -1238,7 +1255,8 @@ export class World {
       log.castShadow = true;
       g.add(log);
       this.group.add(g);
-      this.rocks.push({ x: camp.x, z: camp.z, r: 2.6 });
+      this.rocks.push({ x: camp.x, z: camp.z, r: 2.6, topY: h + 2.05 });
+      this.platforms.push({ x: camp.x, z: camp.z, r: 1.9, topY: h + 2.05 });
     }
 
     const pc = this.playerCamp;
@@ -1396,7 +1414,21 @@ export class World {
     }
     this.group.add(g);
     this.buildingMeshes.set(b.id, g);
-    if (b.type !== 'flowers' && b.type !== 'pond') this.rocks.push({ x: b.x, z: b.z, r: 1.2 });
+    // standable structures: cats can hop onto dens, towers, and the statue
+    if (b.type === 'den') {
+      this.rocks.push({ x: b.x, z: b.z, r: 1.5, topY: h + 1.55 });
+      this.platforms.push({ x: b.x, z: b.z, r: 1.35, topY: h + 1.55 });
+    } else if (b.type === 'tower') {
+      this.rocks.push({ x: b.x, z: b.z, r: 1.3, topY: h + 3.48 });
+      this.platforms.push({ x: b.x, z: b.z, r: 1.5, topY: h + 1.1 });
+      this.platforms.push({ x: b.x, z: b.z, r: 1.2, topY: h + 2.2 });
+      this.platforms.push({ x: b.x, z: b.z, r: 1.05, topY: h + 3.48 });
+    } else if (b.type === 'statue') {
+      this.rocks.push({ x: b.x, z: b.z, r: 1.1, topY: h + 2.3 });
+      this.platforms.push({ x: b.x, z: b.z, r: 0.95, topY: h + 2.3 });
+    } else if (b.type !== 'flowers' && b.type !== 'pond') {
+      this.rocks.push({ x: b.x, z: b.z, r: 1.2 });
+    }
   }
 
   removeBuildingMesh(id: string) {
@@ -1497,6 +1529,57 @@ export class World {
     flagPole(fin.x - px * 1.6, fin.z - pz * 1.6, red);
     flagPole(fin.x + px * 1.6, fin.z + pz * 1.6, red);
     this.agilityGates.push({ x: fin.x, z: fin.z, kind: 'finish' });
+  }
+
+  // ——— Cat Tower Trial: a spiral of pillars to jump up, fall and start over ———
+  private buildTowerTrial() {
+    const c = this.agilityCenter;
+    const dir = Math.atan2(-c.z, -c.x);
+    // off to the side of the flat agility pad
+    const cx = c.x + Math.cos(dir + Math.PI / 2) * 16;
+    const cz = c.z + Math.sin(dir + Math.PI / 2) * 16;
+    const baseH = this.heightAt(cx, cz);
+    const pastel = ['#e8a9c0', '#9ec97f', '#85c1e9', '#f5d76e'];
+    const N = 8;
+    for (let i = 0; i < N; i++) {
+      const a = dir + i * 0.78;
+      const px = cx + Math.cos(a) * 4.1;
+      const pz = cz + Math.sin(a) * 4.1;
+      const topY = baseH + 1.25 + i * 0.85;
+      const groundY = this.heightAt(px, pz);
+      const pillar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.95, 1.15, topY - groundY, 10),
+        new THREE.MeshStandardMaterial({ color: '#b08d57', roughness: 1 })
+      );
+      pillar.position.set(px, groundY + (topY - groundY) / 2, pz);
+      pillar.castShadow = true;
+      this.group.add(pillar);
+      const plat = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.3, 1.3, 0.18, 12),
+        new THREE.MeshStandardMaterial({ color: i === N - 1 ? '#e8c34a' : pastel[i % pastel.length], roughness: 0.85 })
+      );
+      plat.position.set(px, topY - 0.09, pz);
+      plat.castShadow = true;
+      this.group.add(plat);
+      this.rocks.push({ x: px, z: pz, r: 1.1, topY });
+      this.platforms.push({ x: px, z: pz, r: 1.28, topY });
+      if (i === N - 1) {
+        this.towerTop = { x: px, z: pz, r: 1.28, topY };
+        // a little flag marks the summit prize
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.05, 0.06, 1.6, 6),
+          new THREE.MeshStandardMaterial({ color: '#6e5136', roughness: 1 })
+        );
+        pole.position.set(px + 0.9, topY + 0.8, pz);
+        this.group.add(pole);
+        const flag = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.8, 0.5),
+          new THREE.MeshStandardMaterial({ color: '#e8c34a', side: THREE.DoubleSide, roughness: 0.8 })
+        );
+        flag.position.set(px + 1.3, topY + 1.3, pz);
+        this.group.add(flag);
+      }
+    }
   }
 
   // ——— critters ———
@@ -1716,7 +1799,16 @@ export class World {
     }
   }
 
-  collide(x: number, z: number, radius: number): { x: number; z: number } {
+  /** ground height including anything you can stand on (rocks, logs, towers…) */
+  groundHeight(x: number, z: number, py: number): number {
+    let g = this.heightAt(x, z);
+    for (const p of this.platforms) {
+      if (p.topY > g && py >= p.topY - 0.5 && Math.hypot(x - p.x, z - p.z) < p.r) g = p.topY;
+    }
+    return g;
+  }
+
+  collide(x: number, z: number, radius: number, py = 0): { x: number; z: number } {
     for (const t of this.trees) {
       const dx = x - t.x;
       const dz = z - t.z;
@@ -1728,6 +1820,8 @@ export class World {
       }
     }
     for (const r of this.rocks) {
+      // things with a standable top don't block you once you're above them
+      if (r.topY !== undefined && py >= r.topY - 0.5) continue;
       const dx = x - r.x;
       const dz = z - r.z;
       const d = Math.hypot(dx, dz);

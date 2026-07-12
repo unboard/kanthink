@@ -582,22 +582,68 @@ function DuelOverlay({ duel, game }: { duel: DuelState; game: Game }) {
       <div className="w-full max-w-md rounded-3xl border p-4 text-center shadow-2xl"
         style={{ background: 'rgba(253,250,241,0.97)', borderColor: LINE, color: INK }}>
         <div className="text-lg font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>
-          ⚔️ Pounce Duel vs {duel.rivalCat.name}
+          {duel.kind === 'hopscotch' ? '🟨 Hopscotch Race' : '⚔️ Pounce Duel'} vs {duel.rivalCat.name}
         </div>
         <div className="text-[11px] uppercase tracking-widest" style={{ color: INK_SOFT }}>
           {duel.rivalClanName} · {duel.stake ? '1 yarn at stake' : 'friendly (no stakes)'}
         </div>
 
-        {/* round dots */}
-        <div className="my-2 flex justify-center gap-2 text-sm font-bold">
-          <span style={{ color: GREEN }}>You {duel.playerScore}</span>
-          <span style={{ color: INK_SOFT }}>·</span>
-          <span style={{ color: ROSE }}>{duel.rivalScore} Them</span>
-        </div>
+        {/* score line (pounce) or race progress (hopscotch) */}
+        {duel.kind === 'pounce' ? (
+          <div className="my-2 flex justify-center gap-2 text-sm font-bold">
+            <span style={{ color: GREEN }}>You {duel.playerScore}</span>
+            <span style={{ color: INK_SOFT }}>·</span>
+            <span style={{ color: ROSE }}>{duel.rivalScore} Them</span>
+          </div>
+        ) : duel.hs ? (
+          <div className="my-2 flex flex-col gap-1">
+            <RaceBar label="You" value={duel.hs.playerRow} max={duel.hs.rows.length} color={GREEN} />
+            <RaceBar label={duel.rivalCat.name} value={duel.hs.rivalRow} max={duel.hs.rows.length} color={ROSE} />
+          </div>
+        ) : null}
 
-        {duel.phase === 'intro' && <div className="py-3 text-sm">The cats circle each other…</div>}
+        {duel.phase === 'choose' && (
+          <div className="py-2">
+            <p className="mb-2 text-sm" style={{ color: INK_SOFT }}>Pick your game!</p>
+            <div className="flex justify-center gap-3">
+              <button className="rounded-2xl px-5 py-4 font-bold text-white shadow active:scale-95" style={{ background: GREEN }}
+                onPointerDown={() => game.chooseDuelKind('pounce')}>
+                🐾 Pounce<br /><span className="text-xs font-normal">timing duel</span>
+              </button>
+              <button className="rounded-2xl px-5 py-4 font-bold text-white shadow active:scale-95" style={{ background: '#c98a2c' }}
+                onPointerDown={() => game.chooseDuelKind('hopscotch')}>
+                🟨 Hopscotch<br /><span className="text-xs font-normal">counting race</span>
+              </button>
+            </div>
+          </div>
+        )}
 
-        {duel.phase === 'aim' && (
+        {duel.phase === 'intro' && (
+          <div className="py-3 text-sm">
+            {duel.kind === 'hopscotch' ? 'On your marks… count the squares in the next row!' : 'The cats circle each other…'}
+          </div>
+        )}
+
+        {duel.kind === 'hopscotch' && duel.phase === 'aim' && duel.hs && (
+          <>
+            <p className="text-sm font-semibold" style={{ color: duel.hs.locked ? ROSE : INK_SOFT }}>
+              {duel.hs.locked ? 'Oops — wrong number! Look again…' : 'How many squares in the next row?'}
+            </p>
+            <div className="mt-2 flex justify-center gap-2">
+              {[1, 2, 3, 4].map((n) => (
+                <button key={n}
+                  className="h-16 w-16 rounded-2xl text-2xl font-bold shadow-lg active:scale-90 disabled:opacity-40"
+                  disabled={duel.hs!.locked}
+                  style={{ background: duel.hs!.locked ? '#e5dcc4' : CARD, border: `2.5px solid ${GREEN}`, color: INK }}
+                  onPointerDown={() => game.hopscotchTap(n)}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {duel.kind === 'pounce' && duel.phase === 'aim' && (
           <>
             <div className="relative mx-auto h-8 w-full overflow-hidden rounded-full" style={{ background: '#e5dcc4' }}>
               <div className="absolute top-0 h-full rounded-full"
@@ -630,9 +676,11 @@ function DuelOverlay({ duel, game }: { duel: DuelState; game: Game }) {
               {duel.won ? 'Victory! 🏅' : 'Good try!'}
             </div>
             <p className="text-sm" style={{ color: INK_SOFT }}>
-              {duel.won
-                ? duel.stake ? 'You won a yarn ball — it goes on your record!' : 'A win for the record book!'
-                : duel.stake ? 'They took a yarn ball. Win it back anytime!' : 'No yarn lost — just pride.'}
+              {duel.recruited
+                ? `${duel.rivalCat.name} is joining your clan! 🤝`
+                : duel.won
+                  ? duel.stake ? 'You won a yarn ball — it goes on your record!' : 'A win for the record book!'
+                  : duel.stake ? 'They took a yarn ball. Win it back anytime!' : 'No yarn lost — just pride.'}
             </p>
             <button
               className="mt-2 rounded-full px-8 py-3 font-bold text-white active:scale-95"
@@ -644,6 +692,18 @@ function DuelOverlay({ duel, game }: { duel: DuelState; game: Game }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function RaceBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-16 truncate text-right text-[11px] font-bold" style={{ color: INK_SOFT }}>{label}</span>
+      <div className="h-3 flex-1 overflow-hidden rounded-full" style={{ background: '#e8dfc8' }}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${(value / max) * 100}%`, background: color }} />
+      </div>
+      <span className="text-lg">🐾</span>
     </div>
   );
 }
@@ -893,23 +953,53 @@ function GuideOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
             Win golden-yarn challenges to recruit more cats. Build dens for more room!
           </p>
 
-          {/* rescued kittens */}
+          {/* newborn nursery */}
+          {save.nursery.length > 0 && (
+            <div className="min-w-40 rounded-2xl border p-2.5" style={{ background: '#fdf0f5', borderColor: '#e8a9c0' }}>
+              <div className="mb-1 text-xs font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>
+                🍼 Nursery ({save.nursery.length})
+              </div>
+              {save.nursery.map((n) => (
+                <div key={n.spec.id} className="flex items-center justify-between text-[11px]">
+                  <span className="flex items-center gap-1 font-semibold">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: n.spec.coat.base }} />
+                    {n.spec.name}
+                  </span>
+                  <span>{'💗'.repeat(Math.min(3, n.growth))}{'🤍'.repeat(Math.max(0, 3 - n.growth))}</span>
+                </div>
+              ))}
+              <p className="mt-1 text-[10px]" style={{ color: INK_SOFT }}>
+                Nurse them at camp — three feeds and they grow into kittens!
+              </p>
+            </div>
+          )}
+
+          {/* kittens */}
           {save.kittens.length > 0 && (
             <div className="min-w-40 rounded-2xl border p-2.5" style={{ background: CARD, borderColor: LINE }}>
               <div className="mb-1 text-xs font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>
-                🐱 Rescued kittens ({save.kittens.length})
+                🐱 Kittens ({save.kittens.length})
               </div>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-col gap-1">
                 {save.kittens.map((k, i) => (
-                  <span key={k.id} className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                    style={{ background: i < 3 ? '#fbe3ec' : '#ece4cf', color: INK }}>
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: k.coat.base }} />
-                    {k.name}
-                  </span>
+                  <div key={k.id} className="flex items-center justify-between gap-1">
+                    <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                      style={{ background: i < 5 ? '#fbe3ec' : '#ece4cf', color: INK }}>
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: k.coat.base }} />
+                      {k.name}
+                    </span>
+                    <button
+                      className="rounded-full border px-2 py-0.5 text-[9px] font-bold disabled:opacity-40"
+                      style={{ borderColor: GOLD, color: GOLD }}
+                      disabled={save.treats < 2}
+                      onPointerDown={() => { game.growKitten(k.id); force((v) => v + 1); }}>
+                      Grow up 🍪2
+                    </button>
+                  </div>
                 ))}
               </div>
               <p className="mt-1 text-[10px]" style={{ color: INK_SOFT }}>
-                The first 3 follow you and copy everything you do. The rest play at camp!
+                The first 5 follow you and copy everything you do. Feed treats to raise them into clan cats!
               </p>
             </div>
           )}
@@ -967,10 +1057,13 @@ function GuideOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
             “{cat.personality}”
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
+            <Chip text={(cat.gender ?? 'girl') === 'girl' ? 'Girl 🎀' : 'Boy 🧢'} />
+            {cat.isMate && <Chip text="In love 💕" tone="gold" />}
             <Chip text={cat.traits.canSwim ? 'Swimmer 🌊' : 'Scaredy-cat 💧'} tone={cat.traits.canSwim ? 'green' : 'default'} />
             <Chip text={cat.traits.brave ? 'Brave 🦁' : 'Gentle 🌼'} />
             <Chip text={cat.traits.sneaky ? 'Sneaky 🐾' : 'Chatty 📣'} />
             <Chip text={PATTERN_LABELS[cat.coat.pattern]} />
+            {cat.parents && <Chip text={`Kitten of ${cat.parents[0]} & ${cat.parents[1]}`} />}
           </div>
 
           <Section title="Stats" icon="📊">

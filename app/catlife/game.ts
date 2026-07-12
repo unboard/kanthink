@@ -8,7 +8,8 @@ import { CatAvatar } from './cats';
 import { AudioEngine } from './audio';
 import {
   WATER_LEVEL, DAY_LENGTH, RIVAL_CLANS, BUILDABLES, RANKS,
-  generateCat, generateKitten, rankFor, xpForLevel, clanCapacity,
+  generateCat, generateKitten, generateBaby, generateWanderer, genderOf,
+  rankFor, xpForLevel, clanCapacity,
 } from './data';
 import type {
   CatSpec, ContextTarget, ChallengeState, DuelState, GameEvents, GameMode,
@@ -92,8 +93,37 @@ export class Game {
   private followers: FollowerKitten[] = [];
   private campKittens: { avatar: CatAvatar; x: number; z: number; heading: number; t: number }[] = [];
   private actionHistory: { t: number; a: import('./types').CatAction }[] = [];
-  private rescue: { tree: TreeInfo; spec: CatSpec; avatar: CatAvatar; meowT: number } | null = null;
-  private nextRescueAt = 45;
+  private rescue: { tree: TreeInfo; spec: CatSpec; avatar: CatAvatar; meowT: number; perchY: number } | null = null;
+  private nextRescueAt = 40;
+
+  // ground strays that can Join, and a carried kitten in your mouth
+  private stray: { spec: CatSpec; avatar: CatAvatar; x: number; z: number; t: number } | null = null;
+  private nextStrayAt = 90;
+  private carrying: FollowerKitten | null = null;
+
+  // love & family
+  private wanderers: { spec: CatSpec; avatar: CatAvatar; x: number; z: number; y: number; heading: number; state: 'wander' | 'shy' | 'responding' | 'approach' | 'noserub'; stateT: number; cooldown: number }[] = [];
+  private babies: { avatar: CatAvatar; idx: number }[] = []; // nursery avatars at camp
+  private nursingT = 0;
+  private dadHuntAt = 60;
+
+  // camp clanmates (non-active clan cats hang out and babysit)
+  private clanmates: { avatar: CatAvatar; x: number; z: number; heading: number; t: number }[] = [];
+
+  // hopscotch race court
+  private hop: {
+    rows: number[]; playerRow: number; rivalRow: number;
+    lockT: number; rivalT: number; rivalInterval: number;
+    origin: { x: number; z: number; dirX: number; dirZ: number };
+    meshes: THREE.Object3D[];
+    playerHopT: number; rivalHopT: number;
+  } | null = null;
+
+  // pushable toy balls
+  private toys: { mesh: THREE.Mesh; x: number; z: number; y: number; vx: number; vz: number }[] = [];
+
+  // cat tower trial
+  private towerDoneAt = -999;
 
   // duel
   private duel: DuelState | null = null;
@@ -170,6 +200,9 @@ export class Game {
 
     this.spawnRivals();
     this.syncKittens();
+    this.syncFamily();
+    this.spawnWanderers();
+    this.spawnToys();
 
     // agility gate highlight ring
     this.gateRing = new THREE.Mesh(
@@ -255,7 +288,11 @@ export class Game {
     window.removeEventListener('resize', this.onResize);
     for (const f of this.followers) f.avatar.dispose();
     for (const ck of this.campKittens) ck.avatar.dispose();
+    for (const w of this.wanderers) w.avatar.dispose();
+    for (const b of this.babies) b.avatar.dispose();
+    for (const cm of this.clanmates) cm.avatar.dispose();
     if (this.rescue) this.rescue.avatar.dispose();
+    if (this.stray) this.stray.avatar.dispose();
     this.audio.dispose();
     this.renderer.dispose();
     this.persist();
@@ -297,9 +334,12 @@ export class Game {
       const clan = RIVAL_CLANS[ci];
       const camp = this.world.camps.find((c) => c.clanId === clan.id)!;
       for (let i = 0; i < 3; i++) {
-        const spec = generateCat(this.save.seed + ci * 1000 + i * 17, clan.id, {
+        // recruited rivals joined the player's clan — the clan sends a new cat
+        let gen = 0;
+        while (this.save.rivals[clan.id]?.records[gen === 0 ? `${clan.id}_${i}` : `${clan.id}_${i}_g${gen}`]?.recruited) gen++;
+        const spec = generateCat(this.save.seed + ci * 1000 + i * 17 + gen * 7717, clan.id, {
           paletteIdx: clan.palette[i % clan.palette.length],
-          idOverride: `${clan.id}_${i}`,
+          idOverride: gen === 0 ? `${clan.id}_${i}` : `${clan.id}_${i}_g${gen}`,
         });
         // rivals carry earned records from save
         const rec = this.save.rivals[clan.id]?.records[spec.id];
@@ -327,6 +367,7 @@ export class Game {
 
   /** rebuild follower + camp-kitten avatars from the save */
   private syncKittens() {
+    this.carrying = null;
     for (const f of this.followers) {
       this.scene.remove(f.avatar.root);
       f.avatar.dispose();
@@ -338,7 +379,7 @@ export class Game {
     this.followers = [];
     this.campKittens = [];
 
-    const following = this.save.kittens.slice(0, 3);
+    const following = this.save.kittens.slice(0, 5); // a whole pile of kittens
     following.forEach((spec, i) => {
       const avatar = new CatAvatar(spec, { kitten: true });
       const x = this.px - Math.sin(this.heading) * (1.4 + i) + (i - 1) * 0.7;
@@ -348,7 +389,7 @@ export class Game {
       this.followers.push({ spec, avatar, x, z, y: this.world.heightAt(x, z), heading: this.heading, hopVy: 0, hopY: 0 });
     });
 
-    for (const spec of this.save.kittens.slice(3, 7)) {
+    for (const spec of this.save.kittens.slice(5, 10)) {
       const avatar = new CatAvatar(spec, { kitten: true });
       const a = Math.random() * Math.PI * 2;
       const x = this.world.playerCamp.x + Math.cos(a) * 5;
@@ -376,6 +417,18 @@ export class Game {
     const n = this.followers.length;
     for (let i = 0; i < n; i++) {
       const f = this.followers[i];
+      // carried kitten dangles from the mouth, limp and purring
+      if (f === this.carrying) {
+        f.x = this.px + Math.sin(this.heading) * 0.62;
+        f.z = this.pz + Math.cos(this.heading) * 0.62;
+        f.y = this.py + 0.52;
+        f.avatar.root.position.set(f.x, f.y, f.z);
+        f.avatar.root.rotation.y = this.heading;
+        f.avatar.setAction('nap');
+        f.avatar.moveSpeed = 0;
+        f.avatar.update(dt, this.elapsed);
+        continue;
+      }
       const delay = 0.35 + i * 0.28;
       const mimic = this.delayedAction(delay);
 
@@ -465,6 +518,455 @@ export class Game {
     }
   }
 
+  // ——— love & family ———
+
+  /** rebuild nursery babies + camp clanmate avatars from the save */
+  private syncFamily() {
+    for (const b of this.babies) {
+      this.scene.remove(b.avatar.root);
+      b.avatar.dispose();
+    }
+    this.babies = [];
+    const camp = this.world.playerCamp;
+    this.save.nursery.forEach((entry, i) => {
+      const avatar = new CatAvatar(entry.spec, { kitten: true });
+      const a = (i / Math.max(1, this.save.nursery.length)) * Math.PI * 2;
+      const x = camp.x + Math.cos(a) * 2.2;
+      const z = camp.z + Math.sin(a) * 2.2;
+      avatar.root.position.set(x, this.world.heightAt(x, z), z);
+      avatar.setAction(i % 2 ? 'nap' : 'sit');
+      this.scene.add(avatar.root);
+      this.babies.push({ avatar, idx: i });
+    });
+
+    for (const cm of this.clanmates) {
+      this.scene.remove(cm.avatar.root);
+      cm.avatar.dispose();
+    }
+    this.clanmates = [];
+    const others = this.save.cats.filter((c) => c.id !== this.save.activeCatId).slice(0, 3);
+    others.forEach((spec, i) => {
+      const avatar = new CatAvatar(spec);
+      const a = i * 2.3 + 1;
+      const x = camp.x + Math.cos(a) * 6.5;
+      const z = camp.z + Math.sin(a) * 6.5;
+      avatar.root.position.set(x, this.world.heightAt(x, z), z);
+      this.scene.add(avatar.root);
+      this.clanmates.push({ avatar, x, z, heading: Math.random() * Math.PI * 2, t: Math.random() * 10 });
+    });
+  }
+
+  private spawnWanderers() {
+    for (const w of this.wanderers) {
+      this.scene.remove(w.avatar.root);
+      w.avatar.dispose();
+    }
+    this.wanderers = [];
+    const rng = mulberry32(this.save.seed + 424242 + this.save.cats.length * 31);
+    for (let i = 0; i < 3; i++) {
+      const gender: 'girl' | 'boy' = i === 0 ? 'boy' : rng() < 0.6 ? 'boy' : 'girl';
+      const spec = generateWanderer(this.save.seed + 5555 + i * 977 + this.save.cats.length * 13, gender);
+      const avatar = new CatAvatar(spec);
+      let x = 0, z = 0;
+      for (let t = 0; t < 20; t++) {
+        const a = rng() * Math.PI * 2;
+        const d = 60 + rng() * 90;
+        x = Math.cos(a) * d;
+        z = Math.sin(a) * d;
+        if (this.world.heightAt(x, z) > 1.5) break;
+      }
+      avatar.root.position.set(x, this.world.heightAt(x, z), z);
+      this.scene.add(avatar.root);
+      this.wanderers.push({
+        spec, avatar, x, z, y: 0,
+        heading: rng() * Math.PI * 2,
+        state: 'wander', stateT: 0, cooldown: 0,
+      });
+    }
+  }
+
+  /** meow sweetly at a wanderer — hearts by your mouth; maybe hearts back */
+  private tryLove(wandererId: string) {
+    const w = this.wanderers.find((ww) => ww.spec.id === wandererId);
+    if (!w || w.state !== 'wander' || w.cooldown > 0) return;
+    const me = this.player.spec;
+    this.player.meow();
+    this.audio.meow(me.voicePitch, 0.5);
+    this.player.showEmote('heart', 2.2);
+    w.state = 'responding';
+    w.stateT = 0;
+    setTimeout(() => {
+      if (this.disposed || w.state !== 'responding') return;
+      const smitten = Math.random() < 0.65;
+      if (smitten) {
+        w.avatar.showEmote('heart', 3);
+        w.avatar.meow();
+        this.audio.meow(w.spec.voicePitch, 0.4);
+        w.state = 'approach';
+        w.stateT = 0;
+      } else {
+        w.avatar.showEmote('?', 2);
+        w.state = 'shy';
+        w.stateT = 0;
+        w.cooldown = 45;
+        this.toast(`${w.spec.name} is feeling shy… maybe another cat, or try again later!`);
+      }
+    }, 1300);
+  }
+
+  private updateWanderers(dt: number) {
+    for (const w of this.wanderers) {
+      w.stateT += dt;
+      w.cooldown = Math.max(0, w.cooldown - dt);
+      const distP = Math.hypot(w.x - this.px, w.z - this.pz);
+      let speed = 0;
+      switch (w.state) {
+        case 'wander': {
+          if (distP > 60) break; // far wanderers idle (cheap)
+          speed = 1.3;
+          w.heading += (hash2((w.x * 7) | 0, (this.elapsed * 0.4) | 0, 5) - 0.5) * dt * 2;
+          if (this.world.heightAt(w.x + Math.sin(w.heading), w.z + Math.cos(w.heading)) < WATER_LEVEL + 0.4) {
+            w.heading += Math.PI * 0.7;
+          }
+          w.avatar.setAction(Math.sin(this.elapsed * 0.1 + w.x) > 0.6 ? 'sit' : 'walk');
+          if (w.avatar.action !== 'walk') speed = 0;
+          break;
+        }
+        case 'shy': {
+          speed = 2.8; // hurries off a little way
+          if (w.stateT > 2.5) { w.state = 'wander'; w.stateT = 0; }
+          w.avatar.setAction('run');
+          break;
+        }
+        case 'responding': {
+          w.heading = Math.atan2(this.px - w.x, this.pz - w.z);
+          w.avatar.setAction('sit');
+          break;
+        }
+        case 'approach': {
+          w.heading = Math.atan2(this.px - w.x, this.pz - w.z);
+          speed = 2.6;
+          w.avatar.setAction('walk');
+          if (distP < 1.35) {
+            w.state = 'noserub';
+            w.stateT = 0;
+            this.audio.purr(2.4, w.spec.voicePitch);
+            this.audio.purr(2.4, this.player.spec.voicePitch);
+          }
+          break;
+        }
+        case 'noserub': {
+          // the kiss: noses together, hearts everywhere
+          w.heading = Math.atan2(this.px - w.x, this.pz - w.z);
+          w.avatar.setAction('idle');
+          this.player.setAction('idle');
+          this.heading = Math.atan2(w.x - this.px, w.z - this.pz);
+          this.applyAvatarTransform();
+          if (Math.random() < dt * 4) {
+            this.burst((w.x + this.px) / 2, this.py + 0.9, (w.z + this.pz) / 2, '#f2a7c3', 3);
+            w.avatar.showEmote('heart', 1);
+            this.player.showEmote('heart', 1);
+          }
+          if (w.stateT > 3) this.marry(w);
+          break;
+        }
+      }
+      if (speed > 0) {
+        const nx = w.x + Math.sin(w.heading) * speed * dt;
+        const nz = w.z + Math.cos(w.heading) * speed * dt;
+        const solved = this.world.collide(nx, nz, 0.4, w.y);
+        w.x = solved.x;
+        w.z = solved.z;
+      }
+      w.y = this.world.heightAt(w.x, w.z);
+      w.avatar.root.position.set(w.x, w.y, w.z);
+      w.avatar.root.rotation.y = w.heading;
+      w.avatar.moveSpeed = speed;
+      if (distP < 70) w.avatar.update(dt, this.elapsed + w.x);
+    }
+  }
+
+  private marry(w: (typeof this.wanderers)[number]) {
+    this.wanderers = this.wanderers.filter((ww) => ww !== w);
+    this.scene.remove(w.avatar.root);
+    w.avatar.dispose();
+    const spec = w.spec;
+    spec.clanId = 'player';
+    spec.isMate = true;
+    this.save.cats.push(spec); // love ignores the den capacity — family is family
+    this.audio.catJoin();
+    this.events.onCelebrate('recruit', `${this.player.spec.name} and ${spec.name} are in love! 💕 ${spec.name} joins the family!`);
+    this.tutorialOnce('litter', 'Head back to your camp — you might hear tiny squeaks soon… 🍼');
+    this.syncFamily();
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  private updateFamily(dt: number) {
+    // a new litter arrives when you come home with a mate
+    const camp = this.world.playerCamp;
+    const atCamp = Math.hypot(this.px - camp.x, this.pz - camp.z) < 22;
+    if (atCamp) {
+      const mate = this.save.cats.find((c) => c.isMate && !this.save.hadLitter.includes(c.id));
+      if (mate) {
+        this.save.hadLitter.push(mate.id);
+        const mom = genderOf(mate) === 'boy' ? this.player.spec : mate;
+        const dad = mom === mate ? this.player.spec : mate;
+        const n = 2 + ((Date.now() % 2) as number);
+        for (let i = 0; i < n; i++) {
+          this.save.nursery.push({ spec: generateBaby(Date.now() % 999999937 + i * 101, mom, dad), growth: 0 });
+        }
+        this.audio.fanfare();
+        this.events.onCelebrate('recruit', `${mom.name} and ${dad.name} have ${n} newborn kittens! 🍼 Nurse them to help them grow!`);
+        this.syncFamily();
+        this.persist();
+        this.events.onSaveChanged();
+      }
+    }
+
+    // daddy hunts prey for the family
+    if (this.save.cats.some((c) => c.isMate) && this.elapsed > this.dadHuntAt) {
+      this.dadHuntAt = this.elapsed + 100 + Math.random() * 60;
+      const dad = this.save.cats.find((c) => c.isMate)!;
+      this.save.treats += 1;
+      this.toast(`${dad.name} brought back a mouse for the family! 🐭 +1 treat`);
+      this.persist();
+      this.events.onSaveChanged();
+    }
+
+    // nursing in progress
+    if (this.nursingT > 0) {
+      this.nursingT -= dt;
+      this.player.setAction('nap');
+      for (const b of this.babies) {
+        b.avatar.setAction('nap');
+        const bx = this.px + Math.cos(b.idx * 2.1) * 0.85;
+        const bz = this.pz + Math.sin(b.idx * 2.1) * 0.85;
+        b.avatar.root.position.set(bx, this.world.heightAt(bx, bz), bz);
+      }
+      if (Math.random() < dt * 2) this.audio.purr(1, 1.6);
+      if (this.nursingT <= 0) this.finishNursing();
+      return;
+    }
+
+    // idle nursery babies wobble around camp
+    for (const b of this.babies) {
+      const entry = this.save.nursery[b.idx];
+      if (!entry) continue;
+      b.avatar.update(dt, this.elapsed + b.idx * 3.1);
+    }
+
+    // clanmates hang around camp babysitting
+    for (const cm of this.clanmates) {
+      cm.t += dt;
+      const phase = Math.sin(cm.t * 0.2 + cm.x);
+      if (phase > 0.35) {
+        cm.heading += Math.sin(cm.t * 0.5) * dt * 0.7;
+        cm.x += Math.sin(cm.heading) * 0.9 * dt;
+        cm.z += Math.cos(cm.heading) * 0.9 * dt;
+        if (Math.hypot(cm.x - camp.x, cm.z - camp.z) > 11) {
+          cm.heading = Math.atan2(camp.x - cm.x, camp.z - cm.z);
+        }
+        cm.avatar.setAction('walk');
+        cm.avatar.moveSpeed = 0.9;
+      } else {
+        cm.avatar.setAction(phase < -0.6 ? 'nap' : 'sit');
+        cm.avatar.moveSpeed = 0;
+      }
+      cm.avatar.root.position.set(cm.x, this.world.heightAt(cm.x, cm.z), cm.z);
+      cm.avatar.root.rotation.y = cm.heading;
+      if (Math.hypot(cm.x - this.px, cm.z - this.pz) < 60) cm.avatar.update(dt, this.elapsed + cm.t);
+    }
+  }
+
+  private startNursing() {
+    if (this.save.nursery.length === 0 || this.nursingT > 0) return;
+    this.nursingT = 3.2;
+    this.audio.purr(2.5, this.player.spec.voicePitch);
+    this.toast('The kittens snuggle in to nurse… 🍼');
+  }
+
+  private finishNursing() {
+    const grown: string[] = [];
+    for (const entry of this.save.nursery) {
+      entry.growth += 1;
+      if (entry.growth >= 3) grown.push(entry.spec.id);
+    }
+    // babies that finished growing become kittens and join the follow line
+    for (const id of grown) {
+      const idx = this.save.nursery.findIndex((e) => e.spec.id === id);
+      if (idx < 0) continue;
+      const [entry] = this.save.nursery.splice(idx, 1);
+      entry.spec.stage = 'kitten';
+      entry.spec.size = Math.min(0.66, entry.spec.size + 0.14);
+      this.save.kittens.push(entry.spec);
+      this.events.onCelebrate('levelup', `${entry.spec.name} grew bigger — look, their pattern is coming in! 🐱`);
+    }
+    if (grown.length === 0) this.toast('The kittens drank their fill and grew a little! 🍼');
+    this.audio.success();
+    this.syncFamily();
+    this.syncKittens();
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  /** guide button: feed a grown kitten treats until it becomes a full clan cat */
+  growKitten(kittenId: string): boolean {
+    if (this.save.treats < 2) return false;
+    const idx = this.save.kittens.findIndex((k) => k.id === kittenId);
+    if (idx < 0) return false;
+    this.save.treats -= 2;
+    const [spec] = this.save.kittens.splice(idx, 1);
+    spec.stage = 'adult';
+    spec.size = 0.85 + Math.random() * 0.2;
+    spec.voicePitch = Math.max(0.75, spec.voicePitch - 0.6);
+    this.save.cats.push(spec);
+    this.audio.catJoin();
+    this.events.onCelebrate('recruit', `${spec.name} is all grown up — a full member of ${this.save.clanName}! 🎉`);
+    this.syncKittens();
+    this.syncFamily();
+    this.persist();
+    this.events.onSaveChanged();
+    return true;
+  }
+
+  // ——— ground strays + carrying ———
+
+  private updateStray(dt: number) {
+    if (!this.stray) {
+      if (this.elapsed > this.nextStrayAt && this.save.kittens.length < 14) {
+        // a stray kitten waits at the base of a tree near the player
+        let tree: TreeInfo | null = null;
+        for (let i = 0; i < 40; i++) {
+          const cand = this.world.trees[(Math.random() * this.world.trees.length) | 0];
+          if (!cand) break;
+          const dd = Math.hypot(cand.x - this.px, cand.z - this.pz);
+          if (dd > 25 && dd < 80) { tree = cand; break; }
+        }
+        if (tree) {
+          const spec = generateKitten((Date.now() + 7) % 999999937);
+          const avatar = new CatAvatar(spec, { kitten: true });
+          const x = tree.x + 1.4;
+          const z = tree.z + 0.6;
+          avatar.root.position.set(x, this.world.heightAt(x, z), z);
+          avatar.setAction('sit');
+          this.scene.add(avatar.root);
+          this.stray = { spec, avatar, x, z, t: 0 };
+        }
+        this.nextStrayAt = this.elapsed + 80 + Math.random() * 70;
+      }
+      return;
+    }
+    const s = this.stray;
+    s.t += dt;
+    const d = Math.hypot(s.x - this.px, s.z - this.pz);
+    if (d < 18 && Math.random() < dt * 0.5) {
+      this.audio.meow(s.spec.voicePitch, 0.3);
+      s.avatar.meow();
+      s.avatar.showEmote('!', 1.5);
+    }
+    s.avatar.update(dt, this.elapsed + s.t);
+    // strays give up and wander off eventually
+    if (s.t > 150 && d > 60) {
+      this.scene.remove(s.avatar.root);
+      s.avatar.dispose();
+      this.stray = null;
+    }
+  }
+
+  private joinStray() {
+    const s = this.stray;
+    if (!s) return;
+    this.stray = null;
+    this.scene.remove(s.avatar.root);
+    s.avatar.dispose();
+    this.save.kittens.push(s.spec);
+    this.audio.catJoin();
+    this.audio.purr(2, s.spec.voicePitch);
+    this.events.onCelebrate('recruit', `${s.spec.name} joins your kitten pile! 💛`);
+    this.syncKittens();
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  private pickUpKitten(kittenId: string) {
+    const f = this.followers.find((ff) => ff.spec.id === kittenId);
+    if (!f || this.carrying) return;
+    this.carrying = f;
+    f.avatar.setAction('nap'); // goes limp like mama's carrying it
+    this.audio.purr(1.6, f.spec.voicePitch);
+    this.tutorialOnce('carry', `You're carrying ${f.spec.name} in your mouth! Walk them home and set them down gently.`);
+  }
+
+  private setDownKitten() {
+    const f = this.carrying;
+    if (!f) return;
+    this.carrying = null;
+    f.x = this.px + Math.sin(this.heading) * 0.9;
+    f.z = this.pz + Math.cos(this.heading) * 0.9;
+    f.avatar.showEmote('heart', 2);
+    this.audio.meow(f.spec.voicePitch, 0.3);
+  }
+
+  // ——— pushable toy balls ———
+
+  private spawnToys() {
+    const colors: [string, string][] = [['#e05d7e', '#f5efe6'], ['#2980b9', '#f5efe6'], ['#5c7a3f', '#f5d76e']];
+    const camp = this.world.playerCamp;
+    for (let i = 0; i < 3; i++) {
+      const tex = this.world.paintYarnTexture(colors[i][0], colors[i][1]);
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.34, 14, 10),
+        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5 })
+      );
+      mesh.castShadow = true;
+      const a = i * 2.1 + 0.7;
+      const x = camp.x + Math.cos(a) * (4 + i);
+      const z = camp.z + Math.sin(a) * (4 + i);
+      mesh.position.set(x, this.world.heightAt(x, z) + 0.34, z);
+      this.scene.add(mesh);
+      this.toys.push({ mesh, x, z, y: 0, vx: 0, vz: 0 });
+    }
+  }
+
+  private updateToys(dt: number) {
+    for (const t of this.toys) {
+      // player bumps the ball — pounces send it flying
+      const d = Math.hypot(t.x - this.px, t.z - this.pz);
+      if (d < 0.85) {
+        const push = this.busyKind === 'pounce' ? 9 : Math.max(2, this.player.moveSpeed * 1.4);
+        const a = Math.atan2(t.x - this.px, t.z - this.pz);
+        t.vx = Math.sin(a) * push;
+        t.vz = Math.cos(a) * push;
+        if (push > 3) this.audio.uiTick();
+      }
+      // kittens chase the ball a little (pure charm)
+      const speed = Math.hypot(t.vx, t.vz);
+      if (speed > 0.05) {
+        // rolls downhill
+        const gx = (this.world.heightAt(t.x + 0.5, t.z) - this.world.heightAt(t.x - 0.5, t.z)) * 2;
+        const gz = (this.world.heightAt(t.x, t.z + 0.5) - this.world.heightAt(t.x, t.z - 0.5)) * 2;
+        t.vx -= gx * dt * 2;
+        t.vz -= gz * dt * 2;
+        const fr = Math.max(0, 1 - dt * 1.4);
+        t.vx *= fr;
+        t.vz *= fr;
+        const nx = t.x + t.vx * dt;
+        const nz = t.z + t.vz * dt;
+        const solved = this.world.collide(nx, nz, 0.34, t.y);
+        if (Math.abs(solved.x - nx) > 0.001) t.vx *= -0.55;
+        if (Math.abs(solved.z - nz) > 0.001) t.vz *= -0.55;
+        t.x = solved.x;
+        t.z = solved.z;
+        const groundY = this.world.heightAt(t.x, t.z);
+        t.y = Math.max(groundY, WATER_LEVEL - 0.1); // floats in water
+        t.mesh.position.set(t.x, t.y + 0.34, t.z);
+        t.mesh.rotation.x += t.vz * dt * 3;
+        t.mesh.rotation.z -= t.vx * dt * 3;
+      }
+    }
+  }
+
   // ——— kitten tree rescue ———
 
   private spawnRescue() {
@@ -478,11 +980,21 @@ export class Game {
     if (!tree) return;
     const spec = generateKitten(Date.now() % 999999937);
     const avatar = new CatAvatar(spec, { kitten: true });
-    avatar.root.position.set(tree.x + 0.3, tree.perchY, tree.z + 0.3);
-    avatar.setAction('sit');
+    // cling to the trunk BELOW the canopy so the kitten is actually visible
+    // (the leaves used to swallow them — great catch, Lennon)
+    const baseY = this.world.heightAt(tree.x, tree.z);
+    const perchY = baseY + tree.trunkH * 0.42;
+    const outAngle = Math.random() * Math.PI * 2;
+    avatar.root.position.set(
+      tree.x + Math.cos(outAngle) * (tree.r + 0.5),
+      perchY,
+      tree.z + Math.sin(outAngle) * (tree.r + 0.5)
+    );
+    avatar.root.rotation.y = outAngle + Math.PI / 2;
+    avatar.setAction('climb');
     avatar.showEmote('drop', 4);
     this.scene.add(avatar.root);
-    this.rescue = { tree, spec, avatar, meowT: 1.5 };
+    this.rescue = { tree, spec, avatar, meowT: 1.5, perchY };
     this.toast('You hear tiny meows… a kitten is stuck in a tree! Follow the 🐱 arrow!');
   }
 
@@ -502,12 +1014,12 @@ export class Game {
       this.audio.meow(r.spec.voicePitch, Math.max(0.08, Math.min(0.7, 1.5 - d / 60)));
       r.avatar.meow();
       r.avatar.showEmote('drop', 2);
-      if (d < 20) this.burst(r.tree.x, r.tree.perchY + 0.5, r.tree.z, '#ffd54a', 4);
+      if (d < 25) this.burst(r.avatar.root.position.x, r.perchY + 0.5, r.avatar.root.position.z, '#ffd54a', 5);
     }
     // rescued when the player climbs up close to it
     if (this.climbing && this.climbing.tree.id === r.tree.id) {
       const baseY = this.world.heightAt(r.tree.x, r.tree.z);
-      if (baseY + this.climbing.h > r.tree.perchY - 1.1) this.completeRescue();
+      if (baseY + this.climbing.h > r.perchY - 0.9) this.completeRescue();
     }
   }
 
@@ -518,10 +1030,10 @@ export class Game {
     this.scene.remove(r.avatar.root);
     r.avatar.dispose();
     this.save.kittens.push(r.spec);
-    this.nextRescueAt = this.elapsed + 200 + Math.random() * 160;
+    this.nextRescueAt = this.elapsed + 110 + Math.random() * 90;
     this.audio.catJoin();
-    this.burst(r.tree.x, r.tree.perchY, r.tree.z, '#ffd54a', 22);
-    const following = this.save.kittens.length <= 3;
+    this.burst(r.tree.x, r.perchY, r.tree.z, '#ffd54a', 22);
+    const following = this.save.kittens.length <= 5;
     this.events.onCelebrate(
       'recruit',
       following
@@ -644,6 +1156,11 @@ export class Game {
       case 'prey': this.doPounce(); break;
       case 'agility': this.startAgility(); break;
       case 'rescue': this.startClimb(ctx.id); break;
+      case 'love': this.tryLove(ctx.id); break;
+      case 'nurse': this.startNursing(); break;
+      case 'stray': this.joinStray(); break;
+      case 'pickup': this.pickUpKitten(ctx.id); break;
+      case 'setdown': this.setDownKitten(); break;
     }
   }
 
@@ -762,6 +1279,7 @@ export class Game {
     this.duel = {
       rivalCat: rival.spec,
       rivalClanName: clan.name,
+      kind: 'pounce',
       round: 0,
       playerScore: 0,
       rivalScore: 0,
@@ -769,15 +1287,181 @@ export class Game {
       markerSpeed: 1.1 + strength * 0.06,
       zoneSize: Math.max(0.18, 0.34 - this.player.spec.traits.strength * 0.008),
       results: [],
-      phase: 'intro',
+      phase: 'choose',
     };
     this.mode = 'duel';
     this.duelMarker = 0;
     this.duelDir = 1;
-    this.duelTimer = 1.6;
+    this.duelTimer = 0;
     this.audio.duelWhoosh();
     this.events.onDuel(this.duel);
     this.emitHud(true);
+  }
+
+  /** the challenger picks the game: classic pounce or a hopscotch race */
+  chooseDuelKind(kind: 'pounce' | 'hopscotch') {
+    if (!this.duel || this.duel.phase !== 'choose') return;
+    this.duel.kind = kind;
+    this.duel.phase = 'intro';
+    this.duelTimer = 1.5;
+    if (kind === 'hopscotch') this.buildHopscotch();
+    this.events.onDuel({ ...this.duel });
+  }
+
+  // ——— hopscotch race ———
+
+  private hopPre = { x: 0, z: 0 };
+
+  private buildHopscotch() {
+    const r = this.duelRival!;
+    this.hopPre = { x: this.px, z: this.pz };
+    const midX = (this.px + r.x) / 2;
+    const midZ = (this.pz + r.z) / 2;
+    // court runs toward the island centre (keeps it on land)
+    let dirX = -midX, dirZ = -midZ;
+    const dl = Math.hypot(dirX, dirZ) || 1;
+    dirX /= dl; dirZ /= dl;
+    const perpX = -dirZ, perpZ = dirX;
+
+    const nRows = 8 + Math.min(5, r.level);
+    const rows: number[] = [];
+    for (let i = 0; i < nRows; i++) rows.push(1 + ((Math.random() * 4) | 0));
+
+    const meshes: THREE.Object3D[] = [];
+    const sqGeo = new THREE.BoxGeometry(1.45, 0.12, 1.45);
+    const matA = new THREE.MeshStandardMaterial({ color: '#fdf6ea', roughness: 0.8 });
+    const matB = new THREE.MeshStandardMaterial({ color: '#f2d9b8', roughness: 0.8 });
+    const matGold = new THREE.MeshStandardMaterial({ color: '#e8c34a', roughness: 0.6 });
+    const yawRot = Math.atan2(dirX, dirZ);
+
+    for (const lane of [-1, 1]) {
+      for (let i = 0; i <= nRows; i++) {
+        const cx = midX + dirX * (i + 1) * 2.1 + perpX * lane * 3.6;
+        const cz = midZ + dirZ * (i + 1) * 2.1 + perpZ * lane * 3.6;
+        const y = this.world.heightAt(cx, cz) + 0.09;
+        const k = i === nRows ? 1 : rows[i];
+        for (let s = 0; s < k; s++) {
+          const off = (s - (k - 1) / 2) * 1.62;
+          const sq = new THREE.Mesh(sqGeo, i === nRows ? matGold : (i + s) % 2 ? matA : matB);
+          sq.position.set(cx + perpX * off, y, cz + perpZ * off);
+          sq.rotation.y = yawRot;
+          this.scene.add(sq);
+          meshes.push(sq);
+        }
+      }
+    }
+
+    // rival difficulty: faster at higher levels, but always beatable by a kid
+    const rivalInterval = Math.max(1.05, 1.8 - r.level * 0.12);
+    this.hop = {
+      rows, playerRow: 0, rivalRow: 0,
+      lockT: 0, rivalT: 0, rivalInterval,
+      origin: { x: midX, z: midZ, dirX, dirZ },
+      meshes,
+      playerHopT: 0, rivalHopT: 0,
+    };
+    this.duel!.hs = { rows, playerRow: 0, rivalRow: 0, locked: false };
+
+    // snap straight to the aerial view — no drifting through the sky
+    const startX = midX + dirX * 0.55 * 2.1 - perpX * 3.6;
+    const startZ = midZ + dirZ * 0.55 * 2.1 - perpZ * 3.6;
+    const sy = this.world.heightAt(startX, startZ);
+    this.camera.position.set(startX - dirX * 5.5, sy + 7.5, startZ - dirZ * 5.5);
+    this.camera.lookAt(startX + dirX * 6, sy, startZ + dirZ * 6);
+  }
+
+  /** kid taps 1-4 — must match the number of squares in the next row */
+  hopscotchTap(n: number) {
+    const h = this.hop;
+    const d = this.duel;
+    if (!h || !d || d.phase !== 'aim' || h.lockT > 0 || h.playerHopT > 0) return;
+    if (h.playerRow >= h.rows.length) return;
+    if (n === h.rows[h.playerRow]) {
+      h.playerRow++;
+      h.playerHopT = 0.4;
+      this.player.setAction('jump');
+      this.audio.jump();
+      this.audio.uiTick();
+    } else {
+      h.lockT = 0.85;
+      this.player.showEmote('?', 1);
+      this.audio.land();
+    }
+  }
+
+  private updateHopscotch(dt: number) {
+    const h = this.hop;
+    const d = this.duel;
+    if (!h || !d) return;
+    h.lockT = Math.max(0, h.lockT - dt);
+    h.playerHopT = Math.max(0, h.playerHopT - dt);
+    h.rivalHopT = Math.max(0, h.rivalHopT - dt);
+
+    // rival hops on a timer with the occasional flub
+    if (h.rivalRow <= h.rows.length) {
+      h.rivalT += dt;
+      if (h.rivalT >= h.rivalInterval) {
+        h.rivalT = 0;
+        if (Math.random() < 0.12) {
+          this.duelRival?.avatar.showEmote('?', 1);
+          h.rivalT = -0.9; // stumbled
+        } else {
+          h.rivalRow++;
+          h.rivalHopT = 0.4;
+          this.duelRival?.avatar.setAction('jump');
+        }
+      }
+    }
+
+    // move the cats along their lanes
+    const o = h.origin;
+    const perpX = -o.dirZ, perpZ = o.dirX;
+    const place = (row: number, hopT: number, lane: number, isPlayer: boolean) => {
+      const along = (row + 0.55) * 2.1;
+      const tx = o.x + o.dirX * along + perpX * lane * 3.6;
+      const tz = o.z + o.dirZ * along + perpZ * lane * 3.6;
+      const arc = hopT > 0 ? Math.sin((1 - hopT / 0.4) * Math.PI) * 0.7 : 0;
+      if (isPlayer) {
+        this.px += (tx - this.px) * Math.min(1, dt * 9);
+        this.pz += (tz - this.pz) * Math.min(1, dt * 9);
+        this.py = this.world.heightAt(this.px, this.pz) + 0.15 + arc;
+        this.heading = Math.atan2(o.dirX, o.dirZ);
+        if (hopT <= 0 && this.player.action === 'jump') this.player.setAction('idle');
+        this.applyAvatarTransform();
+      } else {
+        const r = this.duelRival!;
+        r.x += (tx - r.x) * Math.min(1, dt * 9);
+        r.z += (tz - r.z) * Math.min(1, dt * 9);
+        r.y = this.world.heightAt(r.x, r.z) + 0.15 + arc;
+        r.heading = Math.atan2(o.dirX, o.dirZ);
+        r.avatar.root.position.set(r.x, r.y, r.z);
+        r.avatar.root.rotation.y = r.heading;
+        if (hopT <= 0 && r.avatar.action === 'jump') r.avatar.setAction('idle');
+      }
+    };
+    place(h.playerRow, h.playerHopT, -1, true);
+    place(h.rivalRow, h.rivalHopT, 1, false);
+
+    d.hs = { rows: h.rows, playerRow: h.playerRow, rivalRow: h.rivalRow, locked: h.lockT > 0 };
+
+    // first to hop past the last row wins
+    if (h.playerRow > h.rows.length - 1 || h.rivalRow > h.rows.length - 1) {
+      d.phase = 'done';
+      d.won = h.playerRow > h.rivalRow || (h.playerRow === h.rivalRow && Math.random() < 0.5);
+      this.resolveDuel(d);
+      this.events.onDuel({ ...d });
+      return;
+    }
+    this.events.onDuel({ ...d });
+  }
+
+  private cleanupHopscotch() {
+    if (!this.hop) return;
+    for (const msh of this.hop.meshes) this.scene.remove(msh);
+    this.px = this.hopPre.x;
+    this.pz = this.hopPre.z;
+    this.py = this.world.heightAt(this.px, this.pz);
+    this.hop = null;
   }
 
   /** live marker position 0..1 — React polls this with rAF while the duel bar is up */
@@ -808,7 +1492,18 @@ export class Game {
   private updateDuel(dt: number) {
     if (!this.duel) return;
     const d = this.duel;
+    if (d.phase === 'choose') return; // waiting for the kid to pick a game
     this.duelTimer -= dt;
+
+    if (d.kind === 'hopscotch') {
+      if (d.phase === 'intro' && this.duelTimer <= 0) {
+        d.phase = 'aim';
+        this.events.onDuel({ ...d });
+      } else if (d.phase === 'aim') {
+        this.updateHopscotch(dt);
+      }
+      return;
+    }
 
     if (d.phase === 'intro' && this.duelTimer <= 0) {
       d.phase = 'aim';
@@ -865,12 +1560,34 @@ export class Game {
       rival.avatar.showEmote('heart', 2);
     }
     this.checkRankUp(spec);
+
+    // beat the same cat twice and it's so impressed it joins your clan
+    if (d.won && rec.losses >= 2 && !rec.recruited) {
+      const cap = clanCapacity(this.save.buildings);
+      if (this.save.cats.length < cap) {
+        rec.recruited = true;
+        d.recruited = true;
+        const spec2 = rival.spec;
+        spec2.clanId = 'player';
+        this.save.cats.push(spec2);
+        // remove them from the rival roster (their clan sends a new cat later)
+        this.scene.remove(rival.avatar.root);
+        this.rivals = this.rivals.filter((rv) => rv !== rival);
+        this.audio.catJoin();
+        this.events.onCelebrate('recruit', `${spec2.name} is so impressed, they're joining ${this.save.clanName}! No more fighting — they'll help babysit at camp. 🤝`);
+        this.syncFamily();
+      } else {
+        this.toast(`${rival.spec.name} wants to join your clan — build another den to make room!`);
+      }
+    }
+
     this.persist();
     this.events.onSaveChanged();
   }
 
   /** UI closes the duel overlay */
   endDuel() {
+    this.cleanupHopscotch();
     this.duel = null;
     if (this.duelRival) {
       this.duelRival.state = 'wander';
@@ -924,7 +1641,7 @@ export class Game {
       const avatar = new CatAvatar(spec);
       avatar.root.position.set(this.px + 2, this.py, this.pz + 2);
       this.scene.add(avatar.root);
-      this.racerCat = { avatar, x: this.px + 2, z: this.pz + 2, progress: 0, speed: 4.6 + Math.random() * 0.9 };
+      this.racerCat = { avatar, x: this.px + 2, z: this.pz + 2, progress: 0, speed: 4.2 + Math.random() * 0.6 };
     } else if (c.kind === 'hideseek') {
       // kitten hides behind a far tree
       const trees = this.world.trees;
@@ -1010,15 +1727,23 @@ export class Game {
       const d = Math.hypot(x - r.x, z - r.z);
       if (d > 2) {
         // rival takes a curvy path with random dawdles (fair for kids)
-        const dawdle = Math.sin(c.t * 0.7) > 0.55 ? 0.25 : 1;
+        let dawdle = Math.sin(c.t * 0.7) > 0.55 ? 0.25 : 1;
+        // rubber-band: if it's way ahead of you, it stops to sniff flowers
+        const pd0 = Math.hypot(x - this.px, z - this.pz);
+        if (pd0 - d > 16) dawdle *= 0.4;
         const a = Math.atan2(z - r.z, x - r.x) + Math.sin(c.t * 1.3) * 0.4;
-        r.x += Math.cos(a) * r.speed * dawdle * dt;
-        r.z += Math.sin(a) * r.speed * dawdle * dt;
         const gy = this.world.heightAt(r.x, r.z);
-        r.avatar.root.position.set(r.x, gy, r.z);
+        const inWater = WATER_LEVEL - gy > 0.5;
+        // it has to actually swim — no sprinting along the lake bottom!
+        const speedEff = r.speed * dawdle * (inWater ? 0.32 : 1);
+        r.x += Math.cos(a) * speedEff * dt;
+        r.z += Math.sin(a) * speedEff * dt;
+        const gy2 = this.world.heightAt(r.x, r.z);
+        const swimming = WATER_LEVEL - gy2 > 0.5;
+        r.avatar.root.position.set(r.x, swimming ? WATER_LEVEL - 0.2 : gy2, r.z);
         r.avatar.root.rotation.y = -a + Math.PI / 2;
-        r.avatar.setAction('run');
-        r.avatar.moveSpeed = r.speed;
+        r.avatar.setAction(swimming ? 'swim' : 'run');
+        r.avatar.moveSpeed = speedEff;
       } else {
         this.failChallenge('The rival racer got there first! Rematch anytime.');
         return;
@@ -1285,6 +2010,7 @@ export class Game {
     if (!spec) return;
     this.save.activeCatId = catId;
     this.spawnPlayer(spec);
+    this.syncFamily(); // camp clanmates change when the active cat changes
     this.persist();
     this.events.onSaveChanged();
     this.emitHud(true);
@@ -1419,6 +2145,10 @@ export class Game {
       this.updateRivals(dt);
       this.updateFollowers(dt);
       this.updateRescue(dt);
+      this.updateStray(dt);
+      this.updateWanderers(dt);
+      this.updateFamily(dt);
+      this.updateToys(dt);
       this.updateChallenge(dt);
       this.updateAgility(dt);
       this.updateBuildGhost();
@@ -1572,7 +2302,7 @@ export class Game {
         }
       }
 
-      const solved = this.world.collide(nx, nz, PLAYER_RADIUS);
+      const solved = this.world.collide(nx, nz, PLAYER_RADIUS, this.py);
       this.px = solved.x;
       this.pz = solved.z;
       // smooth heading toward movement
@@ -1619,8 +2349,9 @@ export class Game {
     } else {
       this.vy += GRAVITY * dt;
       this.py += this.vy * dt;
-      const gy = this.world.heightAt(this.px, this.pz);
-      if (this.py <= gy) {
+      // ground includes standable platforms (rocks, logs, dens, tower pillars)
+      const gy = this.world.groundHeight(this.px, this.pz, this.py - this.vy * dt);
+      if (this.py <= gy && this.vy <= 0) {
         if (!this.grounded && this.vy < -9) {
           this.audio.land();
           this.burst(this.px, gy + 0.1, this.pz, '#c9b28a', 8);
@@ -1630,6 +2361,29 @@ export class Game {
         this.grounded = true;
       } else if (this.py > gy + 0.05) {
         this.grounded = false;
+      }
+      // Cat Tower Trial: reach the golden summit
+      const top = this.world.towerTop;
+      if (
+        top && this.grounded && this.elapsed - this.towerDoneAt > 120 &&
+        Math.abs(this.py - top.topY) < 0.4 && Math.hypot(this.px - top.x, this.pz - top.z) < top.r
+      ) {
+        this.towerDoneAt = this.elapsed;
+        this.audio.fanfare();
+        this.burst(top.x, top.topY + 1, top.z, '#ffd54a', 26);
+        if (!this.save.tutorialDone.includes('towerFirst')) {
+          this.save.tutorialDone.push('towerFirst');
+          const spec = this.player.spec;
+          spec.level++;
+          this.bumpRandomStat(spec);
+          this.events.onCelebrate('levelup', `${spec.name} conquered the Cat Tower! LEVEL UP! 🗼⭐`);
+          this.checkRankUp(spec);
+        } else {
+          this.addXp(6);
+          this.toast('Top of the Cat Tower! +6 xp 🗼');
+        }
+        this.persist();
+        this.events.onSaveChanged();
       }
     }
 
@@ -1659,6 +2413,27 @@ export class Game {
           this.burst(y.x, y.mesh.position.y, y.z, '#ffd54a', 24);
           this.addXp(5);
           this.offerChallenge(y.id);
+        } else if (y.surprise) {
+          // the pink yarn egg cracks open — what's inside?!
+          this.save.collectedYarn.push(y.id);
+          this.audio.purr(2, 1.2);
+          this.burst(y.x, y.mesh.position.y, y.z, '#f5c3d8', 26);
+          this.addXp(3);
+          const roll = Math.random();
+          if (roll < 0.35 && this.save.kittens.length < 14) {
+            const spec = generateKitten((Date.now() + 13) % 999999937);
+            this.save.kittens.push(spec);
+            this.audio.catJoin();
+            this.events.onCelebrate('recruit', `The yarn cracked open — there was a kitten inside! ${spec.name} joins you! 🐱💗`);
+            this.syncKittens();
+          } else if (roll < 0.7) {
+            this.save.treats += 2;
+            this.toast('The surprise yarn unraveled into 2 crunchy treats! 🍪🍪');
+          } else {
+            this.save.yarn += 3;
+            this.save.totalYarn += 3;
+            this.toast('The surprise yarn was extra thick — 3 yarn! 🧶✨');
+          }
         } else {
           this.save.collectedYarn.push(y.id);
           this.save.yarn++;
@@ -1708,10 +2483,40 @@ export class Game {
     };
 
     if (!this.climbing && this.busyT <= 0) {
+      // carrying a kitten: the action button is always "set down"
+      if (this.carrying) {
+        this.context = { kind: 'setdown', label: `Set ${this.carrying.spec.name} down`, id: this.carrying.spec.id, x: this.px, z: this.pz };
+        this.emitHud(true);
+        return;
+      }
       // kitten rescue takes top billing
       if (this.rescue) {
         const d = Math.hypot(this.rescue.tree.x - this.px, this.rescue.tree.z - this.pz);
         if (d < 2.6) set('rescue', `Rescue ${this.rescue.spec.name}!`, this.rescue.tree.id, this.rescue.tree.x, this.rescue.tree.z, d, 8);
+      }
+      // stray kitten wants to join
+      if (this.stray) {
+        const d = Math.hypot(this.stray.x - this.px, this.stray.z - this.pz);
+        if (d < 2.6) set('stray', `Join ${this.stray.spec.name} 💛`, this.stray.spec.id, this.stray.x, this.stray.z, d, 8);
+      }
+      // wanderer cats: say a sweet meow
+      for (const w of this.wanderers) {
+        if (w.state !== 'wander' || w.cooldown > 0) continue;
+        const d = Math.hypot(w.x - this.px, w.z - this.pz);
+        if (d < 4) set('love', `Meow at ${w.spec.name} 💕`, w.spec.id, w.x, w.z, d, 6);
+      }
+      // nurse the newborns at camp
+      if (this.save.nursery.length > 0 && this.nursingT <= 0) {
+        for (const b of this.babies) {
+          const bp = b.avatar.root.position;
+          const d = Math.hypot(bp.x - this.px, bp.z - this.pz);
+          if (d < 2.4) { set('nurse', 'Nurse kittens 🍼', 'nursery', bp.x, bp.z, d, 7); break; }
+        }
+      }
+      // pick up a follower kitten
+      for (const f of this.followers) {
+        const d = Math.hypot(f.x - this.px, f.z - this.pz);
+        if (d < 1.6) set('pickup', `Carry ${f.spec.name}`, f.spec.id, f.x, f.z, d, 1);
       }
       // rival duel
       for (const r of this.rivals) {
@@ -1890,6 +2695,19 @@ export class Game {
 
   private updateDuelCamera(dt: number) {
     if (!this.duelRival) return;
+    // hopscotch: aerial guitar-hero view down your lane
+    if (this.duel?.kind === 'hopscotch' && this.hop) {
+      const o = this.hop.origin;
+      const cx = this.px - o.dirX * 5.5;
+      const cz = this.pz - o.dirZ * 5.5;
+      const cy = this.py + 7.5;
+      const k2 = Math.min(1, dt * 5);
+      this.camera.position.x += (cx - this.camera.position.x) * k2;
+      this.camera.position.y += (cy - this.camera.position.y) * k2;
+      this.camera.position.z += (cz - this.camera.position.z) * k2;
+      this.camera.lookAt(this.px + o.dirX * 6, this.py, this.pz + o.dirZ * 6);
+      return;
+    }
     const r = this.duelRival;
     const mx = (this.px + r.x) / 2;
     const mz = (this.pz + r.z) / 2;

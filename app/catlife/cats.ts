@@ -42,6 +42,11 @@ export function paintCoatTexture(spec: CatSpec): THREE.CanvasTexture {
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, 256, 256);
 
+  // patterns grow in with age: babies are plain, kittens show a faint pattern
+  const stage = spec.stage ?? 'adult';
+  const pat = stage === 'baby' ? 'solid' : pattern;
+  if (stage === 'kitten') ctx.globalAlpha = 0.55;
+
   // Sphere UV on the torso: v=1 (canvas top) is the back, v=0 (bottom) the belly.
   const paintBelly = (h: number) => {
     const g = ctx.createLinearGradient(0, 256, 0, 256 - h - 34);
@@ -51,7 +56,7 @@ export function paintCoatTexture(spec: CatSpec): THREE.CanvasTexture {
     ctx.fillRect(0, 256 - h - 34, 256, h + 34);
   };
 
-  switch (pattern) {
+  switch (pat) {
     case 'solid':
       paintBelly(52);
       break;
@@ -166,8 +171,10 @@ export function paintCoatTexture(spec: CatSpec): THREE.CanvasTexture {
     }
   }
 
+  ctx.globalAlpha = 1;
+
   // dorsal shading — subtle darkening along the back gives the body depth
-  if (pattern !== 'tuxedo' && pattern !== 'calico') {
+  if (pat !== 'tuxedo' && pat !== 'calico') {
     const dg = ctx.createLinearGradient(0, 0, 0, 72);
     dg.addColorStop(0, 'rgba(20,14,8,0.14)');
     dg.addColorStop(1, 'rgba(20,14,8,0)');

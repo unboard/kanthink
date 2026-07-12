@@ -18,6 +18,8 @@ export function newSave(seed: number, clanName: string, firstCatSeed: number): S
     totalYarn: 0,
     cats: [starter],
     kittens: [],
+    nursery: [],
+    hadLitter: [],
     activeCatId: starter.id,
     collectedYarn: [],
     goldenDone: [],
@@ -41,6 +43,8 @@ export function loadSave(): SaveData | null {
     const data = JSON.parse(raw) as SaveData;
     if (!data || data.v !== 1 || !Array.isArray(data.cats) || data.cats.length === 0) return null;
     if (!Array.isArray(data.kittens)) data.kittens = []; // saves from before the kitten update
+    if (!Array.isArray(data.nursery)) data.nursery = []; // saves from before the family update
+    if (!Array.isArray(data.hadLitter)) data.hadLitter = [];
     return data;
   } catch {
     return null;

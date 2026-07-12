@@ -183,7 +183,10 @@ export function generateCat(seed: number, clanId: string, opts?: {
     agility: irange(rng, minStat, 8),
   };
   catCounter++;
+  const gender: 'girl' | 'boy' = rng() < 0.5 ? 'girl' : 'boy';
   return {
+    gender,
+    stage: 'adult',
     id: opts?.idOverride ?? `cat_${seed.toString(36)}_${catCounter}_${Date.now().toString(36)}`,
     name: opts?.name ?? pick(rng, CAT_NAMES),
     clanId,
@@ -207,7 +210,44 @@ export function generateKitten(seed: number): CatSpec {
   const kit = generateCat(seed, 'player', { minStat: 1 });
   kit.size = 0.52 + (Math.abs(seed) % 100) / 900;   // 0.52..0.63
   kit.voicePitch = 1.5 + (Math.abs(seed >> 3) % 40) / 100; // squeaky
+  kit.stage = 'kitten';
   return kit;
+}
+
+/** a newborn: coat inherited from mama and daddy, pattern grows in with age */
+export function generateBaby(seed: number, mom: CatSpec, dad: CatSpec): CatSpec {
+  const rng = mulberry32(seed);
+  const baby = generateKitten(seed);
+  baby.stage = 'baby';
+  baby.size = 0.42 + rng() * 0.06;
+  baby.voicePitch = 1.7 + rng() * 0.25;
+  const a = rng() < 0.5 ? mom : dad;
+  const b = a === mom ? dad : mom;
+  baby.coat = {
+    base: a.coat.base,
+    marking: b.coat.marking,
+    belly: rng() < 0.5 ? a.coat.belly : b.coat.belly,
+    pattern: rng() < 0.5 ? mom.coat.pattern : dad.coat.pattern,
+    eyeColor: rng() < 0.5 ? mom.coat.eyeColor : dad.coat.eyeColor,
+    noseColor: a.coat.noseColor,
+    accentColor: b.coat.accentColor,
+  };
+  baby.parents = [mom.name, dad.name];
+  return baby;
+}
+
+/** lone cats roaming the island — meow at one and you might fall in love */
+export function generateWanderer(seed: number, gender: 'girl' | 'boy'): CatSpec {
+  const w = generateCat(seed, 'wanderer', { minStat: 3 });
+  w.gender = gender;
+  return w;
+}
+
+export function genderOf(spec: CatSpec): 'girl' | 'boy' {
+  if (spec.gender) return spec.gender;
+  let h = 0;
+  for (let i = 0; i < spec.id.length; i++) h = (h * 31 + spec.id.charCodeAt(i)) | 0;
+  return (h & 1) === 0 ? 'girl' : 'boy';
 }
 
 export const TRAIT_LABELS = {

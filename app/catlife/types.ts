@@ -38,10 +38,12 @@ export interface CatTraits {
   agility: number;    // 1..10
 }
 
+export type LifeStage = 'baby' | 'kitten' | 'adult';
+
 export interface CatSpec {
   id: string;
   name: string;
-  clanId: string;      // 'player' or rival clan id
+  clanId: string;      // 'player', rival clan id, or 'wanderer'
   coat: CoatSpec;
   traits: CatTraits;
   personality: string; // short quote
@@ -54,6 +56,10 @@ export interface CatSpec {
   losses: number;
   accessory: AccessoryId;
   bestAgility: number | null; // seconds
+  gender?: 'girl' | 'boy';
+  stage?: LifeStage;   // babies/kittens grow their patterns in as they age
+  isMate?: boolean;    // fell in love with the player's cat and joined the family
+  parents?: [string, string]; // names, for the guide ("kitten of X & Y")
 }
 
 export interface BuildingInstance {
@@ -66,8 +72,8 @@ export interface BuildingInstance {
 
 export interface RivalClanState {
   yarn: number;
-  // per rival cat W/L vs player
-  records: Record<string, { wins: number; losses: number }>;
+  // per rival cat W/L vs player; beat a cat twice and it joins your clan
+  records: Record<string, { wins: number; losses: number; recruited?: boolean }>;
 }
 
 export interface SaveData {
@@ -78,7 +84,9 @@ export interface SaveData {
   yarn: number;
   totalYarn: number;            // lifetime collected
   cats: CatSpec[];
-  kittens: CatSpec[];           // rescued kittens; first 3 follow the player
+  kittens: CatSpec[];           // rescued/grown kittens; first 5 follow the player
+  nursery: { spec: CatSpec; growth: number }[]; // newborn babies at camp (nurse to grow)
+  hadLitter: string[];          // mate ids that already had a litter
   activeCatId: string;
   collectedYarn: string[];      // ids collected this wave
   goldenDone: string[];         // golden yarn ids completed
@@ -103,7 +111,8 @@ export type CatAction =
 
 // Context-sensitive interactable the action button targets
 export interface ContextTarget {
-  kind: 'dig' | 'climb' | 'scratch' | 'yarn' | 'golden' | 'duel' | 'prey' | 'agility' | 'islet' | 'building' | 'rescue';
+  kind: 'dig' | 'climb' | 'scratch' | 'yarn' | 'golden' | 'duel' | 'prey' | 'agility' | 'islet' | 'building' | 'rescue'
+    | 'love' | 'nurse' | 'pickup' | 'setdown' | 'stray';
   label: string;
   id: string;
   x: number;
@@ -138,15 +147,19 @@ export interface ToastMsg {
 export interface DuelState {
   rivalCat: CatSpec;
   rivalClanName: string;
-  round: number;        // 0..2
+  kind: 'pounce' | 'hopscotch';
+  round: number;        // 0..2 (pounce)
   playerScore: number;
   rivalScore: number;
   stake: boolean;       // yarn at stake
   markerSpeed: number;
   zoneSize: number;     // 0..1 fraction of bar that scores
   results: { player: number; rival: number }[]; // per-round accuracy 0..1
-  phase: 'intro' | 'aim' | 'reveal' | 'done';
+  // hopscotch race: tap the number matching the next row of squares
+  hs?: { rows: number[]; playerRow: number; rivalRow: number; locked: boolean };
+  phase: 'choose' | 'intro' | 'aim' | 'reveal' | 'done';
   won?: boolean;
+  recruited?: boolean;  // beaten twice → the rival joins your clan
 }
 
 export type ChallengeKind = 'race' | 'yarnrush' | 'hideseek' | 'agility';

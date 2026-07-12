@@ -24,7 +24,7 @@ export default function CatViewer({
   rotRef.current = rotation;
 
   // key fields that require a rebuild
-  const rebuildKey = `${spec.id}|${spec.coat.pattern}|${spec.accessory}|${spec.coat.base}`;
+  const rebuildKey = `${spec.id}|${spec.coat.pattern}|${spec.accessory}|${spec.coat.base}|${spec.stage ?? 'adult'}`;
 
   useEffect(() => {
     const canvas = canvasRef.current;
