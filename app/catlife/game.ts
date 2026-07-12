@@ -143,6 +143,9 @@ export class Game {
   // cat tower trial
   private towerDoneAt = -999;
 
+  // map waypoint (set by tapping the island map)
+  private waypoint: { x: number; z: number } | null = null;
+
   // playdate multiplayer
   readonly playdate: { code: string } | null;
   private net: PlaydateNet | null = null;
@@ -730,6 +733,7 @@ export class Game {
     const spec = w.spec;
     spec.clanId = 'player';
     spec.isMate = true;
+    spec.mateWith = this.player.spec.id; // remember who they fell in love with
     this.save.cats.push(spec); // love ignores the den capacity — family is family
     this.audio.catJoin();
     this.events.onCelebrate('recruit', `${this.player.spec.name} and ${spec.name} are in love! 💕 ${spec.name} joins the family!`);
@@ -747,8 +751,10 @@ export class Game {
       const mate = this.save.cats.find((c) => c.isMate && !this.save.hadLitter.includes(c.id));
       if (mate) {
         this.save.hadLitter.push(mate.id);
-        const mom = genderOf(mate) === 'boy' ? this.player.spec : mate;
-        const dad = mom === mate ? this.player.spec : mate;
+        // the litter always belongs to the mama — girl cats have the babies
+        const partner = this.save.cats.find((c) => c.id === mate.mateWith) ?? this.player.spec;
+        const mom = genderOf(mate) === 'girl' ? mate : partner;
+        const dad = genderOf(mate) === 'boy' ? mate : partner;
         const n = 2 + ((Date.now() % 2) as number);
         for (let i = 0; i < n; i++) {
           this.save.nursery.push({ spec: generateBaby(Date.now() % 999999937 + i * 101, mom, dad), growth: 0 });
@@ -2505,6 +2511,13 @@ export class Game {
       }
     }
 
+    // arrived at the waypoint
+    if (this.waypoint && Math.hypot(this.waypoint.x - this.px, this.waypoint.z - this.pz) < 8) {
+      this.waypoint = null;
+      this.toast('You made it! ⭐');
+      this.audio.success();
+    }
+
     // autosave
     if (this.elapsed - this.lastSave > 10) {
       this.lastSave = this.elapsed;
@@ -2833,18 +2846,26 @@ export class Game {
         const d = Math.hypot(this.stray.x - this.px, this.stray.z - this.pz);
         if (d < 2.6) set('stray', `Join ${this.stray.spec.name} 💛`, this.stray.spec.id, this.stray.x, this.stray.z, d, 8);
       }
-      // wanderer cats: say a sweet meow
+      // wanderer cats: say a sweet meow — love needs a girl cat and a boy cat
       for (const w of this.wanderers) {
         if (w.state !== 'wander' || w.cooldown > 0) continue;
+        if (genderOf(w.spec) === genderOf(this.player.spec)) continue;
         const d = Math.hypot(w.x - this.px, w.z - this.pz);
         if (d < 4) set('love', `Meow at ${w.spec.name} 💕`, w.spec.id, w.x, w.z, d, 6);
       }
-      // nurse the newborns at camp
+      // nurse the newborns at camp — only mama cats make milk
       if (this.save.nursery.length > 0 && this.nursingT <= 0) {
         for (const b of this.babies) {
           const bp = b.avatar.root.position;
           const d = Math.hypot(bp.x - this.px, bp.z - this.pz);
-          if (d < 2.4) { set('nurse', 'Nurse kittens 🍼', 'nursery', bp.x, bp.z, d, 7); break; }
+          if (d < 2.4) {
+            if (genderOf(this.player.spec) === 'girl') {
+              set('nurse', 'Nurse kittens 🍼', 'nursery', bp.x, bp.z, d, 7);
+            } else {
+              this.tutorialOnce('boysnonurse', `Only mama cats can nurse! Switch to a girl cat — ${this.player.spec.name} can hunt for the family instead. 🐭`);
+            }
+            break;
+          }
         }
       }
       // pick up a follower kitten
@@ -3157,8 +3178,50 @@ export class Game {
         : null,
       kittens: this.save.kittens.length,
       friend: this.friendCompass(),
+      waypoint: this.waypoint
+        ? {
+            angle: Math.atan2(this.waypoint.x - this.px, this.waypoint.z - this.pz) - this.camYaw,
+            dist: Math.hypot(this.waypoint.x - this.px, this.waypoint.z - this.pz),
+          }
+        : null,
     };
     this.events.onHud(hud);
+  }
+
+  // ——— island map ———
+
+  getMinimap(): string {
+    return this.world.buildMinimap();
+  }
+
+  getMapData() {
+    return {
+      range: this.world.MAP_RANGE,
+      you: { x: this.px, z: this.pz, heading: this.heading },
+      camp: this.world.playerCamp,
+      agility: this.world.agilityCenter,
+      tower: this.world.towerTop ? { x: this.world.towerTop.x, z: this.world.towerTop.z } : null,
+      rivalCamps: this.playdate ? [] : this.world.camps.map((cp) => ({
+        x: cp.x, z: cp.z,
+        color: RIVAL_CLANS.find((rc) => rc.id === cp.clanId)?.color ?? '#888',
+      })),
+      friends: [...this.remotes.values()]
+        .filter((r) => r.avatar)
+        .map((r) => ({ x: r.x, z: r.z, name: r.member.name, color: r.member.color })),
+      rescue: this.rescue ? { x: this.rescue.tree.x, z: this.rescue.tree.z } : null,
+      waypoint: this.waypoint,
+    };
+  }
+
+  setWaypoint(x: number, z: number) {
+    this.waypoint = { x, z };
+    this.toast('Waypoint set — follow the ⭐ arrow!');
+    this.emitHud(true);
+  }
+
+  clearWaypoint() {
+    this.waypoint = null;
+    this.emitHud(true);
   }
 
   /** direction (radians in camera space) + distance from player to camp — for the HUD compass */

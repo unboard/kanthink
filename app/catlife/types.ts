@@ -59,6 +59,7 @@ export interface CatSpec {
   gender?: 'girl' | 'boy';
   stage?: LifeStage;   // babies/kittens grow their patterns in as they age
   isMate?: boolean;    // fell in love with the player's cat and joined the family
+  mateWith?: string;   // id of the cat they fell in love with
   parents?: [string, string]; // names, for the guide ("kitten of X & Y")
 }
 
@@ -136,6 +137,7 @@ export interface HudState {
   rescue: { angle: number; dist: number } | null; // kitten-in-tree direction
   kittens: number;   // rescued kitten count
   friend: { angle: number; dist: number; name: string } | null; // nearest playdate friend
+  waypoint: { angle: number; dist: number } | null; // map-tap destination
 }
 
 export interface ToastMsg {

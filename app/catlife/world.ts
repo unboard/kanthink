@@ -1834,6 +1834,46 @@ export class World {
     return { x, z };
   }
 
+  // ——— minimap: the island painted from its own heightfield ———
+  private minimapCache: string | null = null;
+  /** world half-range the map spans (covers islets) */
+  readonly MAP_RANGE = 330;
+
+  buildMinimap(): string {
+    if (this.minimapCache) return this.minimapCache;
+    const S = 220;
+    const c = document.createElement('canvas');
+    c.width = S; c.height = S;
+    const ctx = c.getContext('2d')!;
+    const img = ctx.createImageData(S, S);
+    const R = this.MAP_RANGE;
+    for (let py = 0; py < S; py++) {
+      for (let px = 0; px < S; px++) {
+        const x = (px / (S - 1) - 0.5) * 2 * R;
+        const z = (py / (S - 1) - 0.5) * 2 * R;
+        const h = this.heightAt(x, z);
+        let r = 0, g = 0, b = 0;
+        if (h < WATER_LEVEL - 2.5) { r = 42; g = 110; b = 140; }        // deep sea
+        else if (h < WATER_LEVEL - 0.3) { r = 90; g = 175; b = 185; }   // shallows
+        else if (h < WATER_LEVEL + 1.1) { r = 227; g = 210; b = 154; }  // sand
+        else if (h > 11.5) { r = 141; g = 141; b = 132; }               // rock
+        else {
+          const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
+          if (forest > 0.56) { r = 77; g = 124; b = 58; }               // forest
+          else { r = 121; g = 168; b = 84; }                            // meadow
+          const n = fbm(x * 0.05, z * 0.05, this.seed + 77, 3);
+          const m = 0.86 + n * 0.24;
+          r *= m; g *= m; b *= m;
+        }
+        const i = (py * S + px) * 4;
+        img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    this.minimapCache = c.toDataURL();
+    return this.minimapCache;
+  }
+
   nearestTree(x: number, z: number, maxDist: number): TreeInfo | null {
     let best: TreeInfo | null = null;
     let bd = maxDist;

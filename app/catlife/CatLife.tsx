@@ -76,8 +76,9 @@ function IntroScreen({ onStart }: { onStart: (s: SaveData) => void }) {
   const [clanName, setClanName] = useState('');
   const placeholder = useMemo(() => CLAN_NAME_IDEAS[(Math.random() * CLAN_NAME_IDEAS.length) | 0], []);
 
+  // starter cats are girls — every kid's main cat can be a mama someday
   const kitten = useMemo(
-    () => generateCat(kittenSeeds[idx], 'player', { minStat: 3 }),
+    () => generateCat(kittenSeeds[idx], 'player', { minStat: 3, gender: 'girl' }),
     [kittenSeeds, idx]
   );
 
@@ -118,6 +119,7 @@ function IntroScreen({ onStart }: { onStart: (s: SaveData) => void }) {
             {kitten.name}
           </div>
           <div className="mt-1 flex flex-wrap justify-center gap-1.5">
+            <Chip text="Girl 🎀" tone="gold" />
             <Chip text={kitten.traits.canSwim ? 'Swimmer 🌊' : 'Scaredy-cat 💧'} />
             <Chip text={kitten.traits.brave ? 'Brave 🦁' : 'Gentle 🌼'} />
             <Chip text={PATTERN_LABELS[kitten.coat.pattern]} />
@@ -173,7 +175,7 @@ function PlayScreen({ save }: { save: SaveData }) {
   const [duel, setDuel] = useState<DuelState | null>(null);
   const [challenge, setChallenge] = useState<ChallengeState | null>(null);
   const [celebrate, setCelebrate] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | 'guide' | 'build' | 'clan' | 'settings' | 'playdate'>(null);
+  const [overlay, setOverlay] = useState<null | 'guide' | 'build' | 'clan' | 'settings' | 'playdate' | 'map'>(null);
   const [, setSaveTick] = useState(0); // bump to re-read save in overlays
   const [playdateCode, setPlaydateCode] = useState<string | null>(null);
   const [playdateMembers, setPlaydateMembers] = useState<PlaydateMember[]>([]);
@@ -246,6 +248,7 @@ function PlayScreen({ save }: { save: SaveData }) {
       {overlay === 'guide' && game && <GuideOverlay game={game} onClose={() => setOverlay(null)} />}
       {overlay === 'clan' && game && <ClanOverlay game={game} onClose={() => setOverlay(null)} />}
       {overlay === 'settings' && game && <SettingsOverlay game={game} onClose={() => setOverlay(null)} />}
+      {overlay === 'map' && game && <MapOverlay game={game} onClose={() => setOverlay(null)} />}
       {overlay === 'playdate' && (
         <PlaydateOverlay
           code={playdateCode}
@@ -469,7 +472,7 @@ function TopHud({
   hud, onOpen, gameRef, playdateCount,
 }: {
   hud: HudState;
-  onOpen: (o: 'guide' | 'build' | 'clan' | 'settings' | 'playdate') => void;
+  onOpen: (o: 'guide' | 'build' | 'clan' | 'settings' | 'playdate' | 'map') => void;
   gameRef: React.RefObject<Game | null>;
   playdateCount: number; // -1 = not in a playdate
 }) {
@@ -503,6 +506,15 @@ function TopHud({
         {/* status chips */}
         {hud.swimming && <Pill text="🌊 swimming" />}
         {hud.climbing && <Pill text="🌲 climbing" />}
+        {/* map waypoint */}
+        {hud.waypoint && (
+          <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
+            style={{ background: '#faf0d3', color: INK, border: `1.5px solid ${GOLD}` }}>
+            ⭐
+            <span style={{ display: 'inline-block', transform: `rotate(${hud.waypoint.angle}rad)` }}>⬆️</span>
+            <span className="text-[10px] tabular-nums">{Math.round(hud.waypoint.dist)}m</span>
+          </span>
+        )}
         {/* friend compass — find your sister's cat! */}
         {hud.friend && hud.friend.dist > 12 && (
           <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
@@ -521,12 +533,13 @@ function TopHud({
             <span className="text-[10px] tabular-nums">{Math.round(hud.rescue.dist)}m</span>
           </span>
         )}
-        {/* camp compass — appears when far from home */}
-        {hud.camp.dist > 45 && (
+        {/* camp compass — appears when away from home, with distance */}
+        {hud.camp.dist > 25 && !hud.waypoint && (
           <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
             style={{ background: 'rgba(253,250,241,0.94)', color: INK, border: `1.5px solid ${LINE}` }}>
             🏕
             <span style={{ display: 'inline-block', transform: `rotate(${hud.camp.angle}rad)` }}>⬆️</span>
+            <span className="text-[10px] tabular-nums">{Math.round(hud.camp.dist)}m</span>
           </span>
         )}
         {/* day/night dial */}
@@ -545,6 +558,7 @@ function TopHud({
         >
           👯{playdateCount >= 0 && <span className="text-xs font-bold" style={{ color: INK }}>{playdateCount + 1}</span>}
         </button>
+        <IconBtn icon="🗺" label="Map" onPress={() => onOpen('map')} />
         <IconBtn icon="🔨" label="Build" onPress={() => {
           if (gameRef.current?.enterBuildMode()) onOpen('build');
         }} />
@@ -1220,6 +1234,95 @@ function ClanOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
           onPointerDown={onClose}>
           Close
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ————————————————— island map —————————————————
+
+function MapOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
+  const [mapUrl] = useState(() => game.getMinimap());
+  const [data, setData] = useState(() => game.getMapData());
+
+  useEffect(() => {
+    const iv = setInterval(() => setData(game.getMapData()), 400);
+    return () => clearInterval(iv);
+  }, [game]);
+
+  const pct = (x: number, z: number) => ({
+    left: `${((x / data.range) * 0.5 + 0.5) * 100}%`,
+    top: `${((z / data.range) * 0.5 + 0.5) * 100}%`,
+  });
+
+  const Marker = ({ x, z, children, label }: { x: number; z: number; children: React.ReactNode; label?: string }) => (
+    <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-center" style={pct(x, z)}>
+      <div className="text-xl leading-none drop-shadow">{children}</div>
+      {label && <div className="mt-0.5 rounded bg-black/60 px-1 text-[9px] font-bold text-white">{label}</div>}
+    </div>
+  );
+
+  return (
+    <div className="absolute inset-0 z-40 grid place-items-center p-3" style={{ background: 'rgba(20,18,10,0.55)' }}>
+      <div className="w-full max-w-lg rounded-3xl border p-4 shadow-2xl" style={{ background: CARD, borderColor: LINE, color: INK }}>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>🗺 Island Map</h2>
+          <span className="text-[11px]" style={{ color: INK_SOFT }}>tap anywhere to set a ⭐ waypoint</span>
+        </div>
+
+        <div
+          className="relative w-full cursor-crosshair overflow-hidden rounded-2xl border-2"
+          style={{ borderColor: '#b8a888', aspectRatio: '1' }}
+          onPointerDown={(e) => {
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            const wx = ((e.clientX - rect.left) / rect.width - 0.5) * 2 * data.range;
+            const wz = ((e.clientY - rect.top) / rect.height - 0.5) * 2 * data.range;
+            game.setWaypoint(wx, wz);
+            onClose();
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={mapUrl} alt="Island map" className="absolute inset-0 h-full w-full" style={{ imageRendering: 'auto' }} />
+          {data.rivalCamps.map((c, i) => (
+            <Marker key={i} x={c.x} z={c.z}>
+              <span className="inline-block h-3 w-3 rounded-full border border-white" style={{ background: c.color }} />
+            </Marker>
+          ))}
+          <Marker x={data.camp.x} z={data.camp.z} label="home">🏕</Marker>
+          <Marker x={data.agility.x} z={data.agility.z} label="agility">🚩</Marker>
+          {data.tower && <Marker x={data.tower.x} z={data.tower.z} label="tower">🗼</Marker>}
+          {data.rescue && <Marker x={data.rescue.x} z={data.rescue.z} label="kitten!">🐱</Marker>}
+          {data.friends.map((f) => (
+            <Marker key={f.name + f.x} x={f.x} z={f.z} label={f.name}>
+              <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-white" style={{ background: f.color }} />
+            </Marker>
+          ))}
+          {data.waypoint && <Marker x={data.waypoint.x} z={data.waypoint.z}>⭐</Marker>}
+          {/* you: arrow showing where you're facing */}
+          <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={pct(data.you.x, data.you.z)}>
+            <div className="text-2xl leading-none drop-shadow-lg"
+              style={{ transform: `rotate(${Math.PI - data.you.heading}rad)` }}>
+              🔺
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex justify-center gap-2">
+          <button className="rounded-full px-6 py-3 font-bold text-white active:scale-95" style={{ background: GREEN }}
+            onPointerDown={() => { game.setWaypoint(data.camp.x, data.camp.z); onClose(); }}>
+            🏕 Take me home
+          </button>
+          {data.waypoint && (
+            <button className="rounded-full border px-5 py-3 font-bold active:scale-95" style={{ borderColor: LINE, color: INK_SOFT }}
+              onPointerDown={() => game.clearWaypoint()}>
+              Clear ⭐
+            </button>
+          )}
+          <button className="rounded-full px-6 py-3 font-bold text-white active:scale-95" style={{ background: INK }}
+            onPointerDown={onClose}>
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

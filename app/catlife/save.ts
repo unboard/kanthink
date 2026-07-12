@@ -1,14 +1,15 @@
 // Whisker Wilds — per-device localStorage save (same approach as Wildwood / Paws & Found)
 
 import type { SaveData } from './types';
-import { RIVAL_CLANS, generateCat } from './data';
+import { RIVAL_CLANS, generateCat, genderOf } from './data';
 
 const KEY = 'catlife-save-v1';
 
 export function newSave(seed: number, clanName: string, firstCatSeed: number): SaveData {
   const rivals: SaveData['rivals'] = {};
   for (const c of RIVAL_CLANS) rivals[c.id] = { yarn: 6 + Math.floor(Math.random() * 5), records: {} };
-  const starter = generateCat(firstCatSeed, 'player', { minStat: 3 });
+  // starters are girls, so every kid's main cat can be a mama someday
+  const starter = generateCat(firstCatSeed, 'player', { minStat: 3, gender: 'girl' });
   return {
     v: 1,
     seed,
@@ -45,6 +46,12 @@ export function loadSave(): SaveData | null {
     if (!Array.isArray(data.kittens)) data.kittens = []; // saves from before the kitten update
     if (!Array.isArray(data.nursery)) data.nursery = []; // saves from before the family update
     if (!Array.isArray(data.hadLitter)) data.hadLitter = [];
+    // saves from before genders existed: the first (starter) cat becomes a girl
+    // so she can have kittens; everyone else keeps a stable derived gender
+    data.cats.forEach((c, i) => {
+      if (!c.gender) c.gender = i === 0 ? 'girl' : genderOf(c);
+    });
+    for (const k of data.kittens) if (!k.gender) k.gender = genderOf(k);
     return data;
   } catch {
     return null;

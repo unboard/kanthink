@@ -7,16 +7,20 @@ export const WORLD_SIZE = 520;         // world is WORLD_SIZE x WORLD_SIZE cente
 export const WATER_LEVEL = 0;
 export const DAY_LENGTH = 360;         // seconds per full day/night cycle
 
-// ——— Cat names ———
-export const CAT_NAMES = [
-  'Willow', 'Maple', 'Clover', 'Pepper', 'Mochi', 'Biscuit', 'Juniper', 'Hazel',
-  'Poppy', 'Marble', 'Pumpkin', 'Olive', 'Pickles', 'Waffles', 'Nutmeg', 'Cinnamon',
-  'Storm', 'Ember', 'Frost', 'River', 'Brook', 'Fern', 'Moss', 'Pebble',
-  'Luna', 'Comet', 'Star', 'Nova', 'Sunny', 'Misty', 'Shadow', 'Smokey',
-  'Ginger', 'Butterscotch', 'Toffee', 'Cocoa', 'Vanilla', 'Honey', 'Maple-Syrup', 'Jellybean',
-  'Ziggy', 'Pixel', 'Boots', 'Mittens', 'Socks', 'Patches', 'Freckles', 'Domino',
-  'Sage', 'Basil', 'Thyme', 'Daisy', 'Tulip', 'Rosie', 'Ivy', 'Petal',
-  'Scout', 'Ranger', 'Dash', 'Zoom', 'Rocket', 'Turbo', 'Whiskers', 'Fuzzy',
+// ——— Cat names, split by gender so the family tree makes sense to kids ———
+export const GIRL_NAMES = [
+  'Willow', 'Maple', 'Clover', 'Poppy', 'Hazel', 'Juniper', 'Luna', 'Nova',
+  'Daisy', 'Tulip', 'Rosie', 'Ivy', 'Petal', 'Misty', 'Honey', 'Vanilla',
+  'Cinnamon', 'Olive', 'Pumpkin', 'Mochi', 'Jellybean', 'Star', 'Ember', 'Fern',
+  'Blossom', 'Pearl', 'Ruby', 'Coco', 'Millie', 'Pippa', 'Sugar', 'Buttercup',
+] as const;
+
+export const BOY_NAMES = [
+  'Pepper', 'Biscuit', 'Marble', 'Pickles', 'Waffles', 'Nutmeg', 'Storm', 'Frost',
+  'River', 'Brook', 'Moss', 'Pebble', 'Comet', 'Sunny', 'Shadow', 'Smokey',
+  'Ginger', 'Butterscotch', 'Toffee', 'Ziggy', 'Pixel', 'Boots', 'Mittens', 'Socks',
+  'Patches', 'Freckles', 'Domino', 'Sage', 'Basil', 'Scout', 'Ranger', 'Dash',
+  'Zoom', 'Rocket', 'Turbo', 'Whiskers', 'Fuzzy', 'Ollie', 'Milo', 'Otis',
 ] as const;
 
 export const PERSONALITIES = [
@@ -160,6 +164,7 @@ export function generateCat(seed: number, clanId: string, opts?: {
   name?: string;
   idOverride?: string;   // stable id for rival cats (records persist across sessions)
   rarePattern?: boolean; // challenge-reward cats may roll star/moon fur
+  gender?: 'girl' | 'boy';
 }): CatSpec {
   const rng = mulberry32(seed);
   const paletteIdx = opts?.paletteIdx ?? irange(rng, 0, COAT_PALETTES.length - 1);
@@ -183,12 +188,12 @@ export function generateCat(seed: number, clanId: string, opts?: {
     agility: irange(rng, minStat, 8),
   };
   catCounter++;
-  const gender: 'girl' | 'boy' = rng() < 0.5 ? 'girl' : 'boy';
+  const gender: 'girl' | 'boy' = opts?.gender ?? (rng() < 0.5 ? 'girl' : 'boy');
   return {
     gender,
     stage: 'adult',
     id: opts?.idOverride ?? `cat_${seed.toString(36)}_${catCounter}_${Date.now().toString(36)}`,
-    name: opts?.name ?? pick(rng, CAT_NAMES),
+    name: opts?.name ?? pick(rng, gender === 'girl' ? GIRL_NAMES : BOY_NAMES),
     clanId,
     coat,
     traits,
@@ -238,9 +243,7 @@ export function generateBaby(seed: number, mom: CatSpec, dad: CatSpec): CatSpec 
 
 /** lone cats roaming the island — meow at one and you might fall in love */
 export function generateWanderer(seed: number, gender: 'girl' | 'boy'): CatSpec {
-  const w = generateCat(seed, 'wanderer', { minStat: 3 });
-  w.gender = gender;
-  return w;
+  return generateCat(seed, 'wanderer', { minStat: 3, gender });
 }
 
 export function genderOf(spec: CatSpec): 'girl' | 'boy' {
