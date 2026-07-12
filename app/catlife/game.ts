@@ -115,7 +115,10 @@ export class Game {
     rows: number[]; playerRow: number; rivalRow: number;
     lockT: number; rivalT: number; rivalInterval: number;
     origin: { x: number; z: number; dirX: number; dirZ: number };
+    courtY: number;                     // the board floats flat above the terrain
     meshes: THREE.Object3D[];
+    rowSquares: THREE.Mesh[][];         // player-lane squares per row (for highlighting)
+    marker: THREE.Mesh | null;          // golden arrow over the row being counted
     playerHopT: number; rivalHopT: number;
   } | null = null;
 
@@ -1327,29 +1330,70 @@ export class Game {
     const rows: number[] = [];
     for (let i = 0; i < nRows; i++) rows.push(1 + ((Math.random() * 4) | 0));
 
-    const meshes: THREE.Object3D[] = [];
-    const sqGeo = new THREE.BoxGeometry(1.45, 0.12, 1.45);
-    const matA = new THREE.MeshStandardMaterial({ color: '#fdf6ea', roughness: 0.8 });
-    const matB = new THREE.MeshStandardMaterial({ color: '#f2d9b8', roughness: 0.8 });
-    const matGold = new THREE.MeshStandardMaterial({ color: '#e8c34a', roughness: 0.6 });
-    const yawRot = Math.atan2(dirX, dirZ);
+    // the court is a FLAT floating game board — terrain never hides a square
+    let courtY = -999;
+    for (let i = 0; i <= nRows + 1; i++) {
+      for (const lane of [-1, 0, 1]) {
+        const sx = midX + dirX * i * 2.1 + perpX * lane * 3.6;
+        const sz = midZ + dirZ * i * 2.1 + perpZ * lane * 3.6;
+        courtY = Math.max(courtY, this.world.heightAt(sx, sz));
+      }
+    }
+    courtY += 1.0;
 
+    const meshes: THREE.Object3D[] = [];
+    const yawRot = Math.atan2(dirX, dirZ);
+    const courtLen = (nRows + 2.5) * 2.1;
+
+    // the board itself
+    const slab = new THREE.Mesh(
+      new THREE.BoxGeometry(13.8, 0.35, courtLen),
+      new THREE.MeshStandardMaterial({ color: '#7ba05b', roughness: 0.95 })
+    );
+    slab.position.set(
+      midX + dirX * (courtLen / 2 + 0.4),
+      courtY - 0.22,
+      midZ + dirZ * (courtLen / 2 + 0.4)
+    );
+    slab.rotation.y = yawRot;
+    slab.castShadow = true;
+    this.scene.add(slab);
+    meshes.push(slab);
+
+    const sqGeo = new THREE.BoxGeometry(1.45, 0.12, 1.45);
+    const rowSquares: THREE.Mesh[][] = [];
     for (const lane of [-1, 1]) {
       for (let i = 0; i <= nRows; i++) {
         const cx = midX + dirX * (i + 1) * 2.1 + perpX * lane * 3.6;
         const cz = midZ + dirZ * (i + 1) * 2.1 + perpZ * lane * 3.6;
-        const y = this.world.heightAt(cx, cz) + 0.09;
         const k = i === nRows ? 1 : rows[i];
+        const rowList: THREE.Mesh[] = [];
         for (let s = 0; s < k; s++) {
           const off = (s - (k - 1) / 2) * 1.62;
-          const sq = new THREE.Mesh(sqGeo, i === nRows ? matGold : (i + s) % 2 ? matA : matB);
-          sq.position.set(cx + perpX * off, y, cz + perpZ * off);
+          // own material per square so the active row can glow
+          const mat = new THREE.MeshStandardMaterial({
+            color: i === nRows ? '#e8c34a' : (i + s) % 2 ? '#fdf6ea' : '#f2d9b8',
+            roughness: 0.75,
+          });
+          const sq = new THREE.Mesh(sqGeo, mat);
+          sq.position.set(cx + perpX * off, courtY, cz + perpZ * off);
           sq.rotation.y = yawRot;
           this.scene.add(sq);
           meshes.push(sq);
+          rowList.push(sq);
         }
+        if (lane === -1) rowSquares.push(rowList); // player lane, for highlighting
       }
     }
+
+    // golden arrow bouncing over the row you're counting
+    const marker = new THREE.Mesh(
+      new THREE.ConeGeometry(0.55, 1.0, 4),
+      new THREE.MeshStandardMaterial({ color: '#e8c34a', emissive: '#c99a1e', emissiveIntensity: 0.9, roughness: 0.5 })
+    );
+    marker.rotation.x = Math.PI; // point down at the row
+    this.scene.add(marker);
+    meshes.push(marker);
 
     // rival difficulty: faster at higher levels, but always beatable by a kid
     const rivalInterval = Math.max(1.05, 1.8 - r.level * 0.12);
@@ -1357,17 +1401,19 @@ export class Game {
       rows, playerRow: 0, rivalRow: 0,
       lockT: 0, rivalT: 0, rivalInterval,
       origin: { x: midX, z: midZ, dirX, dirZ },
+      courtY,
       meshes,
+      rowSquares,
+      marker,
       playerHopT: 0, rivalHopT: 0,
     };
     this.duel!.hs = { rows, playerRow: 0, rivalRow: 0, locked: false };
 
-    // snap straight to the aerial view — no drifting through the sky
+    // snap straight to the top-down view — no drifting through the sky
     const startX = midX + dirX * 0.55 * 2.1 - perpX * 3.6;
     const startZ = midZ + dirZ * 0.55 * 2.1 - perpZ * 3.6;
-    const sy = this.world.heightAt(startX, startZ);
-    this.camera.position.set(startX - dirX * 5.5, sy + 7.5, startZ - dirZ * 5.5);
-    this.camera.lookAt(startX + dirX * 6, sy, startZ + dirZ * 6);
+    this.camera.position.set(startX - dirX * 2.9, courtY + 11.5, startZ - dirZ * 2.9);
+    this.camera.lookAt(startX + dirX * 1.3, courtY, startZ + dirZ * 1.3);
   }
 
   /** kid taps 1-4 — must match the number of squares in the next row */
@@ -1413,7 +1459,7 @@ export class Game {
       }
     }
 
-    // move the cats along their lanes
+    // move the cats along their lanes — on the flat board, never in the dirt
     const o = h.origin;
     const perpX = -o.dirZ, perpZ = o.dirX;
     const place = (row: number, hopT: number, lane: number, isPlayer: boolean) => {
@@ -1424,7 +1470,7 @@ export class Game {
       if (isPlayer) {
         this.px += (tx - this.px) * Math.min(1, dt * 9);
         this.pz += (tz - this.pz) * Math.min(1, dt * 9);
-        this.py = this.world.heightAt(this.px, this.pz) + 0.15 + arc;
+        this.py = h.courtY + 0.06 + arc;
         this.heading = Math.atan2(o.dirX, o.dirZ);
         if (hopT <= 0 && this.player.action === 'jump') this.player.setAction('idle');
         this.applyAvatarTransform();
@@ -1432,7 +1478,7 @@ export class Game {
         const r = this.duelRival!;
         r.x += (tx - r.x) * Math.min(1, dt * 9);
         r.z += (tz - r.z) * Math.min(1, dt * 9);
-        r.y = this.world.heightAt(r.x, r.z) + 0.15 + arc;
+        r.y = h.courtY + 0.06 + arc;
         r.heading = Math.atan2(o.dirX, o.dirZ);
         r.avatar.root.position.set(r.x, r.y, r.z);
         r.avatar.root.rotation.y = r.heading;
@@ -1441,6 +1487,34 @@ export class Game {
     };
     place(h.playerRow, h.playerHopT, -1, true);
     place(h.rivalRow, h.rivalHopT, 1, false);
+
+    // highlight the row being counted: golden pulse + bouncing arrow above it
+    const pulse = 0.35 + Math.abs(Math.sin(this.elapsed * 4)) * 0.5;
+    for (let i = 0; i < h.rowSquares.length; i++) {
+      for (const sq of h.rowSquares[i]) {
+        const mat = sq.material as THREE.MeshStandardMaterial;
+        if (i === h.playerRow) {
+          mat.emissive.set('#e8a020');
+          mat.emissiveIntensity = pulse;
+        } else if (mat.emissiveIntensity !== 0) {
+          mat.emissive.set('#000000');
+          mat.emissiveIntensity = 0;
+        }
+        // completed rows fade back into the board
+        if (i < h.playerRow && (mat.color.r > 0.7 || mat.color.g > 0.6)) mat.color.set('#a8b98c');
+      }
+    }
+    if (h.marker && h.playerRow < h.rows.length) {
+      const along = (h.playerRow + 1) * 2.1;
+      h.marker.position.set(
+        o.x + o.dirX * along - perpX * 3.6,
+        h.courtY + 1.6 + Math.abs(Math.sin(this.elapsed * 5)) * 0.45,
+        o.z + o.dirZ * along - perpZ * 3.6
+      );
+      h.marker.rotation.y = this.elapsed * 2;
+    } else if (h.marker) {
+      h.marker.visible = false;
+    }
 
     d.hs = { rows: h.rows, playerRow: h.playerRow, rivalRow: h.rivalRow, locked: h.lockT > 0 };
 
@@ -2695,17 +2769,18 @@ export class Game {
 
   private updateDuelCamera(dt: number) {
     if (!this.duelRival) return;
-    // hopscotch: aerial guitar-hero view down your lane
+    // hopscotch: steep top-down view; the counted row rides above the UI panel
     if (this.duel?.kind === 'hopscotch' && this.hop) {
       const o = this.hop.origin;
-      const cx = this.px - o.dirX * 5.5;
-      const cz = this.pz - o.dirZ * 5.5;
-      const cy = this.py + 7.5;
+      // cat rides screen-centre so the counted row (just ahead) clears the UI panel
+      const cx = this.px - o.dirX * 2.9;
+      const cz = this.pz - o.dirZ * 2.9;
+      const cy = this.hop.courtY + 11.5;
       const k2 = Math.min(1, dt * 5);
       this.camera.position.x += (cx - this.camera.position.x) * k2;
       this.camera.position.y += (cy - this.camera.position.y) * k2;
       this.camera.position.z += (cz - this.camera.position.z) * k2;
-      this.camera.lookAt(this.px + o.dirX * 6, this.py, this.pz + o.dirZ * 6);
+      this.camera.lookAt(this.px + o.dirX * 1.3, this.hop.courtY, this.pz + o.dirZ * 1.3);
       return;
     }
     const r = this.duelRival;
