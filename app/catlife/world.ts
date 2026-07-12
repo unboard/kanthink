@@ -67,6 +67,12 @@ export class World {
   // wind
   private windShaders: { uniforms: { uTime: { value: number } } }[] = [];
 
+  // dense grass ring around the player
+  private readonly GRASS_CAP = 6500;
+  private grassMesh!: THREE.InstancedMesh;
+  private grassAnchor = { x: 1e9, z: 1e9 };
+  quality = 1; // adaptive: 1 → 0.55 → 0.3 when a device can't hold frame rate
+
   // falling leaves
   private leafMesh: THREE.InstancedMesh;
   private leafState: Leaf[] = [];
@@ -168,7 +174,13 @@ export class World {
   heightAt(x: number, z: number): number {
     const d = Math.hypot(x, z);
     const island = smoothstep(clamp01(1 - (d - 155) / 95));
-    let h = (fbm(x * 0.011, z * 0.011, this.seed, 4) * 15 - 3.5) * island;
+    // domain warp bends the noise field so hills flow like eroded land
+    const wx = x + (fbm(x * 0.004 + 7.3, z * 0.004, this.seed + 555, 2) - 0.5) * 55;
+    const wz = z + (fbm(x * 0.004, z * 0.004 + 13.7, this.seed + 777, 2) - 0.5) * 55;
+    let h = (fbm(wx * 0.011, wz * 0.011, this.seed, 4) * 15 - 3.5) * island;
+    // rolling ridgelines (inverted-valley noise)
+    const ridge = 1 - Math.abs(2 * fbm(wx * 0.006, wz * 0.006, this.seed + 99, 3) - 1);
+    h += ridge * ridge * 5 * island;
     h += gauss(Math.hypot(x - this.hillC.x, z - this.hillC.z), 55) * 11 * island;
     h += (island - 1) * 9;
     h -= gauss(Math.hypot(x - this.lakeC.x, z - this.lakeC.z), 34) * 10;
@@ -243,9 +255,15 @@ export class World {
       const n = fbm(x * 0.05, z * 0.05, this.seed + 77, 3);
       const n2 = fbm(x * 0.13, z * 0.13, this.seed + 811, 2);
       const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
+      // slope from neighbor samples — steep faces show bare rock like eroded cliffs
+      const slopeY = new THREE.Vector3(
+        -(this.heightAt(x + 0.8, z) - this.heightAt(x - 0.8, z)),
+        1.6,
+        -(this.heightAt(x, z + 0.8) - this.heightAt(x, z - 0.8))
+      ).normalize().y;
       if (h < WATER_LEVEL - 0.5) tmp.copy(cSea).multiplyScalar(0.8 + n * 0.2);
       else if (h < WATER_LEVEL + 1.1) tmp.copy(cSand).multiplyScalar(0.92 + n * 0.12);
-      else if (h > 10.5) tmp.copy(cRock).multiplyScalar(0.85 + n * 0.25);
+      else if (h > 11.5) tmp.copy(cRock).multiplyScalar(0.85 + n * 0.25);
       else {
         tmp.copy(n > 0.5 ? cGrass : cGrass2);
         if (n2 > 0.62) tmp.lerp(cGrassDry, 0.45);       // sun-dried patches
@@ -253,6 +271,7 @@ export class World {
           tmp.lerp(cForest, 0.6);
           if (n2 < 0.4) tmp.lerp(cDirt, 0.3);           // bare dirt under trees
         }
+        if (slopeY < 0.82) tmp.lerp(cRock, clamp01((0.82 - slopeY) * 4)); // cliffs
         tmp.multiplyScalar(0.88 + n * 0.22);
       }
       colors[i * 3] = tmp.r;
@@ -286,7 +305,25 @@ export class World {
   }
 
   private buildWater(): THREE.Mesh {
-    const geoW = new THREE.PlaneGeometry(WORLD_SIZE * 2.2, WORLD_SIZE * 2.2, 96, 96);
+    // bake the island heightfield into a texture: the fragment shader reads
+    // per-pixel water depth for shore foam + shallow turquoise tint
+    const HM = 220;
+    const span = WORLD_SIZE * 2.2;
+    const data = new Uint8Array(HM * HM);
+    for (let iy = 0; iy < HM; iy++) {
+      for (let ix = 0; ix < HM; ix++) {
+        const x = (ix / (HM - 1) - 0.5) * span;
+        const z = (iy / (HM - 1) - 0.5) * span;
+        const h = this.heightAt(x, z);
+        data[iy * HM + ix] = Math.max(0, Math.min(255, Math.round(((h + 20) / 40) * 255)));
+      }
+    }
+    const hTex = new THREE.DataTexture(data, HM, HM, THREE.RedFormat, THREE.UnsignedByteType);
+    hTex.magFilter = THREE.LinearFilter;
+    hTex.minFilter = THREE.LinearFilter;
+    hTex.needsUpdate = true;
+
+    const geoW = new THREE.PlaneGeometry(span, span, 96, 96);
     geoW.rotateX(-Math.PI / 2);
     const mat = new THREE.ShaderMaterial({
       transparent: true,
@@ -294,13 +331,18 @@ export class World {
         uTime: { value: 0 },
         uDay: { value: 1 },
         uSunDir: { value: new THREE.Vector3(0.5, 1, 0.3).normalize() },
+        uHeight: { value: hTex },
+        uSpan: { value: span },
       },
       vertexShader: `
         uniform float uTime;
+        uniform float uSpan;
         varying vec3 vPos;
         varying vec3 vNormal;
+        varying vec2 vWuv;
         void main() {
           vec3 p = position;
+          vWuv = vec2(p.x, p.z) / uSpan + 0.5;
           float w1 = sin(p.x * 0.08 + uTime * 1.1) * cos(p.z * 0.07 + uTime * 0.9);
           float w2 = sin(p.x * 0.21 - uTime * 1.7 + p.z * 0.17) * 0.5;
           p.y += (w1 + w2) * 0.18;
@@ -312,20 +354,35 @@ export class World {
         }
       `,
       fragmentShader: `
+        uniform float uTime;
         uniform float uDay;
         uniform vec3 uSunDir;
+        uniform sampler2D uHeight;
         varying vec3 vPos;
         varying vec3 vNormal;
+        varying vec2 vWuv;
         void main() {
+          float terrainH = texture2D(uHeight, vWuv).r * 40.0 - 20.0;
+          float depth = -terrainH; // water level is 0
           vec3 deep = mix(vec3(0.05,0.09,0.18), vec3(0.10,0.42,0.55), uDay);
           vec3 shallow = mix(vec3(0.08,0.14,0.24), vec3(0.24,0.62,0.66), uDay);
           vec3 viewDir = normalize(cameraPosition - vPos);
           float fres = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 2.0);
           vec3 col = mix(deep, shallow, fres * 0.9 + 0.15);
+          // shallow water goes glassy turquoise so the sand glows through
+          vec3 lagoon = mix(vec3(0.12,0.2,0.28), vec3(0.32,0.74,0.72), uDay);
+          col = mix(col, lagoon, smoothstep(3.2, 0.3, depth) * 0.55);
+          // animated foam bands hugging the shoreline
+          float band = smoothstep(1.0, 0.1, depth);
+          float wave = 0.5 + 0.5 * sin(uTime * 1.8 - depth * 8.0);
+          float lace = 0.72 + 0.28 * sin(vWuv.x * 780.0 + uTime * 0.4) * sin(vWuv.y * 830.0 - uTime * 0.3);
+          float foam = clamp(band * wave * lace * 1.4, 0.0, 1.0);
+          col = mix(col, vec3(0.95, 0.97, 0.95), foam * 0.8 * (0.35 + 0.65 * uDay));
+          // sun sparkle
           vec3 hv = normalize(viewDir + normalize(uSunDir));
           float spec = pow(max(dot(vNormal, hv), 0.0), 90.0) * uDay;
           col += vec3(1.0, 0.95, 0.8) * spec * 0.9;
-          gl_FragColor = vec4(col, 0.86);
+          gl_FragColor = vec4(col, 0.86 - band * 0.28);
         }
       `,
     });
@@ -338,7 +395,11 @@ export class World {
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
-      uniforms: { uDay: { value: 1 }, uDusk: { value: 0 } },
+      uniforms: {
+        uDay: { value: 1 },
+        uDusk: { value: 0 },
+        uSunDir: { value: new THREE.Vector3(0.4, 0.8, 0.3).normalize() },
+      },
       vertexShader: `
         varying vec3 vDir;
         void main() {
@@ -349,13 +410,26 @@ export class World {
       fragmentShader: `
         uniform float uDay;
         uniform float uDusk;
+        uniform vec3 uSunDir;
         varying vec3 vDir;
         void main() {
           float h = clamp(vDir.y, 0.0, 1.0);
-          vec3 top = mix(vec3(0.03, 0.05, 0.13), vec3(0.35, 0.62, 0.94), uDay);
+          vec3 top = mix(vec3(0.03, 0.05, 0.13), vec3(0.32, 0.58, 0.92), uDay);
           vec3 hor = mix(vec3(0.10, 0.13, 0.25), vec3(0.78, 0.88, 0.96), uDay);
           hor = mix(hor, vec3(0.96, 0.62, 0.38), uDusk);
-          gl_FragColor = vec4(mix(hor, top, pow(h, 0.75)), 1.0);
+          vec3 col = mix(hor, top, pow(h, 0.75));
+          // horizon haze (aerial-perspective feel)
+          col = mix(col, mix(vec3(0.16,0.19,0.3), vec3(0.88, 0.92, 0.96), uDay), pow(1.0 - h, 4.0) * 0.4);
+          vec3 dir = normalize(vDir);
+          vec3 sd = normalize(uSunDir);
+          float sunAmt = max(dot(dir, sd), 0.0);
+          // sun disc + warm glow halo
+          col += vec3(1.0, 0.92, 0.72) * pow(sunAmt, 1400.0) * 3.2 * uDay;
+          col += vec3(1.0, 0.72, 0.42) * pow(sunAmt, 10.0) * (0.16 * uDay + 0.45 * uDusk);
+          // small cool moon opposite the sun
+          float moonAmt = max(dot(dir, -sd), 0.0);
+          col += vec3(0.82, 0.88, 1.0) * pow(moonAmt, 2600.0) * 1.6 * (1.0 - uDay);
+          gl_FragColor = vec4(col, 1.0);
         }
       `,
     });
@@ -386,18 +460,18 @@ export class World {
       color: '#ffffff', roughness: 1, transparent: true, opacity: 0.92,
       emissive: '#ffffff', emissiveIntensity: 0.12,
     });
-    const puffGeo = new THREE.SphereGeometry(1, 10, 8);
-    for (let i = 0; i < 12; i++) {
+    const puffGeo = new THREE.SphereGeometry(1, 12, 9);
+    for (let i = 0; i < 16; i++) {
       const cloud = new THREE.Group();
-      const puffs = 3 + irange(rng, 0, 2);
+      const puffs = 4 + irange(rng, 0, 3);
       for (let j = 0; j < puffs; j++) {
         const puff = new THREE.Mesh(puffGeo, mat);
-        puff.scale.set(3 + rng() * 4.5, 1.1 + rng() * 1.1, 2.2 + rng() * 2.6);
-        puff.position.set((j - puffs / 2) * 3.4 + rng() * 2, rng() * 1.2, (rng() - 0.5) * 3);
+        puff.scale.set(5 + rng() * 7, 1.6 + rng() * 1.8, 3.5 + rng() * 4);
+        puff.position.set((j - puffs / 2) * 5.2 + rng() * 3, rng() * 2 - j * 0.2, (rng() - 0.5) * 5);
         cloud.add(puff);
       }
-      cloud.position.set((rng() - 0.5) * 760, 88 + rng() * 42, (rng() - 0.5) * 760);
-      cloud.userData.speed = 1.1 + rng() * 1.3;
+      cloud.position.set((rng() - 0.5) * 780, 96 + rng() * 55, (rng() - 0.5) * 780);
+      cloud.userData.speed = 1.1 + rng() * 1.4;
       group.add(cloud);
     }
     return group;
@@ -478,15 +552,32 @@ export class World {
     trunkGeo.translate(0, 0.5, 0);
     const oakTrunkMat = new THREE.MeshStandardMaterial({ color: '#6e5136', roughness: 1 });
     const birchTrunkMat = new THREE.MeshStandardMaterial({ color: '#e6e1d3', roughness: 0.9 });
-    const folGeo = new THREE.IcosahedronGeometry(1, 1);
+    // lumpy organic canopy: displace an icosahedron along its normals
+    const folGeo = new THREE.IcosahedronGeometry(1, 2);
+    {
+      const p = folGeo.attributes.position as THREE.BufferAttribute;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.set(p.getX(i), p.getY(i), p.getZ(i));
+        const nse = fbm(v.x * 1.6 + 9, v.y * 1.6 + v.z * 1.6, this.seed + 404, 2);
+        v.multiplyScalar(0.82 + nse * 0.4);
+        p.setXYZ(i, v.x, v.y, v.z);
+      }
+      folGeo.computeVertexNormals();
+    }
     const folMat = new THREE.MeshStandardMaterial({ roughness: 1 });
     this.windify(folMat, 0.045);
     const pineGeo = new THREE.ConeGeometry(1, 1.6, 9);
-    const pineMat = new THREE.MeshStandardMaterial({ roughness: 1 });
+    const pineMat = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
     this.windify(pineMat, 0.035);
 
     const oakTrunks = new THREE.InstancedMesh(trunkGeo, oakTrunkMat, counts.oak + counts.pine);
     oakTrunks.castShadow = true;
+    // visible boughs under the oak canopies
+    const branchGeo = new THREE.CylinderGeometry(0.06, 0.11, 1, 6);
+    branchGeo.translate(0, 0.5, 0);
+    const branches = new THREE.InstancedMesh(branchGeo, oakTrunkMat, Math.max(1, counts.oak * 2));
+    let branchI = 0;
     const birchTrunks = new THREE.InstancedMesh(trunkGeo, birchTrunkMat, Math.max(1, counts.birch));
     birchTrunks.castShadow = true;
     const foliage = new THREE.InstancedMesh(folGeo, folMat, (counts.oak + counts.birch) * 3);
@@ -527,6 +618,21 @@ export class World {
         }
       } else {
         const isBirch = t.type === 'birch';
+        if (!isBirch) {
+          // two boughs reaching out of the trunk into the canopy
+          for (let bj = 0; bj < 2; bj++) {
+            const byaw = hash2(i, 60 + bj, this.seed) * Math.PI * 2;
+            const bpitch = 0.85 + hash2(i, 70 + bj, this.seed) * 0.35;
+            const bq = new THREE.Quaternion().setFromEuler(new THREE.Euler(bpitch, byaw, 0, 'YXZ'));
+            const blen = (1.1 + hash2(i, 80 + bj, this.seed) * 0.8) * t.s;
+            m.compose(
+              new THREE.Vector3(t.x, h + trunkH * (0.45 + bj * 0.18), t.z),
+              bq,
+              vs.set(t.s, blen, t.s)
+            );
+            branches.setMatrixAt(branchI++, m);
+          }
+        }
         const hue = isBirch ? 0.2 + hash2(i, 2, this.seed) * 0.06 : 0.26 + hash2(i, 2, this.seed) * 0.09;
         const light = (isBirch ? 0.42 : 0.3) + hash2(i, 3, this.seed) * 0.13;
         const blobs = isBirch ? 2 : 3;
@@ -564,34 +670,23 @@ export class World {
     birchTrunks.count = birchI;
     foliage.count = folI;
     pineFol.count = pineI;
+    branches.count = branchI;
     if (foliage.instanceColor) foliage.instanceColor.needsUpdate = true;
     if (pineFol.instanceColor) pineFol.instanceColor.needsUpdate = true;
-    this.group.add(oakTrunks, birchTrunks, foliage, pineFol);
+    this.group.add(oakTrunks, birchTrunks, foliage, pineFol, branches);
 
-    // ——— grass: wind-blown blade tufts ———
-    const grassN = 2600;
+    // ——— grass: dense wind-blown ring that follows the player ———
+    // (massive-scatter look from the WebGPU world demos, scaled for tablets:
+    // ~5k tufts packed into a 48u disc around the player, re-scattered
+    // deterministically from a hash grid whenever the player moves)
     const tuftGeo = this.buildGrassTuftGeo();
     const grassMat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 1 });
     this.windify(grassMat, 0.5, true);
-    const grass = new THREE.InstancedMesh(tuftGeo, grassMat, grassN);
-    let gi = 0;
-    for (let i = 0; i < grassN * 2 && gi < grassN; i++) {
-      const x = (mulRand(this.seed + i * 3) - 0.5) * 300;
-      const z = (mulRand(this.seed + i * 3 + 1) - 0.5) * 300;
-      const h = this.heightAt(x, z);
-      if (h < 1 || h > 9.5) continue;
-      if (this.normalAt(x, z).y < 0.88) continue;
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), mulRand(this.seed + i * 3 + 2) * Math.PI);
-      const sc = 0.75 + mulRand(this.seed + i * 7) * 1.0;
-      m.compose(new THREE.Vector3(x, h - 0.03, z), q, vs.set(sc, sc, sc));
-      grass.setMatrixAt(gi, m);
-      const dry = fbm(x * 0.13, z * 0.13, this.seed + 811, 2) > 0.62;
-      col.setHSL(dry ? 0.13 : 0.24 + mulRand(this.seed + i * 11) * 0.07, dry ? 0.45 : 0.5, dry ? 0.3 : 0.26 + mulRand(this.seed + i * 13) * 0.12);
-      grass.setColorAt(gi, col);
-      gi++;
-    }
-    grass.count = gi;
-    this.group.add(grass);
+    this.grassMesh = new THREE.InstancedMesh(tuftGeo, grassMat, this.GRASS_CAP);
+    this.grassMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.grassMesh.frustumCulled = false;
+    this.grassMesh.count = 0;
+    this.group.add(this.grassMesh);
 
     // flowers
     const flowerN = 600;
@@ -673,6 +768,62 @@ export class World {
     }
     ferns.count = fi2;
     this.group.add(ferns);
+  }
+
+  /** re-scatter the grass disc around the player (deterministic hash grid) */
+  private updateGrassRing(px: number, pz: number) {
+    if (Math.hypot(px - this.grassAnchor.x, pz - this.grassAnchor.z) < 8) return;
+    this.grassAnchor = { x: px, z: pz };
+    const R = 54;
+    const cell = 1.34;
+    const cap = Math.floor(this.GRASS_CAP * this.quality);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const vs = new THREE.Vector3();
+    const col = new THREE.Color();
+    let gi = 0;
+    const cx0 = Math.floor((px - R) / cell);
+    const cx1 = Math.ceil((px + R) / cell);
+    const cz0 = Math.floor((pz - R) / cell);
+    const cz1 = Math.ceil((pz + R) / cell);
+    for (let cx = cx0; cx <= cx1 && gi < cap; cx++) {
+      for (let cz = cz0; cz <= cz1 && gi < cap; cz++) {
+        const h1 = hash2(cx, cz, this.seed + 21);
+        const x = cx * cell + (h1 - 0.5) * cell;
+        const z = cz * cell + (hash2(cx, cz, this.seed + 22) - 0.5) * cell;
+        const dd = Math.hypot(x - px, z - pz);
+        if (dd > R) continue;
+        const h = this.heightAt(x, z);
+        if (h < 0.8 || h > 10.5) continue;
+        const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
+        if (forest > 0.58 && h1 > 0.45) continue; // sparser under trees
+        if (this.nearPad(x, z, -2) && hash2(cx, cz, this.seed + 23) > 0.35) continue; // trimmed lawns at camps
+        q.setFromAxisAngle(up, h1 * Math.PI * 2);
+        const fade = 1 - Math.pow(dd / R, 2.4) * 0.8; // sink into the ground toward the disc edge
+        const sc = (0.95 + hash2(cx, cz, this.seed + 24) * 0.95) * Math.max(0.15, fade);
+        m.compose(new THREE.Vector3(x, h - 0.03, z), q, vs.set(sc, sc * (0.9 + h1 * 0.4), sc));
+        this.grassMesh.setMatrixAt(gi, m);
+        const dry = fbm(x * 0.13, z * 0.13, this.seed + 811, 2) > 0.67;
+        col.setHSL(
+          dry ? 0.12 : 0.24 + hash2(cx, cz, this.seed + 25) * 0.07,
+          dry ? 0.5 : 0.55,
+          dry ? 0.27 : 0.27 + hash2(cx, cz, this.seed + 26) * 0.11
+        );
+        this.grassMesh.setColorAt(gi, col);
+        gi++;
+      }
+    }
+    this.grassMesh.count = gi;
+    this.grassMesh.instanceMatrix.needsUpdate = true;
+    if (this.grassMesh.instanceColor) this.grassMesh.instanceColor.needsUpdate = true;
+  }
+
+  /** adaptive quality: called by the game when frame rate sags */
+  setQuality(q: number) {
+    this.quality = q;
+    this.grassAnchor = { x: 1e9, z: 1e9 }; // force a re-scatter
+    if (q < 1) this.sun.shadow.mapSize.set(1024, 1024);
   }
 
   private nearPad(x: number, z: number, margin: number): boolean {
@@ -1522,6 +1673,8 @@ export class World {
     this.hemi.intensity = 0.28 + day * 0.5;
     this.skyMat.uniforms.uDay.value = day;
     this.skyMat.uniforms.uDusk.value = dusk;
+    (this.skyMat.uniforms.uSunDir.value as THREE.Vector3).set(sx * 120, sy * 140 + 8, 60).normalize();
+    (this.waterMat.uniforms.uSunDir.value as THREE.Vector3).set(sx * 120, sy * 140 + 8, 60).normalize();
     this.waterMat.uniforms.uDay.value = 0.15 + day * 0.85;
     (this.stars.material as THREE.PointsMaterial).opacity = clamp01(1 - day * 2) * 0.9;
     (this.fireflies.material as THREE.PointsMaterial).opacity = clamp01(1 - day * 1.6) * 0.85;
@@ -1532,6 +1685,7 @@ export class World {
   update(dt: number, time: number, playerX: number, playerZ: number) {
     this.waterMat.uniforms.uTime.value = time;
     for (const s of this.windShaders) s.uniforms.uTime.value = time;
+    this.updateGrassRing(playerX, playerZ);
     this.skyMesh.position.set(playerX, 0, playerZ);
     this.stars.position.set(playerX, 0, playerZ);
 

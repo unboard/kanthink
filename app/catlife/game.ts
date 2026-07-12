@@ -125,6 +125,12 @@ export class Game {
   private particlePoints: THREE.Points;
   private readonly MAX_PARTICLES = 300;
 
+  // adaptive quality (fps-driven, one-way downgrades)
+  private fpsAcc = 0;
+  private fpsFrames = 0;
+  private fpsCheckAt = 9;
+  private qualityStep = 0;
+
   // time
   private timeOfDay = 0.35; // start morning
   private elapsed = 0;
@@ -1425,6 +1431,27 @@ export class Game {
     this.updateParticles(dt);
     this.updateCamera(dt);
     this.player.update(dt, this.elapsed);
+
+    // adaptive quality: if a tablet can't hold frame rate, shed grass +
+    // shadow resolution rather than let the game chug. (skipped under test
+    // automation, where software rendering would always trigger it)
+    this.fpsAcc += dt;
+    this.fpsFrames++;
+    if (this.elapsed > this.fpsCheckAt && !navigator.webdriver) {
+      const fps = this.fpsFrames / Math.max(0.001, this.fpsAcc);
+      this.fpsFrames = 0;
+      this.fpsAcc = 0;
+      this.fpsCheckAt = this.elapsed + 5;
+      if (fps < 36 && this.qualityStep === 0) {
+        this.qualityStep = 1;
+        this.world.setQuality(0.55);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35));
+      } else if (fps < 29 && this.qualityStep === 1) {
+        this.qualityStep = 2;
+        this.world.setQuality(0.3);
+        this.renderer.setPixelRatio(1);
+      }
+    }
 
     // autosave
     if (this.elapsed - this.lastSave > 10) {
