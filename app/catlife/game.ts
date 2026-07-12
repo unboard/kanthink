@@ -8,7 +8,7 @@ import { CatAvatar } from './cats';
 import { AudioEngine } from './audio';
 import {
   WATER_LEVEL, DAY_LENGTH, RIVAL_CLANS, BUILDABLES, RANKS,
-  generateCat, rankFor, xpForLevel, clanCapacity,
+  generateCat, generateKitten, rankFor, xpForLevel, clanCapacity,
 } from './data';
 import type {
   CatSpec, ContextTarget, ChallengeState, DuelState, GameEvents, GameMode,
@@ -30,6 +30,15 @@ interface RivalCat {
   stateT: number;
   targetYarn: YarnBall | null;
   level: number;
+}
+
+interface FollowerKitten {
+  spec: CatSpec;
+  avatar: CatAvatar;
+  x: number; z: number; y: number;
+  heading: number;
+  hopVy: number;
+  hopY: number;
 }
 
 interface Particle {
@@ -78,6 +87,13 @@ export class Game {
 
   // rivals + AI
   private rivals: RivalCat[] = [];
+
+  // kittens: followers mimic the player; extras hang out at camp
+  private followers: FollowerKitten[] = [];
+  private campKittens: { avatar: CatAvatar; x: number; z: number; heading: number; t: number }[] = [];
+  private actionHistory: { t: number; a: import('./types').CatAction }[] = [];
+  private rescue: { tree: TreeInfo; spec: CatSpec; avatar: CatAvatar; meowT: number } | null = null;
+  private nextRescueAt = 45;
 
   // duel
   private duel: DuelState | null = null;
@@ -147,6 +163,7 @@ export class Game {
     this.spawnPlayer(spec);
 
     this.spawnRivals();
+    this.syncKittens();
 
     // agility gate highlight ring
     this.gateRing = new THREE.Mesh(
@@ -161,7 +178,21 @@ export class Game {
     this.particleGeo = new THREE.BufferGeometry();
     this.particleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.MAX_PARTICLES * 3), 3));
     this.particleGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.MAX_PARTICLES * 3), 3));
-    const pMat = new THREE.PointsMaterial({ size: 0.22, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false });
+    // soft round puff sprite so dust/sparkles aren't hard squares
+    const pc = document.createElement('canvas');
+    pc.width = 32; pc.height = 32;
+    const pctx = pc.getContext('2d')!;
+    const grad = pctx.createRadialGradient(16, 16, 2, 16, 16, 15);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.7, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    pctx.fillStyle = grad;
+    pctx.fillRect(0, 0, 32, 32);
+    const puffTex = new THREE.CanvasTexture(pc);
+    const pMat = new THREE.PointsMaterial({
+      size: 0.3, vertexColors: true, transparent: true, opacity: 0.85,
+      depthWrite: false, map: puffTex,
+    });
     this.particlePoints = new THREE.Points(this.particleGeo, pMat);
     this.particlePoints.frustumCulled = false;
     this.scene.add(this.particlePoints);
@@ -216,6 +247,9 @@ export class Game {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('resize', this.onResize);
+    for (const f of this.followers) f.avatar.dispose();
+    for (const ck of this.campKittens) ck.avatar.dispose();
+    if (this.rescue) this.rescue.avatar.dispose();
     this.audio.dispose();
     this.renderer.dispose();
     this.persist();
@@ -281,6 +315,216 @@ export class Game {
         });
       }
     }
+  }
+
+  // ——— kittens ———
+
+  /** rebuild follower + camp-kitten avatars from the save */
+  private syncKittens() {
+    for (const f of this.followers) {
+      this.scene.remove(f.avatar.root);
+      f.avatar.dispose();
+    }
+    for (const ck of this.campKittens) {
+      this.scene.remove(ck.avatar.root);
+      ck.avatar.dispose();
+    }
+    this.followers = [];
+    this.campKittens = [];
+
+    const following = this.save.kittens.slice(0, 3);
+    following.forEach((spec, i) => {
+      const avatar = new CatAvatar(spec, { kitten: true });
+      const x = this.px - Math.sin(this.heading) * (1.4 + i) + (i - 1) * 0.7;
+      const z = this.pz - Math.cos(this.heading) * (1.4 + i);
+      avatar.root.position.set(x, this.world.heightAt(x, z), z);
+      this.scene.add(avatar.root);
+      this.followers.push({ spec, avatar, x, z, y: this.world.heightAt(x, z), heading: this.heading, hopVy: 0, hopY: 0 });
+    });
+
+    for (const spec of this.save.kittens.slice(3, 7)) {
+      const avatar = new CatAvatar(spec, { kitten: true });
+      const a = Math.random() * Math.PI * 2;
+      const x = this.world.playerCamp.x + Math.cos(a) * 5;
+      const z = this.world.playerCamp.z + Math.sin(a) * 5;
+      avatar.root.position.set(x, this.world.heightAt(x, z), z);
+      this.scene.add(avatar.root);
+      this.campKittens.push({ avatar, x, z, heading: a, t: Math.random() * 10 });
+    }
+  }
+
+  /** the player's action, as it was `delay` seconds ago — kittens copy with a lag */
+  private delayedAction(delay: number): import('./types').CatAction {
+    const cutoff = this.elapsed - delay;
+    for (let i = this.actionHistory.length - 1; i >= 0; i--) {
+      if (this.actionHistory[i].t <= cutoff) return this.actionHistory[i].a;
+    }
+    return this.actionHistory[0]?.a ?? 'idle';
+  }
+
+  private updateFollowers(dt: number) {
+    // record player action history (~120 entries ≈ 2s at 60fps is plenty for 1.2s max lag)
+    this.actionHistory.push({ t: this.elapsed, a: this.player.action });
+    if (this.actionHistory.length > 160) this.actionHistory.shift();
+
+    const n = this.followers.length;
+    for (let i = 0; i < n; i++) {
+      const f = this.followers[i];
+      const delay = 0.35 + i * 0.28;
+      const mimic = this.delayedAction(delay);
+
+      // trail formation: staggered line behind the player
+      const back = this.heading + Math.PI;
+      const side = (i - (n - 1) / 2) * 1.0;
+      const dist = 1.5 + i * 0.75;
+      const tx = this.px + Math.sin(back) * dist + Math.sin(back + Math.PI / 2) * side;
+      const tz = this.pz + Math.cos(back) * dist + Math.cos(back + Math.PI / 2) * side;
+      const d = Math.hypot(tx - f.x, tz - f.z);
+
+      // lost kittens (swam off, glitched) pop back to the player's side
+      if (Math.hypot(f.x - this.px, f.z - this.pz) > 34) {
+        f.x = this.px + Math.sin(back) * 1.5;
+        f.z = this.pz + Math.cos(back) * 1.5;
+      }
+
+      let speed = 0;
+      if (d > 0.35) {
+        speed = Math.min(9.5, d * 2.4);
+        const a = Math.atan2(tx - f.x, tz - f.z);
+        f.x += Math.sin(a) * speed * dt;
+        f.z += Math.cos(a) * speed * dt;
+        let dh = a - f.heading;
+        while (dh > Math.PI) dh -= Math.PI * 2;
+        while (dh < -Math.PI) dh += Math.PI * 2;
+        f.heading += dh * Math.min(1, dt * 8);
+      } else {
+        // idle: face where the player faces (mimicry!)
+        let dh = this.heading - f.heading;
+        while (dh > Math.PI) dh -= Math.PI * 2;
+        while (dh < -Math.PI) dh += Math.PI * 2;
+        f.heading += dh * Math.min(1, dt * 3);
+      }
+
+      const groundY = this.world.heightAt(f.x, f.z);
+      const inWater = WATER_LEVEL - groundY > 0.5;
+
+      // hop mimicry
+      if (mimic === 'jump' && f.hopY === 0 && f.hopVy === 0 && !inWater) {
+        f.hopVy = 5.5;
+        f.hopY = 0.001;
+      }
+      if (f.hopY > 0) {
+        f.hopVy -= 22 * dt;
+        f.hopY += f.hopVy * dt;
+        if (f.hopY <= 0) { f.hopY = 0; f.hopVy = 0; }
+      }
+
+      f.y = inWater ? WATER_LEVEL - 0.22 : groundY + f.hopY;
+      f.avatar.root.position.set(f.x, f.y, f.z);
+      f.avatar.root.rotation.y = f.heading;
+      f.avatar.moveSpeed = speed;
+
+      // choose the mimicked pose
+      if (inWater) f.avatar.setAction('swim');
+      else if (f.hopY > 0) f.avatar.setAction(f.hopVy > 0 ? 'jump' : 'fall');
+      else if (speed > 0.3) f.avatar.setAction(mimic === 'sneak' ? 'sneak' : speed > 4.2 ? 'run' : 'walk');
+      else if (mimic === 'dig' || mimic === 'scratch' || mimic === 'sit' || mimic === 'nap' || mimic === 'sneak' || mimic === 'pounce') {
+        f.avatar.setAction(mimic);
+      } else f.avatar.setAction('idle');
+
+      f.avatar.update(dt, this.elapsed + i * 1.7);
+    }
+
+    // camp kittens: gentle wandering around the stone circle
+    for (const ck of this.campKittens) {
+      ck.t += dt;
+      const camp = this.world.playerCamp;
+      const phase = Math.sin(ck.t * 0.25);
+      if (phase > 0.2) {
+        ck.heading += Math.sin(ck.t * 0.6) * dt * 0.8;
+        ck.x += Math.sin(ck.heading) * 0.8 * dt;
+        ck.z += Math.cos(ck.heading) * 0.8 * dt;
+        if (Math.hypot(ck.x - camp.x, ck.z - camp.z) > 9) {
+          ck.heading = Math.atan2(camp.x - ck.x, camp.z - ck.z);
+        }
+        ck.avatar.setAction('walk');
+        ck.avatar.moveSpeed = 0.8;
+      } else {
+        ck.avatar.setAction(phase < -0.7 ? 'nap' : 'sit');
+        ck.avatar.moveSpeed = 0;
+      }
+      ck.avatar.root.position.set(ck.x, this.world.heightAt(ck.x, ck.z), ck.z);
+      ck.avatar.root.rotation.y = ck.heading;
+      if (Math.hypot(ck.x - this.px, ck.z - this.pz) < 60) ck.avatar.update(dt, this.elapsed + ck.t);
+    }
+  }
+
+  // ——— kitten tree rescue ———
+
+  private spawnRescue() {
+    let tree: TreeInfo | null = null;
+    for (let i = 0; i < 60; i++) {
+      const cand = this.world.trees[(Math.random() * this.world.trees.length) | 0];
+      if (!cand) return;
+      const d = Math.hypot(cand.x - this.px, cand.z - this.pz);
+      if (d > 40 && d < 130 && this.world.heightAt(cand.x, cand.z) > 1) { tree = cand; break; }
+    }
+    if (!tree) return;
+    const spec = generateKitten(Date.now() % 999999937);
+    const avatar = new CatAvatar(spec, { kitten: true });
+    avatar.root.position.set(tree.x + 0.3, tree.perchY, tree.z + 0.3);
+    avatar.setAction('sit');
+    avatar.showEmote('drop', 4);
+    this.scene.add(avatar.root);
+    this.rescue = { tree, spec, avatar, meowT: 1.5 };
+    this.toast('You hear tiny meows… a kitten is stuck in a tree! Follow the 🐱 arrow!');
+  }
+
+  private updateRescue(dt: number) {
+    if (!this.rescue) {
+      if (this.elapsed > this.nextRescueAt && this.save.kittens.length < 12 && !this.challenge && !this.duel) {
+        this.spawnRescue();
+      }
+      return;
+    }
+    const r = this.rescue;
+    r.avatar.update(dt, this.elapsed);
+    r.meowT -= dt;
+    const d = Math.hypot(r.tree.x - this.px, r.tree.z - this.pz);
+    if (r.meowT <= 0) {
+      r.meowT = 3.4;
+      this.audio.meow(r.spec.voicePitch, Math.max(0.08, Math.min(0.7, 1.5 - d / 60)));
+      r.avatar.meow();
+      r.avatar.showEmote('drop', 2);
+      if (d < 20) this.burst(r.tree.x, r.tree.perchY + 0.5, r.tree.z, '#ffd54a', 4);
+    }
+    // rescued when the player climbs up close to it
+    if (this.climbing && this.climbing.tree.id === r.tree.id) {
+      const baseY = this.world.heightAt(r.tree.x, r.tree.z);
+      if (baseY + this.climbing.h > r.tree.perchY - 1.1) this.completeRescue();
+    }
+  }
+
+  private completeRescue() {
+    const r = this.rescue;
+    if (!r) return;
+    this.rescue = null;
+    this.scene.remove(r.avatar.root);
+    r.avatar.dispose();
+    this.save.kittens.push(r.spec);
+    this.nextRescueAt = this.elapsed + 200 + Math.random() * 160;
+    this.audio.catJoin();
+    this.burst(r.tree.x, r.tree.perchY, r.tree.z, '#ffd54a', 22);
+    const following = this.save.kittens.length <= 3;
+    this.events.onCelebrate(
+      'recruit',
+      following
+        ? `You rescued ${r.spec.name}! The kitten will follow you everywhere 🐾`
+        : `You rescued ${r.spec.name}! They'll play safe at your camp 🏕`
+    );
+    this.syncKittens();
+    this.persist();
+    this.events.onSaveChanged();
   }
 
   // ——— input API (called from React) ———
@@ -366,6 +610,14 @@ export class Game {
         this.audio.meow(1.5, vol);
       }, 700);
     }
+    // follower kittens squeak back, one after another
+    this.followers.forEach((f, i) => {
+      setTimeout(() => {
+        if (this.disposed) return;
+        f.avatar.meow();
+        this.audio.meow(f.spec.voicePitch, 0.22);
+      }, 650 + i * 380);
+    });
   }
 
   pressAction() {
@@ -385,6 +637,7 @@ export class Game {
       case 'duel': this.startDuel(ctx.id); break;
       case 'prey': this.doPounce(); break;
       case 'agility': this.startAgility(); break;
+      case 'rescue': this.startClimb(ctx.id); break;
     }
   }
 
@@ -1146,6 +1399,7 @@ export class Game {
       this.updateDuel(dt);
       this.updateDuelCamera(dt);
       this.player.update(dt, this.elapsed);
+      this.updateFollowers(dt); // kittens gather round to watch
       for (const r of this.rivals) r.avatar.update(dt, this.elapsed);
       this.world.update(dt, this.elapsed, this.px, this.pz);
       this.world.setTimeOfDay(this.timeOfDay, this.px, this.pz);
@@ -1157,6 +1411,8 @@ export class Game {
       this.updatePlayer(dt);
       this.updateContext();
       this.updateRivals(dt);
+      this.updateFollowers(dt);
+      this.updateRescue(dt);
       this.updateChallenge(dt);
       this.updateAgility(dt);
       this.updateBuildGhost();
@@ -1300,12 +1556,22 @@ export class Game {
       this.heading += dh * Math.min(1, dt * 10);
       this.lastMoveDir = { x: dx, z: dz };
 
-      // footsteps
+      // footsteps + dust kicked up by running paws
       if (this.grounded && !this.swimming) {
         this.stepAcc += speed * dt;
         if (this.stepAcc > 1.1) {
           this.stepAcc = 0;
-          this.audio.footstep(this.sneaking, groundY < WATER_LEVEL + 1.2);
+          const onSand = groundY < WATER_LEVEL + 1.2;
+          this.audio.footstep(this.sneaking, onSand);
+          if (!this.sneaking && speed > 4.2) {
+            this.burst(
+              this.px - this.lastMoveDir.x * 0.5,
+              this.py + 0.06,
+              this.pz - this.lastMoveDir.z * 0.5,
+              onSand ? '#ddcb96' : '#9a835f',
+              3
+            );
+          }
         }
       } else if (this.swimming) {
         this.stepAcc += speed * dt;
@@ -1415,6 +1681,11 @@ export class Game {
     };
 
     if (!this.climbing && this.busyT <= 0) {
+      // kitten rescue takes top billing
+      if (this.rescue) {
+        const d = Math.hypot(this.rescue.tree.x - this.px, this.rescue.tree.z - this.pz);
+        if (d < 2.6) set('rescue', `Rescue ${this.rescue.spec.name}!`, this.rescue.tree.id, this.rescue.tree.x, this.rescue.tree.z, d, 8);
+      }
       // rival duel
       for (const r of this.rivals) {
         const d = Math.hypot(r.x - this.px, r.z - this.pz);
@@ -1698,6 +1969,13 @@ export class Game {
         : null,
       compass: this.camYaw,
       camp: this.campCompass(),
+      rescue: this.rescue
+        ? {
+            angle: Math.atan2(this.rescue.tree.x - this.px, this.rescue.tree.z - this.pz) - this.camYaw,
+            dist: Math.hypot(this.rescue.tree.x - this.px, this.rescue.tree.z - this.pz),
+          }
+        : null,
+      kittens: this.save.kittens.length,
     };
     this.events.onHud(hud);
   }

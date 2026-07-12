@@ -480,12 +480,22 @@ function TopHud({
         </button>
         <Pill text={`🧶 ${hud.yarn}`} />
         <Pill text={`🍪 ${hud.treats}`} />
+        {hud.kittens > 0 && <Pill text={`🐱 ${hud.kittens}`} />}
       </div>
 
       <div className="flex items-center gap-2">
         {/* status chips */}
         {hud.swimming && <Pill text="🌊 swimming" />}
         {hud.climbing && <Pill text="🌲 climbing" />}
+        {/* kitten rescue compass — a kitten is stuck in a tree! */}
+        {hud.rescue && (
+          <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
+            style={{ background: '#fbe3ec', color: INK, border: '1.5px solid #e8a9c0', animation: 'ww-pulse 1.2s infinite' }}>
+            🐱
+            <span style={{ display: 'inline-block', transform: `rotate(${hud.rescue.angle}rad)` }}>⬆️</span>
+            <span className="text-[10px] tabular-nums">{Math.round(hud.rescue.dist)}m</span>
+          </span>
+        )}
         {/* camp compass — appears when far from home */}
         {hud.camp.dist > 45 && (
           <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
@@ -882,6 +892,27 @@ function GuideOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
           <p className="hidden text-[11px] md:block" style={{ color: INK_SOFT }}>
             Win golden-yarn challenges to recruit more cats. Build dens for more room!
           </p>
+
+          {/* rescued kittens */}
+          {save.kittens.length > 0 && (
+            <div className="min-w-40 rounded-2xl border p-2.5" style={{ background: CARD, borderColor: LINE }}>
+              <div className="mb-1 text-xs font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>
+                🐱 Rescued kittens ({save.kittens.length})
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {save.kittens.map((k, i) => (
+                  <span key={k.id} className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                    style={{ background: i < 3 ? '#fbe3ec' : '#ece4cf', color: INK }}>
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: k.coat.base }} />
+                    {k.name}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-1 text-[10px]" style={{ color: INK_SOFT }}>
+                The first 3 follow you and copy everything you do. The rest play at camp!
+              </p>
+            </div>
+          )}
         </div>
 
         {/* 3D viewer */}

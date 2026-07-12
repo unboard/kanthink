@@ -17,6 +17,7 @@ export function newSave(seed: number, clanName: string, firstCatSeed: number): S
     yarn: 0,
     totalYarn: 0,
     cats: [starter],
+    kittens: [],
     activeCatId: starter.id,
     collectedYarn: [],
     goldenDone: [],
@@ -39,6 +40,7 @@ export function loadSave(): SaveData | null {
     if (!raw) return null;
     const data = JSON.parse(raw) as SaveData;
     if (!data || data.v !== 1 || !Array.isArray(data.cats) || data.cats.length === 0) return null;
+    if (!Array.isArray(data.kittens)) data.kittens = []; // saves from before the kitten update
     return data;
   } catch {
     return null;

@@ -78,6 +78,7 @@ export interface SaveData {
   yarn: number;
   totalYarn: number;            // lifetime collected
   cats: CatSpec[];
+  kittens: CatSpec[];           // rescued kittens; first 3 follow the player
   activeCatId: string;
   collectedYarn: string[];      // ids collected this wave
   goldenDone: string[];         // golden yarn ids completed
@@ -94,13 +95,15 @@ export interface SaveData {
 
 export type GameMode = 'explore' | 'sneak' | 'build' | 'agility' | 'duel';
 
+// Rescued kittens follow the active cat and mimic it (run, sneak, jump, dig…).
+
 export type CatAction =
   | 'idle' | 'walk' | 'run' | 'sneak' | 'jump' | 'fall'
   | 'climb' | 'swim' | 'dig' | 'scratch' | 'sit' | 'pounce' | 'meow' | 'nap';
 
 // Context-sensitive interactable the action button targets
 export interface ContextTarget {
-  kind: 'dig' | 'climb' | 'scratch' | 'yarn' | 'golden' | 'duel' | 'prey' | 'agility' | 'islet' | 'building';
+  kind: 'dig' | 'climb' | 'scratch' | 'yarn' | 'golden' | 'duel' | 'prey' | 'agility' | 'islet' | 'building' | 'rescue';
   label: string;
   id: string;
   x: number;
@@ -121,6 +124,8 @@ export interface HudState {
   agility: { running: boolean; t: number; par: number; nextGate: number; total: number } | null;
   compass: number;   // camera yaw for minimap
   camp: { angle: number; dist: number }; // direction home (camera-relative)
+  rescue: { angle: number; dist: number } | null; // kitten-in-tree direction
+  kittens: number;   // rescued kitten count
 }
 
 export interface ToastMsg {

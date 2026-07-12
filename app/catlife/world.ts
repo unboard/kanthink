@@ -1,9 +1,10 @@
 // Whisker Wilds — procedural island world
-// Seeded generation: terrain, water, forests, rocks, flowers, dig mounds,
-// yarn balls, rival camps, agility course, offshore islets, critters, sky.
+// v2 detail pass: wind-blown grass blades, oak/pine/birch forests with
+// swaying canopies, falling leaves, fallen logs, cattails & lily pads,
+// drifting clouds, fireflies at night, terrain micro-detail.
 
 import * as THREE from 'three';
-import { mulberry32, fbm, range, irange, hash2 } from './rng';
+import { mulberry32, fbm, irange, hash2 } from './rng';
 import { WORLD_SIZE, WATER_LEVEL, RIVAL_CLANS, BUILDABLES } from './data';
 import type { BuildingInstance } from './types';
 
@@ -28,8 +29,9 @@ export interface Critter {
   speed: number;
   phase: number;
 }
-
 export interface ScratchSpot { id: string; x: number; z: number; label: string }
+
+interface Leaf { x: number; y: number; z: number; phase: number; spinX: number; spinY: number; groundT: number }
 
 const gauss = (d: number, r: number) => Math.exp(-(d * d) / (r * r));
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -52,7 +54,6 @@ export class World {
   scratchSpots: ScratchSpot[] = [];
   buildingMeshes = new Map<string, THREE.Group>();
 
-  // lighting / sky
   sun: THREE.DirectionalLight;
   moon: THREE.DirectionalLight;
   hemi: THREE.HemisphereLight;
@@ -61,17 +62,27 @@ export class World {
   private waterMat: THREE.ShaderMaterial;
   private stars: THREE.Points;
   private campLights: THREE.PointLight[] = [];
+  private clouds: THREE.Group;
 
-  // terrain params (seeded once)
+  // wind
+  private windShaders: { uniforms: { uTime: { value: number } } }[] = [];
+
+  // falling leaves
+  private leafMesh: THREE.InstancedMesh;
+  private leafState: Leaf[] = [];
+
+  // fireflies
+  private fireflies: THREE.Points;
+  private fireflyBase: Float32Array;
+
   private lakeC: { x: number; z: number };
   private hillC: { x: number; z: number };
   private flatSpots: { x: number; z: number; r: number; h: number }[] = [];
 
-  private terrainMesh: THREE.Mesh;
   private yarnTexNormal: THREE.CanvasTexture;
   private yarnTexGold: THREE.CanvasTexture;
 
-  constructor(seed: number, scene: THREE.Scene, private isNight = false) {
+  constructor(seed: number, scene: THREE.Scene) {
     this.seed = seed;
     const rng = mulberry32(seed);
 
@@ -80,37 +91,27 @@ export class World {
     this.lakeC = { x: Math.cos(a1) * 70, z: Math.sin(a1) * 70 };
     const a2 = a1 + Math.PI * (0.6 + rng() * 0.5);
     this.hillC = { x: Math.cos(a2) * 90, z: Math.sin(a2) * 90 };
-
-    // player camp: south-ish flat area away from lake
     const a3 = a1 + Math.PI;
     this.playerCamp = { x: Math.cos(a3) * 60, z: Math.sin(a3) * 60 };
-    // agility course: off to one side
     const a4 = a3 + 1.4;
     this.agilityCenter = { x: Math.cos(a4) * 105, z: Math.sin(a4) * 105 };
 
-    // rival camps around the island rim
     for (let i = 0; i < RIVAL_CLANS.length; i++) {
       const a = a3 + Math.PI * 0.5 + (i * Math.PI * 2) / 3 + 0.5;
-      const cx = Math.cos(a) * 120;
-      const cz = Math.sin(a) * 120;
-      this.camps.push({ clanId: RIVAL_CLANS[i].id, x: cx, z: cz, r: 16 });
+      this.camps.push({ clanId: RIVAL_CLANS[i].id, x: Math.cos(a) * 120, z: Math.sin(a) * 120, r: 16 });
     }
-
-    // offshore islets (swim destinations)
     for (let i = 0; i < 3; i++) {
       const a = rng() * Math.PI * 2;
       const d = 265 + rng() * 45;
       this.islets.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 18 + rng() * 10 });
     }
 
-    // flatten pads: player camp, rival camps, agility strip
     this.flatSpots.push({ ...this.playerCamp, r: 26, h: 2.2 });
     for (const c of this.camps) this.flatSpots.push({ x: c.x, z: c.z, r: 20, h: 2.4 });
     this.flatSpots.push({ x: this.agilityCenter.x, z: this.agilityCenter.z, r: 34, h: 2.0 });
 
     // ——— build everything ———
-    this.terrainMesh = this.buildTerrain();
-    this.group.add(this.terrainMesh);
+    this.group.add(this.buildTerrain());
     const water = this.buildWater();
     this.waterMat = water.material as THREE.ShaderMaterial;
     this.group.add(water);
@@ -120,19 +121,29 @@ export class World {
     this.group.add(this.skyMesh);
     this.stars = this.buildStars();
     this.group.add(this.stars);
+    this.clouds = this.buildClouds(rng);
+    this.group.add(this.clouds);
 
     this.buildFlora(rng);
     this.buildRocks(rng);
+    this.buildLogsAndStumps(rng);
+    this.buildLakeLife(rng);
     this.buildDigMounds(rng);
     this.buildCamps();
     this.buildAgilityCourse();
     this.buildCritters(rng);
 
-    // yarn ball textures
+    const leaves = this.buildLeaves(rng);
+    this.leafMesh = leaves;
+    this.group.add(leaves);
+    const ff = this.buildFireflies(rng);
+    this.fireflies = ff.points;
+    this.fireflyBase = ff.base;
+    this.group.add(this.fireflies);
+
     this.yarnTexNormal = this.paintYarnTexture('#e05d7e', '#b23a5a');
     this.yarnTexGold = this.paintYarnTexture('#f5cf58', '#c99a1e');
 
-    // lights
     this.hemi = new THREE.HemisphereLight('#bfd9ff', '#8a9a6a', 0.75);
     this.group.add(this.hemi);
     this.sun = new THREE.DirectionalLight('#fff2d8', 2.2);
@@ -156,19 +167,14 @@ export class World {
   // ——— terrain height (analytic; physics uses the same function) ———
   heightAt(x: number, z: number): number {
     const d = Math.hypot(x, z);
-    const island = smoothstep(clamp01(1 - (d - 155) / 95)); // 1 inside, 0 at ~250
+    const island = smoothstep(clamp01(1 - (d - 155) / 95));
     let h = (fbm(x * 0.011, z * 0.011, this.seed, 4) * 15 - 3.5) * island;
-    // big hill
     h += gauss(Math.hypot(x - this.hillC.x, z - this.hillC.z), 55) * 11 * island;
-    // drop-off to sea floor
     h += (island - 1) * 9;
-    // lake carve
     h -= gauss(Math.hypot(x - this.lakeC.x, z - this.lakeC.z), 34) * 10;
-    // islets rise from the sea
     for (const it of this.islets) {
       h += gauss(Math.hypot(x - it.x, z - it.z), it.r) * (9 + it.r * 0.1);
     }
-    // flatten pads
     for (const f of this.flatSpots) {
       const t = smoothstep(clamp01(1 - Math.hypot(x - f.x, z - f.z) / f.r));
       h = h * (1 - t) + f.h * t;
@@ -176,7 +182,6 @@ export class World {
     return h;
   }
 
-  /** ground normal (approx, for slope checks) */
   normalAt(x: number, z: number): THREE.Vector3 {
     const e = 0.6;
     const hx = this.heightAt(x + e, z) - this.heightAt(x - e, z);
@@ -184,18 +189,50 @@ export class World {
     return new THREE.Vector3(-hx, 2 * e, -hz).normalize();
   }
 
+  /** register a material for wind sway. strength scales with vertex height. */
+  private windify(mat: THREE.MeshStandardMaterial, strength: number, litFromAbove = false) {
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      this.windShaders.push(shader as unknown as { uniforms: { uTime: { value: number } } });
+      shader.vertexShader = ('uniform float uTime;\n' + shader.vertexShader).replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        {
+          #ifdef USE_INSTANCING
+            vec4 wwPos = instanceMatrix * vec4(position, 1.0);
+          #else
+            vec4 wwPos = vec4(position, 1.0);
+          #endif
+          float wwSway = max(0.0, position.y) * ${strength.toFixed(4)};
+          transformed.x += sin(uTime * 1.7 + wwPos.x * 0.4 + wwPos.z * 0.25) * wwSway;
+          transformed.z += cos(uTime * 1.3 + wwPos.x * 0.3 + wwPos.z * 0.17) * wwSway * 0.7;
+        }`
+      );
+      if (litFromAbove) {
+        // grass blades: light them like the ground so back faces never go black
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <normal_fragment_begin>',
+          `#include <normal_fragment_begin>
+          normal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);`
+        );
+      }
+    };
+  }
+
   private buildTerrain(): THREE.Mesh {
-    const segs = 170;
-    const size = WORLD_SIZE * 1.5; // extend under the sea
+    const segs = 200;
+    const size = WORLD_SIZE * 1.5;
     const geoT = new THREE.PlaneGeometry(size, size, segs, segs);
     geoT.rotateX(-Math.PI / 2);
     const pos = geoT.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     const cGrass = new THREE.Color('#79a854');
     const cGrass2 = new THREE.Color('#5e9146');
+    const cGrassDry = new THREE.Color('#a8b060');
     const cForest = new THREE.Color('#4d7c3a');
     const cSand = new THREE.Color('#e3d29a');
     const cRock = new THREE.Color('#8d8d84');
+    const cDirt = new THREE.Color('#8a7350');
     const cSea = new THREE.Color('#c9bd8d');
     const tmp = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
@@ -204,14 +241,19 @@ export class World {
       const h = this.heightAt(x, z);
       pos.setY(i, h);
       const n = fbm(x * 0.05, z * 0.05, this.seed + 77, 3);
+      const n2 = fbm(x * 0.13, z * 0.13, this.seed + 811, 2);
       const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
       if (h < WATER_LEVEL - 0.5) tmp.copy(cSea).multiplyScalar(0.8 + n * 0.2);
       else if (h < WATER_LEVEL + 1.1) tmp.copy(cSand).multiplyScalar(0.92 + n * 0.12);
       else if (h > 10.5) tmp.copy(cRock).multiplyScalar(0.85 + n * 0.25);
       else {
         tmp.copy(n > 0.5 ? cGrass : cGrass2);
-        if (forest > 0.56) tmp.lerp(cForest, 0.6);
-        tmp.multiplyScalar(0.9 + n * 0.18);
+        if (n2 > 0.62) tmp.lerp(cGrassDry, 0.45);       // sun-dried patches
+        if (forest > 0.56) {
+          tmp.lerp(cForest, 0.6);
+          if (n2 < 0.4) tmp.lerp(cDirt, 0.3);           // bare dirt under trees
+        }
+        tmp.multiplyScalar(0.88 + n * 0.22);
       }
       colors[i * 3] = tmp.r;
       colors[i * 3 + 1] = tmp.g;
@@ -219,7 +261,25 @@ export class World {
     }
     geoT.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geoT.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
+
+    // micro-detail: near-white speckle texture tiled over the whole island
+    const dc = document.createElement('canvas');
+    dc.width = 128; dc.height = 128;
+    const dctx = dc.getContext('2d')!;
+    dctx.fillStyle = '#ffffff';
+    dctx.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 2400; i++) {
+      const v = Math.random();
+      dctx.fillStyle = v > 0.5 ? `rgba(40,60,20,${0.04 + Math.random() * 0.08})` : `rgba(255,255,230,${0.05 + Math.random() * 0.06})`;
+      const px = Math.random() * 128, py = Math.random() * 128;
+      dctx.fillRect(px, py, 1 + Math.random() * 1.6, 1 + Math.random() * 2.4);
+    }
+    const detail = new THREE.CanvasTexture(dc);
+    detail.wrapS = detail.wrapT = THREE.RepeatWrapping;
+    detail.repeat.set(110, 110);
+    detail.colorSpace = THREE.SRGBColorSpace;
+
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: detail });
     const mesh = new THREE.Mesh(geoT, mat);
     mesh.receiveShadow = true;
     return mesh;
@@ -262,7 +322,6 @@ export class World {
           vec3 viewDir = normalize(cameraPosition - vPos);
           float fres = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 2.0);
           vec3 col = mix(deep, shallow, fres * 0.9 + 0.15);
-          // sun sparkle
           vec3 hv = normalize(viewDir + normalize(uSunDir));
           float spec = pow(max(dot(vNormal, hv), 0.0), 90.0) * uDay;
           col += vec3(1.0, 0.95, 0.8) * spec * 0.9;
@@ -279,10 +338,7 @@ export class World {
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
-      uniforms: {
-        uDay: { value: 1 },     // 0 night → 1 day
-        uDusk: { value: 0 },    // sunset warmth
-      },
+      uniforms: { uDay: { value: 1 }, uDusk: { value: 0 } },
       vertexShader: `
         varying vec3 vDir;
         void main() {
@@ -296,20 +352,14 @@ export class World {
         varying vec3 vDir;
         void main() {
           float h = clamp(vDir.y, 0.0, 1.0);
-          vec3 dayTop = vec3(0.35, 0.62, 0.94);
-          vec3 dayHor = vec3(0.78, 0.88, 0.96);
-          vec3 nightTop = vec3(0.03, 0.05, 0.13);
-          vec3 nightHor = vec3(0.10, 0.13, 0.25);
-          vec3 top = mix(nightTop, dayTop, uDay);
-          vec3 hor = mix(nightHor, dayHor, uDay);
+          vec3 top = mix(vec3(0.03, 0.05, 0.13), vec3(0.35, 0.62, 0.94), uDay);
+          vec3 hor = mix(vec3(0.10, 0.13, 0.25), vec3(0.78, 0.88, 0.96), uDay);
           hor = mix(hor, vec3(0.96, 0.62, 0.38), uDusk);
-          vec3 col = mix(hor, top, pow(h, 0.75));
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(mix(hor, top, pow(h, 0.75)), 1.0);
         }
       `,
     });
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(900, 24, 16), mat);
-    return { mesh, mat };
+    return { mesh: new THREE.Mesh(new THREE.SphereGeometry(900, 24, 16), mat), mat };
   }
 
   private buildStars(): THREE.Points {
@@ -330,9 +380,72 @@ export class World {
     return new THREE.Points(g, m);
   }
 
-  // ——— flora: instanced trees, grass, flowers, bushes, mushrooms ———
+  private buildClouds(rng: () => number): THREE.Group {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#ffffff', roughness: 1, transparent: true, opacity: 0.92,
+      emissive: '#ffffff', emissiveIntensity: 0.12,
+    });
+    const puffGeo = new THREE.SphereGeometry(1, 10, 8);
+    for (let i = 0; i < 12; i++) {
+      const cloud = new THREE.Group();
+      const puffs = 3 + irange(rng, 0, 2);
+      for (let j = 0; j < puffs; j++) {
+        const puff = new THREE.Mesh(puffGeo, mat);
+        puff.scale.set(3 + rng() * 4.5, 1.1 + rng() * 1.1, 2.2 + rng() * 2.6);
+        puff.position.set((j - puffs / 2) * 3.4 + rng() * 2, rng() * 1.2, (rng() - 0.5) * 3);
+        cloud.add(puff);
+      }
+      cloud.position.set((rng() - 0.5) * 760, 88 + rng() * 42, (rng() - 0.5) * 760);
+      cloud.userData.speed = 1.1 + rng() * 1.3;
+      group.add(cloud);
+    }
+    return group;
+  }
+
+  // ——— grass blade tuft geometry (5 bent blades) ———
+  private buildGrassTuftGeo(): THREE.BufferGeometry {
+    const pos: number[] = [];
+    const nor: number[] = [];
+    const uv: number[] = [];
+    const idx: number[] = [];
+    let vi = 0;
+    const blades = 5;
+    for (let b = 0; b < blades; b++) {
+      const a = (b / blades) * Math.PI * 2 + b * 1.71;
+      const bx = Math.cos(a) * 0.05;
+      const bz = Math.sin(a) * 0.05;
+      const lean = 0.1 + (b % 3) * 0.06;
+      const lx = Math.cos(a) * lean;
+      const lz = Math.sin(a) * lean;
+      const h = 0.34 + (((b * 37) % 10) / 10) * 0.28;
+      const w = 0.034;
+      const px = -Math.sin(a);
+      const pz = Math.cos(a);
+      // tapered quad: wide base, narrow bent tip
+      pos.push(
+        bx - px * w, 0, bz - pz * w,
+        bx + px * w, 0, bz + pz * w,
+        bx + lx - px * w * 0.22, h, bz + lz - pz * w * 0.22,
+        bx + lx + px * w * 0.22, h, bz + lz + pz * w * 0.22
+      );
+      for (let i = 0; i < 4; i++) nor.push(0, 1, 0);
+      uv.push(0, 0, 1, 0, 0, 1, 1, 1);
+      idx.push(vi, vi + 1, vi + 2, vi + 1, vi + 3, vi + 2);
+      vi += 4;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    return g;
+  }
+
+  // ——— flora ———
   private buildFlora(rng: () => number) {
-    const treeSpots: { x: number; z: number; s: number }[] = [];
+    type TreeType = 'oak' | 'pine' | 'birch';
+    const treeSpots: { x: number; z: number; s: number; type: TreeType }[] = [];
     const step = 9;
     for (let gx = -125; gx <= 125; gx += step) {
       for (let gz = -125; gz <= 125; gz += step) {
@@ -341,94 +454,139 @@ export class World {
         const h = this.heightAt(x, z);
         if (h < 1.2 || h > 10.5) continue;
         const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
-        const p = forest > 0.56 ? 0.75 : forest > 0.48 ? 0.18 : 0.03;
+        const p = forest > 0.56 ? 0.78 : forest > 0.48 ? 0.2 : 0.035;
         if (hash2(gx, gz, this.seed + 7) > p) continue;
-        // keep clear of camps/agility
         if (this.nearPad(x, z, 4)) continue;
-        treeSpots.push({ x, z, s: 0.75 + hash2(gx, gz, this.seed + 8) * 0.7 });
+        const tR = hash2(gx, gz, this.seed + 9);
+        const type: TreeType = h > 7 || tR < 0.28 ? 'pine' : tR < 0.4 ? 'birch' : 'oak';
+        treeSpots.push({ x, z, s: 0.75 + hash2(gx, gz, this.seed + 8) * 0.7, type });
       }
     }
-    // a few trees on islets
     for (const it of this.islets) {
       for (let i = 0; i < 3; i++) {
         const a = rng() * Math.PI * 2;
         const d = rng() * it.r * 0.5;
-        treeSpots.push({ x: it.x + Math.cos(a) * d, z: it.z + Math.sin(a) * d, s: 0.7 + rng() * 0.4 });
+        treeSpots.push({ x: it.x + Math.cos(a) * d, z: it.z + Math.sin(a) * d, s: 0.7 + rng() * 0.4, type: 'oak' });
       }
     }
 
-    const n = treeSpots.length;
-    const trunkGeo = new THREE.CylinderGeometry(0.28, 0.44, 1, 8);
+    const counts = { oak: 0, pine: 0, birch: 0 };
+    for (const t of treeSpots) counts[t.type]++;
+
+    // geometry + materials per species
+    const trunkGeo = new THREE.CylinderGeometry(0.26, 0.46, 1, 8);
     trunkGeo.translate(0, 0.5, 0);
-    const trunkMat = new THREE.MeshStandardMaterial({ color: '#6e5136', roughness: 1 });
-    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, n);
-    trunks.castShadow = true;
+    const oakTrunkMat = new THREE.MeshStandardMaterial({ color: '#6e5136', roughness: 1 });
+    const birchTrunkMat = new THREE.MeshStandardMaterial({ color: '#e6e1d3', roughness: 0.9 });
     const folGeo = new THREE.IcosahedronGeometry(1, 1);
     const folMat = new THREE.MeshStandardMaterial({ roughness: 1 });
-    const foliage = new THREE.InstancedMesh(folGeo, folMat, n * 3);
+    this.windify(folMat, 0.045);
+    const pineGeo = new THREE.ConeGeometry(1, 1.6, 9);
+    const pineMat = new THREE.MeshStandardMaterial({ roughness: 1 });
+    this.windify(pineMat, 0.035);
+
+    const oakTrunks = new THREE.InstancedMesh(trunkGeo, oakTrunkMat, counts.oak + counts.pine);
+    oakTrunks.castShadow = true;
+    const birchTrunks = new THREE.InstancedMesh(trunkGeo, birchTrunkMat, Math.max(1, counts.birch));
+    birchTrunks.castShadow = true;
+    const foliage = new THREE.InstancedMesh(folGeo, folMat, (counts.oak + counts.birch) * 3);
     foliage.castShadow = true;
+    const pineFol = new THREE.InstancedMesh(pineGeo, pineMat, Math.max(1, counts.pine * 3));
+    pineFol.castShadow = true;
 
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const vs = new THREE.Vector3();
     const col = new THREE.Color();
-    let fi = 0;
-    for (let i = 0; i < n; i++) {
+    let brownI = 0, birchI = 0, folI = 0, pineI = 0;
+
+    for (let i = 0; i < treeSpots.length; i++) {
       const t = treeSpots[i];
       const h = this.heightAt(t.x, t.z);
-      const trunkH = 3.4 * t.s + 1.2;
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hash2(i, 1, this.seed) * Math.PI * 2);
-      m.compose(new THREE.Vector3(t.x, h - 0.2, t.z), q, vs.set(t.s, trunkH, t.s));
-      trunks.setMatrixAt(i, m);
+      const isPine = t.type === 'pine';
+      const trunkH = (isPine ? 2.6 : 3.4) * t.s + 1.2;
+      const yaw = hash2(i, 1, this.seed) * Math.PI * 2;
+      const tilt = (hash2(i, 44, this.seed) - 0.5) * 0.07;
+      q.setFromEuler(new THREE.Euler(tilt, yaw, tilt * 0.7));
+      m.compose(new THREE.Vector3(t.x, h - 0.2, t.z), q, vs.set(t.s * (t.type === 'birch' ? 0.65 : 1), trunkH, t.s * (t.type === 'birch' ? 0.65 : 1)));
+      if (t.type === 'birch') birchTrunks.setMatrixAt(birchI++, m);
+      else oakTrunks.setMatrixAt(brownI++, m);
 
-      const hue = 0.26 + hash2(i, 2, this.seed) * 0.09;
-      const light = 0.3 + hash2(i, 3, this.seed) * 0.14;
-      for (let j = 0; j < 3; j++) {
-        const fr = (1.5 - j * 0.32) * t.s;
-        const fy = h + trunkH * (0.72 + j * 0.26);
-        const ox = (hash2(i, 10 + j, this.seed) - 0.5) * 0.8 * t.s;
-        const oz = (hash2(i, 20 + j, this.seed) - 0.5) * 0.8 * t.s;
-        m.compose(
-          new THREE.Vector3(t.x + ox, fy, t.z + oz),
-          q,
-          vs.set(fr, fr * (0.82 + hash2(i, 30 + j, this.seed) * 0.3), fr)
-        );
-        foliage.setMatrixAt(fi, m);
-        col.setHSL(hue, 0.45, light + j * 0.03);
-        foliage.setColorAt(fi, col);
-        fi++;
+      const qUp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+      if (isPine) {
+        // stacked cones, darker blue-green
+        const hue = 0.36 + hash2(i, 2, this.seed) * 0.05;
+        for (let j = 0; j < 3; j++) {
+          const fr = (1.5 - j * 0.38) * t.s;
+          const fy = h + trunkH * (0.42 + j * 0.3);
+          m.compose(new THREE.Vector3(t.x, fy, t.z), qUp, vs.set(fr, fr * 1.15, fr));
+          pineFol.setMatrixAt(pineI, m);
+          col.setHSL(hue, 0.4, 0.22 + hash2(i, 30 + j, this.seed) * 0.09 + j * 0.02);
+          pineFol.setColorAt(pineI, col);
+          pineI++;
+        }
+      } else {
+        const isBirch = t.type === 'birch';
+        const hue = isBirch ? 0.2 + hash2(i, 2, this.seed) * 0.06 : 0.26 + hash2(i, 2, this.seed) * 0.09;
+        const light = (isBirch ? 0.42 : 0.3) + hash2(i, 3, this.seed) * 0.13;
+        const blobs = isBirch ? 2 : 3;
+        for (let j = 0; j < 3; j++) {
+          if (j >= blobs) {
+            // keep instanced buffer packed: reuse last blob shrunk to nothing
+            m.compose(new THREE.Vector3(0, -50, 0), qUp, vs.set(0.001, 0.001, 0.001));
+            foliage.setMatrixAt(folI++, m);
+            continue;
+          }
+          const fr = (isBirch ? 1.05 : 1.5 - j * 0.32) * t.s;
+          const fy = h + trunkH * (0.72 + j * 0.26);
+          const ox = (hash2(i, 10 + j, this.seed) - 0.5) * 0.8 * t.s;
+          const oz = (hash2(i, 20 + j, this.seed) - 0.5) * 0.8 * t.s;
+          m.compose(
+            new THREE.Vector3(t.x + ox, fy, t.z + oz), qUp,
+            vs.set(fr, fr * (0.82 + hash2(i, 30 + j, this.seed) * 0.3), fr)
+          );
+          foliage.setMatrixAt(folI, m);
+          col.setHSL(hue, isBirch ? 0.5 : 0.45, light + j * 0.03);
+          foliage.setColorAt(folI, col);
+          folI++;
+        }
       }
 
       this.trees.push({
         id: `tree_${i}`,
         x: t.x, z: t.z,
         trunkH,
-        r: 0.5 * t.s,
-        perchY: h + trunkH * 0.8,
+        r: 0.5 * t.s * (t.type === 'birch' ? 0.7 : 1),
+        perchY: h + trunkH * (isPine ? 0.55 : 0.8),
       });
     }
-    foliage.count = fi;
+    oakTrunks.count = brownI;
+    birchTrunks.count = birchI;
+    foliage.count = folI;
+    pineFol.count = pineI;
     if (foliage.instanceColor) foliage.instanceColor.needsUpdate = true;
-    this.group.add(trunks, foliage);
+    if (pineFol.instanceColor) pineFol.instanceColor.needsUpdate = true;
+    this.group.add(oakTrunks, birchTrunks, foliage, pineFol);
 
-    // grass tufts — little cones (flat quads go black from behind with DoubleSide lighting)
+    // ——— grass: wind-blown blade tufts ———
     const grassN = 2600;
-    const bladeGeo = new THREE.ConeGeometry(0.22, 0.55, 5);
-    bladeGeo.translate(0, 0.24, 0);
-    const grassMat = new THREE.MeshStandardMaterial({ roughness: 1 });
-    const grass = new THREE.InstancedMesh(bladeGeo, grassMat, grassN);
+    const tuftGeo = this.buildGrassTuftGeo();
+    const grassMat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 1 });
+    this.windify(grassMat, 0.5, true);
+    const grass = new THREE.InstancedMesh(tuftGeo, grassMat, grassN);
     let gi = 0;
     for (let i = 0; i < grassN * 2 && gi < grassN; i++) {
       const x = (mulRand(this.seed + i * 3) - 0.5) * 300;
       const z = (mulRand(this.seed + i * 3 + 1) - 0.5) * 300;
       const h = this.heightAt(x, z);
       if (h < 1 || h > 9.5) continue;
-      if (this.normalAt(x, z).y < 0.9) continue; // no grass on steep slopes
+      if (this.normalAt(x, z).y < 0.88) continue;
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), mulRand(this.seed + i * 3 + 2) * Math.PI);
-      const sc = 0.7 + mulRand(this.seed + i * 7) * 0.9;
-      m.compose(new THREE.Vector3(x, h - 0.08, z), q, vs.set(sc, sc, sc));
+      const sc = 0.75 + mulRand(this.seed + i * 7) * 1.0;
+      m.compose(new THREE.Vector3(x, h - 0.03, z), q, vs.set(sc, sc, sc));
       grass.setMatrixAt(gi, m);
-      col.setHSL(0.24 + mulRand(this.seed + i * 11) * 0.07, 0.48, 0.4 + mulRand(this.seed + i * 13) * 0.14);
+      const dry = fbm(x * 0.13, z * 0.13, this.seed + 811, 2) > 0.62;
+      col.setHSL(dry ? 0.13 : 0.24 + mulRand(this.seed + i * 11) * 0.07, dry ? 0.45 : 0.5, dry ? 0.3 : 0.26 + mulRand(this.seed + i * 13) * 0.12);
       grass.setColorAt(gi, col);
       gi++;
     }
@@ -436,10 +594,11 @@ export class World {
     this.group.add(grass);
 
     // flowers
-    const flowerN = 420;
-    const fGeo = new THREE.SphereGeometry(0.16, 6, 5);
+    const flowerN = 600;
+    const fGeo = new THREE.SphereGeometry(0.14, 6, 5);
     fGeo.translate(0, 0.5, 0);
     const fMat = new THREE.MeshStandardMaterial({ roughness: 0.85 });
+    this.windify(fMat, 0.08);
     const flowers = new THREE.InstancedMesh(fGeo, fMat, flowerN);
     const petalCols = ['#f2a7c3', '#f5d76e', '#c39bd3', '#f1948a', '#85c1e9', '#f8f4e3'];
     let fli = 0;
@@ -449,7 +608,7 @@ export class World {
       const h = this.heightAt(x, z);
       if (h < 1.2 || h > 8) continue;
       const meadow = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
-      if (meadow > 0.52) continue; // flowers in meadows, not forest
+      if (meadow > 0.52) continue;
       m.compose(new THREE.Vector3(x, h, z), q.identity(), vs.setScalar(0.8 + mulRand(this.seed + i) * 0.7));
       flowers.setMatrixAt(fli, m);
       col.set(petalCols[Math.floor(mulRand(this.seed + 6000 + i) * petalCols.length)]);
@@ -459,8 +618,8 @@ export class World {
     flowers.count = fli;
     this.group.add(flowers);
 
-    // mushrooms (little Kan friends)
-    const mushN = 60;
+    // mushrooms
+    const mushN = 70;
     const stemGeo = new THREE.CylinderGeometry(0.09, 0.13, 0.36, 6);
     stemGeo.translate(0, 0.18, 0);
     const capGeo = new THREE.SphereGeometry(0.26, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -476,8 +635,8 @@ export class World {
       const h = this.heightAt(x, z);
       if (h < 1.5 || h > 9) continue;
       const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
-      if (forest < 0.54) continue; // mushrooms live in forest shade
-      const sc = 0.7 + mulRand(this.seed + i) * 1.1;
+      if (forest < 0.54) continue;
+      const sc = 0.6 + mulRand(this.seed + i) * 0.9;
       m.compose(new THREE.Vector3(x, h, z), q.identity(), vs.setScalar(sc));
       stems.setMatrixAt(mi, m);
       caps.setMatrixAt(mi, m);
@@ -488,6 +647,32 @@ export class World {
     stems.count = mi;
     caps.count = mi;
     this.group.add(stems, caps);
+
+    // ferns in forest shade — leafy cross of flattened cones
+    const fernN = 220;
+    const fernGeo = new THREE.ConeGeometry(0.5, 0.16, 4);
+    fernGeo.translate(0, 0.1, 0);
+    const fernMat = new THREE.MeshStandardMaterial({ roughness: 1 });
+    this.windify(fernMat, 0.14);
+    const ferns = new THREE.InstancedMesh(fernGeo, fernMat, fernN);
+    let fi2 = 0;
+    for (let i = 0; i < fernN * 3 && fi2 < fernN; i++) {
+      const x = (mulRand(this.seed + 12000 + i * 3) - 0.5) * 270;
+      const z = (mulRand(this.seed + 12000 + i * 3 + 1) - 0.5) * 270;
+      const h = this.heightAt(x, z);
+      if (h < 1.4 || h > 9) continue;
+      const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
+      if (forest < 0.5) continue;
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), mulRand(this.seed + i * 5) * Math.PI * 2);
+      const sc = 0.8 + mulRand(this.seed + i * 7) * 1.1;
+      m.compose(new THREE.Vector3(x, h, z), q, vs.set(sc, sc * 0.8, sc));
+      ferns.setMatrixAt(fi2, m);
+      col.setHSL(0.3, 0.4, 0.22 + mulRand(this.seed + 13000 + i) * 0.1);
+      ferns.setColorAt(fi2, col);
+      fi2++;
+    }
+    ferns.count = fi2;
+    this.group.add(ferns);
   }
 
   private nearPad(x: number, z: number, margin: number): boolean {
@@ -524,6 +709,221 @@ export class World {
     }
     rocksMesh.count = ri;
     this.group.add(rocksMesh);
+
+    // pebbles — pure scenery scatter
+    const pebN = 260;
+    const pebbles = new THREE.InstancedMesh(rockGeo, rockMat, pebN);
+    let pi = 0;
+    for (let i = 0; i < pebN * 2 && pi < pebN; i++) {
+      const x = (rng() - 0.5) * 300;
+      const z = (rng() - 0.5) * 300;
+      const h = this.heightAt(x, z);
+      if (h < 0.4) continue;
+      const r = 0.08 + rng() * 0.18;
+      q.setFromEuler(new THREE.Euler(rng(), rng() * Math.PI, rng()));
+      m.compose(new THREE.Vector3(x, h + r * 0.2, z), q, vs.set(r, r * 0.7, r));
+      pebbles.setMatrixAt(pi, m);
+      col.setHSL(0.09, 0.06 + rng() * 0.08, 0.4 + rng() * 0.28);
+      pebbles.setColorAt(pi, col);
+      pi++;
+    }
+    pebbles.count = pi;
+    this.group.add(pebbles);
+  }
+
+  private buildLogsAndStumps(rng: () => number) {
+    const logGeo = new THREE.CylinderGeometry(0.32, 0.36, 2.4, 9);
+    const logMat = new THREE.MeshStandardMaterial({ roughness: 1 });
+    const logs = new THREE.InstancedMesh(logGeo, logMat, 16);
+    logs.castShadow = true;
+    const stumpGeo = new THREE.CylinderGeometry(0.42, 0.5, 0.55, 9);
+    const stumps = new THREE.InstancedMesh(stumpGeo, logMat, 16);
+    stumps.castShadow = true;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const vs = new THREE.Vector3(1, 1, 1);
+    const col = new THREE.Color();
+    let li = 0, si = 0;
+    for (let i = 0; i < 60 && (li < 16 || si < 16); i++) {
+      const x = (rng() - 0.5) * 280;
+      const z = (rng() - 0.5) * 280;
+      const h = this.heightAt(x, z);
+      if (h < 1.4 || h > 9.5 || this.nearPad(x, z, 2)) continue;
+      const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
+      if (forest < 0.45) continue;
+      col.setHSL(0.08, 0.25 + rng() * 0.1, 0.24 + rng() * 0.12);
+      if (rng() > 0.5 && li < 16) {
+        q.setFromEuler(new THREE.Euler(Math.PI / 2 + (rng() - 0.5) * 0.15, rng() * Math.PI, 0));
+        m.compose(new THREE.Vector3(x, h + 0.3, z), q, vs);
+        logs.setMatrixAt(li, m);
+        logs.setColorAt(li, col);
+        this.rocks.push({ x, z, r: 0.9 });
+        li++;
+      } else if (si < 16) {
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * Math.PI);
+        m.compose(new THREE.Vector3(x, h + 0.26, z), q, vs);
+        stumps.setMatrixAt(si, m);
+        stumps.setColorAt(si, col);
+        this.rocks.push({ x, z, r: 0.6 });
+        si++;
+      }
+    }
+    logs.count = li;
+    stumps.count = si;
+    this.group.add(logs, stumps);
+  }
+
+  private buildLakeLife(rng: () => number) {
+    // cattails around the lake rim
+    const stemGeo = new THREE.CylinderGeometry(0.025, 0.035, 1.5, 5);
+    stemGeo.translate(0, 0.75, 0);
+    const stemMat = new THREE.MeshStandardMaterial({ color: '#7a8a4f', roughness: 1 });
+    this.windify(stemMat, 0.22);
+    const headGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.34, 6);
+    headGeo.translate(0, 1.35, 0);
+    const headMat = new THREE.MeshStandardMaterial({ color: '#6e4a2a', roughness: 1 });
+    this.windify(headMat, 0.22);
+    const N = 60;
+    const cstems = new THREE.InstancedMesh(stemGeo, stemMat, N);
+    const cheads = new THREE.InstancedMesh(headGeo, headMat, N);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const vs = new THREE.Vector3();
+    let ci = 0;
+    for (let i = 0; i < 240 && ci < N; i++) {
+      const a = rng() * Math.PI * 2;
+      const r = 24 + rng() * 18;
+      const x = this.lakeC.x + Math.cos(a) * r;
+      const z = this.lakeC.z + Math.sin(a) * r;
+      const h = this.heightAt(x, z);
+      if (h < WATER_LEVEL - 0.35 || h > WATER_LEVEL + 0.7) continue;
+      q.setFromEuler(new THREE.Euler((rng() - 0.5) * 0.14, rng() * Math.PI, (rng() - 0.5) * 0.14));
+      m.compose(new THREE.Vector3(x, h, z), q, vs.setScalar(0.8 + rng() * 0.5));
+      cstems.setMatrixAt(ci, m);
+      cheads.setMatrixAt(ci, m);
+      ci++;
+    }
+    cstems.count = ci;
+    cheads.count = ci;
+    this.group.add(cstems, cheads);
+
+    // lily pads (a few with flowers) floating on the lake
+    const padGeo = new THREE.CylinderGeometry(1, 1, 0.04, 14, 1, false, 0.4, Math.PI * 2 - 0.5);
+    const padMat = new THREE.MeshStandardMaterial({ color: '#4d7c3a', roughness: 0.7 });
+    for (let i = 0; i < 12; i++) {
+      const a = rng() * Math.PI * 2;
+      const r = rng() * 20;
+      const x = this.lakeC.x + Math.cos(a) * r;
+      const z = this.lakeC.z + Math.sin(a) * r;
+      if (this.heightAt(x, z) > WATER_LEVEL - 0.8) continue;
+      const pad = new THREE.Mesh(padGeo, padMat);
+      pad.scale.setScalar(0.45 + rng() * 0.4);
+      pad.position.set(x, WATER_LEVEL + 0.06, z);
+      pad.rotation.y = rng() * Math.PI * 2;
+      this.group.add(pad);
+      if (i % 4 === 0) {
+        const flower = new THREE.Mesh(
+          new THREE.SphereGeometry(0.16, 8, 6),
+          new THREE.MeshStandardMaterial({ color: '#f2a7c3', roughness: 0.8 })
+        );
+        flower.position.set(x, WATER_LEVEL + 0.18, z);
+        this.group.add(flower);
+      }
+    }
+  }
+
+  // ——— falling leaves ———
+  private buildLeaves(rng: () => number): THREE.InstancedMesh {
+    const N = 56;
+    const geoL = new THREE.PlaneGeometry(0.13, 0.17);
+    const matL = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+    const mesh = new THREE.InstancedMesh(geoL, matL, N);
+    mesh.frustumCulled = false;
+    const cols = ['#8aa84f', '#a8b060', '#c9973a', '#c76b3a', '#7a9a45'];
+    const col = new THREE.Color();
+    for (let i = 0; i < N; i++) {
+      this.leafState.push({
+        x: 0, y: -50, z: 0,
+        phase: rng() * 10,
+        spinX: 1 + rng() * 2.5,
+        spinY: 1 + rng() * 2,
+        groundT: rng() * 6, // stagger initial respawns
+      });
+      col.set(cols[irange(rng, 0, cols.length - 1)]);
+      mesh.setColorAt(i, col);
+    }
+    return mesh;
+  }
+
+  private respawnLeaf(l: Leaf, px: number, pz: number) {
+    // drop from a tree canopy near the player
+    let best: TreeInfo | null = null;
+    for (let t = 0; t < 12; t++) {
+      const cand = this.trees[(Math.random() * this.trees.length) | 0];
+      if (!cand) break;
+      if (Math.hypot(cand.x - px, cand.z - pz) < 55) { best = cand; break; }
+    }
+    if (!best) { l.y = -50; l.groundT = 2; return; }
+    l.x = best.x + (Math.random() - 0.5) * 3;
+    l.z = best.z + (Math.random() - 0.5) * 3;
+    l.y = this.heightAt(best.x, best.z) + best.trunkH * (0.8 + Math.random() * 0.4);
+    l.groundT = 0;
+  }
+
+  private updateLeaves(dt: number, time: number, px: number, pz: number) {
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const vs = new THREE.Vector3(1, 1, 1);
+    for (let i = 0; i < this.leafState.length; i++) {
+      const l = this.leafState[i];
+      if (l.y <= -40) {
+        l.groundT -= dt;
+        if (l.groundT <= 0) this.respawnLeaf(l, px, pz);
+      } else {
+        const ground = this.heightAt(l.x, l.z);
+        if (l.y <= ground + 0.06) {
+          // rest on the ground briefly, then respawn
+          l.groundT += dt;
+          if (l.groundT > 4) { l.y = -50; l.groundT = 1 + Math.random() * 4; }
+        } else {
+          l.y -= (0.3 + Math.sin(time * 1.3 + l.phase) * 0.1) * dt;
+          l.x += Math.sin(time * 1.9 + l.phase) * 0.5 * dt;
+          l.z += Math.cos(time * 1.6 + l.phase * 1.3) * 0.4 * dt;
+        }
+      }
+      e.set(time * l.spinX + l.phase, time * l.spinY, l.phase);
+      q.setFromEuler(e);
+      m.compose(new THREE.Vector3(l.x, l.y, l.z), q, vs);
+      this.leafMesh.setMatrixAt(i, m);
+    }
+    this.leafMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // ——— fireflies ———
+  private buildFireflies(rng: () => number): { points: THREE.Points; base: Float32Array } {
+    const N = 46;
+    const base = new Float32Array(N * 3);
+    const posArr = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      let x = 0, z = 0;
+      for (let t = 0; t < 10; t++) {
+        x = (rng() - 0.5) * 240;
+        z = (rng() - 0.5) * 240;
+        if (this.heightAt(x, z) > 1.2) break;
+      }
+      base[i * 3] = x;
+      base[i * 3 + 1] = this.heightAt(x, z) + 0.7 + rng() * 1.4;
+      base[i * 3 + 2] = z;
+    }
+    posArr.set(base);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    const mat = new THREE.PointsMaterial({
+      color: '#ffe27a', size: 0.16, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    return { points: new THREE.Points(g, mat), base };
   }
 
   private buildDigMounds(rng: () => number) {
@@ -574,9 +974,7 @@ export class World {
     return tex;
   }
 
-  /** Spawn a wave of yarn balls. Skips ids already collected. */
   spawnYarn(wave: number, collectedIds: string[], goldenDone: string[]) {
-    // clear existing
     for (const y of this.yarn) this.group.remove(y.mesh);
     this.yarn = [];
     const rng = mulberry32(this.seed + 31337 + wave * 101);
@@ -609,14 +1007,12 @@ export class World {
       this.yarn.push({ id, x, z, y, golden, spot, mesh: grp, collected: false });
     };
 
-    // starter yarn right by camp so new players spot one immediately
     for (let i = 0; i < 3; i++) {
       const a = (i / 3) * Math.PI * 2 + wave;
       const x = this.playerCamp.x + Math.cos(a) * (9 + i * 3);
       const z = this.playerCamp.z + Math.sin(a) * (9 + i * 3);
       mk(`y_${wave}_camp${i}`, x, z, this.heightAt(x, z) + 0.35, false, 'ground');
     }
-    // ground yarn
     let made = 0;
     for (let i = 0; i < 200 && made < 20; i++) {
       const x = (rng() - 0.5) * 290;
@@ -626,16 +1022,13 @@ export class World {
       mk(`y_${wave}_g${i}`, x, z, h + 0.35, false, 'ground');
       made++;
     }
-    // tree-perch yarn (climb to get)
     const treePick = [...this.trees].sort((a, b) => hash2(a.x | 0, a.z | 0, wave) - hash2(b.x | 0, b.z | 0, wave)).slice(0, 6);
     treePick.forEach((t, i) => mk(`y_${wave}_t${i}`, t.x, t.z, t.perchY + 0.4, false, 'tree'));
-    // islet yarn (swim to get) — worth it: includes goldens
     this.islets.forEach((it, i) => {
       const h = this.heightAt(it.x, it.z);
       mk(`y_${wave}_i${i}a`, it.x + 3, it.z, h + 0.35, false, 'islet');
       mk(`yg_${wave}_i${i}`, it.x, it.z, this.heightAt(it.x, it.z) + 0.45, true, 'islet');
     });
-    // golden on the big hill + scattered
     mk(`yg_${wave}_hill`, this.hillC.x, this.hillC.z, this.heightAt(this.hillC.x, this.hillC.z) + 0.45, true, 'hill');
     for (let i = 0; i < 60; i++) {
       if (this.yarn.filter((y) => y.golden).length >= 6) break;
@@ -658,7 +1051,6 @@ export class World {
       const h = this.heightAt(camp.x, camp.z);
       const g = new THREE.Group();
       g.position.set(camp.x, h, camp.z);
-      // den: dome
       const den = new THREE.Mesh(
         new THREE.SphereGeometry(2.4, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2),
         new THREE.MeshStandardMaterial({ color: '#8a6a48', roughness: 1 })
@@ -673,7 +1065,6 @@ export class World {
       door.rotation.z = Math.PI / 2;
       door.position.set(0, 0.6, 2.3);
       g.add(door);
-      // banner
       const pole = new THREE.Mesh(
         new THREE.CylinderGeometry(0.08, 0.1, 4.6, 6),
         new THREE.MeshStandardMaterial({ color: '#5d4530', roughness: 1 })
@@ -687,7 +1078,6 @@ export class World {
       );
       flag.position.set(3.4 + 0.88, 4.0, 1.2);
       g.add(flag);
-      // scratch log
       const log = new THREE.Mesh(
         new THREE.CylinderGeometry(0.45, 0.5, 2.4, 8),
         new THREE.MeshStandardMaterial({ color: '#6e5136', roughness: 1 })
@@ -697,10 +1087,9 @@ export class World {
       log.castShadow = true;
       g.add(log);
       this.group.add(g);
-      this.rocks.push({ x: camp.x, z: camp.z, r: 2.6 }); // den collision
+      this.rocks.push({ x: camp.x, z: camp.z, r: 2.6 });
     }
 
-    // player camp: humble start — a stone circle + worn patch
     const pc = this.playerCamp;
     const h = this.heightAt(pc.x, pc.z);
     const ring = new THREE.Mesh(
@@ -712,7 +1101,7 @@ export class World {
     this.group.add(ring);
   }
 
-  // ——— buildings (player-built) ———
+  // ——— buildings (unchanged from v1) ———
   addBuilding(b: BuildingInstance) {
     const def = BUILDABLES.find((d) => d.id === b.type);
     if (!def) return;
@@ -870,11 +1259,10 @@ export class World {
   // ——— agility course ———
   private buildAgilityCourse() {
     const c = this.agilityCenter;
-    const h0 = this.heightAt(c.x, c.z);
-    const dir = Math.atan2(-c.z, -c.x); // course runs toward island center
+    const dir = Math.atan2(-c.z, -c.x);
     const dx = Math.cos(dir);
     const dz = Math.sin(dir);
-    const px = -dz; // perpendicular
+    const px = -dz;
     const pz = dx;
 
     const at = (along: number, side: number) => ({
@@ -899,13 +1287,11 @@ export class World {
       this.group.add(g);
     };
 
-    // start
     const start = at(-26, 0);
     flagPole(start.x - px * 1.6, start.z - pz * 1.6, blue);
     flagPole(start.x + px * 1.6, start.z + pz * 1.6, blue);
     this.agilityGates.push({ x: start.x, z: start.z, kind: 'start' });
 
-    // weave poles
     for (let i = 0; i < 4; i++) {
       const p0 = at(-16 + i * 4, i % 2 === 0 ? 2.2 : -2.2);
       const y = this.heightAt(p0.x, p0.z);
@@ -917,7 +1303,6 @@ export class World {
       this.agilityGates.push({ x: gate.x, z: gate.z, kind: 'weave' });
     }
 
-    // hurdles
     for (let i = 0; i < 2; i++) {
       const p0 = at(2 + i * 7, 0);
       const y = this.heightAt(p0.x, p0.z);
@@ -935,7 +1320,6 @@ export class World {
       this.agilityGates.push({ x: p0.x, z: p0.z, kind: 'hurdle' });
     }
 
-    // tunnel: arch
     const tp = at(15, 0);
     const ty = this.heightAt(tp.x, tp.z);
     const tunnel = new THREE.Mesh(
@@ -948,7 +1332,6 @@ export class World {
     this.group.add(tunnel);
     this.agilityGates.push({ x: tp.x, z: tp.z, kind: 'tunnel' });
 
-    // ramp
     const rp = at(23, 0);
     const ry = this.heightAt(rp.x, rp.z);
     const ramp = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.25, 2.2), wood);
@@ -959,7 +1342,6 @@ export class World {
     this.group.add(ramp);
     this.agilityGates.push({ x: rp.x, z: rp.z, kind: 'ramp' });
 
-    // finish
     const fin = at(31, 0);
     flagPole(fin.x - px * 1.6, fin.z - pz * 1.6, red);
     flagPole(fin.x + px * 1.6, fin.z + pz * 1.6, red);
@@ -1040,7 +1422,7 @@ export class World {
         });
       }
     };
-    spawn('butterfly', 14);
+    spawn('butterfly', 18);
     spawn('mouse', 9);
     spawn('bird', 7);
   }
@@ -1053,7 +1435,6 @@ export class World {
 
       if (c.state === 'caught') continue;
       if (c.state === 'gone') {
-        // respawn after a while near home
         if (c.stateT > 20) {
           c.x = c.homeX; c.z = c.homeZ;
           c.state = 'wander';
@@ -1074,7 +1455,7 @@ export class World {
         c.x += Math.cos(c.heading) * sp * dt;
         c.z += Math.sin(c.heading) * sp * dt;
         if (c.kind === 'bird' || c.kind === 'butterfly') {
-          c.y += dt * 4; // fly up and away
+          c.y += dt * 4;
           if (c.stateT > 2.5) {
             c.state = 'gone';
             c.stateT = 0;
@@ -1086,12 +1467,10 @@ export class World {
           c.group.visible = false;
         }
       } else {
-        // wander drift
         c.heading += (hash2(Math.floor(time * 0.5), this.critters.indexOf(c), this.seed) - 0.5) * dt * 3;
         const sp = c.kind === 'mouse' && Math.sin(time * 2 + c.phase) > 0.4 ? c.speed : c.kind === 'mouse' ? 0 : c.speed * 0.5;
         c.x += Math.cos(c.heading) * sp * dt;
         c.z += Math.sin(c.heading) * sp * dt;
-        // stay near home
         const dh = Math.hypot(c.x - c.homeX, c.z - c.homeZ);
         if (dh > 14) c.heading = Math.atan2(c.homeZ - c.z, c.homeX - c.x);
         const groundY = this.heightAt(c.x, c.z);
@@ -1117,7 +1496,6 @@ export class World {
     c.state = 'caught';
     c.group.visible = false;
     c.stateT = 0;
-    // respawn far later
     setTimeout(() => {
       c.state = 'gone';
       c.stateT = 10;
@@ -1125,12 +1503,11 @@ export class World {
   }
 
   // ——— day/night ———
-  /** t: 0..1, 0=midnight, 0.5=noon */
   setTimeOfDay(t: number, playerX: number, playerZ: number) {
-    const sunAngle = (t - 0.25) * Math.PI * 2; // sunrise at t=0.25
+    const sunAngle = (t - 0.25) * Math.PI * 2;
     const sy = Math.sin(sunAngle);
     const sx = Math.cos(sunAngle) * 0.6;
-    const day = clamp01(sy * 3 + 0.1);           // 0 night, 1 day
+    const day = clamp01(sy * 3 + 0.1);
     const dusk = clamp01(1 - Math.abs(sy) * 5) * clamp01(day * 2);
 
     this.sun.position.set(playerX + sx * 120, sy * 140 + 8, playerZ + 60);
@@ -1147,15 +1524,37 @@ export class World {
     this.skyMat.uniforms.uDusk.value = dusk;
     this.waterMat.uniforms.uDay.value = 0.15 + day * 0.85;
     (this.stars.material as THREE.PointsMaterial).opacity = clamp01(1 - day * 2) * 0.9;
+    (this.fireflies.material as THREE.PointsMaterial).opacity = clamp01(1 - day * 1.6) * 0.85;
 
     for (const l of this.campLights) l.intensity = (1 - day) * 2.2;
   }
 
   update(dt: number, time: number, playerX: number, playerZ: number) {
     this.waterMat.uniforms.uTime.value = time;
+    for (const s of this.windShaders) s.uniforms.uTime.value = time;
     this.skyMesh.position.set(playerX, 0, playerZ);
     this.stars.position.set(playerX, 0, playerZ);
-    // yarn bob + spin
+
+    // clouds drift with the wind
+    for (const cloud of this.clouds.children) {
+      cloud.position.x += (cloud.userData.speed as number) * dt;
+      if (cloud.position.x > 420) cloud.position.x = -420;
+    }
+
+    this.updateLeaves(dt, time, playerX, playerZ);
+
+    // firefly drift
+    const fp = this.fireflies.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < fp.count; i++) {
+      fp.setXYZ(
+        i,
+        this.fireflyBase[i * 3] + Math.sin(time * 0.7 + i * 2.3) * 1.2,
+        this.fireflyBase[i * 3 + 1] + Math.sin(time * 1.1 + i) * 0.5,
+        this.fireflyBase[i * 3 + 2] + Math.cos(time * 0.5 + i * 1.7) * 1.2
+      );
+    }
+    fp.needsUpdate = true;
+
     for (const y of this.yarn) {
       if (y.collected) continue;
       y.mesh.rotation.y = time * 1.2;
@@ -1163,7 +1562,6 @@ export class World {
     }
   }
 
-  /** circle push-out vs trees + rocks; returns corrected xz */
   collide(x: number, z: number, radius: number): { x: number; z: number } {
     for (const t of this.trees) {
       const dx = x - t.x;
@@ -1199,7 +1597,6 @@ export class World {
   }
 }
 
-// tiny deterministic helper for flora scatter
 function mulRand(seed: number): number {
   let t = (seed + 0x6d2b79f5) | 0;
   t = Math.imul(t ^ (t >>> 15), 1 | t);

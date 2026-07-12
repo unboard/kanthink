@@ -202,6 +202,14 @@ export function generateCat(seed: number, clanId: string, opts?: {
   };
 }
 
+/** tiny cat: big head, big eyes, squeaky meow */
+export function generateKitten(seed: number): CatSpec {
+  const kit = generateCat(seed, 'player', { minStat: 1 });
+  kit.size = 0.52 + (Math.abs(seed) % 100) / 900;   // 0.52..0.63
+  kit.voicePitch = 1.5 + (Math.abs(seed >> 3) % 40) / 100; // squeaky
+  return kit;
+}
+
 export const TRAIT_LABELS = {
   swimmer: 'Swimmer 🌊',
   scaredyCat: 'Scaredy-cat 💧',
