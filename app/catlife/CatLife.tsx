@@ -7,7 +7,12 @@ import confetti from 'canvas-confetti';
 import { Game } from './game';
 import { makeRoomCode, normalizeRoomCode, type PlaydateMember } from './net';
 import CatViewer from './CatViewer';
-import { loadSave, newSave, persistSave, clearSave } from './save';
+import StyleStudio from './StyleStudio';
+import { loadSave, migrateSave, newSave, persistSave, clearSave } from './save';
+import {
+  getAccount, clearAccount, signup, login as cloudLogin, fetchCloudSave,
+  flushCloudPush, getSyncState, onSyncState, type SyncState,
+} from './cloud';
 import {
   generateCat, rankFor, rankProgress, xpForLevel, clanCapacity,
   BUILDABLES, RANKS, RIVAL_CLANS, PATTERN_LABELS, ACCESSORY_LABELS,
@@ -33,13 +38,34 @@ export default function CatLife() {
   const [save, setSave] = useState<SaveData | null>(null);
 
   useEffect(() => {
-    const s = loadSave();
-    if (s) {
-      setSave(s);
-      setScreen('play');
-    } else {
-      setScreen('intro');
-    }
+    let cancelled = false;
+    (async () => {
+      const local = loadSave();
+      const acc = getAccount();
+      if (acc) {
+        // signed in: the newest save wins, wherever it lives
+        const cloud = await fetchCloudSave();
+        if (cancelled) return;
+        const cloudSave = cloud?.save ? migrateSave(cloud.save) : null;
+        let chosen = local;
+        if (cloudSave && (!local || (cloudSave.savedAt ?? 0) > (local.savedAt ?? 0))) {
+          chosen = cloudSave;
+          persistSave(cloudSave); // mirror the cloud copy locally
+        }
+        if (chosen) {
+          setSave(chosen);
+          setScreen('play');
+          return;
+        }
+      }
+      if (local) {
+        setSave(local);
+        setScreen('play');
+      } else {
+        setScreen('intro');
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   if (screen === 'boot') {
@@ -74,6 +100,7 @@ function IntroScreen({ onStart }: { onStart: (s: SaveData) => void }) {
   );
   const [idx, setIdx] = useState(0);
   const [clanName, setClanName] = useState('');
+  const [signIn, setSignIn] = useState(false);
   const placeholder = useMemo(() => CLAN_NAME_IDEAS[(Math.random() * CLAN_NAME_IDEAS.length) | 0], []);
 
   // starter cats are girls — every kid's main cat can be a mama someday
@@ -81,6 +108,18 @@ function IntroScreen({ onStart }: { onStart: (s: SaveData) => void }) {
     () => generateCat(kittenSeeds[idx], 'player', { minStat: 3, gender: 'girl' }),
     [kittenSeeds, idx]
   );
+
+  if (signIn) {
+    return (
+      <SignInScreen
+        onBack={() => setSignIn(false)}
+        onSignedIn={(s) => {
+          persistSave(s);
+          onStart(s);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="fixed inset-0 overflow-auto" style={{ background: PAPER, color: INK }}>
@@ -157,9 +196,79 @@ function IntroScreen({ onStart }: { onStart: (s: SaveData) => void }) {
         >
           Begin the Adventure 🐾
         </button>
+        <button className="text-sm font-semibold underline" style={{ color: INK_SOFT }} onClick={() => setSignIn(true)}>
+          I already have a clan — sign me in! ☁️
+        </button>
         <p className="text-[11px]" style={{ color: INK_SOFT }}>
-          Best in landscape on a tablet. Your clan saves on this device.
+          Best in landscape on a tablet. Sign in from ⚙️ Settings so your clan is saved online, forever.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ————————————————— cloud sign-in (restore a clan on any tablet) —————————————————
+
+function SignInScreen({ onBack, onSignedIn }: { onBack: () => void; onSignedIn: (s: SaveData) => void }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await cloudLogin(username.trim().toLowerCase(), password);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? 'Something went wrong.');
+      return;
+    }
+    const save = res.save ? migrateSave(res.save) : null;
+    if (!save) {
+      setError("You're signed in, but this account has no saved clan yet. Go back and start a new adventure — it will save to your account!");
+      return;
+    }
+    onSignedIn(save);
+  };
+
+  return (
+    <div className="fixed inset-0 overflow-auto" style={{ background: PAPER, color: INK }}>
+      <div className="mx-auto flex min-h-full max-w-sm flex-col items-center justify-center gap-3 px-6 py-8 text-center">
+        <h1 className="text-3xl font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>Welcome back! ☁️🐾</h1>
+        <p className="text-sm" style={{ color: INK_SOFT, fontFamily: 'var(--font-spectral)' }}>
+          Type your player name and secret word to bring your clan home.
+        </p>
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="player name"
+          autoCapitalize="none"
+          autoCorrect="off"
+          className="w-full rounded-2xl border px-4 py-3 text-center text-lg outline-none"
+          style={{ background: CARD, borderColor: LINE, fontFamily: 'var(--font-fraunces)' }}
+        />
+        <input
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="secret word"
+          type="password"
+          className="w-full rounded-2xl border px-4 py-3 text-center text-lg outline-none"
+          style={{ background: CARD, borderColor: LINE, fontFamily: 'var(--font-fraunces)' }}
+        />
+        {error && <p className="text-sm font-semibold" style={{ color: ROSE }}>{error}</p>}
+        <button
+          onClick={submit}
+          disabled={busy || !username.trim() || !password}
+          className="w-full rounded-full py-4 text-lg font-bold text-white shadow-lg active:scale-95 disabled:opacity-50"
+          style={{ background: GREEN, fontFamily: 'var(--font-fraunces)' }}
+        >
+          {busy ? 'Finding your clan…' : 'Bring my clan back! 🐾'}
+        </button>
+        <button className="text-sm underline" style={{ color: INK_SOFT }} onClick={onBack}>
+          ← back
+        </button>
       </div>
     </div>
   );
@@ -500,6 +609,12 @@ function TopHud({
         <Pill text={`🧶 ${hud.yarn}`} />
         <Pill text={`🍪 ${hud.treats}`} />
         {hud.kittens > 0 && <Pill text={`🐱 ${hud.kittens}`} />}
+        {hud.paint && (
+          <span className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
+            style={{ background: 'rgba(253,250,241,0.94)', color: INK, border: `1.5px solid ${hud.paint}` }}>
+            🎨 <span className="inline-block h-3.5 w-3.5 rounded-full border border-black/10" style={{ background: hud.paint }} />
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -595,6 +710,7 @@ function AgilityHud({ a, onCancel }: { a: NonNullable<HudState['agility']>; onCa
   return (
     <div className="absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-2xl px-5 py-2 text-center shadow-xl"
       style={{ background: 'rgba(253,250,241,0.95)', border: `1.5px solid ${LINE}` }}>
+      <div className="text-[11px] font-bold uppercase tracking-widest" style={{ color: INK_SOFT }}>{a.name}</div>
       <div className="text-2xl font-bold tabular-nums" style={{ color: a.t > a.par ? ROSE : GREEN, fontFamily: 'var(--font-fraunces)' }}>
         {a.t.toFixed(1)}s
       </div>
@@ -945,10 +1061,15 @@ function GuideOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
   const save = game.save;
   const [selId, setSelId] = useState(save.activeCatId);
   const [rot, setRot] = useState<number | null>(null);
+  const [studio, setStudio] = useState(false);
   const cat = save.cats.find((c) => c.id === selId) ?? save.cats[0];
   const { rank, next, frac } = rankProgress(cat);
   const cap = clanCapacity(save.buildings);
   const [, force] = useState(0);
+
+  if (studio) {
+    return <StyleStudio game={game} catId={cat.id} onClose={() => { setStudio(false); force((v) => v + 1); }} />;
+  }
 
   return (
     <div className="absolute inset-0 z-40 overflow-auto" style={{ background: PAPER, color: INK }}>
@@ -1086,6 +1207,13 @@ function GuideOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
             onPointerDown={() => { game.feedTreat(cat.id); force((v) => v + 1); }}
           >
             🍪 Feed a treat (+5 xp) · {save.treats} left
+          </button>
+          <button
+            className="mt-2 w-full rounded-full border-2 py-2.5 text-sm font-bold active:scale-95"
+            style={{ borderColor: ROSE, color: ROSE }}
+            onPointerDown={() => setStudio(true)}
+          >
+            🎨 Style Studio — design {cat.name}!
           </button>
         </div>
 
@@ -1289,7 +1417,10 @@ function MapOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
             </Marker>
           ))}
           <Marker x={data.camp.x} z={data.camp.z} label="home">🏕</Marker>
-          <Marker x={data.agility.x} z={data.agility.z} label="agility">🚩</Marker>
+          {data.courses.map((cs) => (
+            <Marker key={cs.name} x={cs.x} z={cs.z} label={cs.name}>{cs.icon}</Marker>
+          ))}
+          <Marker x={data.art.x} z={data.art.z} label="art meadow">🎨</Marker>
           {data.tower && <Marker x={data.tower.x} z={data.tower.z} label="tower">🗼</Marker>}
           {data.rescue && <Marker x={data.rescue.x} z={data.rescue.z} label="kitten!">🐱</Marker>}
           {data.friends.map((f) => (
@@ -1454,6 +1585,7 @@ function SettingsOverlay({ game, onClose }: { game: Game; onClose: () => void })
           <Toggle label="Sound effects" value={sound} onChange={(v) => { setSound(v); game.setSound(v); }} />
           <Toggle label="Music" value={music} onChange={(v) => { setMusic(v); game.setMusic(v); }} />
         </div>
+        <AccountSection game={game} />
         <div className="mt-4 border-t pt-3" style={{ borderColor: LINE }}>
           {!confirmReset ? (
             <button className="w-full rounded-full border py-2 text-sm font-bold" style={{ borderColor: '#e0b4b4', color: ROSE }}
@@ -1484,6 +1616,133 @@ function SettingsOverlay({ game, onClose }: { game: Game; onClose: () => void })
           Back to the Wilds
         </button>
       </div>
+    </div>
+  );
+}
+
+// ————————————————— account: keep progress safe in the cloud —————————————————
+
+function AccountSection({ game }: { game: Game }) {
+  const [account, setAccountState] = useState(getAccount());
+  const [sync, setSync] = useState<SyncState>(getSyncState());
+  const [mode, setMode] = useState<'idle' | 'create' | 'signin'>('idle');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => onSyncState(setSync), []);
+
+  const doCreate = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await signup(username.trim().toLowerCase(), password, parentEmail.trim());
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? 'Something went wrong.');
+      return;
+    }
+    // push the clan they're playing right now, straight away
+    persistSave(game.save);
+    void flushCloudPush();
+    setAccountState(getAccount());
+    setMode('idle');
+  };
+
+  const doSignIn = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await cloudLogin(username.trim().toLowerCase(), password);
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? 'Something went wrong.');
+      return;
+    }
+    const cloudSave = res.save ? migrateSave(res.save) : null;
+    const localAt = game.save.savedAt ?? 0;
+    if (cloudSave && (cloudSave.savedAt ?? 0) > localAt) {
+      // the online clan is newer — load it (full reload keeps things simple + safe)
+      persistSave(cloudSave);
+      location.reload();
+      return;
+    }
+    // this tablet's clan is the newest — it becomes the online copy
+    persistSave(game.save);
+    void flushCloudPush();
+    setAccountState(getAccount());
+    setMode('idle');
+  };
+
+  const inputCls = 'w-full rounded-xl border px-3 py-2.5 text-center outline-none';
+  const inputStyle = { background: PAPER, borderColor: LINE } as const;
+
+  return (
+    <div className="mt-4 border-t pt-3" style={{ borderColor: LINE }}>
+      {account ? (
+        <div className="rounded-2xl border px-4 py-3 text-center" style={{ borderColor: '#bcd4a6', background: '#f0f5e6' }}>
+          <div className="text-sm font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>
+            ☁️ {account.username}
+          </div>
+          <div className="text-[11px]" style={{ color: sync === 'error' ? ROSE : INK_SOFT }}>
+            {sync === 'error'
+              ? 'Trouble reaching the cloud — progress is safe on this tablet and will sync when internet is back.'
+              : sync === 'syncing'
+                ? 'Saving to the cloud…'
+                : 'Progress saves online automatically — safe forever!'}
+          </div>
+          <button className="mt-1.5 text-[11px] underline" style={{ color: INK_SOFT }}
+            onPointerDown={() => { clearAccount(); setAccountState(null); }}>
+            sign out on this tablet
+          </button>
+        </div>
+      ) : mode === 'idle' ? (
+        <div className="text-center">
+          <p className="text-sm font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>☁️ Keep your clan safe forever</p>
+          <p className="text-[11px]" style={{ color: INK_SOFT }}>
+            Make a player account so your cats are saved online — even if this tablet loses them.
+          </p>
+          <div className="mt-2 flex justify-center gap-2">
+            <button className="rounded-full px-5 py-2.5 text-sm font-bold text-white active:scale-95" style={{ background: GREEN }}
+              onPointerDown={() => { setMode('create'); setError(null); }}>
+              Create account
+            </button>
+            <button className="rounded-full border px-5 py-2.5 text-sm font-bold active:scale-95" style={{ borderColor: LINE, color: INK }}
+              onPointerDown={() => { setMode('signin'); setError(null); }}>
+              Sign in
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-center text-sm font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>
+            {mode === 'create' ? '☁️ Create your player account' : '☁️ Sign in'}
+          </p>
+          <input className={inputCls} style={inputStyle} value={username} placeholder="player name (like scarlett)"
+            autoCapitalize="none" autoCorrect="off" onChange={(e) => setUsername(e.target.value)} />
+          <input className={inputCls} style={inputStyle} value={password} placeholder="secret word" type="password"
+            onChange={(e) => setPassword(e.target.value)} />
+          {mode === 'create' && (
+            <input className={inputCls} style={inputStyle} value={parentEmail} placeholder="parent email (ask a grown-up)"
+              type="email" autoCapitalize="none" onChange={(e) => setParentEmail(e.target.value)} />
+          )}
+          {error && <p className="text-center text-xs font-semibold" style={{ color: ROSE }}>{error}</p>}
+          <div className="flex justify-center gap-2">
+            <button className="rounded-full px-6 py-2.5 text-sm font-bold text-white active:scale-95 disabled:opacity-50"
+              style={{ background: GREEN }}
+              disabled={busy || !username.trim() || password.length < 4}
+              onPointerDown={() => (mode === 'create' ? doCreate() : doSignIn())}>
+              {busy ? 'One moment…' : mode === 'create' ? 'Save my clan! ☁️' : 'Sign in'}
+            </button>
+            <button className="rounded-full border px-4 py-2.5 text-sm font-bold" style={{ borderColor: LINE, color: INK_SOFT }}
+              onPointerDown={() => setMode('idle')}>
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

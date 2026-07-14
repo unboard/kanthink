@@ -12,9 +12,10 @@ import {
   rankFor, xpForLevel, clanCapacity,
 } from './data';
 import type {
-  CatSpec, ContextTarget, ChallengeState, DuelState, GameEvents, GameMode,
+  CatSpec, CatStyle, ContextTarget, ChallengeState, DuelState, GameEvents, GameMode,
   HudState, SaveData, BuildingInstance,
 } from './types';
+import { DEFAULT_STYLE } from './types';
 import { persistSave } from './save';
 import { mulberry32, hash2 } from './rng';
 import { PlaydateNet, seedFromCode, type PlaydateMember, type RemoteState } from './net';
@@ -165,10 +166,14 @@ export class Game {
   private hideKitten: { avatar: CatAvatar; x: number; z: number; meowT: number } | null = null;
   private challengeStartYarn = 0;
 
-  // agility
-  private agility: { running: boolean; t: number; nextGate: number; countdown: number } = { running: false, t: 0, nextGate: 0, countdown: 0 };
+  // agility (courseIdx picks which of the island's courses is being run)
+  private agility: { running: boolean; t: number; nextGate: number; countdown: number; courseIdx: number } = { running: false, t: 0, nextGate: 0, countdown: 0, courseIdx: 0 };
   private gateRing: THREE.Mesh;
   private agilityPar = 46;
+
+  // painty paws (Art Meadow)
+  private paint: { color: string | null; charge: number } = { color: null, charge: 0 };
+  private paintSide = 1;
 
   // build mode
   private buildSel: string | null = null;
@@ -1403,7 +1408,7 @@ export class Game {
       case 'scratch': this.doScratch(ctx.id); break;
       case 'duel': this.startDuel(ctx.id); break;
       case 'prey': this.doPounce(); break;
-      case 'agility': this.startAgility(); break;
+      case 'agility': this.startAgility(parseInt(ctx.id.split('_')[1] ?? '0', 10) || 0); break;
       case 'rescue': this.startClimb(ctx.id); break;
       case 'love': this.tryLove(ctx.id); break;
       case 'nurse': this.startNursing(); break;
@@ -1427,6 +1432,11 @@ export class Game {
     this.grounded = false;
     // resolve catch on landing
     this.busyPayload = () => {
+      // painty pounce = a big splat on the art patio!
+      if (this.paint.color && this.paint.charge > 0 && this.world.isOnArt(this.px, this.pz)) {
+        this.world.splashArt(this.px, this.pz, this.paint.color);
+        this.paint.charge = Math.max(0, this.paint.charge - 6);
+      }
       for (const c of this.world.critters) {
         if (c.state === 'gone' || c.state === 'caught') continue;
         if (Math.hypot(c.x - this.px, c.z - this.pz) < 1.5) {
@@ -2150,13 +2160,15 @@ export class Game {
 
   // ——— agility ———
 
-  private startAgility() {
+  private startAgility(courseIdx = 0) {
     if (this.agility.running) return;
-    this.agility = { running: true, t: 0, nextGate: 1, countdown: 3 };
-    this.agilityPar = Math.max(28, 48 - this.player.spec.traits.agility * 1.6);
+    const course = this.world.courses[courseIdx];
+    if (!course) return;
+    this.agility = { running: true, t: 0, nextGate: 1, countdown: 3, courseIdx };
+    this.agilityPar = Math.max(22, course.basePar - this.player.spec.traits.agility * 1.6);
     this.mode = 'agility';
     this.audio.uiTick();
-    this.toast('Ready... 3... 2... 1...');
+    this.toast(`${course.icon} ${course.name}! Ready... 3... 2... 1...`);
     this.emitHud(true);
   }
 
@@ -2175,7 +2187,7 @@ export class Game {
       return;
     }
     a.t += dt;
-    const gates = this.world.agilityGates;
+    const gates = this.world.courses[a.courseIdx]?.gates ?? this.world.agilityGates;
     const gate = gates[a.nextGate];
     if (!gate) return;
     // highlight ring on current gate
@@ -2354,6 +2366,35 @@ export class Game {
     const spec = this.save.cats.find((c) => c.id === catId);
     if (!spec) return;
     spec.coat.pattern = pattern;
+    if (catId === this.save.activeCatId) this.spawnPlayer(spec);
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  /** Style Studio: change face/ears/eyes/mouth/tail/whiskers */
+  setStyle(catId: string, patch: Partial<CatStyle>) {
+    const spec = this.save.cats.find((c) => c.id === catId);
+    if (!spec) return;
+    spec.style = { ...DEFAULT_STYLE, ...spec.style, ...patch };
+    if (catId === this.save.activeCatId) this.spawnPlayer(spec);
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  setEyeColor(catId: string, color: string) {
+    const spec = this.save.cats.find((c) => c.id === catId);
+    if (!spec) return;
+    spec.coat.eyeColor = color;
+    if (catId === this.save.activeCatId) this.spawnPlayer(spec);
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  /** accessory accent color (collar/bandana/bow tint) */
+  setAccentColor(catId: string, color: string) {
+    const spec = this.save.cats.find((c) => c.id === catId);
+    if (!spec) return;
+    spec.coat.accentColor = color;
     if (catId === this.save.activeCatId) this.spawnPlayer(spec);
     this.persist();
     this.events.onSaveChanged();
@@ -2655,6 +2696,19 @@ export class Game {
           this.stepAcc = 0;
           const onSand = groundY < WATER_LEVEL + 1.2;
           this.audio.footstep(this.sneaking, onSand);
+          // painty paws leave prints on the Art Meadow patio
+          if (this.paint.color && this.paint.charge > 0 && this.world.isOnArt(this.px, this.pz)) {
+            this.paintSide *= -1;
+            const sx = Math.cos(this.heading) * 0.17 * this.paintSide;
+            const sz = -Math.sin(this.heading) * 0.17 * this.paintSide;
+            this.world.stampPaw(this.px + sx, this.pz + sz, this.heading, this.paint.color, this.player.spec.size);
+            this.paint.charge--;
+            if (this.paint.charge <= 0) {
+              this.paint.color = null;
+              this.toast('Your paws are out of paint — dip them in a bucket for more! 🎨');
+              this.emitHud(true);
+            }
+          }
           if (!this.sneaking && speed > 4.2) {
             this.burst(
               this.px - this.lastMoveDir.x * 0.5,
@@ -2674,6 +2728,31 @@ export class Game {
       }
     } else if (this.busyT <= 0) {
       this.idleT += dt;
+    }
+
+    // ——— Art Meadow paint buckets: run through one to paint your paws ———
+    if (Math.hypot(this.px - this.world.artCenter.x, this.pz - this.world.artCenter.z) < 26) {
+      for (const b of this.world.paintBuckets) {
+        if (Math.hypot(b.x - this.px, b.z - this.pz) < 0.95) {
+          if (b.color) {
+            if (this.paint.color !== b.color || this.paint.charge < 30) {
+              this.paint = { color: b.color, charge: 70 };
+              this.audio.splash();
+              this.burst(this.px, this.py + 0.3, this.pz, b.color, 14);
+              this.world.splashArt(this.px, this.pz, b.color);
+              this.tutorialOnce('paint', 'You stepped in paint! 🎨 Run around the patio and leave paw-print art!');
+              this.emitHud(true);
+            }
+          } else if (this.paint.color) {
+            this.paint = { color: null, charge: 0 };
+            this.audio.splash();
+            this.burst(this.px, this.py + 0.3, this.pz, '#9fd8e8', 10);
+            this.toast('Splish! All clean. 💧');
+            this.emitHud(true);
+          }
+          break;
+        }
+      }
     }
 
     // ——— vertical physics ———
@@ -2884,11 +2963,13 @@ export class Game {
         const d = Math.hypot(m.x - this.px, m.z - this.pz);
         if (d < 2) set('dig', 'Dig', m.id, m.x, m.z, d, 4);
       }
-      // agility start
-      const startGate = this.world.agilityGates[0];
-      if (startGate && !this.agility.running) {
-        const d = Math.hypot(startGate.x - this.px, startGate.z - this.pz);
-        if (d < 4) set('agility', 'Start Course', 'agility', startGate.x, startGate.z, d, 4);
+      // agility courses (any start gate on the island)
+      if (!this.agility.running) {
+        this.world.courses.forEach((course, ci) => {
+          const startGate = course.gates[0];
+          const d = Math.hypot(startGate.x - this.px, startGate.z - this.pz);
+          if (d < 4) set('agility', `${course.icon} ${course.name}`, `agility_${ci}`, startGate.x, startGate.z, d, 4);
+        });
       }
       // scratch posts (built)
       for (const s of this.world.scratchSpots) {
@@ -3166,8 +3247,16 @@ export class Game {
       sneaking: this.sneaking,
       timeOfDay: this.timeOfDay,
       agility: this.agility.running
-        ? { running: true, t: this.agility.countdown > 0 ? 0 : this.agility.t, par: this.agilityPar, nextGate: this.agility.nextGate, total: this.world.agilityGates.length }
+        ? {
+            running: true,
+            t: this.agility.countdown > 0 ? 0 : this.agility.t,
+            par: this.agilityPar,
+            nextGate: this.agility.nextGate,
+            total: (this.world.courses[this.agility.courseIdx]?.gates ?? this.world.agilityGates).length,
+            name: this.world.courses[this.agility.courseIdx]?.name ?? 'Agility',
+          }
         : null,
+      paint: this.paint.color,
       compass: this.camYaw,
       camp: this.campCompass(),
       rescue: this.rescue
@@ -3200,6 +3289,8 @@ export class Game {
       you: { x: this.px, z: this.pz, heading: this.heading },
       camp: this.world.playerCamp,
       agility: this.world.agilityCenter,
+      courses: this.world.courses.map((cs) => ({ x: cs.gates[0].x, z: cs.gates[0].z, name: cs.name, icon: cs.icon })),
+      art: this.world.artCenter,
       tower: this.world.towerTop ? { x: this.world.towerTop.x, z: this.world.towerTop.z } : null,
       rivalCamps: this.playdate ? [] : this.world.camps.map((cp) => ({
         x: cp.x, z: cp.z,

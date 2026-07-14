@@ -776,3 +776,22 @@ export const recordings = sqliteTable('recordings', {
 
 export type DbRecording = typeof recordings.$inferSelect
 export type NewDbRecording = typeof recordings.$inferInsert
+
+// ===== /catlife — Whisker Wilds kid accounts + cloud saves =====
+// Standalone from Kanthink users: kids sign in with a simple username +
+// password (parent email kept for recovery). One row per kid, save JSON inline.
+
+export const catlifePlayers = sqliteTable('catlife_players', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  username: text('username').notNull().unique(),      // stored lowercase
+  passwordHash: text('password_hash').notNull(),      // scrypt salt:hash (hex)
+  parentEmail: text('parent_email'),
+  token: text('token'),                               // bearer token for the tablet
+  saveData: text('save_data'),                        // full SaveData JSON
+  saveUpdatedAt: integer('save_updated_at'),          // epoch seconds
+  createdAt: integer('created_at'),                   // epoch seconds
+}, (table) => [
+  index('catlife_players_token_idx').on(table.token),
+])
+
+export type DbCatlifePlayer = typeof catlifePlayers.$inferSelect

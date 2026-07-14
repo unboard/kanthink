@@ -1,6 +1,9 @@
 // Whisker Wilds — static game data + cat generation
 
-import type { AccessoryId, CatSpec, CoatSpec, PatternId } from './types';
+import type {
+  AccessoryId, CatSpec, CatStyle, CoatSpec, PatternId,
+  FaceShape, EarStyle, EyeStyle, MouthStyle, TailStyle, WhiskerStyle,
+} from './types';
 import { mulberry32, pick, range, irange } from './rng';
 
 export const WORLD_SIZE = 520;         // world is WORLD_SIZE x WORLD_SIZE centered at 0
@@ -81,7 +84,7 @@ export const RANKS: readonly RankDef[] = [
   { name: 'Scout', minScore: 4, unlockAccessories: ['collar', 'bandana'] },
   { name: 'Hunter', minScore: 9, unlockAccessories: ['scarf'] },
   { name: 'Guardian', minScore: 16, unlockAccessories: ['bow', 'flowercrown'], unlockPatterns: ['moon'] },
-  { name: 'Champion', minScore: 25, unlockAccessories: ['goldcollar'], unlockPatterns: ['star'] },
+  { name: 'Champion', minScore: 25, unlockAccessories: ['goldcollar', 'starcollar'], unlockPatterns: ['star'] },
   { name: 'Clan Leader', minScore: 36 },
 ];
 
@@ -154,6 +157,47 @@ export function clanCapacity(buildings: { type: string }[]): number {
   return cap;
 }
 
+// ——— Style Studio option pools + labels ———
+export const FACE_SHAPES: readonly FaceShape[] = ['round', 'slim', 'chubby', 'fluffy'];
+export const EAR_STYLES: readonly EarStyle[] = ['pointy', 'round', 'folded', 'big', 'tufted'];
+export const EYE_STYLES: readonly EyeStyle[] = ['almond', 'round', 'sleepy', 'starry'];
+export const MOUTH_STYLES: readonly MouthStyle[] = ['sweet', 'smiley', 'pouty', 'toothy'];
+export const TAIL_STYLES: readonly TailStyle[] = ['classic', 'fluffy', 'bobtail', 'curly'];
+export const WHISKER_STYLES: readonly WhiskerStyle[] = ['classic', 'long', 'curly', 'short'];
+
+export const FACE_LABELS: Record<FaceShape, string> = {
+  round: 'Round', slim: 'Slim', chubby: 'Chubby cheeks', fluffy: 'Extra fluffy',
+};
+export const EAR_LABELS: Record<EarStyle, string> = {
+  pointy: 'Pointy', round: 'Rounded', folded: 'Folded', big: 'Big ears', tufted: 'Lynx tufts',
+};
+export const EYE_LABELS: Record<EyeStyle, string> = {
+  almond: 'Almond', round: 'Big & round', sleepy: 'Sleepy', starry: 'Starry sparkle',
+};
+export const MOUTH_LABELS: Record<MouthStyle, string> = {
+  sweet: 'Sweet', smiley: 'Smiley', pouty: 'Pouty', toothy: 'Little fang',
+};
+export const TAIL_LABELS: Record<TailStyle, string> = {
+  classic: 'Classic', fluffy: 'Floofy', bobtail: 'Bobtail', curly: 'Curly-Q',
+};
+export const WHISKER_LABELS: Record<WhiskerStyle, string> = {
+  classic: 'Classic', long: 'Extra long', curly: 'Curly', short: 'Short & neat',
+};
+
+/** random look for a generated cat — most stay classic, some roll fun features */
+export function randomStyle(rng: () => number): CatStyle {
+  const roll = <T,>(pool: readonly T[], chance: number): T =>
+    rng() < chance ? pool[irange(rng, 0, pool.length - 1)] : pool[0];
+  return {
+    face: roll(FACE_SHAPES, 0.55),
+    ears: roll(EAR_STYLES, 0.5),
+    eyes: roll(EYE_STYLES, 0.5),
+    mouth: roll(MOUTH_STYLES, 0.45),
+    tail: roll(TAIL_STYLES, 0.5),
+    whiskers: roll(WHISKER_STYLES, 0.45),
+  };
+}
+
 // ——— Cat generation ———
 let catCounter = 0;
 
@@ -206,6 +250,7 @@ export function generateCat(seed: number, clanId: string, opts?: {
     wins: 0,
     losses: 0,
     accessory: 'none',
+    style: randomStyle(rng),
     bestAgility: null,
   };
 }
@@ -238,6 +283,19 @@ export function generateBaby(seed: number, mom: CatSpec, dad: CatSpec): CatSpec 
     accentColor: b.coat.accentColor,
   };
   baby.parents = [mom.name, dad.name];
+  // looks run in the family: each feature comes from mama or daddy
+  const momS = mom.style, dadS = dad.style;
+  if (momS || dadS) {
+    const from = <K extends keyof CatStyle>(k: K): CatStyle[K] => {
+      const m = momS?.[k], d = dadS?.[k];
+      if (m !== undefined && d !== undefined) return rng() < 0.5 ? m : d;
+      return (m ?? d ?? baby.style![k]) as CatStyle[K];
+    };
+    baby.style = {
+      face: from('face'), ears: from('ears'), eyes: from('eyes'),
+      mouth: from('mouth'), tail: from('tail'), whiskers: from('whiskers'),
+    };
+  }
   return baby;
 }
 
@@ -281,4 +339,6 @@ export const ACCESSORY_LABELS: Record<AccessoryId, string> = {
   flowercrown: 'Flower Crown',
   goldcollar: 'Golden Collar',
   scarf: 'Scarf',
+  heartcollar: 'Heart Collar 💗',
+  starcollar: 'Star Collar ⭐',
 };

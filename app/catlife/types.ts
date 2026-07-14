@@ -17,7 +17,31 @@ export type AccessoryId =
   | 'bow'
   | 'flowercrown'
   | 'goldcollar'
-  | 'scarf';
+  | 'scarf'
+  | 'heartcollar'
+  | 'starcollar';
+
+// ——— Style Studio: per-cat looks the kids choose themselves ———
+export type FaceShape = 'round' | 'slim' | 'chubby' | 'fluffy';
+export type EarStyle = 'pointy' | 'round' | 'folded' | 'big' | 'tufted';
+export type EyeStyle = 'almond' | 'round' | 'sleepy' | 'starry';
+export type MouthStyle = 'sweet' | 'smiley' | 'pouty' | 'toothy';
+export type TailStyle = 'classic' | 'fluffy' | 'bobtail' | 'curly';
+export type WhiskerStyle = 'classic' | 'long' | 'curly' | 'short';
+
+export interface CatStyle {
+  face: FaceShape;
+  ears: EarStyle;
+  eyes: EyeStyle;
+  mouth: MouthStyle;
+  tail: TailStyle;
+  whiskers: WhiskerStyle;
+}
+
+export const DEFAULT_STYLE: CatStyle = {
+  face: 'round', ears: 'pointy', eyes: 'almond',
+  mouth: 'sweet', tail: 'classic', whiskers: 'classic',
+};
 
 export interface CoatSpec {
   base: string;       // hex
@@ -55,6 +79,7 @@ export interface CatSpec {
   wins: number;
   losses: number;
   accessory: AccessoryId;
+  style?: CatStyle;    // face/ears/eyes/mouth/tail/whiskers — old saves get defaults
   bestAgility: number | null; // seconds
   gender?: 'girl' | 'boy';
   stage?: LifeStage;   // babies/kittens grow their patterns in as they age
@@ -100,6 +125,7 @@ export interface SaveData {
   musicOn: boolean;
   tutorialDone: string[];       // tutorial step keys shown
   createdAt: number;
+  savedAt?: number;             // epoch seconds of last persist — newest save wins across devices
 }
 
 export type GameMode = 'explore' | 'sneak' | 'build' | 'agility' | 'duel';
@@ -131,7 +157,8 @@ export interface HudState {
   climbing: boolean;
   sneaking: boolean;
   timeOfDay: number; // 0..1 (0=midnight .5=noon)
-  agility: { running: boolean; t: number; par: number; nextGate: number; total: number } | null;
+  agility: { running: boolean; t: number; par: number; nextGate: number; total: number; name: string } | null;
+  paint: string | null; // paw paint color while painted-up at the Art Meadow
   compass: number;   // camera yaw for minimap
   camp: { angle: number; dist: number }; // direction home (camera-relative)
   rescue: { angle: number; dist: number } | null; // kitten-in-tree direction

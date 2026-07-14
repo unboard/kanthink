@@ -1,7 +1,9 @@
-// Whisker Wilds — per-device localStorage save (same approach as Wildwood / Paws & Found)
+// Whisker Wilds — localStorage save + cloud sync for signed-in kids.
+// Local write happens on every persist; the cloud push is throttled in cloud.ts.
 
 import type { SaveData } from './types';
 import { RIVAL_CLANS, generateCat, genderOf } from './data';
+import { queueCloudPush } from './cloud';
 
 const KEY = 'catlife-save-v1';
 
@@ -27,7 +29,7 @@ export function newSave(seed: number, clanName: string, firstCatSeed: number): S
     buildings: [],
     rivals,
     unlockedPatterns: ['solid', 'tabby', 'spots', 'tuxedo', 'calico', 'siamese'],
-    unlockedAccessories: ['none'],
+    unlockedAccessories: ['none', 'heartcollar'],
     treats: 0,
     soundOn: true,
     musicOn: true,
@@ -36,23 +38,29 @@ export function newSave(seed: number, clanName: string, firstCatSeed: number): S
   };
 }
 
+/** migrations shared by local loads and cloud pulls */
+export function migrateSave(data: SaveData | null): SaveData | null {
+  if (!data || data.v !== 1 || !Array.isArray(data.cats) || data.cats.length === 0) return null;
+  if (!Array.isArray(data.kittens)) data.kittens = []; // saves from before the kitten update
+  if (!Array.isArray(data.nursery)) data.nursery = []; // saves from before the family update
+  if (!Array.isArray(data.hadLitter)) data.hadLitter = [];
+  // saves from before genders existed: the first (starter) cat becomes a girl
+  // so she can have kittens; everyone else keeps a stable derived gender
+  data.cats.forEach((c, i) => {
+    if (!c.gender) c.gender = i === 0 ? 'girl' : genderOf(c);
+  });
+  for (const k of data.kittens) if (!k.gender) k.gender = genderOf(k);
+  // Style Studio update: everyone starts with the heart collar unlocked
+  if (!data.unlockedAccessories.includes('heartcollar')) data.unlockedAccessories.push('heartcollar');
+  return data;
+}
+
 export function loadSave(): SaveData | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw) as SaveData;
-    if (!data || data.v !== 1 || !Array.isArray(data.cats) || data.cats.length === 0) return null;
-    if (!Array.isArray(data.kittens)) data.kittens = []; // saves from before the kitten update
-    if (!Array.isArray(data.nursery)) data.nursery = []; // saves from before the family update
-    if (!Array.isArray(data.hadLitter)) data.hadLitter = [];
-    // saves from before genders existed: the first (starter) cat becomes a girl
-    // so she can have kittens; everyone else keeps a stable derived gender
-    data.cats.forEach((c, i) => {
-      if (!c.gender) c.gender = i === 0 ? 'girl' : genderOf(c);
-    });
-    for (const k of data.kittens) if (!k.gender) k.gender = genderOf(k);
-    return data;
+    return migrateSave(JSON.parse(raw) as SaveData);
   } catch {
     return null;
   }
@@ -60,11 +68,13 @@ export function loadSave(): SaveData | null {
 
 export function persistSave(data: SaveData) {
   if (typeof window === 'undefined') return;
+  data.savedAt = Math.floor(Date.now() / 1000);
   try {
     localStorage.setItem(KEY, JSON.stringify(data));
   } catch {
     // storage full/blocked — game keeps running in memory
   }
+  queueCloudPush(data); // no-op unless a kid is signed in
 }
 
 export function clearSave() {

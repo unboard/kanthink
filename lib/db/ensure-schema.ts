@@ -288,6 +288,20 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0028 — Whisker Wilds kid accounts + cloud saves
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS catlife_players (
+      id text PRIMARY KEY NOT NULL,
+      username text NOT NULL UNIQUE,
+      password_hash text NOT NULL,
+      parent_email text,
+      token text,
+      save_data text,
+      save_updated_at integer,
+      created_at integer
+    )`))
+  } catch {}
+
   // Data migration — rename Quick Save → Kan Bookmarks
   try {
     await db.run(sql.raw(`UPDATE channels SET name = 'Kan Bookmarks', description = 'Your personal bookmark channel. Save anything from the web — links, articles, ideas, snippets — and Kan will organize and comment on them. Use the browser bookmarklet (desktop) or share sheet (mobile) to save from anywhere.' WHERE is_quick_save = 1 AND name = 'Quick Save'`))
@@ -322,6 +336,8 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS channel_data_sources_channel_provider_idx ON channel_data_sources (channel_id, provider)`,
     // Migration 0026 indexes
     `CREATE INDEX IF NOT EXISTS recordings_owner_idx ON recordings (owner_id)`,
+    // Migration 0028 indexes
+    `CREATE INDEX IF NOT EXISTS catlife_players_token_idx ON catlife_players (token)`,
   ]
 
   for (const idx of indexes) {

@@ -20,6 +20,15 @@ export interface YarnBall {
 }
 export interface CampInfo { clanId: string; x: number; z: number; r: number }
 export interface AgilityGate { x: number; z: number; kind: 'start' | 'weave' | 'hurdle' | 'tunnel' | 'ramp' | 'finish' }
+export interface AgilityCourse {
+  id: string;
+  name: string;
+  icon: string;
+  center: { x: number; z: number };
+  gates: AgilityGate[];
+  basePar: number; // seconds, before the cat's agility stat discount
+}
+export interface PaintBucket { x: number; z: number; color: string | null } // null = wash-off water
 export interface Critter {
   kind: 'butterfly' | 'mouse' | 'bird';
   group: THREE.Group;
@@ -51,9 +60,16 @@ export class World {
   yarn: YarnBall[] = [];
   camps: CampInfo[] = [];
   islets: { x: number; z: number; r: number }[] = [];
-  agilityGates: AgilityGate[] = [];
+  agilityGates: AgilityGate[] = []; // course 0 gates (kept for golden-yarn agility challenges)
   agilityCenter = { x: 0, z: 0 };
+  courses: AgilityCourse[] = [];
   playerCamp = { x: 0, z: 0 };
+  // Art Meadow: paint buckets + a paintable ground canvas
+  artCenter = { x: 0, z: 0 };
+  paintBuckets: PaintBucket[] = [];
+  private artCtx: CanvasRenderingContext2D | null = null;
+  private artTex: THREE.CanvasTexture | null = null;
+  private readonly ART_HALF = 13; // patio disc radius == canvas half-extent (keeps UVs aligned)
   critters: Critter[] = [];
   scratchSpots: ScratchSpot[] = [];
   buildingMeshes = new Map<string, THREE.Group>();
@@ -87,7 +103,8 @@ export class World {
 
   private lakeC: { x: number; z: number };
   private hillC: { x: number; z: number };
-  private flatSpots: { x: number; z: number; r: number; h: number }[] = [];
+  // plateau: fully flat inside this radius (blend happens between plateau and r)
+  private flatSpots: { x: number; z: number; r: number; h: number; plateau?: number }[] = [];
 
   private yarnTexNormal: THREE.CanvasTexture;
   private yarnTexGold: THREE.CanvasTexture;
@@ -106,6 +123,8 @@ export class World {
     this.playerCamp = { x: Math.cos(a3) * 60, z: Math.sin(a3) * 60 };
     const a4 = a3 + 1.4;
     this.agilityCenter = { x: Math.cos(a4) * 105, z: Math.sin(a4) * 105 };
+    const a5 = a3 - 1.25;
+    this.artCenter = { x: Math.cos(a5) * 82, z: Math.sin(a5) * 82 };
 
     for (let i = 0; i < RIVAL_CLANS.length; i++) {
       const a = a3 + Math.PI * 0.5 + (i * Math.PI * 2) / 3 + 0.5;
@@ -120,6 +139,7 @@ export class World {
     this.flatSpots.push({ ...this.playerCamp, r: 26, h: 2.2 });
     for (const c of this.camps) this.flatSpots.push({ x: c.x, z: c.z, r: 20, h: 2.4 });
     this.flatSpots.push({ x: this.agilityCenter.x, z: this.agilityCenter.z, r: 34, h: 2.0 });
+    this.flatSpots.push({ x: this.artCenter.x, z: this.artCenter.z, r: 26, h: 2.1, plateau: 16 });
 
     // ——— build everything ———
     this.group.add(this.buildTerrain());
@@ -142,7 +162,11 @@ export class World {
     this.buildDigMounds(rng);
     this.buildCamps();
     this.buildAgilityCourse();
+    this.buildCliffCourse();
+    this.buildLakeCourse();
+    this.buildCrags();
     this.buildTowerTrial();
+    this.buildArtMeadow();
     this.buildCritters(rng);
 
     const leaves = this.buildLeaves(rng);
@@ -195,7 +219,10 @@ export class World {
       h += gauss(Math.hypot(x - it.x, z - it.z), it.r) * (9 + it.r * 0.1);
     }
     for (const f of this.flatSpots) {
-      const t = smoothstep(clamp01(1 - Math.hypot(x - f.x, z - f.z) / f.r));
+      const d = Math.hypot(x - f.x, z - f.z);
+      const t = f.plateau !== undefined
+        ? smoothstep(clamp01((f.r - d) / (f.r - f.plateau)))
+        : smoothstep(clamp01(1 - d / f.r));
       h = h * (1 - t) + f.h * t;
     }
     return h;
@@ -806,6 +833,7 @@ export class World {
         const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
         if (forest > 0.58 && h1 > 0.45) continue; // sparser under trees
         if (this.nearPad(x, z, -2) && hash2(cx, cz, this.seed + 23) > 0.35) continue; // trimmed lawns at camps
+        if (Math.hypot(x - this.artCenter.x, z - this.artCenter.z) < this.ART_HALF + 0.5) continue; // no grass through the art patio
         q.setFromAxisAngle(up, h1 * Math.PI * 2);
         const fade = 1 - Math.pow(dd / R, 2.4) * 0.8; // sink into the ground toward the disc edge
         const sc = (0.95 + hash2(cx, cz, this.seed + 24) * 0.95) * Math.max(0.15, fade);
@@ -1439,7 +1467,24 @@ export class World {
     }
   }
 
-  // ——— agility course ———
+  // ——— agility courses ———
+
+  private flagPole(x: number, z: number, color: string, y?: number) {
+    const g = new THREE.Group();
+    const yy = y ?? this.heightAt(x, z);
+    const wood = new THREE.MeshStandardMaterial({ color: '#b08d57', roughness: 1 });
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 3, 6), wood);
+    p.position.set(x, yy + 1.5, z);
+    p.castShadow = true;
+    const f = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.1, 0.7),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.8, side: THREE.DoubleSide })
+    );
+    f.position.set(x + 0.55, yy + 2.6, z);
+    g.add(p, f);
+    this.group.add(g);
+  }
+
   private buildAgilityCourse() {
     const c = this.agilityCenter;
     const dir = Math.atan2(-c.z, -c.x);
@@ -1457,18 +1502,8 @@ export class World {
     const red = new THREE.MeshStandardMaterial({ color: '#c0392b', roughness: 0.8 });
     const blue = new THREE.MeshStandardMaterial({ color: '#2980b9', roughness: 0.8 });
 
-    const flagPole = (x: number, z: number, color: THREE.MeshStandardMaterial) => {
-      const g = new THREE.Group();
-      const y = this.heightAt(x, z);
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 3, 6), wood);
-      p.position.set(x, y + 1.5, z);
-      p.castShadow = true;
-      const f = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.7), color);
-      f.material.side = THREE.DoubleSide;
-      f.position.set(x + 0.55, y + 2.6, z);
-      g.add(p, f);
-      this.group.add(g);
-    };
+    const flagPole = (x: number, z: number, mat: THREE.MeshStandardMaterial) =>
+      this.flagPole(x, z, '#' + mat.color.getHexString());
 
     const start = at(-26, 0);
     flagPole(start.x - px * 1.6, start.z - pz * 1.6, blue);
@@ -1529,6 +1564,257 @@ export class World {
     flagPole(fin.x - px * 1.6, fin.z - pz * 1.6, red);
     flagPole(fin.x + px * 1.6, fin.z + pz * 1.6, red);
     this.agilityGates.push({ x: fin.x, z: fin.z, kind: 'finish' });
+
+    this.courses.push({
+      id: 'paws', name: 'Trial of Paws', icon: '🚩',
+      center: { ...this.agilityCenter }, gates: this.agilityGates, basePar: 48,
+    });
+  }
+
+  /** Cliff Scramble: a spiral of gates + stone steps up the big hill. Harder! */
+  private buildCliffCourse() {
+    const c = this.hillC;
+    const baseA = Math.atan2(-c.z, -c.x); // start on the island-centre side
+    const gates: AgilityGate[] = [];
+    const stone = new THREE.MeshStandardMaterial({ color: '#9a9a90', roughness: 1 });
+    const N = 7;
+    for (let i = 0; i < N; i++) {
+      const a = baseA + i * 0.82;
+      const d = 44 - i * 6.2; // spirals in toward the summit
+      const x = c.x + Math.cos(a) * d;
+      const z = c.z + Math.sin(a) * d;
+      gates.push({ x, z, kind: i === 0 ? 'start' : i === N - 1 ? 'finish' : 'weave' });
+      if (i > 0 && i < N - 1) {
+        // a stone step to bound off beside each mid gate
+        const sx = x + Math.cos(a + 1.2) * 2.2;
+        const sz = z + Math.sin(a + 1.2) * 2.2;
+        const h = this.heightAt(sx, sz);
+        const step = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.4, 1.1, 9), stone);
+        step.position.set(sx, h + 0.55, sz);
+        step.castShadow = true;
+        this.group.add(step);
+        this.rocks.push({ x: sx, z: sz, r: 1.1, topY: h + 1.1 });
+        this.platforms.push({ x: sx, z: sz, r: 1.25, topY: h + 1.1 });
+      }
+    }
+    const s = gates[0], f = gates[gates.length - 1];
+    this.flagPole(s.x - 1.4, s.z, '#8e44ad');
+    this.flagPole(s.x + 1.4, s.z, '#8e44ad');
+    this.flagPole(f.x - 1.2, f.z, '#e8c34a');
+    this.flagPole(f.x + 1.2, f.z, '#e8c34a');
+    this.courses.push({
+      id: 'cliff', name: 'Cliff Scramble', icon: '⛰️',
+      center: { x: s.x, z: s.z }, gates, basePar: 42,
+    });
+  }
+
+  /** Stepping Stones: hop the pillar path across the lake — don't get soggy! */
+  private buildLakeCourse() {
+    const c = this.lakeC;
+    const toCentre = Math.atan2(-c.z, -c.x);
+    const ux = Math.cos(toCentre), uz = Math.sin(toCentre);
+    const gates: AgilityGate[] = [];
+    const stone = new THREE.MeshStandardMaterial({ color: '#8d938a', roughness: 1 });
+
+    // find each shore along the crossing line
+    const shoreAt = (sign: number) => {
+      for (let d = 6; d < 60; d += 1.5) {
+        const x = c.x + ux * d * sign, z = c.z + uz * d * sign;
+        if (this.heightAt(x, z) > WATER_LEVEL + 0.6) return { x, z };
+      }
+      return { x: c.x + ux * 40 * sign, z: c.z + uz * 40 * sign };
+    };
+    const start = shoreAt(1);   // island-centre side shore
+    const finish = shoreAt(-1); // far shore
+    gates.push({ x: start.x, z: start.z, kind: 'start' });
+
+    // pillar stepping stones spanning the water, jitter keeps jumps interesting
+    const NS = 6;
+    for (let i = 1; i <= NS; i++) {
+      const t = i / (NS + 1);
+      const jx = Math.sin(i * 2.4) * 2.2;
+      const x = start.x + (finish.x - start.x) * t - uz * jx;
+      const z = start.z + (finish.z - start.z) * t + ux * jx;
+      const bed = Math.min(this.heightAt(x, z), WATER_LEVEL - 0.4);
+      const topY = WATER_LEVEL + 0.55;
+      const pillar = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.05, 1.35, topY - bed + 0.6, 10),
+        stone
+      );
+      pillar.position.set(x, bed + (topY - bed + 0.6) / 2 - 0.6, z);
+      pillar.castShadow = true;
+      this.group.add(pillar);
+      this.rocks.push({ x, z, r: 1.0, topY });
+      this.platforms.push({ x, z, r: 1.2, topY });
+      gates.push({ x, z, kind: 'weave' });
+    }
+    gates.push({ x: finish.x, z: finish.z, kind: 'finish' });
+    this.flagPole(start.x - 1.3, start.z, '#2980b9');
+    this.flagPole(start.x + 1.3, start.z, '#2980b9');
+    this.flagPole(finish.x, finish.z, '#e8c34a');
+    this.courses.push({
+      id: 'stones', name: 'Stepping Stones', icon: '💧',
+      center: { x: start.x, z: start.z }, gates, basePar: 40,
+    });
+  }
+
+  /** Boulder Crags: a free-play parkour cluster of flat-top pillars to bound up. */
+  private buildCrags() {
+    const c = this.agilityCenter;
+    const dir = Math.atan2(-c.z, -c.x);
+    // opposite side of the pad from the Cat Tower
+    const cx = c.x + Math.cos(dir - Math.PI / 2) * 17;
+    const cz = c.z + Math.sin(dir - Math.PI / 2) * 17;
+    const stone = new THREE.MeshStandardMaterial({ color: '#98948a', roughness: 1, flatShading: true });
+    const N = 12;
+    for (let i = 0; i < N; i++) {
+      const a = i * 2.39996; // golden-angle scatter
+      const d = 1.8 + Math.sqrt(i) * 2.35;
+      const x = cx + Math.cos(a) * d;
+      const z = cz + Math.sin(a) * d;
+      const h = this.heightAt(x, z);
+      // taller toward the middle — a little mountain to conquer
+      const height = 0.9 + (1 - d / 11) * 4.6 + ((i * 37) % 10) / 12;
+      const r = 1.0 + ((i * 13) % 10) / 14;
+      const crag = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.35, height, 7), stone);
+      crag.position.set(x, h + height / 2, z);
+      crag.rotation.y = a;
+      crag.castShadow = true;
+      this.group.add(crag);
+      this.rocks.push({ x, z, r: r * 0.95, topY: h + height });
+      this.platforms.push({ x, z, r: r * 1.05, topY: h + height });
+    }
+    // a little flag on the tallest crag in the middle
+    const th = this.heightAt(cx, cz);
+    this.flagPole(cx + 0.5, cz + 0.5, '#67b25f', th + 5.4);
+  }
+
+  // ——— Art Meadow: paint buckets + a big paintable stone patio ———
+
+  private buildArtMeadow() {
+    const c = this.artCenter;
+    const half = this.ART_HALF;
+
+    // paintable patio: a canvas texture on a terrain-conforming plane
+    const canvas = document.createElement('canvas');
+    canvas.width = 768;
+    canvas.height = 768;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#ece5d2';
+    ctx.fillRect(0, 0, 768, 768);
+    // stone speckle so the blank patio doesn't look sterile
+    for (let i = 0; i < 2600; i++) {
+      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(120,110,90,0.06)' : 'rgba(255,255,245,0.08)';
+      ctx.fillRect(Math.random() * 768, Math.random() * 768, 1.5 + Math.random() * 2, 1.5 + Math.random() * 2);
+    }
+    // faded border ring so kids can see the edge of the art zone
+    ctx.strokeStyle = 'rgba(140,120,90,0.35)';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(384, 384, 374, 0, Math.PI * 2);
+    ctx.stroke();
+    this.artCtx = ctx;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    this.artTex = tex;
+
+    // the terrain under the meadow is plateau-flat, so a simple disc sits clean
+    const baseY = this.heightAt(c.x, c.z);
+    const geoA = new THREE.CircleGeometry(half, 48);
+    geoA.rotateX(-Math.PI / 2);
+    const patio = new THREE.Mesh(geoA, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.96 }));
+    patio.position.set(c.x, baseY + 0.05, c.z);
+    patio.receiveShadow = true;
+    this.group.add(patio);
+
+    // paint buckets in a rainbow arc + one water bucket to wash paws
+    const colors = ['#e0505a', '#f0913c', '#f5c542', '#67b25f', '#3f8fd4', '#9b6dd4', '#f08fbf'];
+    const tin = new THREE.MeshStandardMaterial({ color: '#d4d0c6', roughness: 0.6, metalness: 0.12 });
+    const mkBucket = (x: number, z: number, color: string | null) => {
+      const y = this.heightAt(x, z) + 0.05;
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.4, 0.55, 12, 1, true), tin);
+      body.position.set(x, y + 0.28, z);
+      body.castShadow = true;
+      this.group.add(body);
+      const fill = new THREE.Mesh(
+        new THREE.CircleGeometry(0.46, 12),
+        new THREE.MeshStandardMaterial({ color: color ?? '#7ec8e0', roughness: color ? 0.35 : 0.15 })
+      );
+      fill.rotation.x = -Math.PI / 2;
+      fill.position.set(x, y + 0.5, z);
+      this.group.add(fill);
+      // spilled splash on the patio so buckets read as "step in me!"
+      if (color) this.splashArt(x, z, color);
+      this.paintBuckets.push({ x, z, color });
+    };
+    colors.forEach((col, i) => {
+      const a = -0.9 + (i / (colors.length - 1)) * 1.8; // arc facing the centre
+      mkBucket(c.x + Math.cos(a) * 9, c.z + Math.sin(a) * 9, col);
+    });
+    mkBucket(c.x + Math.cos(Math.PI) * 9, c.z + Math.sin(Math.PI) * 9, null); // water
+
+    // an easel-style sign at the entrance
+    this.flagPole(c.x, c.z - 12, '#f08fbf');
+  }
+
+  /** true when a paw can leave a mark here (on the patio disc) */
+  isOnArt(x: number, z: number): boolean {
+    return Math.hypot(x - this.artCenter.x, z - this.artCenter.z) < this.ART_HALF - 0.4;
+  }
+
+  private artPx(x: number, z: number): { px: number; pz: number; scale: number } {
+    const scale = 768 / (this.ART_HALF * 2);
+    return {
+      px: (x - this.artCenter.x + this.ART_HALF) * scale,
+      pz: (z - this.artCenter.z + this.ART_HALF) * scale,
+      scale,
+    };
+  }
+
+  /** stamp one painty paw print onto the patio, rotated to the cat's heading */
+  stampPaw(x: number, z: number, heading: number, color: string, size = 1) {
+    const ctx = this.artCtx;
+    if (!ctx || !this.isOnArt(x, z)) return;
+    const { px, pz, scale } = this.artPx(x, z);
+    ctx.save();
+    ctx.translate(px, pz);
+    // canvas +y is world +z; heading 0 faces +z, and the paw art points up (-y)
+    ctx.rotate(Math.PI - heading);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.85;
+    const u = scale * 0.13 * size; // paw pad radius in px
+    ctx.beginPath();
+    ctx.ellipse(0, 0, u * 1.15, u, 0, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      const ta = (-0.55 + i * 0.37);
+      ctx.beginPath();
+      ctx.ellipse(Math.sin(ta) * u * 1.9, -Math.cos(ta) * u * 1.75, u * 0.42, u * 0.52, ta, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    if (this.artTex) this.artTex.needsUpdate = true;
+  }
+
+  /** a blobby paint splash (bucket spills, big pounce splats) */
+  splashArt(x: number, z: number, color: string) {
+    const ctx = this.artCtx;
+    if (!ctx || !this.isOnArt(x, z)) return;
+    const { px, pz, scale } = this.artPx(x, z);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.8;
+    for (let i = 0; i < 9; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.random() * scale * 0.55;
+      const r = scale * (0.09 + Math.random() * 0.18);
+      ctx.beginPath();
+      ctx.ellipse(px + Math.cos(a) * d, pz + Math.sin(a) * d, r, r * (0.6 + Math.random() * 0.5), a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (this.artTex) this.artTex.needsUpdate = true;
   }
 
   // ——— Cat Tower Trial: a spiral of pillars to jump up, fall and start over ———

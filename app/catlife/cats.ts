@@ -4,7 +4,8 @@
 // heads, eyes and ears. Every cat is still 100% procedural and unique.
 
 import * as THREE from 'three';
-import type { AccessoryId, CatAction, CatSpec } from './types';
+import type { AccessoryId, CatAction, CatSpec, CatStyle } from './types';
+import { DEFAULT_STYLE } from './types';
 import { mulberry32 } from './rng';
 
 // ——— shared geometries (cached across all cats) ———
@@ -272,6 +273,10 @@ export class CatAvatar {
   private earFlickT = 0;
   private meowT = 0;
   private actionT = 0;
+  // style-driven animation params (set from spec.style in the constructor)
+  private lidOpenY = 0.92;
+  private earFold = 0;
+  private tailCurl = 0;
   private disposables: (THREE.Material | THREE.Texture | THREE.BufferGeometry)[] = [];
 
   constructor(spec: CatSpec, opts?: { kitten?: boolean }) {
@@ -303,6 +308,7 @@ export class CatAvatar {
     this.root.add(this.body);
 
     const kit = this.isKitten;
+    const style: CatStyle = { ...DEFAULT_STYLE, ...spec.style };
 
     // ——— torso: main barrel + chest + hip masses (organic silhouette) ———
     const torso = new THREE.Mesh(g.sphere, coatMat);
@@ -358,16 +364,34 @@ export class CatAvatar {
     if (kit) this.head.scale.setScalar(1.32); // kittens: big head = instant baby
     this.body.add(this.head);
 
+    // face shape sculpts the skull + cheeks
+    const faceW = style.face === 'slim' ? 0.88 : style.face === 'chubby' ? 1.14 : 1;
+    const faceD = style.face === 'chubby' ? 1.05 : style.face === 'slim' ? 0.97 : 1;
+    const cheekMul = style.face === 'chubby' ? 1.32 : style.face === 'slim' ? 0.85 : 1;
     const skull = new THREE.Mesh(g.sphere, coatMat);
-    skull.scale.set(0.26 * S, 0.245 * S, 0.235 * S);
+    skull.scale.set(0.26 * S * faceW, 0.245 * S, 0.235 * S * faceD);
     skull.castShadow = true;
     this.head.add(skull);
+
+    // extra-fluffy faces get a ruff of fur clumps around the cheeks
+    if (style.face === 'fluffy') {
+      for (const [fx, fy, fz, fr] of [
+        [-0.2, -0.04, 0.1, 0.1], [0.2, -0.04, 0.1, 0.1],
+        [-0.17, -0.12, 0.14, 0.08], [0.17, -0.12, 0.14, 0.08],
+        [-0.22, 0.06, 0.05, 0.075], [0.22, 0.06, 0.05, 0.075],
+      ] as const) {
+        const fluff = new THREE.Mesh(g.sphere, coatMat);
+        fluff.scale.set(fr * S, fr * 1.25 * S, fr * 0.8 * S);
+        fluff.position.set(fx * S, fy * S, fz * S);
+        this.head.add(fluff);
+      }
+    }
 
     // cheeks + chin form a real muzzle instead of a stuck-on ball
     for (const side of [-1, 1]) {
       const cheek = new THREE.Mesh(g.sphere, bellyMat);
-      cheek.scale.set(0.092 * S, 0.082 * S, 0.088 * S);
-      cheek.position.set(side * 0.078 * S, -0.095 * S, 0.175 * S);
+      cheek.scale.set(0.092 * S * cheekMul, 0.082 * S * cheekMul, 0.088 * S);
+      cheek.position.set(side * 0.078 * S * faceW, -0.095 * S, 0.175 * S);
       this.head.add(cheek);
     }
     const chin = new THREE.Mesh(g.sphere, bellyMat);
@@ -381,10 +405,24 @@ export class CatAvatar {
     bridge.position.set(0, -0.03 * S, 0.2 * S);
     this.head.add(bridge);
 
+    // mouth style: jaw + chin proportions, plus a tiny fang for 'toothy'
+    const jawW = style.mouth === 'smiley' ? 1.4 : style.mouth === 'pouty' ? 0.78 : 1;
+    const jawY = style.mouth === 'smiley' ? -0.115 : style.mouth === 'pouty' ? -0.135 : -0.125;
+    if (style.mouth === 'pouty') chin.scale.setScalar(0.075 * S);
     this.jaw = new THREE.Mesh(g.sphere, mouthMat);
-    this.jaw.scale.set(0.07 * S, 0.042 * S, 0.07 * S);
-    this.jaw.position.set(0, -0.125 * S, 0.16 * S);
+    this.jaw.scale.set(0.07 * S * jawW, 0.042 * S, 0.07 * S);
+    this.jaw.position.set(0, jawY * S, 0.16 * S);
     this.head.add(this.jaw);
+    if (style.mouth === 'toothy') {
+      const fangMat = new THREE.MeshStandardMaterial({ color: '#fdfaf1', roughness: 0.4 });
+      this.disposables.push(fangMat);
+      const fang = new THREE.Mesh(g.cone, fangMat);
+      fang.scale.set(0.016 * S, 0.05 * S, 0.013 * S);
+      fang.rotation.x = Math.PI;
+      // hangs from the upper lip, in front of the cheeks so it reads at a glance
+      fang.position.set(0.034 * S, -0.105 * S, 0.25 * S);
+      this.head.add(fang);
+    }
 
     const nose = new THREE.Mesh(g.cone, noseMat);
     nose.scale.set(0.042 * S, 0.034 * S, 0.03 * S);
@@ -392,28 +430,37 @@ export class CatAvatar {
     nose.position.set(0, -0.062 * S, 0.268 * S);
     this.head.add(nose);
 
-    // eyes — almond-set, angled, with a catchlight sparkle
-    const eyeScale = kit ? 1.28 : 1;
+    // eyes — shape chosen in the Style Studio, with a catchlight sparkle
+    const eyeScale = (kit ? 1.28 : 1) * (style.eyes === 'round' ? 1.12 : 1);
+    this.lidOpenY = style.eyes === 'sleepy' ? 0.52 : 0.92;
     const mkEye = (side: number) => {
       const socket = new THREE.Group();
-      socket.position.set(side * 0.112 * S, 0.035 * S, 0.195 * S);
-      socket.rotation.z = side * -0.16;
+      socket.position.set(side * 0.112 * S * faceW, 0.035 * S, 0.195 * S);
+      socket.rotation.z = side * (style.eyes === 'round' ? -0.04 : -0.16);
       socket.rotation.y = side * 0.22;
       this.head.add(socket);
       const eye = new THREE.Mesh(g.sphere, eyeMat);
-      eye.scale.set(0.06 * S * eyeScale, 0.082 * S * eyeScale, 0.05 * S);
+      if (style.eyes === 'round') eye.scale.set(0.074 * S * eyeScale, 0.076 * S * eyeScale, 0.05 * S);
+      else eye.scale.set(0.06 * S * eyeScale, 0.082 * S * eyeScale, 0.05 * S);
       socket.add(eye);
       const pupil = new THREE.Mesh(g.sphere, pupilMat);
-      pupil.scale.set(0.42, 0.78, 0.42);
+      if (style.eyes === 'round') pupil.scale.set(0.6, 0.66, 0.42);
+      else pupil.scale.set(0.42, 0.78, 0.42);
       pupil.position.z = 0.62;
       eye.add(pupil);
       const glint = new THREE.Mesh(g.sphere, glintMat);
-      glint.scale.setScalar(0.2);
+      glint.scale.setScalar(style.eyes === 'starry' ? 0.3 : 0.2);
       glint.position.set(0.28, 0.34, 0.92);
       eye.add(glint);
+      if (style.eyes === 'starry') {
+        const glint2 = new THREE.Mesh(g.sphere, glintMat);
+        glint2.scale.setScalar(0.14);
+        glint2.position.set(-0.26, -0.2, 0.9);
+        eye.add(glint2);
+      }
       const lid = new THREE.Mesh(g.sphere, coatMat);
       lid.scale.setScalar(1.14);
-      lid.position.y = 0.92;
+      lid.position.y = this.lidOpenY;
       eye.add(lid);
       return { eye, lid };
     };
@@ -422,21 +469,42 @@ export class CatAvatar {
     this.lidL = eL.lid;
     this.lidR = eR.lid;
 
-    // ears — wide-set triangles with pink inner, slight outward splay
-    const earScale = kit ? 1.22 : 1;
+    // ears — style picks the shape: pointy, rounded, folded, big, or lynx-tufted
+    const earScale = (kit ? 1.22 : 1) * (style.ears === 'big' ? 1.42 : style.ears === 'folded' ? 0.82 : 1);
+    this.earFold = style.ears === 'folded' ? 1.0 : 0;
+    const earMat = isPointed ? markMat : limbMat;
     const mkEar = (side: number) => {
       const grp = new THREE.Group();
-      grp.position.set(side * 0.145 * S, 0.195 * S, -0.015 * S);
+      grp.position.set(side * 0.145 * S * faceW, 0.195 * S, -0.015 * S);
       grp.rotation.z = side * -0.3;
-      grp.rotation.x = -0.12;
-      const outer = new THREE.Mesh(g.cone, isPointed ? markMat : limbMat);
-      outer.scale.set(0.1 * S * earScale, 0.165 * S * earScale, 0.045 * S);
-      outer.castShadow = true;
-      grp.add(outer);
-      const inner = new THREE.Mesh(g.cone, innerEarMat);
-      inner.scale.set(0.058 * S * earScale, 0.105 * S * earScale, 0.024 * S);
-      inner.position.set(0, -0.012 * S, 0.02 * S);
-      grp.add(inner);
+      grp.rotation.x = -0.12 + this.earFold;
+      if (style.ears === 'round') {
+        const outer = new THREE.Mesh(g.sphere, earMat);
+        outer.scale.set(0.095 * S * earScale, 0.115 * S * earScale, 0.04 * S);
+        outer.position.y = 0.01 * S;
+        outer.castShadow = true;
+        grp.add(outer);
+        const inner = new THREE.Mesh(g.sphere, innerEarMat);
+        inner.scale.set(0.056 * S * earScale, 0.072 * S * earScale, 0.02 * S);
+        inner.position.set(0, 0, 0.026 * S);
+        grp.add(inner);
+      } else {
+        const outer = new THREE.Mesh(g.cone, earMat);
+        outer.scale.set(0.1 * S * earScale, 0.165 * S * earScale, 0.045 * S);
+        outer.castShadow = true;
+        grp.add(outer);
+        const inner = new THREE.Mesh(g.cone, innerEarMat);
+        inner.scale.set(0.058 * S * earScale, 0.105 * S * earScale, 0.024 * S);
+        inner.position.set(0, -0.012 * S, 0.02 * S);
+        grp.add(inner);
+        if (style.ears === 'tufted') {
+          const tuft = new THREE.Mesh(g.cone, bellyMat);
+          tuft.scale.set(0.02 * S, 0.07 * S, 0.014 * S);
+          tuft.position.set(0, 0.11 * S * earScale, 0);
+          tuft.rotation.z = side * -0.2;
+          grp.add(tuft);
+        }
+      }
       this.head.add(grp);
       return grp;
     };
@@ -463,22 +531,29 @@ export class CatAvatar {
         prev = p;
       }
     };
+    // whisker style: length multiplier + an upward curl at the tips
+    const wLen = style.whiskers === 'long' ? 1.55 : style.whiskers === 'short' ? 0.62 : style.whiskers === 'curly' ? 1.1 : 1;
+    const wCurl = style.whiskers === 'curly' ? 0.07 : 0;
     for (const side of [-1, 1]) {
       for (const [dy, droop] of [[-0.075, -0.01], [-0.095, -0.035], [-0.115, -0.06]] as const) {
         addWhisker(
           side * 0.075 * S, dy * S, 0.24 * S,
-          side * 0.42 * S, (dy + droop) * S, 0.16 * S
+          side * (0.075 + 0.345 * wLen) * S, (dy + droop * wLen + wCurl) * S, 0.16 * S
         );
       }
       // brow whiskers
-      addWhisker(side * 0.09 * S, 0.11 * S, 0.19 * S, side * 0.2 * S, 0.22 * S, 0.12 * S);
+      addWhisker(side * 0.09 * S, 0.11 * S, 0.19 * S, side * (0.09 + 0.11 * wLen) * S, (0.11 + 0.11 * wLen) * S, 0.12 * S);
     }
     const wGeo = new THREE.BufferGeometry().setFromPoints(wPts);
     this.disposables.push(wGeo);
     this.head.add(new THREE.LineSegments(wGeo, whiskerMat));
 
-    // ——— tail: 8 tapering segments = smooth curl ———
-    const tailSegs = kit ? 6 : 8;
+    // ——— tail: style picks the build — classic, floofy, bobtail, or curly-Q ———
+    let tailSegs = kit ? 6 : 8;
+    let tailR = 1;
+    if (style.tail === 'bobtail') { tailSegs = kit ? 3 : 4; tailR = 1.3; }
+    else if (style.tail === 'fluffy') tailR = 1.75;
+    else if (style.tail === 'curly') this.tailCurl = 0.48;
     let parent: THREE.Object3D = this.body;
     let px = 0, py = 0.1 * S, pz = (kit ? -0.42 : -0.48) * S;
     for (let i = 0; i < tailSegs; i++) {
@@ -486,7 +561,7 @@ export class CatAvatar {
       seg.position.set(px, py, pz);
       const isTip = i >= tailSegs - 2;
       const m = new THREE.Mesh(g.sphere, isTip && (isPointed || spec.coat.pattern !== 'solid') ? markMat : limbMat);
-      const r = (0.055 - i * 0.0034) * S;
+      const r = (0.055 - i * 0.0034) * S * tailR;
       m.scale.set(r, r, 0.085 * S);
       m.position.z = -0.045 * S;
       m.castShadow = i < 2;
@@ -566,6 +641,50 @@ export class CatAvatar {
         bell.scale.setScalar(0.05 * S);
         bell.position.set(0, neckY - 0.15 * S, neckZ + 0.12 * S);
         this.accessoryGroup.add(bell);
+        break;
+      }
+      case 'heartcollar': {
+        const pink = new THREE.MeshStandardMaterial({ color: '#e0507a', roughness: 0.45 });
+        const t = new THREE.Mesh(g.torus, accent);
+        t.scale.setScalar(0.175 * S);
+        t.rotation.x = Math.PI / 2 - 0.35;
+        t.position.set(0, neckY, neckZ - 0.03 * S);
+        this.accessoryGroup.add(t);
+        // pendant heart: two lobes + a point
+        const hy = neckY - 0.16 * S, hz = neckZ + 0.12 * S;
+        for (const side of [-1, 1]) {
+          const lobe = new THREE.Mesh(g.sphere, pink);
+          lobe.scale.setScalar(0.034 * S);
+          lobe.position.set(side * 0.023 * S, hy + 0.014 * S, hz);
+          this.accessoryGroup.add(lobe);
+        }
+        const point = new THREE.Mesh(g.cone, pink);
+        point.scale.set(0.045 * S, 0.055 * S, 0.03 * S);
+        point.rotation.x = Math.PI;
+        point.position.set(0, hy - 0.026 * S, hz);
+        this.accessoryGroup.add(point);
+        break;
+      }
+      case 'starcollar': {
+        const t = new THREE.Mesh(g.torus, gold);
+        t.scale.setScalar(0.175 * S);
+        t.rotation.x = Math.PI / 2 - 0.35;
+        t.position.set(0, neckY, neckZ - 0.03 * S);
+        this.accessoryGroup.add(t);
+        // pendant star: a core with five little points
+        const sy = neckY - 0.16 * S, sz = neckZ + 0.12 * S;
+        const core = new THREE.Mesh(g.sphere, gold);
+        core.scale.setScalar(0.03 * S);
+        core.position.set(0, sy, sz);
+        this.accessoryGroup.add(core);
+        for (let i = 0; i < 5; i++) {
+          const a2 = Math.PI / 2 + (i * Math.PI * 2) / 5;
+          const spike = new THREE.Mesh(g.cone, gold);
+          spike.scale.set(0.016 * S, 0.042 * S, 0.012 * S);
+          spike.position.set(Math.cos(a2) * 0.04 * S, sy + Math.sin(a2) * 0.04 * S, sz);
+          spike.rotation.z = a2 - Math.PI / 2;
+          this.accessoryGroup.add(spike);
+        }
         break;
       }
       case 'bandana': case 'scarf': {
@@ -797,7 +916,8 @@ export class CatAvatar {
 
     for (let i = 0; i < this.tail.length; i++) {
       const seg = this.tail[i];
-      const targetX = i === 0 ? -tailLift : -tailLift * 0.28;
+      // curly tails coil up over the back on top of whatever the pose wants
+      const targetX = (i === 0 ? -tailLift - this.tailCurl * 0.5 : -tailLift * 0.28 - this.tailCurl);
       seg.rotation.x += (targetX - seg.rotation.x) * Math.min(1, dt * 6);
       seg.rotation.y = Math.sin(time * 2 + i * 0.7) * 0.1 + tailWave * (i / this.tail.length);
     }
@@ -806,7 +926,7 @@ export class CatAvatar {
     this.blinkT -= dt;
     if (this.blinkT < -0.12) this.blinkT = 2 + Math.random() * 3.5;
     const closed = a === 'nap' || this.blinkT < 0;
-    const lidY = closed ? 0.18 : 0.92;
+    const lidY = closed ? 0.18 : this.lidOpenY;
     this.lidL.position.y += (lidY - this.lidL.position.y) * Math.min(1, dt * 20);
     this.lidR.position.y = this.lidL.position.y;
 
@@ -820,7 +940,7 @@ export class CatAvatar {
     const baseZL = 0.3, baseZR = -0.3;
     this.earL.rotation.z += (baseZL - this.earL.rotation.z) * Math.min(1, dt * 6);
     this.earR.rotation.z += (baseZR - this.earR.rotation.z) * Math.min(1, dt * 6);
-    const earPitch = a === 'sneak' ? -0.75 : -0.12;
+    const earPitch = (a === 'sneak' ? -0.75 : -0.12) + this.earFold;
     this.earL.rotation.x += (earPitch - this.earL.rotation.x) * k;
     this.earR.rotation.x += (earPitch - this.earR.rotation.x) * k;
 
