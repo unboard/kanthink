@@ -86,7 +86,7 @@ export class Game {
   private sneaking = false;
   private climbing: { tree: TreeInfo; h: number } | null = null;
   private busyT = 0;               // dig/scratch/pounce lock timer
-  private busyKind: 'dig' | 'scratch' | 'pounce' | null = null;
+  private busyKind: 'dig' | 'scratch' | 'pounce' | 'bath' | null = null;
   private busyPayload: (() => void) | null = null;
   private idleT = 0;
   private lastMoveDir = { x: 0, z: 1 };
@@ -109,7 +109,15 @@ export class Game {
   private followers: FollowerKitten[] = [];
   private campKittens: { avatar: CatAvatar; x: number; z: number; heading: number; t: number }[] = [];
   private actionHistory: { t: number; a: import('./types').CatAction }[] = [];
-  private rescue: { tree: TreeInfo; spec: CatSpec; avatar: CatAvatar; meowT: number; perchY: number } | null = null;
+  private rescue: {
+    kind: 'tree' | 'water';
+    x: number; z: number;
+    tree: TreeInfo | null;        // tree rescues
+    raft: THREE.Group | null;     // water rescues: driftwood the kitten clings to
+    beacon: THREE.Mesh;           // tall pink light so kids can SEE where to go
+    spec: CatSpec; avatar: CatAvatar;
+    meowT: number; guideT: number; perchY: number;
+  } | null = null;
   private nextRescueAt = 40;
 
   // ground strays that can Join, and a carried kitten in your mouth
@@ -174,6 +182,11 @@ export class Game {
   // painty paws (Art Meadow)
   private paint: { color: string | null; charge: number } = { color: null, charge: 0 };
   private paintSide = 1;
+
+  // bubble bath: suds that cling to the cat and pop off as it moves
+  private bubbles: { mesh: THREE.Mesh; life: number }[] = [];
+  private bubbleGeo: THREE.SphereGeometry | null = null;
+  private bubbleMat: THREE.MeshStandardMaterial | null = null;
 
   // build mode
   private buildSel: string | null = null;
@@ -361,10 +374,16 @@ export class Game {
 
   private spawnPlayer(spec: CatSpec) {
     if (this.player) {
+      this.clearBubbles(); // bath bubbles ride on the old avatar
       this.scene.remove(this.player.root);
       this.player.dispose();
     }
     this.player = new CatAvatar(spec);
+    // an expecting mama keeps her belly when you switch to her
+    const preg = this.save.pregnancy;
+    if (preg && preg.momId === spec.id) {
+      this.player.setPregnancy(1 - preg.remaining / preg.total);
+    }
     this.scene.add(this.player.root);
     if (this.px === 0 && this.pz === 0) {
       this.px = this.world.playerCamp.x + 3;
@@ -589,7 +608,12 @@ export class Game {
       cm.avatar.dispose();
     }
     this.clanmates = [];
-    const others = this.save.cats.filter((c) => c.id !== this.save.activeCatId).slice(0, 3);
+    // an expecting mama always hangs out at camp where you can see her belly
+    const momId = this.save.pregnancy?.momId;
+    const others = this.save.cats
+      .filter((c) => c.id !== this.save.activeCatId)
+      .sort((a, b) => Number(b.id === momId) - Number(a.id === momId))
+      .slice(0, 3);
     others.forEach((spec, i) => {
       const avatar = new CatAvatar(spec);
       const a = i * 2.3 + 1;
@@ -748,11 +772,20 @@ export class Game {
     this.events.onSaveChanged();
   }
 
+  /** the expecting mama's avatar, wherever she is: your cat, or one at camp */
+  private momAvatar(): CatAvatar | null {
+    const momId = this.save.pregnancy?.momId;
+    if (!momId) return null;
+    if (this.player.spec.id === momId) return this.player;
+    return this.clanmates.find((cm) => cm.avatar.spec.id === momId)?.avatar ?? null;
+  }
+
   private updateFamily(dt: number) {
-    // a new litter arrives when you come home with a mate
     const camp = this.world.playerCamp;
     const atCamp = Math.hypot(this.px - camp.x, this.pz - camp.z) < 22;
-    if (atCamp) {
+
+    // falling in love starts a pregnancy — the mama's belly grows day by day
+    if (!this.save.pregnancy) {
       const mate = this.save.cats.find((c) => c.isMate && !this.save.hadLitter.includes(c.id));
       if (mate) {
         this.save.hadLitter.push(mate.id);
@@ -760,15 +793,50 @@ export class Game {
         const partner = this.save.cats.find((c) => c.id === mate.mateWith) ?? this.player.spec;
         const mom = genderOf(mate) === 'girl' ? mate : partner;
         const dad = genderOf(mate) === 'boy' ? mate : partner;
-        const n = 2 + ((Date.now() % 2) as number);
-        for (let i = 0; i < n; i++) {
-          this.save.nursery.push({ spec: generateBaby(Date.now() % 999999937 + i * 101, mom, dad), growth: 0 });
-        }
-        this.audio.fanfare();
-        this.events.onCelebrate('recruit', `${mom.name} and ${dad.name} have ${n} newborn kittens! 🍼 Nurse them to help them grow!`);
-        this.syncFamily();
+        const total = 200; // ~3 minutes of play until the kittens are due
+        this.save.pregnancy = { momId: mom.id, dadId: dad.id, total, remaining: total, inLabor: false };
+        this.audio.purr(2.5, 1.1);
+        this.events.onCelebrate('recruit', `${mom.name} is going to be a mama! 🤰 Watch her belly grow — kittens on the way!`);
         this.persist();
         this.events.onSaveChanged();
+      }
+    }
+
+    // pregnancy countdown → labor → dash home → the litter is born at camp
+    const preg = this.save.pregnancy;
+    if (preg) {
+      const mom = this.save.cats.find((c) => c.id === preg.momId);
+      if (!mom) {
+        this.save.pregnancy = null; // mom vanished from the save somehow — bail safely
+      } else {
+        if (!preg.inLabor) {
+          preg.remaining = Math.max(0, preg.remaining - dt);
+          if (preg.remaining <= 0) {
+            preg.inLabor = true;
+            this.audio.meow(1.1, 0.8);
+            this.momAvatar()?.showEmote('!', 4);
+            this.events.onCelebrate('recruit', `${mom.name}'s kittens are coming! Hurry back to camp! 🏕💨`);
+            this.persist();
+          }
+        }
+        // the belly grows with the countdown, on whichever avatar is hers
+        this.momAvatar()?.setPregnancy(1 - preg.remaining / preg.total);
+
+        if (preg.inLabor && atCamp) {
+          const dad = this.save.cats.find((c) => c.id === preg.dadId) ?? this.player.spec;
+          const n = 2 + ((Date.now() % 2) as number);
+          for (let i = 0; i < n; i++) {
+            this.save.nursery.push({ spec: generateBaby(Date.now() % 999999937 + i * 101, mom, dad), growth: 0 });
+          }
+          this.save.pregnancy = null;
+          this.player.setPregnancy(0); // clanmate avatars are rebuilt by syncFamily below
+          this.audio.fanfare();
+          this.burst(this.px, this.py + 0.8, this.pz, '#f2a7c3', 24);
+          this.events.onCelebrate('recruit', `${mom.name} and ${dad.name} have ${n} newborn kittens! 🍼 Nurse them to help them grow!`);
+          this.syncFamily();
+          this.persist();
+          this.events.onSaveChanged();
+        }
       }
     }
 
@@ -1220,9 +1288,43 @@ export class Game {
     };
   }
 
-  // ——— kitten tree rescue ———
+  // ——— kitten rescue: stuck up a tree or stranded out on the water ———
+
+  /** a tall soft pink light column — visible from across the island */
+  private mkBeacon(x: number, baseY: number, z: number): THREE.Mesh {
+    const geo = new THREE.CylinderGeometry(0.65, 1.1, 34, 12, 1, true);
+    const mat = new THREE.MeshBasicMaterial({
+      color: '#f78bb8', transparent: true, opacity: 0.32,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const beacon = new THREE.Mesh(geo, mat);
+    beacon.position.set(x, baseY + 15, z);
+    this.scene.add(beacon);
+    return beacon;
+  }
 
   private spawnRescue() {
+    // sometimes the kitten drifted out onto the water instead of up a tree —
+    // but only when the clan actually has a swimmer who could reach it
+    const haveSwimmer = this.save.cats.some((c) => c.traits.canSwim);
+    const wantWater = haveSwimmer && Math.random() < 0.4;
+
+    if (wantWater) {
+      // find open water near the lake within reach of the player
+      for (let i = 0; i < 50; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const dd = 6 + Math.random() * 30;
+        const x = this.world.lakeC.x + Math.cos(a) * dd;
+        const z = this.world.lakeC.z + Math.sin(a) * dd;
+        const d = Math.hypot(x - this.px, z - this.pz);
+        if (this.world.heightAt(x, z) < WATER_LEVEL - 0.75 && d > 30 && d < 150) {
+          this.spawnWaterRescue(x, z);
+          return;
+        }
+      }
+      // no good water spot — fall through to a tree rescue
+    }
+
     let tree: TreeInfo | null = null;
     for (let i = 0; i < 60; i++) {
       const cand = this.world.trees[(Math.random() * this.world.trees.length) | 0];
@@ -1247,8 +1349,39 @@ export class Game {
     avatar.setAction('climb');
     avatar.showEmote('drop', 4);
     this.scene.add(avatar.root);
-    this.rescue = { tree, spec, avatar, meowT: 1.5, perchY };
-    this.toast('You hear tiny meows… a kitten is stuck in a tree! Follow the 🐱 arrow!');
+    this.rescue = {
+      kind: 'tree', x: tree.x, z: tree.z, tree, raft: null,
+      beacon: this.mkBeacon(tree.x, baseY, tree.z),
+      spec, avatar, meowT: 1.5, guideT: 0, perchY,
+    };
+    this.toast('Oh no — a kitten is stuck in a tree! Follow the pink light! 🐱💗');
+  }
+
+  private spawnWaterRescue(x: number, z: number) {
+    const spec = generateKitten(Date.now() % 999999937);
+    const avatar = new CatAvatar(spec, { kitten: true });
+    // a scrap of driftwood keeping the poor thing afloat
+    const raft = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color: '#7d5f3f', roughness: 1 });
+    const log1 = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 2.2, 8), wood);
+    log1.rotation.z = Math.PI / 2;
+    raft.add(log1);
+    const log2 = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 1.9, 8), wood);
+    log2.rotation.z = Math.PI / 2;
+    log2.position.set(0, 0.02, 0.42);
+    raft.add(log2);
+    raft.position.set(x, WATER_LEVEL + 0.05, z);
+    this.scene.add(raft);
+    avatar.root.position.set(x, WATER_LEVEL + 0.22, z);
+    avatar.setAction('sit');
+    avatar.showEmote('drop', 4);
+    this.scene.add(avatar.root);
+    this.rescue = {
+      kind: 'water', x, z, tree: null, raft,
+      beacon: this.mkBeacon(x, WATER_LEVEL, z),
+      spec, avatar, meowT: 1.5, guideT: 0, perchY: WATER_LEVEL + 0.22,
+    };
+    this.toast('Oh no — a kitten is stranded on the water! Follow the pink light! 🌊🐱');
   }
 
   private updateRescue(dt: number) {
@@ -1261,7 +1394,33 @@ export class Game {
     const r = this.rescue;
     r.avatar.update(dt, this.elapsed);
     r.meowT -= dt;
-    const d = Math.hypot(r.tree.x - this.px, r.tree.z - this.pz);
+    const d = Math.hypot(r.x - this.px, r.z - this.pz);
+
+    // the beacon breathes so it reads as "alive", not scenery
+    (r.beacon.material as THREE.MeshBasicMaterial).opacity = 0.24 + Math.sin(this.elapsed * 2.4) * 0.1;
+
+    // sparkle trail: a run of pink twinkles leading from you toward the kitten
+    r.guideT -= dt;
+    if (r.guideT <= 0 && d > 14) {
+      r.guideT = 1.1;
+      const dx = (r.x - this.px) / d;
+      const dz = (r.z - this.pz) / d;
+      for (const step of [4, 7.5, 11]) {
+        const gx = this.px + dx * step;
+        const gz = this.pz + dz * step;
+        const gy = Math.max(this.world.heightAt(gx, gz), WATER_LEVEL) + 0.9;
+        this.burst(gx, gy, gz, '#f78bb8', 2);
+      }
+    }
+
+    if (r.kind === 'water' && r.raft) {
+      // gentle bobbing on the waves
+      const bob = Math.sin(this.elapsed * 1.6) * 0.05;
+      r.raft.position.y = WATER_LEVEL + 0.05 + bob;
+      r.raft.rotation.z = Math.sin(this.elapsed * 1.1) * 0.04;
+      r.avatar.root.position.y = WATER_LEVEL + 0.22 + bob;
+    }
+
     if (r.meowT <= 0) {
       r.meowT = 3.4;
       this.audio.meow(r.spec.voicePitch, Math.max(0.08, Math.min(0.7, 1.5 - d / 60)));
@@ -1269,10 +1428,16 @@ export class Game {
       r.avatar.showEmote('drop', 2);
       if (d < 25) this.burst(r.avatar.root.position.x, r.perchY + 0.5, r.avatar.root.position.z, '#ffd54a', 5);
     }
-    // rescued when the player climbs up close to it
-    if (this.climbing && this.climbing.tree.id === r.tree.id) {
-      const baseY = this.world.heightAt(r.tree.x, r.tree.z);
-      if (baseY + this.climbing.h > r.perchY - 0.9) this.completeRescue();
+
+    if (r.kind === 'tree' && r.tree) {
+      // rescued when the player climbs up close to it
+      if (this.climbing && this.climbing.tree.id === r.tree.id) {
+        const baseY = this.world.heightAt(r.tree.x, r.tree.z);
+        if (baseY + this.climbing.h > r.perchY - 0.9) this.completeRescue();
+      }
+    } else if (r.kind === 'water') {
+      // rescued by swimming right up to the driftwood
+      if (d < 1.9) this.completeRescue();
     }
   }
 
@@ -1282,10 +1447,14 @@ export class Game {
     this.rescue = null;
     this.scene.remove(r.avatar.root);
     r.avatar.dispose();
+    this.scene.remove(r.beacon);
+    (r.beacon.material as THREE.Material).dispose();
+    r.beacon.geometry.dispose();
+    if (r.raft) this.scene.remove(r.raft);
     this.save.kittens.push(r.spec);
     this.nextRescueAt = this.elapsed + 110 + Math.random() * 90;
     this.audio.catJoin();
-    this.burst(r.tree.x, r.perchY, r.tree.z, '#ffd54a', 22);
+    this.burst(r.x, r.perchY, r.z, '#ffd54a', 22);
     const following = this.save.kittens.length <= 5;
     this.events.onCelebrate(
       'recruit',
@@ -1415,7 +1584,153 @@ export class Game {
       case 'stray': this.joinStray(); break;
       case 'pickup': this.pickUpKitten(ctx.id); break;
       case 'setdown': this.setDownKitten(); break;
+      case 'washart': this.doWashArt(); break;
+      case 'bath': this.startBath(); break;
     }
+  }
+
+  // ——— Art Meadow wash bucket: wipe the patio back to a blank canvas ———
+
+  private doWashArt() {
+    this.world.clearArt();
+    this.paint = { color: null, charge: 0 };
+    this.audio.splash();
+    const wb = this.world.washBucket;
+    this.burst(wb.x, this.world.heightAt(wb.x, wb.z) + 0.6, wb.z, '#9fd8e8', 22);
+    this.toast('SPLASH! 💦 The patio is a fresh clean canvas — paint something new!');
+    this.emitHud(true);
+  }
+
+  // ——— bubble bath: hop in, get squeaky clean, wear the bubbles out ———
+
+  private startBath() {
+    if (this.busyT > 0) return;
+    const bs = this.world.bathSpot;
+    // hop into the tub (the suds surface is a platform, so the cat sits on top)
+    this.px = bs.x;
+    this.pz = bs.z;
+    this.py = this.world.heightAt(bs.x, bs.z) + 0.68;
+    this.busyT = 3.4;
+    this.busyKind = 'bath';
+    this.player.setAction('sit');
+    this.applyAvatarTransform();
+    this.audio.splash();
+    this.paint = { color: null, charge: 0 }; // baths wash painty paws too
+    this.toast(`${this.player.spec.name} settles into the warm bubbles… 🛁`);
+    // sudsy pops while soaking
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => {
+        if (this.disposed) return;
+        this.burst(this.px, this.py + 0.5 + Math.random() * 0.4, this.pz, '#ffffff', 5);
+        if (i % 2 === 0) this.audio.purr(0.8, this.player.spec.voicePitch);
+      }, 500 + i * 550);
+    }
+    this.busyPayload = () => {
+      this.attachBubbles();
+      this.player.showEmote('heart', 2.5);
+      this.toast('Squeaky clean! ✨ Run and wiggle to pop the bubbles off!');
+      this.tutorialOnce('bath', 'Bubbles stick to clean fur — they pop off one by one as you zoom around!');
+    };
+  }
+
+  /** stick a coat of clingy bubbles onto the cat */
+  private attachBubbles() {
+    this.clearBubbles();
+    if (!this.bubbleGeo) this.bubbleGeo = new THREE.SphereGeometry(1, 8, 6);
+    if (!this.bubbleMat) {
+      this.bubbleMat = new THREE.MeshStandardMaterial({
+        color: '#eaf7ff', transparent: true, opacity: 0.8, roughness: 0.15,
+      });
+    }
+    const s = this.player.s * 2;
+    for (let i = 0; i < 9; i++) {
+      const mesh = new THREE.Mesh(this.bubbleGeo, this.bubbleMat);
+      mesh.scale.setScalar((0.055 + Math.random() * 0.05) * s);
+      const a = Math.random() * Math.PI * 2;
+      mesh.position.set(
+        Math.cos(a) * 0.24 * s,
+        (0.35 + Math.random() * 0.45) * s,
+        (Math.random() - 0.5) * 0.85 * s
+      );
+      this.player.root.add(mesh);
+      this.bubbles.push({ mesh, life: 0.7 + Math.random() * 0.9 });
+    }
+  }
+
+  private clearBubbles() {
+    for (const b of this.bubbles) b.mesh.removeFromParent();
+    this.bubbles = [];
+  }
+
+  private updateBubbles(dt: number) {
+    if (this.bubbles.length === 0) return;
+    const moving = this.player.moveSpeed;
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const b = this.bubbles[i];
+      // bubbles hold on while you sit still and shake loose as you move
+      b.life -= dt * (0.05 + moving * 0.14);
+      b.mesh.scale.multiplyScalar(1 + Math.sin(this.elapsed * 7 + i) * dt * 0.4);
+      if (b.life <= 0) {
+        const wp = new THREE.Vector3();
+        b.mesh.getWorldPosition(wp);
+        b.mesh.removeFromParent();
+        this.bubbles.splice(i, 1);
+        this.burst(wp.x, wp.y, wp.z, '#ffffff', 3);
+      }
+    }
+    if (this.bubbles.length === 0) this.toast('Pop! All the bubbles are gone — what a clean cat! ✨');
+  }
+
+  // ——— map fast travel: tap the map and zoom straight there ———
+
+  travelTo(x: number, z: number): boolean {
+    // land the cat on solid ground — nudge water taps to the nearest shore
+    let tx = x, tz = z;
+    if (this.world.heightAt(tx, tz) < WATER_LEVEL + 0.3) {
+      let found = false;
+      for (let r = 3; r <= 45 && !found; r += 3) {
+        for (let i = 0; i < 14 && !found; i++) {
+          const a = (i / 14) * Math.PI * 2;
+          const cx = x + Math.cos(a) * r;
+          const cz = z + Math.sin(a) * r;
+          if (this.world.heightAt(cx, cz) > WATER_LEVEL + 0.35) {
+            tx = cx; tz = cz;
+            found = true;
+          }
+        }
+      }
+      if (!found) {
+        this.toast("That's open sea, silly! Tap somewhere on the island 🌊");
+        return false;
+      }
+    }
+    this.burst(this.px, this.py + 0.5, this.pz, '#c8a2e8', 16);
+    this.climbing = null;
+    this.swimming = false;
+    this.pounceVel = null;
+    this.vy = 0;
+    const dx = tx - this.px;
+    const dz = tz - this.pz;
+    this.px = tx;
+    this.pz = tz;
+    this.py = this.world.heightAt(tx, tz);
+    this.grounded = true;
+    this.applyAvatarTransform();
+    // carry the camera along so the view lands instantly instead of lerping across the island
+    this.camera.position.x += dx;
+    this.camera.position.z += dz;
+    // followers pop in right behind you
+    for (const f of this.followers) {
+      f.x = this.px + (Math.random() - 0.5) * 3;
+      f.z = this.pz - 1.5 - Math.random() * 2;
+      f.y = this.world.heightAt(f.x, f.z);
+    }
+    this.waypoint = null;
+    this.audio.goldenPickup();
+    this.burst(this.px, this.py + 0.5, this.pz, '#c8a2e8', 20);
+    this.toast('Whoosh! ✨');
+    this.emitHud(true);
+    return true;
   }
 
   // ——— actions ———
@@ -1439,6 +1754,7 @@ export class Game {
       }
       for (const c of this.world.critters) {
         if (c.state === 'gone' || c.state === 'caught') continue;
+        if (c.kind === 'bunny' || c.kind === 'frog' || c.kind === 'duck' || c.kind === 'turtle') continue;
         if (Math.hypot(c.x - this.px, c.z - this.pz) < 1.5) {
           this.world.catchCritter(c);
           this.save.treats += 1;
@@ -2522,6 +2838,7 @@ export class Game {
       this.updateAgility(dt);
       this.updateBuildGhost();
     }
+    this.updateBubbles(dt);
     this.world.updateCritters(dt, this.elapsed, this.px, this.pz, this.sneaking);
     this.world.update(dt, this.elapsed, this.px, this.pz);
     this.world.setTimeOfDay(this.timeOfDay, this.px, this.pz);
@@ -2915,10 +3232,11 @@ export class Game {
         this.emitHud(true);
         return;
       }
-      // kitten rescue takes top billing
-      if (this.rescue) {
-        const d = Math.hypot(this.rescue.tree.x - this.px, this.rescue.tree.z - this.pz);
-        if (d < 2.6) set('rescue', `Rescue ${this.rescue.spec.name}!`, this.rescue.tree.id, this.rescue.tree.x, this.rescue.tree.z, d, 8);
+      // kitten rescue takes top billing (water rescues auto-complete on touch)
+      if (this.rescue && this.rescue.kind === 'tree' && this.rescue.tree) {
+        const t = this.rescue.tree;
+        const d = Math.hypot(t.x - this.px, t.z - this.pz);
+        if (d < 2.6) set('rescue', `Rescue ${this.rescue.spec.name}!`, t.id, t.x, t.z, d, 8);
       }
       // stray kitten wants to join
       if (this.stray) {
@@ -2976,6 +3294,18 @@ export class Game {
         const d = Math.hypot(s.x - this.px, s.z - this.pz);
         if (d < 2.2) set('scratch', 'Scratch Post', s.id, s.x, s.z, d, 3);
       }
+      // wash bucket at the Art Meadow: splash it to wipe the whole canvas
+      {
+        const wb = this.world.washBucket;
+        const d = Math.hypot(wb.x - this.px, wb.z - this.pz);
+        if (d < 2.4) set('washart', 'Splash! Clean the canvas 💦', 'washbucket', wb.x, wb.z, d, 3);
+      }
+      // bubble bath tub at camp
+      if (!this.swimming && this.grounded) {
+        const bs = this.world.bathSpot;
+        const d = Math.hypot(bs.x - this.px, bs.z - this.pz);
+        if (d < 2.8) set('bath', 'Bubble bath! 🛁', 'bath', bs.x, bs.z, d, 3);
+      }
       // trees: climb or scratch
       if (!this.swimming && this.grounded) {
         const tree = this.world.nearestTree(this.px, this.pz, 1.9);
@@ -2984,9 +3314,10 @@ export class Game {
           set('climb', hasYarnUp ? 'Climb (yarn up top!)' : 'Climb', tree.id, tree.x, tree.z, 1, 2);
         }
       }
-      // prey nearby → pounce
+      // prey nearby → pounce (the new gentle friends are for watching, not catching)
       for (const cr of this.world.critters) {
         if (cr.state !== 'wander') continue;
+        if (cr.kind === 'bunny' || cr.kind === 'frog' || cr.kind === 'duck' || cr.kind === 'turtle') continue;
         const d = Math.hypot(cr.x - this.px, cr.z - this.pz);
         if (d < 3.4) set('prey', 'Pounce!', cr.kind, cr.x, cr.z, d, this.sneaking ? 6 : 1);
       }
@@ -3261,8 +3592,9 @@ export class Game {
       camp: this.campCompass(),
       rescue: this.rescue
         ? {
-            angle: Math.atan2(this.rescue.tree.x - this.px, this.rescue.tree.z - this.pz) - this.camYaw,
-            dist: Math.hypot(this.rescue.tree.x - this.px, this.rescue.tree.z - this.pz),
+            angle: Math.atan2(this.rescue.x - this.px, this.rescue.z - this.pz) - this.camYaw,
+            dist: Math.hypot(this.rescue.x - this.px, this.rescue.z - this.pz),
+            kind: this.rescue.kind,
           }
         : null,
       kittens: this.save.kittens.length,
@@ -3273,6 +3605,18 @@ export class Game {
             dist: Math.hypot(this.waypoint.x - this.px, this.waypoint.z - this.pz),
           }
         : null,
+      pregnancy: (() => {
+        const p = this.save.pregnancy;
+        if (!p) return null;
+        const mom = this.save.cats.find((c) => c.id === p.momId);
+        if (!mom) return null;
+        return {
+          mom: mom.name,
+          secondsLeft: Math.ceil(p.remaining),
+          inLabor: p.inLabor,
+          momIsActive: mom.id === this.save.activeCatId,
+        };
+      })(),
     };
     this.events.onHud(hud);
   }
@@ -3299,7 +3643,7 @@ export class Game {
       friends: [...this.remotes.values()]
         .filter((r) => r.avatar)
         .map((r) => ({ x: r.x, z: r.z, name: r.member.name, color: r.member.color })),
-      rescue: this.rescue ? { x: this.rescue.tree.x, z: this.rescue.tree.z } : null,
+      rescue: this.rescue ? { x: this.rescue.x, z: this.rescue.z } : null,
       waypoint: this.waypoint,
     };
   }

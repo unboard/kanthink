@@ -258,6 +258,11 @@ export class CatAvatar {
   private body: THREE.Group;
   private head: THREE.Group;
   private jaw: THREE.Mesh;
+  private jawRestY: number;
+  // pregnancy belly: grows with setPregnancy(0..1)
+  private torsoMesh: THREE.Mesh;
+  private torsoBase = new THREE.Vector3();
+  private bellyBump: THREE.Mesh;
   private earL: THREE.Group;
   private earR: THREE.Group;
   private lidL: THREE.Mesh;
@@ -315,6 +320,15 @@ export class CatAvatar {
     torso.scale.set(0.33 * S, 0.29 * S, (kit ? 0.44 : 0.5) * S);
     torso.castShadow = true;
     this.body.add(torso);
+    this.torsoMesh = torso;
+    this.torsoBase.copy(torso.scale);
+
+    // round mama belly, hidden until setPregnancy() grows it
+    this.bellyBump = new THREE.Mesh(g.sphere, bellyMat);
+    this.bellyBump.position.set(0, -0.1 * S, -0.04 * S);
+    this.bellyBump.scale.setScalar(0.001);
+    this.bellyBump.visible = false;
+    this.body.add(this.bellyBump);
 
     const chestBulge = new THREE.Mesh(g.sphere, bellyMat);
     chestBulge.scale.set(0.235 * S, 0.235 * S, 0.25 * S);
@@ -405,23 +419,88 @@ export class CatAvatar {
     bridge.position.set(0, -0.03 * S, 0.2 * S);
     this.head.add(bridge);
 
-    // mouth style: jaw + chin proportions, plus a tiny fang for 'toothy'
+    // mouth style — each one reads differently at a glance (Lennon's request):
+    // sweet = little ω smile · smiley = big open grin with a tongue ·
+    // pouty = downturned frown with a big chin · toothy = smile with two fangs
     const jawW = style.mouth === 'smiley' ? 1.4 : style.mouth === 'pouty' ? 0.78 : 1;
     const jawY = style.mouth === 'smiley' ? -0.115 : style.mouth === 'pouty' ? -0.135 : -0.125;
     if (style.mouth === 'pouty') chin.scale.setScalar(0.075 * S);
     this.jaw = new THREE.Mesh(g.sphere, mouthMat);
     this.jaw.scale.set(0.07 * S * jawW, 0.042 * S, 0.07 * S);
     this.jaw.position.set(0, jawY * S, 0.16 * S);
+    this.jawRestY = jawY * S;
     this.head.add(this.jaw);
-    if (style.mouth === 'toothy') {
-      const fangMat = new THREE.MeshStandardMaterial({ color: '#fdfaf1', roughness: 0.4 });
-      this.disposables.push(fangMat);
-      const fang = new THREE.Mesh(g.cone, fangMat);
-      fang.scale.set(0.016 * S, 0.05 * S, 0.013 * S);
-      fang.rotation.x = Math.PI;
-      // hangs from the upper lip, in front of the cheeks so it reads at a glance
-      fang.position.set(0.034 * S, -0.105 * S, 0.25 * S);
-      this.head.add(fang);
+
+    const lipMat = new THREE.MeshStandardMaterial({ color: '#5a3030', roughness: 0.85 });
+    this.disposables.push(lipMat);
+    // one little lip arc (half-torus); flip=1 bulges down (smile), -1 up (frown)
+    const lipGeo = new THREE.TorusGeometry(0.028 * S, 0.0075 * S, 6, 14, Math.PI);
+    this.disposables.push(lipGeo);
+    const mkLip = (x: number, y: number, flip: number) => {
+      const lip = new THREE.Mesh(lipGeo, lipMat);
+      lip.position.set(x, y, 0.252 * S);
+      lip.rotation.z = flip > 0 ? Math.PI : 0; // arc opening up = happy ω
+      lip.rotation.x = -0.25; // follow the muzzle slope
+      this.head.add(lip);
+      return lip;
+    };
+    switch (style.mouth) {
+      case 'sweet': {
+        // the classic cat "ω" — two small arcs meeting under the nose
+        mkLip(-0.026 * S, -0.096 * S, 1);
+        mkLip(0.026 * S, -0.096 * S, 1);
+        break;
+      }
+      case 'smiley': {
+        // a big open happy grin: dark open mouth + pink tongue poking out
+        const openMouth = new THREE.Mesh(g.sphere, mouthMat);
+        openMouth.scale.set(0.055 * S, 0.042 * S, 0.024 * S);
+        openMouth.position.set(0, -0.105 * S, 0.245 * S);
+        openMouth.rotation.x = -0.3;
+        this.head.add(openMouth);
+        const tongueMat = new THREE.MeshStandardMaterial({ color: '#e8899a', roughness: 0.7 });
+        this.disposables.push(tongueMat);
+        const tongue = new THREE.Mesh(g.sphere, tongueMat);
+        tongue.scale.set(0.03 * S, 0.014 * S, 0.028 * S);
+        tongue.position.set(0, -0.124 * S, 0.256 * S);
+        tongue.rotation.x = -0.35;
+        this.head.add(tongue);
+        // wide grin corners curling up on the cheeks
+        mkLip(-0.052 * S, -0.092 * S, 1);
+        mkLip(0.052 * S, -0.092 * S, 1);
+        break;
+      }
+      case 'pouty': {
+        // one downturned arc = an unmistakable little frown
+        mkLip(0, -0.1 * S, -1);
+        break;
+      }
+      case 'toothy': {
+        // the ω smile plus two fangs growing right out of the smile line
+        const lipL = mkLip(-0.026 * S, -0.096 * S, 1);
+        const lipR = mkLip(0.026 * S, -0.096 * S, 1);
+        const fangMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.25 });
+        // a dark open-mouth sliver behind the fangs so they pop on light coats too
+        const gap = new THREE.Mesh(g.sphere, mouthMat);
+        gap.scale.set(0.052 * S, 0.02 * S, 0.016 * S);
+        gap.position.set(0, -0.108 * S, 0.248 * S);
+        this.head.add(gap);
+        this.disposables.push(fangMat);
+        for (const side of [-1, 1]) {
+          const fang = new THREE.Mesh(g.cone, fangMat);
+          fang.scale.set(0.017 * S, 0.055 * S, 0.014 * S);
+          fang.rotation.x = Math.PI - 0.25; // hang along the muzzle slope
+          // base tucked up into the lip arc so the fang is clearly attached
+          const anchor = side < 0 ? lipL : lipR;
+          fang.position.set(
+            anchor.position.x + side * 0.024 * S,
+            anchor.position.y - 0.026 * S,
+            anchor.position.z + 0.006 * S
+          );
+          this.head.add(fang);
+        }
+        break;
+      }
     }
 
     const nose = new THREE.Mesh(g.cone, noseMat);
@@ -573,7 +652,12 @@ export class CatAvatar {
     }
 
     // ——— legs (FL, FR, BL, BR) — tapered, under the shoulder/haunch masses ———
-    const sock = spec.coat.pattern === 'tuxedo' || spec.coat.pattern === 'calico' || hashStr(spec.id) % 3 === 0;
+    // paw style from the Style Studio: socks, toe beans, fluff, and claw length
+    const sock = style.paws === 'socks' ||
+      (style.paws === 'classic' && (spec.coat.pattern === 'tuxedo' || spec.coat.pattern === 'calico' || hashStr(spec.id) % 3 === 0));
+    const beanMat = new THREE.MeshStandardMaterial({ color: '#e89aae', roughness: 0.6 });
+    const clawMat = new THREE.MeshStandardMaterial({ color: '#f5f0e2', roughness: 0.35 });
+    this.disposables.push(beanMat, clawMat);
     const mkLeg = (x: number, z: number): Leg => {
       const hip = new THREE.Group();
       hip.position.set(x, -0.12 * S, z);
@@ -586,7 +670,7 @@ export class CatAvatar {
       const knee = new THREE.Group();
       knee.position.y = -0.19 * S;
       hip.add(knee);
-      const lower = new THREE.Mesh(g.taperCyl, limbMat);
+      const lower = new THREE.Mesh(g.taperCyl, sock && style.paws === 'socks' ? bellyMat : limbMat);
       lower.scale.set(0.052 * S, 0.165 * S, 0.052 * S);
       lower.position.y = -0.082 * S;
       knee.add(lower);
@@ -594,6 +678,40 @@ export class CatAvatar {
       paw.scale.set(0.068 * S, 0.048 * S, 0.098 * S);
       paw.position.set(0, -0.175 * S, 0.02 * S);
       knee.add(paw);
+
+      // toe beans: three chubby toes with squishy pink pads peeking out front
+      if (style.paws === 'toebeans') {
+        for (const [tx, tz] of [[-0.036, 0.088], [0, 0.1], [0.036, 0.088]] as const) {
+          const toe = new THREE.Mesh(g.sphere, sock ? bellyMat : limbMat);
+          toe.scale.set(0.024 * S, 0.026 * S, 0.03 * S);
+          toe.position.set(tx * S, -0.178 * S, (0.02 + tz * 0.5) * S + 0.045 * S);
+          knee.add(toe);
+          const bean = new THREE.Mesh(g.sphere, beanMat);
+          bean.scale.set(0.013 * S, 0.013 * S, 0.01 * S);
+          bean.position.set(tx * S, -0.186 * S, (0.02 + tz * 0.5) * S + 0.068 * S);
+          knee.add(bean);
+        }
+      }
+      // fluffy tufts around the ankle
+      if (style.paws === 'fluffy') {
+        for (const [fx, fz] of [[-0.05, 0.02], [0.05, 0.02], [0, -0.045], [0, 0.075]] as const) {
+          const fluff = new THREE.Mesh(g.sphere, bellyMat);
+          fluff.scale.set(0.028 * S, 0.038 * S, 0.03 * S);
+          fluff.position.set(fx * S, -0.15 * S, (0.02 + fz) * S);
+          knee.add(fluff);
+        }
+      }
+      // claws poking out of the front edge of the paw
+      if (style.claws !== 'tucked') {
+        const len = style.claws === 'long' ? 0.05 : 0.026;
+        for (const cx of [-0.034, 0, 0.034]) {
+          const claw = new THREE.Mesh(g.cone, clawMat);
+          claw.scale.set(0.009 * S, len * S, 0.007 * S);
+          claw.rotation.x = Math.PI / 2 + 0.35; // point forward and a bit down
+          claw.position.set(cx * S, -0.19 * S, (0.115 + len * 0.4) * S);
+          knee.add(claw);
+        }
+      }
       return { hip, knee, paw };
     };
     const fz = (kit ? 0.25 : 0.3) * S;
@@ -758,6 +876,20 @@ export class CatAvatar {
       this.action = a;
       this.actionT = 0;
     }
+  }
+
+  /** grow the mama belly: t 0 = normal, 1 = kittens due any second */
+  setPregnancy(t: number) {
+    const S = this.s * 2;
+    const b = Math.max(0, Math.min(1, t));
+    this.torsoMesh.scale.set(
+      this.torsoBase.x * (1 + b * 0.3),
+      this.torsoBase.y * (1 + b * 0.32),
+      this.torsoBase.z * (1 + b * 0.08)
+    );
+    this.bellyBump.visible = b > 0.12;
+    const r = b * 0.19 * S;
+    this.bellyBump.scale.set(r * 1.15, r, r * 1.5);
   }
 
   meow() {
@@ -948,10 +1080,10 @@ export class CatAvatar {
     if (this.meowT > 0) {
       this.meowT -= dt;
       const open = Math.sin((1 - this.meowT / 0.5) * Math.PI) * 0.08;
-      this.jaw.position.y = (-0.125 - open) * S;
+      this.jaw.position.y = this.jawRestY - open * S;
       this.head.rotation.x = -0.4;
     } else {
-      this.jaw.position.y += (-0.125 * S - this.jaw.position.y) * Math.min(1, dt * 12);
+      this.jaw.position.y += (this.jawRestY - this.jaw.position.y) * Math.min(1, dt * 12);
     }
 
     // emote fade

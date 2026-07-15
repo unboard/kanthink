@@ -28,6 +28,8 @@ export type EyeStyle = 'almond' | 'round' | 'sleepy' | 'starry';
 export type MouthStyle = 'sweet' | 'smiley' | 'pouty' | 'toothy';
 export type TailStyle = 'classic' | 'fluffy' | 'bobtail' | 'curly';
 export type WhiskerStyle = 'classic' | 'long' | 'curly' | 'short';
+export type PawStyle = 'classic' | 'toebeans' | 'fluffy' | 'socks';
+export type ClawStyle = 'tucked' | 'short' | 'long';
 
 export interface CatStyle {
   face: FaceShape;
@@ -36,11 +38,14 @@ export interface CatStyle {
   mouth: MouthStyle;
   tail: TailStyle;
   whiskers: WhiskerStyle;
+  paws: PawStyle;
+  claws: ClawStyle;
 }
 
 export const DEFAULT_STYLE: CatStyle = {
   face: 'round', ears: 'pointy', eyes: 'almond',
   mouth: 'sweet', tail: 'classic', whiskers: 'classic',
+  paws: 'classic', claws: 'tucked',
 };
 
 export interface CoatSpec {
@@ -113,6 +118,9 @@ export interface SaveData {
   kittens: CatSpec[];           // rescued/grown kittens; first 5 follow the player
   nursery: { spec: CatSpec; growth: number }[]; // newborn babies at camp (nurse to grow)
   hadLitter: string[];          // mate ids that already had a litter
+  // an expecting mama: belly grows as `remaining` counts down; at 0 she goes
+  // into labor and the kittens arrive when everyone is safely home at camp
+  pregnancy?: { momId: string; dadId: string; total: number; remaining: number; inLabor: boolean } | null;
   activeCatId: string;
   collectedYarn: string[];      // ids collected this wave
   goldenDone: string[];         // golden yarn ids completed
@@ -139,7 +147,7 @@ export type CatAction =
 // Context-sensitive interactable the action button targets
 export interface ContextTarget {
   kind: 'dig' | 'climb' | 'scratch' | 'yarn' | 'golden' | 'duel' | 'prey' | 'agility' | 'islet' | 'building' | 'rescue'
-    | 'love' | 'nurse' | 'pickup' | 'setdown' | 'stray';
+    | 'love' | 'nurse' | 'pickup' | 'setdown' | 'stray' | 'washart' | 'bath';
   label: string;
   id: string;
   x: number;
@@ -161,10 +169,12 @@ export interface HudState {
   paint: string | null; // paw paint color while painted-up at the Art Meadow
   compass: number;   // camera yaw for minimap
   camp: { angle: number; dist: number }; // direction home (camera-relative)
-  rescue: { angle: number; dist: number } | null; // kitten-in-tree direction
+  rescue: { angle: number; dist: number; kind: 'tree' | 'water' } | null; // stranded kitten direction
   kittens: number;   // rescued kitten count
   friend: { angle: number; dist: number; name: string } | null; // nearest playdate friend
   waypoint: { angle: number; dist: number } | null; // map-tap destination
+  // expecting mama: countdown to the litter; when inLabor, race home to camp!
+  pregnancy: { mom: string; secondsLeft: number; inLabor: boolean; momIsActive: boolean } | null;
 }
 
 export interface ToastMsg {

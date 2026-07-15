@@ -8,8 +8,8 @@ import { useState } from 'react';
 import { Game } from './game';
 import CatViewer, { type ViewerView } from './CatViewer';
 import {
-  FACE_SHAPES, EAR_STYLES, EYE_STYLES, MOUTH_STYLES, TAIL_STYLES, WHISKER_STYLES,
-  FACE_LABELS, EAR_LABELS, EYE_LABELS, MOUTH_LABELS, TAIL_LABELS, WHISKER_LABELS,
+  FACE_SHAPES, EAR_STYLES, EYE_STYLES, MOUTH_STYLES, TAIL_STYLES, WHISKER_STYLES, PAW_STYLES, CLAW_STYLES,
+  FACE_LABELS, EAR_LABELS, EYE_LABELS, MOUTH_LABELS, TAIL_LABELS, WHISKER_LABELS, PAW_LABELS, CLAW_LABELS,
   ACCESSORY_LABELS, EYE_COLORS, ACCENT_COLORS,
 } from './data';
 import type { AccessoryId, CatStyle } from './types';
@@ -34,6 +34,7 @@ const TABS: Tab[] = [
   { key: 'ears', label: 'Ears', icon: '📡', view: 'ears' },
   { key: 'eyes', label: 'Eyes', icon: '👀', view: 'eyes' },
   { key: 'mouth', label: 'Mouth', icon: '😺', view: 'mouth' },
+  { key: 'paws', label: 'Paws', icon: '🐾', view: 'paws' },
   { key: 'whiskers', label: 'Whiskers', icon: '〰️', view: 'whiskers' },
   { key: 'tail', label: 'Tail', icon: '🌀', view: 'tail' },
   { key: 'collar', label: 'Collar', icon: '🎀', view: 'full' },
@@ -188,6 +189,16 @@ export default function StyleStudio({ game, catId, onClose }: { game: Game; catI
                 <StudioTitle text="Mouth" />
                 <OptionChips options={MOUTH_STYLES} labels={MOUTH_LABELS} value={style.mouth}
                   onPick={(v) => { game.setStyle(cat.id, { mouth: v }); bump(); }} />
+              </>
+            )}
+            {tab.key === 'paws' && (
+              <>
+                <StudioTitle text="Paw style" />
+                <OptionChips options={PAW_STYLES} labels={PAW_LABELS} value={style.paws}
+                  onPick={(v) => { game.setStyle(cat.id, { paws: v }); bump(); }} />
+                <StudioTitle text="Claws" top />
+                <OptionChips options={CLAW_STYLES} labels={CLAW_LABELS} value={style.claws}
+                  onPick={(v) => { game.setStyle(cat.id, { claws: v }); bump(); }} />
               </>
             )}
             {tab.key === 'whiskers' && (

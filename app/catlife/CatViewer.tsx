@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { CatAvatar } from './cats';
 import type { CatSpec } from './types';
 
-export type ViewerView = 'full' | 'face' | 'ears' | 'eyes' | 'mouth' | 'whiskers' | 'tail';
+export type ViewerView = 'full' | 'face' | 'ears' | 'eyes' | 'mouth' | 'whiskers' | 'tail' | 'paws';
 
 // camera presets per body part, scaled by the cat's size in the effect below
 const VIEWS: Record<ViewerView, { pos: [number, number, number]; look: [number, number, number] }> = {
@@ -20,6 +20,7 @@ const VIEWS: Record<ViewerView, { pos: [number, number, number]; look: [number, 
   whiskers: { pos: [0.35, 0.95, 1.45], look: [0, 0.88, 0.28] },
   ears: { pos: [0, 1.5, 1.85], look: [0, 1.12, 0.5] },
   tail: { pos: [1.35, 1.5, -2.5], look: [0, 0.9, -0.45] },
+  paws: { pos: [0, 0.45, 1.9], look: [0, 0.14, 0.35] },
 };
 
 export default function CatViewer({

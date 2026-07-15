@@ -571,6 +571,8 @@ function ctxIcon(kind: string): string {
     case 'duel': return '⚔️';
     case 'prey': return '🐾';
     case 'agility': return '🚩';
+    case 'washart': return '💦';
+    case 'bath': return '🛁';
     default: return '✨';
   }
 }
@@ -639,14 +641,35 @@ function TopHud({
             <span className="text-[10px]">{hud.friend.name} · {Math.round(hud.friend.dist)}m</span>
           </span>
         )}
-        {/* kitten rescue compass — a kitten is stuck in a tree! */}
+        {/* kitten rescue compass — someone is stuck in a tree or out on the water! */}
         {hud.rescue && (
           <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
             style={{ background: '#fbe3ec', color: INK, border: '1.5px solid #e8a9c0', animation: 'ww-pulse 1.2s infinite' }}>
-            🐱
+            {hud.rescue.kind === 'water' ? '🌊🐱' : '🐱'}
             <span style={{ display: 'inline-block', transform: `rotate(${hud.rescue.angle}rad)` }}>⬆️</span>
             <span className="text-[10px] tabular-nums">{Math.round(hud.rescue.dist)}m</span>
           </span>
+        )}
+        {/* pregnancy countdown — and the mad dash home when the kittens come! */}
+        {hud.pregnancy && (
+          hud.pregnancy.inLabor ? (
+            <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
+              style={{ background: '#fcd9e6', color: INK, border: '2px solid #e0507a', animation: 'ww-pulse 0.7s infinite' }}>
+              🍼 Kittens coming — get home!
+              <span style={{ display: 'inline-block', transform: `rotate(${hud.camp.angle}rad)` }}>⬆️</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
+              style={{
+                background: '#fbe3ec', color: INK, border: '1.5px solid #e8a9c0',
+                animation: hud.pregnancy.secondsLeft <= 30 ? 'ww-pulse 1.2s infinite' : undefined,
+              }}>
+              🤰 {hud.pregnancy.momIsActive ? 'Kittens due' : hud.pregnancy.mom}
+              <span className="text-[11px] tabular-nums">
+                {Math.floor(hud.pregnancy.secondsLeft / 60)}:{String(hud.pregnancy.secondsLeft % 60).padStart(2, '0')}
+              </span>
+            </span>
+          )
         )}
         {/* camp compass — appears when away from home, with distance */}
         {hud.camp.dist > 25 && !hud.waypoint && (
@@ -1372,6 +1395,7 @@ function ClanOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
 function MapOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
   const [mapUrl] = useState(() => game.getMinimap());
   const [data, setData] = useState(() => game.getMapData());
+  const [pending, setPending] = useState<{ x: number; z: number } | null>(null);
 
   useEffect(() => {
     const iv = setInterval(() => setData(game.getMapData()), 400);
@@ -1395,7 +1419,7 @@ function MapOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
       <div className="w-full max-w-lg rounded-3xl border p-4 shadow-2xl" style={{ background: CARD, borderColor: LINE, color: INK }}>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>🗺 Island Map</h2>
-          <span className="text-[11px]" style={{ color: INK_SOFT }}>tap anywhere to set a ⭐ waypoint</span>
+          <span className="text-[11px]" style={{ color: INK_SOFT }}>tap the map, then zoom or walk there</span>
         </div>
 
         <div
@@ -1405,8 +1429,7 @@ function MapOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             const wx = ((e.clientX - rect.left) / rect.width - 0.5) * 2 * data.range;
             const wz = ((e.clientY - rect.top) / rect.height - 0.5) * 2 * data.range;
-            game.setWaypoint(wx, wz);
-            onClose();
+            setPending({ x: wx, z: wz });
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1429,6 +1452,7 @@ function MapOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
             </Marker>
           ))}
           {data.waypoint && <Marker x={data.waypoint.x} z={data.waypoint.z}>⭐</Marker>}
+          {pending && <Marker x={pending.x} z={pending.z}>📍</Marker>}
           {/* you: arrow showing where you're facing */}
           <div className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={pct(data.you.x, data.you.z)}>
             <div className="text-2xl leading-none drop-shadow-lg"
@@ -1438,12 +1462,25 @@ function MapOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
           </div>
         </div>
 
-        <div className="mt-3 flex justify-center gap-2">
-          <button className="rounded-full px-6 py-3 font-bold text-white active:scale-95" style={{ background: GREEN }}
-            onPointerDown={() => { game.setWaypoint(data.camp.x, data.camp.z); onClose(); }}>
-            🏕 Take me home
-          </button>
-          {data.waypoint && (
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {pending ? (
+            <>
+              <button className="rounded-full px-6 py-3 font-bold text-white active:scale-95" style={{ background: '#8e5cc0' }}
+                onPointerDown={() => { if (game.travelTo(pending.x, pending.z)) onClose(); else setPending(null); }}>
+                🪄 Zoom there!
+              </button>
+              <button className="rounded-full border-2 px-5 py-3 font-bold active:scale-95" style={{ borderColor: GOLD, color: INK }}
+                onPointerDown={() => { game.setWaypoint(pending.x, pending.z); onClose(); }}>
+                ⭐ Walk there
+              </button>
+            </>
+          ) : (
+            <button className="rounded-full px-6 py-3 font-bold text-white active:scale-95" style={{ background: GREEN }}
+              onPointerDown={() => { if (game.travelTo(data.camp.x, data.camp.z)) onClose(); }}>
+              🏕 Zoom home
+            </button>
+          )}
+          {data.waypoint && !pending && (
             <button className="rounded-full border px-5 py-3 font-bold active:scale-95" style={{ borderColor: LINE, color: INK_SOFT }}
               onPointerDown={() => game.clearWaypoint()}>
               Clear ⭐

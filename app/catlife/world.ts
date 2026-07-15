@@ -30,7 +30,7 @@ export interface AgilityCourse {
 }
 export interface PaintBucket { x: number; z: number; color: string | null } // null = wash-off water
 export interface Critter {
-  kind: 'butterfly' | 'mouse' | 'bird';
+  kind: 'butterfly' | 'mouse' | 'bird' | 'bunny' | 'frog' | 'duck' | 'turtle';
   group: THREE.Group;
   x: number; z: number; y: number;
   homeX: number; homeZ: number;
@@ -67,6 +67,8 @@ export class World {
   // Art Meadow: paint buckets + a paintable ground canvas
   artCenter = { x: 0, z: 0 };
   paintBuckets: PaintBucket[] = [];
+  washBucket = { x: 0, z: 0 };       // the water bucket — splash it to clear the art
+  bathSpot = { x: 0, z: 0 };         // bubble bath tub at the player camp
   private artCtx: CanvasRenderingContext2D | null = null;
   private artTex: THREE.CanvasTexture | null = null;
   private readonly ART_HALF = 13; // patio disc radius == canvas half-extent (keeps UVs aligned)
@@ -101,7 +103,7 @@ export class World {
   private fireflies: THREE.Points;
   private fireflyBase: Float32Array;
 
-  private lakeC: { x: number; z: number };
+  readonly lakeC: { x: number; z: number };
   private hillC: { x: number; z: number };
   // plateau: fully flat inside this radius (blend happens between plateau and r)
   private flatSpots: { x: number; z: number; r: number; h: number; plateau?: number }[] = [];
@@ -1296,6 +1298,51 @@ export class World {
     ring.rotation.x = Math.PI / 2;
     ring.position.set(pc.x, h + 0.06, pc.z);
     this.group.add(ring);
+
+    // ——— bubble bath tub: a wooden barrel of warm sudsy water ———
+    const bx = pc.x - 6.5, bz = pc.z - 5;
+    this.bathSpot = { x: bx, z: bz };
+    const bh = this.heightAt(bx, bz);
+    const wood = new THREE.MeshStandardMaterial({ color: '#8a6a48', roughness: 0.95 });
+    const tub = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.0, 0.75, 14, 1, true), wood);
+    tub.material.side = THREE.DoubleSide;
+    tub.position.set(bx, bh + 0.38, bz);
+    tub.castShadow = true;
+    this.group.add(tub);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.07, 8, 18), wood);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.set(bx, bh + 0.75, bz);
+    this.group.add(rim);
+    // two metal bands like a real barrel
+    const band = new THREE.MeshStandardMaterial({ color: '#7d7a70', roughness: 0.5, metalness: 0.3 });
+    for (const by of [0.2, 0.55]) {
+      const hoop = new THREE.Mesh(new THREE.TorusGeometry(1.12 - by * 0.1, 0.035, 6, 18), band);
+      hoop.rotation.x = Math.PI / 2;
+      hoop.position.set(bx, bh + by, bz);
+      this.group.add(hoop);
+    }
+    const suds = new THREE.Mesh(
+      new THREE.CircleGeometry(1.05, 16),
+      new THREE.MeshStandardMaterial({ color: '#cfe9f2', roughness: 0.25 })
+    );
+    suds.rotation.x = -Math.PI / 2;
+    suds.position.set(bx, bh + 0.68, bz);
+    this.group.add(suds);
+    // foam heaps floating on top
+    const foam = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.55 });
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.4;
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(0.16 + (i % 3) * 0.07, 8, 6), foam);
+      puff.position.set(bx + Math.cos(a) * (0.25 + (i % 4) * 0.18), bh + 0.72, bz + Math.sin(a) * (0.25 + (i % 4) * 0.18));
+      this.group.add(puff);
+    }
+    // a little step stool so tiny cats can hop in
+    const stool = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 0.35, 8), wood);
+    stool.position.set(bx + 1.5, bh + 0.18, bz + 0.4);
+    this.group.add(stool);
+    // stand on the suds (and the stool) — the tub is a real platform
+    this.platforms.push({ x: bx, z: bz, r: 1.05, topY: bh + 0.68 });
+    this.platforms.push({ x: bx + 1.5, z: bz + 0.4, r: 0.45, topY: bh + 0.35 });
   }
 
   // ——— buildings (unchanged from v1) ———
@@ -1691,15 +1738,9 @@ export class World {
 
   // ——— Art Meadow: paint buckets + a big paintable stone patio ———
 
-  private buildArtMeadow() {
-    const c = this.artCenter;
-    const half = this.ART_HALF;
-
-    // paintable patio: a canvas texture on a terrain-conforming plane
-    const canvas = document.createElement('canvas');
-    canvas.width = 768;
-    canvas.height = 768;
-    const ctx = canvas.getContext('2d')!;
+  /** blank stone patio — used on build and by the wash-bucket "clear the art" */
+  private paintArtBase(ctx: CanvasRenderingContext2D) {
+    ctx.globalAlpha = 1;
     ctx.fillStyle = '#ece5d2';
     ctx.fillRect(0, 0, 768, 768);
     // stone speckle so the blank patio doesn't look sterile
@@ -1713,6 +1754,28 @@ export class World {
     ctx.beginPath();
     ctx.arc(384, 384, 374, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  /** splash of the wash bucket: wipe every paw print off the patio */
+  clearArt() {
+    const ctx = this.artCtx;
+    if (!ctx) return;
+    this.paintArtBase(ctx);
+    // re-spill the bucket splashes so the buckets still read as "step in me!"
+    for (const b of this.paintBuckets) if (b.color) this.splashArt(b.x, b.z, b.color);
+    if (this.artTex) this.artTex.needsUpdate = true;
+  }
+
+  private buildArtMeadow() {
+    const c = this.artCenter;
+    const half = this.ART_HALF;
+
+    // paintable patio: a canvas texture on a terrain-conforming plane
+    const canvas = document.createElement('canvas');
+    canvas.width = 768;
+    canvas.height = 768;
+    const ctx = canvas.getContext('2d')!;
+    this.paintArtBase(ctx);
     this.artCtx = ctx;
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -1753,6 +1816,7 @@ export class World {
       mkBucket(c.x + Math.cos(a) * 9, c.z + Math.sin(a) * 9, col);
     });
     mkBucket(c.x + Math.cos(Math.PI) * 9, c.z + Math.sin(Math.PI) * 9, null); // water
+    this.washBucket = { x: c.x + Math.cos(Math.PI) * 9, z: c.z + Math.sin(Math.PI) * 9 };
 
     // an easel-style sign at the entrance
     this.flagPole(c.x, c.z - 12, '#f08fbf');
@@ -1919,25 +1983,135 @@ export class World {
       g.add(beak);
       return g;
     };
+    const mkBunny = () => {
+      const g = new THREE.Group();
+      const colr = ['#e8e2d4', '#b3906a', '#9c9186'][irange(rng, 0, 2)];
+      const fur = new THREE.MeshStandardMaterial({ color: colr, roughness: 1 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), fur);
+      body.scale.set(0.9, 0.85, 1.25);
+      body.position.y = 0.17;
+      g.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), fur);
+      head.position.set(0, 0.34, 0.16);
+      g.add(head);
+      const earGeo = new THREE.SphereGeometry(0.05, 6, 5);
+      for (const s of [-1, 1]) {
+        const ear = new THREE.Mesh(earGeo, fur);
+        ear.scale.set(0.8, 3.2, 0.6);
+        ear.position.set(s * 0.06, 0.55, 0.1);
+        ear.rotation.z = s * -0.15;
+        g.add(ear);
+      }
+      const tail = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1 }));
+      tail.position.set(0, 0.18, -0.26);
+      g.add(tail);
+      return g;
+    };
+    const mkFrog = () => {
+      const g = new THREE.Group();
+      const green = new THREE.MeshStandardMaterial({ color: ['#6aa84f', '#83b356', '#4f8a3d'][irange(rng, 0, 2)], roughness: 0.85 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), green);
+      body.scale.set(1.1, 0.75, 1.2);
+      body.position.y = 0.09;
+      g.add(body);
+      for (const s of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), green);
+        eye.position.set(s * 0.07, 0.19, 0.08);
+        g.add(eye);
+        const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5), new THREE.MeshStandardMaterial({ color: '#1a1a1a' }));
+        pupil.position.set(s * 0.07, 0.2, 0.12);
+        g.add(pupil);
+      }
+      return g;
+    };
+    const mkDuck = () => {
+      const g = new THREE.Group();
+      const feathers = new THREE.MeshStandardMaterial({ color: rng() < 0.5 ? '#f5efdc' : '#c8a05a', roughness: 0.9 });
+      const orange = new THREE.MeshStandardMaterial({ color: '#e8892c', roughness: 0.7 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), feathers);
+      body.scale.set(0.85, 0.7, 1.25);
+      body.position.y = 0.1;
+      g.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), feathers);
+      head.position.set(0, 0.36, 0.18);
+      g.add(head);
+      const bill = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 5), orange);
+      bill.scale.set(1.1, 0.55, 1.5);
+      bill.position.set(0, 0.34, 0.3);
+      g.add(bill);
+      // two fuzzy ducklings paddle along behind mama
+      for (const off of [0.55, 1.0]) {
+        const kid = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshStandardMaterial({ color: '#f5d76e', roughness: 0.95 }));
+        kid.scale.set(0.9, 0.8, 1.15);
+        kid.position.set((off === 0.55 ? -0.12 : 0.1), 0.06, -0.3 - off);
+        g.add(kid);
+        const kidHead = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 5), new THREE.MeshStandardMaterial({ color: '#f5d76e', roughness: 0.95 }));
+        kidHead.position.set(kid.position.x, 0.17, kid.position.z + 0.08);
+        g.add(kidHead);
+      }
+      return g;
+    };
+    const mkTurtle = () => {
+      const g = new THREE.Group();
+      const shellMat = new THREE.MeshStandardMaterial({ color: '#5e7a4a', roughness: 0.8 });
+      const skin = new THREE.MeshStandardMaterial({ color: '#8a9a5c', roughness: 0.95 });
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), shellMat);
+      shell.scale.set(1.05, 0.55, 1.2);
+      shell.position.y = 0.12;
+      g.add(shell);
+      const rimm = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.23, 0.05, 12), skin);
+      rimm.position.y = 0.06;
+      g.add(rimm);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), skin);
+      head.position.set(0, 0.1, 0.27);
+      g.add(head);
+      g.userData.head = head; // tucks in when a cat gets close
+      for (const [sx, sz] of [[-0.15, 0.14], [0.15, 0.14], [-0.15, -0.14], [0.15, -0.14]] as const) {
+        const foot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), skin);
+        foot.scale.set(1, 0.6, 1.3);
+        foot.position.set(sx, 0.04, sz);
+        g.add(foot);
+      }
+      return g;
+    };
 
-    const spawn = (kind: Critter['kind'], count: number) => {
+    const makers: Record<Critter['kind'], () => THREE.Group> = {
+      butterfly: mkButterfly, mouse: mkMouse, bird: mkBird,
+      bunny: mkBunny, frog: mkFrog, duck: mkDuck, turtle: mkTurtle,
+    };
+    // ducks float on water; frogs and turtles keep to the shoreline
+    const placeOk = (kind: Critter['kind'], h: number): boolean => {
+      if (kind === 'duck') return h < WATER_LEVEL - 0.6;
+      if (kind === 'frog' || kind === 'turtle') return h > WATER_LEVEL + 0.05 && h < WATER_LEVEL + 1.1;
+      return h > 1.2 && h < 9;
+    };
+    const spawn = (kind: Critter['kind'], count: number, nearWater = false) => {
       for (let i = 0; i < count; i++) {
         let x = 0, z = 0, ok = false;
-        for (let t = 0; t < 15 && !ok; t++) {
-          x = (rng() - 0.5) * 260;
-          z = (rng() - 0.5) * 260;
-          const h = this.heightAt(x, z);
-          ok = h > 1.2 && h < 9;
+        for (let t = 0; t < 40 && !ok; t++) {
+          if (nearWater) {
+            // sample around the lake so water friends actually find water
+            const a = rng() * Math.PI * 2;
+            const d = rng() * 34;
+            x = this.lakeC.x + Math.cos(a) * d;
+            z = this.lakeC.z + Math.sin(a) * d;
+          } else {
+            x = (rng() - 0.5) * 260;
+            z = (rng() - 0.5) * 260;
+          }
+          ok = placeOk(kind, this.heightAt(x, z));
         }
-        const g = kind === 'butterfly' ? mkButterfly() : kind === 'mouse' ? mkMouse() : mkBird();
-        const y = this.heightAt(x, z) + (kind === 'butterfly' ? 1.1 : 0);
+        if (!ok) continue;
+        const g = makers[kind]();
+        const y = kind === 'duck' ? WATER_LEVEL : this.heightAt(x, z) + (kind === 'butterfly' ? 1.1 : 0);
         g.position.set(x, y, z);
         this.group.add(g);
         this.critters.push({
           kind, group: g, x, z, y, homeX: x, homeZ: z,
           heading: rng() * Math.PI * 2,
           state: 'wander', stateT: 0,
-          speed: kind === 'mouse' ? 2.2 : kind === 'bird' ? 1.4 : 0.9,
+          speed: kind === 'mouse' ? 2.2 : kind === 'bird' ? 1.4 : kind === 'bunny' ? 2.0
+            : kind === 'frog' ? 1.3 : kind === 'duck' ? 0.7 : kind === 'turtle' ? 0.25 : 0.9,
           phase: rng() * 10,
         });
       }
@@ -1945,13 +2119,17 @@ export class World {
     spawn('butterfly', 18);
     spawn('mouse', 9);
     spawn('bird', 7);
+    spawn('bunny', 6);
+    spawn('frog', 5, true);
+    spawn('duck', 3, true);
+    spawn('turtle', 3, true);
   }
 
   updateCritters(dt: number, time: number, playerX: number, playerZ: number, sneaking: boolean) {
     for (const c of this.critters) {
       c.stateT += dt;
       const distP = Math.hypot(c.x - playerX, c.z - playerZ);
-      const scareRange = sneaking ? 1.6 : c.kind === 'butterfly' ? 2.2 : 5;
+      const scareRange = sneaking ? 1.6 : c.kind === 'butterfly' ? 2.2 : c.kind === 'turtle' ? 3 : 5;
 
       if (c.state === 'caught') continue;
       if (c.state === 'gone') {
@@ -1968,35 +2146,90 @@ export class World {
         c.state = 'flee';
         c.stateT = 0;
         c.heading = Math.atan2(c.z - playerZ, c.x - playerX);
+        // frogs always escape toward the water
+        if (c.kind === 'frog') c.heading = Math.atan2(this.lakeC.z - c.z, this.lakeC.x - c.x);
       }
 
       if (c.state === 'flee') {
-        const sp = c.speed * 3;
-        c.x += Math.cos(c.heading) * sp * dt;
-        c.z += Math.sin(c.heading) * sp * dt;
-        if (c.kind === 'bird' || c.kind === 'butterfly') {
-          c.y += dt * 4;
-          if (c.stateT > 2.5) {
+        if (c.kind === 'turtle') {
+          // turtles don't run — they tuck into their shell until it's safe
+          const head = c.group.userData.head as THREE.Mesh | undefined;
+          if (head) head.scale.setScalar(Math.max(0.05, 1 - c.stateT * 4));
+          if (c.stateT > 4 && distP > scareRange + 1) {
+            c.state = 'wander';
+            c.stateT = 0;
+            if (head) head.scale.setScalar(1);
+          }
+        } else if (c.kind === 'duck') {
+          // mama duck paddles calmly away with the ducklings in tow
+          const sp = c.speed * 2.5;
+          const nx = c.x + Math.cos(c.heading) * sp * dt;
+          const nz = c.z + Math.sin(c.heading) * sp * dt;
+          if (this.heightAt(nx, nz) < WATER_LEVEL - 0.5) { c.x = nx; c.z = nz; }
+          else c.heading += dt * 3;
+          if (c.stateT > 3 && distP > 8) { c.state = 'wander'; c.stateT = 0; }
+        } else {
+          const sp = c.speed * 3;
+          c.x += Math.cos(c.heading) * sp * dt;
+          c.z += Math.sin(c.heading) * sp * dt;
+          if (c.kind === 'frog') {
+            // bounding hops, then a "sploosh" — gone beneath the lily pads
+            c.y = this.heightAt(c.x, c.z) + Math.abs(Math.sin(c.stateT * 9)) * 0.3;
+            if (c.stateT > 1.6 || this.heightAt(c.x, c.z) < WATER_LEVEL - 0.2) {
+              c.state = 'gone';
+              c.stateT = 0;
+              c.group.visible = false;
+            }
+          } else if (c.kind === 'bunny') {
+            c.y = this.heightAt(c.x, c.z) + Math.abs(Math.sin(c.stateT * 10)) * 0.22;
+            if (c.stateT > 2.4) {
+              c.state = 'gone';
+              c.stateT = 0;
+              c.group.visible = false;
+            }
+          } else if (c.kind === 'bird' || c.kind === 'butterfly') {
+            c.y += dt * 4;
+            if (c.stateT > 2.5) {
+              c.state = 'gone';
+              c.stateT = 0;
+              c.group.visible = false;
+            }
+          } else if (c.stateT > 2.2) {
             c.state = 'gone';
             c.stateT = 0;
             c.group.visible = false;
           }
-        } else if (c.stateT > 2.2) {
-          c.state = 'gone';
-          c.stateT = 0;
-          c.group.visible = false;
         }
       } else {
         c.heading += (hash2(Math.floor(time * 0.5), this.critters.indexOf(c), this.seed) - 0.5) * dt * 3;
-        const sp = c.kind === 'mouse' && Math.sin(time * 2 + c.phase) > 0.4 ? c.speed : c.kind === 'mouse' ? 0 : c.speed * 0.5;
-        c.x += Math.cos(c.heading) * sp * dt;
-        c.z += Math.sin(c.heading) * sp * dt;
+        // mice scurry in bursts; bunnies and frogs move in little hops
+        const hopBurst = Math.sin(time * 2 + c.phase) > 0.4;
+        const sp = c.kind === 'mouse' ? (hopBurst ? c.speed : 0)
+          : c.kind === 'bunny' || c.kind === 'frog' ? (hopBurst ? c.speed : 0)
+          : c.speed * 0.5;
+        let nx = c.x + Math.cos(c.heading) * sp * dt;
+        let nz = c.z + Math.sin(c.heading) * sp * dt;
+        // ducks stay in the water; shore friends stay out of it
+        if (c.kind === 'duck' && this.heightAt(nx, nz) > WATER_LEVEL - 0.5) {
+          c.heading += Math.PI * 0.6;
+          nx = c.x; nz = c.z;
+        }
+        if ((c.kind === 'frog' || c.kind === 'turtle' || c.kind === 'bunny') && this.heightAt(nx, nz) < WATER_LEVEL + 0.05) {
+          c.heading += Math.PI * 0.6;
+          nx = c.x; nz = c.z;
+        }
+        c.x = nx; c.z = nz;
         const dh = Math.hypot(c.x - c.homeX, c.z - c.homeZ);
         if (dh > 14) c.heading = Math.atan2(c.homeZ - c.z, c.homeX - c.x);
         const groundY = this.heightAt(c.x, c.z);
+        const hopY = (c.kind === 'bunny' || c.kind === 'frog') && sp > 0
+          ? Math.abs(Math.sin(time * (c.kind === 'frog' ? 7 : 9) + c.phase)) * (c.kind === 'frog' ? 0.18 : 0.16)
+          : 0;
         c.y = c.kind === 'butterfly'
           ? groundY + 1.0 + Math.sin(time * 2.4 + c.phase) * 0.35
-          : groundY;
+          : c.kind === 'duck'
+            ? WATER_LEVEL + Math.sin(time * 1.8 + c.phase) * 0.03
+            : groundY + hopY;
       }
 
       c.group.position.set(c.x, c.y, c.z);

@@ -2,7 +2,7 @@
 
 import type {
   AccessoryId, CatSpec, CatStyle, CoatSpec, PatternId,
-  FaceShape, EarStyle, EyeStyle, MouthStyle, TailStyle, WhiskerStyle,
+  FaceShape, EarStyle, EyeStyle, MouthStyle, TailStyle, WhiskerStyle, PawStyle, ClawStyle,
 } from './types';
 import { mulberry32, pick, range, irange } from './rng';
 
@@ -164,6 +164,8 @@ export const EYE_STYLES: readonly EyeStyle[] = ['almond', 'round', 'sleepy', 'st
 export const MOUTH_STYLES: readonly MouthStyle[] = ['sweet', 'smiley', 'pouty', 'toothy'];
 export const TAIL_STYLES: readonly TailStyle[] = ['classic', 'fluffy', 'bobtail', 'curly'];
 export const WHISKER_STYLES: readonly WhiskerStyle[] = ['classic', 'long', 'curly', 'short'];
+export const PAW_STYLES: readonly PawStyle[] = ['classic', 'toebeans', 'fluffy', 'socks'];
+export const CLAW_STYLES: readonly ClawStyle[] = ['tucked', 'short', 'long'];
 
 export const FACE_LABELS: Record<FaceShape, string> = {
   round: 'Round', slim: 'Slim', chubby: 'Chubby cheeks', fluffy: 'Extra fluffy',
@@ -175,13 +177,19 @@ export const EYE_LABELS: Record<EyeStyle, string> = {
   almond: 'Almond', round: 'Big & round', sleepy: 'Sleepy', starry: 'Starry sparkle',
 };
 export const MOUTH_LABELS: Record<MouthStyle, string> = {
-  sweet: 'Sweet', smiley: 'Smiley', pouty: 'Pouty', toothy: 'Little fang',
+  sweet: 'Sweet smile', smiley: 'Big open grin', pouty: 'Pouty', toothy: 'Little fangs',
 };
 export const TAIL_LABELS: Record<TailStyle, string> = {
   classic: 'Classic', fluffy: 'Floofy', bobtail: 'Bobtail', curly: 'Curly-Q',
 };
 export const WHISKER_LABELS: Record<WhiskerStyle, string> = {
   classic: 'Classic', long: 'Extra long', curly: 'Curly', short: 'Short & neat',
+};
+export const PAW_LABELS: Record<PawStyle, string> = {
+  classic: 'Classic', toebeans: 'Toe beans 🫘', fluffy: 'Fluffy tufts', socks: 'White socks',
+};
+export const CLAW_LABELS: Record<ClawStyle, string> = {
+  tucked: 'Tucked in', short: 'Short claws', long: 'Looong claws',
 };
 
 /** random look for a generated cat — most stay classic, some roll fun features */
@@ -195,6 +203,8 @@ export function randomStyle(rng: () => number): CatStyle {
     mouth: roll(MOUTH_STYLES, 0.45),
     tail: roll(TAIL_STYLES, 0.5),
     whiskers: roll(WHISKER_STYLES, 0.45),
+    paws: roll(PAW_STYLES, 0.4),
+    claws: roll(CLAW_STYLES, 0.3),
   };
 }
 
@@ -294,6 +304,7 @@ export function generateBaby(seed: number, mom: CatSpec, dad: CatSpec): CatSpec 
     baby.style = {
       face: from('face'), ears: from('ears'), eyes: from('eyes'),
       mouth: from('mouth'), tail: from('tail'), whiskers: from('whiskers'),
+      paws: from('paws'), claws: from('claws'),
     };
   }
   return baby;
