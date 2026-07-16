@@ -119,7 +119,10 @@ export class Game {
   // input
   private joy = { x: 0, y: 0 };
   private keys = new Set<string>();
-  private camYawOff = 0;
+  // Absolute camera heading. On foot it is fully user-controlled (only drag
+  // changes it), so joystick movement is measured against a steady camera and
+  // never fights you. While driving, it eases to trail behind the plow.
+  private camHeading = 0;
   private camPitch = 0.7;   // radians above horizon; drag vertically to change
   private camDist = 13;
   private pointers = new Map<number, { x: number; y: number }>();
@@ -1179,14 +1182,18 @@ export class Game {
   }
 
   private camYaw(): number {
-    const baseYaw = this.mode === 'plow' ? this.plowYaw : this.playerYaw;
-    return baseYaw + this.camYawOff;
+    return this.camHeading;
   }
 
   private updateCamera(dt: number, snap: boolean) {
     const target = this.mode === 'plow' ? this.plowPos : this.playerPos;
     const dist = this.mode === 'plow' ? this.camDist * 1.25 : this.camDist;
-    const yaw = this.camYaw();
+    // Driving: camera trails behind the plow (steering is gradual, so no whip).
+    // On foot: camera holds still unless you drag it.
+    if (this.mode === 'plow') {
+      this.camHeading = this.lerpAngle(this.camHeading, this.plowYaw, snap ? 1 : Math.min(1, dt * 2.5));
+    }
+    const yaw = this.camHeading;
     const horiz = dist * Math.cos(this.camPitch);
     const h = Math.max(2.2, dist * Math.sin(this.camPitch));
     const px = target.x + Math.sin(yaw) * horiz;
@@ -1244,7 +1251,7 @@ export class Game {
       this.pinchDist = d;
     } else {
       // one finger / mouse: orbit (left-right) and tilt (up-down)
-      this.camYawOff -= (e.clientX - p.x) * 0.006;
+      this.camHeading -= (e.clientX - p.x) * 0.006;
       this.camPitch = Math.max(0.28, Math.min(1.25, this.camPitch + (e.clientY - p.y) * 0.004));
       p.x = e.clientX; p.y = e.clientY;
     }
