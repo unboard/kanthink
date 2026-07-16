@@ -114,7 +114,11 @@ export default function SnowPath() {
 
       {/* ------- top bar ------- */}
       {playing && (
-        <div style={{ position: 'absolute', top: 'max(10px, env(safe-area-inset-top))', left: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{
+          position: 'absolute', top: 'max(10px, env(safe-area-inset-top))', left: 12,
+          display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
+          maxWidth: 'calc(100vw - 118px)',
+        }}>
           <Chip>Day {hud.day}</Chip>
           <Chip strong color={hud.overtime ? '#ff6b6b' : undefined}>
             {hud.overtime ? 'OVERTIME' : fmtClock(hud.timeLeft)}
@@ -249,6 +253,15 @@ export default function SnowPath() {
         <div style={{ position: 'absolute', top: 'max(10px, env(safe-area-inset-top))', right: 12, display: 'flex', gap: 6 }}>
           <MiniButton label={muted ? '🔇' : '🔊'} onClick={() => { const m = !muted; setMuted(m); g?.setMuted(m); }} />
           <MiniButton label={paused ? '▶️' : '⏸'} onClick={() => { const p = !paused; setPaused(p); g?.setPaused(p); }} />
+        </div>
+      )}
+      {playing && (
+        <div style={{
+          position: 'absolute', right: 12, top: 'max(190px, calc(env(safe-area-inset-top) + 182px))',
+          display: 'flex', gap: 6,
+        }}>
+          <MiniButton label="➕" onClick={() => gameRef.current?.zoomBy(-2.5)} />
+          <MiniButton label="➖" onClick={() => gameRef.current?.zoomBy(2.5)} />
         </div>
       )}
 

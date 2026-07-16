@@ -61,6 +61,7 @@ interface Request {
   ribbon: THREE.Line | null;
   runner: THREE.Mesh | null;
   runnerT: number;
+  marker: THREE.Mesh | null;   // floating pin above the car
   resolved: boolean;
   onTime: boolean;
   snowedInToastShown: boolean;
@@ -119,7 +120,10 @@ export class Game {
   private joy = { x: 0, y: 0 };
   private keys = new Set<string>();
   private camYawOff = 0;
-  private camDist = 12;
+  private camPitch = 0.7;   // radians above horizon; drag vertically to change
+  private camDist = 13;
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinchDist = 0;
 
   // day state
   private screen: 'menu' | 'playing' | 'summary' = 'menu';
@@ -137,6 +141,7 @@ export class Game {
   private nextReqId = 1;
   private accumT = 0;
   private focusReq = -1;
+  private tips: { t: number; text: string }[] = [];
 
   // hud
   private onHud: (h: HudState) => void;
@@ -412,6 +417,12 @@ export class Game {
     for (const r of this.requests) this.cleanupRequest(r);
     this.requests = [];
     this.scheduleRequests();
+    this.tips = this.day === 1 ? [
+      { t: 3, text: 'Walk to the orange plow (orange dot on your map) and tap “Drive plow” 🚜' },
+      { t: 26, text: 'Tip: the plow banks snow onto driveways — clean those up with the red blower 💨' },
+      { t: 55, text: 'Tip: tap the little map to see the whole town and every route 🗺️' },
+      { t: 90, text: 'Tip: drag up/down to tilt the camera, pinch to zoom ⛰️' },
+    ] : [];
     this.toast(`Day ${this.day} — the storm is here. Clear the way! ❄️`);
     this.pushHud();
   }
@@ -436,7 +447,7 @@ export class Game {
         warmup: 0,
         deadline: 0,
         phase: 'warming',
-        car: null, ribbon: null, runner: null, runnerT: 0,
+        car: null, ribbon: null, runner: null, runnerT: 0, marker: null,
         resolved: false, onTime: false, snowedInToastShown: false,
       });
       const gap = Math.max(14, 40 - this.day * 3);
@@ -535,6 +546,9 @@ export class Game {
       this.updateStorm(dt);
       this.updateRequests(dt);
       this.updateDayEnd(dt);
+      if (this.tips.length && this.dayClock >= this.tips[0].t) {
+        this.toast(this.tips.shift()!.text);
+      }
     }
     this.updateMovement(dt);
     this.updateClearing(dt);
@@ -781,6 +795,16 @@ export class Game {
           r.runner.position.lerpVectors(p0, p1, fi - i0);
         }
       }
+      if (r.marker && r.car) {
+        const stuck = r.phase === 'stuck';
+        const bobSpeed = stuck ? 0.014 : 0.005;
+        r.marker.position.set(
+          r.car.pos.x,
+          5.4 + Math.sin(performance.now() * bobSpeed) * 0.45,
+          r.car.pos.z,
+        );
+        (r.marker.material as THREE.MeshBasicMaterial).color.set(stuck ? '#ff4455' : r.color);
+      }
     }
   }
 
@@ -829,6 +853,16 @@ export class Game {
     runner.position.copy(pts[0]);
     this.scene.add(runner);
     r.runner = runner;
+
+    // floating pin above the car so it's easy to spot in the world
+    const marker = new THREE.Mesh(
+      new THREE.ConeGeometry(0.55, 1.1, 8),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(r.color) }),
+    );
+    marker.rotation.x = Math.PI; // point down
+    marker.position.set(car.pos.x, 5.4, car.pos.z);
+    this.scene.add(marker);
+    r.marker = marker;
 
     this.toast(`${house.family} family → ${dest.name}. Route is on your map! 🗺️`);
     this.audio.ding();
@@ -912,6 +946,7 @@ export class Game {
   private cleanupRequest(r: Request, keepHud = false) {
     if (r.ribbon) { this.scene.remove(r.ribbon); r.ribbon.geometry.dispose(); r.ribbon = null; }
     if (r.runner) { this.scene.remove(r.runner); r.runner = null; }
+    if (r.marker) { this.scene.remove(r.marker); r.marker.geometry.dispose(); r.marker = null; }
     if (r.car) { this.scene.remove(r.car.group); r.car = null; }
     this.ribbonPoints.delete(r.id);
     if (!keepHud) r.resolved = true;
@@ -1152,9 +1187,10 @@ export class Game {
     const target = this.mode === 'plow' ? this.plowPos : this.playerPos;
     const dist = this.mode === 'plow' ? this.camDist * 1.25 : this.camDist;
     const yaw = this.camYaw();
-    const h = dist * 0.85;
-    const px = target.x + Math.sin(yaw) * dist;
-    const pz = target.z + Math.cos(yaw) * dist;
+    const horiz = dist * Math.cos(this.camPitch);
+    const h = Math.max(2.2, dist * Math.sin(this.camPitch));
+    const px = target.x + Math.sin(yaw) * horiz;
+    const pz = target.z + Math.cos(yaw) * horiz;
     const k = snap ? 1 : Math.min(1, dt * 5);
     this.camera.position.x += (px - this.camera.position.x) * k;
     this.camera.position.y += (target.y + h - this.camera.position.y) * k;
@@ -1183,23 +1219,54 @@ export class Game {
   };
 
   private onPointerDown = (e: PointerEvent) => {
-    const startX = e.clientX;
-    let lastX = startX;
-    const move = (ev: PointerEvent) => {
-      this.camYawOff -= (ev.clientX - lastX) * 0.006;
-      lastX = ev.clientX;
-    };
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()];
+      this.pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+    if (this.pointers.size === 1) {
+      window.addEventListener('pointermove', this.onPointerMove);
+      window.addEventListener('pointerup', this.onPointerUp);
+      window.addEventListener('pointercancel', this.onPointerUp);
+    }
+  };
+
+  private onPointerMove = (e: PointerEvent) => {
+    const p = this.pointers.get(e.pointerId);
+    if (!p) return;
+    if (this.pointers.size >= 2) {
+      p.x = e.clientX; p.y = e.clientY;
+      const [a, b] = [...this.pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (this.pinchDist > 0 && d > 0) {
+        this.camDist = Math.max(7, Math.min(24, this.camDist * (this.pinchDist / d)));
+      }
+      this.pinchDist = d;
+    } else {
+      // one finger / mouse: orbit (left-right) and tilt (up-down)
+      this.camYawOff -= (e.clientX - p.x) * 0.006;
+      this.camPitch = Math.max(0.28, Math.min(1.25, this.camPitch + (e.clientY - p.y) * 0.004));
+      p.x = e.clientX; p.y = e.clientY;
+    }
+  };
+
+  private onPointerUp = (e: PointerEvent) => {
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinchDist = 0;
+    if (this.pointers.size === 0) {
+      window.removeEventListener('pointermove', this.onPointerMove);
+      window.removeEventListener('pointerup', this.onPointerUp);
+      window.removeEventListener('pointercancel', this.onPointerUp);
+    }
   };
 
   private onWheel = (e: WheelEvent) => {
-    this.camDist = Math.max(7, Math.min(22, this.camDist + e.deltaY * 0.01));
+    this.camDist = Math.max(7, Math.min(24, this.camDist + e.deltaY * 0.01));
   };
+
+  zoomBy(delta: number) {
+    this.camDist = Math.max(7, Math.min(24, this.camDist + delta));
+  }
 
   // ---------- HUD & minimap ----------
 
