@@ -121,6 +121,35 @@ export async function fetchCloudSave(): Promise<{ save: SaveData | null } | null
   }
 }
 
+// ——— recorded meows: upload straight to Cloudinary with a server signature ———
+
+export async function uploadMeow(blob: Blob): Promise<string> {
+  const acc = getAccount();
+  if (!acc) throw new Error('Not signed in');
+  const signRes = await fetch('/api/catlife/meow-sign', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${acc.token}` },
+  });
+  if (!signRes.ok) throw new Error('Could not authorize the upload');
+  const { signature, timestamp, apiKey, cloudName, folder } = await signRes.json();
+
+  const form = new FormData();
+  form.append('file', blob);
+  form.append('api_key', apiKey);
+  form.append('timestamp', String(timestamp));
+  form.append('signature', signature);
+  form.append('folder', folder);
+  // audio rides Cloudinary's video pipeline
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/video/upload`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new Error('Upload failed');
+  const data = (await res.json()) as { public_id: string };
+  // deliver as mp3 so every tablet (Safari included) can play it back
+  return `https://res.cloudinary.com/${cloudName}/video/upload/${data.public_id}.mp3`;
+}
+
 // ——— throttled push (called from persistSave on every autosave) ———
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;

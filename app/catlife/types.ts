@@ -59,7 +59,7 @@ export interface CoatSpec {
 }
 
 export interface CatTraits {
-  canSwim: boolean;
+  canSwim: boolean;   // legacy — every Wilds cat swims now (kept for old saves)
   brave: boolean;     // will duel more, less scared
   sneaky: boolean;    // better at stalking
   speed: number;      // 1..10
@@ -91,6 +91,7 @@ export interface CatSpec {
   isMate?: boolean;    // fell in love with the player's cat and joined the family
   mateWith?: string;   // id of the cat they fell in love with
   parents?: [string, string]; // names, for the guide ("kitten of X & Y")
+  meowUrl?: string;    // a kid-recorded meow (Cloudinary mp3) played on the meow button
 }
 
 export interface BuildingInstance {
@@ -129,6 +130,8 @@ export interface SaveData {
   unlockedPatterns: PatternId[];
   unlockedAccessories: AccessoryId[];
   treats: number;               // dug-up treats (bonus xp currency)
+  fish: Record<string, { count: number; best: number }>; // fish collection by species
+  toybox: string[];             // collectable toys & stuffies found around the island
   soundOn: boolean;
   musicOn: boolean;
   tutorialDone: string[];       // tutorial step keys shown
@@ -147,7 +150,7 @@ export type CatAction =
 // Context-sensitive interactable the action button targets
 export interface ContextTarget {
   kind: 'dig' | 'climb' | 'scratch' | 'yarn' | 'golden' | 'duel' | 'prey' | 'agility' | 'islet' | 'building' | 'rescue'
-    | 'love' | 'nurse' | 'pickup' | 'setdown' | 'stray' | 'washart' | 'bath';
+    | 'love' | 'nurse' | 'pickup' | 'setdown' | 'stray' | 'washart' | 'bath' | 'fish' | 'reel';
   label: string;
   id: string;
   x: number;
@@ -167,6 +170,9 @@ export interface HudState {
   timeOfDay: number; // 0..1 (0=midnight .5=noon)
   agility: { running: boolean; t: number; par: number; nextGate: number; total: number; name: string } | null;
   paint: string | null; // paw paint color while painted-up at the Art Meadow
+  zoom: { active: boolean; ready: boolean }; // super-run dash state for the ⚡ button
+  fishing: 'cast' | 'bite' | null; // waiting for a nibble / FISH ON, reel it in!
+  territory: string | null; // name of the climate territory the cat is standing in
   compass: number;   // camera yaw for minimap
   camp: { angle: number; dist: number }; // direction home (camera-relative)
   rescue: { angle: number; dist: number; kind: 'tree' | 'water' } | null; // stranded kitten direction

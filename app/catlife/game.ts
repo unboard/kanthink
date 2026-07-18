@@ -10,6 +10,7 @@ import {
   WATER_LEVEL, DAY_LENGTH, RIVAL_CLANS, BUILDABLES, RANKS,
   generateCat, generateKitten, generateBaby, generateWanderer, genderOf,
   rankFor, xpForLevel, clanCapacity,
+  rollFish, RARITY_LABELS, TOYS,
 } from './data';
 import type {
   CatSpec, CatStyle, ContextTarget, ChallengeState, DuelState, GameEvents, GameMode,
@@ -149,6 +150,21 @@ export class Game {
   // pushable toy balls
   private toys: { mesh: THREE.Mesh; x: number; z: number; y: number; vx: number; vz: number }[] = [];
 
+  // super moves: one mid-air super jump per hop + the ⚡ zoom dash
+  private airJumps = 0;
+  private zoomT = 0;
+  private zoomCooldown = 0;
+
+  // fishing
+  private fishing: { phase: 'cast' | 'bite'; x: number; z: number; t: number; bobber: THREE.Group } | null = null;
+
+  // kid-recorded meows, cached per URL
+  private voiceCache = new Map<string, HTMLAudioElement>();
+
+  // territory the cat is standing in (for the HUD pill + crossing toasts)
+  private curTerritory: string | null = null;
+  private territoryCheckT = 0;
+
   // cat tower trial
   private towerDoneAt = -999;
 
@@ -256,6 +272,7 @@ export class Game {
       this.syncFamily();
       this.spawnWanderers();
       this.spawnToys();
+      this.world.spawnToyCollectables(this.save.toybox);
     } else {
       this.connectPlaydate();
     }
@@ -351,6 +368,8 @@ export class Game {
     for (const cm of this.clanmates) cm.avatar.dispose();
     if (this.rescue) this.rescue.avatar.dispose();
     if (this.stray) this.stray.avatar.dispose();
+    for (const el of this.voiceCache.values()) el.pause();
+    this.voiceCache.clear();
     this.audio.dispose();
     this.renderer.dispose();
     this.persist();
@@ -375,6 +394,7 @@ export class Game {
   private spawnPlayer(spec: CatSpec) {
     if (this.player) {
       this.clearBubbles(); // bath bubbles ride on the old avatar
+      if (this.fishing) this.stopFishing(false);
       this.scene.remove(this.player.root);
       this.player.dispose();
     }
@@ -1304,10 +1324,8 @@ export class Game {
   }
 
   private spawnRescue() {
-    // sometimes the kitten drifted out onto the water instead of up a tree —
-    // but only when the clan actually has a swimmer who could reach it
-    const haveSwimmer = this.save.cats.some((c) => c.traits.canSwim);
-    const wantWater = haveSwimmer && Math.random() < 0.4;
+    // sometimes the kitten drifted out onto the water instead of up a tree
+    const wantWater = Math.random() < 0.4;
 
     if (wantWater) {
       // find open water near the lake within reach of the player
@@ -1490,6 +1508,7 @@ export class Game {
     if (e.key.toLowerCase() === 'e') this.pressAction();
     if (e.key.toLowerCase() === 'm') this.pressMeow();
     if (e.key.toLowerCase() === 'q') this.toggleSneak();
+    if (e.key.toLowerCase() === 'z') this.startZoom();
   };
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.key.toLowerCase());
@@ -1503,6 +1522,7 @@ export class Game {
   pressJump() {
     this.unlockAudio();
     if (this.duel || this.challenge?.phase === 'offer') return;
+    if (this.fishing) this.stopFishing(false);
     if (this.climbing) {
       // leap off the tree
       const t = this.climbing;
@@ -1518,9 +1538,31 @@ export class Game {
     if (this.grounded && !this.swimming && this.busyT <= 0) {
       this.vy = 8.6;
       this.grounded = false;
+      this.airJumps = 0;
       this.audio.jump();
       this.player.setAction('jump');
+    } else if (!this.grounded && !this.swimming && this.busyT <= 0 && this.airJumps < 1) {
+      // SUPER JUMP! tap jump again mid-air for a sparkly double boost
+      this.airJumps++;
+      this.vy = 9.8;
+      this.audio.superJump();
+      this.player.setAction('jump');
+      this.burst(this.px, this.py + 0.3, this.pz, '#ffd54a', 14);
+      this.tutorialOnce('superjump', 'SUPER JUMP! ✨ Tap jump again in the air to leap extra high!');
     }
+  }
+
+  /** ⚡ zoom: a super-run dash with a short recharge */
+  startZoom() {
+    this.unlockAudio();
+    if (this.zoomT > 0 || this.zoomCooldown > 0 || this.swimming || this.climbing || this.duel || this.busyT > 0) return;
+    this.zoomT = 2.8;
+    this.zoomCooldown = 7;
+    this.sneaking = false;
+    this.audio.zoomWhoosh();
+    this.burst(this.px, this.py + 0.4, this.pz, '#9ec3e8', 12);
+    this.tutorialOnce('zoom', 'ZOOM! ⚡ Super-run while the sparkles last — it recharges in a few seconds.');
+    this.emitHud(true);
   }
 
   pressMeow() {
@@ -1528,7 +1570,8 @@ export class Game {
     const spec = this.player.spec;
     this.player.meow();
     this.player.showEmote('music', 1.2);
-    this.audio.meow(spec.voicePitch);
+    // a kid-recorded meow beats the synth voice every time
+    if (!this.playVoice(spec)) this.audio.meow(spec.voicePitch);
     this.net?.sendMeow(spec.voicePitch);
     // nearby cats meow back (staggered) — and the hiding kitten answers loudly
     let delay = 500;
@@ -1586,7 +1629,136 @@ export class Game {
       case 'setdown': this.setDownKitten(); break;
       case 'washart': this.doWashArt(); break;
       case 'bath': this.startBath(); break;
+      case 'fish': {
+        const surfaceY = ctx.id.startsWith('pond_')
+          ? this.world.heightAt(ctx.x, ctx.z) + 0.16
+          : WATER_LEVEL + 0.05;
+        this.startFishing(ctx.x, ctx.z, surfaceY);
+        break;
+      }
+      case 'reel': this.reelIn(); break;
     }
+  }
+
+  // ——— fishing: cast at the shore, wait for the tug, reel in a unique fish ———
+
+  private startFishing(sx: number, sz: number, surfaceY: number) {
+    if (this.fishing || this.swimming || !this.grounded) return;
+    this.zoomT = 0;
+    this.heading = Math.atan2(sx - this.px, sz - this.pz);
+    this.player.setAction('sit');
+    this.applyAvatarTransform();
+    // a little red-and-white bobber out on the water
+    const bobber = new THREE.Group();
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), new THREE.MeshStandardMaterial({ color: '#e0505a', roughness: 0.5 }));
+    top.position.y = 0.06;
+    const bottom = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), new THREE.MeshStandardMaterial({ color: '#f5efe6', roughness: 0.5 }));
+    bottom.position.y = -0.06;
+    bobber.add(top, bottom);
+    bobber.position.set(sx, surfaceY, sz);
+    bobber.userData.surfaceY = surfaceY;
+    this.scene.add(bobber);
+    this.fishing = { phase: 'cast', x: sx, z: sz, t: 2 + Math.random() * 3.5, bobber };
+    this.audio.castPlunk();
+    this.burst(sx, surfaceY + 0.15, sz, '#9fd8e8', 8);
+    this.tutorialOnce('fishing', 'Fishing! 🎣 Sit very still… when the bobber tugs under, REEL IN fast!');
+    this.emitHud(true);
+  }
+
+  private stopFishing(reeledEarly: boolean) {
+    const f = this.fishing;
+    if (!f) return;
+    this.fishing = null;
+    this.scene.remove(f.bobber);
+    if (reeledEarly) this.toast('Nothing on the hook yet! Wait for the tug… 🎣');
+    this.emitHud(true);
+  }
+
+  private updateFishing(dt: number) {
+    const f = this.fishing;
+    if (!f) return;
+    if (this.busyT <= 0) this.player.setAction('sit');
+    const surfaceY = (f.bobber.userData.surfaceY as number) ?? WATER_LEVEL + 0.05;
+    const bob = Math.sin(this.elapsed * 2.2) * 0.05;
+    f.bobber.position.y = (f.phase === 'bite' ? surfaceY - 0.2 : surfaceY) + bob;
+    f.t -= dt;
+    if (f.phase === 'cast' && f.t <= 0) {
+      // FISH ON!
+      f.phase = 'bite';
+      f.t = 1.35;
+      this.audio.biteAlert();
+      this.player.showEmote('!', 1.4);
+      this.burst(f.x, surfaceY + 0.25, f.z, '#9fd8e8', 10);
+      this.emitHud(true);
+    } else if (f.phase === 'bite' && f.t <= 0) {
+      f.phase = 'cast';
+      f.t = 2.5 + Math.random() * 3;
+      this.toast('Ooh, it slipped away! Keep watching the bobber… 👀');
+      this.emitHud(true);
+    }
+  }
+
+  private reelIn() {
+    const f = this.fishing;
+    if (!f) return;
+    if (f.phase !== 'bite') {
+      this.stopFishing(true);
+      return;
+    }
+    // CAUGHT ONE! every fish rolls its own species + size
+    const { species, size } = rollFish(Math.random);
+    const rec = this.save.fish[species.id] ?? { count: 0, best: 0 };
+    const isNew = rec.count === 0;
+    const isRecord = !isNew && size > rec.best;
+    rec.count += 1;
+    rec.best = Math.max(rec.best, size);
+    this.save.fish[species.id] = rec;
+    this.save.treats += 1;
+    this.addXp(species.rarity === 'legendary' ? 12 : species.rarity === 'rare' ? 8 : 4);
+    this.stopFishing(false);
+    this.audio.success();
+    this.burst(this.px, this.py + 0.8, this.pz, '#7ec8e0', 22);
+    this.player.showEmote('heart', 2);
+    if (isNew) {
+      this.events.onCelebrate('recruit', `${species.icon} First-ever ${species.name} — ${size} cm! ${RARITY_LABELS[species.rarity]} · “${species.blurb}”`);
+    } else if (isRecord) {
+      this.events.onCelebrate('levelup', `${species.icon} NEW RECORD ${species.name} — ${size} cm! 🏆`);
+    } else {
+      this.toast(`${species.icon} Caught a ${species.name} — ${size} cm! +1 treat 🍪`);
+    }
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  // ——— kid-recorded meows ———
+
+  /** play this cat's recorded meow if it has one; false → use the synth voice */
+  private playVoice(spec: CatSpec, vol = 1): boolean {
+    if (!spec.meowUrl || !this.audio.soundOn) return false;
+    try {
+      let el = this.voiceCache.get(spec.meowUrl);
+      if (!el) {
+        el = new Audio(spec.meowUrl);
+        el.preload = 'auto';
+        this.voiceCache.set(spec.meowUrl, el);
+      }
+      el.currentTime = 0;
+      el.volume = Math.max(0, Math.min(1, vol));
+      void el.play().catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Guide: attach or clear a recorded meow for a cat */
+  setMeowUrl(catId: string, url: string | null) {
+    const spec = this.save.cats.find((c) => c.id === catId);
+    if (!spec) return;
+    if (url) spec.meowUrl = url;
+    else delete spec.meowUrl;
+    this.persist();
+    this.events.onSaveChanged();
   }
 
   // ——— Art Meadow wash bucket: wipe the patio back to a blank canvas ———
@@ -1705,6 +1877,7 @@ export class Game {
       }
     }
     this.burst(this.px, this.py + 0.5, this.pz, '#c8a2e8', 16);
+    if (this.fishing) this.stopFishing(false);
     this.climbing = null;
     this.swimming = false;
     this.pounceVel = null;
@@ -1835,6 +2008,8 @@ export class Game {
   private startClimb(treeId: string) {
     const tree = this.world.trees.find((t) => t.id === treeId);
     if (!tree) return;
+    this.zoomT = 0;
+    this.airJumps = 0;
     this.climbing = { tree, h: Math.max(0.5, this.py - this.world.heightAt(tree.x, tree.z)) };
     this.player.setAction('climb');
     this.audio.climbGrip();
@@ -2838,6 +3013,7 @@ export class Game {
       this.updateAgility(dt);
       this.updateBuildGhost();
     }
+    if (!paused) this.updateFishing(dt);
     this.updateBubbles(dt);
     this.world.updateCritters(dt, this.elapsed, this.px, this.pz, this.sneaking);
     this.world.update(dt, this.elapsed, this.px, this.pz);
@@ -2874,6 +3050,42 @@ export class Game {
       this.waypoint = null;
       this.toast('You made it! ⭐');
       this.audio.success();
+    }
+
+    // collectable toys: walk right up and they're yours forever
+    if (!this.playdate) {
+      for (const t of this.world.toySpawns) {
+        const d = Math.hypot(t.x - this.px, t.z - this.pz);
+        if (d < 1.7 && Math.abs(t.y - this.py) < 2.4) {
+          this.save.toybox.push(t.id);
+          this.world.collectToy(t.id);
+          this.audio.toyFound();
+          this.burst(t.x, t.y + 0.8, t.z, '#ffd54a', 24);
+          const left = TOYS.length - this.save.toybox.length;
+          this.events.onCelebrate(
+            'recruit',
+            `You found ${t.def.name}! ${t.def.icon} ${left > 0 ? `${left} more toys are hidden out there…` : 'THE WHOLE TOYBOX IS COMPLETE!! 🎉'}`
+          );
+          this.persist();
+          this.events.onSaveChanged();
+          break;
+        }
+      }
+    }
+
+    // territory crossings ("Welcome to Frostpaw Tundra!")
+    this.territoryCheckT -= dt;
+    if (this.territoryCheckT <= 0) {
+      this.territoryCheckT = 0.8;
+      const terr = this.world.territoryAt(this.px, this.pz);
+      if (terr) {
+        const name = `${terr.icon} ${terr.name}`;
+        if (name !== this.curTerritory) {
+          this.curTerritory = name;
+          this.toast(`Welcome to ${name}!`);
+          this.emitHud(true);
+        }
+      }
     }
 
     // autosave
@@ -2949,51 +3161,54 @@ export class Game {
     const waterDepth = WATER_LEVEL - groundY;
     const inDeepWater = waterDepth > 0.55;
 
-    // swim state transitions
+    // swim state transitions — every Wilds cat is a champion swimmer
     if (inDeepWater && !this.swimming) {
-      if (spec.traits.canSwim) {
-        this.swimming = true;
-        this.audio.splash();
-        this.burst(this.px, WATER_LEVEL, this.pz, '#9fd8e8', 16);
-        this.tutorialOnce('swim', `${spec.name} loves the water! Some cats are too scared to swim.`);
-      }
+      this.swimming = true;
+      this.airJumps = 0;
+      this.zoomT = 0;
+      this.audio.splash();
+      this.burst(this.px, WATER_LEVEL, this.pz, '#9fd8e8', 16);
+      this.tutorialOnce('swim', `${spec.name} loves the water! Every cat in the Wilds is a great swimmer. 🌊`);
     } else if (!inDeepWater && this.swimming) {
       this.swimming = false;
       this.audio.splash();
       this.burst(this.px, WATER_LEVEL + 0.2, this.pz, '#9fd8e8', 10);
     }
 
+    // ⚡ zoom dash timers
+    this.zoomCooldown = Math.max(0, this.zoomCooldown - dt);
+    if (this.zoomT > 0) {
+      this.zoomT -= dt;
+      if (this.zoomT <= 0) this.emitHud(true);
+    }
+
     let speed = 0;
     if (mag > 0.05 && this.busyT <= 0) {
       this.idleT = 0;
+      if (this.fishing) this.stopFishing(false); // walking away reels the line in
       const runThreshold = 0.72;
       const wantRun = mag > runThreshold && !this.sneaking;
-      const baseSpeed = this.swimming
+      let baseSpeed = this.swimming
         ? 2.4 + spec.traits.speed * 0.1
         : this.sneaking
           ? 1.5
           : wantRun
             ? 5.6 + spec.traits.speed * 0.22
             : 3.0;
+      if (this.zoomT > 0 && !this.swimming && !this.sneaking) {
+        baseSpeed *= 1.85; // ZOOM! super-run
+        if (Math.random() < dt * 14) {
+          this.burst(this.px - this.lastMoveDir.x * 0.6, this.py + 0.35, this.pz - this.lastMoveDir.z * 0.6, '#9ec3e8', 2);
+        }
+      }
       speed = baseSpeed * Math.min(1, mag * 1.3);
 
       // camera-relative direction
       const ang = Math.atan2(jx, jy) + this.camYaw + Math.PI;
       const dx = Math.sin(ang);
       const dz = Math.cos(ang);
-      let nx = this.px + dx * speed * dt;
-      let nz = this.pz + dz * speed * dt;
-
-      // scaredy-cats refuse deep water
-      const nGroundY = this.world.heightAt(nx, nz);
-      if (!spec.traits.canSwim && WATER_LEVEL - nGroundY > 0.5 && this.grounded) {
-        nx = this.px;
-        nz = this.pz;
-        if (this.player.action !== 'sit') {
-          this.player.showEmote('drop', 1.5);
-          this.tutorialOnce('noswim', `${spec.name} is scared of deep water! Switch to a Swimmer cat to reach the islets. 🌊`);
-        }
-      }
+      const nx = this.px + dx * speed * dt;
+      const nz = this.pz + dz * speed * dt;
 
       const solved = this.world.collide(nx, nz, PLAYER_RADIUS, this.py);
       this.px = solved.x;
@@ -3090,6 +3305,7 @@ export class Game {
         this.py = gy;
         this.vy = 0;
         this.grounded = true;
+        this.airJumps = 0;
       } else if (this.py > gy + 0.05) {
         this.grounded = false;
       }
@@ -3226,6 +3442,18 @@ export class Game {
     };
 
     if (!this.climbing && this.busyT <= 0) {
+      // line in the water: the action button is the reel
+      if (this.fishing) {
+        const next: ContextTarget = {
+          kind: 'reel',
+          label: this.fishing.phase === 'bite' ? 'REEL IN!! 🐟' : 'Watch the bobber…',
+          id: 'reel', x: this.fishing.x, z: this.fishing.z,
+        };
+        const changed = JSON.stringify(next) !== JSON.stringify(this.context);
+        this.context = next;
+        if (changed) this.emitHud(true);
+        return;
+      }
       // carrying a kitten: the action button is always "set down"
       if (this.carrying) {
         this.context = { kind: 'setdown', label: `Set ${this.carrying.spec.name} down`, id: this.carrying.spec.id, x: this.px, z: this.pz };
@@ -3305,6 +3533,16 @@ export class Game {
         const bs = this.world.bathSpot;
         const d = Math.hypot(bs.x - this.px, bs.z - this.pz);
         if (d < 2.8) set('bath', 'Bubble bath! 🛁', 'bath', bs.x, bs.z, d, 3);
+      }
+      // fishing at the water's edge, or at a camp fish pond
+      if (!this.swimming && this.grounded && !this.agility.running) {
+        const spot = this.world.fishingSpotNear(this.px, this.pz);
+        if (spot) set('fish', 'Go fishing! 🎣', 'fish', spot.x, spot.z, 1.5, 2);
+        for (const b of this.save.buildings) {
+          if (b.type !== 'pond') continue;
+          const d = Math.hypot(b.x - this.px, b.z - this.pz);
+          if (d < 2.6) set('fish', 'Fish the pond! 🎣', `pond_${b.id}`, b.x, b.z, d, 3);
+        }
       }
       // trees: climb or scratch
       if (!this.swimming && this.grounded) {
@@ -3439,6 +3677,7 @@ export class Game {
     else if (this.swimming) { dist = 7.5; }
     else if (this.mode === 'agility' && this.agility.running) { dist = 7.8; fov = 66; }
     if (this.climbing) { dist = 5.4; pitchBias = -0.1; }
+    if (this.zoomT > 0) fov = 70; // zoom dash feels FAST
 
     const pitch = Math.max(0.05, Math.min(1.25, this.camPitch + pitchBias));
     const cx = this.px - Math.sin(this.camYaw) * Math.cos(pitch) * dist;
@@ -3588,6 +3827,9 @@ export class Game {
           }
         : null,
       paint: this.paint.color,
+      zoom: { active: this.zoomT > 0, ready: this.zoomT <= 0 && this.zoomCooldown <= 0 },
+      fishing: this.fishing ? this.fishing.phase : null,
+      territory: this.curTerritory,
       compass: this.camYaw,
       camp: this.campCompass(),
       rescue: this.rescue

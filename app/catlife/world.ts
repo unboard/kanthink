@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { mulberry32, fbm, irange, hash2 } from './rng';
-import { WORLD_SIZE, WATER_LEVEL, RIVAL_CLANS, BUILDABLES } from './data';
+import { WORLD_SIZE, WATER_LEVEL, RIVAL_CLANS, BUILDABLES, TOYS, TERRITORIES, type TerritoryDef, type ToyDef } from './data';
 import type { BuildingInstance } from './types';
 
 export interface TreeInfo { id: string; x: number; z: number; trunkH: number; r: number; perchY: number }
@@ -41,6 +41,8 @@ export interface Critter {
   phase: number;
 }
 export interface ScratchSpot { id: string; x: number; z: number; label: string }
+export interface ToySpawn { id: string; def: ToyDef; x: number; z: number; y: number; sprite: THREE.Sprite; glow: THREE.Mesh }
+export interface ClimateWeights { forest: number; winter: number; desert: number; mountain: number }
 
 interface Leaf { x: number; y: number; z: number; phase: number; spinX: number; spinY: number; groundT: number }
 
@@ -75,6 +77,16 @@ export class World {
   critters: Critter[] = [];
   scratchSpots: ScratchSpot[] = [];
   buildingMeshes = new Map<string, THREE.Group>();
+  // collectable toys & stuffies hidden around the island
+  toySpawns: ToySpawn[] = [];
+  // the clan house at the player camp — cats can actually walk inside!
+  clanHouse = { x: 0, z: 0, r: 3.3 };
+  private houseFadeMats: THREE.MeshStandardMaterial[] = [];
+  private houseReveal = 0;
+  // territories: the island is split into four soft climate sectors
+  private climateRot: number;
+  private snow!: THREE.Points;
+  private snowFlakes: { ox: number; oz: number; y: number; speed: number; sway: number }[] = [];
 
   sun: THREE.DirectionalLight;
   moon: THREE.DirectionalLight;
@@ -114,6 +126,8 @@ export class World {
 
   constructor(seed: number, scene: THREE.Scene) {
     this.seed = seed;
+    // set before any heightAt call — mountains reshape the terrain
+    this.climateRot = mulRand(seed + 31415) * Math.PI * 2;
     const rng = mulberry32(seed);
 
     // seeded landmarks
@@ -178,6 +192,8 @@ export class World {
     this.fireflies = ff.points;
     this.fireflyBase = ff.base;
     this.group.add(this.fireflies);
+    this.snow = this.buildSnow();
+    this.group.add(this.snow);
 
     this.yarnTexNormal = this.paintYarnTexture('#e05d7e', '#b23a5a');
     this.yarnTexGold = this.paintYarnTexture('#f5cf58', '#c99a1e');
@@ -203,6 +219,34 @@ export class World {
     scene.add(this.group);
   }
 
+  // ——— territories: four soft climate sectors around the island ———
+  climateAt(x: number, z: number): ClimateWeights {
+    const TWO = Math.PI * 2;
+    let a = Math.atan2(z, x) - this.climateRot;
+    a = ((a % TWO) + TWO) % TWO;
+    const w = [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      const center = (i + 0.5) * (Math.PI / 2);
+      let dd = Math.abs(a - center);
+      if (dd > Math.PI) dd = TWO - dd;
+      // full strength inside the sector, smooth blend across the border band
+      w[i] = smoothstep(clamp01(1 - (dd - (Math.PI / 4 - 0.2)) / 0.4));
+    }
+    const sum = w[0] + w[1] + w[2] + w[3] || 1;
+    return { forest: w[0] / sum, winter: w[1] / sum, desert: w[2] / sum, mountain: w[3] / sum };
+  }
+
+  /** the territory you're clearly inside of, or null in a border band */
+  territoryAt(x: number, z: number): TerritoryDef | null {
+    const cl = this.climateAt(x, z);
+    const list: [TerritoryDef['id'], number][] = [
+      ['forest', cl.forest], ['winter', cl.winter], ['desert', cl.desert], ['mountain', cl.mountain],
+    ];
+    list.sort((p, q) => q[1] - p[1]);
+    if (list[0][1] < 0.62) return null;
+    return TERRITORIES.find((t) => t.id === list[0][0]) ?? null;
+  }
+
   // ——— terrain height (analytic; physics uses the same function) ———
   heightAt(x: number, z: number): number {
     const d = Math.hypot(x, z);
@@ -215,6 +259,13 @@ export class World {
     const ridge = 1 - Math.abs(2 * fbm(wx * 0.006, wz * 0.006, this.seed + 99, 3) - 1);
     h += ridge * ridge * 5 * island;
     h += gauss(Math.hypot(x - this.hillC.x, z - this.hillC.z), 55) * 11 * island;
+    // Cloudpeak Mountains: their sector rises into real peaks (kept away from
+    // the lake so the water never dries up)
+    const mtn = this.climateAt(x, z).mountain;
+    if (mtn > 0.01) {
+      const lakeGuard = 1 - gauss(Math.hypot(x - this.lakeC.x, z - this.lakeC.z), 48);
+      h += mtn * island * lakeGuard * (ridge * ridge * 5 + 3);
+    }
     h += (island - 1) * 9;
     h -= gauss(Math.hypot(x - this.lakeC.x, z - this.lakeC.z), 34) * 10;
     for (const it of this.islets) {
@@ -282,6 +333,11 @@ export class World {
     const cRock = new THREE.Color('#8d8d84');
     const cDirt = new THREE.Color('#8a7350');
     const cSea = new THREE.Color('#c9bd8d');
+    const cSnow = new THREE.Color('#eef2f6');
+    const cSnowShade = new THREE.Color('#d6e2ec');
+    const cDesert = new THREE.Color('#e2c584');
+    const cDesertDeep = new THREE.Color('#cfa963');
+    const cMount = new THREE.Color('#8f9488');
     const tmp = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
@@ -297,9 +353,16 @@ export class World {
         1.6,
         -(this.heightAt(x, z + 0.8) - this.heightAt(x, z - 0.8))
       ).normalize().y;
+      const cl = this.climateAt(x, z);
       if (h < WATER_LEVEL - 0.5) tmp.copy(cSea).multiplyScalar(0.8 + n * 0.2);
-      else if (h < WATER_LEVEL + 1.1) tmp.copy(cSand).multiplyScalar(0.92 + n * 0.12);
-      else if (h > 11.5) tmp.copy(cRock).multiplyScalar(0.85 + n * 0.25);
+      else if (h < WATER_LEVEL + 1.1) {
+        tmp.copy(cSand).multiplyScalar(0.92 + n * 0.12);
+        tmp.lerp(cSnow, cl.winter * 0.75); // frosty beaches in the tundra
+      }
+      else if (h > 11.5) {
+        tmp.copy(cRock).multiplyScalar(0.85 + n * 0.25);
+        tmp.lerp(cSnow, cl.winter * 0.8 + cl.mountain * clamp01((h - 13) / 6) * 0.85); // snowcaps
+      }
       else {
         tmp.copy(n > 0.5 ? cGrass : cGrass2);
         if (n2 > 0.62) tmp.lerp(cGrassDry, 0.45);       // sun-dried patches
@@ -307,6 +370,10 @@ export class World {
           tmp.lerp(cForest, 0.6);
           if (n2 < 0.4) tmp.lerp(cDirt, 0.3);           // bare dirt under trees
         }
+        // ——— climate territories tint the land ———
+        if (cl.winter > 0.01) tmp.lerp(n2 > 0.55 ? cSnowShade : cSnow, cl.winter * 0.92);
+        if (cl.desert > 0.01) tmp.lerp(n2 > 0.55 ? cDesertDeep : cDesert, cl.desert * 0.9);
+        if (cl.mountain > 0.01) tmp.lerp(cMount, cl.mountain * 0.45);
         if (slopeY < 0.82) tmp.lerp(cRock, clamp01((0.82 - slopeY) * 4)); // cliffs
         tmp.multiplyScalar(0.88 + n * 0.22);
       }
@@ -562,13 +629,21 @@ export class World {
         const x = gx + (hash2(gx, gz, this.seed + 5) - 0.5) * step * 0.9;
         const z = gz + (hash2(gx, gz, this.seed + 6) - 0.5) * step * 0.9;
         const h = this.heightAt(x, z);
-        if (h < 1.2 || h > 10.5) continue;
+        if (h < 1.2 || h > 12.5) continue;
         const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
-        const p = forest > 0.56 ? 0.78 : forest > 0.48 ? 0.2 : 0.035;
+        let p = forest > 0.56 ? 0.78 : forest > 0.48 ? 0.2 : 0.035;
+        // climates reshape the woods: lush forest sector, sparse tundra pines,
+        // near-treeless desert (cacti live there instead), open mountain slopes
+        const cl = this.climateAt(x, z);
+        p *= 1 + cl.forest * 1.6;
+        p *= 1 - cl.desert * 0.96;
+        p *= 1 - cl.mountain * 0.45;
+        p *= 1 - cl.winter * 0.3;
         if (hash2(gx, gz, this.seed + 7) > p) continue;
         if (this.nearPad(x, z, 4)) continue;
         const tR = hash2(gx, gz, this.seed + 9);
-        const type: TreeType = h > 7 || tR < 0.28 ? 'pine' : tR < 0.4 ? 'birch' : 'oak';
+        let type: TreeType = h > 7 || tR < 0.28 ? 'pine' : tR < 0.4 ? 'birch' : 'oak';
+        if (cl.winter > 0.45 || cl.mountain > 0.45) type = 'pine';
         treeSpots.push({ x, z, s: 0.75 + hash2(gx, gz, this.seed + 8) * 0.7, type });
       }
     }
@@ -627,9 +702,11 @@ export class World {
     const col = new THREE.Color();
     let brownI = 0, birchI = 0, folI = 0, pineI = 0;
 
+    const snowDust = new THREE.Color('#e6edf4');
     for (let i = 0; i < treeSpots.length; i++) {
       const t = treeSpots[i];
       const h = this.heightAt(t.x, t.z);
+      const winterW = this.climateAt(t.x, t.z).winter;
       const isPine = t.type === 'pine';
       const trunkH = (isPine ? 2.6 : 3.4) * t.s + 1.2;
       const yaw = hash2(i, 1, this.seed) * Math.PI * 2;
@@ -649,6 +726,7 @@ export class World {
           m.compose(new THREE.Vector3(t.x, fy, t.z), qUp, vs.set(fr, fr * 1.15, fr));
           pineFol.setMatrixAt(pineI, m);
           col.setHSL(hue, 0.4, 0.22 + hash2(i, 30 + j, this.seed) * 0.09 + j * 0.02);
+          col.lerp(snowDust, winterW * 0.65); // snow-dusted tundra pines
           pineFol.setColorAt(pineI, col);
           pineI++;
         }
@@ -689,6 +767,7 @@ export class World {
           );
           foliage.setMatrixAt(folI, m);
           col.setHSL(hue, isBirch ? 0.5 : 0.45, light + j * 0.03);
+          col.lerp(snowDust, winterW * 0.5); // frosted canopies near the tundra border
           foliage.setColorAt(folI, col);
           folI++;
         }
@@ -740,6 +819,8 @@ export class World {
       if (h < 1.2 || h > 8) continue;
       const meadow = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
       if (meadow > 0.52) continue;
+      const clF = this.climateAt(x, z);
+      if (clF.desert > 0.4 || clF.winter > 0.4) continue; // no wildflowers in sand or snow
       m.compose(new THREE.Vector3(x, h, z), q.identity(), vs.setScalar(0.8 + mulRand(this.seed + i) * 0.7));
       flowers.setMatrixAt(fli, m);
       col.set(petalCols[Math.floor(mulRand(this.seed + 6000 + i) * petalCols.length)]);
@@ -804,6 +885,52 @@ export class World {
     }
     ferns.count = fi2;
     this.group.add(ferns);
+
+    // ——— Sunscorch Desert: friendly saguaro cacti ———
+    const cactusN = 46;
+    const bodyGeo = new THREE.CylinderGeometry(0.26, 0.32, 1.7, 9);
+    bodyGeo.translate(0, 0.85, 0);
+    const armGeo = new THREE.CylinderGeometry(0.14, 0.16, 0.85, 8);
+    armGeo.translate(0, 0.42, 0);
+    const cactusMat = new THREE.MeshStandardMaterial({ roughness: 0.9 });
+    const bodies = new THREE.InstancedMesh(bodyGeo, cactusMat, cactusN);
+    bodies.castShadow = true;
+    const arms = new THREE.InstancedMesh(armGeo, cactusMat, cactusN * 2);
+    const bloomGeo = new THREE.SphereGeometry(0.12, 6, 5);
+    const blooms = new THREE.InstancedMesh(bloomGeo, new THREE.MeshStandardMaterial({ color: '#f2a7c3', roughness: 0.8 }), cactusN);
+    let cci = 0, cai = 0, cbi = 0;
+    for (let i = 0; i < cactusN * 6 && cci < cactusN; i++) {
+      const x = (mulRand(this.seed + 40000 + i * 3) - 0.5) * 290;
+      const z = (mulRand(this.seed + 40000 + i * 3 + 1) - 0.5) * 290;
+      const h = this.heightAt(x, z);
+      if (h < 1.2 || h > 9 || this.nearPad(x, z, 3)) continue;
+      if (this.climateAt(x, z).desert < 0.55) continue;
+      const sc = 0.8 + mulRand(this.seed + 41000 + i) * 0.9;
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), mulRand(this.seed + 42000 + i) * Math.PI * 2);
+      m.compose(new THREE.Vector3(x, h, z), q, vs.set(sc, sc, sc));
+      bodies.setMatrixAt(cci, m);
+      col.setHSL(0.33, 0.32 + mulRand(this.seed + 43000 + i) * 0.12, 0.3 + mulRand(this.seed + 44000 + i) * 0.08);
+      bodies.setColorAt(cci, col);
+      // two little arms partway up
+      for (const side of [-1, 1] as const) {
+        const ax = x + side * 0.34 * sc;
+        m.compose(new THREE.Vector3(ax, h + 0.75 * sc, z), q, vs.set(sc, sc, sc));
+        arms.setMatrixAt(cai, m);
+        arms.setColorAt(cai, col);
+        cai++;
+      }
+      // some cacti wear a pink bloom on top
+      if (mulRand(this.seed + 45000 + i) < 0.4) {
+        m.compose(new THREE.Vector3(x, h + 1.72 * sc, z), q, vs.set(sc, sc, sc));
+        blooms.setMatrixAt(cbi++, m);
+      }
+      this.rocks.push({ x, z, r: 0.45 * sc }); // ouch — don't run through a cactus
+      cci++;
+    }
+    bodies.count = cci;
+    arms.count = cai;
+    blooms.count = cbi;
+    this.group.add(bodies, arms, blooms);
   }
 
   /** re-scatter the grass disc around the player (deterministic hash grid) */
@@ -836,6 +963,10 @@ export class World {
         if (forest > 0.58 && h1 > 0.45) continue; // sparser under trees
         if (this.nearPad(x, z, -2) && hash2(cx, cz, this.seed + 23) > 0.35) continue; // trimmed lawns at camps
         if (Math.hypot(x - this.artCenter.x, z - this.artCenter.z) < this.ART_HALF + 0.5) continue; // no grass through the art patio
+        // climates thin the grass: bare sand in the desert, sparse frosty tufts in the tundra
+        const clG = this.climateAt(x, z);
+        if (clG.desert > 0.5 && hash2(cx, cz, this.seed + 27) > 0.12) continue;
+        if (clG.winter > 0.5 && hash2(cx, cz, this.seed + 28) > 0.45) continue;
         q.setFromAxisAngle(up, h1 * Math.PI * 2);
         const fade = 1 - Math.pow(dd / R, 2.4) * 0.8; // sink into the ground toward the disc edge
         const sc = (0.95 + hash2(cx, cz, this.seed + 24) * 0.95) * Math.max(0.15, fade);
@@ -847,6 +978,8 @@ export class World {
           dry ? 0.5 : 0.55,
           dry ? 0.27 : 0.27 + hash2(cx, cz, this.seed + 26) * 0.11
         );
+        if (clG.winter > 0.2) col.lerp(FROST_GRASS, clG.winter * 0.8);   // frosty
+        if (clG.desert > 0.2) col.lerp(STRAW_GRASS, clG.desert * 0.85);  // dry straw
         this.grassMesh.setColorAt(gi, col);
         gi++;
       }
@@ -1122,6 +1255,59 @@ export class World {
     return { points: new THREE.Points(g, mat), base };
   }
 
+  // ——— snowfall in the Frostpaw Tundra ———
+  private buildSnow(): THREE.Points {
+    const N = 170;
+    const posArr = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      this.snowFlakes.push({
+        ox: (Math.random() - 0.5) * 46,
+        oz: (Math.random() - 0.5) * 46,
+        y: Math.random() * 16,
+        speed: 1.1 + Math.random() * 1.4,
+        sway: Math.random() * 10,
+      });
+      posArr[i * 3 + 1] = -999;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    const mat = new THREE.PointsMaterial({
+      color: '#ffffff', size: 0.14, transparent: true, opacity: 0, depthWrite: false,
+    });
+    const pts = new THREE.Points(g, mat);
+    pts.frustumCulled = false;
+    return pts;
+  }
+
+  private updateSnow(dt: number, time: number, px: number, pz: number) {
+    const winter = this.climateAt(px, pz).winter;
+    const mat = this.snow.material as THREE.PointsMaterial;
+    mat.opacity += (clamp01(winter * 1.6) * 0.9 - mat.opacity) * Math.min(1, dt * 2);
+    if (mat.opacity < 0.02) {
+      this.snow.visible = false;
+      return;
+    }
+    this.snow.visible = true;
+    const baseY = this.heightAt(px, pz);
+    const pos = this.snow.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < this.snowFlakes.length; i++) {
+      const f = this.snowFlakes[i];
+      f.y -= f.speed * dt;
+      if (f.y < -2) {
+        f.y = 13 + Math.random() * 5;
+        f.ox = (Math.random() - 0.5) * 46;
+        f.oz = (Math.random() - 0.5) * 46;
+      }
+      pos.setXYZ(
+        i,
+        px + f.ox + Math.sin(time * 0.8 + f.sway) * 0.7,
+        baseY + f.y,
+        pz + f.oz + Math.cos(time * 0.6 + f.sway * 1.3) * 0.7
+      );
+    }
+    pos.needsUpdate = true;
+  }
+
   private buildDigMounds(rng: () => number) {
     const moundGeo = new THREE.SphereGeometry(0.7, 10, 6);
     const moundMat = new THREE.MeshStandardMaterial({ color: '#7d5b3c', roughness: 1 });
@@ -1298,6 +1484,106 @@ export class World {
     ring.rotation.x = Math.PI / 2;
     ring.position.set(pc.x, h + 0.06, pc.z);
     this.group.add(ring);
+
+    // ——— the Clan House: a real little home the cats can walk inside ———
+    {
+      const hx = pc.x + 7.5, hz = pc.z - 3;
+      const hh = this.heightAt(hx, hz);
+      const R = 3.3;
+      const wallH = 2.3;
+      this.clanHouse = { x: hx, z: hz, r: R };
+      const hg = new THREE.Group();
+      hg.position.set(hx, hh, hz);
+      // door faces the camp circle so kids naturally walk in
+      hg.rotation.y = Math.atan2(pc.x - hx, pc.z - hz);
+      const doorHalf = 0.52; // half-width of the door gap, radians
+
+      const wallMat = new THREE.MeshStandardMaterial({ color: '#a3805a', roughness: 0.95, side: THREE.DoubleSide, transparent: true });
+      const wall = new THREE.Mesh(
+        new THREE.CylinderGeometry(R, R + 0.12, wallH, 20, 1, true, doorHalf, Math.PI * 2 - doorHalf * 2),
+        wallMat
+      );
+      wall.position.y = wallH / 2;
+      wall.castShadow = true;
+      hg.add(wall);
+      const roofMat = new THREE.MeshStandardMaterial({ color: '#8a5a3a', roughness: 1, flatShading: true, transparent: true });
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(R + 0.9, 2.5, 12), roofMat);
+      roof.position.y = wallH + 1.2;
+      roof.castShadow = true;
+      hg.add(roof);
+      this.houseFadeMats = [wallMat, roofMat];
+      // door frame posts
+      const post = new THREE.MeshStandardMaterial({ color: '#6e5136', roughness: 1 });
+      for (const s of [-1, 1]) {
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, wallH + 0.15, 8), post);
+        p.position.set(Math.sin(s * doorHalf) * R, (wallH + 0.15) / 2, Math.cos(s * doorHalf) * R);
+        hg.add(p);
+      }
+      // cozy inside: wood floor, a round rug, nap cushions, a yarn basket, a lantern
+      const floor = new THREE.Mesh(
+        new THREE.CircleGeometry(R - 0.05, 20),
+        new THREE.MeshStandardMaterial({ color: '#b08d57', roughness: 0.9 })
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = 0.05;
+      hg.add(floor);
+      const rug = new THREE.Mesh(
+        new THREE.CircleGeometry(1.6, 18),
+        new THREE.MeshStandardMaterial({ color: '#c05c7a', roughness: 1 })
+      );
+      rug.rotation.x = -Math.PI / 2;
+      rug.position.y = 0.09;
+      hg.add(rug);
+      const cushionCols = ['#9ec97f', '#85c1e9', '#f5d76e'];
+      cushionCols.forEach((cc, i) => {
+        const a = 2 + i * 1.5;
+        const cush = new THREE.Mesh(
+          new THREE.SphereGeometry(0.5, 10, 7),
+          new THREE.MeshStandardMaterial({ color: cc, roughness: 1 })
+        );
+        cush.scale.set(1, 0.35, 1);
+        cush.position.set(Math.sin(a) * 1.9, 0.16, Math.cos(a) * 1.9);
+        hg.add(cush);
+      });
+      const basket = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.55, 0.4, 0.45, 10, 1, true),
+        new THREE.MeshStandardMaterial({ color: '#b08d57', roughness: 1, side: THREE.DoubleSide })
+      );
+      basket.position.set(Math.sin(4.4) * 1.9, 0.24, Math.cos(4.4) * 1.9);
+      hg.add(basket);
+      const yb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.26, 10, 8),
+        new THREE.MeshStandardMaterial({ map: this.yarnTexNormal, roughness: 0.7 })
+      );
+      yb.position.set(basket.position.x, 0.5, basket.position.z);
+      hg.add(yb);
+      const bulb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 8, 6),
+        new THREE.MeshStandardMaterial({ color: '#ffd97a', emissive: '#ffb830', emissiveIntensity: 1.1 })
+      );
+      bulb.position.set(0, wallH - 0.5, 0);
+      hg.add(bulb);
+      const houseLight = new THREE.PointLight('#ffc860', 0, 9, 2);
+      houseLight.position.set(0, wallH - 0.6, 0);
+      hg.add(houseLight);
+      this.campLights.push(houseLight);
+      this.group.add(hg);
+
+      // the wall is real: a ring of blockers with a gap right at the doorway
+      const yaw = hg.rotation.y;
+      for (let k = 0; k < 16; k++) {
+        const theta = (k / 16) * Math.PI * 2 - Math.PI;
+        if (Math.abs(theta) < doorHalf + 0.28) continue; // the doorway stays open
+        this.rocks.push({
+          x: hx + Math.sin(yaw + theta) * R,
+          z: hz + Math.cos(yaw + theta) * R,
+          r: 0.62,
+          topY: hh + wallH, // clear the wall top and you sail right over
+        });
+      }
+      // and the roof is a perch — leap up top and survey your kingdom
+      this.platforms.push({ x: hx, z: hz, r: 2.4, topY: hh + wallH + 0.7 });
+    }
 
     // ——— bubble bath tub: a wooden barrel of warm sudsy water ———
     const bx = pc.x - 6.5, bz = pc.z - 5;
@@ -1705,6 +1991,8 @@ export class World {
     });
   }
 
+  private cragsC = { x: 0, z: 0 };
+
   /** Boulder Crags: a free-play parkour cluster of flat-top pillars to bound up. */
   private buildCrags() {
     const c = this.agilityCenter;
@@ -1712,6 +2000,7 @@ export class World {
     // opposite side of the pad from the Cat Tower
     const cx = c.x + Math.cos(dir - Math.PI / 2) * 17;
     const cz = c.z + Math.sin(dir - Math.PI / 2) * 17;
+    this.cragsC = { x: cx, z: cz };
     const stone = new THREE.MeshStandardMaterial({ color: '#98948a', roughness: 1, flatShading: true });
     const N = 12;
     for (let i = 0; i < N; i++) {
@@ -1930,6 +2219,122 @@ export class World {
         this.group.add(flag);
       }
     }
+  }
+
+  // ——— collectable toys & stuffies ———
+
+  /** each toy has a home spot tied to an island landmark */
+  private toySpotFor(id: string): { x: number; z: number; y?: number } {
+    const pc = this.playerCamp;
+    switch (id) {
+      case 'teddy': return { x: pc.x - 10, z: pc.z + 9 };
+      case 'toymouse': return { x: this.agilityCenter.x + 7, z: this.agilityCenter.z + 6 };
+      case 'ball': return { x: this.hillC.x + 2, z: this.hillC.z - 2 };
+      case 'ribbon': return { x: this.artCenter.x + 2, z: this.artCenter.z + this.ART_HALF + 3 };
+      case 'bell': return this.towerTop
+        ? { x: this.towerTop.x, z: this.towerTop.z, y: this.towerTop.topY }
+        : { x: this.agilityCenter.x - 8, z: this.agilityCenter.z };
+      case 'dino': return { x: this.cragsC.x + 1.5, z: this.cragsC.z + 1.5 };
+      case 'unicorn': return { x: this.islets[0]?.x ?? 40, z: (this.islets[0]?.z ?? 40) + 2 };
+      case 'robot': return { x: (this.camps[0]?.x ?? 60) + 6, z: (this.camps[0]?.z ?? 60) + 4 };
+      case 'crown': {
+        const cliff = this.courses.find((cs) => cs.id === 'cliff');
+        const g = cliff?.gates[cliff.gates.length - 1];
+        return g ? { x: g.x + 2, z: g.z } : { x: this.hillC.x - 4, z: this.hillC.z + 4 };
+      }
+      case 'bunny': {
+        // deepest, greenest woods on the island
+        let best = { x: pc.x + 25, z: pc.z + 25 };
+        let bestScore = -99;
+        for (let i = 0; i < 160; i++) {
+          const x = (mulRand(this.seed + 60000 + i * 2) - 0.5) * 260;
+          const z = (mulRand(this.seed + 60001 + i * 2) - 0.5) * 260;
+          const h = this.heightAt(x, z);
+          if (h < 1.5 || h > 9) continue;
+          const score = fbm(x * 0.02, z * 0.02, this.seed + 313, 3) + this.climateAt(x, z).forest;
+          if (score > bestScore) { bestScore = score; best = { x, z }; }
+        }
+        return best;
+      }
+      case 'ducky': {
+        // on the lake shore
+        for (let d = 6; d < 50; d += 2) {
+          const x = this.lakeC.x + d, z = this.lakeC.z + d * 0.3;
+          if (this.heightAt(x, z) > WATER_LEVEL + 0.3) return { x, z };
+        }
+        return { x: this.lakeC.x + 40, z: this.lakeC.z };
+      }
+      case 'octopus': {
+        // washed up on a beach somewhere around the coast
+        for (let i = 0; i < 240; i++) {
+          const a = mulRand(this.seed + 70000 + i) * Math.PI * 2;
+          const d = 150 + mulRand(this.seed + 71000 + i) * 90;
+          const x = Math.cos(a) * d, z = Math.sin(a) * d;
+          const h = this.heightAt(x, z);
+          if (h > WATER_LEVEL + 0.25 && h < WATER_LEVEL + 0.9) return { x, z };
+        }
+        return { x: pc.x + 20, z: pc.z - 20 };
+      }
+      default: return { x: pc.x, z: pc.z };
+    }
+  }
+
+  /** drop every not-yet-found toy into the world as a floating sparkly sprite */
+  spawnToyCollectables(foundIds: string[]) {
+    for (const t of this.toySpawns) {
+      this.group.remove(t.sprite, t.glow);
+    }
+    this.toySpawns = [];
+    const found = new Set(foundIds);
+    for (const def of TOYS) {
+      if (found.has(def.id)) continue;
+      const spot = this.toySpotFor(def.id);
+      const y = spot.y ?? this.heightAt(spot.x, spot.z);
+      // emoji sprite — reads instantly, costs nothing
+      const c = document.createElement('canvas');
+      c.width = 128; c.height = 128;
+      const ctx = c.getContext('2d')!;
+      ctx.font = '96px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.icon, 64, 70);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+      sprite.scale.set(1.15, 1.15, 1);
+      sprite.position.set(spot.x, y + 0.75, spot.z);
+      this.group.add(sprite);
+      const glow = new THREE.Mesh(
+        new THREE.TorusGeometry(0.7, 0.07, 6, 20),
+        new THREE.MeshBasicMaterial({ color: '#ffd54a', transparent: true, opacity: 0.3, depthWrite: false })
+      );
+      glow.rotation.x = Math.PI / 2;
+      glow.position.set(spot.x, y + 0.15, spot.z);
+      this.group.add(glow);
+      this.toySpawns.push({ id: def.id, def, x: spot.x, z: spot.z, y, sprite, glow });
+    }
+  }
+
+  collectToy(id: string) {
+    const t = this.toySpawns.find((ts) => ts.id === id);
+    if (!t) return;
+    this.group.remove(t.sprite, t.glow);
+    (t.sprite.material as THREE.SpriteMaterial).map?.dispose();
+    t.sprite.material.dispose();
+    this.toySpawns = this.toySpawns.filter((ts) => ts !== t);
+  }
+
+  /** nearest deep-enough water within casting range — where the bobber lands */
+  fishingSpotNear(x: number, z: number): { x: number; z: number } | null {
+    for (const d of [2.4, 3.6, 5, 6.5]) {
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const fx = x + Math.cos(a) * d;
+        const fz = z + Math.sin(a) * d;
+        if (this.heightAt(fx, fz) < WATER_LEVEL - 0.7) return { x: fx, z: fz };
+      }
+    }
+    return null;
   }
 
   // ——— critters ———
@@ -2298,6 +2703,22 @@ export class World {
     }
 
     this.updateLeaves(dt, time, playerX, playerZ);
+    this.updateSnow(dt, time, playerX, playerZ);
+
+    // fade the clan-house shell away while a cat is inside so the camera can see
+    {
+      const inside = Math.hypot(playerX - this.clanHouse.x, playerZ - this.clanHouse.z) < this.clanHouse.r + 1.2;
+      const target = inside ? 0.16 : 1;
+      this.houseReveal += (target - this.houseReveal) * Math.min(1, dt * 6);
+      for (const mm of this.houseFadeMats) mm.opacity = this.houseReveal;
+    }
+
+    // toys bob and shimmer so kids spot them from a distance
+    for (const t of this.toySpawns) {
+      t.sprite.position.y = t.y + 0.75 + Math.sin(time * 2 + t.x) * 0.12;
+      t.glow.rotation.y = time * 1.4;
+      (t.glow.material as THREE.MeshBasicMaterial).opacity = 0.22 + Math.sin(time * 3 + t.z) * 0.1;
+    }
 
     // firefly drift
     const fp = this.fireflies.geometry.attributes.position as THREE.BufferAttribute;
@@ -2380,6 +2801,18 @@ export class World {
           const forest = fbm(x * 0.02, z * 0.02, this.seed + 313, 3);
           if (forest > 0.56) { r = 77; g = 124; b = 58; }               // forest
           else { r = 121; g = 168; b = 84; }                            // meadow
+          // climate territories show on the map
+          const cl = this.climateAt(x, z);
+          r = r * (1 - cl.winter) + 232 * cl.winter;
+          g = g * (1 - cl.winter) + 238 * cl.winter;
+          b = b * (1 - cl.winter) + 244 * cl.winter;
+          r = r * (1 - cl.desert) + 224 * cl.desert;
+          g = g * (1 - cl.desert) + 196 * cl.desert;
+          b = b * (1 - cl.desert) + 130 * cl.desert;
+          const mw = cl.mountain * 0.55;
+          r = r * (1 - mw) + 148 * mw;
+          g = g * (1 - mw) + 150 * mw;
+          b = b * (1 - mw) + 140 * mw;
           const n = fbm(x * 0.05, z * 0.05, this.seed + 77, 3);
           const m = 0.86 + n * 0.24;
           r *= m; g *= m; b *= m;
@@ -2403,6 +2836,9 @@ export class World {
     return best;
   }
 }
+
+const FROST_GRASS = new THREE.Color('#cfdde8');
+const STRAW_GRASS = new THREE.Color('#c9b060');
 
 function mulRand(seed: number): number {
   let t = (seed + 0x6d2b79f5) | 0;

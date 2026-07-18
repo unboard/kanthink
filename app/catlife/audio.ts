@@ -138,6 +138,29 @@ export class AudioEngine {
     this.sweep(300, 620, 0.12, 0.1, 'sine');
   }
 
+  superJump() {
+    this.sweep(280, 980, 0.24, 0.13, 'sine');
+    this.chime([880, 1174.7], 0.05, 0.1);
+  }
+
+  zoomWhoosh() {
+    this.noiseBurst(0.5, 2200, 0.13, 0.08);
+    this.sweep(220, 760, 0.4, 0.09, 'sine');
+  }
+
+  castPlunk() {
+    this.sweep(620, 210, 0.18, 0.11, 'sine');
+    this.noiseBurst(0.16, 1100, 0.1, 0.01);
+  }
+
+  biteAlert() {
+    this.chime([980, 1320], 0.04, 0.16);
+  }
+
+  toyFound() {
+    this.chime([659.3, 880, 1108.7, 1318.5], 0.1, 0.18);
+  }
+
   land() {
     this.noiseBurst(0.09, 500, 0.1, 0.002);
   }

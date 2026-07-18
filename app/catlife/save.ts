@@ -31,6 +31,8 @@ export function newSave(seed: number, clanName: string, firstCatSeed: number): S
     unlockedPatterns: ['solid', 'tabby', 'spots', 'tuxedo', 'calico', 'siamese'],
     unlockedAccessories: ['none', 'heartcollar'],
     treats: 0,
+    fish: {},
+    toybox: [],
     soundOn: true,
     musicOn: true,
     tutorialDone: [],
@@ -52,6 +54,13 @@ export function migrateSave(data: SaveData | null): SaveData | null {
   for (const k of data.kittens) if (!k.gender) k.gender = genderOf(k);
   // Style Studio update: everyone starts with the heart collar unlocked
   if (!data.unlockedAccessories.includes('heartcollar')) data.unlockedAccessories.push('heartcollar');
+  // fear of water is gone — every cat in the Wilds can swim now
+  for (const c of data.cats) c.traits.canSwim = true;
+  for (const k of data.kittens) k.traits.canSwim = true;
+  for (const n of data.nursery) n.spec.traits.canSwim = true;
+  // fishing + toybox update
+  if (!data.fish || typeof data.fish !== 'object') data.fish = {};
+  if (!Array.isArray(data.toybox)) data.toybox = [];
   return data;
 }
 

@@ -213,7 +213,6 @@ let catCounter = 0;
 
 export function generateCat(seed: number, clanId: string, opts?: {
   paletteIdx?: number;
-  forceSwim?: boolean;
   minStat?: number;
   name?: string;
   idOverride?: string;   // stable id for rival cats (records persist across sessions)
@@ -232,9 +231,9 @@ export function generateCat(seed: number, clanId: string, opts?: {
     accentColor: pick(rng, ACCENT_COLORS),
   };
   const minStat = opts?.minStat ?? 2;
-  const canSwim = opts?.forceSwim ?? rng() < 0.45;
+  rng(); // burn the old canSwim roll so existing cats keep their look & stats
   const traits = {
-    canSwim,
+    canSwim: true, // every Wilds cat is a proud swimmer now
     brave: rng() < 0.5,
     sneaky: rng() < 0.5,
     speed: irange(rng, minStat, 8),
@@ -341,6 +340,83 @@ export const PATTERN_LABELS: Record<PatternId, string> = {
   star: 'Starfur ✨',
   moon: 'Moonfur 🌙',
 };
+
+// ——— Fishing: species pool — every catch rolls its own size ———
+export interface FishSpeciesDef {
+  id: string;
+  name: string;
+  icon: string;
+  rarity: 'common' | 'uncommon' | 'rare' | 'legendary';
+  minCm: number;
+  maxCm: number;
+  blurb: string; // one line for the collection page
+}
+
+export const FISH_SPECIES: readonly FishSpeciesDef[] = [
+  { id: 'sunny', name: 'Sunny Perch', icon: '🐟', rarity: 'common', minCm: 8, maxCm: 22, blurb: 'Glitters like a little sunbeam.' },
+  { id: 'minnow', name: 'Pebble Minnow', icon: '🐟', rarity: 'common', minCm: 4, maxCm: 9, blurb: 'Tiny, quick, and very proud of it.' },
+  { id: 'bluegill', name: 'Bluegill Whiskerfish', icon: '🐠', rarity: 'common', minCm: 10, maxCm: 25, blurb: 'Has whiskers almost as fine as a cat’s.' },
+  { id: 'trout', name: 'Rainbow Trout', icon: '🐠', rarity: 'uncommon', minCm: 18, maxCm: 45, blurb: 'Wears every color of the sky after rain.' },
+  { id: 'bass', name: 'Bramble Bass', icon: '🐟', rarity: 'uncommon', minCm: 22, maxCm: 50, blurb: 'Grumpy, splashy, and fun to catch.' },
+  { id: 'catfish', name: 'Catfish (a cousin?!)', icon: '🐡', rarity: 'uncommon', minCm: 25, maxCm: 60, blurb: 'It meowed. It definitely meowed.' },
+  { id: 'koi', name: 'Golden Koi', icon: '🎏', rarity: 'rare', minCm: 30, maxCm: 70, blurb: 'A living treasure of the lake.' },
+  { id: 'moonfish', name: 'Moonfish', icon: '🌙', rarity: 'rare', minCm: 20, maxCm: 40, blurb: 'Glows softly. Only nibbles for patient cats.' },
+  { id: 'shimmerfin', name: 'Rainbow Shimmerfin', icon: '✨', rarity: 'legendary', minCm: 40, maxCm: 90, blurb: 'The legend every clan tells kittens about.' },
+] as const;
+
+export const RARITY_LABELS: Record<FishSpeciesDef['rarity'], string> = {
+  common: 'Common', uncommon: 'Uncommon', rare: 'Rare ✨', legendary: 'LEGENDARY 🌈',
+};
+
+/** roll a catch: rarity-weighted species + a size somewhere in its range */
+export function rollFish(rand: () => number): { species: FishSpeciesDef; size: number } {
+  const roll = rand();
+  const rarity: FishSpeciesDef['rarity'] =
+    roll < 0.55 ? 'common' : roll < 0.83 ? 'uncommon' : roll < 0.97 ? 'rare' : 'legendary';
+  const pool = FISH_SPECIES.filter((f) => f.rarity === rarity);
+  const species = pool[Math.floor(rand() * pool.length)] ?? FISH_SPECIES[0];
+  // most fish are middling; the occasional whopper
+  const t = Math.pow(rand(), 1.6);
+  const size = Math.round((species.minCm + (species.maxCm - species.minCm) * t) * 10) / 10;
+  return { species, size };
+}
+
+// ——— Collectables: toys & stuffies hidden all over the island ———
+export interface ToyDef {
+  id: string;
+  name: string;
+  icon: string;
+  hint: string; // where to look, in kid language
+}
+
+export const TOYS: readonly ToyDef[] = [
+  { id: 'teddy', name: 'Buttons the Teddy', icon: '🧸', hint: 'Napping near your camp.' },
+  { id: 'bunny', name: 'Flopsy the Bunny Stuffy', icon: '🐰', hint: 'Lost in the deep forest.' },
+  { id: 'ducky', name: 'Rubber Ducky', icon: '🐤', hint: 'Bobbing near the lake shore.' },
+  { id: 'toymouse', name: 'Wind-up Mouse', icon: '🐭', hint: 'Hiding by the agility course.' },
+  { id: 'ball', name: 'Bouncy Star Ball', icon: '⭐', hint: 'Rolled to the top of the big hill.' },
+  { id: 'ribbon', name: 'Royal Ribbon', icon: '🎀', hint: 'Fluttering at the Art Meadow.' },
+  { id: 'bell', name: 'Jingle Bell', icon: '🔔', hint: 'Somewhere high on the Cat Tower.' },
+  { id: 'dino', name: 'Rex the Dino Stuffy', icon: '🦖', hint: 'Guarding the boulder crags.' },
+  { id: 'unicorn', name: 'Sparkle the Unicorn', icon: '🦄', hint: 'Waiting on a faraway islet.' },
+  { id: 'robot', name: 'Beep-Boop Robot', icon: '🤖', hint: 'Watching a rival camp.' },
+  { id: 'octopus', name: 'Inky the Octopus', icon: '🐙', hint: 'Washed up on a sandy beach.' },
+  { id: 'crown', name: 'Tiny Crown', icon: '👑', hint: 'Only the bravest climber will find it.' },
+] as const;
+
+// ——— Territories: four climates share the island ———
+export interface TerritoryDef {
+  id: 'forest' | 'winter' | 'desert' | 'mountain';
+  name: string;
+  icon: string;
+}
+
+export const TERRITORIES: readonly TerritoryDef[] = [
+  { id: 'forest', name: 'Whisperwood Forest', icon: '🌲' },
+  { id: 'winter', name: 'Frostpaw Tundra', icon: '❄️' },
+  { id: 'desert', name: 'Sunscorch Desert', icon: '🌵' },
+  { id: 'mountain', name: 'Cloudpeak Mountains', icon: '⛰️' },
+] as const;
 
 export const ACCESSORY_LABELS: Record<AccessoryId, string> = {
   none: 'None',

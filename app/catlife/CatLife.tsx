@@ -11,11 +11,12 @@ import StyleStudio from './StyleStudio';
 import { loadSave, migrateSave, newSave, persistSave, clearSave } from './save';
 import {
   getAccount, clearAccount, signup, login as cloudLogin, fetchCloudSave,
-  flushCloudPush, getSyncState, onSyncState, type SyncState,
+  flushCloudPush, getSyncState, onSyncState, uploadMeow, type SyncState,
 } from './cloud';
 import {
   generateCat, rankFor, rankProgress, xpForLevel, clanCapacity,
   BUILDABLES, RANKS, RIVAL_CLANS, PATTERN_LABELS, ACCESSORY_LABELS,
+  FISH_SPECIES, RARITY_LABELS, TOYS,
 } from './data';
 import type {
   AccessoryId, CatSpec, ChallengeState, DuelState, HudState, PatternId, SaveData, ToastMsg,
@@ -159,7 +160,7 @@ function IntroScreen({ onStart }: { onStart: (s: SaveData) => void }) {
           </div>
           <div className="mt-1 flex flex-wrap justify-center gap-1.5">
             <Chip text="Girl 🎀" tone="gold" />
-            <Chip text={kitten.traits.canSwim ? 'Swimmer 🌊' : 'Scaredy-cat 💧'} />
+            <Chip text="Swimmer 🌊" />
             <Chip text={kitten.traits.brave ? 'Brave 🦁' : 'Gentle 🌼'} />
             <Chip text={PATTERN_LABELS[kitten.coat.pattern]} />
           </div>
@@ -372,6 +373,14 @@ function PlayScreen({ save }: { save: SaveData }) {
       {duel && game && <DuelOverlay duel={duel} game={game} />}
       {challenge && game && <ChallengeOverlay c={challenge} game={game} />}
 
+      {/* FISH ON! */}
+      {hud?.fishing === 'bite' && (
+        <div className="pointer-events-none absolute left-1/2 top-24 z-30 -translate-x-1/2 rounded-2xl px-6 py-2.5 text-xl font-bold text-white shadow-xl"
+          style={{ background: ROSE, fontFamily: 'var(--font-fraunces)', animation: 'ww-pulse 0.5s infinite' }}>
+          🎣 FISH ON! Tap REEL IN!
+        </div>
+      )}
+
       {/* celebration banner */}
       {celebrate && (
         <div className="pointer-events-none absolute left-1/2 top-16 z-40 -translate-x-1/2 rounded-2xl px-6 py-3 text-center text-lg font-bold text-white shadow-xl"
@@ -544,6 +553,9 @@ function ActionCluster({ hud, gameRef }: { hud: HudState; gameRef: React.RefObje
   return (
     <div className="absolute bottom-6 right-6 z-20 flex items-end gap-3">
       <div className="flex flex-col items-center gap-3">
+        <RoundBtn label="⚡" sub={hud.zoom.active ? 'ZOOM!' : hud.zoom.ready ? 'zoom' : 'recharging'}
+          active={hud.zoom.active} size={56}
+          onPress={() => gameRef.current?.startZoom()} />
         <RoundBtn label="🤫" sub={hud.sneaking ? 'sneaking' : 'sneak'} active={hud.sneaking} size={56}
           onPress={() => gameRef.current?.toggleSneak()} />
         <RoundBtn label="🐱" sub="meow" size={56} onPress={() => gameRef.current?.pressMeow()} />
@@ -573,6 +585,8 @@ function ctxIcon(kind: string): string {
     case 'agility': return '🚩';
     case 'washart': return '💦';
     case 'bath': return '🛁';
+    case 'fish': return '🎣';
+    case 'reel': return '🎣';
     default: return '✨';
   }
 }
@@ -611,6 +625,7 @@ function TopHud({
         <Pill text={`🧶 ${hud.yarn}`} />
         <Pill text={`🍪 ${hud.treats}`} />
         {hud.kittens > 0 && <Pill text={`🐱 ${hud.kittens}`} />}
+        {hud.territory && <Pill text={hud.territory} />}
         {hud.paint && (
           <span className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
             style={{ background: 'rgba(253,250,241,0.94)', color: INK, border: `1.5px solid ${hud.paint}` }}>
@@ -949,7 +964,7 @@ function ChallengeOverlay({ c, game }: { c: ChallengeState; game: Game }) {
                 </div>
                 <div className="text-xl font-bold" style={{ fontFamily: 'var(--font-fraunces)' }}>{c.rewardCat.name}</div>
                 <div className="mt-1 flex flex-wrap justify-center gap-1.5">
-                  <Chip text={c.rewardCat.traits.canSwim ? 'Swimmer 🌊' : 'Scaredy-cat 💧'} />
+                  <Chip text="Swimmer 🌊" />
                   <Chip text={PATTERN_LABELS[c.rewardCat.coat.pattern]} />
                 </div>
                 <p className="mt-1 text-sm italic" style={{ color: INK_SOFT }}>“{c.rewardCat.personality}”</p>
@@ -1260,7 +1275,7 @@ function GuideOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Chip text={(cat.gender ?? 'girl') === 'girl' ? 'Girl 🎀' : 'Boy 🧢'} />
             {cat.isMate && <Chip text="In love 💕" tone="gold" />}
-            <Chip text={cat.traits.canSwim ? 'Swimmer 🌊' : 'Scaredy-cat 💧'} tone={cat.traits.canSwim ? 'green' : 'default'} />
+            <Chip text="Swimmer 🌊" tone="green" />
             <Chip text={cat.traits.brave ? 'Brave 🦁' : 'Gentle 🌼'} />
             <Chip text={cat.traits.sneaky ? 'Sneaky 🐾' : 'Chatty 📣'} />
             <Chip text={PATTERN_LABELS[cat.coat.pattern]} />
@@ -1330,8 +1345,168 @@ function GuideOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
               })}
             </div>
           </Section>
+
+          <Section title={`${cat.name}'s meow`} icon="🎤">
+            <MeowRecorder game={game} cat={cat} onChanged={() => force((v) => v + 1)} />
+          </Section>
+
+          <Section title="Fish collection" icon="🎣">
+            <div className="flex flex-wrap gap-1.5">
+              {FISH_SPECIES.map((f) => {
+                const rec = save.fish?.[f.id];
+                return rec ? (
+                  <Chip key={f.id} text={`${f.icon} ${f.name} · best ${rec.best}cm ×${rec.count}`}
+                    tone={f.rarity === 'common' ? 'default' : 'gold'} />
+                ) : (
+                  <Chip key={f.id} text={`❔ ${RARITY_LABELS[f.rarity]}`} />
+                );
+              })}
+            </div>
+            <p className="mt-1 text-[10px]" style={{ color: INK_SOFT }}>
+              Sit at the water&apos;s edge and press 🎣 — when the bobber tugs, reel in fast!
+            </p>
+          </Section>
+
+          <Section title={`Toybox (${(save.toybox ?? []).length}/${TOYS.length})`} icon="🧸">
+            <div className="flex flex-wrap gap-1.5">
+              {TOYS.map((t) =>
+                save.toybox?.includes(t.id) ? (
+                  <Chip key={t.id} text={`${t.icon} ${t.name}`} tone="green" />
+                ) : (
+                  <Chip key={t.id} text={`❔ ${t.hint}`} />
+                )
+              )}
+            </div>
+            <p className="mt-1 text-[10px]" style={{ color: INK_SOFT }}>
+              Toys and stuffies are hidden all over the island — the hints tell you where to sniff around!
+            </p>
+          </Section>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ————————————————— meow recorder: your real voice becomes the cat's meow —————————————————
+
+function MeowRecorder({ game, cat, onChanged }: { game: Game; cat: CatSpec; onChanged: () => void }) {
+  const [state, setState] = useState<'idle' | 'recording' | 'preview' | 'uploading'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const blobRef = useRef<Blob | null>(null);
+  const signedIn = !!getAccount();
+
+  useEffect(() => () => {
+    if (recRef.current?.state === 'recording') recRef.current.stop();
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const start = async () => {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' });
+        blobRef.current = blob;
+        setPreviewUrl((old) => {
+          if (old) URL.revokeObjectURL(old);
+          return URL.createObjectURL(blob);
+        });
+        setState('preview');
+      };
+      rec.start();
+      recRef.current = rec;
+      setState('recording');
+      setTimeout(() => {
+        if (recRef.current === rec && rec.state === 'recording') rec.stop();
+      }, 3000);
+    } catch {
+      setError('Could not use the microphone — ask a grown-up to allow it!');
+    }
+  };
+
+  const saveIt = async () => {
+    const blob = blobRef.current;
+    if (!blob) return;
+    setState('uploading');
+    setError(null);
+    try {
+      const url = await uploadMeow(blob);
+      game.setMeowUrl(cat.id, url);
+      blobRef.current = null;
+      setState('idle');
+      onChanged();
+    } catch {
+      setError('Could not save the meow — check the internet and try again!');
+      setState('preview');
+    }
+  };
+
+  const btn = 'rounded-full px-4 py-2 text-xs font-bold active:scale-95';
+
+  return (
+    <div>
+      <p className="text-[11px]" style={{ color: INK_SOFT }}>
+        Record your own meow (up to 3 seconds) — {cat.name} will use YOUR voice on the meow button!
+      </p>
+      {cat.meowUrl && state === 'idle' && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <Chip text="🎤 Custom meow saved!" tone="green" />
+          <button className={btn} style={{ background: '#dbe7c9', color: INK }}
+            onPointerDown={() => { new Audio(cat.meowUrl!).play().catch(() => {}); }}>
+            ▶ Play it
+          </button>
+          <button className={btn} style={{ background: '#f3dede', color: ROSE }}
+            onPointerDown={() => { game.setMeowUrl(cat.id, null); onChanged(); }}>
+            ✕ Remove
+          </button>
+        </div>
+      )}
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        {state === 'idle' && (
+          signedIn ? (
+            <button className={btn} style={{ background: ROSE, color: '#fff' }} onPointerDown={start}>
+              ● Record {cat.meowUrl ? 'a new meow' : 'a meow'}
+            </button>
+          ) : (
+            <p className="text-[11px] font-semibold" style={{ color: INK_SOFT }}>
+              ☁️ Sign in (in Settings) to record meows — they save online with your clan!
+            </p>
+          )
+        )}
+        {state === 'recording' && (
+          <button className={btn} style={{ background: ROSE, color: '#fff', animation: 'ww-pulse 0.6s infinite' }}
+            onPointerDown={() => recRef.current?.state === 'recording' && recRef.current.stop()}>
+            ⏺ MEOW NOW! (tap to stop)
+          </button>
+        )}
+        {state === 'preview' && (
+          <>
+            <button className={btn} style={{ background: '#dbe7c9', color: INK }}
+              onPointerDown={() => { if (previewUrl) new Audio(previewUrl).play().catch(() => {}); }}>
+              ▶ Listen
+            </button>
+            <button className={btn} style={{ background: GREEN, color: '#fff' }} onPointerDown={saveIt}>
+              ✓ Save this meow!
+            </button>
+            <button className={btn} style={{ background: PAPER, color: INK_SOFT, border: `1px solid ${LINE}` }} onPointerDown={start}>
+              ↺ Try again
+            </button>
+          </>
+        )}
+        {state === 'uploading' && <Chip text="☁️ Saving your meow…" tone="gold" />}
+      </div>
+      {error && <p className="mt-1 text-[11px] font-semibold" style={{ color: ROSE }}>{error}</p>}
     </div>
   );
 }
@@ -1646,7 +1821,7 @@ function SettingsOverlay({ game, onClose }: { game: Game; onClose: () => void })
           )}
         </div>
         <p className="mt-3 text-center text-[10px]" style={{ color: INK_SOFT }}>
-          Tips: 🤫 sneak up on mice & butterflies · 🌲 climb trees for hidden yarn · 🌊 swimmer cats can reach the far islets
+          Tips: 🤫 sneak up on mice & butterflies · 🌲 climb trees for hidden yarn · 🌊 every cat can swim to the far islets · ⚡ zoom + double-tap jump for super moves
         </p>
         <button className="mt-3 w-full rounded-full py-3 font-bold text-white active:scale-95" style={{ background: INK }}
           onPointerDown={onClose}>
