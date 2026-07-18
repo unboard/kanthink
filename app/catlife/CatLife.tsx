@@ -1017,7 +1017,7 @@ function BuildSheet({ game, onClose }: { game: Game; onClose: () => void }) {
         </div>
 
         {!sel ? (
-          <div className="flex gap-2 overflow-x-auto pb-1" style={{ touchAction: 'pan-x' }}>
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}>
             {BUILDABLES.map((b) => {
               const locked = (b.minRankIdx ?? 0) > activeRankIdx;
               const afford = save.yarn >= b.cost;
@@ -1027,7 +1027,9 @@ function BuildSheet({ game, onClose }: { game: Game; onClose: () => void }) {
                   disabled={locked || !afford}
                   className="min-w-32 shrink-0 rounded-2xl border p-2 text-center disabled:opacity-45"
                   style={{ background: CARD, borderColor: LINE, color: INK }}
-                  onPointerDown={() => {
+                  // click, not pointerdown: a swipe that starts on a card must scroll
+                  // the row, not instantly select the card out from under the finger
+                  onClick={() => {
                     if (locked || !afford) return;
                     setSel(b.id);
                     game.selectBuildable(b.id);
@@ -1400,6 +1402,7 @@ function MeowRecorder({ game, cat, onChanged }: { game: Game; cat: CatSpec; onCh
 
   useEffect(() => () => {
     if (recRef.current?.state === 'recording') recRef.current.stop();
+    game.setRecordingMute(false);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1407,14 +1410,25 @@ function MeowRecorder({ game, cat, onChanged }: { game: Game; cat: CatSpec; onCh
   const start = async () => {
     setError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      // clean voice capture: cancel any speaker bleed and room hiss, keep it mono
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+        .find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+      const rec = new MediaRecorder(stream, {
+        ...(mime ? { mimeType: mime } : {}),
+        audioBitsPerSecond: 128000,
+      });
       chunksRef.current = [];
       rec.ondataavailable = (e) => { if (e.data.size) chunksRef.current.push(e.data); };
       rec.onstop = () => {
+        game.setRecordingMute(false);
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' });
         blobRef.current = blob;
@@ -1424,13 +1438,15 @@ function MeowRecorder({ game, cat, onChanged }: { game: Game; cat: CatSpec; onCh
         });
         setState('preview');
       };
+      game.setRecordingMute(true); // the game goes quiet so the mic only hears the meow
       rec.start();
       recRef.current = rec;
       setState('recording');
       setTimeout(() => {
         if (recRef.current === rec && rec.state === 'recording') rec.stop();
-      }, 3000);
+      }, 4000);
     } catch {
+      game.setRecordingMute(false);
       setError('Could not use the microphone — ask a grown-up to allow it!');
     }
   };
@@ -1457,7 +1473,7 @@ function MeowRecorder({ game, cat, onChanged }: { game: Game; cat: CatSpec; onCh
   return (
     <div>
       <p className="text-[11px]" style={{ color: INK_SOFT }}>
-        Record your own meow (up to 3 seconds) — {cat.name} will use YOUR voice on the meow button!
+        Record your own meow (up to 4 seconds) — {cat.name} will use YOUR voice on the meow button!
       </p>
       {cat.meowUrl && state === 'idle' && (
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -1619,6 +1635,9 @@ function MapOverlay({ game, onClose }: { game: Game; onClose: () => void }) {
             <Marker key={cs.name} x={cs.x} z={cs.z} label={cs.name}>{cs.icon}</Marker>
           ))}
           <Marker x={data.art.x} z={data.art.z} label="art meadow">🎨</Marker>
+          {data.spirits.map((s) => (
+            <Marker key={s.name} x={s.x} z={s.z} label={s.name}>{s.icon}</Marker>
+          ))}
           {data.tower && <Marker x={data.tower.x} z={data.tower.z} label="tower">🗼</Marker>}
           {data.rescue && <Marker x={data.rescue.x} z={data.rescue.z} label="kitten!">🐱</Marker>}
           {data.friends.map((f) => (

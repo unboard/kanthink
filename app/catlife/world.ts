@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { mulberry32, fbm, irange, hash2 } from './rng';
-import { WORLD_SIZE, WATER_LEVEL, RIVAL_CLANS, BUILDABLES, TOYS, TERRITORIES, type TerritoryDef, type ToyDef } from './data';
+import { WORLD_SIZE, WATER_LEVEL, RIVAL_CLANS, BUILDABLES, TOYS, TERRITORIES, SPIRIT_ANIMALS, type TerritoryDef, type ToyDef, type SpiritAnimalDef, type SpiritKind } from './data';
 import type { BuildingInstance } from './types';
 
 export interface TreeInfo { id: string; x: number; z: number; trunkH: number; r: number; perchY: number }
@@ -39,6 +39,15 @@ export interface Critter {
   stateT: number;
   speed: number;
   phase: number;
+}
+export interface SpiritAnimal {
+  def: SpiritAnimalDef;
+  group: THREE.Group;
+  x: number; z: number; y: number;
+  homeX: number; homeZ: number;
+  heading: number;
+  phase: number;
+  facing: boolean; // stopped to look at the player
 }
 export interface ScratchSpot { id: string; x: number; z: number; label: string }
 export interface ToySpawn { id: string; def: ToyDef; x: number; z: number; y: number; sprite: THREE.Sprite; glow: THREE.Mesh }
@@ -75,6 +84,8 @@ export class World {
   private artTex: THREE.CanvasTexture | null = null;
   private readonly ART_HALF = 13; // patio disc radius == canvas half-extent (keeps UVs aligned)
   critters: Critter[] = [];
+  // one special animal lives in each climate territory — meet it to transform!
+  spirits: SpiritAnimal[] = [];
   scratchSpots: ScratchSpot[] = [];
   buildingMeshes = new Map<string, THREE.Group>();
   // collectable toys & stuffies hidden around the island
@@ -184,6 +195,7 @@ export class World {
     this.buildTowerTrial();
     this.buildArtMeadow();
     this.buildCritters(rng);
+    this.buildSpirits();
 
     const leaves = this.buildLeaves(rng);
     this.leafMesh = leaves;
@@ -2658,6 +2670,237 @@ export class World {
       c.state = 'gone';
       c.stateT = 10;
     }, 30000);
+  }
+
+  // ——— territory spirit animals: meet one and TRANSFORM into it ———
+
+  /** builds a fresh animal body (also used for the player's transformed shape). Faces +Z. */
+  makeSpiritModel(kind: SpiritKind): THREE.Group {
+    const g = new THREE.Group();
+    if (kind === 'penguin') {
+      const black = new THREE.MeshStandardMaterial({ color: '#26303a', roughness: 0.85 });
+      const white = new THREE.MeshStandardMaterial({ color: '#f2f0e8', roughness: 0.9 });
+      const orange = new THREE.MeshStandardMaterial({ color: '#e8892c', roughness: 0.7 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10), black);
+      body.scale.set(0.9, 1.35, 0.95);
+      body.position.y = 0.42;
+      g.add(body);
+      const belly = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 10), white);
+      belly.scale.set(0.75, 1.2, 0.7);
+      belly.position.set(0, 0.4, 0.15);
+      g.add(belly);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), black);
+      head.position.set(0, 0.88, 0.03);
+      g.add(head);
+      for (const s of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 5), white);
+        eye.position.set(s * 0.07, 0.92, 0.15);
+        g.add(eye);
+        const flip = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), black);
+        flip.scale.set(0.28, 1.6, 0.7);
+        flip.position.set(s * 0.29, 0.45, 0);
+        flip.rotation.z = s * -0.25;
+        g.add(flip);
+        if (s === -1) g.userData.flipL = flip; else g.userData.flipR = flip;
+        const foot = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), orange);
+        foot.scale.set(1.2, 0.4, 1.8);
+        foot.position.set(s * 0.11, 0.03, 0.06);
+        g.add(foot);
+      }
+      const beak = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 8), orange);
+      beak.rotation.x = Math.PI / 2;
+      beak.position.set(0, 0.86, 0.24);
+      g.add(beak);
+    } else if (kind === 'dog') {
+      const fur = new THREE.MeshStandardMaterial({ color: '#b3906a', roughness: 1 });
+      const dark = new THREE.MeshStandardMaterial({ color: '#8a6a48', roughness: 1 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), fur);
+      body.scale.set(0.85, 0.8, 1.5);
+      body.position.y = 0.42;
+      g.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), fur);
+      head.position.set(0, 0.68, 0.4);
+      g.add(head);
+      const snout = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), dark);
+      snout.scale.set(0.9, 0.7, 1.3);
+      snout.position.set(0, 0.62, 0.56);
+      g.add(snout);
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), new THREE.MeshStandardMaterial({ color: '#2a241e' }));
+      nose.position.set(0, 0.64, 0.68);
+      g.add(nose);
+      for (const s of [-1, 1]) {
+        const ear = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), dark);
+        ear.scale.set(0.5, 1.3, 0.7);
+        ear.position.set(s * 0.15, 0.72, 0.32);
+        ear.rotation.z = s * 0.5;
+        g.add(ear);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028, 6, 5), new THREE.MeshStandardMaterial({ color: '#2a241e' }));
+        eye.position.set(s * 0.08, 0.73, 0.53);
+        g.add(eye);
+      }
+      const legGeo = new THREE.CylinderGeometry(0.05, 0.06, 0.34, 6);
+      for (const [sx, sz] of [[-0.14, 0.24], [0.14, 0.24], [-0.14, -0.24], [0.14, -0.24]] as const) {
+        const leg = new THREE.Mesh(legGeo, fur);
+        leg.position.set(sx, 0.17, sz);
+        g.add(leg);
+      }
+      const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.3, 6), fur);
+      tail.position.set(0, 0.62, -0.42);
+      tail.rotation.x = -0.8;
+      g.add(tail);
+      g.userData.tail = tail;
+    } else if (kind === 'goat') {
+      const coat = new THREE.MeshStandardMaterial({ color: '#ddd6c8', roughness: 1 });
+      const grey = new THREE.MeshStandardMaterial({ color: '#8f887c', roughness: 0.9 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), coat);
+      body.scale.set(0.85, 0.85, 1.4);
+      body.position.y = 0.5;
+      g.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), coat);
+      head.scale.set(0.85, 1, 1.2);
+      head.position.set(0, 0.82, 0.4);
+      g.add(head);
+      for (const s of [-1, 1]) {
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.22, 6), grey);
+        horn.position.set(s * 0.08, 1.0, 0.32);
+        horn.rotation.x = -0.5;
+        horn.rotation.z = s * -0.35;
+        g.add(horn);
+        const ear = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), coat);
+        ear.scale.set(1.6, 0.5, 0.8);
+        ear.position.set(s * 0.17, 0.85, 0.35);
+        g.add(ear);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 5), new THREE.MeshStandardMaterial({ color: '#2a241e' }));
+        eye.position.set(s * 0.08, 0.87, 0.53);
+        g.add(eye);
+      }
+      const beard = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 6), grey);
+      beard.position.set(0, 0.68, 0.5);
+      beard.rotation.x = Math.PI;
+      g.add(beard);
+      const legGeo = new THREE.CylinderGeometry(0.045, 0.05, 0.42, 6);
+      for (const [sx, sz] of [[-0.13, 0.22], [0.13, 0.22], [-0.13, -0.22], [0.13, -0.22]] as const) {
+        const leg = new THREE.Mesh(legGeo, coat);
+        leg.position.set(sx, 0.21, sz);
+        g.add(leg);
+      }
+      const tail = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), coat);
+      tail.scale.set(0.7, 1.4, 0.7);
+      tail.position.set(0, 0.68, -0.4);
+      g.add(tail);
+      g.userData.tail = tail;
+    } else {
+      // snake: a low S-curve of segments with a raised head
+      const scale1 = new THREE.MeshStandardMaterial({ color: '#7a9c4a', roughness: 0.8 });
+      const scale2 = new THREE.MeshStandardMaterial({ color: '#5d7c38', roughness: 0.8 });
+      for (let i = 0; i < 7; i++) {
+        const t = i / 6;
+        const r = 0.13 - t * 0.075;
+        const seg = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), i % 2 ? scale2 : scale1);
+        seg.position.set(Math.sin(t * Math.PI * 2.2) * 0.16, r * 0.85, 0.18 - t * 0.85);
+        g.add(seg);
+      }
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), scale1);
+      head.scale.set(1, 0.85, 1.25);
+      head.position.set(0, 0.26, 0.32);
+      g.add(head);
+      g.userData.head = head;
+      for (const s of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028, 6, 5), new THREE.MeshStandardMaterial({ color: '#f5d76e' }));
+        eye.position.set(s * 0.06, 0.3, 0.4);
+        g.add(eye);
+      }
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.11, 0.22, 8), scale2);
+      neck.position.set(0, 0.13, 0.26);
+      neck.rotation.x = 0.3;
+      g.add(neck);
+      const tongue = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.12, 4), new THREE.MeshStandardMaterial({ color: '#d4506a' }));
+      tongue.rotation.x = Math.PI / 2;
+      tongue.position.set(0, 0.24, 0.46);
+      g.add(tongue);
+      g.userData.tongue = tongue;
+    }
+    g.traverse((o) => { o.castShadow = true; });
+    return g;
+  }
+
+  private buildSpirits() {
+    // sector centers match climateAt: i 0..3 → forest, winter, desert, mountain
+    const sectorIdx: Record<TerritoryDef['id'], number> = { forest: 0, winter: 1, desert: 2, mountain: 3 };
+    for (const def of SPIRIT_ANIMALS) {
+      const baseA = this.climateRot + (sectorIdx[def.territory] + 0.5) * (Math.PI / 2);
+      let x = 0, z = 0, found = false;
+      // walk candidate spots deep in the sector until one is on comfortable land
+      outer: for (let ri = 0; ri < 9 && !found; ri++) {
+        const r = 50 + ri * 9;
+        for (const ja of [0, 0.18, -0.18, 0.36, -0.36]) {
+          const a = baseA + ja;
+          const cx = Math.cos(a) * r;
+          const cz = Math.sin(a) * r;
+          const h = this.heightAt(cx, cz);
+          if (h > 1.6 && h < 22 && this.territoryAt(cx, cz)?.id === def.territory) {
+            x = cx; z = cz; found = true;
+            break outer;
+          }
+        }
+      }
+      if (!found) { x = Math.cos(baseA) * 70; z = Math.sin(baseA) * 70; }
+      const group = this.makeSpiritModel(def.kind);
+      const y = Math.max(this.heightAt(x, z), WATER_LEVEL + 0.05);
+      group.position.set(x, y, z);
+      this.group.add(group);
+      this.spirits.push({
+        def, group, x, z, y, homeX: x, homeZ: z,
+        heading: mulRand(this.seed + 616 + sectorIdx[def.territory]) * Math.PI * 2,
+        phase: sectorIdx[def.territory] * 2.3,
+        facing: false,
+      });
+    }
+  }
+
+  updateSpirits(dt: number, time: number, playerX: number, playerZ: number) {
+    for (const s of this.spirits) {
+      const d = Math.hypot(s.x - playerX, s.z - playerZ);
+      if (d > 90) continue; // far offscreen — sleep
+      s.facing = d < 6;
+      if (s.facing) {
+        // stop and look at the visitor — this friend WANTS to be met
+        const want = Math.atan2(playerX - s.x, playerZ - s.z);
+        let dh = want - s.heading;
+        while (dh > Math.PI) dh -= Math.PI * 2;
+        while (dh < -Math.PI) dh += Math.PI * 2;
+        s.heading += dh * Math.min(1, dt * 6);
+        // an excited little hop now and then
+        s.group.position.y = s.y + Math.abs(Math.sin(time * 3 + s.phase)) * 0.05;
+      } else {
+        s.heading += (hash2(Math.floor(time * 0.4), s.phase * 10 | 0, this.seed) - 0.5) * dt * 2;
+        const sp = s.def.kind === 'snake' ? 0.5 : 0.7;
+        let nx = s.x + Math.sin(s.heading) * sp * dt;
+        let nz = s.z + Math.cos(s.heading) * sp * dt;
+        // stay on land, near home
+        if (this.heightAt(nx, nz) < WATER_LEVEL + 0.2) { s.heading += Math.PI * 0.6; nx = s.x; nz = s.z; }
+        if (Math.hypot(nx - s.homeX, nz - s.homeZ) > 9) s.heading = Math.atan2(s.homeX - nx, s.homeZ - nz);
+        s.x = nx; s.z = nz;
+        s.y = Math.max(this.heightAt(s.x, s.z), WATER_LEVEL + 0.05);
+        const waddle = s.def.kind === 'penguin' ? Math.abs(Math.sin(time * 6 + s.phase)) * 0.04 : 0;
+        s.group.position.y = s.y + waddle;
+      }
+      s.group.position.x = s.x;
+      s.group.position.z = s.z;
+      s.group.rotation.y = s.heading;
+      // idle character animation
+      const ud = s.group.userData;
+      if (s.def.kind === 'penguin') {
+        const flap = s.facing ? Math.sin(time * 9 + s.phase) * 0.45 : 0.1;
+        if (ud.flipL) (ud.flipL as THREE.Mesh).rotation.z = 0.25 - flap * 0.5;
+        if (ud.flipR) (ud.flipR as THREE.Mesh).rotation.z = -0.25 + flap * 0.5;
+        s.group.rotation.z = Math.sin(time * 5 + s.phase) * (s.facing ? 0.02 : 0.08);
+      } else if (ud.tail) {
+        (ud.tail as THREE.Mesh).rotation.z = Math.sin(time * (s.facing ? 14 : 5) + s.phase) * 0.5;
+      } else if (ud.tongue) {
+        (ud.tongue as THREE.Mesh).visible = Math.sin(time * 2.2 + s.phase) > 0.55;
+      }
+    }
   }
 
   // ——— day/night ———

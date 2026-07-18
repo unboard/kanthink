@@ -150,7 +150,8 @@ export type CatAction =
 // Context-sensitive interactable the action button targets
 export interface ContextTarget {
   kind: 'dig' | 'climb' | 'scratch' | 'yarn' | 'golden' | 'duel' | 'prey' | 'agility' | 'islet' | 'building' | 'rescue'
-    | 'love' | 'nurse' | 'pickup' | 'setdown' | 'stray' | 'washart' | 'bath' | 'fish' | 'reel';
+    | 'love' | 'nurse' | 'pickup' | 'setdown' | 'stray' | 'washart' | 'bath' | 'fish' | 'reel'
+    | 'transform' | 'untransform';
   label: string;
   id: string;
   x: number;

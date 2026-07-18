@@ -418,6 +418,25 @@ export const TERRITORIES: readonly TerritoryDef[] = [
   { id: 'mountain', name: 'Cloudpeak Mountains', icon: '⛰️' },
 ] as const;
 
+// ——— Territory spirit animals: one lives in each climate; walk up and TRANSFORM ———
+export interface SpiritAnimalDef {
+  kind: 'dog' | 'penguin' | 'snake' | 'goat';
+  territory: TerritoryDef['id'];
+  name: string;    // the friend's name
+  label: string;   // "a dog"
+  icon: string;
+  perk: string;    // what the form is great at (toast copy)
+}
+
+export const SPIRIT_ANIMALS: readonly SpiritAnimalDef[] = [
+  { kind: 'dog', territory: 'forest', name: 'Biscuit', label: 'dog', icon: '🐶', perk: 'Dogs run extra fast!' },
+  { kind: 'penguin', territory: 'winter', name: 'Pip', label: 'penguin', icon: '🐧', perk: 'Penguins are super swimmers!' },
+  { kind: 'snake', territory: 'desert', name: 'Sizzle', label: 'snake', icon: '🐍', perk: 'Snakes slither fast and silent — critters never spot you!' },
+  { kind: 'goat', territory: 'mountain', name: 'Clover', label: 'goat', icon: '🐐', perk: 'Goats jump SO high!' },
+] as const;
+
+export type SpiritKind = SpiritAnimalDef['kind'];
+
 export const ACCESSORY_LABELS: Record<AccessoryId, string> = {
   none: 'None',
   collar: 'Collar',

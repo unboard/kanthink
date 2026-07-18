@@ -11,6 +11,7 @@ import {
   generateCat, generateKitten, generateBaby, generateWanderer, genderOf,
   rankFor, xpForLevel, clanCapacity,
   rollFish, RARITY_LABELS, TOYS,
+  SPIRIT_ANIMALS, type SpiritAnimalDef, type SpiritKind,
 } from './data';
 import type {
   CatSpec, CatStyle, ContextTarget, ChallengeState, DuelState, GameEvents, GameMode,
@@ -160,6 +161,10 @@ export class Game {
 
   // kid-recorded meows, cached per URL
   private voiceCache = new Map<string, HTMLAudioElement>();
+
+  // territory spirit animals: walk up to one and TRANSFORM into it
+  private form: SpiritAnimalDef | null = null;
+  private formBody: THREE.Group | null = null;
 
   // territory the cat is standing in (for the HUD pill + crossing toasts)
   private curTerritory: string | null = null;
@@ -340,6 +345,14 @@ export class Game {
           this.toast(t);
         }, 1200 + i * 4000)
       );
+    }
+    // one-time news for every clan: territory friends you can transform into
+    if (!this.save.tutorialDone.includes('spiritsNews')) {
+      setTimeout(() => {
+        if (this.disposed || this.save.tutorialDone.includes('spiritsNews')) return;
+        this.save.tutorialDone.push('spiritsNews');
+        this.toast('NEW friends live in the four territories! 🐶🐧🐍🐐 Find them on the 🗺 map, walk up, and TRANSFORM! ✨');
+      }, 15000);
     }
     this.lastFrame = performance.now();
     const loop = (now: number) => {
@@ -996,8 +1009,8 @@ export class Game {
     const s = this.stray;
     s.t += dt;
     const d = Math.hypot(s.x - this.px, s.z - this.pz);
-    if (d < 18 && Math.random() < dt * 0.5) {
-      this.audio.meow(s.spec.voicePitch, 0.3);
+    if (d < 18 && Math.random() < dt * 0.2) {
+      this.audio.meow(s.spec.voicePitch, 0.18);
       s.avatar.meow();
       s.avatar.showEmote('!', 1.5);
     }
@@ -1440,8 +1453,8 @@ export class Game {
     }
 
     if (r.meowT <= 0) {
-      r.meowT = 3.4;
-      this.audio.meow(r.spec.voicePitch, Math.max(0.08, Math.min(0.7, 1.5 - d / 60)));
+      r.meowT = 7.5;
+      this.audio.meow(r.spec.voicePitch, Math.max(0.05, Math.min(0.3, 0.7 - d / 60)));
       r.avatar.meow();
       r.avatar.showEmote('drop', 2);
       if (d < 25) this.burst(r.avatar.root.position.x, r.perchY + 0.5, r.avatar.root.position.z, '#ffd54a', 5);
@@ -1536,7 +1549,7 @@ export class Game {
       return;
     }
     if (this.grounded && !this.swimming && this.busyT <= 0) {
-      this.vy = 8.6;
+      this.vy = this.form?.kind === 'goat' ? 10.8 : 8.6; // goats jump SO high
       this.grounded = false;
       this.airJumps = 0;
       this.audio.jump();
@@ -1544,7 +1557,7 @@ export class Game {
     } else if (!this.grounded && !this.swimming && this.busyT <= 0 && this.airJumps < 1) {
       // SUPER JUMP! tap jump again mid-air for a sparkly double boost
       this.airJumps++;
-      this.vy = 9.8;
+      this.vy = this.form?.kind === 'goat' ? 11.8 : 9.8;
       this.audio.superJump();
       this.player.setAction('jump');
       this.burst(this.px, this.py + 0.3, this.pz, '#ffd54a', 14);
@@ -1569,9 +1582,11 @@ export class Game {
     this.unlockAudio();
     const spec = this.player.spec;
     this.player.meow();
-    this.player.showEmote('music', 1.2);
-    // a kid-recorded meow beats the synth voice every time
-    if (!this.playVoice(spec)) this.audio.meow(spec.voicePitch);
+    if (!this.form) this.player.showEmote('music', 1.2);
+    // transformed animals speak their own language; otherwise a kid-recorded
+    // meow beats the synth voice every time
+    if (this.form) this.formVoice();
+    else if (!this.playVoice(spec)) this.audio.meow(spec.voicePitch);
     this.net?.sendMeow(spec.voicePitch);
     // nearby cats meow back (staggered) — and the hiding kitten answers loudly
     let delay = 500;
@@ -1594,12 +1609,12 @@ export class Game {
         this.audio.meow(1.5, vol);
       }, 700);
     }
-    // follower kittens squeak back, one after another
-    this.followers.forEach((f, i) => {
+    // a couple of follower kittens squeak back softly (a whole choir was too much)
+    this.followers.slice(0, 2).forEach((f, i) => {
       setTimeout(() => {
         if (this.disposed) return;
         f.avatar.meow();
-        this.audio.meow(f.spec.voicePitch, 0.22);
+        this.audio.meow(f.spec.voicePitch, 0.14);
       }, 650 + i * 380);
     });
   }
@@ -1629,6 +1644,8 @@ export class Game {
       case 'setdown': this.setDownKitten(); break;
       case 'washart': this.doWashArt(); break;
       case 'bath': this.startBath(); break;
+      case 'transform': this.transformInto(ctx.id as SpiritKind); break;
+      case 'untransform': this.revertForm(); break;
       case 'fish': {
         const surfaceY = ctx.id.startsWith('pond_')
           ? this.world.heightAt(ctx.x, ctx.z) + 0.16
@@ -1749,6 +1766,61 @@ export class Game {
     } catch {
       return false;
     }
+  }
+
+  // ——— territory transformations ———
+
+  private transformInto(kind: SpiritKind) {
+    const def = SPIRIT_ANIMALS.find((s) => s.kind === kind);
+    if (!def || this.duel || this.climbing || this.busyT > 0) return;
+    this.revertForm(false);
+    this.form = def;
+    this.formBody = this.world.makeSpiritModel(kind);
+    this.scene.add(this.formBody);
+    this.player.root.visible = false;
+    this.applyAvatarTransform();
+    this.audio.success();
+    setTimeout(() => { if (!this.disposed) this.formVoice(); }, 350);
+    this.burst(this.px, this.py + 0.6, this.pz, '#dfa7f0', 24);
+    this.toast(`✨ POOF! You're a ${def.label} now! ${def.icon} ${def.perk}`);
+    this.tutorialOnce('transform', 'The paw button turns you back into a cat whenever you want. 🐱');
+    this.emitHud(true);
+  }
+
+  private revertForm(fx = true) {
+    if (!this.form) return;
+    this.form = null;
+    if (this.formBody) {
+      this.scene.remove(this.formBody);
+      this.formBody.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) (Array.isArray(m.material) ? m.material : [m.material]).forEach((mat) => mat.dispose());
+      });
+      this.formBody = null;
+    }
+    this.player.root.visible = true;
+    if (fx) {
+      this.burst(this.px, this.py + 0.6, this.pz, '#dfa7f0', 18);
+      this.audio.meow(this.player.spec.voicePitch, 0.4);
+      this.toast(`${this.player.spec.name} is a cat again! 🐱`);
+      this.emitHud(true);
+    }
+  }
+
+  /** the transformed animal's voice (used by the meow button too) */
+  private formVoice() {
+    switch (this.form?.kind) {
+      case 'dog': this.audio.bark(); break;
+      case 'goat': this.audio.bleat(); break;
+      case 'penguin': this.audio.squawk(); break;
+      case 'snake': this.audio.snakeHiss(); break;
+    }
+  }
+
+  /** MeowRecorder: silence the game while the mic is open so it can't bleed into the take */
+  setRecordingMute(on: boolean) {
+    this.audio.duckForRecording(on);
   }
 
   /** Guide: attach or clear a recorded meow for a cat */
@@ -2021,6 +2093,7 @@ export class Game {
   private startDuel(rivalCatId: string) {
     const rival = this.rivals.find((r) => r.spec.id === rivalCatId);
     if (!rival || this.duel) return;
+    this.revertForm(false); // duels are cat business — back to cat shape
     this.duelRival = rival;
     rival.state = 'facing';
     const clan = RIVAL_CLANS.find((c) => c.id === rival.clanId)!;
@@ -2577,7 +2650,7 @@ export class Game {
       if (k.meowT <= 0) {
         k.meowT = 3.2;
         const d = Math.hypot(k.x - this.px, k.z - this.pz);
-        const vol = Math.max(0.06, Math.min(0.8, 1.4 - d / 50));
+        const vol = Math.max(0.06, Math.min(0.55, 1.4 - d / 50));
         this.audio.meow(1.5, vol);
         if (d < 15) this.burst(k.x, this.world.heightAt(k.x, k.z) + 1.2, k.z, '#ffd54a', 4);
       }
@@ -2835,6 +2908,7 @@ export class Game {
   switchCat(catId: string) {
     const spec = this.save.cats.find((c) => c.id === catId);
     if (!spec) return;
+    this.revertForm(false); // transformations don't carry between cats
     this.save.activeCatId = catId;
     this.spawnPlayer(spec);
     if (!this.playdate) this.syncFamily(); // camp clanmates change when the active cat changes
@@ -3015,7 +3089,9 @@ export class Game {
     }
     if (!paused) this.updateFishing(dt);
     this.updateBubbles(dt);
-    this.world.updateCritters(dt, this.elapsed, this.px, this.pz, this.sneaking);
+    // snakes count as sneaking — critters never spot them coming
+    this.world.updateCritters(dt, this.elapsed, this.px, this.pz, this.sneaking || this.form?.kind === 'snake');
+    this.world.updateSpirits(dt, this.elapsed, this.px, this.pz);
     this.world.update(dt, this.elapsed, this.px, this.pz);
     this.world.setTimeOfDay(this.timeOfDay, this.px, this.pz);
     this.audio.setNight(this.timeOfDay < 0.22 || this.timeOfDay > 0.78);
@@ -3195,6 +3271,10 @@ export class Game {
           : wantRun
             ? 5.6 + spec.traits.speed * 0.22
             : 3.0;
+      // transformed-animal perks: each form is the best at its own thing
+      if (this.form?.kind === 'dog' && wantRun && !this.swimming) baseSpeed *= 1.3;
+      if (this.form?.kind === 'penguin' && this.swimming) baseSpeed *= 1.7;
+      if (this.form?.kind === 'snake' && this.sneaking) baseSpeed *= 2.2;
       if (this.zoomT > 0 && !this.swimming && !this.sneaking) {
         baseSpeed *= 1.85; // ZOOM! super-run
         if (Math.random() < dt * 14) {
@@ -3427,6 +3507,23 @@ export class Game {
   private applyAvatarTransform() {
     this.player.root.position.set(this.px, this.py, this.pz);
     this.player.root.rotation.y = this.heading;
+    if (this.formBody && this.form) {
+      const t = this.elapsed;
+      const moving = Math.min(1, this.player.moveSpeed / 3);
+      this.formBody.position.set(this.px, this.py, this.pz);
+      this.formBody.rotation.set(0, this.heading, 0);
+      switch (this.form.kind) {
+        case 'penguin': // side-to-side waddle
+          this.formBody.rotation.z = Math.sin(t * 11) * 0.14 * moving;
+          break;
+        case 'snake':   // slither wiggle
+          this.formBody.rotation.y = this.heading + Math.sin(t * 9) * 0.2 * moving;
+          break;
+        default:        // happy trot bounce
+          this.formBody.position.y = this.py + Math.abs(Math.sin(t * 9)) * 0.07 * moving;
+      }
+      if (this.swimming) this.formBody.rotation.x = this.form.kind === 'penguin' ? 1.1 : 0.25;
+    }
   }
 
   // context-sensitive action detection
@@ -3552,6 +3649,14 @@ export class Game {
           set('climb', hasYarnUp ? 'Climb (yarn up top!)' : 'Climb', tree.id, tree.x, tree.z, 1, 2);
         }
       }
+      // territory spirit animals: walk up and TRANSFORM
+      for (const sp of this.world.spirits) {
+        if (this.form?.kind === sp.def.kind) continue;
+        const d = Math.hypot(sp.x - this.px, sp.z - this.pz);
+        if (d < 3.6) set('transform', `Turn into a ${sp.def.label}! ${sp.def.icon}`, sp.def.kind, sp.x, sp.z, d, 6);
+      }
+      // while transformed, the button always offers the way back
+      if (this.form) set('untransform', 'Turn back into a cat 🐱', 'untransform', this.px, this.pz, 0.5, 1);
       // prey nearby → pounce (the new gentle friends are for watching, not catching)
       for (const cr of this.world.critters) {
         if (cr.state !== 'wander') continue;
@@ -3886,6 +3991,7 @@ export class Game {
         .filter((r) => r.avatar)
         .map((r) => ({ x: r.x, z: r.z, name: r.member.name, color: r.member.color })),
       rescue: this.rescue ? { x: this.rescue.x, z: this.rescue.z } : null,
+      spirits: this.world.spirits.map((s) => ({ x: s.x, z: s.z, icon: s.def.icon, name: s.def.name })),
       waypoint: this.waypoint,
     };
   }

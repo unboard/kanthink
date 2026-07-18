@@ -30,7 +30,7 @@ export class AudioEngine {
       this.musicGain.gain.value = this.musicOn ? 0.16 : 0;
       this.musicGain.connect(this.master);
       this.ambientGain = this.ctx.createGain();
-      this.ambientGain.gain.value = 0.35;
+      this.ambientGain.gain.value = 0.24;
       this.ambientGain.connect(this.master);
       this.startMusic();
       this.startAmbient();
@@ -42,7 +42,15 @@ export class AudioEngine {
 
   setSound(on: boolean) {
     this.soundOn = on;
-    if (this.master) this.master.gain.value = on ? 0.5 : 0;
+    if (this.master) this.master.gain.value = on && !this.ducked ? 0.5 : 0;
+  }
+
+  private ducked = false;
+
+  /** silence the game while the mic is open so meow recordings stay clean */
+  duckForRecording(on: boolean) {
+    this.ducked = on;
+    if (this.master) this.master.gain.value = on || !this.soundOn ? 0 : 0.5;
   }
 
   setMusic(on: boolean) {
@@ -122,6 +130,79 @@ export class AudioEngine {
 
   hiss() {
     this.noiseBurst(0.4, 3200, 0.16, 0.05);
+  }
+
+  // ——— territory animal voices (for transformed cats) ———
+
+  /** happy double "woof woof!" */
+  bark() {
+    if (!this.ctx || !this.master || !this.soundOn) return;
+    for (const off of [0, 0.22]) {
+      const t0 = this.now() + off;
+      const g = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 520;
+      filter.Q.value = 1.1;
+      g.connect(filter).connect(this.master);
+      const o = this.osc('sawtooth', 180, g);
+      o.frequency.setValueAtTime(140, t0);
+      o.frequency.linearRampToValueAtTime(320, t0 + 0.05);
+      o.frequency.exponentialRampToValueAtTime(120, t0 + 0.14);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(0.4, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15);
+      o.start(t0); o.stop(t0 + 0.18);
+    }
+  }
+
+  /** wobbly "baa-a-a-a" */
+  bleat() {
+    if (!this.ctx || !this.master || !this.soundOn) return;
+    const t0 = this.now();
+    const g = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 800;
+    filter.Q.value = 1.4;
+    g.connect(filter).connect(this.master);
+    const o = this.osc('sawtooth', 260, g);
+    const lfo = this.ctx.createOscillator();
+    lfo.frequency.value = 11; // the goaty tremble
+    const lfoG = this.ctx.createGain();
+    lfoG.gain.value = 40;
+    lfo.connect(lfoG).connect(o.frequency);
+    o.frequency.setValueAtTime(300, t0);
+    o.frequency.linearRampToValueAtTime(240, t0 + 0.55);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.3, t0 + 0.05);
+    g.gain.setValueAtTime(0.3, t0 + 0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+    o.start(t0); o.stop(t0 + 0.65);
+    lfo.start(t0); lfo.stop(t0 + 0.65);
+  }
+
+  /** cheerful penguin trumpet-chirp */
+  squawk() {
+    if (!this.ctx || !this.master || !this.soundOn) return;
+    const t0 = this.now();
+    for (let i = 0; i < 3; i++) {
+      const g = this.ctx.createGain();
+      g.connect(this.master);
+      const o = this.osc('square', 700, g);
+      const tt = t0 + i * 0.13;
+      o.frequency.setValueAtTime(620 + i * 90, tt);
+      o.frequency.linearRampToValueAtTime(980 + i * 60, tt + 0.06);
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.linearRampToValueAtTime(0.12, tt + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.11);
+      o.start(tt); o.stop(tt + 0.13);
+    }
+  }
+
+  /** long slithery "sssss" */
+  snakeHiss() {
+    this.noiseBurst(0.8, 4200, 0.12, 0.12);
   }
 
   // ——— movement / world ———
@@ -290,12 +371,12 @@ export class AudioEngine {
       if (!this.ctx || !this.soundOn || document.hidden) return;
       if (this.isNight) {
         // crickets
-        if (Math.random() < 0.75) this.cricket();
+        if (Math.random() < 0.55) this.cricket();
       } else {
         // birdsong
-        if (Math.random() < 0.55) this.birdsong();
+        if (Math.random() < 0.38) this.birdsong();
       }
-    }, 2400);
+    }, 3200);
   }
 
   private birdsong() {
@@ -348,7 +429,7 @@ export class AudioEngine {
     filter.type = 'lowpass';
     filter.frequency.value = 320;
     const g = this.ctx.createGain();
-    g.gain.value = 0.12;
+    g.gain.value = 0.09;
     const lfo = this.ctx.createOscillator();
     lfo.frequency.value = 0.07;
     const lfoG = this.ctx.createGain();
