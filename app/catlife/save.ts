@@ -35,6 +35,7 @@ export function newSave(seed: number, clanName: string, firstCatSeed: number): S
     toybox: [],
     soundOn: true,
     musicOn: true,
+    shelves: {},
     tutorialDone: [],
     createdAt: Math.floor(Date.now() / 1000),
   };
@@ -61,6 +62,8 @@ export function migrateSave(data: SaveData | null): SaveData | null {
   // fishing + toybox update
   if (!data.fish || typeof data.fish !== 'object') data.fish = {};
   if (!Array.isArray(data.toybox)) data.toybox = [];
+  // enterable buildings update: every room starts with an empty shelf
+  if (!data.shelves || typeof data.shelves !== 'object') data.shelves = {};
   return data;
 }
 

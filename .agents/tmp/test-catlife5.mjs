@@ -1,0 +1,25 @@
+import { chromium } from '@playwright/test';
+const OUT = 'C:/Users/dhodg/AppData/Local/Temp/claude/C--code-kanthink/469364a8-7826-403b-91ee-37d39ff64c25/scratchpad';
+const errors = [];
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+page.on('pageerror', (err) => errors.push(err.message));
+await page.goto('http://localhost:3000/catlife', { waitUntil: 'domcontentloaded', timeout: 60000 });
+await page.evaluate(() => localStorage.removeItem('catlife-save-v1'));
+await page.reload({ waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(5000);
+await page.getByText('Begin the Adventure').click();
+await page.waitForTimeout(4000);
+await page.screenshot({ path: `${OUT}/e1-toast.png` });
+const hasToast = (await page.evaluate(() => document.body.innerText)).includes('Welcome to the Wilds');
+console.log('welcome toast visible:', hasToast);
+// run far in one direction
+await page.keyboard.down('w');
+await page.waitForTimeout(9000);
+await page.keyboard.up('w');
+await page.waitForTimeout(300);
+const txt = await page.evaluate(() => document.body.innerText);
+console.log('compass visible:', txt.includes('🏕'));
+await page.screenshot({ path: `${OUT}/e2-compass.png` });
+console.log('errors:', errors.length, errors.slice(0, 5));
+await browser.close();

@@ -858,6 +858,21 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
     if (connectorSourceRef.current) {
       const wp = screenToWorld(sp.x, sp.y)
       const hit = hitTest(wp)
+      if (connectorSourceRef.current === '__pending__') {
+        // First click: set source object
+        if (hit && hit.type !== 'connector') {
+          connectorSourceRef.current = hit.id
+          setConnectorSource(hit.id)
+          setSelectedId(hit.id)
+          requestAnimationFrame(redraw)
+        } else {
+          // Clicked empty space — cancel connector
+          connectorSourceRef.current = null
+          setConnectorSource(null)
+        }
+        return
+      }
+      // Second click: set target and create connector
       if (hit && hit.type !== 'connector' && connectorSourceRef.current !== hit.id) {
         pushUndo()
         const conn: ConnectorObj = {
@@ -1470,6 +1485,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
   }
   const [emojiCategory, setEmojiCategory] = useState('Kitties')
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const emojiBtnRef = useRef<HTMLDivElement>(null)
 
   // ===== TOOLBAR ICONS =====
   const icons = {
@@ -1714,7 +1730,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
       <button onClick={insertLine} style={btnStyle()} title="Line">{icons.line}</button>
 
       {/* Emoji insert with picker */}
-      <div style={{ position: 'relative' }}>
+      <div ref={emojiBtnRef} style={{ position: 'relative' }}>
         <button onClick={() => { insertEmoji(); setShowEmojiPicker(false); }} style={btnStyle()} title="Emoji">
           <span style={{ fontSize: 16, lineHeight: 1 }}>{selectedKitty}</span>
         </button>
@@ -1725,9 +1741,20 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
         >
           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#737373" strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
-        {showEmojiPicker && (
-          <div onClick={e => e.stopPropagation()}
-            style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, padding: 6, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)', zIndex: 20, width: 200 }}>
+        {showEmojiPicker && (() => {
+          const rect = emojiBtnRef.current?.getBoundingClientRect()
+          const openAbove = rect ? rect.top > 280 : false
+          return <div onClick={e => e.stopPropagation()}
+            style={rect ? {
+              position: 'fixed',
+              left: Math.max(8, Math.min(rect.left + rect.width / 2 - 100, window.innerWidth - 208)),
+              ...(openAbove
+                ? { bottom: window.innerHeight - rect.top + 8 }
+                : { top: rect.bottom + 8 }),
+              padding: 6, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)', zIndex: 20, width: 200,
+            } : {
+              position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8, padding: 6, background: '#fff', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)', zIndex: 20, width: 200,
+            }}>
             {/* Category tabs */}
             <div style={{ display: 'flex', gap: 2, marginBottom: 4, flexWrap: 'wrap' }}>
               {Object.entries(EMOJI_CATEGORIES).map(([name, cat]) => (
@@ -1748,7 +1775,7 @@ export function WhiteboardEditor({ isOpen, initialData, onSave, onClose }: White
               ))}
             </div>
           </div>
-        )}
+        })()}
       </div>
 
       <button onClick={startConnector} style={btnStyle(!!connectorSource)} title="Connector">{icons.connector}</button>

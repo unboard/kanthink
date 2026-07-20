@@ -52,3 +52,5 @@ data/*.db-wal
 *.tsbuildinfo
 next-env.d.ts
 lib/mcs/scrape-results.json
+
+.vercel

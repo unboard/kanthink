@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { mulberry32, fbm, irange, hash2 } from './rng';
-import { WORLD_SIZE, WATER_LEVEL, RIVAL_CLANS, BUILDABLES, TOYS, TERRITORIES, SPIRIT_ANIMALS, type TerritoryDef, type ToyDef, type SpiritAnimalDef, type SpiritKind } from './data';
+import { WORLD_SIZE, WATER_LEVEL, RIVAL_CLANS, BUILDABLES, TOYS, TERRITORIES, SPIRIT_ANIMALS, ROOMS, type TerritoryDef, type ToyDef, type SpiritAnimalDef, type SpiritKind, type RoomDef } from './data';
 import type { BuildingInstance } from './types';
 
 export interface TreeInfo { id: string; x: number; z: number; trunkH: number; r: number; perchY: number }
@@ -53,7 +53,31 @@ export interface ScratchSpot { id: string; x: number; z: number; label: string }
 export interface ToySpawn { id: string; def: ToyDef; x: number; z: number; y: number; sprite: THREE.Sprite; glow: THREE.Mesh }
 export interface ClimateWeights { forest: number; winter: number; desert: number; mountain: number }
 
+// ——— playground equipment ———
+export interface Trampoline { id: string; x: number; z: number; r: number; topY: number; mat: THREE.Mesh; squash: number }
+export interface Carousel {
+  x: number; z: number; r: number; topY: number;
+  group: THREE.Group;
+  spin: number;   // radians/sec
+  angle: number;
+}
+export interface Swing {
+  id: string; x: number; z: number; baseY: number;
+  /** unit vector the seat swings along */
+  dirX: number; dirZ: number;
+  ropeLen: number; pivotY: number;
+  angle: number; vel: number;
+  seat: THREE.Group;
+  ropes: THREE.Mesh[];
+}
+export interface Slide { x: number; z: number; topY: number }
+export interface Seesaw { x: number; z: number; plank: THREE.Group; tilt: number; vel: number }
+/** the doorway of a building you can walk inside */
+export interface DoorInfo { roomId: string; x: number; z: number; y: number; yaw: number }
+
 interface Leaf { x: number; y: number; z: number; phase: number; spinX: number; spinY: number; groundT: number }
+
+const SWING_AXIS = new THREE.Vector3();
 
 const gauss = (d: number, r: number) => Math.exp(-(d * d) / (r * r));
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -92,6 +116,14 @@ export class World {
   toySpawns: ToySpawn[] = [];
   // the clan house at the player camp — cats can actually walk inside!
   clanHouse = { x: 0, z: 0, r: 3.3 };
+  // ——— the town square: playground rides + big buildings you can walk into ———
+  playCenter = { x: 0, z: 0 };
+  trampolines: Trampoline[] = [];
+  carousel: Carousel | null = null;
+  swings: Swing[] = [];
+  slides: Slide[] = [];
+  seesaws: Seesaw[] = [];
+  doors: DoorInfo[] = [];
   private houseFadeMats: THREE.MeshStandardMaterial[] = [];
   private houseReveal = 0;
   // territories: the island is split into four soft climate sectors
@@ -143,23 +175,27 @@ export class World {
 
     // seeded landmarks
     const a1 = rng() * Math.PI * 2;
-    this.lakeC = { x: Math.cos(a1) * 70, z: Math.sin(a1) * 70 };
+    this.lakeC = { x: Math.cos(a1) * 96, z: Math.sin(a1) * 96 };
     const a2 = a1 + Math.PI * (0.6 + rng() * 0.5);
-    this.hillC = { x: Math.cos(a2) * 90, z: Math.sin(a2) * 90 };
+    this.hillC = { x: Math.cos(a2) * 124, z: Math.sin(a2) * 124 };
     const a3 = a1 + Math.PI;
     this.playerCamp = { x: Math.cos(a3) * 60, z: Math.sin(a3) * 60 };
     const a4 = a3 + 1.4;
-    this.agilityCenter = { x: Math.cos(a4) * 105, z: Math.sin(a4) * 105 };
+    this.agilityCenter = { x: Math.cos(a4) * 145, z: Math.sin(a4) * 145 };
     const a5 = a3 - 1.25;
-    this.artCenter = { x: Math.cos(a5) * 82, z: Math.sin(a5) * 82 };
+    this.artCenter = { x: Math.cos(a5) * 116, z: Math.sin(a5) * 116 };
+    // the Playground + the big enterable buildings share one lively town square,
+    // set a short run from camp so the kids find it fast
+    const a6 = a3 + 0.55;
+    this.playCenter = { x: Math.cos(a6) * 92, z: Math.sin(a6) * 92 };
 
     for (let i = 0; i < RIVAL_CLANS.length; i++) {
       const a = a3 + Math.PI * 0.5 + (i * Math.PI * 2) / 3 + 0.5;
-      this.camps.push({ clanId: RIVAL_CLANS[i].id, x: Math.cos(a) * 120, z: Math.sin(a) * 120, r: 16 });
+      this.camps.push({ clanId: RIVAL_CLANS[i].id, x: Math.cos(a) * 168, z: Math.sin(a) * 168, r: 16 });
     }
     for (let i = 0; i < 3; i++) {
       const a = rng() * Math.PI * 2;
-      const d = 265 + rng() * 45;
+      const d = 368 + rng() * 62;
       this.islets.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 18 + rng() * 10 });
     }
 
@@ -167,6 +203,8 @@ export class World {
     for (const c of this.camps) this.flatSpots.push({ x: c.x, z: c.z, r: 20, h: 2.4 });
     this.flatSpots.push({ x: this.agilityCenter.x, z: this.agilityCenter.z, r: 34, h: 2.0 });
     this.flatSpots.push({ x: this.artCenter.x, z: this.artCenter.z, r: 26, h: 2.1, plateau: 16 });
+    // the town square is dead flat — trampolines and carousels need level ground
+    this.flatSpots.push({ x: this.playCenter.x, z: this.playCenter.z, r: 66, h: 2.3, plateau: 54 });
 
     // ——— build everything ———
     this.group.add(this.buildTerrain());
@@ -194,6 +232,7 @@ export class World {
     this.buildCrags();
     this.buildTowerTrial();
     this.buildArtMeadow();
+    this.buildTownSquare();
     this.buildCritters(rng);
     this.buildSpirits();
 
@@ -262,7 +301,7 @@ export class World {
   // ——— terrain height (analytic; physics uses the same function) ———
   heightAt(x: number, z: number): number {
     const d = Math.hypot(x, z);
-    const island = smoothstep(clamp01(1 - (d - 155) / 95));
+    const island = smoothstep(clamp01(1 - (d - 218) / 130));
     // domain warp bends the noise field so hills flow like eroded land
     const wx = x + (fbm(x * 0.004 + 7.3, z * 0.004, this.seed + 555, 2) - 0.5) * 55;
     const wz = z + (fbm(x * 0.004, z * 0.004 + 13.7, this.seed + 777, 2) - 0.5) * 55;
@@ -635,9 +674,9 @@ export class World {
   private buildFlora(rng: () => number) {
     type TreeType = 'oak' | 'pine' | 'birch';
     const treeSpots: { x: number; z: number; s: number; type: TreeType }[] = [];
-    const step = 9;
-    for (let gx = -125; gx <= 125; gx += step) {
-      for (let gz = -125; gz <= 125; gz += step) {
+    const step = 10;
+    for (let gx = -180; gx <= 180; gx += step) {
+      for (let gz = -180; gz <= 180; gz += step) {
         const x = gx + (hash2(gx, gz, this.seed + 5) - 0.5) * step * 0.9;
         const z = gz + (hash2(gx, gz, this.seed + 6) - 0.5) * step * 0.9;
         const h = this.heightAt(x, z);
@@ -1410,9 +1449,9 @@ export class World {
       mk(`y_${wave}_camp${i}`, x, z, this.heightAt(x, z) + 0.35, false, 'ground');
     }
     let made = 0;
-    for (let i = 0; i < 200 && made < 20; i++) {
-      const x = (rng() - 0.5) * 290;
-      const z = (rng() - 0.5) * 290;
+    for (let i = 0; i < 320 && made < 30; i++) {
+      const x = (rng() - 0.5) * 410;
+      const z = (rng() - 0.5) * 410;
       const h = this.heightAt(x, z);
       if (h < 1 || h > 10) continue;
       mk(`y_${wave}_g${i}`, x, z, h + 0.35, false, 'ground');
@@ -1426,10 +1465,10 @@ export class World {
       mk(`yg_${wave}_i${i}`, it.x, it.z, this.heightAt(it.x, it.z) + 0.45, true, 'islet');
     });
     mk(`yg_${wave}_hill`, this.hillC.x, this.hillC.z, this.heightAt(this.hillC.x, this.hillC.z) + 0.45, true, 'hill');
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 90; i++) {
       if (this.yarn.filter((y) => y.golden).length >= 6) break;
-      const x = (rng() - 0.5) * 270;
-      const z = (rng() - 0.5) * 270;
+      const x = (rng() - 0.5) * 380;
+      const z = (rng() - 0.5) * 380;
       const h = this.heightAt(x, z);
       if (h < 1.4 || h > 10) continue;
       mk(`yg_${wave}_s${i}`, x, z, h + 0.45, true, 'ground');
@@ -2182,6 +2221,496 @@ export class World {
     if (this.artTex) this.artTex.needsUpdate = true;
   }
 
+  // ——— The Town Square: a whole playground plus buildings you walk inside ———
+  private buildTownSquare() {
+    const c = this.playCenter;
+    const base = this.heightAt(c.x, c.z);
+    const g = new THREE.Group();
+    g.position.set(c.x, base, c.z);
+    this.group.add(g);
+
+    const wood = new THREE.MeshStandardMaterial({ color: '#8a6a48', roughness: 0.95 });
+    const paintRed = new THREE.MeshStandardMaterial({ color: '#d2564f', roughness: 0.7 });
+    const paintBlue = new THREE.MeshStandardMaterial({ color: '#4a8fd0', roughness: 0.7 });
+    const paintYellow = new THREE.MeshStandardMaterial({ color: '#f0c04a', roughness: 0.7 });
+    const paintGreen = new THREE.MeshStandardMaterial({ color: '#63b06a', roughness: 0.7 });
+    const metal = new THREE.MeshStandardMaterial({ color: '#b9bcc2', roughness: 0.35, metalness: 0.55 });
+
+    // soft wood-chip ground so the square reads as "playground" from far off
+    const pad = new THREE.Mesh(
+      new THREE.CircleGeometry(46, 44),
+      new THREE.MeshStandardMaterial({ color: '#c8a271', roughness: 1 })
+    );
+    pad.rotation.x = -Math.PI / 2;
+    pad.position.y = 0.04;
+    pad.receiveShadow = true;
+    g.add(pad);
+
+    // ——— trampolines: land on one and BOING ———
+    const trampSpots: [number, number, number][] = [[0, -17, 3.4], [-9, -21, 2.5], [9, -21, 2.5]];
+    trampSpots.forEach(([ox, oz, r], i) => {
+      const th = this.heightAt(c.x + ox, c.z + oz);
+      const tg = new THREE.Group();
+      tg.position.set(c.x + ox, th, c.z + oz);
+      const frame = new THREE.Mesh(new THREE.TorusGeometry(r, 0.22, 8, 24), paintBlue);
+      frame.rotation.x = Math.PI / 2;
+      frame.position.y = 1.0;
+      frame.castShadow = true;
+      tg.add(frame);
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.0, 6), metal);
+        leg.position.set(Math.cos(a) * (r - 0.15), 0.5, Math.sin(a) * (r - 0.15));
+        tg.add(leg);
+      }
+      const mat = new THREE.Mesh(
+        new THREE.CircleGeometry(r - 0.25, 24),
+        new THREE.MeshStandardMaterial({ color: '#2f3d55', roughness: 0.8 })
+      );
+      mat.rotation.x = -Math.PI / 2;
+      mat.position.y = 1.0;
+      tg.add(mat);
+      this.group.add(tg);
+      this.trampolines.push({ id: `tramp${i}`, x: c.x + ox, z: c.z + oz, r: r - 0.3, topY: th + 1.0, mat, squash: 0 });
+      this.platforms.push({ x: c.x + ox, z: c.z + oz, r: r - 0.3, topY: th + 1.0 });
+    });
+
+    // ——— the spinner: push it faster and faster until it flings you off ———
+    {
+      const R = 4.6;
+      const cg = new THREE.Group();
+      cg.position.set(c.x, base, c.z);
+      const deck = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.22, 24), paintRed);
+      deck.position.y = 0.62;
+      deck.castShadow = true;
+      deck.receiveShadow = true;
+      cg.add(deck);
+      // candy-stripe wedges so the spin is obvious at speed
+      for (let k = 0; k < 6; k++) {
+        const wedge = new THREE.Mesh(
+          new THREE.CylinderGeometry(R - 0.05, R - 0.05, 0.06, 12, 1, false, (k / 6) * Math.PI * 2, Math.PI / 6),
+          k % 2 ? paintYellow : paintGreen
+        );
+        wedge.position.y = 0.75;
+        cg.add(wedge);
+      }
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.42, 1.5, 10), metal);
+      hub.position.y = 1.1;
+      cg.add(hub);
+      // grab bars arcing from the hub out to the rim
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2;
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, R - 0.4, 6), metal);
+        bar.rotation.z = Math.PI / 2;
+        bar.rotation.y = -a;
+        bar.position.set(Math.cos(a) * (R - 0.4) / 2, 1.65, Math.sin(a) * (R - 0.4) / 2);
+        cg.add(bar);
+        const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.0, 6), metal);
+        drop.position.set(Math.cos(a) * (R - 0.4), 1.2, Math.sin(a) * (R - 0.4));
+        cg.add(drop);
+      }
+      this.group.add(cg);
+      this.carousel = { x: c.x, z: c.z, r: R - 0.3, topY: base + 0.73, group: cg, spin: 0, angle: 0 };
+      this.platforms.push({ x: c.x, z: c.z, r: R - 0.3, topY: base + 0.73 });
+    }
+
+    // ——— swing set: hop on, pump, then launch yourself into the sky ———
+    {
+      const sx = c.x - 17, sz = c.z + 4;
+      const sh = this.heightAt(sx, sz);
+      const yaw = 0.35;                       // the beam runs along this heading
+      const bx = Math.cos(yaw), bz = Math.sin(yaw);
+      const dx = -Math.sin(yaw), dz = Math.cos(yaw); // swing travel direction
+      const beamY = 4.2;
+      const sg = new THREE.Group();
+      sg.position.set(sx, sh, sz);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 11, 8), metal);
+      beam.rotation.z = Math.PI / 2;
+      beam.rotation.y = -yaw;
+      beam.position.y = beamY;
+      beam.castShadow = true;
+      sg.add(beam);
+      for (const end of [-1, 1]) {
+        for (const lean of [-1, 1]) {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, beamY + 0.6, 8), metal);
+          leg.position.set(bx * end * 5.2 + dx * lean * 1.3, (beamY + 0.6) / 2 - 0.3, bz * end * 5.2 + dz * lean * 1.3);
+          leg.rotation.x = -dz * lean * 0.3;
+          leg.rotation.z = dx * lean * 0.3;
+          leg.castShadow = true;
+          sg.add(leg);
+        }
+      }
+      this.group.add(sg);
+      const seatCols = [paintRed, paintBlue, paintYellow];
+      for (let k = 0; k < 3; k++) {
+        const off = (k - 1) * 3.1;
+        const px = sx + bx * off, pz = sz + bz * off;
+        // the group sits at the beam and pivots like a real swing; the seat
+        // and ropes hang below it, so one rotation animates the whole thing
+        const ropeLen = 2.9;
+        const seatGrp = new THREE.Group();
+        seatGrp.position.set(px, sh + beamY, pz);
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.14, 0.62), seatCols[k]);
+        seat.position.y = -ropeLen;
+        seat.rotation.y = -yaw;
+        seat.castShadow = true;
+        seatGrp.add(seat);
+        const ropes: THREE.Mesh[] = [];
+        for (const side of [-1, 1]) {
+          const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, ropeLen, 5), metal);
+          rope.position.set(bx * side * 0.42, -ropeLen / 2, bz * side * 0.42);
+          seatGrp.add(rope);
+          ropes.push(rope);
+        }
+        this.group.add(seatGrp);
+        this.swings.push({
+          id: `swing${k}`, x: px, z: pz, baseY: sh,
+          dirX: dx, dirZ: dz,
+          ropeLen, pivotY: sh + beamY,
+          angle: 0.25 * (k - 1), vel: 0,
+          seat: seatGrp, ropes,
+        });
+      }
+    }
+
+    // ——— monkey bars: hop rung to rung all the way across ———
+    {
+      const mx = c.x + 17, mz = c.z + 6;
+      const mh = this.heightAt(mx, mz);
+      const yaw = -0.4;
+      const bx = Math.cos(yaw), bz = Math.sin(yaw);
+      const dx = -Math.sin(yaw), dz = Math.cos(yaw);
+      const barY = 3.3;
+      const mg = new THREE.Group();
+      mg.position.set(mx, mh, mz);
+      // side rails
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 12, 8), paintGreen);
+        rail.rotation.z = Math.PI / 2;
+        rail.rotation.y = -yaw;
+        rail.position.set(dx * side * 0.95, barY, dz * side * 0.95);
+        rail.castShadow = true;
+        mg.add(rail);
+        for (const end of [-1, 1]) {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, barY + 0.4, 8), paintGreen);
+          post.position.set(bx * end * 5.7 + dx * side * 0.95, (barY + 0.4) / 2 - 0.2, bz * end * 5.7 + dz * side * 0.95);
+          post.castShadow = true;
+          mg.add(post);
+        }
+      }
+      this.group.add(mg);
+      // rungs double as little platforms so a well-timed hop carries you across
+      for (let k = 0; k < 11; k++) {
+        const off = -5.5 + k * 1.1;
+        const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 2.1, 6), metal);
+        rung.rotation.x = Math.PI / 2;
+        rung.rotation.y = -yaw;
+        rung.position.set(mx + bx * off, mh + barY, mz + bz * off);
+        this.group.add(rung);
+        this.platforms.push({ x: mx + bx * off, z: mz + bz * off, r: 0.72, topY: mh + barY + 0.08 });
+      }
+      // a stepped platform at each end so little cats can get up there
+      for (const end of [-1, 1]) {
+        for (let s = 0; s < 3; s++) {
+          const off = end * (6.4 + s * 0.9);
+          const stepY = mh + 1.1 + s * 0.75;
+          const step = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.22, 1.7), wood);
+          step.position.set(mx + bx * off, stepY, mz + bz * off);
+          step.castShadow = true;
+          this.group.add(step);
+          for (const legSide of [-0.6, 0.6]) {
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, stepY - mh, 6), wood);
+            leg.position.set(mx + bx * off + dx * legSide, mh + (stepY - mh) / 2, mz + bz * off + dz * legSide);
+            this.group.add(leg);
+          }
+          this.platforms.push({ x: mx + bx * off, z: mz + bz * off, r: 0.9, topY: stepY + 0.11 });
+        }
+      }
+    }
+
+    // ——— slide tower: climb the steps, whoosh down the chute ———
+    {
+      const lx = c.x - 12, lz = c.z - 16;
+      const lh = this.heightAt(lx, lz);
+      const topY = lh + 4.0;
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.26, 2.6), wood);
+      deck.position.set(lx, topY, lz);
+      deck.castShadow = true;
+      this.group.add(deck);
+      for (const [ox, oz] of [[-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1]]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 4.0, 8), wood);
+        post.position.set(lx + ox, lh + 2.0, lz + oz);
+        post.castShadow = true;
+        this.group.add(post);
+      }
+      // little roof, so it reads as a fort
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1.3, 4), paintRed);
+      roof.rotation.y = Math.PI / 4;
+      roof.position.set(lx, topY + 0.9, lz);
+      roof.castShadow = true;
+      this.group.add(roof);
+      this.platforms.push({ x: lx, z: lz, r: 1.4, topY: topY + 0.13 });
+      // climbing steps up the back
+      for (let s = 0; s < 4; s++) {
+        const sy = lh + 0.85 + s * 0.85;
+        const sz2 = lz - 2.0 - s * 0.85;
+        const step = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.2, 0.7), paintYellow);
+        step.position.set(lx, sy, sz2);
+        this.group.add(step);
+        this.platforms.push({ x: lx, z: sz2, r: 0.75, topY: sy + 0.1 });
+      }
+      // the chute: a staircase of shallow slabs you can run straight down
+      const steps = 9;
+      for (let s = 0; s < steps; s++) {
+        const t = s / (steps - 1);
+        const sy = topY - t * 3.7;
+        const sz2 = lz + 1.5 + t * 5.5;
+        const slab = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.16, 0.95), paintBlue);
+        slab.position.set(lx, sy, sz2);
+        slab.receiveShadow = true;
+        this.group.add(slab);
+        this.platforms.push({ x: lx, z: sz2, r: 0.8, topY: sy + 0.08 });
+      }
+      this.slides.push({ x: lx, z: lz, topY });
+    }
+
+    // ——— seesaw ———
+    {
+      const ex = c.x + 12, ez = c.z - 17;
+      const eh = this.heightAt(ex, ez);
+      const pivot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.6, 1.0, 8), wood);
+      pivot.position.set(ex, eh + 0.5, ez);
+      pivot.castShadow = true;
+      this.group.add(pivot);
+      const plank = new THREE.Group();
+      plank.position.set(ex, eh + 1.05, ez);
+      const board = new THREE.Mesh(new THREE.BoxGeometry(7.0, 0.2, 0.9), paintYellow);
+      board.castShadow = true;
+      plank.add(board);
+      for (const end of [-1, 1]) {
+        const grip = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.06, 6, 12), metal);
+        grip.position.set(end * 2.9, 0.35, 0);
+        plank.add(grip);
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.14, 0.8), end > 0 ? paintRed : paintBlue);
+        seat.position.set(end * 3.1, 0.16, 0);
+        plank.add(seat);
+      }
+      this.group.add(plank);
+      this.seesaws.push({ x: ex, z: ez, plank, tilt: 0.18, vel: 0 });
+      this.platforms.push({ x: ex, z: ez, r: 1.2, topY: eh + 1.2 });
+    }
+
+    // ——— sandbox: soft sand full of things to dig up ———
+    {
+      const bx2 = c.x + 22, bz2 = c.z - 4;
+      const bh = this.heightAt(bx2, bz2);
+      const sand = new THREE.Mesh(
+        new THREE.CircleGeometry(4.4, 20),
+        new THREE.MeshStandardMaterial({ color: '#e6d29c', roughness: 1 })
+      );
+      sand.rotation.x = -Math.PI / 2;
+      sand.position.set(bx2, bh + 0.1, bz2);
+      this.group.add(sand);
+      const kerb = new THREE.Mesh(new THREE.TorusGeometry(4.4, 0.24, 8, 24), wood);
+      kerb.rotation.x = Math.PI / 2;
+      kerb.position.set(bx2, bh + 0.16, bz2);
+      this.group.add(kerb);
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 + 0.7;
+        const d = 1.4 + (k % 3) * 0.9;
+        const mx2 = bx2 + Math.cos(a) * d, mz2 = bz2 + Math.sin(a) * d;
+        const mound = new THREE.Mesh(
+          new THREE.SphereGeometry(0.42, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+          new THREE.MeshStandardMaterial({ color: '#cbb175', roughness: 1 })
+        );
+        mound.position.set(mx2, bh + 0.12, mz2);
+        this.group.add(mound);
+        this.digMounds.push({ id: `sandbox${k}`, x: mx2, z: mz2, dug: false, mesh: mound });
+      }
+    }
+
+    // ——— the big buildings you can actually walk inside ———
+    ROOMS.forEach((room, i) => {
+      const a = -Math.PI / 2 + (i - 1) * 1.15;
+      const bx2 = c.x + Math.cos(a) * 47;
+      const bz2 = c.z + Math.sin(a) * 47;
+      this.buildBigBuilding(room, bx2, bz2, Math.atan2(c.x - bx2, c.z - bz2));
+    });
+  }
+
+  /** the exterior shell of an enterable building — the inside is its own scene */
+  private buildBigBuilding(room: RoomDef, x: number, z: number, yaw: number) {
+    const h = this.heightAt(x, z);
+    // a flat pad so the shell never floats or sinks on sloped ground
+    const W = room.hw * 1.35, D = room.hd * 1.35, H = room.wallH * 1.15;
+    const g = new THREE.Group();
+    g.position.set(x, h, z);
+    g.rotation.y = yaw;
+
+    const wallMat = new THREE.MeshStandardMaterial({ color: room.wallColor, roughness: 0.95 });
+    const walls = new THREE.Mesh(new THREE.BoxGeometry(W * 2, H, D * 2), wallMat);
+    walls.position.y = H / 2;
+    walls.castShadow = true;
+    walls.receiveShadow = true;
+    g.add(walls);
+
+    const roof = new THREE.Mesh(
+      new THREE.ConeGeometry(Math.hypot(W, D) * 1.04, H * 0.62, 4),
+      new THREE.MeshStandardMaterial({ color: room.roofColor, roughness: 1, flatShading: true })
+    );
+    roof.rotation.y = Math.PI / 4;
+    roof.position.y = H + H * 0.31;
+    roof.castShadow = true;
+    g.add(roof);
+
+    // ——— the doorway: a big obvious arch on the side facing the square ———
+    const doorW = 3.0, doorH = 4.0;
+    const doorway = new THREE.Mesh(
+      new THREE.BoxGeometry(doorW, doorH, 0.5),
+      new THREE.MeshStandardMaterial({ color: '#231a12', roughness: 1 })
+    );
+    doorway.position.set(0, doorH / 2, D + 0.05);
+    g.add(doorway);
+    // warm light spilling out of the door
+    const glow = new THREE.Mesh(
+      new THREE.PlaneGeometry(doorW - 0.3, doorH - 0.4),
+      new THREE.MeshBasicMaterial({ color: '#ffcf7a', transparent: true, opacity: 0.4 })
+    );
+    glow.position.set(0, doorH / 2 - 0.15, D + 0.32);
+    g.add(glow);
+    const frameMat = new THREE.MeshStandardMaterial({ color: '#5d4530', roughness: 1 });
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.4, doorH + 0.4, 0.5), frameMat);
+      post.position.set(side * (doorW / 2 + 0.2), (doorH + 0.4) / 2, D + 0.1);
+      g.add(post);
+    }
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(doorW + 1.2, 0.45, 0.6), frameMat);
+    lintel.position.set(0, doorH + 0.4, D + 0.1);
+    g.add(lintel);
+    // a welcome mat with the room's sign above it
+    const mat2 = new THREE.Mesh(
+      new THREE.PlaneGeometry(doorW, 1.6),
+      new THREE.MeshStandardMaterial({ color: '#a8543f', roughness: 1 })
+    );
+    mat2.rotation.x = -Math.PI / 2;
+    mat2.position.set(0, 0.06, D + 1.1);
+    g.add(mat2);
+    g.add(this.makeSign(room.name, room.icon, 0, doorH + 1.5, D + 0.35));
+
+    // windows, so the shell isn't a blank box
+    const winMat = new THREE.MeshStandardMaterial({ color: '#ffe0a8', emissive: '#ffb44a', emissiveIntensity: 0.35, roughness: 0.4 });
+    for (const side of [-1, 1]) {
+      for (const off of [-0.45, 0.45]) {
+        const win = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.5, 1.8), winMat);
+        win.position.set(side * (W + 0.02), H * 0.55, off * D);
+        g.add(win);
+      }
+    }
+    this.group.add(g);
+
+    // walls are solid; the doorway is the one way through
+    const sinY = Math.sin(yaw), cosY = Math.cos(yaw);
+    const toWorld = (lx: number, lz: number) => ({
+      x: x + lx * cosY + lz * sinY,
+      z: z - lx * sinY + lz * cosY,
+    });
+    const stepsX = Math.ceil((W * 2) / 1.2);
+    const stepsZ = Math.ceil((D * 2) / 1.2);
+    for (let k = 0; k <= stepsX; k++) {
+      const lx = -W + (k / stepsX) * W * 2;
+      for (const lz of [-D, D]) {
+        if (lz > 0 && Math.abs(lx) < doorW / 2 + 0.2) continue; // the doorway stays open
+        const p = toWorld(lx, lz);
+        this.rocks.push({ x: p.x, z: p.z, r: 0.7 });
+      }
+    }
+    for (let k = 0; k <= stepsZ; k++) {
+      const lz = -D + (k / stepsZ) * D * 2;
+      for (const lx of [-W, W]) {
+        const p = toWorld(lx, lz);
+        this.rocks.push({ x: p.x, z: p.z, r: 0.7 });
+      }
+    }
+
+    const door = toWorld(0, D + 1.2);
+    this.doors.push({ roomId: room.id, x: door.x, z: door.z, y: this.heightAt(door.x, door.z), yaw });
+  }
+
+  /** a hanging wooden sign with the building's name painted on it */
+  private makeSign(name: string, icon: string, x: number, y: number, z: number): THREE.Mesh {
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 160;
+    const ctx = cv.getContext('2d')!;
+    ctx.fillStyle = '#f0dfc0';
+    ctx.fillRect(0, 0, 512, 160);
+    ctx.strokeStyle = '#6e5136';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(6, 6, 500, 148);
+    ctx.fillStyle = '#4a3520';
+    ctx.font = 'bold 62px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${icon} ${name}`, 256, 84);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(5.2, 1.6),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 })
+    );
+    sign.position.set(x, y, z);
+    return sign;
+  }
+
+  /** playground rides animate every frame; the game feeds back rider input */
+  updatePlayground(dt: number, time: number) {
+    const car = this.carousel;
+    if (car) {
+      car.spin *= Math.pow(0.86, dt * 60 * 0.06); // slowly winds down
+      if (Math.abs(car.spin) < 0.02) car.spin = 0;
+      car.angle += car.spin * dt;
+      car.group.rotation.y = car.angle;
+    }
+    for (const s of this.swings) {
+      // pendulum: gravity pulls the seat back toward straight down
+      s.vel += -(9.8 / s.ropeLen) * Math.sin(s.angle) * dt;
+      s.vel *= Math.pow(0.995, dt * 60);
+      s.angle += s.vel * dt;
+      // rotate the whole hanging group about the beam axis
+      s.seat.quaternion.setFromAxisAngle(SWING_AXIS.set(-s.dirZ, 0, s.dirX), s.angle);
+    }
+    for (const t of this.trampolines) {
+      t.squash = Math.max(0, t.squash - dt * 3.2);
+      t.mat.position.y = 1.0 - t.squash * 0.55; // local to the trampoline frame
+    }
+    for (const e of this.seesaws) {
+      e.vel += -Math.sin(e.tilt) * 3.4 * dt;
+      e.vel *= Math.pow(0.985, dt * 60);
+      e.tilt += e.vel * dt;
+      e.tilt = Math.max(-0.34, Math.min(0.34, e.tilt));
+      e.plank.rotation.z = e.tilt + Math.sin(time * 0.7) * 0.01;
+    }
+  }
+
+  /** where a swing's seat is right now, in world space */
+  swingSeatPos(s: Swing): { x: number; y: number; z: number } {
+    return {
+      x: s.x + s.dirX * Math.sin(s.angle) * s.ropeLen,
+      y: s.pivotY - Math.cos(s.angle) * s.ropeLen,
+      z: s.z + s.dirZ * Math.sin(s.angle) * s.ropeLen,
+    };
+  }
+
+  /** the nearest door you're standing in front of */
+  doorNear(x: number, z: number, r = 3.2): DoorInfo | null {
+    let best: DoorInfo | null = null;
+    let bd = r;
+    for (const d of this.doors) {
+      const dd = Math.hypot(d.x - x, d.z - z);
+      if (dd < bd) { bd = dd; best = d; }
+    }
+    return best;
+  }
+
   // ——— Cat Tower Trial: a spiral of pillars to jump up, fall and start over ———
   private buildTowerTrial() {
     const c = this.agilityCenter;
@@ -2280,7 +2809,7 @@ export class World {
         // washed up on a beach somewhere around the coast
         for (let i = 0; i < 240; i++) {
           const a = mulRand(this.seed + 70000 + i) * Math.PI * 2;
-          const d = 150 + mulRand(this.seed + 71000 + i) * 90;
+          const d = 208 + mulRand(this.seed + 71000 + i) * 125;
           const x = Math.cos(a) * d, z = Math.sin(a) * d;
           const h = this.heightAt(x, z);
           if (h > WATER_LEVEL + 0.25 && h < WATER_LEVEL + 0.9) return { x, z };
@@ -2947,6 +3476,7 @@ export class World {
 
     this.updateLeaves(dt, time, playerX, playerZ);
     this.updateSnow(dt, time, playerX, playerZ);
+    this.updatePlayground(dt, time);
 
     // fade the clan-house shell away while a cat is inside so the camera can see
     {
@@ -3020,7 +3550,7 @@ export class World {
   // ——— minimap: the island painted from its own heightfield ———
   private minimapCache: string | null = null;
   /** world half-range the map spans (covers islets) */
-  readonly MAP_RANGE = 330;
+  readonly MAP_RANGE = 460;
 
   buildMinimap(): string {
     if (this.minimapCache) return this.minimapCache;

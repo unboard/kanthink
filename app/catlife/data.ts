@@ -6,7 +6,7 @@ import type {
 } from './types';
 import { mulberry32, pick, range, irange } from './rng';
 
-export const WORLD_SIZE = 520;         // world is WORLD_SIZE x WORLD_SIZE centered at 0
+export const WORLD_SIZE = 720;         // world is WORLD_SIZE x WORLD_SIZE centered at 0
 export const WATER_LEVEL = 0;
 export const DAY_LENGTH = 360;         // seconds per full day/night cycle
 
@@ -436,6 +436,116 @@ export const SPIRIT_ANIMALS: readonly SpiritAnimalDef[] = [
 ] as const;
 
 export type SpiritKind = SpiritAnimalDef['kind'];
+
+// ——— Big buildings you can actually walk inside ———
+// Each one swaps the whole world out for a cozy room the kids decorate.
+export interface RoomDef {
+  id: string;
+  name: string;
+  icon: string;
+  /** exterior look */
+  wallColor: string;
+  roofColor: string;
+  /** interior half-extents (x, z) and wall height */
+  hw: number;
+  hd: number;
+  wallH: number;
+  floorColor: string;
+  innerWallColor: string;
+  /** how many shelf slots the bookshelf has (rows x cols) */
+  shelfRows: number;
+  shelfCols: number;
+  shelfLabel: string;
+  welcome: string;
+}
+
+export const ROOMS: readonly RoomDef[] = [
+  {
+    id: 'library',
+    name: 'The Great Library',
+    icon: '📚',
+    wallColor: '#b98f63',
+    roofColor: '#7d4a34',
+    hw: 11,
+    hd: 9,
+    wallH: 6,
+    floorColor: '#a5763f',
+    innerWallColor: '#e5d3b3',
+    shelfRows: 3,
+    shelfCols: 6,
+    shelfLabel: 'Bookshelf',
+    welcome: 'Welcome to the Great Library! 📚 Tap the bookshelf to organize it.',
+  },
+  {
+    id: 'cafe',
+    name: 'The Cozy Cat Café',
+    icon: '☕',
+    wallColor: '#d2907f',
+    roofColor: '#6b4a5e',
+    hw: 10,
+    hd: 8,
+    wallH: 5.5,
+    floorColor: '#c9a271',
+    innerWallColor: '#f4e2d8',
+    shelfRows: 3,
+    shelfCols: 5,
+    shelfLabel: 'Pantry Shelf',
+    welcome: 'Welcome to the Cozy Cat Café! ☕ Stock the pantry shelf however you like.',
+  },
+  {
+    id: 'playhouse',
+    name: 'The Playhouse',
+    icon: '🎪',
+    wallColor: '#8fb98f',
+    roofColor: '#4a7d6b',
+    hw: 12,
+    hd: 10,
+    wallH: 6.5,
+    floorColor: '#b98f63',
+    innerWallColor: '#dff0e4',
+    shelfRows: 4,
+    shelfCols: 6,
+    shelfLabel: 'Toy Shelf',
+    welcome: 'Welcome to the Playhouse! 🎪 The big shelf is yours to fill.',
+  },
+] as const;
+
+// ——— Shelf decor: everything the kids can arrange on a shelf ———
+export interface ShelfItemDef {
+  id: string;
+  name: string;
+  icon: string;
+  /** how it's drawn on the 3D shelf */
+  shape: 'book' | 'jar' | 'plant' | 'ball' | 'stack' | 'frame' | 'cup' | 'star';
+  color: string;
+}
+
+export const SHELF_ITEMS: readonly ShelfItemDef[] = [
+  { id: 'redbook', name: 'Red Book', icon: '📕', shape: 'book', color: '#c0392b' },
+  { id: 'bluebook', name: 'Blue Book', icon: '📘', shape: 'book', color: '#2980b9' },
+  { id: 'greenbook', name: 'Green Book', icon: '📗', shape: 'book', color: '#27ae60' },
+  { id: 'goldbook', name: 'Gold Book', icon: '📙', shape: 'book', color: '#d4a017' },
+  { id: 'bookstack', name: 'Stack of Books', icon: '📚', shape: 'stack', color: '#8e44ad' },
+  { id: 'notebook', name: 'Notebook', icon: '📓', shape: 'book', color: '#34495e' },
+  { id: 'fern', name: 'Little Fern', icon: '🪴', shape: 'plant', color: '#4d7c3a' },
+  { id: 'flowerpot', name: 'Flower Pot', icon: '🌸', shape: 'plant', color: '#e91e63' },
+  { id: 'cactus', name: 'Tiny Cactus', icon: '🌵', shape: 'plant', color: '#5e9146' },
+  { id: 'jamjar', name: 'Jam Jar', icon: '🍓', shape: 'jar', color: '#c0392b' },
+  { id: 'honeyjar', name: 'Honey Jar', icon: '🍯', shape: 'jar', color: '#d4a017' },
+  { id: 'cookiejar', name: 'Cookie Jar', icon: '🍪', shape: 'jar', color: '#a5763f' },
+  { id: 'milkjar', name: 'Milk Jug', icon: '🥛', shape: 'jar', color: '#f2f2f2' },
+  { id: 'teacup', name: 'Teacup', icon: '🍵', shape: 'cup', color: '#9ec97f' },
+  { id: 'mug', name: 'Cocoa Mug', icon: '☕', shape: 'cup', color: '#8a5a3a' },
+  { id: 'yarnball', name: 'Yarn Ball', icon: '🧶', shape: 'ball', color: '#e05d7e' },
+  { id: 'blueyarn', name: 'Blue Yarn', icon: '🧵', shape: 'ball', color: '#5dade2' },
+  { id: 'bouncyball', name: 'Bouncy Ball', icon: '⚽', shape: 'ball', color: '#f5d76e' },
+  { id: 'photo', name: 'Clan Photo', icon: '🖼️', shape: 'frame', color: '#b08d57' },
+  { id: 'painting', name: 'Little Painting', icon: '🎨', shape: 'frame', color: '#85c1e9' },
+  { id: 'trophy', name: 'Trophy', icon: '🏆', shape: 'star', color: '#f1c40f' },
+  { id: 'seashell', name: 'Seashell', icon: '🐚', shape: 'star', color: '#f5c3d8' },
+  { id: 'crystal', name: 'Crystal', icon: '💎', shape: 'star', color: '#7fd8e8' },
+  { id: 'lantern', name: 'Lantern', icon: '🏮', shape: 'jar', color: '#e67e22' },
+] as const;
 
 export const ACCESSORY_LABELS: Record<AccessoryId, string> = {
   none: 'None',

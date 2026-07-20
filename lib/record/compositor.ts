@@ -351,26 +351,45 @@ export class Compositor {
 // ===== Audio mixing + enhancement =====
 
 /**
- * Gentle "soften" chain to take the edge off harsh mic audio: a mild high-shelf
- * cut, a small presence dip, a high low-pass, and light compression. Returns
- * the tail node.
+ * Load the de-esser AudioWorklet (see public/worklets/deesser.js). It ducks
+ * sibilance only while an "s" actually spikes — no makeup gain, no latency —
+ * which native DynamicsCompressorNode can't do (its automatic makeup gain
+ * boosts the whole high band, amplifying hiss and Bluetooth codec artifacts).
+ * Returns null if worklets are unavailable; the chain then skips de-essing.
  */
-function softenMic(ctx: AudioContext, source: AudioNode): AudioNode {
+async function createDeEsser(ctx: AudioContext): Promise<AudioNode | null> {
+  try {
+    await ctx.audioWorklet.addModule('/worklets/deesser.js');
+    return new AudioWorkletNode(ctx, 'deesser');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Gentle "soften" chain for the mic: rumble high-pass, de-esser (worklet),
+ * a mild high-shelf cut, a small presence dip, and light compression.
+ * Tuned for band-limited sources like Bluetooth headset mics (~8 kHz of real
+ * content), so the static cuts are modest — the de-esser handles the spikes.
+ * Returns the tail node.
+ */
+function softenMic(ctx: AudioContext, source: AudioNode, deesser: AudioNode | null): AudioNode {
+  // Below ~85 Hz is rumble, handling noise and breath thumps, not voice.
+  const highpass = ctx.createBiquadFilter();
+  highpass.type = 'highpass';
+  highpass.frequency.value = 85;
+  highpass.Q.value = 0.9;
+
   const shelf = ctx.createBiquadFilter();
   shelf.type = 'highshelf';
   shelf.frequency.value = 5500;
-  shelf.gain.value = -6;
+  shelf.gain.value = -4;
 
   const presence = ctx.createBiquadFilter();
   presence.type = 'peaking';
   presence.frequency.value = 3200;
   presence.Q.value = 1;
-  presence.gain.value = -4;
-
-  const lowpass = ctx.createBiquadFilter();
-  lowpass.type = 'lowpass';
-  lowpass.frequency.value = 13000;
-  lowpass.Q.value = 0.7;
+  presence.gain.value = -3;
 
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -24;
@@ -379,10 +398,15 @@ function softenMic(ctx: AudioContext, source: AudioNode): AudioNode {
   comp.attack.value = 0.003;
   comp.release.value = 0.25;
 
-  source.connect(shelf);
+  source.connect(highpass);
+  let tail: AudioNode = highpass;
+  if (deesser) {
+    tail.connect(deesser);
+    tail = deesser;
+  }
+  tail.connect(shelf);
   shelf.connect(presence);
-  presence.connect(lowpass);
-  lowpass.connect(comp);
+  presence.connect(comp);
   return comp;
 }
 
@@ -390,16 +414,16 @@ function softenMic(ctx: AudioContext, source: AudioNode): AudioNode {
  * Build the recording audio: mic (optionally softened) plus browser/tab audio,
  * mixed to one stream. Returns null for a silent recording. Caller owns the ctx.
  */
-export function buildRecordingAudio(
+export async function buildRecordingAudio(
   ctx: AudioContext,
   opts: { mic?: MediaStream | null; browser?: MediaStream | null; enhance: boolean }
-): MediaStream | null {
+): Promise<MediaStream | null> {
   const dest = ctx.createMediaStreamDestination();
   let any = false;
 
   if (opts.mic && opts.mic.getAudioTracks().length > 0) {
     const src = ctx.createMediaStreamSource(opts.mic);
-    const tail = opts.enhance ? softenMic(ctx, src) : src;
+    const tail = opts.enhance ? softenMic(ctx, src, await createDeEsser(ctx)) : src;
     tail.connect(dest);
     any = true;
   }
@@ -427,6 +451,8 @@ export function pickMimeType(): string {
 
 export interface ActiveRecording {
   stop: () => Promise<Blob>;
+  pause: () => void;
+  resume: () => void;
   mimeType: string;
 }
 
@@ -441,7 +467,11 @@ export function startRecording(
   const combined = new MediaStream(tracks);
 
   const mimeType = pickMimeType();
-  const recorder = new MediaRecorder(combined, { mimeType, videoBitsPerSecond: 6_000_000 });
+  const recorder = new MediaRecorder(combined, {
+    mimeType,
+    videoBitsPerSecond: 6_000_000,
+    audioBitsPerSecond: 192_000,
+  });
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data);
@@ -450,6 +480,12 @@ export function startRecording(
 
   return {
     mimeType,
+    pause: () => {
+      if (recorder.state === 'recording') recorder.pause();
+    },
+    resume: () => {
+      if (recorder.state === 'paused') recorder.resume();
+    },
     stop: () =>
       new Promise<Blob>((resolve) => {
         recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));

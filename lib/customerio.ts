@@ -41,15 +41,20 @@ export async function identifyUser(user: {
 /**
  * Send a transactional email through Customer.IO.
  * Uses the single `kanthink_email` transactional template with body override.
+ *
+ * Optional `attachments` are passed through CIO's SendEmailRequest.attach().
+ * CIO caps individual attachments at 2MB.
  */
 export async function sendTransactionalEmail({
   to,
   subject,
   html,
+  attachments,
 }: {
   to: string
   subject: string
   html: string
+  attachments?: Array<{ filename: string; data: Buffer }>
 }): Promise<boolean> {
   if (!cioApi) {
     console.warn('[CIO] API client not configured, skipping email')
@@ -69,6 +74,12 @@ export async function sendTransactionalEmail({
       message_data: { subject, body: html },
       disable_message_retention: false,
     })
+
+    if (attachments) {
+      for (const a of attachments) {
+        request.attach(a.filename, a.data)
+      }
+    }
 
     await cioApi.sendEmail(request)
     return true

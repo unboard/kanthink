@@ -132,6 +132,8 @@ export interface SaveData {
   treats: number;               // dug-up treats (bonus xp currency)
   fish: Record<string, { count: number; best: number }>; // fish collection by species
   toybox: string[];             // collectable toys & stuffies found around the island
+  // what's on each enterable building's shelf: roomId -> slot index -> item id
+  shelves?: Record<string, (string | null)[]>;
   soundOn: boolean;
   musicOn: boolean;
   tutorialDone: string[];       // tutorial step keys shown
@@ -151,7 +153,9 @@ export type CatAction =
 export interface ContextTarget {
   kind: 'dig' | 'climb' | 'scratch' | 'yarn' | 'golden' | 'duel' | 'prey' | 'agility' | 'islet' | 'building' | 'rescue'
     | 'love' | 'nurse' | 'pickup' | 'setdown' | 'stray' | 'washart' | 'bath' | 'fish' | 'reel'
-    | 'transform' | 'untransform';
+    | 'transform' | 'untransform'
+    // playground + enterable buildings
+    | 'enter' | 'exit' | 'shelf' | 'swing' | 'hopoff' | 'spin' | 'nap';
   label: string;
   id: string;
   x: number;
@@ -174,6 +178,8 @@ export interface HudState {
   zoom: { active: boolean; ready: boolean }; // super-run dash state for the ⚡ button
   fishing: 'cast' | 'bite' | null; // waiting for a nibble / FISH ON, reel it in!
   territory: string | null; // name of the climate territory the cat is standing in
+  indoors: { roomId: string; name: string; icon: string } | null; // inside a big building
+  riding: 'swing' | 'carousel' | null; // hanging on to playground equipment
   compass: number;   // camera yaw for minimap
   camp: { angle: number; dist: number }; // direction home (camera-relative)
   rescue: { angle: number; dist: number; kind: 'tree' | 'water' } | null; // stranded kitten direction
@@ -232,4 +238,5 @@ export interface GameEvents {
   onSaveChanged: () => void;     // yarn/cats/etc changed; UI screens re-read save
   onCelebrate: (kind: 'recruit' | 'levelup' | 'build' | 'rankup', text: string) => void;
   onPlaydateMembers?: (members: { id: string; name: string; color: string }[]) => void;
+  onShelf: (roomId: string | null) => void; // bookshelf organizer opened/closed
 }

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
   Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Film, ArrowRight,
-  Captions, AudioLines,
+  Captions, AudioLines, Pause, Play,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
@@ -42,6 +42,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [cameraId, setCameraId] = useState<string>('');
   const [micId, setMicId] = useState<string>('');
+  const [micHz, setMicHz] = useState<number | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
   const [includeBrowserAudio, setIncludeBrowserAudio] = useState(false);
 
@@ -49,6 +50,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const [hasScreen, setHasScreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
 
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [reviewBlob, setReviewBlob] = useState<Blob | null>(null);
@@ -69,6 +71,11 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const audioCtxRef = useRef<AudioContext | null>(null);
   const recordingRef = useRef<ActiveRecording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Elapsed accounting across pause/resume: total ms of completed segments plus
+  // the wall-clock start of the currently running segment.
+  const elapsedBaseRef = useRef(0);
+  const segmentStartRef = useRef(0);
+  const pausedRef = useRef(false);
 
   // Live captions: written to a ref (high frequency) so they don't re-render.
   const captionRef = useRef('');
@@ -165,19 +172,24 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const acquireMic = useCallback(async (deviceId?: string) => {
     try {
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
-      // Browser-level cleanup helps tame harsh/noisy headset mics.
+      // Browser-level cleanup helps tame harsh/noisy headset mics. Ask for
+      // 48 kHz so capture matches the Opus encoder rate (no resample step).
       const enhanceConstraints: MediaTrackConstraints = {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
+        sampleRate: { ideal: 48000 },
       };
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: deviceId ? { deviceId: { exact: deviceId }, ...enhanceConstraints } : enhanceConstraints,
         video: false,
       });
       micStreamRef.current = stream;
-      const id = stream.getAudioTracks()[0]?.getSettings().deviceId;
-      if (id) setMicId(id);
+      const settings = stream.getAudioTracks()[0]?.getSettings();
+      if (settings?.deviceId) setMicId(settings.deviceId);
+      // Bluetooth hands-free mics report 8/16/32 kHz — surface that the
+      // quality ceiling comes from the mic link, not the recording.
+      setMicHz(settings?.sampleRate ?? null);
       await refreshDevices();
     } catch {
       setError('Could not access the microphone.');
@@ -227,9 +239,10 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     if (!canvasRef.current) return;
     if (!hasScreen) { setError('Share your screen before recording.'); return; }
 
-    const audioCtx = new AudioContext();
+    // 48 kHz matches the Opus encoder's native rate — avoids a 44.1→48 resample.
+    const audioCtx = new AudioContext({ sampleRate: 48000 });
     audioCtxRef.current = audioCtx;
-    const audio = buildRecordingAudio(audioCtx, {
+    const audio = await buildRecordingAudio(audioCtx, {
       mic: micEnabled ? micStreamRef.current : null,
       browser: includeBrowserAudio ? screenStreamRef.current : null,
       enhance: config.enhanceAudio,
@@ -237,14 +250,48 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
 
     recordingRef.current = startRecording(canvasRef.current, audio, 30);
     setElapsed(0);
+    setIsPaused(false);
+    pausedRef.current = false;
     setPhase('recording');
-    const startedAt = Date.now();
-    timerRef.current = setInterval(() => setElapsed(Date.now() - startedAt), 200);
+    elapsedBaseRef.current = 0;
+    segmentStartRef.current = Date.now();
+    timerRef.current = setInterval(
+      () => setElapsed(elapsedBaseRef.current + (Date.now() - segmentStartRef.current)),
+      200
+    );
   }, [hasScreen, micEnabled, includeBrowserAudio, config.enhanceAudio]);
+
+  const pauseRecording = useCallback(() => {
+    if (!recordingRef.current || pausedRef.current) return;
+    recordingRef.current.pause();
+    elapsedBaseRef.current += Date.now() - segmentStartRef.current;
+    if (timerRef.current) clearInterval(timerRef.current);
+    setElapsed(elapsedBaseRef.current);
+    pausedRef.current = true;
+    setIsPaused(true);
+  }, []);
+
+  const resumeRecording = useCallback(() => {
+    if (!recordingRef.current || !pausedRef.current) return;
+    recordingRef.current.resume();
+    segmentStartRef.current = Date.now();
+    timerRef.current = setInterval(
+      () => setElapsed(elapsedBaseRef.current + (Date.now() - segmentStartRef.current)),
+      200
+    );
+    pausedRef.current = false;
+    setIsPaused(false);
+  }, []);
 
   const finishRecording = useCallback(async () => {
     if (!recordingRef.current) return;
     if (timerRef.current) clearInterval(timerRef.current);
+    if (!pausedRef.current) {
+      elapsedBaseRef.current += Date.now() - segmentStartRef.current;
+    }
+    setElapsed(elapsedBaseRef.current);
+    setIsPaused(false);
+    pausedRef.current = false;
     const blob = await recordingRef.current.stop();
     recordingRef.current = null;
     audioCtxRef.current?.close().catch(() => {});
@@ -382,7 +429,14 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
 
             {phase === 'recording' && (
               <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/70 px-3 py-1 text-sm">
-                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                {isPaused ? (
+                  <>
+                    <Pause className="h-3 w-3 text-amber-400" />
+                    <span className="text-amber-300">Paused</span>
+                  </>
+                ) : (
+                  <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+                )}
                 {formatTime(elapsed)}
               </div>
             )}
@@ -400,12 +454,29 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
               </button>
             )}
             {phase === 'recording' && (
-              <button
-                onClick={finishRecording}
-                className="flex items-center gap-2 rounded-full bg-neutral-200 px-6 py-3 font-semibold text-black hover:bg-white"
-              >
-                <Square className="h-4 w-4 fill-current" /> Stop
-              </button>
+              <>
+                {isPaused ? (
+                  <button
+                    onClick={resumeRecording}
+                    className="flex items-center gap-2 rounded-full bg-emerald-500 px-6 py-3 font-semibold text-black hover:bg-emerald-400"
+                  >
+                    <Play className="h-4 w-4 fill-current" /> Continue
+                  </button>
+                ) : (
+                  <button
+                    onClick={pauseRecording}
+                    className="flex items-center gap-2 rounded-full border border-neutral-600 bg-neutral-900 px-6 py-3 font-semibold text-neutral-200 hover:bg-neutral-800"
+                  >
+                    <Pause className="h-4 w-4 fill-current" /> Pause
+                  </button>
+                )}
+                <button
+                  onClick={finishRecording}
+                  className="flex items-center gap-2 rounded-full bg-neutral-200 px-6 py-3 font-semibold text-black hover:bg-white"
+                >
+                  <Square className="h-4 w-4 fill-current" /> Stop
+                </button>
+              </>
             )}
           </div>
         </section>
@@ -479,8 +550,14 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                   onClick={() => setConfig((c) => ({ ...c, enhanceAudio: !c.enhanceAudio }))}
                 />
                 <p className="text-[11px] text-neutral-500">
-                  Takes a little edge off bright/harsh mics. Test with a short clip.
+                  De-esses sharp &ldquo;s&rdquo; sounds and takes the edge off bright mics. Test with a short clip.
                 </p>
+                {micHz !== null && micHz <= 32000 && (
+                  <p className="text-[11px] text-amber-400">
+                    This mic is running in Bluetooth hands-free mode ({Math.round(micHz / 1000)} kHz) —
+                    that caps voice quality no matter the settings. A built-in or wired mic will sound noticeably clearer.
+                  </p>
+                )}
               </Group>
 
               {/* Webcam style */}

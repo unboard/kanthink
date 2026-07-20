@@ -1,0 +1,18 @@
+import { chromium } from '@playwright/test';
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+const errors = [];
+page.on('pageerror', (err) => errors.push(err.message));
+await page.goto('http://localhost:3000/catlife', { waitUntil: 'domcontentloaded', timeout: 60000 });
+await page.evaluate(() => localStorage.removeItem('catlife-save-v1'));
+await page.reload({ waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(5000);
+await page.getByText('Begin the Adventure').click();
+await page.waitForTimeout(6000);
+await page.evaluate(() => { const g = window.__ww; if (g) { g.px += 80; g.pz += 40; } });
+await page.waitForTimeout(1200);
+const txt = await page.evaluate(() => document.body.innerText);
+console.log('camp after teleport:', await page.evaluate(() => JSON.stringify(window.__ww?.campCompass())));
+console.log('compass visible:', txt.includes('🏕'));
+console.log('errors:', errors.length, errors.slice(0, 3));
+await browser.close();

@@ -16,7 +16,7 @@ import {
 import {
   generateCat, rankFor, rankProgress, xpForLevel, clanCapacity,
   BUILDABLES, RANKS, RIVAL_CLANS, PATTERN_LABELS, ACCESSORY_LABELS,
-  FISH_SPECIES, RARITY_LABELS, TOYS,
+  FISH_SPECIES, RARITY_LABELS, TOYS, ROOMS, SHELF_ITEMS,
 } from './data';
 import type {
   AccessoryId, CatSpec, ChallengeState, DuelState, HudState, PatternId, SaveData, ToastMsg,
@@ -289,6 +289,7 @@ function PlayScreen({ save }: { save: SaveData }) {
   const [, setSaveTick] = useState(0); // bump to re-read save in overlays
   const [playdateCode, setPlaydateCode] = useState<string | null>(null);
   const [playdateMembers, setPlaydateMembers] = useState<PlaydateMember[]>([]);
+  const [shelfRoom, setShelfRoom] = useState<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -310,6 +311,7 @@ function PlayScreen({ save }: { save: SaveData }) {
         setTimeout(() => setCelebrate(null), 4200);
       },
       onPlaydateMembers: setPlaydateMembers,
+      onShelf: setShelfRoom,
     }, playdateCode ? { code: playdateCode } : null);
     gameRef.current = game;
     game.start();
@@ -368,6 +370,9 @@ function PlayScreen({ save }: { save: SaveData }) {
           onClose={() => setOverlay(null)}
         />
       )}
+
+      {/* bookshelf organizer (inside a building) */}
+      {shelfRoom && game && <ShelfOverlay game={game} roomId={shelfRoom} onClose={() => setShelfRoom(null)} />}
 
       {/* duel + challenge */}
       {duel && game && <DuelOverlay duel={duel} game={game} />}
@@ -568,7 +573,10 @@ function ActionCluster({ hud, gameRef }: { hud: HudState; gameRef: React.RefObje
         {!ctx && hud.sneaking && (
           <RoundBtn label="🐾" sub="pounce" size={72} onPress={() => gameRef.current?.pressAction()} />
         )}
-        <RoundBtn label="⬆️" sub={hud.climbing ? 'leap off' : 'jump'} size={72}
+        <RoundBtn
+          label={hud.riding ? '🚀' : '⬆️'}
+          sub={hud.riding === 'swing' ? 'LAUNCH!' : hud.riding === 'carousel' ? 'hop off' : hud.climbing ? 'leap off' : 'jump'}
+          size={72}
           onPress={() => gameRef.current?.pressJump()} />
       </div>
     </div>
@@ -587,6 +595,12 @@ function ctxIcon(kind: string): string {
     case 'bath': return '🛁';
     case 'fish': return '🎣';
     case 'reel': return '🎣';
+    case 'enter': return '🚪';
+    case 'exit': return '☀️';
+    case 'shelf': return '📚';
+    case 'nap': return '😴';
+    case 'swing': return '🎠';
+    case 'spin': return '🌀';
     default: return '✨';
   }
 }
@@ -625,7 +639,9 @@ function TopHud({
         <Pill text={`🧶 ${hud.yarn}`} />
         <Pill text={`🍪 ${hud.treats}`} />
         {hud.kittens > 0 && <Pill text={`🐱 ${hud.kittens}`} />}
-        {hud.territory && <Pill text={hud.territory} />}
+        {hud.indoors
+          ? <Pill text={`${hud.indoors.icon} ${hud.indoors.name}`} />
+          : hud.territory && <Pill text={hud.territory} />}
         {hud.paint && (
           <span className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold shadow-lg"
             style={{ background: 'rgba(253,250,241,0.94)', color: INK, border: `1.5px solid ${hud.paint}` }}>
@@ -989,6 +1005,106 @@ function ChallengeOverlay({ c, game }: { c: ChallengeState; game: Game }) {
               onPointerDown={() => game.dismissChallenge()}>
               Okay!
             </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ————————————————— shelf organizer —————————————————
+// Tap a slot, tap a thing, and it appears on the real 3D shelf behind you.
+
+function ShelfOverlay({ game, roomId, onClose }: { game: Game; roomId: string; onClose: () => void }) {
+  const room = ROOMS.find((r) => r.id === roomId)!;
+  const [slots, setSlots] = useState<(string | null)[]>(() => game.getShelf(roomId));
+  const [sel, setSel] = useState<number | null>(null);
+
+  const place = (itemId: string | null) => {
+    if (sel === null) return;
+    game.setShelfSlot(roomId, sel, itemId);
+    setSlots(game.getShelf(roomId));
+    // walk along the shelf so filling it up is one tap per thing
+    setSel((s) => (s === null ? null : Math.min(s + 1, slots.length - 1)));
+  };
+
+  const filled = slots.filter(Boolean).length;
+
+  return (
+    <div className="absolute inset-0 z-40 flex items-end justify-center" style={{ background: 'rgba(20,16,10,0.45)' }}>
+      <div className="w-full max-w-3xl rounded-t-3xl border p-3 shadow-2xl"
+        style={{ background: 'rgba(253,250,241,0.98)', borderColor: LINE, maxHeight: '82%', overflowY: 'auto' }}>
+        <div className="mb-2 flex items-center justify-between px-1">
+          <div className="font-bold" style={{ color: INK, fontFamily: 'var(--font-fraunces)' }}>
+            📚 {room.shelfLabel}
+            <span className="ml-2 text-sm font-normal" style={{ color: INK_SOFT }}>
+              {filled} / {slots.length} filled
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button className="rounded-full px-3 py-1.5 text-sm font-bold" style={{ background: '#eee5cf', color: INK }}
+              onPointerDown={() => { game.clearShelf(roomId); setSlots(game.getShelf(roomId)); setSel(null); }}>
+              🧹 Clear
+            </button>
+            <button className="rounded-full px-4 py-1.5 text-sm font-bold" style={{ background: GOLD, color: '#3a2f14' }}
+              onPointerDown={onClose}>
+              ✕ Done
+            </button>
+          </div>
+        </div>
+
+        {/* the shelf itself — rows mirror the real one in the room */}
+        <div className="mb-3 rounded-2xl p-2" style={{ background: '#7d5836' }}>
+          {Array.from({ length: room.shelfRows }, (_, r) => (
+            <div key={r} className="mb-1.5 flex gap-1.5 rounded-lg p-1.5" style={{ background: '#5c4028' }}>
+              {Array.from({ length: room.shelfCols }, (_, c) => {
+                const i = r * room.shelfCols + c;
+                const item = slots[i] ? SHELF_ITEMS.find((s) => s.id === slots[i]) : null;
+                const active = sel === i;
+                return (
+                  <button
+                    key={c}
+                    className="flex aspect-square flex-1 items-center justify-center rounded-md text-2xl active:scale-95"
+                    style={{
+                      background: active ? '#ffe9b0' : '#a5763f',
+                      border: active ? `2.5px solid ${GOLD}` : '2px solid rgba(0,0,0,0.18)',
+                    }}
+                    onPointerDown={() => setSel(active ? null : i)}
+                  >
+                    {item?.icon ?? ''}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {sel === null ? (
+          <p className="px-1 pb-2 text-center text-sm" style={{ color: INK_SOFT }}>
+            Tap a shelf square, then pick something to put there. ✨
+          </p>
+        ) : (
+          <>
+            <div className="mb-1.5 flex items-center justify-between px-1">
+              <span className="text-sm font-bold" style={{ color: INK }}>Pick something for that spot:</span>
+              <button className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: '#eee5cf', color: INK }}
+                onPointerDown={() => place(null)}>
+                Empty it
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-2 pb-2 sm:grid-cols-6">
+              {SHELF_ITEMS.map((it) => (
+                <button
+                  key={it.id}
+                  className="flex flex-col items-center gap-0.5 rounded-xl border px-1 py-2 active:scale-95"
+                  style={{ background: '#fff', borderColor: LINE }}
+                  onPointerDown={() => place(it.id)}
+                >
+                  <span className="text-2xl">{it.icon}</span>
+                  <span className="text-center text-[10px] leading-tight" style={{ color: INK_SOFT }}>{it.name}</span>
+                </button>
+              ))}
+            </div>
           </>
         )}
       </div>

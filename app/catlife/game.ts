@@ -3,7 +3,8 @@
 // bridge to the React UI shell (HUD state, overlays, touch input).
 
 import * as THREE from 'three';
-import { World, type Critter, type TreeInfo, type YarnBall } from './world';
+import { World, type Critter, type Swing, type TreeInfo, type YarnBall } from './world';
+import { Interior } from './interior';
 import { CatAvatar } from './cats';
 import { AudioEngine } from './audio';
 import {
@@ -11,7 +12,7 @@ import {
   generateCat, generateKitten, generateBaby, generateWanderer, genderOf,
   rankFor, xpForLevel, clanCapacity,
   rollFish, RARITY_LABELS, TOYS,
-  SPIRIT_ANIMALS, type SpiritAnimalDef, type SpiritKind,
+  SPIRIT_ANIMALS, ROOMS, type SpiritAnimalDef, type SpiritKind,
 } from './data';
 import type {
   CatSpec, CatStyle, ContextTarget, ChallengeState, DuelState, GameEvents, GameMode,
@@ -172,6 +173,17 @@ export class Game {
 
   // cat tower trial
   private towerDoneAt = -999;
+
+  // ——— indoors: a building interior replaces the whole island ———
+  private interiors = new Map<string, Interior>();
+  private indoors: Interior | null = null;
+  private hiddenOutside: THREE.Object3D[] = [];
+  private doorCooldown = 0;
+  private savedFog: THREE.Fog | null = null;
+
+  // ——— playground rides ———
+  private riding: { kind: 'swing'; swing: Swing } | { kind: 'carousel'; a: number; r: number } | null = null;
+  private rideT = 0;
 
   // map waypoint (set by tapping the island map)
   private waypoint: { x: number; z: number } | null = null;
@@ -381,6 +393,8 @@ export class Game {
     for (const cm of this.clanmates) cm.avatar.dispose();
     if (this.rescue) this.rescue.avatar.dispose();
     if (this.stray) this.stray.avatar.dispose();
+    for (const room of this.interiors.values()) room.dispose();
+    this.interiors.clear();
     for (const el of this.voiceCache.values()) el.pause();
     this.voiceCache.clear();
     this.audio.dispose();
@@ -1535,6 +1549,11 @@ export class Game {
   pressJump() {
     this.unlockAudio();
     if (this.duel || this.challenge?.phase === 'offer') return;
+    // launch off a swing / bail off the spinner
+    if (this.riding) {
+      this.dismount(true);
+      return;
+    }
     if (this.fishing) this.stopFishing(false);
     if (this.climbing) {
       // leap off the tree
@@ -1654,6 +1673,23 @@ export class Game {
         break;
       }
       case 'reel': this.reelIn(); break;
+      case 'enter': this.enterBuilding(ctx.id); break;
+      case 'exit': this.exitBuilding(); break;
+      case 'shelf': this.events.onShelf(ctx.id); break;
+      case 'nap':
+        this.player.setAction('nap');
+        this.idleT = 30;
+        this.audio.purr(2, 1);
+        this.toast('Zzz… what a comfy bed. 😴');
+        break;
+      case 'swing':
+        if (this.riding?.kind === 'swing') this.pumpSwing();
+        else this.hopOnSwing(ctx.id);
+        break;
+      case 'spin':
+        if (this.riding?.kind === 'carousel') this.pushCarousel();
+        else this.hopOnCarousel();
+        break;
     }
   }
 
@@ -1925,9 +1961,409 @@ export class Game {
     if (this.bubbles.length === 0) this.toast('Pop! All the bubbles are gone — what a clean cat! ✨');
   }
 
+  // ——— walking inside a big building ———
+  // Inside, the island genuinely stops existing: every outdoor object is hidden
+  // and the room brings its own floor, walls and lights.
+
+  private enterBuilding(roomId: string) {
+    if (this.indoors || this.doorCooldown > 0) return;
+    const def = ROOMS.find((r) => r.id === roomId);
+    if (!def) return;
+
+    let room = this.interiors.get(roomId);
+    if (!room) {
+      room = new Interior(def);
+      this.interiors.set(roomId, room);
+      this.scene.add(room.group);
+    }
+    room.setShelf(this.shelfFor(roomId));
+
+    // hide the entire outdoors — including the world, every other cat, and toys
+    this.hiddenOutside = [];
+    const keep = new Set<THREE.Object3D>([room.group, this.player.root, this.particlePoints]);
+    if (this.formBody) keep.add(this.formBody);
+    for (const child of this.scene.children) {
+      if (keep.has(child) || !child.visible) continue;
+      child.visible = false;
+      this.hiddenOutside.push(child);
+    }
+    room.group.visible = true;
+
+    this.savedFog = this.scene.fog as THREE.Fog;
+    this.scene.fog = null;
+
+    // reset anything that only makes sense outdoors
+    this.riding = null;
+    this.climbing = null;
+    this.swimming = false;
+    this.sneaking = false;
+    this.zoomT = 0;
+    if (this.fishing) this.stopFishing(false);
+    this.setJoystick(0, 0);
+
+    this.indoors = room;
+    this.doorCooldown = 0.9;
+    this.px = room.entry.x;
+    this.pz = room.entry.z - 1.2;
+    this.py = 0;
+    this.vy = 0;
+    this.grounded = true;
+    this.heading = Math.PI; // face into the room
+    this.camYaw = Math.PI;  // and the camera looks in with you, over your shoulder
+    this.applyAvatarTransform();
+    this.camera.position.set(this.px, 3.4, this.pz + 5.5);
+    this.audio.success();
+    this.toast(def.welcome);
+    this.tutorialOnce('indoors', 'You can walk right inside! 🏠 Head back out through the glowing doorway.');
+    this.emitHud(true);
+  }
+
+  private exitBuilding() {
+    const room = this.indoors;
+    if (!room || this.doorCooldown > 0) return;
+    room.group.visible = false;
+    for (const o of this.hiddenOutside) o.visible = true;
+    this.hiddenOutside = [];
+    if (this.savedFog) this.scene.fog = this.savedFog;
+    this.savedFog = null;
+    this.indoors = null;
+    this.doorCooldown = 0.9;
+
+    // step back out onto the doormat
+    const door = this.world.doors.find((d) => d.roomId === room.def.id);
+    if (door) {
+      this.px = door.x;
+      this.pz = door.z;
+      this.py = this.world.heightAt(door.x, door.z);
+      this.heading = door.yaw + Math.PI;
+    }
+    this.vy = 0;
+    this.grounded = true;
+    this.setJoystick(0, 0);
+    this.applyAvatarTransform();
+    this.emitHud(true);
+  }
+
+  private shelfFor(roomId: string): (string | null)[] {
+    const def = ROOMS.find((r) => r.id === roomId);
+    const size = def ? def.shelfRows * def.shelfCols : 0;
+    if (!this.save.shelves) this.save.shelves = {};
+    const cur = this.save.shelves[roomId];
+    const out: (string | null)[] = Array.from({ length: size }, (_, i) => cur?.[i] ?? null);
+    this.save.shelves[roomId] = out;
+    return out;
+  }
+
+  /** React shelf organizer: read the current arrangement */
+  getShelf(roomId: string): (string | null)[] {
+    return this.shelfFor(roomId).slice();
+  }
+
+  /** React shelf organizer: put an item in a slot (or null to clear it) */
+  setShelfSlot(roomId: string, slot: number, itemId: string | null) {
+    const shelf = this.shelfFor(roomId);
+    if (slot < 0 || slot >= shelf.length) return;
+    shelf[slot] = itemId;
+    this.interiors.get(roomId)?.setShelf(shelf);
+    this.audio.success();
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  /** React shelf organizer: sweep the whole shelf clean */
+  clearShelf(roomId: string) {
+    const shelf = this.shelfFor(roomId);
+    for (let i = 0; i < shelf.length; i++) shelf[i] = null;
+    this.interiors.get(roomId)?.setShelf(shelf);
+    this.persist();
+    this.events.onSaveChanged();
+  }
+
+  closeShelf() {
+    this.events.onShelf(null);
+  }
+
+  private updatePlayerIndoors(dt: number) {
+    const room = this.indoors!;
+    this.doorCooldown = Math.max(0, this.doorCooldown - dt);
+
+    let jx = this.joyX, jy = this.joyY;
+    if (this.keys.size) {
+      if (this.keys.has('w') || this.keys.has('arrowup')) jy = -1;
+      if (this.keys.has('s') || this.keys.has('arrowdown')) jy = 1;
+      if (this.keys.has('a') || this.keys.has('arrowleft')) jx = -1;
+      if (this.keys.has('d') || this.keys.has('arrowright')) jx = 1;
+    }
+    const mag = Math.min(1, Math.hypot(jx, jy));
+
+    if (this.busyT > 0) {
+      this.busyT -= dt;
+      if (this.busyT <= 0) {
+        const payload = this.busyPayload;
+        this.busyPayload = null;
+        this.busyKind = null;
+        payload?.();
+        this.player.setAction('idle');
+      }
+    }
+
+    let speed = 0;
+    if (mag > 0.05 && this.busyT <= 0) {
+      this.idleT = 0;
+      speed = (mag > 0.72 ? 4.6 : 2.6) * Math.min(1, mag * 1.3);
+      const ang = Math.atan2(jx, jy) + this.camYaw + Math.PI;
+      const dx = Math.sin(ang), dz = Math.cos(ang);
+      const solved = room.clamp(this.px + dx * speed * dt, this.pz + dz * speed * dt, PLAYER_RADIUS);
+      this.px = solved.x;
+      this.pz = solved.z;
+      let dh = Math.atan2(dx, dz) - this.heading;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      this.heading += dh * Math.min(1, dt * 10);
+      this.lastMoveDir = { x: dx, z: dz };
+      this.stepAcc += speed * dt;
+      if (this.stepAcc > 1.1 && this.grounded) {
+        this.stepAcc = 0;
+        this.audio.footstep(false, false);
+      }
+    } else if (this.busyT <= 0) {
+      this.idleT += dt;
+    }
+
+    // flat wooden floor — jumping still works, there's just nothing to climb
+    this.vy += GRAVITY * dt;
+    this.py += this.vy * dt;
+    if (this.py <= 0 && this.vy <= 0) {
+      this.py = 0;
+      this.vy = 0;
+      this.grounded = true;
+      this.airJumps = 0;
+    } else if (this.py > 0.05) {
+      this.grounded = false;
+    }
+
+    if (this.busyT <= 0) {
+      if (!this.grounded) this.player.setAction(this.vy > 1 ? 'jump' : 'fall');
+      else if (speed > 0.1) this.player.setAction(speed > 3.6 ? 'run' : 'walk');
+      else if (this.idleT > 20) this.player.setAction('nap');
+      else if (this.idleT > 6) this.player.setAction('sit');
+      else this.player.setAction('idle');
+    }
+    this.player.moveSpeed = speed;
+
+    // walking back out through the doorway leaves the building
+    if (this.doorCooldown <= 0 && this.pz > room.def.hd - 1.0 && Math.abs(this.px) < 1.5) {
+      this.exitBuilding();
+    }
+
+    this.applyAvatarTransform();
+  }
+
+  private updateCameraIndoors(dt: number) {
+    const room = this.indoors!;
+    // a dollhouse view: high and looking down, so the whole room reads at once
+    // flatter than outdoors: you want to see the shelf and the walls, not the floor
+    const pitch = Math.max(0.22, Math.min(0.85, this.camPitch * 0.7));
+    const dirX = -Math.sin(this.camYaw) * Math.cos(pitch);
+    const dirZ = -Math.cos(this.camYaw) * Math.cos(pitch);
+    // walls pull the camera IN toward the cat rather than sliding it sideways —
+    // sliding would swing the view around and hide whatever you walked up to
+    const pad = 0.7;
+    let dist = 6.6;
+    if (dirX > 0.001) dist = Math.min(dist, (room.def.hw - pad - this.px) / dirX);
+    if (dirX < -0.001) dist = Math.min(dist, (-room.def.hw + pad - this.px) / dirX);
+    if (dirZ > 0.001) dist = Math.min(dist, (room.def.hd - pad - this.pz) / dirZ);
+    if (dirZ < -0.001) dist = Math.min(dist, (-room.def.hd + pad - this.pz) / dirZ);
+    dist = Math.max(2.2, dist);
+    const cx = this.px + dirX * dist;
+    const cz = this.pz + dirZ * dist;
+    const cy = Math.min(room.def.wallH - 0.45, this.py + Math.sin(pitch) * dist + 1.3);
+    const k = Math.min(1, dt * 8);
+    this.camera.position.x += (cx - this.camera.position.x) * k;
+    this.camera.position.y += (cy - this.camera.position.y) * k;
+    this.camera.position.z += (cz - this.camera.position.z) * k;
+    // aim a bit above the cat so the whole shelf fits in frame
+    this.camera.lookAt(this.px, this.py + 1.5, this.pz);
+    if (Math.abs(this.camera.fov - 62) > 0.3) {
+      this.camera.fov += (62 - this.camera.fov) * k;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  // ——— playground rides ———
+
+  private hopOnSwing(swingId: string) {
+    const swing = this.world.swings.find((s) => s.id === swingId);
+    if (!swing) return;
+    this.riding = { kind: 'swing', swing };
+    this.rideT = 0;
+    swing.vel += swing.vel >= 0 ? 0.9 : -0.9; // give it a starting shove
+    this.player.setAction('sit');
+    this.audio.jump();
+    this.tutorialOnce('swing', 'Whee! 🎠 Tap ACTION to pump higher, then tap JUMP to launch yourself!');
+    this.emitHud(true);
+  }
+
+  private pumpSwing() {
+    if (this.riding?.kind !== 'swing') return;
+    const s = this.riding.swing;
+    // pump in whichever direction you're already travelling
+    const dir = s.vel >= 0 ? 1 : -1;
+    s.vel += dir * 0.55;
+    s.vel = Math.max(-3.2, Math.min(3.2, s.vel));
+    this.audio.jump();
+    this.burst(this.px, this.py + 0.4, this.pz, '#ffd54a', 6);
+  }
+
+  private hopOnCarousel() {
+    const car = this.world.carousel;
+    if (!car) return;
+    const a = Math.atan2(this.pz - car.z, this.px - car.x);
+    const r = Math.min(car.r - 0.5, Math.hypot(this.px - car.x, this.pz - car.z));
+    this.riding = { kind: 'carousel', a: a - car.angle, r: Math.max(1.2, r) };
+    this.rideT = 0;
+    this.py = car.topY;
+    this.vy = 0;
+    this.grounded = true;
+    this.audio.jump();
+    this.tutorialOnce('spinner', 'Tap ACTION to push the spinner faster — but hold on, it can fling you off! 🌀');
+    this.emitHud(true);
+  }
+
+  private pushCarousel() {
+    const car = this.world.carousel;
+    if (!car || this.riding?.kind !== 'carousel') return;
+    car.spin += 0.55;
+    car.spin = Math.min(car.spin, 7.5);
+    this.audio.footstep(false, false);
+    this.burst(this.px, this.py + 0.3, this.pz, '#f0c04a', 8);
+    if (car.spin > 4.2) this.tutorialOnce('spinfast', 'WHOA — any faster and you are flying off! 🌀💫');
+  }
+
+  private dismount(launch: boolean) {
+    const ride = this.riding;
+    if (!ride) return;
+    this.riding = null;
+    if (ride.kind === 'swing') {
+      const s = ride.swing;
+      const seat = this.world.swingSeatPos(s);
+      this.px = seat.x;
+      this.pz = seat.z;
+      this.py = seat.y;
+      if (launch) {
+        // fling forward along the swing's travel, scaled by how hard you're going
+        const power = Math.min(3.0, Math.abs(s.vel));
+        const dir = s.vel >= 0 ? 1 : -1;
+        this.vy = 6.5 + power * 2.4;
+        this.px += s.dirX * dir * power * 0.5;
+        this.pz += s.dirZ * dir * power * 0.5;
+        this.lastMoveDir = { x: s.dirX * dir, z: s.dirZ * dir };
+        this.audio.superJump();
+        this.burst(this.px, this.py, this.pz, '#ffd54a', 20);
+        if (power > 2.2) {
+          this.addXp(2);
+          this.toast('HUGE launch off the swing! 🚀 +2 xp');
+        }
+      }
+      this.grounded = false;
+    } else {
+      const car = this.world.carousel;
+      if (car && launch && Math.abs(car.spin) > 1.2) {
+        // flung off: fly outward along the tangent
+        const a = ride.a + car.angle;
+        const tanX = -Math.sin(a), tanZ = Math.cos(a);
+        const speed = Math.abs(car.spin) * ride.r;
+        this.px = car.x + Math.cos(a) * (car.r + 0.6);
+        this.pz = car.z + Math.sin(a) * (car.r + 0.6);
+        this.py = car.topY + 0.4;
+        this.vy = 4.5 + Math.min(6, speed * 0.5);
+        this.pounceVel = { x: tanX * Math.sign(car.spin) * Math.min(11, speed * 0.9), z: tanZ * Math.sign(car.spin) * Math.min(11, speed * 0.9) };
+        this.busyT = 0.75;
+        this.busyKind = 'pounce';
+        this.grounded = false;
+        this.audio.superJump();
+        this.burst(this.px, this.py, this.pz, '#f0c04a', 24);
+        this.toast('WHEEE! The spinner flung you off! 🌀💫');
+      } else {
+        // hopping off a slow spinner is just a little hop
+        if (car) {
+          const a = ride.a + car.angle;
+          this.px = car.x + Math.cos(a) * (car.r + 0.9);
+          this.pz = car.z + Math.sin(a) * (car.r + 0.9);
+        }
+        this.grounded = false;
+        this.vy = 3.5;
+      }
+    }
+    this.player.setAction('jump');
+    this.emitHud(true);
+  }
+
+  /** carries the player along with whatever ride they're on */
+  private updateRide(dt: number) {
+    const ride = this.riding;
+    if (!ride) return true;
+    this.rideT += dt;
+    if (ride.kind === 'swing') {
+      const seat = this.world.swingSeatPos(ride.swing);
+      this.px = seat.x;
+      this.pz = seat.z;
+      this.py = seat.y + 0.18;
+      this.heading = Math.atan2(ride.swing.dirX, ride.swing.dirZ);
+      this.vy = 0;
+      this.grounded = false;
+      this.player.setAction('sit');
+      this.player.moveSpeed = 0;
+      // let go by pushing the stick
+      if (Math.hypot(this.joyX, this.joyY) > 0.7 && this.rideT > 0.6) this.dismount(false);
+      this.applyAvatarTransform();
+      return false;
+    }
+    const car = this.world.carousel;
+    if (!car) { this.riding = null; return true; }
+    const a = ride.a + car.angle;
+    this.px = car.x + Math.cos(a) * ride.r;
+    this.pz = car.z + Math.sin(a) * ride.r;
+    this.py = car.topY;
+    this.vy = 0;
+    this.grounded = true;
+    this.heading = a + Math.PI / 2 * Math.sign(car.spin || 1);
+    this.player.setAction(Math.abs(car.spin) > 3 ? 'sit' : 'idle');
+    this.player.moveSpeed = 0;
+    // spin it too fast and physics wins
+    if (Math.abs(car.spin) * ride.r > 13) {
+      this.dismount(true);
+    } else if (Math.hypot(this.joyX, this.joyY) > 0.7 && this.rideT > 0.6 && Math.abs(car.spin) < 2.5) {
+      this.dismount(false);
+    }
+    this.applyAvatarTransform();
+    return false;
+  }
+
+  /** landing on a trampoline mat sends you straight back up, higher each time */
+  private checkTrampoline(groundY: number, prevVy: number) {
+    if (prevVy > -1) return false;
+    for (const t of this.world.trampolines) {
+      if (Math.abs(groundY - t.topY) > 0.1) continue;
+      if (Math.hypot(this.px - t.x, this.pz - t.z) > t.r) continue;
+      t.squash = 1;
+      this.py = t.topY;
+      // bouncier the harder you land, capped so nobody launches off the island
+      this.vy = Math.min(17, Math.max(9.5, -prevVy * 1.18));
+      this.grounded = false;
+      this.airJumps = 0;
+      this.audio.superJump();
+      this.burst(t.x, t.topY + 0.2, t.z, '#85c1e9', 12);
+      this.tutorialOnce('tramp', 'BOING! 🤸 Keep bouncing to go higher and higher!');
+      return true;
+    }
+    return false;
+  }
+
   // ——— map fast travel: tap the map and zoom straight there ———
 
   travelTo(x: number, z: number): boolean {
+    if (this.indoors) return false; // the island map means nothing from in here
     // land the cat on solid ground — nudge water taps to the nearest shore
     let tx = x, tz = z;
     if (this.world.heightAt(tx, tz) < WATER_LEVEL + 0.3) {
@@ -3058,6 +3494,28 @@ export class Game {
     const isNightNow = this.timeOfDay < 0.23 || this.timeOfDay > 0.77;
     this.timeOfDay = (this.timeOfDay + (dt / DAY_LENGTH) * (isNightNow ? 2.5 : 1)) % 1;
 
+    // indoors the island doesn't exist: no weather, no critters, no rivals
+    if (this.indoors) {
+      this.updatePlayerIndoors(dt);
+      // walking out the doorway ends the indoor frame — the rest of this
+      // tick belongs to the island again, so pick it up next frame
+      if (!this.indoors) return;
+      this.updateContext();
+      this.indoors.update(dt, this.elapsed);
+      this.updateParticles(dt);
+      this.updateCameraIndoors(dt);
+      this.player.update(dt, this.elapsed);
+      if (this.elapsed - this.lastSave > 10) {
+        this.lastSave = this.elapsed;
+        this.persist();
+      }
+      if (this.elapsed - this.lastHud > 0.085) {
+        this.lastHud = this.elapsed;
+        this.emitHud();
+      }
+      return;
+    }
+
     if (this.duel) {
       this.updateDuel(dt);
       this.updateDuelCamera(dt);
@@ -3179,6 +3637,10 @@ export class Game {
 
   private updatePlayer(dt: number) {
     const spec = this.player.spec;
+    this.doorCooldown = Math.max(0, this.doorCooldown - dt);
+
+    // riding a swing or the spinner: the ride drives the cat, not the joystick
+    if (this.riding && !this.updateRide(dt)) return;
 
     // keyboard → joystick
     let jx = this.joyX, jy = this.joyY;
@@ -3373,11 +3835,14 @@ export class Game {
       this.vy = 0;
       this.grounded = false;
     } else {
+      const prevVy = this.vy;
       this.vy += GRAVITY * dt;
       this.py += this.vy * dt;
       // ground includes standable platforms (rocks, logs, dens, tower pillars)
       const gy = this.world.groundHeight(this.px, this.pz, this.py - this.vy * dt);
-      if (this.py <= gy && this.vy <= 0) {
+      if (this.py <= gy && this.vy <= 0 && this.checkTrampoline(gy, prevVy)) {
+        // BOING — the trampoline already set py/vy
+      } else if (this.py <= gy && this.vy <= 0) {
         if (!this.grounded && this.vy < -9) {
           this.audio.land();
           this.burst(this.px, gy + 0.1, this.pz, '#c9b28a', 8);
@@ -3538,7 +4003,55 @@ export class Game {
       }
     };
 
+    // indoors: a tiny, focused set of things to do
+    if (this.indoors) {
+      const room = this.indoors;
+      const ds = Math.hypot(this.px - room.shelfSpot.x, this.pz - room.shelfSpot.z);
+      if (ds < 3.0) set('shelf', `Organize the ${room.def.shelfLabel} 📚`, room.def.id, room.shelfSpot.x, room.shelfSpot.z, ds, 6);
+      const db = Math.hypot(this.px - room.bedSpot.x, this.pz - room.bedSpot.z);
+      if (db < 1.8) set('nap', 'Curl up for a nap 😴', 'bed', room.bedSpot.x, room.bedSpot.z, db, 4);
+      const dd = Math.hypot(this.px - room.entry.x, this.pz - room.entry.z);
+      if (dd < 2.6) set('exit', 'Go back outside ☀️', room.def.id, room.entry.x, room.entry.z, dd, 5);
+      const changedIn = JSON.stringify(best) !== JSON.stringify(this.context);
+      this.context = best;
+      if (changedIn) this.emitHud(true);
+      return;
+    }
+
+    // on a ride, the button pumps the swing / pushes the spinner
+    if (this.riding) {
+      this.context = this.riding.kind === 'swing'
+        ? { kind: 'swing', label: 'Pump higher! 🎠', id: 'pump', x: this.px, z: this.pz }
+        : { kind: 'spin', label: 'Push it faster! 🌀', id: 'push', x: this.px, z: this.pz };
+      this.emitHud(true);
+      return;
+    }
+
     if (!this.climbing && this.busyT <= 0) {
+      // a big building's doorway — step inside and the island falls away
+      if (this.grounded && !this.swimming && this.doorCooldown <= 0) {
+        const door = this.world.doorNear(this.px, this.pz);
+        if (door) {
+          const room = ROOMS.find((r) => r.id === door.roomId);
+          const d = Math.hypot(door.x - this.px, door.z - this.pz);
+          if (room) set('enter', `Go inside ${room.name} ${room.icon}`, room.id, door.x, door.z, d, 7);
+        }
+      }
+      // playground: swings and the spinner
+      if (this.grounded && !this.swimming) {
+        for (const s of this.world.swings) {
+          const seat = this.world.swingSeatPos(s);
+          const d = Math.hypot(seat.x - this.px, seat.z - this.pz);
+          if (d < 1.5 && Math.abs(s.vel) < 1.2) set('swing', 'Hop on the swing! 🎠', s.id, seat.x, seat.z, d, 5);
+        }
+        const car = this.world.carousel;
+        if (car) {
+          const d = Math.hypot(car.x - this.px, car.z - this.pz);
+          if (d < car.r + 0.8 && Math.abs(this.py - car.topY) < 1.4) {
+            set('spin', 'Ride the spinner! 🌀', 'carousel', car.x, car.z, d, 5);
+          }
+        }
+      }
       // line in the water: the action button is the reel
       if (this.fishing) {
         const next: ContextTarget = {
@@ -3935,6 +4448,10 @@ export class Game {
       zoom: { active: this.zoomT > 0, ready: this.zoomT <= 0 && this.zoomCooldown <= 0 },
       fishing: this.fishing ? this.fishing.phase : null,
       territory: this.curTerritory,
+      indoors: this.indoors
+        ? { roomId: this.indoors.def.id, name: this.indoors.def.name, icon: this.indoors.def.icon }
+        : null,
+      riding: this.riding?.kind === 'carousel' ? 'carousel' : this.riding ? 'swing' : null,
       compass: this.camYaw,
       camp: this.campCompass(),
       rescue: this.rescue
