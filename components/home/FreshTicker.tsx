@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { usePeekTrigger, type PeekTarget } from '@/components/home/PeekPreview';
@@ -34,10 +34,48 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/**
+ * The loop covers one copy of the strip in `duration`, so its speed is
+ * copyWidth/duration px per second. To tick in from the right edge at that same
+ * speed, the intro must cover one viewport width in viewport/speed seconds.
+ * Returns null until measured so the marquee never runs at the wrong speed.
+ */
+function useTickerIntro(
+  viewportRef: React.RefObject<HTMLDivElement | null>,
+  stripRef: React.RefObject<HTMLDivElement | null>,
+  scrolls: boolean,
+  duration: number,
+) {
+  const [intro, setIntro] = useState<{ start: number; seconds: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!scrolls) {
+      setIntro(null);
+      return;
+    }
+
+    const measure = () => {
+      const viewport = viewportRef.current?.clientWidth ?? 0;
+      const copy = (stripRef.current?.scrollWidth ?? 0) / 2;
+      if (!viewport || !copy) return;
+      setIntro({ start: viewport, seconds: (duration * viewport) / copy });
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (viewportRef.current) observer.observe(viewportRef.current);
+    return () => observer.disconnect();
+  }, [viewportRef, stripRef, scrolls, duration]);
+
+  return intro;
+}
+
 /** Breaking-news style marquee of the most recently added items in the workspace */
 export function FreshTicker({ onPeek }: { onPeek?: (target: PeekTarget | null) => void }) {
   const router = useRouter();
   const peek = usePeekTrigger(onPeek);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
   const channels = useStore((s) => s.channels);
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
@@ -89,11 +127,13 @@ export function FreshTicker({ onPeek }: { onPeek?: (target: PeekTarget | null) =
       .slice(0, 14);
   }, [channels, cards, tasks]);
 
-  if (items.length === 0) return null;
-
   // Only loop the marquee when there's enough content for a seamless scroll
   const scrolls = items.length >= 5;
   const rendered = scrolls ? [...items, ...items] : items;
+  const duration = items.length * 5;
+  const intro = useTickerIntro(viewportRef, stripRef, scrolls, duration);
+
+  if (items.length === 0) return null;
 
   return (
     <div className="mb-3 flex items-center gap-2">
@@ -105,6 +145,7 @@ export function FreshTicker({ onPeek }: { onPeek?: (target: PeekTarget | null) =
         <span className="text-[10px] font-semibold uppercase tracking-widest text-violet-300">Fresh</span>
       </div>
       <div
+        ref={viewportRef}
         className="ticker-viewport relative flex-1 overflow-hidden"
         style={{
           maskImage: 'linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent)',
@@ -112,8 +153,17 @@ export function FreshTicker({ onPeek }: { onPeek?: (target: PeekTarget | null) =
         }}
       >
         <div
-          className={`flex w-max ${scrolls ? 'animate-ticker' : ''}`}
-          style={scrolls ? ({ '--ticker-duration': `${items.length * 5}s` } as React.CSSProperties) : undefined}
+          ref={stripRef}
+          className={`flex w-max ${scrolls && intro ? 'animate-ticker' : ''}`}
+          style={
+            scrolls && intro
+              ? ({
+                  '--ticker-duration': `${duration}s`,
+                  '--ticker-start': `${intro.start}px`,
+                  '--ticker-intro': `${intro.seconds}s`,
+                } as React.CSSProperties)
+              : undefined
+          }
         >
           {rendered.map((item, i) => (
             <button

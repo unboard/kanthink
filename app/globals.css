@@ -199,12 +199,23 @@ body {
 }
 
 /* Home "Fresh" ticker — breaking-news marquee of recent workspace activity */
+@keyframes ticker-intro {
+  from { transform: translateX(var(--ticker-start, 0px)); }
+  to { transform: translateX(0); }
+}
 @keyframes ticker-scroll {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
+/* The strip starts one viewport-width to the right and ticks in at the same
+   speed as the loop, so the first item reads before it scrolls off. FreshTicker
+   measures the content to derive --ticker-start/--ticker-intro; both animations
+   are linear so the hand-off is seamless. ticker-scroll is listed last and
+   delayed by the intro, so it only takes over the transform once the intro ends. */
 .animate-ticker {
-  animation: ticker-scroll var(--ticker-duration, 45s) linear infinite;
+  animation:
+    ticker-intro var(--ticker-intro, 0s) linear 1 both,
+    ticker-scroll var(--ticker-duration, 45s) linear var(--ticker-intro, 0s) infinite;
 }
 .ticker-viewport:hover .animate-ticker {
   animation-play-state: paused;
