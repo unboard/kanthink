@@ -8,7 +8,7 @@ import { Interior } from './interior';
 import { CatAvatar } from './cats';
 import { AudioEngine } from './audio';
 import {
-  WATER_LEVEL, DAY_LENGTH, RIVAL_CLANS, BUILDABLES, RANKS,
+  WATER_LEVEL, RIVAL_CLANS, BUILDABLES, RANKS,
   generateCat, generateKitten, generateBaby, generateWanderer, genderOf,
   rankFor, xpForLevel, clanCapacity,
   rollFish, RARITY_LABELS, TOYS,
@@ -239,7 +239,7 @@ export class Game {
   private qualityStep = 0;
 
   // time
-  private timeOfDay = 0.35; // start morning
+  private timeOfDay = 0.4; // permanent bright day (no night cycle)
   private elapsed = 0;
   private lastHud = 0;
   private lastSave = 0;
@@ -2011,7 +2011,9 @@ export class Game {
     this.heading = Math.PI; // face into the room
     this.camYaw = Math.PI;  // and the camera looks in with you, over your shoulder
     this.applyAvatarTransform();
-    this.camera.position.set(this.px, 3.4, this.pz + 5.5);
+    // seat the camera just inside the front wall (never beyond it) so the very
+    // first frame already looks into the room rather than through its wall
+    this.camera.position.set(this.px, 3.4, Math.min(room.def.hd - 0.8, this.pz + 4.5));
     this.audio.success();
     this.toast(def.welcome);
     this.tutorialOnce('indoors', 'You can walk right inside! 🏠 Head back out through the glowing doorway.');
@@ -3490,9 +3492,8 @@ export class Game {
 
   private update(dt: number) {
     this.elapsed += dt;
-    // nights pass 2.5x faster — kids spend most of their time in daylight
-    const isNightNow = this.timeOfDay < 0.23 || this.timeOfDay > 0.77;
-    this.timeOfDay = (this.timeOfDay + (dt / DAY_LENGTH) * (isNightNow ? 2.5 : 1)) % 1;
+    // always bright daytime — night made it too hard for the kids to see
+    this.timeOfDay = 0.4;
 
     // indoors the island doesn't exist: no weather, no critters, no rivals
     if (this.indoors) {

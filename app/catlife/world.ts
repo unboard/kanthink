@@ -2547,7 +2547,7 @@ export class World {
     g.position.set(x, h, z);
     g.rotation.y = yaw;
 
-    const wallMat = new THREE.MeshStandardMaterial({ color: room.wallColor, roughness: 0.95 });
+    const wallMat = new THREE.MeshStandardMaterial({ color: room.wallColor, roughness: 0.95, side: THREE.DoubleSide });
     const walls = new THREE.Mesh(new THREE.BoxGeometry(W * 2, H, D * 2), wallMat);
     walls.position.y = H / 2;
     walls.castShadow = true;
@@ -2608,7 +2608,9 @@ export class World {
     }
     this.group.add(g);
 
-    // walls are solid; the doorway is the one way through
+    // The shell is fully solid — you never walk into the box itself. Stepping
+    // up to the door and tapping ACTION swaps you into the real interior room,
+    // so there's no gap here that could trap a cat inside the empty shell.
     const sinY = Math.sin(yaw), cosY = Math.cos(yaw);
     const toWorld = (lx: number, lz: number) => ({
       x: x + lx * cosY + lz * sinY,
@@ -2619,7 +2621,6 @@ export class World {
     for (let k = 0; k <= stepsX; k++) {
       const lx = -W + (k / stepsX) * W * 2;
       for (const lz of [-D, D]) {
-        if (lz > 0 && Math.abs(lx) < doorW / 2 + 0.2) continue; // the doorway stays open
         const p = toWorld(lx, lz);
         this.rocks.push({ x: p.x, z: p.z, r: 0.7 });
       }
