@@ -795,3 +795,78 @@ export const catlifePlayers = sqliteTable('catlife_players', {
 ])
 
 export type DbCatlifePlayer = typeof catlifePlayers.$inferSelect
+
+// ===== /calendar — AI-driven marketing calendar =====
+// Ideas are scoped by `business` slug (e.g. 'mycreativeshop'). They are shared
+// across the marketing team, not per-user. Ideas are added through an AI chat
+// (Kan) that is aware of every existing idea, and can also be edited directly
+// (drag to reschedule, status changes) in the UI.
+
+export const marketingIdeas = sqliteTable('marketing_ideas', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  business: text('business').notNull(),           // 'mycreativeshop', etc.
+
+  title: text('title').notNull(),
+  date: text('date'),                             // 'YYYY-MM-DD' planned date; null = backlog
+  channel: text('channel').default('other'),      // email | blog | seo | ads | direct_mail | social | product | automation | other
+  audience: text('audience').default(''),         // e.g. "Roofers", "Real estate agents"
+  objective: text('objective').default(''),       // what it's meant to achieve
+  justification: text('justification').default(''), // why this, why now
+  metric: text('metric').default(''),             // revenue metric it drives
+  owner: text('owner').default('Dustin'),         // primary owner: Dustin | Jason | Erica
+  collaborators: text('collaborators', { mode: 'json' }).$type<string[]>().default([]),
+  tools: text('tools', { mode: 'json' }).$type<string[]>().default([]),
+  effort: text('effort').default('M'),            // S | M | L
+  status: text('status').$type<'idea' | 'planned' | 'in_progress' | 'done' | 'skipped'>().default('planned'),
+  notes: text('notes').default(''),               // longer body / playbook detail
+  position: integer('position').notNull().default(0),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('marketing_ideas_business_idx').on(table.business),
+  index('marketing_ideas_business_date_idx').on(table.business, table.date),
+])
+
+// Knowledge base the team builds up per business: audiences (industries/topics),
+// marketing tools, products, pages, and offers. Kan reads all of this so it gets
+// more familiar with who we sell to and what we can sell/send them, and can
+// generate ideas focused on a specific audience.
+export const marketingAssets = sqliteTable('marketing_assets', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  business: text('business').notNull(),
+  kind: text('kind').$type<'audience' | 'tool' | 'product' | 'page' | 'offer'>().notNull(),
+  name: text('name').notNull(),
+  description: text('description').default(''),
+  url: text('url').default(''),
+  tags: text('tags', { mode: 'json' }).$type<string[]>().default([]),
+  notes: text('notes').default(''),
+  position: integer('position').notNull().default(0),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('marketing_assets_business_idx').on(table.business),
+  index('marketing_assets_business_kind_idx').on(table.business, table.kind),
+])
+
+export type DbMarketingAsset = typeof marketingAssets.$inferSelect
+export type NewDbMarketingAsset = typeof marketingAssets.$inferInsert
+
+// One evolving chat thread per business (shared by the team)
+export const marketingChat = sqliteTable('marketing_chat', {
+  business: text('business').primaryKey(),
+  messages: safeJsonText<MarketingChatMessageJson[]>([])('messages').default([]),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+export interface MarketingChatMessageJson {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+}
+
+export type DbMarketingIdea = typeof marketingIdeas.$inferSelect
+export type NewDbMarketingIdea = typeof marketingIdeas.$inferInsert
+export type DbMarketingChat = typeof marketingChat.$inferSelect

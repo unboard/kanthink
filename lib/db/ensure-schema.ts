@@ -302,6 +302,52 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0029 — /calendar marketing calendar
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS marketing_ideas (
+      id text PRIMARY KEY NOT NULL,
+      business text NOT NULL,
+      title text NOT NULL,
+      date text,
+      channel text DEFAULT 'other',
+      audience text DEFAULT '',
+      objective text DEFAULT '',
+      justification text DEFAULT '',
+      metric text DEFAULT '',
+      owner text DEFAULT 'Dustin',
+      collaborators text DEFAULT '[]',
+      tools text DEFAULT '[]',
+      effort text DEFAULT 'M',
+      status text DEFAULT 'planned',
+      notes text DEFAULT '',
+      position integer NOT NULL DEFAULT 0,
+      created_at integer,
+      updated_at integer
+    )`))
+  } catch {}
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS marketing_assets (
+      id text PRIMARY KEY NOT NULL,
+      business text NOT NULL,
+      kind text NOT NULL,
+      name text NOT NULL,
+      description text DEFAULT '',
+      url text DEFAULT '',
+      tags text DEFAULT '[]',
+      notes text DEFAULT '',
+      position integer NOT NULL DEFAULT 0,
+      created_at integer,
+      updated_at integer
+    )`))
+  } catch {}
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS marketing_chat (
+      business text PRIMARY KEY NOT NULL,
+      messages text DEFAULT '[]',
+      updated_at integer
+    )`))
+  } catch {}
+
   // Data migration — rename Quick Save → Kan Bookmarks
   try {
     await db.run(sql.raw(`UPDATE channels SET name = 'Kan Bookmarks', description = 'Your personal bookmark channel. Save anything from the web — links, articles, ideas, snippets — and Kan will organize and comment on them. Use the browser bookmarklet (desktop) or share sheet (mobile) to save from anywhere.' WHERE is_quick_save = 1 AND name = 'Quick Save'`))
@@ -338,6 +384,11 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS recordings_owner_idx ON recordings (owner_id)`,
     // Migration 0028 indexes
     `CREATE INDEX IF NOT EXISTS catlife_players_token_idx ON catlife_players (token)`,
+    // Migration 0029 indexes
+    `CREATE INDEX IF NOT EXISTS marketing_ideas_business_idx ON marketing_ideas (business)`,
+    `CREATE INDEX IF NOT EXISTS marketing_ideas_business_date_idx ON marketing_ideas (business, date)`,
+    `CREATE INDEX IF NOT EXISTS marketing_assets_business_idx ON marketing_assets (business)`,
+    `CREATE INDEX IF NOT EXISTS marketing_assets_business_kind_idx ON marketing_assets (business, kind)`,
   ]
 
   for (const idx of indexes) {
