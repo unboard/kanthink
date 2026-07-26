@@ -359,11 +359,11 @@ export class Game {
       );
     }
     // one-time news for every clan: territory friends you can transform into
-    if (!this.save.tutorialDone.includes('spiritsNews')) {
+    if (!this.save.tutorialDone.includes('spiritsNews2')) {
       setTimeout(() => {
-        if (this.disposed || this.save.tutorialDone.includes('spiritsNews')) return;
-        this.save.tutorialDone.push('spiritsNews');
-        this.toast('NEW friends live in the four territories! 🐶🐧🐍🐐 Find them on the 🗺 map, walk up, and TRANSFORM! ✨');
+        if (this.disposed || this.save.tutorialDone.includes('spiritsNews2')) return;
+        this.save.tutorialDone.push('spiritsNews2');
+        this.toast('LOTS of animal friends live in the four territories! 🐶🐰🦜🐧🦎🐍🐊🦒🐐🐢 Find them, walk up, and TRANSFORM into them! ✨');
       }, 15000);
     }
     this.lastFrame = performance.now();
@@ -1568,7 +1568,7 @@ export class Game {
       return;
     }
     if (this.grounded && !this.swimming && this.busyT <= 0) {
-      this.vy = this.form?.kind === 'goat' ? 10.8 : 8.6; // goats jump SO high
+      this.vy = (this.form?.kind === 'goat' || this.form?.kind === 'bunny') ? 10.8 : 8.6; // goats & bunnies jump SO high
       this.grounded = false;
       this.airJumps = 0;
       this.audio.jump();
@@ -1576,7 +1576,7 @@ export class Game {
     } else if (!this.grounded && !this.swimming && this.busyT <= 0 && this.airJumps < 1) {
       // SUPER JUMP! tap jump again mid-air for a sparkly double boost
       this.airJumps++;
-      this.vy = this.form?.kind === 'goat' ? 11.8 : 9.8;
+      this.vy = (this.form?.kind === 'goat' || this.form?.kind === 'bunny') ? 11.8 : 9.8;
       this.audio.superJump();
       this.player.setAction('jump');
       this.burst(this.px, this.py + 0.3, this.pz, '#ffd54a', 14);
@@ -1849,8 +1849,14 @@ export class Game {
     switch (this.form?.kind) {
       case 'dog': this.audio.bark(); break;
       case 'goat': this.audio.bleat(); break;
+      case 'giraffe': this.audio.bleat(); break;
       case 'penguin': this.audio.squawk(); break;
       case 'snake': this.audio.snakeHiss(); break;
+      case 'bunny': this.audio.squeak(); break;
+      case 'turtle': this.audio.squeak(); break;
+      case 'parrot': this.audio.chirp(); break;
+      case 'crocodile': this.audio.growl(); break;
+      case 'axolotl': this.audio.bubble(); break;
     }
   }
 
@@ -3735,9 +3741,15 @@ export class Game {
             ? 5.6 + spec.traits.speed * 0.22
             : 3.0;
       // transformed-animal perks: each form is the best at its own thing
-      if (this.form?.kind === 'dog' && wantRun && !this.swimming) baseSpeed *= 1.3;
-      if (this.form?.kind === 'penguin' && this.swimming) baseSpeed *= 1.7;
-      if (this.form?.kind === 'snake' && this.sneaking) baseSpeed *= 2.2;
+      const fk = this.form?.kind;
+      if (fk === 'dog' && wantRun && !this.swimming) baseSpeed *= 1.3;
+      if (fk === 'penguin' && this.swimming) baseSpeed *= 1.7;
+      if (fk === 'snake' && this.sneaking) baseSpeed *= 2.2;
+      if (fk === 'bunny' && wantRun && !this.swimming) baseSpeed *= 1.25; // bunnies bolt
+      if (fk === 'giraffe' && wantRun && !this.swimming) baseSpeed *= 1.2; // long strides
+      if (fk === 'crocodile' && this.swimming) baseSpeed *= 1.8;           // king of the water
+      if (fk === 'axolotl' && this.swimming) baseSpeed *= 1.7;             // zoomy swimmer
+      if (fk === 'turtle' && this.swimming) baseSpeed *= 1.4;              // glides in water
       if (this.zoomT > 0 && !this.swimming && !this.sneaking) {
         baseSpeed *= 1.85; // ZOOM! super-run
         if (Math.random() < dt * 14) {
@@ -3838,6 +3850,11 @@ export class Game {
     } else {
       const prevVy = this.vy;
       this.vy += GRAVITY * dt;
+      // parrots glide: once you start falling, float down gently instead of dropping
+      if (this.form?.kind === 'parrot' && this.vy < -2.2 && !this.grounded) {
+        this.vy = -2.2;
+        if (Math.random() < dt * 8) this.burst(this.px, this.py, this.pz, '#f2c33c', 1);
+      }
       this.py += this.vy * dt;
       // ground includes standable platforms (rocks, logs, dens, tower pillars)
       const gy = this.world.groundHeight(this.px, this.pz, this.py - this.vy * dt);
@@ -3983,11 +4000,28 @@ export class Game {
           this.formBody.rotation.z = Math.sin(t * 11) * 0.14 * moving;
           break;
         case 'snake':   // slither wiggle
+        case 'crocodile': // low, sinuous crawl
           this.formBody.rotation.y = this.heading + Math.sin(t * 9) * 0.2 * moving;
+          break;
+        case 'bunny':   // springy little hops
+          this.formBody.position.y = this.py + Math.abs(Math.sin(t * 7)) * 0.16 * moving;
+          break;
+        case 'giraffe': // slow, tall, gentle sway
+          this.formBody.position.y = this.py + Math.abs(Math.sin(t * 6)) * 0.05 * moving;
+          this.formBody.rotation.z = Math.sin(t * 3) * 0.03 * moving;
+          break;
+        case 'turtle':  // plods low to the ground, no bounce
+        case 'axolotl': // glides along
+          this.formBody.rotation.z = Math.sin(t * 6) * 0.05 * moving;
           break;
         default:        // happy trot bounce
           this.formBody.position.y = this.py + Math.abs(Math.sin(t * 9)) * 0.07 * moving;
       }
+      // wiggle the fun bits: bunny ears, parrot wings, axolotl gills
+      const ud = this.formBody.userData;
+      if (ud.earL) { ud.earL.rotation.z = -0.16 + Math.sin(t * 8) * 0.12 * moving; ud.earR.rotation.z = 0.16 - Math.sin(t * 8) * 0.12 * moving; }
+      if (ud.wingL) { const f = (this.swimming || !this.grounded) ? Math.sin(t * 16) * 0.6 : Math.sin(t * 6) * 0.12; ud.wingL.rotation.z = 0.2 + f; ud.wingR.rotation.z = -0.2 - f; }
+      if (ud.gillL) { ud.gillL.rotation.z = Math.sin(t * 7) * 0.12; ud.gillR.rotation.z = Math.sin(t * 7 + 1) * 0.12; }
       if (this.swimming) this.formBody.rotation.x = this.form.kind === 'penguin' ? 1.1 : 0.25;
     }
   }

@@ -375,7 +375,7 @@ export class CatAvatar {
     // ——— head ———
     this.head = new THREE.Group();
     this.head.position.set(0, 0.36 * S, (kit ? 0.48 : 0.56) * S);
-    if (kit) this.head.scale.setScalar(1.32); // kittens: big head = instant baby
+    if (kit) this.head.scale.setScalar(1.42); // kittens: extra-big head = instant baby
     this.body.add(this.head);
 
     // face shape sculpts the skull + cheeks
@@ -412,6 +412,20 @@ export class CatAvatar {
     chin.scale.setScalar(0.052 * S);
     chin.position.set(0, -0.145 * S, 0.18 * S);
     this.head.add(chin);
+
+    // kittens & babies get rosy cheek blush — pure cuteness
+    if (kit) {
+      const blushMat = new THREE.MeshStandardMaterial({
+        color: '#f2a6b8', roughness: 0.85, transparent: true, opacity: 0.6,
+      });
+      this.disposables.push(blushMat);
+      for (const side of [-1, 1]) {
+        const blush = new THREE.Mesh(g.sphere, blushMat);
+        blush.scale.set(0.05 * S, 0.036 * S, 0.03 * S);
+        blush.position.set(side * 0.13 * S, -0.055 * S, 0.16 * S);
+        this.head.add(blush);
+      }
+    }
 
     // snout bridge from brow to nose
     const bridge = new THREE.Mesh(g.sphere, coatMat);
@@ -510,7 +524,7 @@ export class CatAvatar {
     this.head.add(nose);
 
     // eyes — shape chosen in the Style Studio, with a catchlight sparkle
-    const eyeScale = (kit ? 1.28 : 1) * (style.eyes === 'round' ? 1.12 : 1);
+    const eyeScale = (kit ? 1.44 : 1) * (style.eyes === 'round' ? 1.12 : 1);
     this.lidOpenY = style.eyes === 'sleepy' ? 0.52 : 0.92;
     const mkEye = (side: number) => {
       const socket = new THREE.Group();
@@ -549,7 +563,7 @@ export class CatAvatar {
     this.lidR = eR.lid;
 
     // ears — style picks the shape: pointy, rounded, folded, big, or lynx-tufted
-    const earScale = (kit ? 1.22 : 1) * (style.ears === 'big' ? 1.42 : style.ears === 'folded' ? 0.82 : 1);
+    const earScale = (kit ? 1.3 : 1) * (style.ears === 'big' ? 1.42 : style.ears === 'folded' ? 0.82 : 1);
     this.earFold = style.ears === 'folded' ? 1.0 : 0;
     const earMat = isPointed ? markMat : limbMat;
     const mkEar = (side: number) => {

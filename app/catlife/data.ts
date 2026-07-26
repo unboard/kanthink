@@ -418,9 +418,10 @@ export const TERRITORIES: readonly TerritoryDef[] = [
   { id: 'mountain', name: 'Cloudpeak Mountains', icon: '⛰️' },
 ] as const;
 
-// ——— Territory spirit animals: one lives in each climate; walk up and TRANSFORM ———
+// ——— Territory spirit animals: they live in each climate; walk up and TRANSFORM ———
 export interface SpiritAnimalDef {
-  kind: 'dog' | 'penguin' | 'snake' | 'goat';
+  kind: 'dog' | 'penguin' | 'snake' | 'goat'
+    | 'axolotl' | 'turtle' | 'giraffe' | 'parrot' | 'bunny' | 'crocodile';
   territory: TerritoryDef['id'];
   name: string;    // the friend's name
   label: string;   // "a dog"
@@ -429,10 +430,20 @@ export interface SpiritAnimalDef {
 }
 
 export const SPIRIT_ANIMALS: readonly SpiritAnimalDef[] = [
+  // 🌲 Whisperwood Forest
   { kind: 'dog', territory: 'forest', name: 'Biscuit', label: 'dog', icon: '🐶', perk: 'Dogs run extra fast!' },
+  { kind: 'bunny', territory: 'forest', name: 'Thumper', label: 'bunny', icon: '🐰', perk: 'Bunnies hop super high and hop away fast!' },
+  { kind: 'parrot', territory: 'forest', name: 'Mango', label: 'parrot', icon: '🦜', perk: 'Parrots glide through the air — jump off anything and float!' },
+  // ❄️ Frostpaw Tundra
   { kind: 'penguin', territory: 'winter', name: 'Pip', label: 'penguin', icon: '🐧', perk: 'Penguins are super swimmers!' },
+  { kind: 'axolotl', territory: 'winter', name: 'Luna', label: 'axolotl', icon: '🦎', perk: 'Axolotls never run out of breath and zoom through the water!' },
+  // 🌵 Sunscorch Desert
   { kind: 'snake', territory: 'desert', name: 'Sizzle', label: 'snake', icon: '🐍', perk: 'Snakes slither fast and silent — critters never spot you!' },
+  { kind: 'crocodile', territory: 'desert', name: 'Chomp', label: 'crocodile', icon: '🐊', perk: 'Crocodiles rule the water — nothing swims faster!' },
+  { kind: 'giraffe', territory: 'desert', name: 'Stretch', label: 'giraffe', icon: '🦒', perk: "Giraffes are SO tall they run with long, bouncy strides!" },
+  // ⛰️ Cloudpeak Mountains
   { kind: 'goat', territory: 'mountain', name: 'Clover', label: 'goat', icon: '🐐', perk: 'Goats jump SO high!' },
+  { kind: 'turtle', territory: 'mountain', name: 'Shelly', label: 'turtle', icon: '🐢', perk: 'Turtles have a tough shell and glide through water!' },
 ] as const;
 
 export type SpiritKind = SpiritAnimalDef['kind'];

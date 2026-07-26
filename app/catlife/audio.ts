@@ -205,6 +205,80 @@ export class AudioEngine {
     this.noiseBurst(0.8, 4200, 0.12, 0.12);
   }
 
+  /** tiny high bunny squeak-squeak */
+  squeak() {
+    if (!this.ctx || !this.master || !this.soundOn) return;
+    const t0 = this.now();
+    for (const off of [0, 0.14]) {
+      const g = this.ctx.createGain();
+      g.connect(this.master);
+      const o = this.osc('triangle', 1200, g);
+      const tt = t0 + off;
+      o.frequency.setValueAtTime(1050, tt);
+      o.frequency.linearRampToValueAtTime(1500, tt + 0.05);
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.linearRampToValueAtTime(0.1, tt + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.1);
+      o.start(tt); o.stop(tt + 0.12);
+    }
+  }
+
+  /** bright parrot "squawk-awk!" whistle */
+  chirp() {
+    if (!this.ctx || !this.master || !this.soundOn) return;
+    const t0 = this.now();
+    for (let i = 0; i < 2; i++) {
+      const g = this.ctx.createGain();
+      g.connect(this.master);
+      const o = this.osc('sawtooth', 900, g);
+      const tt = t0 + i * 0.18;
+      o.frequency.setValueAtTime(700, tt);
+      o.frequency.linearRampToValueAtTime(1400 - i * 200, tt + 0.09);
+      o.frequency.linearRampToValueAtTime(600, tt + 0.16);
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.linearRampToValueAtTime(0.11, tt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.17);
+      o.start(tt); o.stop(tt + 0.19);
+    }
+  }
+
+  /** low croc/turtle "rrrmph" growl */
+  growl() {
+    if (!this.ctx || !this.master || !this.soundOn) return;
+    const t0 = this.now();
+    const g = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 380;
+    g.connect(filter).connect(this.master);
+    const o = this.osc('sawtooth', 90, g);
+    o.frequency.setValueAtTime(110, t0);
+    o.frequency.linearRampToValueAtTime(70, t0 + 0.35);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.28, t0 + 0.05);
+    g.gain.setValueAtTime(0.28, t0 + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+    o.start(t0); o.stop(t0 + 0.42);
+  }
+
+  /** watery axolotl "blorp" bubble */
+  bubble() {
+    if (!this.ctx || !this.master || !this.soundOn) return;
+    const t0 = this.now();
+    for (let i = 0; i < 3; i++) {
+      const g = this.ctx.createGain();
+      g.connect(this.master);
+      const o = this.osc('sine', 300, g);
+      const tt = t0 + i * 0.08;
+      o.frequency.setValueAtTime(240 + i * 120, tt);
+      o.frequency.linearRampToValueAtTime(520 + i * 120, tt + 0.06);
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.linearRampToValueAtTime(0.12, tt + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.08);
+      o.start(tt); o.stop(tt + 0.1);
+    }
+  }
+
   // ——— movement / world ———
 
   footstep(soft: boolean, onSand: boolean) {

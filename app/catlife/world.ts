@@ -3319,7 +3319,7 @@ export class World {
       tail.position.set(0, 0.68, -0.4);
       g.add(tail);
       g.userData.tail = tail;
-    } else {
+    } else if (kind === 'snake') {
       // snake: a low S-curve of segments with a raised head
       const scale1 = new THREE.MeshStandardMaterial({ color: '#7a9c4a', roughness: 0.8 });
       const scale2 = new THREE.MeshStandardMaterial({ color: '#5d7c38', roughness: 0.8 });
@@ -3349,6 +3349,290 @@ export class World {
       tongue.position.set(0, 0.24, 0.46);
       g.add(tongue);
       g.userData.tongue = tongue;
+    } else if (kind === 'bunny') {
+      // bunny: round fluffball, tall ears, pom tail
+      const fur = new THREE.MeshStandardMaterial({ color: '#d8cfc2', roughness: 1 });
+      const white = new THREE.MeshStandardMaterial({ color: '#f5f1ea', roughness: 1 });
+      const pink = new THREE.MeshStandardMaterial({ color: '#e79bb0', roughness: 0.85 });
+      const dark = new THREE.MeshStandardMaterial({ color: '#2a241e', roughness: 0.4 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 12), fur);
+      body.scale.set(0.9, 0.95, 1.05);
+      body.position.y = 0.34;
+      g.add(body);
+      const belly = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), white);
+      belly.scale.set(0.75, 0.9, 0.7);
+      belly.position.set(0, 0.3, 0.14);
+      g.add(belly);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 12), fur);
+      head.position.set(0, 0.62, 0.16);
+      g.add(head);
+      const cheekL = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 7), white);
+      cheekL.position.set(-0.08, 0.57, 0.26); g.add(cheekL);
+      const cheekR = cheekL.clone(); cheekR.position.x = 0.08; g.add(cheekR);
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), pink);
+      nose.scale.set(1.3, 0.9, 0.9); nose.position.set(0, 0.58, 0.35); g.add(nose);
+      for (const s of [-1, 1]) {
+        const ear = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), fur);
+        ear.scale.set(0.55, 2.6, 0.5);
+        ear.position.set(s * 0.09, 0.92, 0.08);
+        ear.rotation.z = s * 0.16;
+        g.add(ear);
+        const inner = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), pink);
+        inner.scale.set(0.5, 2.4, 0.4);
+        inner.position.set(s * 0.09, 0.93, 0.12);
+        inner.rotation.z = s * 0.16;
+        g.add(inner);
+        if (s === -1) g.userData.earL = ear; else g.userData.earR = ear;
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.033, 8, 7), dark);
+        eye.position.set(s * 0.09, 0.66, 0.31); g.add(eye);
+        const glint = new THREE.Mesh(new THREE.SphereGeometry(0.012, 5, 4), white);
+        glint.position.set(s * 0.1, 0.68, 0.34); g.add(glint);
+      }
+      const legGeo = new THREE.SphereGeometry(0.07, 8, 7);
+      for (const [sx, sz] of [[-0.13, 0.18], [0.13, 0.18]] as const) {
+        const foot = new THREE.Mesh(legGeo, white);
+        foot.scale.set(0.7, 0.55, 1.5);
+        foot.position.set(sx, 0.06, sz + 0.05);
+        g.add(foot);
+      }
+      const tail = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 9), white);
+      tail.position.set(0, 0.36, -0.28); g.add(tail);
+    } else if (kind === 'parrot') {
+      // parrot: bright body, curved beak, folded wings, long tail feathers
+      const green = new THREE.MeshStandardMaterial({ color: '#3faa4e', roughness: 0.7 });
+      const teal = new THREE.MeshStandardMaterial({ color: '#2b8f8f', roughness: 0.7 });
+      const yellow = new THREE.MeshStandardMaterial({ color: '#f2c33c', roughness: 0.6 });
+      const red = new THREE.MeshStandardMaterial({ color: '#d9483b', roughness: 0.6 });
+      const beakMat = new THREE.MeshStandardMaterial({ color: '#2a2620', roughness: 0.4 });
+      const white = new THREE.MeshStandardMaterial({ color: '#f5f1ea', roughness: 0.5 });
+      const dark = new THREE.MeshStandardMaterial({ color: '#141210', roughness: 0.3 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 12), green);
+      body.scale.set(0.85, 1.25, 0.9);
+      body.position.y = 0.42;
+      g.add(body);
+      const chest = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), yellow);
+      chest.scale.set(0.7, 1.05, 0.6);
+      chest.position.set(0, 0.42, 0.15);
+      g.add(chest);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 12), green);
+      head.position.set(0, 0.82, 0.05);
+      g.add(head);
+      // crest feather
+      const crest = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.16, 6), red);
+      crest.position.set(0, 0.98, -0.02); crest.rotation.x = -0.3; g.add(crest);
+      // hooked beak: upper hook + lower
+      const upper = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 8), beakMat);
+      upper.rotation.x = Math.PI / 2 + 0.5; upper.position.set(0, 0.8, 0.2); g.add(upper);
+      const lower = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), beakMat);
+      lower.scale.set(1, 0.6, 1.1); lower.position.set(0, 0.75, 0.19); g.add(lower);
+      for (const s of [-1, 1]) {
+        const patch = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 7), white);
+        patch.scale.set(0.9, 1, 0.4); patch.position.set(s * 0.09, 0.83, 0.13); g.add(patch);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 7), dark);
+        eye.position.set(s * 0.1, 0.84, 0.16); g.add(eye);
+        const wing = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), teal);
+        wing.scale.set(0.35, 1.15, 0.7);
+        wing.position.set(s * 0.2, 0.42, -0.02);
+        wing.rotation.z = s * 0.2;
+        g.add(wing);
+        if (s === -1) g.userData.wingL = wing; else g.userData.wingR = wing;
+        const foot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), beakMat);
+        foot.scale.set(1, 0.5, 1.4); foot.position.set(s * 0.08, 0.04, 0.04); g.add(foot);
+      }
+      // trailing tail feathers
+      for (const [tx, col] of [[-0.06, red], [0, green], [0.06, yellow]] as const) {
+        const f = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.4, 6), col);
+        f.rotation.x = -1.9; f.position.set(tx, 0.28, -0.34); g.add(f);
+      }
+    } else if (kind === 'turtle') {
+      // turtle: domed shell, plastron, head, four flippers, little tail
+      const shellMat = new THREE.MeshStandardMaterial({ color: '#5f7d3c', roughness: 0.85 });
+      const shellDark = new THREE.MeshStandardMaterial({ color: '#47612c', roughness: 0.85 });
+      const skin = new THREE.MeshStandardMaterial({ color: '#8aa15a', roughness: 0.9 });
+      const belly = new THREE.MeshStandardMaterial({ color: '#d9c98f', roughness: 0.9 });
+      const dark = new THREE.MeshStandardMaterial({ color: '#20241a', roughness: 0.3 });
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), shellMat);
+      shell.scale.set(1, 0.72, 1.15);
+      shell.position.y = 0.24;
+      g.add(shell);
+      const under = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 8), belly);
+      under.scale.set(1, 0.25, 1.12); under.position.y = 0.2; g.add(under);
+      // scute bumps on the shell
+      for (const [bx, bz] of [[0, 0], [0.14, 0.1], [-0.14, 0.1], [0.14, -0.1], [-0.14, -0.1], [0, 0.2], [0, -0.2]] as const) {
+        const scute = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 7), shellDark);
+        scute.scale.set(1, 0.4, 1);
+        scute.position.set(bx, 0.24 + 0.72 * 0.34 * Math.sqrt(Math.max(0, 1 - (bx * bx + bz * bz) / 0.115)), bz);
+        g.add(scute);
+      }
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), skin);
+      head.scale.set(0.9, 0.85, 1.1); head.position.set(0, 0.24, 0.42); g.add(head);
+      g.userData.head = head;
+      for (const s of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 7), dark);
+        eye.position.set(s * 0.06, 0.29, 0.52); g.add(eye);
+        // front flippers
+        const fin = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 7), skin);
+        fin.scale.set(0.5, 0.3, 1); fin.position.set(s * 0.28, 0.14, 0.18);
+        fin.rotation.y = s * 0.5; g.add(fin);
+        // back feet
+        const foot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 7), skin);
+        foot.scale.set(0.6, 0.3, 0.9); foot.position.set(s * 0.26, 0.12, -0.2); g.add(foot);
+      }
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 6), skin);
+      tail.rotation.x = -Math.PI / 2; tail.position.set(0, 0.18, -0.38); g.add(tail);
+    } else if (kind === 'giraffe') {
+      // giraffe: tall! long neck, ossicones, long legs, spotted coat
+      const coat = new THREE.MeshStandardMaterial({ color: '#e6c36a', roughness: 0.9 });
+      const spotMat = new THREE.MeshStandardMaterial({ color: '#a9702f', roughness: 0.9 });
+      const mane = new THREE.MeshStandardMaterial({ color: '#8a5a24', roughness: 0.9 });
+      const dark = new THREE.MeshStandardMaterial({ color: '#20241a', roughness: 0.3 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 12), coat);
+      body.scale.set(0.8, 0.75, 1.3);
+      body.position.y = 0.78;
+      g.add(body);
+      // long neck rising to the front
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 0.7, 10), coat);
+      neck.position.set(0, 1.12, 0.28); neck.rotation.x = -0.45; g.add(neck);
+      const maneStrip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.72, 0.06), mane);
+      maneStrip.position.set(0, 1.12, 0.2); maneStrip.rotation.x = -0.45; g.add(maneStrip);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), coat);
+      head.scale.set(0.85, 0.9, 1.25); head.position.set(0, 1.48, 0.5); g.add(head);
+      const snout = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), spotMat);
+      snout.scale.set(0.85, 0.8, 1); snout.position.set(0, 1.44, 0.64); g.add(snout);
+      for (const s of [-1, 1]) {
+        const ossi = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.028, 0.13, 6), coat);
+        ossi.position.set(s * 0.06, 1.62, 0.46); g.add(ossi);
+        const knob = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 7), mane);
+        knob.position.set(s * 0.06, 1.69, 0.46); g.add(knob);
+        const ear = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 7), coat);
+        ear.scale.set(1.4, 0.5, 0.6); ear.position.set(s * 0.14, 1.55, 0.44); ear.rotation.z = s * 0.4; g.add(ear);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 7), dark);
+        eye.position.set(s * 0.1, 1.52, 0.58); g.add(eye);
+      }
+      // long legs
+      const legGeo = new THREE.CylinderGeometry(0.05, 0.045, 0.66, 7);
+      for (const [sx, sz] of [[-0.16, 0.32], [0.16, 0.32], [-0.16, -0.34], [0.16, -0.34]] as const) {
+        const leg = new THREE.Mesh(legGeo, coat);
+        leg.position.set(sx, 0.33, sz);
+        g.add(leg);
+        const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.08, 7), dark);
+        hoof.position.set(sx, 0.04, sz); g.add(hoof);
+      }
+      const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 6), coat);
+      tail.position.set(0, 0.72, -0.5); tail.rotation.x = 0.35; g.add(tail);
+      const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.05, 7, 6), mane);
+      tuft.position.set(0, 0.52, -0.58); g.add(tuft);
+      g.userData.tail = tail;
+      // scatter giraffe spots over body and neck
+      for (let i = 0; i < 12; i++) {
+        const spot = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 5), spotMat);
+        spot.scale.set(1, 0.35, 1);
+        const onNeck = i > 7;
+        const ang = (i / 8) * Math.PI * 2;
+        if (onNeck) spot.position.set((mulRand(this.seed + i * 13) - 0.5) * 0.18, 1.0 + (i - 8) * 0.11, 0.28 + (i - 8) * 0.06);
+        else spot.position.set(Math.cos(ang) * 0.26, 0.78 + Math.sin(ang) * 0.18, (mulRand(this.seed + i * 7) - 0.5) * 1.1);
+        spot.lookAt(spot.position.clone().multiplyScalar(2));
+        g.add(spot);
+      }
+    } else if (kind === 'crocodile') {
+      // crocodile: long low body, toothy snout, ridged back, long tail
+      const green = new THREE.MeshStandardMaterial({ color: '#4f7a45', roughness: 0.85 });
+      const darkGreen = new THREE.MeshStandardMaterial({ color: '#3a5c33', roughness: 0.85 });
+      const belly = new THREE.MeshStandardMaterial({ color: '#c7c07e', roughness: 0.9 });
+      const white = new THREE.MeshStandardMaterial({ color: '#f2efe4', roughness: 0.5 });
+      const dark = new THREE.MeshStandardMaterial({ color: '#141410', roughness: 0.3 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 10), green);
+      body.scale.set(0.9, 0.62, 1.7);
+      body.position.y = 0.24;
+      g.add(body);
+      const bellyM = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 8), belly);
+      bellyM.scale.set(0.7, 0.3, 1.5); bellyM.position.set(0, 0.14, 0.05); g.add(bellyM);
+      // long snout: upper + lower jaw
+      const upper = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.11, 0.34), green);
+      upper.position.set(0, 0.26, 0.6); g.add(upper);
+      const lower = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.07, 0.32), darkGreen);
+      lower.position.set(0, 0.18, 0.59); g.add(lower);
+      const snoutTip = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 7), green);
+      snoutTip.scale.set(1, 0.7, 0.7); snoutTip.position.set(0, 0.24, 0.78); g.add(snoutTip);
+      // teeth poking down from the upper jaw
+      for (let i = 0; i < 5; i++) {
+        for (const s of [-1, 1]) {
+          const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.05, 4), white);
+          tooth.rotation.x = Math.PI; tooth.position.set(s * 0.08, 0.2, 0.5 + i * 0.055); g.add(tooth);
+        }
+      }
+      // eyes bulging on top
+      for (const s of [-1, 1]) {
+        const bump = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 7), green);
+        bump.position.set(s * 0.09, 0.36, 0.42); g.add(bump);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 7), new THREE.MeshStandardMaterial({ color: '#e2b93c' }));
+        eye.position.set(s * 0.09, 0.4, 0.44); g.add(eye);
+        const pup = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 5), dark);
+        pup.position.set(s * 0.09, 0.41, 0.47); g.add(pup);
+        // stubby legs
+        for (const sz of [0.28, -0.24]) {
+          const leg = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 7), darkGreen);
+          leg.scale.set(0.8, 0.6, 1); leg.position.set(s * 0.26, 0.1, sz);
+          leg.rotation.y = s * 0.6; g.add(leg);
+        }
+      }
+      // ridged back + tapering tail
+      let px = 0, py = 0.34, pz = -0.05;
+      for (let i = 0; i < 6; i++) {
+        const r = 0.09 - i * 0.012;
+        const ridge = new THREE.Mesh(new THREE.ConeGeometry(r, r * 1.6, 5), darkGreen);
+        ridge.position.set(0, py + 0.02, -0.05 - i * 0.02); g.add(ridge);
+        if (i >= 2) {
+          const seg = new THREE.Mesh(new THREE.SphereGeometry(0.16 - (i - 2) * 0.03, 10, 8), green);
+          seg.scale.set(0.8, 0.6, 1.2);
+          seg.position.set(0, 0.2, -0.36 - (i - 2) * 0.22);
+          g.add(seg);
+          px = seg.position.x; py = seg.position.y; pz = seg.position.z;
+        }
+      }
+      void px; void py; void pz;
+    } else if (kind === 'axolotl') {
+      // axolotl: pink, wide smiley head, feathery gills, paddle tail
+      const pink = new THREE.MeshStandardMaterial({ color: '#f2b6cc', roughness: 0.7 });
+      const deep = new THREE.MeshStandardMaterial({ color: '#e78bb0', roughness: 0.7 });
+      const frill = new THREE.MeshStandardMaterial({ color: '#f28fb4', roughness: 0.6 });
+      const dark = new THREE.MeshStandardMaterial({ color: '#141210', roughness: 0.3 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), pink);
+      body.scale.set(0.9, 0.7, 1.7);
+      body.position.y = 0.2;
+      g.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 12), pink);
+      head.scale.set(1.15, 0.9, 0.95); head.position.set(0, 0.24, 0.34); g.add(head);
+      // smiley mouth line
+      const smile = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.012, 6, 12, Math.PI), deep);
+      smile.rotation.x = 1.2; smile.position.set(0, 0.19, 0.5); g.add(smile);
+      for (const s of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 7), dark);
+        eye.position.set(s * 0.11, 0.3, 0.46); g.add(eye);
+        const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 7), deep);
+        cheek.position.set(s * 0.15, 0.22, 0.44); g.add(cheek);
+        // three feathery gill frills sweeping back from the head
+        const frillGroup = new THREE.Group();
+        for (const [ang, len] of [[0.4, 0.16], [0.0, 0.2], [-0.4, 0.16]] as const) {
+          const stalk = new THREE.Mesh(new THREE.ConeGeometry(0.035, len, 5), frill);
+          stalk.position.set(Math.sin(ang) * len * 0.5, ang * 0.15, -len * 0.4);
+          stalk.rotation.z = s * (0.9 + ang);
+          stalk.rotation.x = -0.3;
+          frillGroup.add(stalk);
+        }
+        frillGroup.position.set(s * 0.19, 0.3, 0.22);
+        g.add(frillGroup);
+        if (s === -1) g.userData.gillL = frillGroup; else g.userData.gillR = frillGroup;
+        // stubby legs
+        for (const sz of [0.2, -0.18]) {
+          const leg = new THREE.Mesh(new THREE.SphereGeometry(0.05, 7, 6), pink);
+          leg.scale.set(0.7, 0.5, 1.1); leg.position.set(s * 0.19, 0.09, sz); g.add(leg);
+        }
+      }
+      // flat paddle tail
+      const tail = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), pink);
+      tail.scale.set(0.35, 0.9, 1.2); tail.position.set(0, 0.22, -0.44); g.add(tail);
+      g.userData.tail = tail;
     }
     g.traverse((o) => { o.castShadow = true; });
     return g;
@@ -3357,12 +3641,18 @@ export class World {
   private buildSpirits() {
     // sector centers match climateAt: i 0..3 → forest, winter, desert, mountain
     const sectorIdx: Record<TerritoryDef['id'], number> = { forest: 0, winter: 1, desert: 2, mountain: 3 };
+    // several friends can share a territory now — fan them out so they don't stack
+    const slotInTerritory: Record<string, number> = {};
     for (const def of SPIRIT_ANIMALS) {
-      const baseA = this.climateRot + (sectorIdx[def.territory] + 0.5) * (Math.PI / 2);
+      const slot = slotInTerritory[def.territory] ?? 0;
+      slotInTerritory[def.territory] = slot + 1;
+      // spread siblings across the sector: 0, +0.5, -0.5, +0.9 … radians of fan
+      const fan = slot === 0 ? 0 : (slot % 2 ? 1 : -1) * (0.42 + 0.22 * Math.floor((slot + 1) / 2));
+      const baseA = this.climateRot + (sectorIdx[def.territory] + 0.5) * (Math.PI / 2) + fan;
       let x = 0, z = 0, found = false;
       // walk candidate spots deep in the sector until one is on comfortable land
       outer: for (let ri = 0; ri < 9 && !found; ri++) {
-        const r = 50 + ri * 9;
+        const r = 46 + ri * 9 + slot * 3;
         for (const ja of [0, 0.18, -0.18, 0.36, -0.36]) {
           const a = baseA + ja;
           const cx = Math.cos(a) * r;
@@ -3381,8 +3671,8 @@ export class World {
       this.group.add(group);
       this.spirits.push({
         def, group, x, z, y, homeX: x, homeZ: z,
-        heading: mulRand(this.seed + 616 + sectorIdx[def.territory]) * Math.PI * 2,
-        phase: sectorIdx[def.territory] * 2.3,
+        heading: mulRand(this.seed + 616 + sectorIdx[def.territory] * 7 + slot * 31) * Math.PI * 2,
+        phase: sectorIdx[def.territory] * 2.3 + slot * 1.7,
         facing: false,
       });
     }
