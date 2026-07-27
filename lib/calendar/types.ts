@@ -13,7 +13,7 @@ export type MarketingChannel =
 
 export type IdeaStatus = 'idea' | 'planned' | 'in_progress' | 'done' | 'skipped';
 export type Effort = 'S' | 'M' | 'L';
-export type Owner = 'Dustin' | 'Jason' | 'Erica';
+export type Owner = 'Dustin' | 'Jason' | 'Eric';
 
 // The client-facing idea shape (dates are plain 'YYYY-MM-DD' strings).
 export interface Idea {
@@ -114,7 +114,7 @@ export function channelMeta(key: string): ChannelMeta {
 export const OWNERS: { key: Owner; label: string; role: string; color: string }[] = [
   { key: 'Dustin', label: 'Dustin', role: 'Design & marketing lead', color: '#2563eb' },
   { key: 'Jason',  label: 'Jason',  role: 'Product / editor & designer', color: '#7c3aed' },
-  { key: 'Erica',  label: 'Erica',  role: 'Automations & tooling', color: '#0d9488' },
+  { key: 'Eric',  label: 'Eric',  role: 'Automations & tooling', color: '#0d9488' },
 ];
 
 export const STATUSES: { key: IdeaStatus; label: string; color: string }[] = [

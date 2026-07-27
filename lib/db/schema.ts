@@ -813,7 +813,7 @@ export const marketingIdeas = sqliteTable('marketing_ideas', {
   objective: text('objective').default(''),       // what it's meant to achieve
   justification: text('justification').default(''), // why this, why now
   metric: text('metric').default(''),             // revenue metric it drives
-  owner: text('owner').default('Dustin'),         // primary owner: Dustin | Jason | Erica
+  owner: text('owner').default('Dustin'),         // primary owner: Dustin | Jason | Eric
   collaborators: text('collaborators', { mode: 'json' }).$type<string[]>().default([]),
   tools: text('tools', { mode: 'json' }).$type<string[]>().default([]),
   effort: text('effort').default('M'),            // S | M | L

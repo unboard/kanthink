@@ -128,7 +128,7 @@ export function IdeaDetail({
                 </Field>
                 <Field label="Collaborators">
                   <input value={draft.collaborators.join(', ')} onChange={(e) => set('collaborators', splitList(e.target.value))}
-                    className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="Erica, Jason" />
+                    className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="Eric, Jason" />
                 </Field>
               </div>
 

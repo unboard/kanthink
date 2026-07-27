@@ -1,9 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, CSSProperties } from 'react';
 import Link from 'next/link';
-import type { Idea, Asset, Business, MarketingChannel } from '@/lib/calendar/types';
-import { CHANNELS, OWNERS, channelMeta, statusMeta } from '@/lib/calendar/types';
+import type { Idea, Asset, Business } from '@/lib/calendar/types';
+import { CHANNELS, OWNERS, STATUSES, channelMeta, statusMeta } from '@/lib/calendar/types';
+import {
+  type CalFilters, emptyFilters, filterCount, ideaPasses,
+  ideaMatchesAudience, audienceOptionsFromAssets, tagOptionsFromAssets,
+} from '@/lib/calendar/filters';
 import {
   MONTHS, WEEKDAYS_SHORT, WEEKDAYS_MIN, monthGrid, weekDays, todayIso, isToday, isPast,
   sameMonth, parseIso, addDays, formatShortDate, weekKey, weekLabel, isoToDate,
@@ -49,8 +54,7 @@ export function CalendarApp({ business }: { business: Business }) {
   const [cursor, setCursor] = useState<string>(todayIso());
   const [selected, setSelected] = useState<Idea | 'new' | null>(null);
 
-  const [channelFilter, setChannelFilter] = useState<Set<MarketingChannel>>(new Set());
-  const [ownerFilter, setOwnerFilter] = useState<string>('all');
+  const [filters, setFilters] = useState<CalFilters>(emptyFilters);
   const [focusAudience, setFocusAudience] = useState<string | null>(null);
 
   const [chatOpen, setChatOpen] = useState(false);
@@ -85,13 +89,14 @@ export function CalendarApp({ business }: { business: Business }) {
   }, [slug, showToast]);
 
   const audiences = useMemo(() => assets.filter((a) => a.kind === 'audience').map((a) => a.name), [assets]);
+  const audienceOptions = useMemo(() => audienceOptionsFromAssets(assets), [assets]);
+  const tagOptions = useMemo(() => tagOptionsFromAssets(assets), [assets]);
 
   const visibleIdeas = useMemo(() => ideas.filter((i) => {
-    if (channelFilter.size > 0 && !channelFilter.has(i.channel)) return false;
-    if (ownerFilter !== 'all' && i.owner !== ownerFilter) return false;
-    if (focusAudience && !i.audience.toLowerCase().includes(focusAudience.toLowerCase())) return false;
+    if (!ideaPasses(i, filters)) return false;
+    if (focusAudience && !ideaMatchesAudience(i, focusAudience)) return false;
     return true;
-  }), [ideas, channelFilter, ownerFilter, focusAudience]);
+  }), [ideas, filters, focusAudience]);
 
   const byDate = useMemo(() => {
     const map = new Map<string, Idea[]>();
@@ -262,8 +267,8 @@ export function CalendarApp({ business }: { business: Business }) {
                   </h2>
                   <div className="ml-auto flex items-center gap-2">
                     <FilterControls
-                      channelFilter={channelFilter} setChannelFilter={setChannelFilter}
-                      ownerFilter={ownerFilter} setOwnerFilter={setOwnerFilter}
+                      filters={filters} setFilters={setFilters}
+                      audienceOptions={audienceOptions} tagOptions={tagOptions}
                     />
                   </div>
                 </div>
@@ -287,8 +292,8 @@ export function CalendarApp({ business }: { business: Business }) {
               {view === 'list' && (
                 <ListView
                   ideas={visibleIdeas} onOpen={setSelected}
-                  channelFilter={channelFilter} setChannelFilter={setChannelFilter}
-                  ownerFilter={ownerFilter} setOwnerFilter={setOwnerFilter}
+                  filters={filters} setFilters={setFilters}
+                  audienceOptions={audienceOptions} tagOptions={tagOptions}
                   focusAudience={focusAudience} onClearFocus={() => setFocusAudience(null)}
                 />
               )}
@@ -501,10 +506,10 @@ function WeekCard({ idea, onOpen }: { idea: Idea; onOpen: (i: Idea) => void }) {
 }
 
 // ---------------- List ----------------
-function ListView({ ideas, onOpen, channelFilter, setChannelFilter, ownerFilter, setOwnerFilter, focusAudience, onClearFocus }: {
+function ListView({ ideas, onOpen, filters, setFilters, audienceOptions, tagOptions, focusAudience, onClearFocus }: {
   ideas: Idea[]; onOpen: (i: Idea) => void;
-  channelFilter: Set<MarketingChannel>; setChannelFilter: (s: Set<MarketingChannel>) => void;
-  ownerFilter: string; setOwnerFilter: (v: string) => void;
+  filters: CalFilters; setFilters: (f: CalFilters) => void;
+  audienceOptions: string[]; tagOptions: string[];
   focusAudience: string | null; onClearFocus: () => void;
 }) {
   const dated = ideas.filter((i) => i.date).sort((a, b) => (a.date! < b.date! ? -1 : a.date! > b.date! ? 1 : a.position - b.position));
@@ -519,7 +524,7 @@ function ListView({ ideas, onOpen, channelFilter, setChannelFilter, ownerFilter,
   return (
     <div className="rounded-xl border border-neutral-200 bg-white">
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-2.5">
-        <FilterControls channelFilter={channelFilter} setChannelFilter={setChannelFilter} ownerFilter={ownerFilter} setOwnerFilter={setOwnerFilter} />
+        <FilterControls filters={filters} setFilters={setFilters} audienceOptions={audienceOptions} tagOptions={tagOptions} />
         {focusAudience && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-[12px] font-medium text-violet-700">
             {focusAudience}
@@ -577,50 +582,112 @@ function ListRow({ idea, onOpen, past }: { idea: Idea; onOpen: (i: Idea) => void
 }
 
 // ---------------- Filters + Legend ----------------
-function FilterControls({ channelFilter, setChannelFilter, ownerFilter, setOwnerFilter }: {
-  channelFilter: Set<MarketingChannel>; setChannelFilter: (s: Set<MarketingChannel>) => void;
-  ownerFilter: string; setOwnerFilter: (v: string) => void;
+function FilterControls({ filters, setFilters, audienceOptions, tagOptions }: {
+  filters: CalFilters; setFilters: (f: CalFilters) => void;
+  audienceOptions: string[]; tagOptions: string[];
 }) {
   const [open, setOpen] = useState(false);
-  const active = channelFilter.size > 0 || ownerFilter !== 'all';
-  function toggle(k: MarketingChannel) {
-    const next = new Set(channelFilter);
-    if (next.has(k)) next.delete(k); else next.add(k);
-    setChannelFilter(next);
+  const count = filterCount(filters);
+  const active = count > 0;
+
+  // Toggle a value in one of the filter Sets, returning a fresh CalFilters.
+  function toggle(key: keyof CalFilters, value: string) {
+    const next = new Set(filters[key]);
+    if (next.has(value)) next.delete(value); else next.add(value);
+    setFilters({ ...filters, [key]: next });
   }
+  const clear = () => setFilters(emptyFilters());
+
   return (
     <div className="relative">
       <button onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12.5px] font-medium ${active ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50'}`}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
-        Filter{active ? ` · ${channelFilter.size + (ownerFilter !== 'all' ? 1 : 0)}` : ''}
+        Filter{active ? ` · ${count}` : ''}
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-40 mt-1.5 w-56 rounded-xl border border-neutral-200 bg-white p-3 shadow-lg">
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Channel</div>
-            <div className="mb-3 flex flex-wrap gap-1.5">
+          <div className="absolute right-0 z-40 mt-1.5 max-h-[70vh] w-72 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-3 shadow-lg">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-neutral-700">Filters</span>
+              {active && <button onClick={clear} className="text-[12px] font-medium text-blue-600 hover:text-blue-700">Clear all</button>}
+            </div>
+
+            <FilterSection label="Channel">
               {CHANNELS.map((c) => (
-                <button key={c.key} onClick={() => toggle(c.key)}
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${channelFilter.has(c.key) ? '' : 'opacity-45'}`}
-                  style={{ background: c.bg, color: c.text }}>{c.label}</button>
+                <Chip key={c.key} on={filters.channels.has(c.key)} onClick={() => toggle('channels', c.key)}
+                  style={{ background: c.bg, color: c.text }}>{c.label}</Chip>
               ))}
-            </div>
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Owner</div>
-            <div className="flex flex-wrap gap-1.5">
-              {['all', ...OWNERS.map((o) => o.key)].map((o) => (
-                <button key={o} onClick={() => setOwnerFilter(o)}
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${ownerFilter === o ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600'}`}>
-                  {o === 'all' ? 'Everyone' : o}
-                </button>
+            </FilterSection>
+
+            {audienceOptions.length > 0 && (
+              <FilterSection label="Audience" hint="From your Knowledge base">
+                {audienceOptions.map((a) => (
+                  <Chip key={a} on={filters.audiences.has(a)} onClick={() => toggle('audiences', a)}
+                    style={{ background: '#f5f3ff', color: '#6d28d9' }}>{a}</Chip>
+                ))}
+              </FilterSection>
+            )}
+
+            {tagOptions.length > 0 && (
+              <FilterSection label="Tag" hint="From your Knowledge base">
+                {tagOptions.map((t) => (
+                  <Chip key={t} on={filters.tags.has(t)} onClick={() => toggle('tags', t)}
+                    style={{ background: '#f1f5f9', color: '#475569' }}>#{t}</Chip>
+                ))}
+              </FilterSection>
+            )}
+
+            <FilterSection label="Owner">
+              {OWNERS.map((o) => (
+                <Chip key={o.key} on={filters.owners.has(o.key)} onClick={() => toggle('owners', o.key)}
+                  neutral>{o.key}</Chip>
               ))}
-            </div>
-            {(active) && <button onClick={() => { setChannelFilter(new Set()); setOwnerFilter('all'); }} className="mt-3 text-[12px] font-medium text-blue-600 hover:text-blue-700">Clear filters</button>}
+            </FilterSection>
+
+            <FilterSection label="Status" last>
+              {STATUSES.map((s) => (
+                <Chip key={s.key} on={filters.statuses.has(s.key)} onClick={() => toggle('statuses', s.key)} neutral>
+                  <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: s.color }} />{s.label}
+                </Chip>
+              ))}
+            </FilterSection>
           </div>
         </>
       )}
     </div>
+  );
+}
+
+function FilterSection({ label, hint, last, children }: { label: string; hint?: string; last?: boolean; children: ReactNode }) {
+  return (
+    <div className={last ? '' : 'mb-3'}>
+      <div className="mb-1.5 flex items-baseline gap-1.5">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">{label}</span>
+        {hint && <span className="text-[10px] font-normal normal-case text-neutral-300">{hint}</span>}
+      </div>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+function Chip({ on, onClick, style, neutral, children }: {
+  on: boolean; onClick: () => void; style?: CSSProperties; neutral?: boolean; children: ReactNode;
+}) {
+  if (neutral) {
+    return (
+      <button onClick={onClick}
+        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${on ? 'bg-neutral-900 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}>
+        {children}
+      </button>
+    );
+  }
+  return (
+    <button onClick={onClick} style={style}
+      className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-all ${on ? 'ring-1 ring-inset ring-black/15' : 'opacity-45 hover:opacity-70'}`}>
+      {children}
+    </button>
   );
 }
 

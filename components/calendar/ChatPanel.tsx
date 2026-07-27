@@ -13,7 +13,7 @@ const STARTERS = [
   'What should we focus on this week to drive revenue?',
   'Add a fall HVAC email campaign targeting heating tune-ups.',
   "What's light in Q4? Fill the gaps.",
-  'Give Erica an automation idea for September.',
+  'Give Eric an automation idea for September.',
 ];
 
 export function ChatPanel({
