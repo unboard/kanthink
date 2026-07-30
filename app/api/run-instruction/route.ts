@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
 import { marked } from 'marked';
 import type { Channel, Card, CardInput, InstructionCard, InstructionTarget, ContextColumnSelection, Task, CardRejection } from '@/lib/types';
-import { type LLMMessage } from '@/lib/ai/llm';
+import { type LLMMessage, type LLMProvider, getLLMClientForUser } from '@/lib/ai/llm';
+import { recordUsage } from '@/lib/usage';
 import { buildFeedbackContext, buildRejectionContext } from '@/lib/ai/feedbackAnalyzer';
 import { getAuthenticatedLLM } from '@/lib/ai/withAuth';
 import { createNotification } from '@/lib/notifications/createNotification';
 import { auth } from '@/lib/auth';
+import { ensureSchema } from '@/lib/db/ensure-schema';
+import { createShroomCards, createShroomReport, applyShroomModifications, applyShroomMoves } from '@/lib/shrooms/apply';
+import { loadChannelRejections } from '@/lib/shrooms/rejections';
+import { sendShroomRunEmail, type ShroomRunOutcome } from '@/lib/shrooms/sendRunEmail';
 
 // Configure marked for safe HTML output
 marked.setOptions({
@@ -617,6 +622,113 @@ If no cards should be moved, return an empty array: []`;
   ];
 }
 
+interface ReportResult {
+  headline: string;
+  highlights: { text: string; cardIds?: string[] }[];
+  summary?: string;
+}
+
+/**
+ * Build a prompt for a `report` shroom.
+ *
+ * Unlike the other actions this produces no card mutations — it reads the context
+ * columns and writes an observation. Boards get harder to read as they fill up; a
+ * shroom that says "these three have been sitting a week" is useful precisely because
+ * it doesn't add to the pile.
+ */
+function buildReportPrompt(
+  instructionCard: InstructionCard,
+  channel: Channel,
+  contextCards: Card[],
+  systemInstructions?: string
+): LLMMessage[] {
+  const systemPrompt = `You are analyzing a Kanban channel and writing a short, useful status report for its owner.
+
+You do NOT create, modify, or move cards. You observe and report.
+
+Respond with a JSON object:
+{
+  "headline": "One short line summarizing the state (max 80 chars)",
+  "highlights": [
+    {"text": "A specific, concrete observation", "cardIds": ["id-of-a-card-it-refers-to"]}
+  ],
+  "summary": "Optional 1-2 sentence closing thought"
+}
+
+Rules:
+- 2-5 highlights. Fewer good ones beats more filler.
+- Be specific. "3 cards in Do These haven't moved in over a week" beats "some cards are stale".
+- Reference real card IDs from the data when a highlight is about particular cards.
+- If nothing noteworthy is happening, say so plainly in the headline with an empty highlights array.
+- Never invent cards, dates, or activity that isn't in the data.`;
+
+  const userParts: string[] = [];
+
+  let contextSection = `## Context\nChannel: ${channel.name}`;
+  if (channel.description) contextSection += `\nDescription: ${channel.description}`;
+  contextSection += `\nToday: ${new Date().toISOString().slice(0, 10)}`;
+  if (systemInstructions?.trim()) {
+    contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
+  }
+  userParts.push(contextSection);
+
+  let cardsSection = '## Cards';
+  if (contextCards.length === 0) {
+    cardsSection += '\n(no cards)';
+  }
+  for (const card of contextCards) {
+    const currentColumn = channel.columns.find((c) => c.cardIds.includes(card.id));
+    cardsSection += `\n\n### ${card.title} (id:${card.id})`;
+    cardsSection += `\nColumn: ${currentColumn?.name || 'Unknown'}`;
+    cardsSection += `\nCreated: ${card.createdAt?.slice(0, 10) ?? 'unknown'} · Updated: ${card.updatedAt?.slice(0, 10) ?? 'unknown'}`;
+    if (card.tags?.length) cardsSection += `\nTags: ${card.tags.join(', ')}`;
+    if (card.summary) cardsSection += `\nSummary: ${card.summary}`;
+  }
+  userParts.push(cardsSection);
+
+  let taskSection = '## What to report on';
+  if (instructionCard.instructions?.trim()) {
+    taskSection += `\n\n${instructionCard.instructions.trim()}`;
+  } else {
+    taskSection += '\n\nSummarize the current state of this channel and flag anything that needs attention.';
+  }
+  userParts.push(taskSection);
+
+  return [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userParts.join('\n\n') },
+  ];
+}
+
+function parseReportResponse(content: string): ReportResult | null {
+  try {
+    const cleaned = stripCodeBlocks(content);
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed || typeof parsed.headline !== 'string') return null;
+
+    return {
+      headline: parsed.headline.trim(),
+      highlights: Array.isArray(parsed.highlights)
+        ? parsed.highlights
+            .filter((h: unknown) => h && typeof (h as { text?: unknown }).text === 'string')
+            .map((h: { text: string; cardIds?: unknown }) => ({
+              text: h.text.trim(),
+              cardIds: Array.isArray(h.cardIds)
+                ? h.cardIds.filter((id: unknown) => typeof id === 'string')
+                : undefined,
+            }))
+        : [],
+      summary: typeof parsed.summary === 'string' ? parsed.summary.trim() : undefined,
+    };
+  } catch (error) {
+    console.warn('Failed to parse report response:', error);
+    return null;
+  }
+}
+
 function parseMoveResponse(content: string): Array<{ cardId: string; destinationColumnId: string; reason?: string }> {
   try {
     const cleaned = stripCodeBlocks(content);
@@ -922,6 +1034,9 @@ interface RunInstructionRequest {
   cards: Record<string, Card>;
   tasks?: Record<string, Task>;
   triggeringCardId?: string;
+  cardIds?: string[];              // Scope the run to specific cards (card menu, multi-select, "run only unprocessed")
+  apply?: boolean;                 // Write generated cards server-side. Default false so previews stay dry runs.
+  asUserId?: string;               // Internal (cron) only: whose LLM quota to spend
   skipAlreadyProcessed?: boolean;  // For automatic runs, skip cards already processed by this instruction
   systemInstructions?: string;
   members?: MemberInfo[];
@@ -930,11 +1045,20 @@ interface RunInstructionRequest {
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
+    await ensureSchema();
 
     const body: RunInstructionRequest = await request.json();
-    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, skipAlreadyProcessed, systemInstructions, members, rejections } = body;
+
+    // Cron has no session. It authenticates with the internal secret and tells us which
+    // user's LLM quota to spend (the channel owner's).
+    const internalSecret = request.headers.get('x-internal-secret');
+    const isInternal = Boolean(
+      process.env.INTERNAL_API_SECRET && internalSecret === process.env.INTERNAL_API_SECRET
+    );
+
+    const session = isInternal ? null : await auth();
+    const userId = isInternal ? body.asUserId ?? null : session?.user?.id;
+    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, cardIds, apply = false, skipAlreadyProcessed, systemInstructions, members, rejections } = body;
 
     // Validate required fields
     if (!instructionCard || !channel) {
@@ -947,26 +1071,94 @@ export async function POST(request: Request) {
     const targetColumnIds = getTargetColumnIds(instructionCard.target, channel);
     const contextColumnIds = getContextColumnIds(instructionCard.contextColumns, channel);
 
-    // Get authenticated LLM client
-    const authResult = await getAuthenticatedLLM('run-instruction');
-    if (authResult.error) {
-      // Check if we should return stub data for unauthenticated users
-      if (instructionCard.action === 'generate') {
-        const ideas = getRandomIdeas(instructionCard.cardCount ?? 5);
-        return NextResponse.json({
-          action: 'generate',
-          targetColumnIds,
-          generatedCards: ideas.map((idea) => ({
-            title: idea,
-            content: '<p>Sign in or configure an API key for real AI suggestions.</p>',
-          })),
-        });
-      } else {
-        return authResult.error;
+    // Rejection history lives on the server so a shroom learns from every device, not
+    // just the one it happened to run on. `rejections` in the body is the legacy
+    // client-passed array, kept only as a fallback while old clients are in flight.
+    let cachedRejections: CardRejection[] | null = null;
+    const resolveRejections = async (): Promise<CardRejection[]> => {
+      if (cachedRejections) return cachedRejections;
+      try {
+        const stored = await loadChannelRejections(channel.id);
+        cachedRejections = stored.length > 0 ? stored : (rejections ?? []);
+      } catch {
+        cachedRejections = rejections ?? [];
       }
+      return cachedRejections;
+    };
+
+    const appendRejectionContext = (messages: LLMMessage[], entries: CardRejection[]) => {
+      if (entries.length === 0) return;
+      const rejectionContext = buildRejectionContext(entries, channel.id);
+      if (!rejectionContext) return;
+      const userMsg = messages[messages.length - 1];
+      userMsg.content = `${userMsg.content as string}\n\n${rejectionContext}\n\nUse this rejection history to avoid generating similar cards.`;
+    };
+
+    /**
+     * Email the channel owner about this run, if the shroom asks for it.
+     *
+     * Awaited rather than fired-and-forgotten: composing the email is another LLM call,
+     * and on serverless the function can be frozen the moment the response is returned,
+     * which would drop the send. Runs are already slow enough that a few more seconds
+     * is the right trade for actually delivering.
+     *
+     * Only fires on `apply` runs — previews and dry runs shouldn't mail anyone.
+     */
+    const maybeSendRunEmail = async (outcome: ShroomRunOutcome): Promise<void> => {
+      if (!apply) return;
+      if (!instructionCard.emailConfig?.enabled) return;
+      const result = await sendShroomRunEmail(instructionCard, channel.id, outcome, userId ?? undefined);
+      if (!result.sent && result.reason !== 'not enabled' && result.reason !== 'nothing happened') {
+        console.warn(`[run-instruction] Shroom email not sent: ${result.reason}`);
+      }
+    };
+
+    const columnName = (columnId: string): string =>
+      channel.columns.find((c) => c.id === columnId)?.name ?? 'another column';
+
+    // Get authenticated LLM client
+    let llm: LLMProvider;
+    let recordUsageAfterSuccess: () => Promise<void>;
+
+    if (isInternal) {
+      // Cron path: resolve the channel owner's client directly. No session to check, and
+      // usage is recorded against them since it's their shroom and their quota.
+      if (!userId) {
+        return NextResponse.json({ error: 'asUserId is required for internal runs' }, { status: 400 });
+      }
+      const internalLlm = await getLLMClientForUser(userId);
+      if (!internalLlm.client) {
+        return NextResponse.json(
+          { error: internalLlm.error ?? 'No LLM configured for this user' },
+          { status: 400 }
+        );
+      }
+      llm = internalLlm.client;
+      recordUsageAfterSuccess = async () => {
+        await recordUsage(userId, 'run-instruction').catch(() => {});
+      };
+    } else {
+      const authResult = await getAuthenticatedLLM('run-instruction');
+      if (authResult.error) {
+        // Check if we should return stub data for unauthenticated users
+        if (instructionCard.action === 'generate') {
+          const ideas = getRandomIdeas(instructionCard.cardCount ?? 5);
+          return NextResponse.json({
+            action: 'generate',
+            targetColumnIds,
+            generatedCards: ideas.map((idea) => ({
+              title: idea,
+              content: '<p>Sign in or configure an API key for real AI suggestions.</p>',
+            })),
+          });
+        } else {
+          return authResult.error;
+        }
+      }
+      llm = authResult.context.llm;
+      recordUsageAfterSuccess = authResult.context.recordUsageAfterSuccess;
     }
 
-    const { llm, recordUsageAfterSuccess } = authResult.context;
     const effectiveSystemInstructions = systemInstructions;
 
     // ==========================================
@@ -995,6 +1187,9 @@ export async function POST(request: Request) {
         } catch (e) { console.warn('Web search failed:', e); }
       }
 
+      // Multi-step can generate cards, so it needs the same rejection history
+      appendRejectionContext(messages, await resolveRejections());
+
       try {
         const response = await llm.complete(messages);
         const multiStepResult = parseMultiStepResponse(response.content);
@@ -1015,12 +1210,68 @@ export async function POST(request: Request) {
           }).catch(() => {});
         }
 
+        // Multi-step can generate cards too — route them through the same server-side
+        // creation path so they land pending-review like any other generated card.
+        let multiStepApplied: Awaited<ReturnType<typeof createShroomCards>> | undefined;
+        const multiStepColumnId = allTargetColumnIds[0] || channel.columns[0]?.id;
+        if (apply && userId && multiStepColumnId && multiStepResult.generatedCards.length > 0) {
+          multiStepApplied = await createShroomCards({
+            channelId: channel.id,
+            columnId: multiStepColumnId,
+            generatedCards: multiStepResult.generatedCards,
+            instructionCardId: instructionCard.id,
+            autoApprove: !!instructionCard.autoApprove,
+            validMemberIds: members?.map((m) => m.id),
+          });
+        }
+
+        // Edits before relocations — a card should be updated in the column it was
+        // judged in, then moved.
+        if (apply && multiStepResult.modifiedCards.length > 0) {
+          await applyShroomModifications({
+            channelId: channel.id,
+            instructionCardId: instructionCard.id,
+            modifications: multiStepResult.modifiedCards,
+            validMemberIds: members?.map((m) => m.id),
+          });
+        }
+        if (apply && multiStepResult.movedCards.length > 0) {
+          await applyShroomMoves({
+            channelId: channel.id,
+            instructionCardId: instructionCard.id,
+            moves: multiStepResult.movedCards,
+          });
+        }
+
+        await maybeSendRunEmail({
+          action: instructionCard.action,
+          created: multiStepResult.generatedCards.map((c, i) => ({
+            title: c.title,
+            body: c.initialMessage,
+            cardId: multiStepApplied?.created[i]?.id,
+          })),
+          createdArePending: multiStepApplied?.pending ?? !instructionCard.autoApprove,
+          modified: multiStepResult.modifiedCards.map((c) => ({
+            title: c.title,
+            body: c.content,
+            cardId: c.id,
+          })),
+          moved: multiStepResult.movedCards.map((m) => ({
+            title: cards[m.cardId]?.title ?? 'A card',
+            toColumn: columnName(m.destinationColumnId),
+            cardId: m.cardId,
+          })),
+        });
+
         return NextResponse.json({
           action: 'multi-step',
           targetColumnIds: allTargetColumnIds,
           modifiedCards: multiStepResult.modifiedCards.length > 0 ? multiStepResult.modifiedCards : undefined,
           movedCards: multiStepResult.movedCards.length > 0 ? multiStepResult.movedCards : undefined,
           generatedCards: multiStepResult.generatedCards.length > 0 ? multiStepResult.generatedCards : undefined,
+          applied: multiStepApplied
+            ? { runId: multiStepApplied.runId, columnId: multiStepColumnId, pending: multiStepApplied.pending, cardIds: multiStepApplied.created.map((c) => c.id) }
+            : undefined,
         });
       } catch (llmError) {
         console.error('Multi-step LLM error:', llmError);
@@ -1138,15 +1389,8 @@ export async function POST(request: Request) {
         }
       }
 
-      // Append rejection context if available
-      if (rejections && rejections.length > 0) {
-        const rejectionContext = buildRejectionContext(rejections, channel.id);
-        if (rejectionContext) {
-          const userMsg = messages[messages.length - 1];
-          const currentContent = userMsg.content as string;
-          userMsg.content = currentContent + `\n\n${rejectionContext}\n\nUse this rejection history to avoid generating similar cards.`;
-        }
-      }
+      // Append rejection context so the shroom learns what not to generate
+      appendRejectionContext(messages, await resolveRejections());
 
       debug.systemPrompt = messages[0].content as string;
       debug.userPrompt = messages[1].content as string;
@@ -1171,21 +1415,60 @@ export async function POST(request: Request) {
         // Record usage after successful generation
         await recordUsageAfterSuccess();
 
+        const cardsToCreate = generatedCards.slice(0, instructionCard.cardCount ?? 5);
+        const targetColumnId = targetColumnIds[0] || channel.columns[0]?.id;
+
+        // When applying, write the cards here so they're born pending-review — see
+        // lib/shrooms/apply.ts for why creation can't happen on the client.
+        let applied: Awaited<ReturnType<typeof createShroomCards>> | undefined;
+        if (apply && userId && targetColumnId) {
+          applied = await createShroomCards({
+            channelId: channel.id,
+            columnId: targetColumnId,
+            generatedCards: cardsToCreate,
+            instructionCardId: instructionCard.id,
+            autoApprove: !!instructionCard.autoApprove,
+            validMemberIds: members?.map((m) => m.id),
+          });
+        }
+
         // Notify shroom completed
         if (userId) {
+          const pending = applied?.pending ?? !instructionCard.autoApprove;
           createNotification({
             userId,
             type: 'shroom_completed',
             title: 'Shroom finished running',
-            body: `"${instructionCard.title}" generated ${generatedCards.length} card(s) — tap to review`,
-            data: { channelId: channel.id, instructionCardId: instructionCard.id },
+            body: pending
+              ? `"${instructionCard.title}" generated ${cardsToCreate.length} card(s) — tap to review`
+              : `"${instructionCard.title}" added ${cardsToCreate.length} card(s)`,
+            data: {
+              channelId: channel.id,
+              instructionCardId: instructionCard.id,
+              columnId: targetColumnId,
+              reviewRunId: applied?.runId,
+            },
           }).catch(() => {});
         }
+
+        await maybeSendRunEmail({
+          action: 'generate',
+          created: cardsToCreate.map((c, i) => ({
+            title: c.title,
+            body: c.initialMessage,
+            // Ids only exist once the rows are written, in the same order
+            cardId: applied?.created[i]?.id,
+          })),
+          createdArePending: applied?.pending ?? !instructionCard.autoApprove,
+        });
 
         return NextResponse.json({
           action: 'generate',
           targetColumnIds,
-          generatedCards: generatedCards.slice(0, instructionCard.cardCount ?? 5),
+          generatedCards: cardsToCreate,
+          applied: applied
+            ? { runId: applied.runId, columnId: targetColumnId, pending: applied.pending, cardIds: applied.created.map((c) => c.id) }
+            : undefined,
           debug,
         });
       } catch (llmError) {
@@ -1209,30 +1492,25 @@ export async function POST(request: Request) {
       const cardsToModify: Card[] = [];
       const skippedCardIds: string[] = [];
 
-      if (triggeringCardId && cards[triggeringCardId]) {
-        const card = cards[triggeringCardId];
+      // Resolve the candidate card set: a single triggering card, an explicit
+      // cardIds scope (card menu / multi-select / "run only unprocessed"), or
+      // every card in the target columns.
+      const candidateIds: string[] = triggeringCardId && cards[triggeringCardId]
+        ? [triggeringCardId]
+        : cardIds?.length
+          ? cardIds
+          : targetColumnIds.flatMap(
+              (columnId) => channel.columns.find((c) => c.id === columnId)?.cardIds ?? []
+            );
+
+      for (const cardId of candidateIds) {
+        const card = cards[cardId];
+        if (!card) continue;
         // Check if already processed by this instruction
         if (skipAlreadyProcessed && card.processedByInstructions?.[instructionCard.id]) {
           skippedCardIds.push(card.id);
         } else {
           cardsToModify.push(card);
-        }
-      } else {
-        for (const columnId of targetColumnIds) {
-          const column = channel.columns.find((c) => c.id === columnId);
-          if (column) {
-            for (const cardId of column.cardIds) {
-              const card = cards[cardId];
-              if (card) {
-                // Check if already processed by this instruction
-                if (skipAlreadyProcessed && card.processedByInstructions?.[instructionCard.id]) {
-                  skippedCardIds.push(card.id);
-                } else {
-                  cardsToModify.push(card);
-                }
-              }
-            }
-          }
         }
       }
 
@@ -1362,6 +1640,9 @@ export async function POST(request: Request) {
         }
       }
 
+      // Modify writes card content too, so the same rejection history applies
+      appendRejectionContext(messages, await resolveRejections());
+
       debug.systemPrompt = messages[0].content as string;
       debug.userPrompt = messages[1].content as string;
 
@@ -1386,6 +1667,12 @@ export async function POST(request: Request) {
           }
         }
 
+        // Snapshot the markdown before it becomes HTML — the email composer renders
+        // through a Markdown node, and handing it HTML would show tags as text.
+        const modifiedMarkdown = new Map(
+          modifiedCards.filter((c) => c.content).map((c) => [c.id, c.content as string])
+        );
+
         // Convert markdown content to HTML for each modified card
         for (const modified of modifiedCards) {
           if (modified.content) {
@@ -1395,6 +1682,17 @@ export async function POST(request: Request) {
 
         // Record usage after successful modification
         await recordUsageAfterSuccess();
+
+        // Write the edits here rather than on the client, so a run means the same thing
+        // whether a board was open to receive it or not.
+        if (apply && modifiedCards.length > 0) {
+          await applyShroomModifications({
+            channelId: channel.id,
+            instructionCardId: instructionCard.id,
+            modifications: modifiedCards,
+            validMemberIds: members?.map((m) => m.id),
+          });
+        }
 
         // Notify shroom completed
         if (userId) {
@@ -1406,6 +1704,15 @@ export async function POST(request: Request) {
             data: { channelId: channel.id, instructionCardId: instructionCard.id },
           }).catch(() => {});
         }
+
+        await maybeSendRunEmail({
+          action: 'modify',
+          modified: modifiedCards.map((c) => ({
+            title: c.title,
+            body: modifiedMarkdown.get(c.id),
+            cardId: c.id,
+          })),
+        });
 
         return NextResponse.json({
           action: 'modify',
@@ -1425,6 +1732,98 @@ export async function POST(request: Request) {
           debug,
         });
       }
+    } else if (instructionCard.action === 'report') {
+      // REPORT action — observes and writes a single digest card, mutates nothing else
+      const reportCards: Card[] = [];
+      const seen = new Set<string>();
+      for (const columnId of contextColumnIds.length > 0 ? contextColumnIds : targetColumnIds) {
+        const column = channel.columns.find((c) => c.id === columnId);
+        for (const cardId of column?.cardIds ?? []) {
+          const card = cards[cardId];
+          if (card && !seen.has(cardId)) {
+            seen.add(cardId);
+            reportCards.push(card);
+          }
+        }
+      }
+
+      const messages = buildReportPrompt(instructionCard, channel, reportCards, effectiveSystemInstructions);
+      debug.systemPrompt = messages[0].content as string;
+      debug.userPrompt = messages[1].content as string;
+
+      try {
+        const response = await llm.complete(messages);
+        debug.rawResponse = response.content;
+        const report = parseReportResponse(response.content);
+
+        if (!report) {
+          return NextResponse.json({
+            action: 'report',
+            targetColumnIds,
+            error: 'Could not read the report back from the AI. Please try again.',
+            debug,
+          });
+        }
+
+        await recordUsageAfterSuccess();
+
+        const reportColumnId = targetColumnIds[0] || channel.columns[0]?.id;
+        let createdReport: { cardId: string; title: string } | undefined;
+        if (apply && userId && reportColumnId) {
+          createdReport = await createShroomReport({
+            channelId: channel.id,
+            columnId: reportColumnId,
+            instructionCardId: instructionCard.id,
+            instructionTitle: instructionCard.title,
+            report,
+          });
+        }
+
+        if (userId) {
+          createNotification({
+            userId,
+            type: 'shroom_report',
+            title: report.headline,
+            body: report.highlights.length > 0
+              ? report.highlights.map((h) => h.text).join(' · ').slice(0, 200)
+              : `"${instructionCard.title}" had nothing to flag`,
+            data: {
+              channelId: channel.id,
+              instructionCardId: instructionCard.id,
+              cardId: createdReport?.cardId,
+              columnId: reportColumnId,
+            },
+          }).catch(() => {});
+        }
+
+        await maybeSendRunEmail({
+          action: 'report',
+          report: {
+            headline: report.headline,
+            highlights: report.highlights.map((h) => h.text),
+            summary: report.summary,
+            cardId: createdReport?.cardId,
+          },
+        });
+
+        return NextResponse.json({
+          action: 'report',
+          targetColumnIds,
+          report,
+          applied: createdReport
+            ? { runId: createdReport.cardId, columnId: reportColumnId, pending: false, cardIds: [createdReport.cardId] }
+            : undefined,
+          debug,
+        });
+      } catch (llmError) {
+        console.error('Report LLM error:', llmError);
+        return NextResponse.json({
+          action: 'report',
+          targetColumnIds,
+          error: `AI error: ${llmError instanceof Error ? llmError.message : 'Unknown error'}`,
+          debug,
+        });
+      }
     } else {
       // MOVE action
       // If triggered by a specific card event, only analyze that card
@@ -1432,28 +1831,22 @@ export async function POST(request: Request) {
       const cardsToMove: Card[] = [];
       const skippedCardIds: string[] = [];
 
-      if (triggeringCardId && cards[triggeringCardId]) {
-        const card = cards[triggeringCardId];
+      // Same candidate resolution as modify: triggering card, explicit scope, or all.
+      const candidateIds: string[] = triggeringCardId && cards[triggeringCardId]
+        ? [triggeringCardId]
+        : cardIds?.length
+          ? cardIds
+          : targetColumnIds.flatMap(
+              (columnId) => channel.columns.find((c) => c.id === columnId)?.cardIds ?? []
+            );
+
+      for (const cardId of candidateIds) {
+        const card = cards[cardId];
+        if (!card) continue;
         if (skipAlreadyProcessed && card.processedByInstructions?.[instructionCard.id]) {
           skippedCardIds.push(card.id);
         } else {
           cardsToMove.push(card);
-        }
-      } else {
-        for (const columnId of targetColumnIds) {
-          const column = channel.columns.find((c) => c.id === columnId);
-          if (column) {
-            for (const cardId of column.cardIds) {
-              const card = cards[cardId];
-              if (card) {
-                if (skipAlreadyProcessed && card.processedByInstructions?.[instructionCard.id]) {
-                  skippedCardIds.push(card.id);
-                } else {
-                  cardsToMove.push(card);
-                }
-              }
-            }
-          }
         }
       }
 
@@ -1486,6 +1879,14 @@ export async function POST(request: Request) {
         // Record usage after successful move analysis
         await recordUsageAfterSuccess();
 
+        if (apply && moveDecisions.length > 0) {
+          await applyShroomMoves({
+            channelId: channel.id,
+            instructionCardId: instructionCard.id,
+            moves: moveDecisions,
+          });
+        }
+
         // Notify shroom completed
         if (userId) {
           createNotification({
@@ -1496,6 +1897,15 @@ export async function POST(request: Request) {
             data: { channelId: channel.id, instructionCardId: instructionCard.id },
           }).catch(() => {});
         }
+
+        await maybeSendRunEmail({
+          action: 'move',
+          moved: moveDecisions.map((m) => ({
+            title: cardsToMove.find((c) => c.id === m.cardId)?.title ?? 'A card',
+            toColumn: columnName(m.destinationColumnId),
+            cardId: m.cardId,
+          })),
+        });
 
         return NextResponse.json({
           action: 'move',

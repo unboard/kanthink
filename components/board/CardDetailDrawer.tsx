@@ -36,6 +36,8 @@ import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { useKeyboardOffset } from './ChatInput';
+import { ShroomPicker } from './ShroomPicker';
+import { useShroomRun, shroomsForCard } from './ShroomRunContext';
 import { nanoid } from 'nanoid';
 import { Pin } from 'lucide-react';
 
@@ -107,6 +109,8 @@ interface CardDetailDrawerProps {
   fullPage?: boolean;
   onNavigateBack?: () => void;
   initialTaskId?: string;
+  /** Which tab to land on when the drawer opens. Defaults to the thread. */
+  initialTab?: ActiveTab;
 }
 
 function formatDate(dateString: string): string {
@@ -120,9 +124,9 @@ function formatDate(dateString: string): string {
   });
 }
 
-type ActiveTab = 'thread' | 'tasks' | 'info';
+type ActiveTab = 'thread' | 'tasks' | 'info' | 'playground';
 
-export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack, initialTaskId }: CardDetailDrawerProps) {
+export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack, initialTaskId, initialTab }: CardDetailDrawerProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const [title, setTitle] = useState('');
@@ -135,7 +139,10 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
   const [isAssigneePickerOpen, setIsAssigneePickerOpen] = useState(false);
   const [isInstructionHistoryOpen, setIsInstructionHistoryOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('thread');
+  const [showShroomPicker, setShowShroomPicker] = useState(false);
+  const { shrooms } = useShroomRun();
+  const cardShrooms = shroomsForCard(shrooms);
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab ?? 'thread');
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -210,6 +217,13 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
       if (raf2) cancelAnimationFrame(raf2);
     };
   }, [isOpen, card?.id]);
+
+  // The drawer stays mounted between opens, so the initial tab has to be re-applied
+  // on each open — otherwise "Open Playground" would only work the first time, and
+  // reopening a card would drop you on whatever tab you happened to leave it on.
+  useEffect(() => {
+    if (isOpen) setActiveTab(initialTab ?? 'thread');
+  }, [isOpen, card?.id, initialTab]);
 
   const generateCoverImage = async (customPrompt?: string) => {
     if (!card) return;
@@ -466,18 +480,25 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
     : nonArchivedTasks;
   const completedCount = nonArchivedTasks.filter((t) => t.status === 'done').length;
 
-  // Tab navigation tiles (reused across Thread, Tasks, and Info tabs)
+  // How many builds this card's playground has produced, for the tab badge.
+  const playgroundVersion =
+    (card.typeData as { generationCount?: number } | undefined)?.generationCount ?? 0;
+
+  // Tab navigation tiles (reused across every tab). Playground is a peer of the others
+  // rather than a mode that takes over the drawer — same card, same thread, one more
+  // place to work on it. Horizontally scrollable so four tiles never wrap on a phone.
   const tabTiles = (
-    <div className="flex gap-2 px-3 pb-2">
+    <div className="flex gap-2 px-3 pb-2 overflow-x-auto scrollbar-none">
       {([
         { key: 'thread' as const, label: 'Thread', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /> },
         { key: 'tasks' as const, label: `Tasks${cardTasks.length > 0 ? ` ${completedCount}/${cardTasks.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /> },
         { key: 'info' as const, label: 'Info', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
+        { key: 'playground' as const, label: `Playground${playgroundVersion > 0 ? ` v${playgroundVersion}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /> },
       ]).map((tab) => (
         <button
           key={tab.key}
           onClick={() => setActiveTab(tab.key)}
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+          className={`flex flex-shrink-0 items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
             activeTab === tab.key
               ? 'bg-violet-500/15 border-violet-500/30 text-violet-300'
               : 'bg-neutral-800/80 border-neutral-700 text-neutral-400 hover:bg-neutral-700/80 hover:text-neutral-300'
@@ -500,9 +521,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const content = (
     <>
       <div className={`flex flex-col ${fullPage ? 'h-full' : 'h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]'}`}>
-        {/* Compact Header - sticky on mobile. Hidden in playground mode because
-            PlaygroundView renders its own polished header with title + actions. */}
-        <div className={`flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3 ${card.cardType === 'playground' ? 'hidden' : ''}`}>
+        {/* Compact Header - sticky on mobile */}
+        <div className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-neutral-900 flex items-center gap-3 px-4 py-3">
           {fullPage && onNavigateBack && (
             <button
               onClick={onNavigateBack}
@@ -917,10 +937,11 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         React
                       </button>
 
-                      {/* Turn into / Open Playground */}
+                      {/* Open Playground. Just a jump to the tab now — the playground is
+                          no longer a card mode you have to convert into and back out of. */}
                       <button
                         onClick={() => {
-                          updateCard(card.id, { cardType: card.cardType === 'playground' ? undefined : 'playground' });
+                          setActiveTab('playground');
                           setShowCardMenu(false);
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
@@ -928,7 +949,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
                         </svg>
-                        {card.cardType === 'playground' ? 'Exit Playground' : 'Turn into Playground'}
+                        Open Playground
                       </button>
                       <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
 
@@ -1042,20 +1063,14 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {/* Thread Tab — Playground mode swaps the chat for the build-and-preview UI.
-              Both heavy components are gated on contentReady so the drawer slide-in
-              starts immediately and the thread/preview mounts a frame later. */}
-          {activeTab === 'thread' && !contentReady && (
+          {/* Thread Tab. Gated on contentReady so the drawer slide-in starts
+              immediately and the heavy chat mounts a frame later. */}
+          {(activeTab === 'thread' || activeTab === 'playground') && !contentReady && (
             <div className="flex-1 min-h-0 flex items-center justify-center">
               <div className="h-5 w-5 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin" />
             </div>
           )}
-          {activeTab === 'thread' && contentReady && card.cardType === 'playground' && (
-            <div className="flex-1 min-h-0 flex flex-col">
-              <PlaygroundView card={card} onClose={handleClose} />
-            </div>
-          )}
-          {activeTab === 'thread' && contentReady && card.cardType !== 'playground' && (
+          {activeTab === 'thread' && contentReady && (
             <div className="flex-1 min-h-0 flex flex-col">
               <CardChat
                 card={card}
@@ -1064,6 +1079,13 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 tagDefinitions={channels[card.channelId]?.tagDefinitions ?? []}
                 tabBar={tabTiles}
               />
+            </div>
+          )}
+
+          {/* Playground Tab — build-and-preview against this card's own thread + tasks. */}
+          {activeTab === 'playground' && contentReady && (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <PlaygroundView card={card} embedded tabBar={tabTiles} />
             </div>
           )}
 
@@ -1437,6 +1459,18 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
               <div className="p-4 space-y-1">
                 <h3 className="text-xs font-medium text-neutral-500 uppercase tracking-wider mb-2">Actions</h3>
 
+                {/* Run a shroom against just this card */}
+                {cardShrooms.length > 0 && (
+                  <button
+                    onClick={() => setShowShroomPicker(true)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg transition-colors"
+                  >
+                    <span className="w-4 h-4 text-sm leading-none flex items-center justify-center">🍄</span>
+                    <span className="flex-1 text-left">Run a shroom on this card</span>
+                    <span className="text-xs text-neutral-400">{cardShrooms.length}</span>
+                  </button>
+                )}
+
                 {/* Run History (if any) */}
                 {card.processedByInstructions && Object.keys(card.processedByInstructions).length > 0 && (
                   <div>
@@ -1569,6 +1603,13 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
         </div>
 
       </div>
+      <ShroomPicker
+        isOpen={showShroomPicker}
+        cardIds={[card.id]}
+        cardScoped
+        subtitle={card.title}
+        onClose={() => setShowShroomPicker(false)}
+      />
       <TaskDrawer
         task={selectedTask}
         autoFocusTitle={autoFocusTaskTitle}
@@ -1667,11 +1708,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
     );
   }
 
-  // Playground mode needs the full viewport — chat + iframe preview is too cramped at 'lg'.
-  const drawerWidth = card.cardType === 'playground' ? 'full' : 'lg';
-
   return (
-    <Drawer isOpen={isOpen} onClose={handleClose} width={drawerWidth} floating hideCloseButton>
+    <Drawer isOpen={isOpen} onClose={handleClose} width="lg" floating hideCloseButton>
       {content}
     </Drawer>
   );

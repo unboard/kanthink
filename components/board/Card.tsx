@@ -9,6 +9,8 @@ import type { Card as CardType, Task } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { CardDetailDrawer } from './CardDetailDrawer';
+import { ShroomPicker } from './ShroomPicker';
+import { useShroomRun, shroomsForCard } from './ShroomRunContext';
 import { TaskListOnCard } from './TaskListOnCard';
 import { TaskDrawer } from './TaskDrawer';
 import { AssigneeAvatars } from './AssigneeAvatars';
@@ -61,7 +63,12 @@ interface CardProps {
 
 export function Card({ card }: CardProps) {
   const router = useRouter();
+  const { shrooms } = useShroomRun();
+  const cardShrooms = shroomsForCard(shrooms);
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
+  // Which tab the card drawer should land on. "Open Playground" jumps straight there;
+  // every other entry point wants the thread.
+  const [drawerInitialTab, setDrawerInitialTab] = useState<'thread' | 'playground'>('thread');
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [promotedCard, setPromotedCard] = useState<CardType | null>(null);
@@ -71,6 +78,7 @@ export function Card({ card }: CardProps) {
   const [showSnoozeSubmenu, setShowSnoozeSubmenu] = useState(false);
   const [showMoveChannelPicker, setShowMoveChannelPicker] = useState(false);
   const [showMoveColumnPicker, setShowMoveColumnPicker] = useState(false);
+  const [showShroomPicker, setShowShroomPicker] = useState(false);
   const [showReactSubmenu, setShowReactSubmenu] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const cardMenuRef = useRef<HTMLDivElement>(null);
@@ -447,9 +455,9 @@ export function Card({ card }: CardProps) {
                     <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     Info
                   </button>
-                  <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); updateCard(card.id, { cardType: 'playground' }); setIsCardDrawerOpen(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors rounded-lg">
+                  <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); setDrawerInitialTab('playground'); setIsCardDrawerOpen(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors rounded-lg">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" /></svg>
-                    {card.cardType === 'playground' ? 'Open Playground' : 'Turn into Playground'}
+                    Open Playground
                   </button>
                   <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1 mx-2" />
                   <button onClick={(e) => { e.stopPropagation(); setShowMoveColumnPicker(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
@@ -502,6 +510,12 @@ export function Card({ card }: CardProps) {
                     </div>
                   </div>
                   <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1 mx-2" />
+                  {cardShrooms.length > 0 && (
+                    <button onClick={(e) => { e.stopPropagation(); setShowShroomPicker(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
+                      <span className="w-5 h-5 text-base leading-none flex items-center justify-center">🍄</span>
+                      Run shroom
+                    </button>
+                  )}
                   <button onClick={(e) => { e.stopPropagation(); handleDuplicate(); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
                     <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                     Duplicate
@@ -659,17 +673,27 @@ export function Card({ card }: CardProps) {
                     </svg>
                     Info
                   </button>
-                  {/* Turn into Playground / Open Playground */}
+                  {/* Open Playground — jumps straight to the card's playground tab */}
                   <button
-                    onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); updateCard(card.id, { cardType: 'playground' }); setIsCardDrawerOpen(true); }}
+                    onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); setDrawerInitialTab('playground'); setIsCardDrawerOpen(true); }}
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
                     </svg>
-                    {card.cardType === 'playground' ? 'Open Playground' : 'Turn into Playground'}
+                    Open Playground
                   </button>
                   <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
+                  {/* Run a shroom on just this card */}
+                  {cardShrooms.length > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowShroomPicker(true); }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                    >
+                      <span className="w-4 h-4 text-sm leading-none flex items-center justify-center">🍄</span>
+                      Run shroom
+                    </button>
+                  )}
                   {/* Duplicate */}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDuplicate(); }}
@@ -846,11 +870,14 @@ export function Card({ card }: CardProps) {
             </div>
           )}
 
-          <h4 className="text-sm font-medium text-neutral-900 dark:text-white pr-6">
+          {/* wrap-anywhere, not break-words: a bookmarked URL is one long "word", and
+              overflow-wrap:break-word still reports the whole word as the min-content
+              width, so the title spills past the card. `anywhere` lets it break mid-word. */}
+          <h4 className="text-sm font-medium text-neutral-900 dark:text-white pr-6 wrap-anywhere">
             {card.title}
           </h4>
           {contentPreview && (
-            <p className="mt-1 text-xs text-neutral-500 line-clamp-2">
+            <p className="mt-1 text-xs text-neutral-500 line-clamp-2 wrap-anywhere">
               {contentPreview}
             </p>
           )}
@@ -952,11 +979,19 @@ export function Card({ card }: CardProps) {
         </div>
         </div>{/* End card content padding wrapper */}
       </div>
+      <ShroomPicker
+        isOpen={showShroomPicker}
+        cardIds={[card.id]}
+        cardScoped
+        subtitle={card.title}
+        onClose={() => { setShowShroomPicker(false); setShowCardMenu(false); }}
+      />
       <CardDrawerErrorBoundary>
         <CardDetailDrawer
           card={card}
           isOpen={isCardDrawerOpen}
-          onClose={() => setIsCardDrawerOpen(false)}
+          initialTab={drawerInitialTab}
+          onClose={() => { setIsCardDrawerOpen(false); setDrawerInitialTab('thread'); }}
         />
       </CardDrawerErrorBoundary>
       <TaskDrawer

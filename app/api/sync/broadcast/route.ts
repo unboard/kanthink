@@ -46,6 +46,8 @@ const WRITE_EVENTS = new Set([
   'card:move',
   'card:archive',
   'card:unarchive',
+  'card:reviewApprove',
+  'card:reviewReject',
   'card:addMessage',
   'card:addAIResponse',
   'card:updateMessageAction',

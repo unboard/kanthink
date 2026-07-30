@@ -3,27 +3,21 @@
 import { createContext, useContext, useEffect, useRef, useCallback } from 'react';
 import { useStore, getAIAbortSignal } from '@/lib/store';
 import { useToastStore } from '@/lib/toastStore';
-import type { CardEvent } from '@/lib/types';
 import {
-  checkScheduledTriggers,
-  checkEventTriggers,
   checkThresholdTriggers,
   initializeScheduledTriggers,
   type AutomationContext,
 } from '@/lib/automationEngine';
 import { automationEvents } from '@/lib/automationEvents';
+import { useServerSync } from '@/components/providers/ServerSyncProvider';
 
 interface AutomationContextValue {
-  emitCardEvent: (event: CardEvent) => void;
   checkThresholds: (channelId: string) => void;
 }
 
 const AutomationCtx = createContext<AutomationContextValue | null>(null);
 
-const POLL_INTERVAL = 60000; // Check scheduled triggers every 60 seconds
-
 export function AutomationProvider({ children }: { children: React.ReactNode }) {
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isInitializedRef = useRef(false);
 
   // Get store state and actions
@@ -44,6 +38,7 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
   const completeAIOperation = useStore((s) => s.completeAIOperation);
   const setCardProcessing = useStore((s) => s.setCardProcessing);
   const setInstructionRunning = useStore((s) => s.setInstructionRunning);
+  const { refetch } = useServerSync();
 
   // Build automation context
   const getAutomationContext = useCallback((): AutomationContext => {
@@ -73,6 +68,7 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
       recordInstructionRun: state.recordInstructionRun,
       addTagDefinition: state.addTagDefinition,
       addTagToCard: state.addTagToCard,
+      refetch,
       onCardsSkipped: (count: number, instructionTitle: string) => {
         const addToast = useToastStore.getState().addToast;
         addToast(
@@ -82,7 +78,7 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
         );
       },
     };
-  }, []);
+  }, [refetch]);
 
   // Initialize scheduled triggers on mount
   useEffect(() => {
@@ -98,41 +94,15 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
     return () => clearTimeout(initTimeout);
   }, [getAutomationContext]);
 
-  // Start polling for scheduled triggers
-  useEffect(() => {
-    const checkScheduled = async () => {
-      const ctx = getAutomationContext();
-      try {
-        await checkScheduledTriggers(ctx);
-      } catch (error) {
-        console.error('[Automation] Error checking scheduled triggers:', error);
-      }
-    };
-
-    // Initial check after a delay
-    const initialTimeout = setTimeout(checkScheduled, 5000);
-
-    // Set up polling
-    pollIntervalRef.current = setInterval(checkScheduled, POLL_INTERVAL);
-
-    return () => {
-      clearTimeout(initialTimeout);
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
-    };
-  }, [getAutomationContext]);
+  // The 60s scheduled poll that used to live here is gone: /api/cron/shrooms runs
+  // scheduled shrooms server-side, so polling from a tab would just double-fire them
+  // (and only while someone happened to be looking at the board).
 
   // Subscribe to automation events from the event bus
   useEffect(() => {
-    const unsubscribeCardEvent = automationEvents.onCardEvent(async (event) => {
-      const ctx = getAutomationContext();
-      try {
-        await checkEventTriggers(ctx, event);
-      } catch (error) {
-        console.error('[Automation] Error handling card event:', error);
-      }
-    });
+    // Card created / moved events are handled server-side (lib/shrooms/runEventTriggers.ts)
+    // from the routes that write the row, so they fire whether or not a tab is open.
+    // Subscribing here as well would run every shroom twice.
 
     const unsubscribeThreshold = automationEvents.onThresholdCheck(async (channelId) => {
       const ctx = getAutomationContext();
@@ -144,19 +114,8 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
     });
 
     return () => {
-      unsubscribeCardEvent();
       unsubscribeThreshold();
     };
-  }, [getAutomationContext]);
-
-  // Handler for card events
-  const emitCardEvent = useCallback(async (event: CardEvent) => {
-    const ctx = getAutomationContext();
-    try {
-      await checkEventTriggers(ctx, event);
-    } catch (error) {
-      console.error('[Automation] Error checking event triggers:', error);
-    }
   }, [getAutomationContext]);
 
   // Handler for threshold checks
@@ -170,7 +129,6 @@ export function AutomationProvider({ children }: { children: React.ReactNode }) 
   }, [getAutomationContext]);
 
   const value: AutomationContextValue = {
-    emitCardEvent,
     checkThresholds,
   };
 

@@ -35,6 +35,15 @@ import {
 interface PlaygroundViewProps {
   card: Card;
   onClose?: () => void;
+  /**
+   * Rendered as a tab inside the card detail drawer rather than as a full-screen
+   * takeover. Drops the view's own title header (the drawer already shows the card
+   * title) and the side-by-side split in favour of a Build/Preview switch, which is
+   * the only layout that reads well in a drawer-width column.
+   */
+  embedded?: boolean;
+  /** The drawer's tab tiles, rendered inside this view so they stay reachable. */
+  tabBar?: React.ReactNode;
 }
 
 interface PlaygroundUsage {
@@ -79,7 +88,7 @@ const STARTER_PROMPTS = [
   { label: 'Memory match game', prompt: 'A 4x4 memory match game with animal emoji tiles, flip animation, move counter, and a celebratory confetti burst on win.' },
 ];
 
-export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
+export function PlaygroundView({ card, onClose, embedded = false, tabBar }: PlaygroundViewProps) {
   const updateCard = useStore((s) => s.updateCard);
   const cardFromStore = useStore((s) => s.cards[card.id]) || card;
 
@@ -95,7 +104,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
-  const [mobileTab, setMobileTab] = useState<'chat' | 'preview'>('chat');
+  const [pane, setPane] = useState<'chat' | 'preview'>('chat');
   const [chatWidth, setChatWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return CHAT_WIDTH_DEFAULT;
     const saved = window.localStorage.getItem(CHAT_WIDTH_KEY);
@@ -292,7 +301,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
 
   // Auto-flip to preview tab after a fresh generation lands (mobile).
   useEffect(() => {
-    if (hasCode) setMobileTab('preview');
+    if (hasCode) setPane('preview');
   }, [generationCount, hasCode]);
 
   // Scroll chat to bottom on new messages.
@@ -863,6 +872,83 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
     );
   }
 
+  // Embedded — the card drawer is a single narrow column, so there's no split to
+  // resize (the old draggable divider is what made this feel cramped and broken at
+  // drawer width). Build and Preview take turns at full width instead, with the
+  // publish controls sitting on the same bar as the switch.
+  if (embedded) {
+    return (
+      <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-950">
+        {tabBar && <div className="flex-shrink-0 pt-2">{tabBar}</div>}
+
+        <div className="flex-shrink-0 flex items-center gap-1 border-b border-neutral-200 dark:border-neutral-800 px-3 pt-1">
+          <button
+            onClick={() => setPane('chat')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
+              pane === 'chat'
+                ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
+                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
+            }`}
+          >
+            <MessageSquareText className="w-3.5 h-3.5" />
+            Build
+          </button>
+          <button
+            onClick={() => setPane('preview')}
+            disabled={!hasCode}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
+              pane === 'preview'
+                ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
+                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 disabled:opacity-40'
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            Preview
+          </button>
+
+          <div className="ml-auto flex items-center gap-1 pb-1">
+            {hasCode && (
+              <>
+                <button
+                  onClick={() => setIsFullscreen(true)}
+                  title="Fullscreen preview"
+                  className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={togglePublic}
+                  title={cardFromStore.isPublic ? 'Published — click to unpublish' : 'Publish to a public link'}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                    cardFromStore.isPublic
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/50'
+                      : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                  }`}
+                >
+                  {cardFromStore.isPublic ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                  {cardFromStore.isPublic ? 'Published' : 'Publish'}
+                </button>
+                {shareLink && (
+                  <button
+                    onClick={copyShareLink}
+                    title="Copy share link"
+                    className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 flex flex-col">
+          {pane === 'chat' ? ChatPane : PreviewPane}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-950">
       {Header}
@@ -870,9 +956,9 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
       {/* Mobile tab switcher (hidden on md+) */}
       <div className="md:hidden flex-shrink-0 flex border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 pt-2">
         <button
-          onClick={() => setMobileTab('chat')}
+          onClick={() => setPane('chat')}
           className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
-            mobileTab === 'chat'
+            pane === 'chat'
               ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
               : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
           }`}
@@ -881,10 +967,10 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
           Chat
         </button>
         <button
-          onClick={() => setMobileTab('preview')}
+          onClick={() => setPane('preview')}
           disabled={!hasCode}
           className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
-            mobileTab === 'preview'
+            pane === 'preview'
               ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
               : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 disabled:opacity-40'
           }`}
@@ -894,7 +980,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
           {generationCount > 0 && <span className="ml-0.5 text-[9px] text-neutral-400">v{generationCount}</span>}
         </button>
         <div className="ml-auto self-center pb-1.5">
-          {mobileTab === 'preview' && hasCode && (
+          {pane === 'preview' && hasCode && (
             <button
               onClick={() => setIsFullscreen(true)}
               className="flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
@@ -912,7 +998,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
             CSS var lets us drive the desktop width inline while keeping mobile full-bleed. */}
         <div
           className={`flex-col min-h-0 md:flex md:flex-shrink-0 md:flex-grow-0 md:border-r md:border-neutral-200 md:dark:border-neutral-800 w-full md:w-[var(--kpg-chat-w)] ${
-            mobileTab === 'chat' ? 'flex flex-1' : 'hidden md:flex'
+            pane === 'chat' ? 'flex flex-1' : 'hidden md:flex'
           }`}
           style={{ '--kpg-chat-w': `${chatWidth}%` } as React.CSSProperties}
         >
@@ -940,7 +1026,7 @@ export function PlaygroundView({ card, onClose }: PlaygroundViewProps) {
         </div>
 
         {/* Preview (desktop: right side flex-1, mobile: full when active) */}
-        <div className={`flex-1 min-h-0 ${mobileTab === 'preview' ? 'flex flex-col' : 'hidden md:flex md:flex-col'}`}>
+        <div className={`flex-1 min-h-0 ${pane === 'preview' ? 'flex flex-col' : 'hidden md:flex md:flex-col'}`}>
           {PreviewPane}
         </div>
       </div>

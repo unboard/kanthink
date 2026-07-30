@@ -19,11 +19,14 @@ export interface AspectDims {
   height: number;
 }
 
+// Composite canvas size = capture resolution. 1080p-class so recordings stay
+// crisp when viewed large on a desktop screen (a phone downscales; a desktop
+// upscales, which is why 720p looked soft on big screens).
 export const ASPECT_DIMS: Record<AspectRatio, AspectDims> = {
-  '16:9': { width: 1280, height: 720 },
-  '9:16': { width: 720, height: 1280 },
-  '1:1': { width: 1080, height: 1080 },
-  '4:3': { width: 960, height: 720 },
+  '16:9': { width: 1920, height: 1080 },
+  '9:16': { width: 1080, height: 1920 },
+  '1:1': { width: 1440, height: 1440 },
+  '4:3': { width: 1440, height: 1080 },
 };
 
 // Normalized bubble placement (0..1 of canvas) for the floating "overlay" template.

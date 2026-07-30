@@ -4,6 +4,7 @@ import { cards, columns, channels } from '@/lib/db/schema'
 import { eq, and, gt, gte, sql } from 'drizzle-orm'
 import { publishToChannel } from '@/lib/sync/pusherServer'
 import { generateEventId } from '@/lib/sync/broadcastSync'
+import { bucketOf, inColumnBucket } from '@/lib/db/cardBuckets'
 
 /**
  * POST /api/internal/move-card
@@ -49,11 +50,21 @@ export async function POST(req: NextRequest) {
   const fromColumnId = card.columnId
   const fromPosition = card.position
 
-  // Get the next position in the target column
+  // Pending-review cards aren't on the board yet — moving one would bypass review.
+  if (card.isPendingReview) {
+    return NextResponse.json(
+      { error: 'Card is pending review and cannot be moved until it is approved' },
+      { status: 409 }
+    )
+  }
+
+  const bucket = bucketOf(card)
+
+  // Get the next position in the target column's matching bucket
   const maxPosResult = await db
     .select({ maxPos: sql<number>`COALESCE(MAX(${cards.position}), -1)` })
     .from(cards)
-    .where(and(eq(cards.columnId, toColumnId), eq(cards.isArchived, false)))
+    .where(inColumnBucket(toColumnId, bucket))
 
   const toPosition = (maxPosResult[0]?.maxPos ?? -1) + 1
 
@@ -63,8 +74,7 @@ export async function POST(req: NextRequest) {
     .set({ position: sql`${cards.position} - 1` })
     .where(
       and(
-        eq(cards.columnId, fromColumnId),
-        eq(cards.isArchived, card.isArchived ?? false),
+        inColumnBucket(fromColumnId, bucket),
         gt(cards.position, fromPosition)
       )
     )

@@ -1,136 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { channels, columns, cards, userChannelOrg } from '@/lib/db/schema'
-import { eq, and, asc, desc } from 'drizzle-orm'
+import { channels, columns, cards, users } from '@/lib/db/schema'
+import { eq, and, desc, sql } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
+import { inColumnBucket } from '@/lib/db/cardBuckets'
+import { newCardGoesFirst } from '@/lib/columnSort'
 import { fetchUrlMetadata } from '@/lib/url-metadata'
 import { getLLMClientForUser } from '@/lib/ai/llm'
+import { runEventTriggers } from '@/lib/shrooms/runEventTriggers'
+import { afterResponse } from '@/lib/afterResponse'
+import { canEditChannel } from '@/lib/api/permissions'
+import { getOrCreateQuickSaveChannel, BOOKMARK_INSTRUCTIONS } from '@/lib/inbox/quickSaveChannel'
 import { nanoid } from 'nanoid'
 
-const BOOKMARK_COLUMNS = [
-  { name: 'Inbox', isAiTarget: true },
-  { name: 'Read Later', isAiTarget: false },
-  { name: 'Interesting', isAiTarget: false },
-  { name: 'Archive', isAiTarget: false },
-]
-
-const BOOKMARK_INSTRUCTIONS = `You are a bookmark analyst. When a user saves a URL or text snippet, provide brief, helpful commentary:
-- For articles/blog posts: summarize the key points and why it might be valuable
-- For tools/products: explain what it does and who it's for
-- For videos: describe the content and key takeaways if possible
-- For general text: provide context or related ideas
-Keep responses concise (2-3 sentences). Be genuinely helpful, not generic.`
-
-const BOOKMARK_DESCRIPTION = `Your personal bookmark channel. Save anything from the web — links, articles, ideas, snippets — and Kan will organize and comment on them. Use the browser bookmarklet (desktop) or share sheet (mobile) to save from anywhere.`
-
 /**
- * Find or create the user's Kan Bookmarks channel.
+ * Resolve where a shared item should land.
+ *
+ * Precedence: an explicit destination from this request, then the user's saved
+ * default, then the Kan Bookmarks inbox. Each candidate is permission-checked and
+ * falls through on failure, so a deleted or unshared default degrades to the
+ * bookmark channel instead of failing the save outright — losing the thing you just
+ * shared is a much worse outcome than filing it in the wrong place.
  */
-async function getOrCreateQuickSaveChannel(userId: string) {
-  // Look for existing Kan Bookmarks channel
-  const existing = await db.query.channels.findFirst({
-    where: and(eq(channels.ownerId, userId), eq(channels.isQuickSave, true)),
-  })
+async function resolveDestination(
+  userId: string,
+  requestedChannelId?: string,
+  requestedColumnId?: string
+): Promise<{ channelId: string; column: typeof columns.$inferSelect }> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) })
 
-  if (existing) {
-    const cols = await db.query.columns.findMany({
-      where: eq(columns.channelId, existing.id),
-      orderBy: [asc(columns.position)],
+  const candidates: Array<{ channelId?: string; columnId?: string }> = [
+    { channelId: requestedChannelId, columnId: requestedColumnId },
+    { channelId: user?.saveDefaultChannelId ?? undefined, columnId: user?.saveDefaultColumnId ?? undefined },
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate.channelId || !candidate.columnId) continue
+    if (!(await canEditChannel(candidate.channelId, userId))) continue
+    const column = await db.query.columns.findFirst({
+      where: and(eq(columns.id, candidate.columnId), eq(columns.channelId, candidate.channelId)),
     })
-    return { channel: existing, columns: cols }
+    if (column) return { channelId: candidate.channelId, column }
   }
 
-  // Auto-create
-  const channelId = nanoid()
-  const now = new Date()
-
-  await db.insert(channels).values({
-    id: channelId,
-    ownerId: userId,
-    name: 'Kan Bookmarks',
-    description: BOOKMARK_DESCRIPTION,
-    aiInstructions: BOOKMARK_INSTRUCTIONS,
-    status: 'active',
-    isQuickSave: true,
-    createdAt: now,
-    updatedAt: now,
-  })
-
-  const columnInserts = BOOKMARK_COLUMNS.map((col, index) => ({
-    id: nanoid(),
-    channelId,
-    name: col.name,
-    position: index,
-    isAiTarget: col.isAiTarget,
-    createdAt: now,
-    updatedAt: now,
-  }))
-
-  await db.insert(columns).values(columnInserts)
-
-  // Add to user's channel organization
-  const existingOrg = await db.query.userChannelOrg.findMany({
-    where: eq(userChannelOrg.userId, userId),
-    orderBy: [desc(userChannelOrg.position)],
-    limit: 1,
-  })
-  const maxPosition = existingOrg.length > 0 ? existingOrg[0].position : -1
-
-  await db.insert(userChannelOrg).values({
-    userId,
-    channelId,
-    position: maxPosition + 1,
-  })
-
-  // Add setup/education cards to the Inbox column
-  const inboxCol = columnInserts.find(c => c.isAiTarget) || columnInserts[0]
-  const setupCards = [
-    {
-      id: nanoid(),
-      channelId,
-      columnId: inboxCol.id,
-      title: 'How to save from your phone',
-      messages: [{
-        id: nanoid(),
-        type: 'note' as const,
-        content: `**Android:** Open kanthink.com in Chrome, tap the menu (⋮) and select "Install app". After that, any app's Share button will show Kanthink as an option.\n\n**iPhone:** Open kanthink.com in Safari, tap the Share icon, then "Add to Home Screen". To save links, copy the URL and paste it into a new card here — or use the bookmarklet below on Safari.`,
-        createdAt: now.toISOString(),
-      }],
-      source: 'manual' as const,
-      position: 0,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: nanoid(),
-      channelId,
-      columnId: inboxCol.id,
-      title: 'How to save from your computer',
-      messages: [{
-        id: nanoid(),
-        type: 'note' as const,
-        content: `**Browser bookmarklet:** Create a bookmark in your bookmarks bar, edit it, and replace the URL with this code:\n\n\`javascript:void(window.open('https://kanthink.com/save?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'kanthink-save','width=420,height=320'))\`\n\nName it "Save to Kanthink" — click it on any page to save the link here with AI commentary.\n\nYou can also find this code in the channel settings (gear icon).`,
-        createdAt: now.toISOString(),
-      }],
-      source: 'manual' as const,
-      position: 1,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ]
-  await db.insert(cards).values(setupCards)
-
-  const createdChannel = await db.query.channels.findFirst({
-    where: eq(channels.id, channelId),
-  })
-
-  return { channel: createdChannel!, columns: columnInserts }
+  const { channel, columns: channelColumns } = await getOrCreateQuickSaveChannel(userId)
+  const inbox = channelColumns.find(c => c.isAiTarget) || channelColumns[0]
+  return { channelId: channel.id, column: inbox as typeof columns.$inferSelect }
 }
 
 /**
  * POST /api/inbox
- * Save a URL, text, or both into the user's Kan Bookmarks channel.
+ * Save a URL, text, or both. Defaults to the user's Kan Bookmarks channel but accepts
+ * an explicit channel/column destination and an optional freeform note.
  */
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -145,7 +67,15 @@ export async function POST(req: NextRequest) {
     await ensureSchema()
 
     const body = await req.json()
-    const { url, text, title: providedTitle } = body
+    const {
+      url,
+      text,
+      title: providedTitle,
+      note,
+      channelId: requestedChannelId,
+      columnId: requestedColumnId,
+      rememberDestination,
+    } = body
 
     if (!url && !text && !providedTitle) {
       return NextResponse.json(
@@ -154,9 +84,23 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Get or create the Kan Bookmarks channel
-    const { channel, columns: channelColumns } = await getOrCreateQuickSaveChannel(userId)
-    const inboxColumn = channelColumns.find(c => c.isAiTarget) || channelColumns[0]
+    const { channelId: destChannelId, column: destColumn } = await resolveDestination(
+      userId,
+      typeof requestedChannelId === 'string' ? requestedChannelId : undefined,
+      typeof requestedColumnId === 'string' ? requestedColumnId : undefined
+    )
+
+    // Remember the destination only once we know it resolved to something real, so a
+    // stale id can never be written back as the new default.
+    if (rememberDestination) {
+      await db.update(users)
+        .set({
+          saveDefaultChannelId: destChannelId,
+          saveDefaultColumnId: destColumn.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId))
+    }
 
     // Fetch URL metadata if URL provided
     let metadata: { title?: string; description?: string; ogImage?: string; siteName?: string } = {}
@@ -191,32 +135,58 @@ export async function POST(req: NextRequest) {
     }
     const initialMessage = messageParts.join('\n\n') || cardTitle
 
-    // Get max position in inbox column
-    const existingCards = await db.query.cards.findMany({
-      where: and(
-        eq(cards.columnId, inboxColumn.id),
-        eq(cards.isArchived, false)
-      ),
-      orderBy: [desc(cards.position)],
-      limit: 1,
-    })
-    const position = existingCards.length > 0 ? existingCards[0].position + 1 : 0
+    // The user's own note goes in its own thread message rather than being merged into
+    // the link blurb — it's the one part of the card they actually wrote, and it should
+    // read that way in the thread and to any shroom summarising the card.
+    const trimmedNote = typeof note === 'string' ? note.trim() : ''
+
+    // Place the card according to the column's sort rule. This route writes the row
+    // directly rather than going through POST /api/channels/:id/cards, which is why
+    // shared bookmarks used to always land at the bottom no matter the column's order.
+    let position: number
+    if (newCardGoesFirst(destColumn.sortOrder ?? 'manual')) {
+      // Take slot 0 and push the existing active cards down, mirroring how the main
+      // card-create route handles an explicit requestedPosition.
+      await db
+        .update(cards)
+        .set({ position: sql`${cards.position} + 1` })
+        .where(inColumnBucket(destColumn.id, 'active'))
+      position = 0
+    } else {
+      const existingCards = await db.query.cards.findMany({
+        where: inColumnBucket(destColumn.id, 'active'),
+        orderBy: [desc(cards.position)],
+        limit: 1,
+      })
+      position = existingCards.length > 0 ? existingCards[0].position + 1 : 0
+    }
 
     const cardId = nanoid()
     const now = new Date()
     const nowIso = now.toISOString()
 
-    const messages = [{
-      id: nanoid(),
-      type: 'note' as const,
-      content: initialMessage,
-      createdAt: nowIso,
-    }]
+    const messages = [
+      {
+        id: nanoid(),
+        type: 'note' as const,
+        content: initialMessage,
+        createdAt: nowIso,
+      },
+      ...(trimmedNote
+        ? [{
+            id: nanoid(),
+            type: 'note' as const,
+            content: trimmedNote,
+            authorId: userId,
+            createdAt: nowIso,
+          }]
+        : []),
+    ]
 
     await db.insert(cards).values({
       id: cardId,
-      channelId: channel.id,
-      columnId: inboxColumn.id,
+      channelId: destChannelId,
+      columnId: destColumn.id,
       title: cardTitle,
       messages,
       coverImageUrl: metadata.ogImage || null,
@@ -230,8 +200,28 @@ export async function POST(req: NextRequest) {
       where: eq(cards.id, cardId),
     })
 
-    // Fire-and-forget: AI commentary
-    generateAICommentary(userId, channel.id, cardId, cardTitle, initialMessage, url).catch(() => {})
+    // Commentary first, then any shroom watching Inbox — sequentially, and after the
+    // response so the share sheet closes immediately.
+    //
+    // This route writes the card row directly instead of going through
+    // POST /api/channels/:id/cards, which is why shrooms never fired on a shared
+    // bookmark: the trigger hook lives on that route. Saving from the share sheet has to
+    // wake a shroom exactly like typing the card in does.
+    //
+    // Sequential, not parallel: both this and a modify shroom rewrite the card's whole
+    // `messages` array, so running them concurrently means one silently overwrites the
+    // other. Going in order also lets the shroom read the commentary as context.
+    afterResponse(async () => {
+      // Pass the user's note along — commentary on "why did I save this" is far more
+      // useful when Kan can see what the user said they found interesting.
+      await generateAICommentary(userId, destChannelId, cardId, cardTitle, initialMessage, url, trimmedNote).catch(() => {})
+      await runEventTriggers({
+        channelId: destChannelId,
+        columnId: destColumn.id,
+        eventType: 'card_created_in',
+        cardId,
+      })
+    })
 
     return NextResponse.json({
       card: {
@@ -239,7 +229,8 @@ export async function POST(req: NextRequest) {
         createdAt: createdCard?.createdAt?.toISOString(),
         updatedAt: createdCard?.updatedAt?.toISOString(),
       },
-      channelId: channel.id,
+      channelId: destChannelId,
+      columnId: destColumn.id,
     }, { status: 201 })
   } catch (error) {
     console.error('Error saving to inbox:', error)
@@ -256,18 +247,29 @@ async function generateAICommentary(
   cardId: string,
   title: string,
   content: string,
-  url?: string
+  url?: string,
+  userNote?: string
 ) {
   try {
     const { client } = await getLLMClientForUser(userId)
     if (!client) return
 
+    // Now that a share can be filed into any channel, take that channel's own
+    // instructions when it has them — commentary in a research channel shouldn't
+    // read like generic bookmark blurb. Falls back to the bookmark analyst prompt.
+    const channel = await db.query.channels.findFirst({ where: eq(channels.id, channelId) })
+    const systemPrompt = channel?.aiInstructions?.trim() || BOOKMARK_INSTRUCTIONS
+
+    const noteBlock = userNote
+      ? `\n\nThe user added this note about why they saved it — speak to it directly:\n"${userNote}"`
+      : ''
+
     const prompt = url
-      ? `The user saved this bookmark:\n\nTitle: ${title}\nURL: ${url}\n${content ? `\nContent: ${content}` : ''}\n\nProvide brief, helpful commentary about this link (2-3 sentences).`
-      : `The user saved this note:\n\nTitle: ${title}\n${content}\n\nProvide brief, helpful commentary (2-3 sentences).`
+      ? `The user saved this bookmark:\n\nTitle: ${title}\nURL: ${url}\n${content ? `\nContent: ${content}` : ''}${noteBlock}\n\nProvide brief, helpful commentary about this link (2-3 sentences).`
+      : `The user saved this note:\n\nTitle: ${title}\n${content}${noteBlock}\n\nProvide brief, helpful commentary (2-3 sentences).`
 
     const response = await client.complete([
-      { role: 'system', content: BOOKMARK_INSTRUCTIONS },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt },
     ])
 

@@ -245,6 +245,16 @@ export async function sendChannelDigestEmail(
 }
 
 /**
+ * Send an email whose body was composed on the fly rather than loaded from a template.
+ *
+ * Shroom run emails go through here: there's no saved template because the content
+ * depends on what the run found, so Kan writes an EmailConfig per send.
+ */
+export async function sendComposedEmail(to: string, config: EmailConfig): Promise<boolean> {
+  return renderAndSend(to, config.subject, React.createElement(DynamicEmail, { config }))
+}
+
+/**
  * Send an email using a saved dynamic template (looked up by slug).
  * Supports {{placeholder}} substitution in subject and body JSON.
  */

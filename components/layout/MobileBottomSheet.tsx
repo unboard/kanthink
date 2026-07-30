@@ -34,8 +34,10 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { signInWithGoogle } from '@/lib/actions/auth';
 import { shrooms as marketplaceShrooms } from '@/lib/marketplace-data';
+import { addCommunityShroom } from '@/lib/shrooms/addFromCommunity';
+import { ShroomCard } from '@/components/shrooms/ShroomCard';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
-import type { Channel, ChannelStatus, Folder, InstructionTarget, ID, Card, Task } from '@/lib/types';
+import type { Channel, ChannelStatus, Folder, ID, Card, Task } from '@/lib/types';
 
 // ============================================
 // STREAK UTILS
@@ -833,13 +835,13 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const instructionCards = useStore((s) => s.instructionCards);
-  const createInstructionCard = useStore((s) => s.createInstructionCard);
   const channels = useStore((s) => s.channels);
   const currentChannelId = pathname.startsWith('/channel/') ? pathname.split('/')[2] : null;
   const currentChannel = currentChannelId ? channels[currentChannelId] : null;
   const [activeTab, setActiveTab] = useState<'mine' | 'community'>('mine');
   const [communitySearch, setCommunitySearch] = useState('');
   const [addedSlugs, setAddedSlugs] = useState<Set<string>>(new Set());
+  const [addError, setAddError] = useState<string | null>(null);
 
   const allShrooms = Object.values(instructionCards);
   const channelShrooms = currentChannelId
@@ -876,21 +878,6 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // Get target column name for a shroom
-  const getTargetInfo = (shroom: typeof allShrooms[0]) => {
-    const targetChannel = shroom.channelId ? channels[shroom.channelId] : currentChannel;
-    if (!targetChannel) return null;
-
-    if (shroom.target.type === 'column') {
-      const target = shroom.target as { type: 'column'; columnId: string };
-      const column = targetChannel.columns.find(c => c.id === target.columnId);
-      return column?.name || 'Unknown';
-    } else if (shroom.target.type === 'board') {
-      return 'All columns';
-    }
-    return null;
-  };
-
   const allChannelShrooms = [...channelShrooms, ...globalShrooms];
 
   // Community tab filtering
@@ -909,14 +896,12 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
   }, [communitySearch]);
 
   const handleAddCommunityShroom = (shroom: typeof marketplaceShrooms[0]) => {
-    const target: InstructionTarget = { type: 'column', columnId: '' };
-    createInstructionCard('', {
-      title: shroom.name,
-      instructions: shroom.instructions,
-      action: shroom.action,
-      target,
-      scope: 'global',
-    });
+    const result = addCommunityShroom(shroom, currentChannelId);
+    if (!result.ok) {
+      setAddError('Create a channel first — shrooms need a board to live on.');
+      return;
+    }
+    setAddError(null);
     setAddedSlugs(prev => new Set([...prev, shroom.slug]));
   };
 
@@ -961,61 +946,17 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
                 </p>
               </div>
             ) : (
-              allChannelShrooms.map((shroom) => {
-                const targetInfo = getTargetInfo(shroom);
-                const isGlobal = shroom.scope === 'global';
-
-                return (
-                  <div
-                    key={shroom.id}
-                    className="relative p-4 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700"
-                  >
-                    <div className="absolute top-3 right-3 flex items-center gap-1">
-                      <button
-                        onClick={() => handleRun(shroom)}
-                        className="p-2 rounded-lg text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M6.5 5.5v9l7-4.5-7-4.5z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => handleEdit(shroom)}
-                        className="p-2 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                    </div>
-
-                    <h3 className="text-base font-semibold text-neutral-900 dark:text-white pr-20 mb-1">
-                      {shroom.title}
-                    </h3>
-
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400 line-clamp-2 mb-3">
-                      {shroom.instructions}
-                    </p>
-
-                    {targetInfo && (
-                      <div className="flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500">
-                        <span>→ {targetInfo}</span>
-                        {shroom.cardCount && <span>• {shroom.cardCount} cards</span>}
-                        {shroom.isGlobalResource && (
-                          <span className="px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400 text-[10px] font-medium">
-                            by Kanthink
-                          </span>
-                        )}
-                        {isGlobal && !shroom.isGlobalResource && (
-                          <span className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 text-[10px]">
-                            Global
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
+              allChannelShrooms.map((shroom, i) => (
+                <ShroomCard
+                  key={shroom.id}
+                  shroom={shroom}
+                  channel={channels[shroom.channelId] ?? currentChannel ?? undefined}
+                  allShrooms={instructionCards}
+                  index={i}
+                  onRun={() => handleRun(shroom)}
+                  onEdit={() => handleEdit(shroom)}
+                />
+              ))
             )}
           </div>
 
@@ -1046,6 +987,10 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
             onChange={e => setCommunitySearch(e.target.value)}
             className="w-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-4 py-3 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
           />
+
+          {addError && (
+            <p className="text-xs text-red-500 dark:text-red-400">{addError}</p>
+          )}
 
           {/* Community shroom list */}
           {filteredCommunityShrooms.map(shroom => {

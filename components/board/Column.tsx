@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { Column as ColumnType, ID, Task } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Card } from './Card';
 import { BacksideCard } from './BacksideCard';
+import { ReviewCard } from './ReviewCard';
 import { BacksideTask } from './BacksideTask';
 import { ColumnMenu } from './ColumnMenu';
 import { ColumnDetailDrawer } from './ColumnDetailDrawer';
@@ -57,6 +58,7 @@ interface ColumnProps {
 
 export function Column({ column, channelId, columnCount, dragHandleProps }: ColumnProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
   const updateColumn = useStore((s) => s.updateColumn);
@@ -72,6 +74,8 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const backsideCards = (column.backsideCardIds ?? []).map((id) => cards[id]).filter(Boolean);
   const backsideTasks = (column.backsideTaskIds ?? []).map((id) => tasks[id]).filter(Boolean);
   const backsideCount = backsideCards.length + backsideTasks.length;
+  const reviewCards = (column.reviewCardIds ?? []).map((id) => cards[id]).filter(Boolean);
+  const reviewCount = reviewCards.length;
   const completedTaskCount = (column.taskIds ?? []).filter((id) => tasks[id]?.status === 'done').length;
 
   // Build interleaved item list from itemOrder, filtering out snoozed items and sorting pinned first
@@ -99,7 +103,10 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const itemCount = itemOrder.length;
 
   const [isRenaming, setIsRenaming] = useState(false);
-  const [isFlipped, setIsFlipped] = useState(false);
+  // A column shows one of three sides: the board itself, shroom output awaiting review,
+  // or the archive. Kept as a single value so the auto-return effects can't fight.
+  const [view, setView] = useState<'front' | 'review' | 'archive'>('front');
+  const isFlipped = view !== 'front';
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -126,9 +133,11 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
     }
   }, [isRenaming]);
 
-  // Close add menu on click outside
+  // Close add menu on click outside (desktop only — the MobileMenuDrawer is portaled to
+  // document.body, so addMenuRef.contains(target) is false for taps inside it and the
+  // mousedown would unmount the sheet before the button's click lands).
   useEffect(() => {
-    if (!isAddMenuOpen) return;
+    if (!isAddMenuOpen || isMobile) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
         setIsAddMenuOpen(false);
@@ -136,14 +145,22 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isAddMenuOpen]);
+  }, [isAddMenuOpen, isMobile]);
 
-  // Auto-flip back to front when all archived cards are removed
+  // Return to the front when the side you're looking at empties out. One effect over
+  // the whole 3-way view — two separate effects would race each other.
   useEffect(() => {
-    if (isFlipped && backsideCount === 0) {
-      setIsFlipped(false);
-    }
-  }, [isFlipped, backsideCount]);
+    if (view === 'archive' && backsideCount === 0) setView('front');
+    else if (view === 'review' && reviewCount === 0) setView('front');
+  }, [view, backsideCount, reviewCount]);
+
+  // Deep link from Kan's desk or a shroom notification: ?column=<id> opens that
+  // column's review side and scrolls it into view.
+  useEffect(() => {
+    if (searchParams.get('column') !== column.id || reviewCount === 0) return;
+    setView('review');
+    document.getElementById(`column-${column.id}`)?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+  }, [searchParams, column.id, reviewCount]);
 
   const handleRenameSubmit = () => {
     const trimmed = renameValue.trim();
@@ -165,7 +182,11 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   };
 
   const handleFlipColumn = () => {
-    setIsFlipped(!isFlipped);
+    setView(view === 'archive' ? 'front' : 'archive');
+  };
+
+  const handleToggleReview = () => {
+    setView(view === 'review' ? 'front' : 'review');
   };
 
   const handleAddCard = () => {
@@ -229,10 +250,25 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         )}
       </div>
       <div className="flex items-center gap-1">
-        <AnimatedCount value={isFlipped ? backsideCount : itemCount} />
+        {reviewCount > 0 && (
+          <button
+            onClick={handleToggleReview}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium transition-colors ${
+              view === 'review'
+                ? 'bg-violet-600 text-white'
+                : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-900/60'
+            }`}
+            title={`${reviewCount} card${reviewCount === 1 ? '' : 's'} awaiting review`}
+          >
+            <span className="leading-none">🍄</span>
+            <span>{reviewCount}</span>
+          </button>
+        )}
+        <AnimatedCount value={view === 'archive' ? backsideCount : view === 'review' ? reviewCount : itemCount} />
         <ColumnMenu
           channelId={channelId}
           columnId={column.id}
+          sortOrder={column.sortOrder}
           columnCount={columnCount}
           cardCount={columnCards.length}
           columnCardIds={column.cardIds}
@@ -306,7 +342,14 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           !isFlipped && isOver ? 'bg-neutral-200/50 dark:bg-neutral-700/50' : ''
         }`}
       >
-        {isFlipped ? (
+        {view === 'review' ? (
+          // Review side - shroom output awaiting per-card approval
+          <>
+            {reviewCards.map((card) => (
+              <ReviewCard key={card.id} card={card} />
+            ))}
+          </>
+        ) : view === 'archive' ? (
           // Back side - show archived cards and hidden tasks
           <>
             {backsideCards.map((card) => (
@@ -407,10 +450,10 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         )}
       </div>
 
-      {/* Back to active - pinned at bottom of archive view */}
+      {/* Back to active - pinned at bottom of the review and archive views */}
       {isFlipped && (
         <button
-          onClick={handleFlipColumn}
+          onClick={() => setView('front')}
           className="flex items-center justify-center gap-1.5 mx-2 mb-2 px-2 py-2 rounded-md text-xs text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:text-neutral-200 dark:hover:bg-neutral-700 transition-colors"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

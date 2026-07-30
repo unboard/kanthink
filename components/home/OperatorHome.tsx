@@ -11,6 +11,8 @@ import { AudioLines } from 'lucide-react';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 import { FreshTicker } from '@/components/home/FreshTicker';
+import { KanDesk } from '@/components/home/KanDesk';
+import { WhatsNew } from '@/components/home/WhatsNew';
 import { SproutSearch, type SproutResult } from '@/components/home/SproutSearch';
 import { ChannelPreviewDrawer } from '@/components/home/ChannelPreviewDrawer';
 import { PeekPreview, type PeekTarget } from '@/components/home/PeekPreview';
@@ -98,6 +100,7 @@ export function OperatorHome() {
   const channels = useStore((s) => s.channels);
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
+  const instructionCards = useStore((s) => s.instructionCards);
   const folders = useStore((s) => s.folders);
   const folderOrder = useStore((s) => s.folderOrder);
   const channelOrder = useStore((s) => s.channelOrder);
@@ -190,6 +193,9 @@ export function OperatorHome() {
       isBookmarks: ch.isQuickSave || undefined,
       columns: ch.columns.map((col) => ({
         name: col.name,
+        // Shroom output waiting on a decision. Surfacing the count lets Kan tell you
+        // there's review work without you having to open each board to find it.
+        pendingReview: col.reviewCardIds?.length || undefined,
         cards: col.cardIds
           .map((cid) => cards[cid])
           .filter(Boolean)
@@ -203,6 +209,22 @@ export function OperatorHome() {
       })),
     }));
   }, [channelList, cards]);
+
+  const buildShroomContext = useCallback(() => {
+    return channelList.flatMap((ch) =>
+      (ch.instructionCardIds ?? [])
+        .map((id) => instructionCards[id])
+        .filter(Boolean)
+        .map((s) => ({
+          id: s.id,
+          title: s.title,
+          action: s.action,
+          channelId: ch.id,
+          channelName: ch.name,
+          isEnabled: s.isEnabled || undefined,
+        }))
+    );
+  }, [channelList, instructionCards]);
 
   const buildTaskContext = useCallback(() => {
     return Object.values(tasks).map((t) => ({
@@ -267,6 +289,7 @@ export function OperatorHome() {
           history,
           channels: buildChannelContext(),
           tasks: buildTaskContext(),
+          shrooms: buildShroomContext(),
           user: session?.user ? { name: session.user.name, email: session.user.email } : undefined,
         }),
       });
@@ -647,6 +670,13 @@ export function OperatorHome() {
             <FreshTicker onPeek={setPeek} />
           </div>
         )}
+
+        {/* Kan's desk — what the shrooms have left for you, across every channel */}
+        {!hasConversation && !input.trim() && <KanDesk />}
+
+        {/* Noteworthy platform changes. Below Kan's desk on purpose: your own pending
+            work outranks news about the product. */}
+        {!hasConversation && !input.trim() && <WhatsNew />}
 
         {/* Input area */}
         <div className={`relative ${hasConversation ? 'pb-4' : ''}`}>

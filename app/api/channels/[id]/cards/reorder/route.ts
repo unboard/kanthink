@@ -5,6 +5,9 @@ import { cards, columns } from '@/lib/db/schema'
 import { eq, and, gte, lte, gt, lt, sql } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { logChannelActivity } from '@/lib/db/activity'
+import { bucketOf, inColumnBucket } from '@/lib/db/cardBuckets'
+import { runEventTriggers } from '@/lib/shrooms/runEventTriggers'
+import { afterResponse } from '@/lib/afterResponse'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -57,11 +60,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     const fromColumnId = card.columnId
     const fromPosition = card.position
-    const wasArchived = card.isArchived ?? false
+    const fromBucket = bucketOf(card)
+
+    // Cards live in one of three position buckets (active / review / archived), each
+    // with its own numbering. Callers that don't mention pending-review state must not
+    // silently change it — an ordinary drag would otherwise approve a pending card.
+    const isPendingReview = body.isPendingReview ?? card.isPendingReview ?? false
+    const toBucket = bucketOf({ isArchived, isPendingReview })
 
     // Handle different move scenarios
-    if (fromColumnId === toColumnId && wasArchived === isArchived) {
-      // Moving within the same column (same archive state)
+    if (fromColumnId === toColumnId && fromBucket === toBucket) {
+      // Moving within the same column and bucket
       if (fromPosition === toPosition) {
         // No change needed
         return NextResponse.json({ success: true })
@@ -74,8 +83,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           .set({ position: sql`${cards.position} - 1` })
           .where(
             and(
-              eq(cards.columnId, fromColumnId),
-              eq(cards.isArchived, isArchived),
+              inColumnBucket(fromColumnId, toBucket),
               gt(cards.position, fromPosition),
               lte(cards.position, toPosition)
             )
@@ -87,8 +95,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           .set({ position: sql`${cards.position} + 1` })
           .where(
             and(
-              eq(cards.columnId, fromColumnId),
-              eq(cards.isArchived, isArchived),
+              inColumnBucket(fromColumnId, toBucket),
               gte(cards.position, toPosition),
               lt(cards.position, fromPosition)
             )
@@ -98,28 +105,26 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       // Update the card's position
       await db.update(cards).set({ position: toPosition, updatedAt: new Date() }).where(eq(cards.id, cardId))
     } else {
-      // Moving to a different column or changing archive state
+      // Moving to a different column, or between buckets
 
-      // Remove from old column (shift positions up)
+      // Remove from the old column/bucket (shift positions up)
       await db
         .update(cards)
         .set({ position: sql`${cards.position} - 1` })
         .where(
           and(
-            eq(cards.columnId, fromColumnId),
-            eq(cards.isArchived, wasArchived),
+            inColumnBucket(fromColumnId, fromBucket),
             gt(cards.position, fromPosition)
           )
         )
 
-      // Make room in new column (shift positions down)
+      // Make room in the new column/bucket (shift positions down)
       await db
         .update(cards)
         .set({ position: sql`${cards.position} + 1` })
         .where(
           and(
-            eq(cards.columnId, toColumnId),
-            eq(cards.isArchived, isArchived),
+            inColumnBucket(toColumnId, toBucket),
             gte(cards.position, toPosition)
           )
         )
@@ -131,6 +136,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           columnId: toColumnId,
           position: toPosition,
           isArchived,
+          isPendingReview,
           updatedAt: new Date(),
         })
         .where(eq(cards.id, cardId))
@@ -147,6 +153,20 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         fromColumnId,
         toColumnId,
       }).catch(() => {})
+
+      // Wake any shroom watching the destination. Deferred past the response because it
+      // makes an LLM call, and a drag should land instantly.
+      if (!isArchived && !isPendingReview) {
+        afterResponse(() =>
+          runEventTriggers({
+            channelId,
+            columnId: toColumnId,
+            eventType: 'card_moved_to',
+            cardId,
+            createdByInstructionId: updatedCard?.createdByInstructionId,
+          })
+        )
+      }
     }
 
     return NextResponse.json({

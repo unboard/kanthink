@@ -32,9 +32,10 @@ interface ServerCard extends Card {
   columnId: string
   position: number
   isArchived?: boolean
+  isPendingReview?: boolean
 }
 
-interface ServerColumn extends Omit<Column, 'cardIds' | 'backsideCardIds'> {
+interface ServerColumn extends Omit<Column, 'cardIds' | 'backsideCardIds' | 'reviewCardIds'> {
   position: number
 }
 
@@ -195,9 +196,12 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
 
         // Build column structure with card IDs and task IDs
         const columnsWithCards: Column[] = serverColumns.map((col) => {
+          // Three position buckets, each independently numbered — see lib/db/cardBuckets.ts
           const colCards = channelCards.filter((c) => c.columnId === col.id)
-          const frontCards = colCards.filter((c) => !c.isArchived).sort((a, b) => a.position - b.position)
-          const backCards = colCards.filter((c) => c.isArchived).sort((a, b) => a.position - b.position)
+          const byPosition = (a: ServerCard, b: ServerCard) => a.position - b.position
+          const frontCards = colCards.filter((c) => !c.isArchived && !c.isPendingReview).sort(byPosition)
+          const reviewCards = colCards.filter((c) => !c.isArchived && c.isPendingReview).sort(byPosition)
+          const backCards = colCards.filter((c) => c.isArchived).sort(byPosition)
 
           // Build taskIds for standalone column tasks
           const allColTasks = channelTasks
@@ -225,8 +229,10 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             processingPrompt: col.processingPrompt,
             autoProcess: col.autoProcess,
             isAiTarget: col.isAiTarget,
+            sortOrder: col.sortOrder ?? 'manual',
             cardIds,
             backsideCardIds: backCards.map((c) => c.id),
+            reviewCardIds: reviewCards.map((c) => c.id),
             backsideTaskIds,
             taskIds,
             itemOrder: allItems.length > 0 ? allItems.map((i) => i.id) : cardIds,
@@ -350,6 +356,8 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             coverImageUrl: ic.coverImageUrl,
             nextInstructionId: ic.nextInstructionId ?? undefined,
             autoApprove: ic.autoApprove ?? false,
+            emailConfig: ic.emailConfig ?? undefined,
+            summary: ic.summary ?? undefined,
             createdAt: ic.createdAt,
             updatedAt: ic.updatedAt,
           }

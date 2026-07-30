@@ -18,8 +18,18 @@ interface ChannelSummary {
   isBookmarks?: boolean;
   columns: {
     name: string;
+    pendingReview?: number;
     cards: { id: string; title: string; summary?: string; tags?: string[] }[];
   }[];
+}
+
+interface ShroomSummary {
+  id: string;
+  title: string;
+  action: string;
+  channelId: string;
+  channelName: string;
+  isEnabled?: boolean;
 }
 
 interface TaskSummary {
@@ -40,6 +50,7 @@ interface OperatorChatRequest {
   history: { role: 'user' | 'assistant'; content: string }[];
   channels: ChannelSummary[];
   tasks?: TaskSummary[];
+  shrooms?: ShroomSummary[];
   user?: { name?: string | null; email?: string | null };
 }
 
@@ -119,6 +130,7 @@ function buildSystemPrompt(
   tasks?: TaskSummary[],
   user?: { name?: string | null; email?: string | null; id?: string },
   membershipMap?: Record<string, string[]>,
+  shrooms?: ShroomSummary[],
 ): string {
   const channelContext = channels.map((ch) => {
     const cols = ch.columns.map((col) => {
@@ -130,7 +142,8 @@ function buildSystemPrompt(
           return desc;
         }).join('\n')
         : '    (empty)';
-      return `  ${col.name} (${col.cards.length}):\n${cardList}`;
+      const pending = col.pendingReview ? ` [${col.pendingReview} awaiting review]` : '';
+      return `  ${col.name} (${col.cards.length})${pending}:\n${cardList}`;
     }).join('\n');
     const label = ch.isBookmarks ? '🔖' : '📋';
     return `${label} ${ch.name} (channelId:${ch.id})${ch.isBookmarks ? ' [BOOKMARKS CHANNEL]' : ''}${ch.description ? ` — ${ch.description}` : ''}\n${cols}`;
@@ -180,6 +193,23 @@ function buildSystemPrompt(
     }
   }
 
+  // Shrooms — the user's automations. Kan had no idea these existed before.
+  let shroomSection = '';
+  if (shrooms && shrooms.length > 0) {
+    shroomSection = `\n\n## SHROOMS (${shrooms.length})\nShrooms are the user's saved AI automations. Each belongs to a channel and either generates new cards, updates existing ones, or moves them between columns.`;
+    for (const s of shrooms) {
+      shroomSection += `\n  - "${s.title}" (shroomId:${s.id}) — ${s.action}, in ${s.channelName}${s.isEnabled ? ' [runs automatically]' : ''}`;
+    }
+    shroomSection += `\n\nWhen a shroom generates cards they land in a "pending review" state on the target column rather than straight onto the board, and the user approves or rejects each one. Columns above marked "[N awaiting review]" have work waiting. You cannot run a shroom yourself — if the user wants one run, point them at the channel and say which shroom.`;
+  }
+
+  const pendingTotal = channels.reduce(
+    (sum, ch) => sum + ch.columns.reduce((s, col) => s + (col.pendingReview ?? 0), 0), 0
+  );
+  if (pendingTotal > 0) {
+    shroomSection += `\n\nThere ${pendingTotal === 1 ? 'is' : 'are'} ${pendingTotal} card${pendingTotal === 1 ? '' : 's'} awaiting review across the workspace. Mention this if the user asks what needs their attention.`;
+  }
+
   // User identity
   const userSection = user?.name
     ? `\n\n## CURRENT USER\nName: ${user.name}${user.email ? ` (${user.email})` : ''}${user.id ? `\nUser ID: ${user.id}` : ''}`
@@ -197,7 +227,7 @@ ${userSection}
 
 ## YOUR WORKSPACE (${channels.length} channels, ${totalCards} cards)
 
-${channelContext || '(No channels yet)'}${taskSection}${membershipSection}
+${channelContext || '(No channels yet)'}${taskSection}${membershipSection}${shroomSection}
 
 ## KAN BOOKMARKS
 
@@ -397,7 +427,7 @@ export async function POST(request: Request) {
     await ensureSchema();
 
     const body: OperatorChatRequest = await request.json();
-    const { threadId, message, imageUrls, imageSettings, history, channels: channelData, tasks: taskData, user: userData } = body;
+    const { threadId, message, imageUrls, imageSettings, history, channels: channelData, tasks: taskData, user: userData, shrooms: shroomData } = body;
 
     if (!message && (!imageUrls || imageUrls.length === 0)) {
       return NextResponse.json({ error: 'Missing message' }, { status: 400 });
@@ -458,6 +488,7 @@ export async function POST(request: Request) {
         taskData,
         { ...userData, id: session.user.id },
         membershipMap,
+        shroomData,
       ) },
     ];
 

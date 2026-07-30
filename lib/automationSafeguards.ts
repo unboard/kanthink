@@ -19,7 +19,20 @@ export function checkSafeguards(
   instruction: InstructionCard,
   triggerType: TriggerType,
   eventContext?: CardEvent,
-  getCard?: (id: string) => { createdByInstructionId?: string } | undefined
+  getCard?: (id: string) => { createdByInstructionId?: string } | undefined,
+  options?: {
+    /**
+     * True when this run acts on one specific card rather than a whole column.
+     *
+     * Such runs skip the cooldown. The cooldown exists to stop a shroom re-doing the
+     * *same* work — which is a real risk when a run means "process the whole column",
+     * and no risk at all when each run handles a different card. Sharing five bookmarks
+     * in a minute is five separate jobs; rate-limiting four of them away is just losing
+     * work someone asked for. Repeat work on a single card is already prevented by
+     * `processedByInstructions`, and self-triggering loops by `createdByInstructionId`.
+     */
+    cardScoped?: boolean;
+  }
 ): SafeguardCheck {
   // Check if automatic mode is enabled
   if (!instruction.isEnabled) {
@@ -28,8 +41,8 @@ export function checkSafeguards(
 
   const safeguards = { ...DEFAULT_SAFEGUARDS, ...instruction.safeguards };
 
-  // 1. Check cooldown
-  if (instruction.lastExecutedAt) {
+  // 1. Check cooldown — see `cardScoped` above for why per-card runs are exempt
+  if (instruction.lastExecutedAt && !options?.cardScoped) {
     const elapsed = Date.now() - new Date(instruction.lastExecutedAt).getTime();
     const cooldownMs = safeguards.cooldownMinutes * 60 * 1000;
     if (elapsed < cooldownMs) {

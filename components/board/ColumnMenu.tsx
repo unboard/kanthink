@@ -1,16 +1,18 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import type { ID, Card } from '@/lib/types';
+import type { ID, Card, ColumnSortOrder } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Modal } from '@/components/ui';
 import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
-
-type SortOption = 'created_newest' | 'created_oldest' | 'updated_newest' | 'updated_oldest';
+import { ShroomPicker } from './ShroomPicker';
+import { useShroomRun } from './ShroomRunContext';
+import { COLUMN_SORT_LABELS, COLUMN_SORT_OPTIONS, sortCardsBy } from '@/lib/columnSort';
 
 interface ColumnMenuProps {
   channelId: ID;
   columnId: ID;
+  sortOrder?: ColumnSortOrder;
   columnCount: number;
   cardCount: number;
   columnCardIds: ID[];
@@ -28,6 +30,7 @@ interface ColumnMenuProps {
 export function ColumnMenu({
   channelId,
   columnId,
+  sortOrder = 'manual',
   columnCount,
   cardCount,
   columnCardIds,
@@ -46,47 +49,55 @@ export function ColumnMenu({
   const [showDeleteCardsConfirm, setShowDeleteCardsConfirm] = useState(false);
   const [showDeleteColumnConfirm, setShowDeleteColumnConfirm] = useState(false);
   const [showArchiveCardsConfirm, setShowArchiveCardsConfirm] = useState(false);
+  const [showShroomPicker, setShowShroomPicker] = useState(false);
+  const { shrooms } = useShroomRun();
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const deleteColumn = useStore((s) => s.deleteColumn);
   const deleteAllCardsInColumn = useStore((s) => s.deleteAllCardsInColumn);
   const archiveCard = useStore((s) => s.archiveCard);
   const sortColumnCards = useStore((s) => s.sortColumnCards);
+  const updateColumn = useStore((s) => s.updateColumn);
   const allCards = useStore((s) => s.cards);
   const isMobile = useIsMobile();
 
+  // Close on click outside (desktop only — the MobileMenuDrawer is portaled to
+  // document.body, so menuRef.contains(target) is always false for taps inside it.
+  // On mobile that race fires setIsOpen(false) on mousedown, which unmounts the sheet
+  // before the button's click event lands: tapping "Sort cards" closed the menu instead
+  // of opening the submenu, and tapping a sort option silently no-oped. The drawer has
+  // its own backdrop for outside taps, so this listener isn't needed on mobile.
   useEffect(() => {
+    if (!isOpen || isMobile) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setIsOpen(false);
         setShowSortSubmenu(false);
       }
     };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, isMobile]);
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+  // Applying a sort both reorders now AND persists the choice on the column, so new
+  // cards keep landing in the right place on every device instead of the order
+  // drifting back the next time something is added.
+  const handleSort = (option: ColumnSortOrder) => {
+    updateColumn(channelId, columnId, { sortOrder: option });
+    if (option !== 'manual') {
+      const cards: Card[] = columnCardIds.map((id) => allCards[id]).filter(Boolean);
+      const sorted = sortCardsBy(cards, option);
+      sortColumnCards(channelId, columnId, sorted.map((c) => c.id));
     }
-  }, [isOpen]);
-
-  const handleSort = (option: SortOption) => {
-    const cards: Card[] = columnCardIds.map((id) => allCards[id]).filter(Boolean);
-    const sorted = [...cards].sort((a, b) => {
-      switch (option) {
-        case 'created_newest':
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        case 'created_oldest':
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        case 'updated_newest':
-          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-        case 'updated_oldest':
-          return new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
-      }
-    });
-    sortColumnCards(channelId, columnId, sorted.map((c) => c.id));
     setIsOpen(false);
     setShowSortSubmenu(false);
   };
+
+  const sortOptionRows = COLUMN_SORT_OPTIONS.map((option) => ({
+    option,
+    label: COLUMN_SORT_LABELS[option],
+    isActive: sortOrder === option,
+  }));
 
   const handleDeleteAllCards = () => {
     if (cardCount === 0) return;
@@ -208,37 +219,37 @@ export function ColumnMenu({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
                   </svg>
                   Sort cards
+                  {sortOrder !== 'manual' && (
+                    <span className="w-1.5 h-1.5 bg-violet-500 rounded-full" />
+                  )}
                 </span>
                 <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
               {showSortSubmenu && (
-                <div className="absolute left-full top-0 ml-1 w-48 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
-                  <button
-                    onClick={() => handleSort('created_newest')}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                  >
-                    Created date (newest)
-                  </button>
-                  <button
-                    onClick={() => handleSort('created_oldest')}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                  >
-                    Created date (oldest)
-                  </button>
-                  <button
-                    onClick={() => handleSort('updated_newest')}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                  >
-                    Modified date (newest)
-                  </button>
-                  <button
-                    onClick={() => handleSort('updated_oldest')}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
-                  >
-                    Modified date (oldest)
-                  </button>
+                <div className="absolute left-full top-0 ml-1 w-56 rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-neutral-800 dark:ring-white/10">
+                  {sortOptionRows.map(({ option, label, isActive }) => (
+                    <button
+                      key={option}
+                      onClick={() => handleSort(option)}
+                      className={`flex items-center justify-between gap-2 w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-700 ${
+                        isActive
+                          ? 'text-violet-600 dark:text-violet-300 font-medium'
+                          : 'text-neutral-700 dark:text-neutral-300'
+                      }`}
+                    >
+                      {label}
+                      {isActive && (
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                  <p className="px-3 pt-1.5 pb-1 text-[10.5px] leading-snug text-neutral-400 dark:text-neutral-500">
+                    Sticky — new cards follow this order.
+                  </p>
                 </div>
               )}
             </div>
@@ -255,6 +266,21 @@ export function ColumnMenu({
               </svg>
               Hide completed tasks{completedTaskCount > 0 ? ` (${completedTaskCount})` : ''}
             </button>
+            {shrooms.length > 0 && (
+              <>
+                <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
+                <button
+                  onClick={() => {
+                    setIsOpen(false);
+                    setShowShroomPicker(true);
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700"
+                >
+                  <span className="w-4 h-4 text-sm leading-none flex items-center justify-center">🍄</span>
+                  Run shroom on this column
+                </button>
+              </>
+            )}
             <hr className="my-1 border-neutral-200 dark:border-neutral-700" />
             <button
               onClick={() => {
@@ -306,14 +332,32 @@ export function ColumnMenu({
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                 Back
               </button>
-              <button onClick={() => handleSort('created_newest')} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Created date (newest)</button>
-              <button onClick={() => handleSort('created_oldest')} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Created date (oldest)</button>
-              <button onClick={() => handleSort('updated_newest')} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Modified date (newest)</button>
-              <button onClick={() => handleSort('updated_oldest')} className="w-full px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg">Modified date (oldest)</button>
+              {sortOptionRows.map(({ option, label, isActive }) => (
+                <button
+                  key={option}
+                  onClick={() => handleSort(option)}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-3 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg ${
+                    isActive ? 'text-violet-600 dark:text-violet-300 font-medium' : 'text-neutral-700 dark:text-neutral-300'
+                  }`}
+                >
+                  {label}
+                  {isActive && (
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+              <p className="px-3 pt-1 pb-2 text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">
+                Sticky — new cards follow this order.
+              </p>
             </>
           ) : (
             <button onClick={() => setShowSortSubmenu(true)} disabled={cardCount < 2} className="w-full flex items-center justify-between px-3 py-3 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-50 rounded-lg">
-              Sort cards
+              <span className="flex items-center gap-2">
+                Sort cards
+                {sortOrder !== 'manual' && <span className="text-xs text-violet-400">{COLUMN_SORT_LABELS[sortOrder]}</span>}
+              </span>
               <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
             </button>
           )}
@@ -434,6 +478,13 @@ export function ColumnMenu({
           </div>
         </div>
       </Modal>
+      {/* Run a shroom scoped to this column's cards */}
+      <ShroomPicker
+        isOpen={showShroomPicker}
+        cardIds={columnCardIds}
+        subtitle={`${columnCardIds.length} card${columnCardIds.length === 1 ? '' : 's'} in this column`}
+        onClose={() => setShowShroomPicker(false)}
+      />
       {/* Archive all cards confirmation */}
       <Modal
         isOpen={showArchiveCardsConfirm}

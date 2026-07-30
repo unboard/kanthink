@@ -348,7 +348,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       {/* Fullscreen header - only shown in fullscreen mode */}
       {isFullscreen && (
         <div className="flex-shrink-0 flex items-center justify-between px-4 py-2">
-          <h3 className="text-sm font-medium text-neutral-900 dark:text-white">
+          <h3 className="text-sm font-medium text-neutral-900 dark:text-white wrap-anywhere">
             {card.title}
           </h3>
           <button

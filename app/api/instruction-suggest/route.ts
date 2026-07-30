@@ -41,6 +41,7 @@ export async function POST(request: Request) {
       generate: 'create new cards',
       modify: 'update existing cards',
       move: 'move cards between columns',
+      report: 'observe the channel and write a summary, without changing any cards',
     };
 
     const messages: LLMMessage[] = [

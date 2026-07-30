@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { instructionCards } from '@/lib/db/schema'
 import { eq, asc } from 'drizzle-orm'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 /**
  * GET /api/global-shrooms
@@ -16,6 +17,8 @@ export async function GET() {
   }
 
   try {
+    await ensureSchema()
+
     // Fetch global resource shrooms
     let globalShrooms: typeof instructionCards.$inferSelect[] = []
     try {

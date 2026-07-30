@@ -8,123 +8,13 @@ import { useNav } from '@/components/providers/NavProvider';
 import { useStore, getGlobalShrooms, getChannelShrooms, getFavoriteShrooms } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { ShroomCard as SharedShroomCard } from '@/components/shrooms/ShroomCard';
 import { MushroomIcon } from '@/components/icons/MushroomIcon';
 import { shrooms as marketplaceShrooms } from '@/lib/marketplace-data';
-import type { InstructionCard, InstructionTarget } from '@/lib/types';
+import { addCommunityShroom } from '@/lib/shrooms/addFromCommunity';
+import type { InstructionCard } from '@/lib/types';
 
 type ShroomTab = 'channel' | 'favorites' | 'community';
-
-interface ShroomCardProps {
-  shroom: InstructionCard;
-  onRun?: () => void;
-  onEdit?: () => void;
-  onToggleFavorite?: () => void;
-  isFavorite?: boolean;
-}
-
-function ShroomCard({ shroom, onRun, onEdit, onToggleFavorite, isFavorite }: ShroomCardProps) {
-  const actionIcons: Record<string, React.ReactNode> = {
-    generate: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-      </svg>
-    ),
-    modify: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-      </svg>
-    ),
-    move: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-      </svg>
-    ),
-  };
-
-  const isGlobal = shroom.scope === 'global';
-  const isKanthinkResource = shroom.isGlobalResource;
-
-  return (
-    <div className="flex items-center gap-3 p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors group">
-      {/* Icon */}
-      <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center text-violet-600 dark:text-violet-400">
-        {actionIcons[shroom.action] || <KanthinkIcon size={16} />}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-sm text-neutral-900 dark:text-white truncate">
-            {shroom.title}
-          </span>
-          {isKanthinkResource && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400">
-              by Kanthink
-            </span>
-          )}
-          {isGlobal && !isKanthinkResource && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-              <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM4.332 8.027a6.012 6.012 0 011.912-2.706C6.512 5.73 6.974 6 7.5 6A1.5 1.5 0 019 7.5V8a2 2 0 004 0 2 2 0 011.523-1.943A5.977 5.977 0 0116 10c0 .34-.028.675-.083 1H15a2 2 0 00-2 2v2.197A5.973 5.973 0 0110 16v-2a2 2 0 00-2-2 2 2 0 01-2-2 2 2 0 00-1.668-1.973z" clipRule="evenodd" />
-              </svg>
-              Global
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-neutral-500 truncate mt-0.5">
-          {shroom.instructions.slice(0, 60)}...
-        </p>
-      </div>
-
-      {/* Action buttons */}
-      <div className="flex items-center gap-1 flex-shrink-0">
-        {onRun && (
-          <button
-            onClick={onRun}
-            className="p-1.5 rounded-md text-neutral-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-            title="Run"
-          >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-            </svg>
-          </button>
-        )}
-        {onToggleFavorite && (
-          <button
-            onClick={onToggleFavorite}
-            className={`p-1.5 rounded-md transition-colors ${
-              isFavorite
-                ? 'text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
-                : 'text-neutral-400 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-            }`}
-            title={isFavorite ? 'Unfavorite' : 'Favorite'}
-          >
-            {isFavorite ? (
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-              </svg>
-            )}
-          </button>
-        )}
-        {onEdit && (
-          <button
-            onClick={onEdit}
-            className="p-1.5 rounded-md text-neutral-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-900/30 transition-colors"
-            title="Edit"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 const TAB_CONFIG: { key: ShroomTab; label: string }[] = [
   { key: 'channel', label: 'Channel' },
@@ -132,11 +22,11 @@ const TAB_CONFIG: { key: ShroomTab; label: string }[] = [
   { key: 'community', label: 'Community' },
 ];
 
-function CommunityTab() {
-  const createInstructionCard = useStore((s) => s.createInstructionCard);
+function CommunityTab({ channelId }: { channelId: string | null }) {
   const existingShrooms = useStore((s) => s.instructionCards);
   const [search, setSearch] = useState('');
   const [addedSlugs, setAddedSlugs] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
 
   // Check which marketplace shrooms are already added (by matching title)
   const existingTitles = useMemo(() => {
@@ -154,14 +44,12 @@ function CommunityTab() {
   }, [search]);
 
   function handleAdd(shroom: typeof marketplaceShrooms[0]) {
-    const target: InstructionTarget = { type: 'column', columnId: '' };
-    createInstructionCard('', {
-      title: shroom.name,
-      instructions: shroom.instructions,
-      action: shroom.action,
-      target,
-      scope: 'global',
-    });
+    const result = addCommunityShroom(shroom, channelId);
+    if (!result.ok) {
+      setError('Create a channel first — shrooms need a board to live on.');
+      return;
+    }
+    setError(null);
     setAddedSlugs(prev => new Set([...prev, shroom.slug]));
   }
 
@@ -177,6 +65,10 @@ function CommunityTab() {
           className="w-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-1.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
         />
       </div>
+
+      {error && (
+        <p className="px-1 text-xs text-red-500 dark:text-red-400">{error}</p>
+      )}
 
       {/* Marketplace shrooms */}
       <div className="space-y-1.5">
@@ -393,14 +285,15 @@ export function ShroomsPanel() {
                           )}
                         </div>
                         <div className="space-y-2">
-                          {channelShrooms.map((shroom) => (
-                            <ShroomCard
+                          {channelShrooms.map((shroom, i) => (
+                            <SharedShroomCard
                               key={shroom.id}
                               shroom={shroom}
+                              channel={currentChannel ?? undefined}
+                              allShrooms={instructionCards}
+                              index={i}
                               onRun={() => handleRunShroom(shroom)}
                               onEdit={() => handleEditShroom(shroom)}
-                              onToggleFavorite={() => toggleInstructionCardFavorite(shroom.id)}
-                              isFavorite={favoriteInstructionCardIds.includes(shroom.id)}
                             />
                           ))}
                         </div>
@@ -419,14 +312,15 @@ export function ShroomsPanel() {
                           </h3>
                         </div>
                         <div className="space-y-2">
-                          {globalShrooms.map((shroom) => (
-                            <ShroomCard
+                          {globalShrooms.map((shroom, i) => (
+                            <SharedShroomCard
                               key={shroom.id}
                               shroom={shroom}
+                              channel={channels[shroom.channelId] ?? currentChannel ?? undefined}
+                              allShrooms={instructionCards}
+                              index={i}
                               onRun={channelId ? () => handleRunShroom(shroom) : undefined}
                               onEdit={() => handleEditShroom(shroom)}
-                              onToggleFavorite={() => toggleInstructionCardFavorite(shroom.id)}
-                              isFavorite={favoriteInstructionCardIds.includes(shroom.id)}
                             />
                           ))}
                         </div>
@@ -473,14 +367,15 @@ export function ShroomsPanel() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {favoriteShrooms.map((shroom) => (
-                      <ShroomCard
+                    {favoriteShrooms.map((shroom, i) => (
+                      <SharedShroomCard
                         key={shroom.id}
                         shroom={shroom}
+                        channel={channels[shroom.channelId] ?? currentChannel ?? undefined}
+                        allShrooms={instructionCards}
+                        index={i}
                         onRun={() => handleRunShroom(shroom)}
                         onEdit={() => handleEditShroom(shroom)}
-                        onToggleFavorite={() => toggleInstructionCardFavorite(shroom.id)}
-                        isFavorite={true}
                       />
                     ))}
                   </div>
@@ -489,7 +384,7 @@ export function ShroomsPanel() {
             )}
 
             {activeTab === 'community' && (
-              <CommunityTab />
+              <CommunityTab channelId={channelId} />
             )}
           </div>
         </div>

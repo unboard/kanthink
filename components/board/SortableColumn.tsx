@@ -38,7 +38,8 @@ export function SortableColumn({
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    // id is the scroll anchor for shroom_completed notification deep links
+    <div id={`column-${column.id}`} ref={setNodeRef} style={style} {...attributes}>
       <Column
         column={column}
         channelId={channelId}

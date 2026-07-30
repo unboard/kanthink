@@ -4,8 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { MarketplaceShroom } from '@/lib/marketplace-data'
-import type { InstructionTarget } from '@/lib/types'
-import { useStore } from '@/lib/store'
+import { addCommunityShroom } from '@/lib/shrooms/addFromCommunity'
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon'
 import { MushroomIcon } from '@/components/icons/MushroomIcon'
 
@@ -15,19 +14,17 @@ function formatCount(n: number): string {
 }
 
 export function ShroomProductClient({ shroom }: { shroom: MarketplaceShroom }) {
-  const createInstructionCard = useStore((s) => s.createInstructionCard)
   const [isAdded, setIsAdded] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
   const router = useRouter()
 
   const handleAdd = () => {
-    const target: InstructionTarget = { type: 'column', columnId: '' }
-    createInstructionCard('', {
-      title: shroom.name,
-      instructions: shroom.instructions,
-      action: shroom.action,
-      target,
-      scope: 'global',
-    })
+    const result = addCommunityShroom(shroom)
+    if (!result.ok) {
+      setAddError('Create a channel in Kanthink first — shrooms need a board to live on.')
+      return
+    }
+    setAddError(null)
     setIsAdded(true)
   }
   return (
@@ -78,6 +75,10 @@ export function ShroomProductClient({ shroom }: { shroom: MarketplaceShroom }) {
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mb-2">{shroom.name}</h1>
             <p className="text-sm sm:text-base text-neutral-400 leading-relaxed">{shroom.tagline}</p>
+
+            {addError && (
+              <p className="mt-3 text-xs text-red-400">{addError}</p>
+            )}
 
             <div className="flex items-center gap-4 mt-4">
               <button

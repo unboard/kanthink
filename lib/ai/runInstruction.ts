@@ -21,8 +21,14 @@ export interface ModifiedCardTask {
 }
 
 export interface RunInstructionResult {
-  action: 'generate' | 'modify' | 'move' | 'multi-step';
+  action: 'generate' | 'modify' | 'move' | 'multi-step' | 'report';
   targetColumnIds: string[];
+  /** Present for `report` runs — an observation, not a mutation. */
+  report?: {
+    headline: string;
+    highlights: { text: string; cardIds?: string[] }[];
+    summary?: string;
+  };
   generatedCards?: CardInput[];
   modifiedCards?: Array<{
     id: string;
@@ -34,6 +40,13 @@ export interface RunInstructionResult {
     assignedTo?: string[];
   }>;
   movedCards?: Array<{ cardId: string; destinationColumnId: string; reason?: string }>;
+  /** Present when the run was made with apply:true — the server already wrote these cards. */
+  applied?: {
+    runId: string;
+    columnId: string;
+    pending: boolean;
+    cardIds: string[];
+  };
   skippedCardIds?: string[];  // Cards skipped because they were already processed
   message?: string;
   error?: string;
@@ -53,7 +66,9 @@ export async function runInstruction(
   triggeringCardId?: string,
   skipAlreadyProcessed?: boolean,
   members?: ChannelMember[],
-  rejections?: CardRejection[]
+  rejections?: CardRejection[],
+  cardIds?: string[],
+  apply?: boolean
 ): Promise<RunInstructionResult> {
   // Get system instructions from settings store (no API key)
   const { ai } = useSettingsStore.getState();
@@ -68,6 +83,8 @@ export async function runInstruction(
         cards: allCards,
         tasks: allTasks,
         triggeringCardId,
+        cardIds,
+        apply,
         skipAlreadyProcessed,
         systemInstructions: ai.systemInstructions,
         members: members?.map(m => ({

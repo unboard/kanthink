@@ -4,10 +4,15 @@ import { db } from '@/lib/db'
 import { columns, cards } from '@/lib/db/schema'
 import { eq, and, gt, sql, asc } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { bucketOf } from '@/lib/db/cardBuckets'
 
 interface RouteParams {
   params: Promise<{ id: string; columnId: string }>
 }
+
+// Allow-list so a bad client value can't put an unrecognised rule in the column row,
+// which the placement logic would then silently treat as 'manual'.
+const VALID_SORT_ORDERS = ['manual', 'created_newest', 'created_oldest', 'updated_newest', 'updated_oldest']
 
 /**
  * GET /api/channels/:id/columns/:columnId
@@ -89,7 +94,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     const body = await req.json()
-    const { name, instructions, processingPrompt, autoProcess, isAiTarget } = body
+    const { name, instructions, processingPrompt, autoProcess, isAiTarget, sortOrder } = body
 
     const updates: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -100,6 +105,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (processingPrompt !== undefined) updates.processingPrompt = processingPrompt
     if (autoProcess !== undefined) updates.autoProcess = autoProcess
     if (isAiTarget !== undefined) updates.isAiTarget = isAiTarget
+    if (sortOrder !== undefined && VALID_SORT_ORDERS.includes(sortOrder)) {
+      updates.sortOrder = sortOrder
+    }
 
     await db.update(columns).set(updates).where(eq(columns.id, columnId))
 
@@ -164,30 +172,40 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const targetColumn =
       channelColumns[0].id === columnId ? channelColumns[1] : channelColumns[0]
 
-    // Move all cards to the target column
-    // First, get the max position in target column
+    // Move all cards to the target column.
+    // Positions are partitioned per bucket (active / review / archived), so each bucket
+    // has to be appended to its own position space. Flattening them lets archived or
+    // pending-review cards land in active position numbers and collide with real cards.
     const targetCards = await db.query.cards.findMany({
-      where: and(eq(cards.columnId, targetColumn.id), eq(cards.isArchived, false)),
-      orderBy: [asc(cards.position)],
+      where: eq(cards.columnId, targetColumn.id),
     })
-    const maxPosition = targetCards.length > 0 ? targetCards[targetCards.length - 1].position : -1
 
-    // Get cards from column being deleted
     const cardsToMove = await db.query.cards.findMany({
       where: eq(cards.columnId, columnId),
       orderBy: [asc(cards.position)],
     })
 
-    // Move each card to target column with new positions
-    for (let i = 0; i < cardsToMove.length; i++) {
+    // Max existing position in the target column, per bucket
+    const maxPositionByBucket = new Map<string, number>()
+    for (const card of targetCards) {
+      const bucket = bucketOf(card)
+      maxPositionByBucket.set(bucket, Math.max(maxPositionByBucket.get(bucket) ?? -1, card.position))
+    }
+
+    // Append each card to the end of its own bucket, preserving relative order
+    for (const card of cardsToMove) {
+      const bucket = bucketOf(card)
+      const nextPosition = (maxPositionByBucket.get(bucket) ?? -1) + 1
+      maxPositionByBucket.set(bucket, nextPosition)
+
       await db
         .update(cards)
         .set({
           columnId: targetColumn.id,
-          position: maxPosition + 1 + i,
+          position: nextPosition,
           updatedAt: new Date(),
         })
-        .where(eq(cards.id, cardsToMove[i].id))
+        .where(eq(cards.id, card.id))
     }
 
     // If deleting AI target column, transfer that to target column

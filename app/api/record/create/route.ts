@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { recordings } from '@/lib/db/schema';
 import { ensureSchema } from '@/lib/db/ensure-schema';
-import { recordingDeliveryUrl } from '@/lib/cloudinary';
+import { recordingDeliveryUrl, ensureRecordingTranscoded } from '@/lib/cloudinary';
 
 export const runtime = 'nodejs';
 
@@ -40,6 +40,11 @@ export async function POST(request: Request) {
     aspectRatio: typeof body.aspectRatio === 'string' ? body.aspectRatio : '16:9',
     editSpec: { trimStart: 0, trimEnd: null, masks: [] },
   });
+
+  // Pre-bake the mp4 derivative so the first playback streams a cached asset
+  // instead of triggering a synchronous live transcode. Non-blocking: if this
+  // fails, delivery falls back to transcode-on-first-request.
+  await ensureRecordingTranscoded(body.publicId).catch(() => {});
 
   return NextResponse.json({ id, url: `/watch/${id}` });
 }

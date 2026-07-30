@@ -45,6 +45,8 @@ export type BroadcastEvent =
   | { type: 'card:move'; cardId: ID; channelId: ID; fromColumnId: ID; toColumnId: ID; toIndex: number }
   | { type: 'card:archive'; cardId: ID; channelId: ID; columnId: ID }
   | { type: 'card:unarchive'; cardId: ID; channelId: ID; columnId: ID }
+  | { type: 'card:reviewApprove'; cardId: ID; channelId: ID; columnId: ID }
+  | { type: 'card:reviewReject'; cardId: ID; channelId: ID; columnId: ID }
 
   // Card message events
   | { type: 'card:addMessage'; cardId: ID; message: CardMessage }

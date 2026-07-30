@@ -8,6 +8,9 @@ import { nanoid } from 'nanoid'
 import { createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
 import { logChannelActivity } from '@/lib/db/activity'
 import { ensureSchema } from '@/lib/db/ensure-schema'
+import { inColumnBucket } from '@/lib/db/cardBuckets'
+import { runEventTriggers } from '@/lib/shrooms/runEventTriggers'
+import { afterResponse } from '@/lib/afterResponse'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -40,6 +43,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       source = 'manual',
       createdByInstructionId,
       position: requestedPosition,
+      isPendingReview = false,
+      reviewRunId,
     } = body
 
     if (!columnId || !title) {
@@ -58,12 +63,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Column not found' }, { status: 404 })
     }
 
-    // Get max position in column
+    // Pending-review cards have their own position numbering, so scope all the
+    // position math to the bucket this card is being created in.
+    const bucket = isPendingReview ? 'review' : 'active'
+
+    // Get max position in this column's bucket
     const existingCards = await db.query.cards.findMany({
-      where: and(
-        eq(cards.columnId, columnId),
-        eq(cards.isArchived, false)
-      ),
+      where: inColumnBucket(columnId, bucket),
       orderBy: [desc(cards.position)],
       limit: 1,
     })
@@ -71,15 +77,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const maxPosition = existingCards.length > 0 ? existingCards[0].position : -1
     const position = requestedPosition !== undefined ? requestedPosition : maxPosition + 1
 
-    // If inserting at a specific position, shift other cards
+    // If inserting at a specific position, shift other cards in the same bucket
     if (requestedPosition !== undefined) {
       await db
         .update(cards)
         .set({ position: sql`${cards.position} + 1` })
         .where(
           and(
-            eq(cards.columnId, columnId),
-            eq(cards.isArchived, false),
+            inColumnBucket(columnId, bucket),
             gte(cards.position, requestedPosition)
           )
         )
@@ -111,6 +116,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       source,
       position,
       createdByInstructionId,
+      isPendingReview: !!isPendingReview,
+      reviewRunId,
       createdAt: now,
       updatedAt: now,
     })
@@ -119,17 +126,35 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       where: eq(cards.id, cardId),
     })
 
-    // Log activity for digests
-    logChannelActivity(channelId, userId, 'card_created', 'card', cardId, { title }).catch(() => {})
+    // Pending-review cards aren't on the board yet, so they don't count as activity
+    // and shouldn't notify anyone until they're approved.
+    if (!isPendingReview) {
+      // Log activity for digests
+      logChannelActivity(channelId, userId, 'card_created', 'card', cardId, { title }).catch(() => {})
 
-    // Notify channel members about new card
-    if (createdCard) {
-      createNotificationForChannelMembers(channelId, userId, {
-        type: 'card_added_by_other',
-        title: 'New card added',
-        body: `"${title}" was added`,
-        data: { channelId, cardId },
-      }).catch(() => {})
+      // Notify channel members about new card
+      if (createdCard) {
+        createNotificationForChannelMembers(channelId, userId, {
+          type: 'card_added_by_other',
+          title: 'New card added',
+          body: `"${title}" was added`,
+          data: { channelId, cardId },
+        }).catch(() => {})
+      }
+
+      // Wake any shroom watching this column. Runs after the response via `after()`
+      // because it makes an LLM call — adding seconds to card creation would make
+      // adding a card feel broken. A plain floating promise would risk the serverless
+      // function being frozen the moment the response is sent, dropping the run.
+      afterResponse(() =>
+        runEventTriggers({
+          channelId,
+          columnId,
+          eventType: 'card_created_in',
+          cardId,
+          createdByInstructionId,
+        })
+      )
     }
 
     return NextResponse.json(

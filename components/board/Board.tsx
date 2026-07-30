@@ -23,7 +23,7 @@ import {
   sortableKeyboardCoordinates,
   horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import type { Channel, ID, Column as ColumnType, InstructionCard, CardChange } from '@/lib/types';
+import type { Channel, ID, Column as ColumnType, InstructionCard } from '@/lib/types';
 import { useStore, getAIAbortSignal } from '@/lib/store';
 import { type AIDebugInfo } from '@/lib/ai/generateCards';
 import { type RunInstructionResult } from '@/lib/ai/runInstruction';
@@ -40,7 +40,6 @@ import { AIDebugModal } from './AIDebugModal';
 // import { QuestionsDrawer } from './QuestionsDrawer';
 import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
 import { ShroomChatDrawer } from './ShroomChatDrawer';
-import { ReviewDrawer } from './ReviewDrawer';
 import { TaskListView } from './TaskListView';
 import { FocusColumnView } from './FocusColumnView';
 import { CardListView } from './CardListView';
@@ -49,6 +48,7 @@ import { ChannelActionsDrawer } from './ChannelActionsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
 import { ChannelChatDrawer } from './ChannelChatDrawer';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { ShroomRunProvider } from './ShroomRunContext';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
 import { AgentStatusBar } from './AgentStatusBar';
@@ -91,7 +91,7 @@ export function Board({ channel }: BoardProps) {
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [editingShroomId, setEditingShroomId] = useState<string | null>(null);
   const [shroomsButtonPulse, setShroomsButtonPulse] = useState(false);
-  const { isServerMode } = useServerSync();
+  const { isServerMode, refetch } = useServerSync();
   const { members: channelMembers } = useChannelMembers(channel.id);
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
   const [previewResult, setPreviewResult] = useState<{ instruction: InstructionCard; result: import('@/lib/ai/runInstruction').RunInstructionResult } | null>(null);
@@ -182,61 +182,42 @@ export function Board({ channel }: BoardProps) {
     }
   }, [searchParams, router, channel.id]);
 
-  // Prune old rejections on mount
-  useEffect(() => {
-    pruneOldRejections();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Handle ?review= param for notification linkage
+  // Handle ?review= param from a shroom_completed notification. Pending cards are real
+  // server rows now, so this works on any device — the old localStorage queue didn't.
+  // Scroll the column holding that shroom's output into view; the badge does the rest.
   useEffect(() => {
     const reviewParam = searchParams.get('review');
-    if (reviewParam) {
-      const state = useStore.getState();
-      if (state.pendingReviews[reviewParam]) {
-        // Open the review drawer for this pending review
-        useStore.setState({ activeReviewId: reviewParam });
-      }
-      // Clear the param
-      router.replace(`/channel/${channel.id}`, { scroll: false });
+    if (!reviewParam) return;
+
+    const targetColumn = channel.columns.find((col) =>
+      (col.reviewCardIds ?? []).some((id) => useStore.getState().cards[id]?.createdByInstructionId === reviewParam)
+    );
+    if (targetColumn) {
+      document.getElementById(`column-${targetColumn.id}`)?.scrollIntoView({ behavior: 'smooth', inline: 'center' });
     }
-  }, [searchParams, router, channel.id]);
+    router.replace(`/channel/${channel.id}`, { scroll: false });
+  }, [searchParams, router, channel.id, channel.columns]);
 
   const cards = useStore((s) => s.cards);
   const tasks = useStore((s) => s.tasks);
   const instructionCards = useStore((s) => s.instructionCards);
+  const aiOperation = useStore((s) => s.aiOperation);
   const folders = useStore((s) => s.folders);
   const folderOrder = useStore((s) => s.folderOrder);
   const moveCard = useStore((s) => s.moveCard);
   const moveTaskToColumn = useStore((s) => s.moveTaskToColumn);
   const reorderColumnItems = useStore((s) => s.reorderColumnItems);
   const createCard = useStore((s) => s.createCard);
-  const updateCard = useStore((s) => s.updateCard);
   const createColumn = useStore((s) => s.createColumn);
   const reorderColumns = useStore((s) => s.reorderColumns);
   const setCardProcessing = useStore((s) => s.setCardProcessing);
   const setCardProperties = useStore((s) => s.setCardProperties);
-  const setCardProperty = useStore((s) => s.setCardProperty);
   const addQuestion = useStore((s) => s.addQuestion);
-  const addMessage = useStore((s) => s.addMessage);
-  const createTask = useStore((s) => s.createTask);
-  const addTaskNote = useStore((s) => s.addTaskNote);
   const startAIOperation = useStore((s) => s.startAIOperation);
   const completeAIOperation = useStore((s) => s.completeAIOperation);
   const setGeneratingSkeletons = useStore((s) => s.setGeneratingSkeletons);
   const clearGeneratingSkeletons = useStore((s) => s.clearGeneratingSkeletons);
-  const recordInstructionRun = useStore((s) => s.recordInstructionRun);
-  const saveInstructionRun = useStore((s) => s.saveInstructionRun);
   const createInstructionCard = useStore((s) => s.createInstructionCard);
-  const addTagDefinition = useStore((s) => s.addTagDefinition);
-  const addTagToCard = useStore((s) => s.addTagToCard);
-  const setCardAssignees = useStore((s) => s.setCardAssignees);
-  const setTaskAssignees = useStore((s) => s.setTaskAssignees);
-  const openReviewQueue = useStore((s) => s.openReviewQueue);
-  const activeReviewId = useStore((s) => s.activeReviewId);
-  const pendingReviews = useStore((s) => s.pendingReviews);
-  const closeReviewQueue = useStore((s) => s.closeReviewQueue);
-  const rejections = useStore((s) => s.rejections);
-  const pruneOldRejections = useStore((s) => s.pruneOldRejections);
   const addToast = useToastStore((s) => s.addToast);
 
   // Find the folder this channel belongs to (if any)
@@ -680,319 +661,40 @@ export function Board({ channel }: BoardProps) {
     }
 
     try {
-      const result = await runInstruction(instructionCard, channel, cards, tasks, getAIAbortSignal(), undefined, undefined, channelMembers, rejections);
+      const result = await runInstruction(instructionCard, channel, cards, tasks, getAIAbortSignal(), undefined, undefined, channelMembers, undefined, cardIdsToProcess, true);
 
       // Store debug info for the modal
       if (result.debug) {
         setDebugInfo(result.debug);
       }
 
-      // Build a set of valid member IDs for filtering hallucinated IDs
-      const validMemberIds = new Set(channelMembers.map(m => m.id));
-      const filterAssignees = (ids?: string[]) =>
-        ids?.filter(id => validMemberIds.has(id));
-
-      // Track whether chaining should be deferred (generate with review queue)
-      let chainDeferred = false;
-
       if (result.action === 'generate' && result.generatedCards) {
-        const targetColId = result.targetColumnIds[0] || channel.columns[0]?.id;
-        const targetCol = targetColId ? channel.columns.find(c => c.id === targetColId) : null;
-        if (targetColId && targetCol) {
-          if (instructionCard.autoApprove) {
-            // Auto-approve: create cards directly, skip review queue
-            for (const cardInput of result.generatedCards) {
-              const assignees = filterAssignees(cardInput.assignedTo);
-              const newCard = createCard(channel.id, targetColId, {
-                title: cardInput.title,
-                initialMessage: cardInput.initialMessage,
-                assignedTo: assignees,
-              }, 'ai', instructionCard.id);
-              if (assignees?.length && newCard) {
-                setCardAssignees(newCard.id, assignees);
-              }
-            }
-            addToast(`Created ${result.generatedCards.length} card(s)`, 'success');
-          } else {
-            // Route to review queue
-            const chainDepth = (instructionCard as InstructionCard & { _chainDepth?: number })._chainDepth ?? 0;
-            const pendingChain = instructionCard.nextInstructionId
-              ? { nextInstructionId: instructionCard.nextInstructionId, chainDepth }
-              : undefined;
-
-            openReviewQueue({
-              instructionCardId: instructionCard.id,
-              instructionTitle: instructionCard.title,
-              channelId: channel.id,
-              targetColumnId: targetColId,
-              targetColumnName: targetCol.name,
-              cards: result.generatedCards.map(cardInput => ({
-                title: cardInput.title,
-                content: cardInput.initialMessage,
-                assignedTo: filterAssignees(cardInput.assignedTo),
-                accepted: true,
-              })),
-              createdAt: new Date().toISOString(),
-              pendingChain,
-            });
-            // Chain will be triggered by commitReviewQueue instead
-            chainDeferred = true;
-          }
+        const targetCol = channel.columns.find(c => c.id === result.applied?.columnId);
+        // The server created these cards (see lib/shrooms/apply.ts) so they're already
+        // in the right bucket — pull them down rather than writing them again here.
+        await refetch();
+        const count = result.applied?.cardIds.length ?? result.generatedCards.length;
+        if (result.applied?.pending) {
+          addToast(
+            `${count} card${count === 1 ? '' : 's'} ready to review${targetCol ? ` in ${targetCol.name}` : ''}`,
+            'info'
+          );
+        } else {
+          addToast(`Created ${count} card(s)`, 'success');
         }
-      } else if (result.action === 'modify' && result.modifiedCards) {
-        // Track all changes for undo capability
-        const changes: CardChange[] = [];
-
-        // Update modified cards
-        for (const modified of result.modifiedCards) {
-          const existingCard = cards[modified.id];
-
-          // Track title change
-          if (existingCard && modified.title !== existingCard.title) {
-            changes.push({
-              cardId: modified.id,
-              type: 'title_changed',
-              previousTitle: existingCard.title,
-            });
-          }
-
-          updateCard(modified.id, {
-            title: modified.title,
-          });
-
-          // Apply tags if present
-          if (modified.tags && modified.tags.length > 0) {
-            for (const tagName of modified.tags) {
-              // Check if tag already exists in channel (case-insensitive match)
-              const existingTag = channel.tagDefinitions?.find(
-                t => t.name.toLowerCase() === tagName.toLowerCase()
-              );
-
-              let finalTagName: string;
-              if (existingTag) {
-                // Use the existing tag's exact name
-                finalTagName = existingTag.name;
-              } else {
-                // Create a new tag with a default color
-                const defaultColors = ['blue', 'green', 'purple', 'orange', 'pink', 'cyan'];
-                const colorIndex = (channel.tagDefinitions?.length || 0) % defaultColors.length;
-                addTagDefinition(channel.id, tagName, defaultColors[colorIndex]);
-                finalTagName = tagName;
-              }
-
-              // Add tag to card if not already present
-              if (!existingCard?.tags?.includes(finalTagName)) {
-                changes.push({
-                  cardId: modified.id,
-                  type: 'tag_added',
-                  tagName: finalTagName,
-                });
-                addTagToCard(modified.id, finalTagName);
-              }
-            }
-          }
-
-          // Apply properties if present
-          if (modified.properties && modified.properties.length > 0) {
-            for (const prop of modified.properties) {
-              // Track property change
-              const existingProp = existingCard?.properties?.find(p => p.key === prop.key);
-              changes.push({
-                cardId: modified.id,
-                type: 'property_set',
-                propertyKey: prop.key,
-                previousValue: existingProp?.value, // undefined if new property
-              });
-
-              setCardProperty(modified.id, prop.key, prop.value, prop.displayType, prop.color);
-            }
-          }
-
-          // Create tasks if present (skip duplicates by title)
-          if (modified.tasks && modified.tasks.length > 0) {
-            // Get existing task titles for this card
-            const existingTaskTitles = new Set(
-              (existingCard?.taskIds || [])
-                .map(id => tasks[id]?.title?.toLowerCase().trim())
-                .filter(Boolean)
-            );
-
-            for (const task of modified.tasks) {
-              const normalizedTitle = task.title?.toLowerCase().trim();
-              if (normalizedTitle && !existingTaskTitles.has(normalizedTitle)) {
-                const createdTask = createTask(channel.id, modified.id, {
-                  title: task.title,
-                });
-                // Add description as first note if present
-                if (task.description) {
-                  addTaskNote(createdTask.id, task.description);
-                }
-                // Apply task-level assignment if present
-                const validTaskAssignees = filterAssignees(task.assignedTo);
-                if (validTaskAssignees?.length) {
-                  setTaskAssignees(createdTask.id, validTaskAssignees);
-                }
-                // Track task creation for undo
-                changes.push({
-                  cardId: modified.id,
-                  type: 'task_added',
-                  taskId: createdTask.id,
-                });
-                // Add to set to prevent duplicates within the same batch
-                existingTaskTitles.add(normalizedTitle);
-              }
-            }
-          }
-
-          // Apply card-level assignment if present
-          const validCardAssignees = filterAssignees(modified.assignedTo);
-          if (validCardAssignees?.length) {
-            setCardAssignees(modified.id, validCardAssignees);
-          }
-
-          // Add modified content as a new message if present
-          if (modified.content) {
-            const newMessage = addMessage(modified.id, 'ai_response', modified.content);
-            if (newMessage) {
-              changes.push({
-                cardId: modified.id,
-                type: 'message_added',
-                messageId: newMessage.id,
-              });
-            }
-          }
-
-          // Record that this instruction has processed this card
-          recordInstructionRun(modified.id, instructionCard.id);
-        }
-
-        // Save the instruction run for undo capability
-        if (changes.length > 0) {
-          saveInstructionRun({
-            instructionId: instructionCard.id,
-            instructionTitle: instructionCard.title,
-            channelId: channel.id,
-            timestamp: new Date().toISOString(),
-            changes,
-            undone: false,
-          });
-        }
-      } else if (result.action === 'move' && result.movedCards) {
-        // Move cards to their destination columns
-        for (const move of result.movedCards) {
-          moveCard(move.cardId, move.destinationColumnId, 0);
-          // Record that this instruction has processed this card
-          recordInstructionRun(move.cardId, instructionCard.id);
-        }
-      } else if (result.action === 'multi-step') {
-        // Unified multi-step: process flat modifiedCards, movedCards, generatedCards
-        // Apply modifications first, then moves (order matters for coherence)
-
-        if (result.generatedCards) {
-          const targetColId = result.targetColumnIds?.[0] || channel.columns[0]?.id;
-          const targetCol = targetColId ? channel.columns.find(c => c.id === targetColId) : null;
-          if (targetColId && targetCol) {
-            if (instructionCard.autoApprove) {
-              for (const cardInput of result.generatedCards) {
-                const assignees = filterAssignees(cardInput.assignedTo);
-                const newCard = createCard(channel.id, targetColId, {
-                  title: cardInput.title,
-                  initialMessage: cardInput.initialMessage,
-                  assignedTo: assignees,
-                }, 'ai', instructionCard.id);
-                if (assignees?.length && newCard) {
-                  setCardAssignees(newCard.id, assignees);
-                }
-              }
-            } else {
-              const chainDepth = (instructionCard as InstructionCard & { _chainDepth?: number })._chainDepth ?? 0;
-              const pendingChain = instructionCard.nextInstructionId
-                ? { nextInstructionId: instructionCard.nextInstructionId, chainDepth }
-                : undefined;
-
-              openReviewQueue({
-                instructionCardId: instructionCard.id,
-                instructionTitle: instructionCard.title,
-                channelId: channel.id,
-                targetColumnId: targetColId,
-                targetColumnName: targetCol.name,
-                cards: result.generatedCards.map(cardInput => ({
-                  title: cardInput.title,
-                  content: cardInput.initialMessage,
-                  assignedTo: filterAssignees(cardInput.assignedTo),
-                  accepted: true,
-                })),
-                createdAt: new Date().toISOString(),
-                pendingChain,
-              });
-              chainDeferred = true;
-            }
-          }
-        }
-
-        if (result.modifiedCards) {
-          for (const modified of result.modifiedCards) {
-            updateCard(modified.id, { title: modified.title });
-            if (modified.content) {
-              addMessage(modified.id, 'ai_response', modified.content);
-            }
-            if (modified.tags) {
-              for (const tagName of modified.tags) {
-                const existingTag = channel.tagDefinitions?.find(t => t.name.toLowerCase() === tagName.toLowerCase());
-                if (!existingTag) {
-                  const defaultColors = ['blue', 'green', 'purple', 'orange', 'pink', 'cyan'];
-                  const colorIndex = (channel.tagDefinitions?.length || 0) % defaultColors.length;
-                  addTagDefinition(channel.id, tagName, defaultColors[colorIndex]);
-                }
-                addTagToCard(modified.id, existingTag?.name || tagName);
-              }
-            }
-            if (modified.properties) {
-              for (const prop of modified.properties) {
-                setCardProperty(modified.id, prop.key, prop.value, prop.displayType, prop.color);
-              }
-            }
-            // Apply card-level assignment
-            const validCardAssignees = filterAssignees(modified.assignedTo);
-            if (validCardAssignees?.length) {
-              setCardAssignees(modified.id, validCardAssignees);
-            }
-            // Apply task-level assignment for any tasks created
-            if (modified.tasks) {
-              const existingCard = cards[modified.id];
-              const existingTaskTitles = new Set(
-                (existingCard?.taskIds || [])
-                  .map(id => tasks[id]?.title?.toLowerCase().trim())
-                  .filter(Boolean)
-              );
-              for (const task of modified.tasks) {
-                const normalizedTitle = task.title?.toLowerCase().trim();
-                if (normalizedTitle && !existingTaskTitles.has(normalizedTitle)) {
-                  const createdTask = createTask(channel.id, modified.id, {
-                    title: task.title,
-                  });
-                  // Add description as first note if present
-                  if (task.description) {
-                    addTaskNote(createdTask.id, task.description);
-                  }
-                  const validTaskAssignees = filterAssignees(task.assignedTo);
-                  if (validTaskAssignees?.length) {
-                    setTaskAssignees(createdTask.id, validTaskAssignees);
-                  }
-                  existingTaskTitles.add(normalizedTitle);
-                }
-              }
-            }
-            recordInstructionRun(modified.id, instructionCard.id);
-          }
-        }
-
-        if (result.movedCards) {
-          for (const move of result.movedCards) {
-            moveCard(move.cardId, move.destinationColumnId, 0);
-            recordInstructionRun(move.cardId, instructionCard.id);
-          }
-        }
+      } else if (result.action === 'report') {
+        // A report writes one digest card server-side and mutates nothing else
+        await refetch();
+        addToast(result.report?.headline ?? 'Report ready', 'info');
+      } else if (
+        result.action === 'modify' ||
+        result.action === 'move' ||
+        result.action === 'multi-step'
+      ) {
+        // Applied server-side (lib/shrooms/apply.ts) so a run writes the same rows whether
+        // or not a board was open to receive it. Replaying the edits here too would double
+        // them — append the AI message twice, move the card twice.
+        await refetch();
       }
 
       // Toast feedback for shroom completion
@@ -1032,9 +734,10 @@ export function Board({ channel }: BoardProps) {
           addToast(result.message, 'info');
         }
       }
-      // Chain: trigger next shroom if this one completed successfully
-      // Skip if chain was deferred to commitReviewQueue (generate without auto-approve)
-      if (!result.error && !chainDeferred && instructionCard.nextInstructionId) {
+      // Chain: trigger next shroom if this one completed successfully.
+      // Fires on run completion rather than on review completion — per-card review has
+      // no single "done" moment to hang it off.
+      if (!result.error && instructionCard.nextInstructionId) {
         const nextShroom = instructionCards[instructionCard.nextInstructionId!];
         if (nextShroom) {
           // Depth guard: prevent chains longer than 5
@@ -1177,6 +880,30 @@ export function Board({ channel }: BoardProps) {
     await executeInstruction(previewResult.instruction);
   };
 
+  // Exposed to everything inside the board (card menus, column menu, bulk toolbar) so a
+  // shroom can be pointed at a specific card without threading callbacks down the tree.
+  const channelShrooms = useMemo(
+    () =>
+      channel.instructionCardIds
+        ?.map((id) => instructionCards[id])
+        .filter((s): s is InstructionCard => Boolean(s)) ?? [],
+    [channel.instructionCardIds, instructionCards]
+  );
+
+  const shroomRunValue = useMemo(
+    () => ({
+      runShroom: (instructionCard: InstructionCard, options?: { cardIds?: string[] }) => {
+        void executeInstruction(instructionCard, options?.cardIds);
+      },
+      shrooms: channelShrooms,
+      runningIds: aiOperation.runningInstructionIds ?? [],
+    }),
+    // executeInstruction is redefined every render; depending on it would thrash the
+    // context. The shroom list and running set are what consumers actually re-render on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [channelShrooms, aiOperation.runningInstructionIds]
+  );
+
   // Handle pending shroom actions (run or create)
   useEffect(() => {
     if (!pendingShroomAction) return;
@@ -1197,6 +924,7 @@ export function Board({ channel }: BoardProps) {
   }, [pendingShroomAction, instructionCards]);
 
   return (
+    <ShroomRunProvider value={shroomRunValue}>
     <div className="flex h-full flex-col">
       {/* Cursor presence overlay - shows other users' cursors */}
       {isServerMode && (
@@ -1578,7 +1306,7 @@ export function Board({ channel }: BoardProps) {
                     <div className="space-y-2 max-h-[300px] overflow-y-auto">
                       {previewResult.result.generatedCards.map((card, i) => (
                         <div key={i} className="p-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800">
-                          <div className="font-medium text-sm text-neutral-900 dark:text-white">{card.title}</div>
+                          <div className="font-medium text-sm text-neutral-900 dark:text-white wrap-anywhere">{card.title}</div>
                           {card.initialMessage && (
                             <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2">{card.initialMessage}</div>
                           )}
@@ -1602,7 +1330,7 @@ export function Board({ channel }: BoardProps) {
                     <div className="space-y-2 max-h-[200px] overflow-y-auto">
                       {previewResult.result.modifiedCards.map((card, i) => (
                         <div key={i} className="p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
-                          <div className="font-medium text-sm text-neutral-900 dark:text-white">{card.title}</div>
+                          <div className="font-medium text-sm text-neutral-900 dark:text-white wrap-anywhere">{card.title}</div>
                           {card.tags && <div className="text-xs text-neutral-500 mt-1">Tags: {card.tags.join(', ')}</div>}
                         </div>
                       ))}
@@ -1711,21 +1439,6 @@ export function Board({ channel }: BoardProps) {
         }}
       />
 
-      <ReviewDrawer
-        isOpen={activeReviewId !== null}
-        onClose={() => closeReviewQueue()}
-        onChainTrigger={(nextInstructionId, chainDepth) => {
-          const nextShroom = instructionCards[nextInstructionId];
-          if (nextShroom && chainDepth < 5) {
-            addToast(`Chain: running "${nextShroom.title}"...`, 'info');
-            setTimeout(() => {
-              const chainedShroom = { ...nextShroom, _chainDepth: chainDepth + 1 } as InstructionCard & { _chainDepth?: number };
-              executeInstruction(chainedShroom as InstructionCard);
-            }, 500);
-          }
-        }}
-      />
-
       <ChannelChatDrawer
         channel={channel}
         isOpen={isChannelChatOpen}
@@ -1735,5 +1448,6 @@ export function Board({ channel }: BoardProps) {
       {/* Bulk card actions toolbar — appears when cards are selected */}
       <BulkActionsToolbar channel={channel} />
     </div>
+    </ShroomRunProvider>
   );
 }

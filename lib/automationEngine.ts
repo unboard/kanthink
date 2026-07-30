@@ -34,6 +34,11 @@ export interface AutomationContext {
   getAIAbortSignal: () => AbortSignal | undefined;
   recordInstructionRun: (cardId: string, instructionId: string) => void;
   onCardsSkipped?: (count: number, instructionTitle: string) => void;
+  /**
+   * Pull server state down after a run. Everything a shroom does is written server-side
+   * now, so without this the board keeps showing the pre-run rows until the next sync.
+   */
+  refetch?: () => Promise<void>;
   // Tag methods
   addTagDefinition: (channelId: string, name: string, color: string) => { id: string; name: string; color: string };
   addTagToCard: (cardId: string, tagName: string) => void;
@@ -250,79 +255,30 @@ async function executeAutomaticInstruction(
       ctx.tasks,
       ctx.getAIAbortSignal(),
       triggeringCardId,
-      true  // skipAlreadyProcessed for automatic runs
+      true,      // skipAlreadyProcessed for automatic runs
+      undefined, // members
+      undefined, // rejections — loaded server-side
+      undefined, // cardIds
+      true       // apply: create generated cards server-side so autoApprove is honored
     );
 
     let cardsAffected = 0;
 
     // Process results based on action type
     if (result.action === 'generate' && result.generatedCards) {
-      const targetColumnId = result.targetColumnIds[0] || channel.columns[0]?.id;
-      if (targetColumnId) {
-        for (const cardInput of result.generatedCards) {
-          // Pass the instruction ID for loop prevention
-          ctx.createCard(channel.id, targetColumnId, cardInput, 'ai', instruction.id);
-          cardsAffected++;
-        }
-      }
+      // Created server-side, already in the right bucket. Automatic runs used to write
+      // cards straight to the board regardless of autoApprove — the exact clutter the
+      // review queue was meant to prevent. They now respect it like manual runs do.
+      cardsAffected = result.applied?.cardIds.length ?? result.generatedCards.length;
     } else if (result.action === 'modify' && result.modifiedCards) {
-      for (const modified of result.modifiedCards) {
-        ctx.updateCard(modified.id, { title: modified.title });
-
-        // Process tags if present
-        if (modified.tags && modified.tags.length > 0) {
-          const existingCard = ctx.cards[modified.id];
-          for (const tagName of modified.tags) {
-            // Check if tag already exists in channel (case-insensitive match)
-            const existingTag = channel.tagDefinitions?.find(
-              t => t.name.toLowerCase() === tagName.toLowerCase()
-            );
-
-            let finalTagName: string;
-            if (existingTag) {
-              finalTagName = existingTag.name;
-            } else {
-              // Create a new tag with a default color
-              const defaultColors = ['blue', 'green', 'purple', 'orange', 'pink', 'cyan'];
-              const colorIndex = (channel.tagDefinitions?.length || 0) % defaultColors.length;
-              ctx.addTagDefinition(channel.id, tagName, defaultColors[colorIndex]);
-              finalTagName = tagName;
-            }
-
-            // Add tag to card if not already present
-            if (!existingCard?.tags?.includes(finalTagName)) {
-              ctx.addTagToCard(modified.id, finalTagName);
-            }
-          }
-        }
-
-        if (modified.properties) {
-          for (const prop of modified.properties) {
-            ctx.setCardProperty(modified.id, prop.key, prop.value, prop.displayType, prop.color);
-          }
-        }
-        if (modified.tasks) {
-          for (const task of modified.tasks) {
-            ctx.createTask(channel.id, modified.id, {
-              title: task.title,
-              description: task.description,
-            });
-          }
-        }
-        if (modified.content) {
-          ctx.addMessage(modified.id, 'ai_response', modified.content);
-        }
-        // Record that this instruction has processed this card
-        ctx.recordInstructionRun(modified.id, instruction.id);
-        cardsAffected++;
-      }
+      // Applied server-side (lib/shrooms/apply.ts) — replaying it here would double it
+      cardsAffected = result.modifiedCards.length;
     } else if (result.action === 'move' && result.movedCards) {
-      for (const move of result.movedCards) {
-        ctx.moveCard(move.cardId, move.destinationColumnId, 0);
-        // Record that this instruction has processed this card
-        ctx.recordInstructionRun(move.cardId, instruction.id);
-        cardsAffected++;
-      }
+      cardsAffected = result.movedCards.length;
+    }
+
+    if (cardsAffected > 0 && ctx.refetch) {
+      await ctx.refetch();
     }
 
     // Notify about skipped cards (automatic runs only)

@@ -313,7 +313,7 @@ function PlayerOverlay({ rec, onClose }: { rec: Recording; onClose: () => void }
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95 p-4"
       onClick={onClose}
     >
       {/* Close */}
@@ -334,8 +334,10 @@ function PlayerOverlay({ rec, onClose }: { rec: Recording; onClose: () => void }
         <video
           ref={videoRef}
           src={rec.cloudinaryUrl}
+          poster={rec.thumbnailUrl}
           autoPlay
           playsInline
+          preload="auto"
           onClick={togglePlay}
           onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
           onLoadedMetadata={(e) => { if (isFinite(e.currentTarget.duration)) setDuration(e.currentTarget.duration); }}

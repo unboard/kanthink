@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ShroomChatMessage, ShroomStep } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ShroomChatMessage, ShroomStep, ShroomEmailConfig } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
 import { ShroomPreview } from './ShroomPreview';
@@ -20,6 +20,7 @@ interface ShroomConfig {
   targetColumnName: string;
   cardCount?: number;
   steps?: ShroomConfigStep[];
+  email?: ShroomEmailConfig;
 }
 
 interface ShroomChatDrawerProps {
@@ -183,6 +184,7 @@ export function ShroomChatDrawer({
             action: existingShroom.action,
             targetColumnName: getExistingShroomTargetName(),
             cardCount: existingShroom.cardCount,
+            email: existingShroom.emailConfig,
           }
         : undefined;
 
@@ -256,6 +258,7 @@ export function ShroomChatDrawer({
             action: existingShroom.action,
             targetColumnName: getExistingShroomTargetName(),
             cardCount: existingShroom.cardCount,
+            email: existingShroom.emailConfig,
           }
         : undefined;
 
@@ -337,6 +340,9 @@ export function ShroomChatDrawer({
         cardCount: finalConfig.action === 'generate' ? (finalConfig.cardCount ?? 5) : undefined,
         conversationHistory,
         steps: resolvedSteps,
+        // Omitting email leaves whatever's already configured alone; the chat only
+        // proposes an email object when the conversation actually covered it.
+        ...(finalConfig.email ? { emailConfig: finalConfig.email } : {}),
       });
       onShroomUpdated?.();
     } else {
@@ -350,6 +356,7 @@ export function ShroomChatDrawer({
         cardCount: finalConfig.action === 'generate' ? (finalConfig.cardCount ?? 5) : undefined,
         conversationHistory,
         steps: resolvedSteps,
+        emailConfig: finalConfig.email,
       });
       onShroomCreated?.(newCard);
     }

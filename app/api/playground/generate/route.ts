@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { cards } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { cards, tasks } from '@/lib/db/schema';
+import { eq, and, asc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { getUserByokConfigWithError } from '@/lib/usage';
 import { nanoid } from 'nanoid';
@@ -296,6 +296,21 @@ export async function POST(request: Request) {
         .join('\n')
     : '(no prior messages)';
 
+  // The card's task list, as build context. Now that the playground lives as a tab on
+  // the card rather than a separate mode, the tasks sitting one tab over are usually a
+  // literal spec for what the thing should do — not passing them meant the user had to
+  // retype requirements they'd already written down.
+  const cardTasks = await db.query.tasks.findMany({
+    where: and(eq(tasks.cardId, body.cardId), eq(tasks.isArchived, false)),
+    orderBy: [asc(tasks.position)],
+    limit: 30,
+  });
+  const taskContext = cardTasks.length > 0
+    ? cardTasks
+        .map(t => `- [${t.status === 'done' ? 'x' : ' '}] ${t.title}${t.description ? `: ${t.description.slice(0, 200)}` : ''}`)
+        .join('\n')
+    : '';
+
   const attachedImages = (body.imageUrls || []).slice(0, 6); // hard cap on images per call
   const imageNote = attachedImages.length > 0
     ? `\n\nThe user attached ${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} below — use them for visual reference (style, layout, colors, content).`
@@ -370,6 +385,7 @@ export async function POST(request: Request) {
       ? `CURRENT CODE (this is your starting point — preserve it except for what the user asks to change):\n\`\`\`jsx\n${currentCode}\n\`\`\``
       : 'CURRENT CODE: (none yet — this is the first generation, design freely)',
     designNotesBlock,
+    taskContext ? `TASKS ON THIS CARD (treat these as requirements, not a to-do list to render):\n${taskContext}` : '',
     `RECENT THREAD CONTEXT:\n${threadContext}`,
     body.lastError ? `PREVIOUS ERROR:\n${body.lastError}` : '',
     `USER REQUEST:\n${body.prompt}${imageNote}${iterationReminder}`,

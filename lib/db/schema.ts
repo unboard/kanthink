@@ -36,6 +36,12 @@ export const users = sqliteTable('users', {
   byokApiKey: text('byok_api_key'),
   byokModel: text('byok_model'),
 
+  // Where the share sheet / bookmarklet drops things by default. Stored per user
+  // rather than in localStorage so the default is the same from the phone and the
+  // desktop browser. Null falls back to the Kan Bookmarks inbox.
+  saveDefaultChannelId: text('save_default_channel_id'),
+  saveDefaultColumnId: text('save_default_column_id'),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
@@ -144,6 +150,11 @@ export const columns = sqliteTable('columns', {
   isAiTarget: integer('is_ai_target', { mode: 'boolean' }).default(false),
   position: integer('position').notNull().default(0),
 
+  // Sticky sort preference. 'manual' (the default) means positions are whatever
+  // the user dragged them to. Anything else is a rule new cards have to respect,
+  // so a shared bookmark doesn't land at the bottom of a newest-first column.
+  sortOrder: text('sort_order').$type<'manual' | 'created_newest' | 'created_oldest' | 'updated_newest' | 'updated_oldest'>().default('manual'),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [
@@ -174,6 +185,11 @@ export const cards = sqliteTable('cards', {
   // Positioning: position for ordering within column, isArchived for backside
   position: integer('position').notNull().default(0),
   isArchived: integer('is_archived', { mode: 'boolean' }).default(false),
+
+  // Pending review: AI-generated cards awaiting approval. A third position bucket
+  // alongside active and archived — see lib/db/cardBuckets.ts.
+  isPendingReview: integer('is_pending_review', { mode: 'boolean' }).default(false),
+  reviewRunId: text('review_run_id'),  // groups cards produced by one shroom run
 
   // Task visibility preference
   hideCompletedTasks: integer('hide_completed_tasks', { mode: 'boolean' }).default(false),
@@ -216,6 +232,7 @@ export const cards = sqliteTable('cards', {
   index('cards_channel_idx').on(table.channelId),
   index('cards_column_idx').on(table.columnId),
   index('cards_position_idx').on(table.columnId, table.isArchived, table.position),
+  index('cards_review_idx').on(table.columnId, table.isPendingReview),
 ])
 
 // Tasks (can be linked to cards or standalone)
@@ -258,7 +275,7 @@ export const instructionCards = sqliteTable('instruction_cards', {
 
   title: text('title').notNull(),
   instructions: text('instructions').notNull(),
-  action: text('action').$type<'generate' | 'modify' | 'move'>().notNull(),
+  action: text('action').$type<'generate' | 'modify' | 'move' | 'report'>().notNull(),
   target: text('target', { mode: 'json' }).$type<InstructionTargetJson>().notNull(),
   contextColumns: text('context_columns', { mode: 'json' }).$type<ContextColumnSelectionJson>(),
 
@@ -275,6 +292,11 @@ export const instructionCards = sqliteTable('instruction_cards', {
   isGlobalResource: integer('is_global_resource', { mode: 'boolean' }).default(false),
   coverImageUrl: text('cover_image_url'),
 
+  // 'global' shrooms are offered on every board the owner has, not just channelId's.
+  // channelId is still the row's anchor (it's a NOT NULL FK) — it just stops being the
+  // only place the shroom shows up.
+  scope: text('scope').$type<'channel' | 'global'>().default('channel'),
+
   // Conversational creation/editing history
   conversationHistory: text('conversation_history', { mode: 'json' }).$type<ShroomChatMessageJson[]>(),
 
@@ -286,6 +308,13 @@ export const instructionCards = sqliteTable('instruction_cards', {
 
   // Skip review queue for generate actions
   autoApprove: integer('auto_approve').default(0),
+
+  // "Email me after this runs" — a natural-language brief, not a template.
+  // Kan composes the actual email at send time from the brief plus the run's outcome.
+  emailConfig: text('email_config', { mode: 'json' }).$type<ShroomEmailConfigJson>(),
+
+  // Generated one-liner shown on the card, distinct from the instructions sent to the model
+  summary: text('summary'),
 
   lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
   nextScheduledRun: integer('next_scheduled_run', { mode: 'timestamp' }),
@@ -439,6 +468,24 @@ export const instructionRuns = sqliteTable('instruction_runs', {
 }, (table) => [
   index('instruction_runs_channel_idx').on(table.channelId),
   index('instruction_runs_instruction_idx').on(table.instructionId),
+])
+
+// Rejected shroom output. Feeds back into that shroom's future prompts so it learns
+// what not to generate — see buildRejectionContext in lib/ai/feedbackAnalyzer.ts.
+export const cardRejections = sqliteTable('card_rejections', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  instructionCardId: text('instruction_card_id'),  // no FK — the shroom may be deleted
+  cardId: text('card_id'),                         // the (now deleted) card's id
+  cardTitle: text('card_title').notNull(),
+  reason: text('reason'),                          // RejectionReason
+  feedback: text('feedback'),
+  createdBy: text('created_by'),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('card_rejections_instruction_idx').on(table.instructionCardId, table.createdAt),
+  index('card_rejections_channel_idx').on(table.channelId, table.createdAt),
 ])
 
 // Channel chat threads (server-stored conversations with Kan at channel level)
@@ -616,6 +663,8 @@ interface ExecutionRecordJson {
   triggeredBy: 'scheduled' | 'event' | 'threshold'
   success: boolean
   cardsAffected: number
+  /** Present when the run was declined (daily cap, loop prevention) rather than attempted. */
+  skippedReason?: string
 }
 
 type AutomaticTriggerJson =
@@ -651,6 +700,13 @@ interface ShroomChatMessageJson {
   role: 'user' | 'assistant'
   content: string
   timestamp: string
+}
+
+interface ShroomEmailConfigJson {
+  enabled: boolean
+  brief: string
+  subjectHint?: string
+  skipWhenNothingHappened?: boolean
 }
 
 interface EmailBuilderMessageJson {

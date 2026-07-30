@@ -93,6 +93,11 @@ function getNavigationUrl(notification: NotificationData, tasks: Record<string, 
   }
 
   // Shroom notifications → open review drawer
+  // A report is a card — go straight to it
+  if (notification.type === 'shroom_report' && data.cardId && channelId) {
+    return `/channel/${channelId}/card/${data.cardId}`
+  }
+
   if (notification.type === 'shroom_completed' && data.instructionCardId) {
     return `/channel/${channelId}?review=${data.instructionCardId}`
   }
@@ -109,6 +114,7 @@ function getTypeLabel(notification: NotificationData): string | null {
     case 'channel_shared': return 'Shared'
     case 'channel_join_via_link': return 'Joined'
     case 'shroom_completed': return 'Shroom'
+    case 'shroom_report': return 'Report'
     case 'ai_generation_completed': return 'AI'
     case 'ai_instruction_refinement': return 'AI'
     case 'ai_clarifying_questions': return 'Insights'

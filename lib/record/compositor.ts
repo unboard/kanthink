@@ -469,7 +469,9 @@ export function startRecording(
   const mimeType = pickMimeType();
   const recorder = new MediaRecorder(combined, {
     mimeType,
-    videoBitsPerSecond: 6_000_000,
+    // ~9 Mbps keeps 1080p screen content (sharp text/edges) clean without
+    // bloating files. Scaled up from the old 720p/6 Mbps.
+    videoBitsPerSecond: 9_000_000,
     audioBitsPerSecond: 192_000,
   });
   const chunks: Blob[] = [];

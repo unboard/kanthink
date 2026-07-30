@@ -5,6 +5,8 @@ import type { Channel, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useSelectionStore } from '@/lib/selectionStore';
 import { getTagStyles } from './TagPicker';
+import { ShroomPicker } from './ShroomPicker';
+import { useShroomRun, shroomsForCard } from './ShroomRunContext';
 
 interface BulkActionsToolbarProps {
   channel: Channel;
@@ -27,8 +29,12 @@ export function BulkActionsToolbar({ channel }: BulkActionsToolbarProps) {
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
+  const [showShroomPicker, setShowShroomPicker] = useState(false);
   const moveRef = useRef<HTMLDivElement>(null);
   const tagRef = useRef<HTMLDivElement>(null);
+
+  const { shrooms } = useShroomRun();
+  const cardShrooms = shroomsForCard(shrooms);
 
   const count = selectedCardIds.size;
 
@@ -217,6 +223,28 @@ export function BulkActionsToolbar({ channel }: BulkActionsToolbarProps) {
             )}
             {isMerging ? 'Merging...' : 'Merge'}
           </button>
+          <div className="w-px h-5 bg-white/20 dark:bg-black/20 mx-1" />
+        </>
+      )}
+
+      {/* Run a shroom on just the selected cards */}
+      {cardShrooms.length > 0 && (
+        <>
+          <button
+            onClick={() => setShowShroomPicker(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white/10 dark:hover:bg-black/10 transition-colors"
+            title={`Run a shroom on ${count} selected card${count === 1 ? '' : 's'}`}
+          >
+            <span className="text-sm leading-none">🍄</span>
+            Run shroom
+          </button>
+          <ShroomPicker
+            isOpen={showShroomPicker}
+            cardIds={Array.from(selectedCardIds)}
+            cardScoped
+            subtitle={`${count} selected card${count === 1 ? '' : 's'}`}
+            onClose={() => { setShowShroomPicker(false); clearSelection(); }}
+          />
           <div className="w-px h-5 bg-white/20 dark:bg-black/20 mx-1" />
         </>
       )}

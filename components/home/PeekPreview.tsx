@@ -180,7 +180,7 @@ function ChannelPeekBody({ channel, cards }: { channel: Channel; cards: Record<s
               <div className="space-y-1">
                 {colCards.slice(0, 6).map((c) => (
                   <div key={c.id} className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1.5">
-                    <p className="line-clamp-2 text-[11px] leading-snug text-neutral-300">{c.title}</p>
+                    <p className="line-clamp-2 text-[11px] leading-snug text-neutral-300 wrap-anywhere">{c.title}</p>
                   </div>
                 ))}
                 {colCards.length > 6 && (

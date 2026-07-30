@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import type { Channel, ChannelStatus, InstructionCard, Card, Task, TaskStatus } from '@/lib/types';
+import type { Channel, ChannelStatus, InstructionCard, InstructionAction, Card, Task, TaskStatus } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Button, Input, Textarea, Drawer } from '@/components/ui';
 import { InstructionGuide, type GuideResult } from '@/components/guide/InstructionGuide';
@@ -21,7 +21,7 @@ interface ChannelExport {
   instructionCards: Array<{
     title: string;
     instructions: string;
-    action: 'generate' | 'modify' | 'move';
+    action: InstructionAction;
     targetColumnName: string;
     contextColumnNames?: string[];
     runMode: 'manual' | 'automatic';

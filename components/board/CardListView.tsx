@@ -230,7 +230,7 @@ export function CardListView({ channelId }: CardListViewProps) {
             >
               {/* Mobile layout */}
               <div className="sm:hidden px-4 py-3">
-                <div className="font-medium text-neutral-900 dark:text-white text-sm leading-snug">
+                <div className="font-medium text-neutral-900 dark:text-white text-sm leading-snug wrap-anywhere">
                   {card.title}
                 </div>
                 {card.summary && (

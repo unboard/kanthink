@@ -2,10 +2,25 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope, ScheduleInterval, EventTrigger, ScheduledTrigger } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { calculateNextScheduledRun } from '@/lib/automationSafeguards';
+import { REJECTION_REASONS } from '@/lib/constants';
 import { Drawer } from '@/components/ui/Drawer';
 import { Button, Textarea } from '@/components/ui';
+
+const SKIP_LABELS: Record<string, string> = {
+  daily_cap_reached: 'Skipped — daily limit reached',
+  loop_prevention: 'Skipped — card was made by this shroom',
+  cooldown_active: 'Skipped — ran too recently',
+  not_enabled: 'Skipped — not set to run automatically',
+};
+
+interface ShroomLearnings {
+  total: number;
+  byReason: Record<string, number>;
+  rejections: { id: string; cardTitle: string; reason?: string | null; feedback?: string | null; createdAt?: string }[];
+}
 
 interface InstructionDetailDrawerV2Props {
   instructionCard: InstructionCard | null;
@@ -52,21 +67,22 @@ export function InstructionDetailDrawerV2({
   const [contextColumnIds, setContextColumnIds] = useState<ID[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showConversationHistory, setShowConversationHistory] = useState(false);
+  const [showLearnings, setShowLearnings] = useState(false);
+  const [learnings, setLearnings] = useState<ShroomLearnings | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [coverImageUrl, setCoverImageUrl] = useState<string | undefined>();
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [showImagePrompt, setShowImagePrompt] = useState(false);
   const [imagePromptText, setImagePromptText] = useState('');
 
-  // Automatic mode state (kept but hidden in advanced)
-  const [triggers, setTriggers] = useState<AutomaticTrigger[]>([]);
+  // Cooldown / daily cap / loop prevention. Not surfaced in the UI — the defaults are
+  // the guard rails, and the same values apply whether a run comes from cron, a card
+  // landing, or the Run button.
   const [safeguards, setSafeguards] = useState<AutomaticSafeguards>({
     cooldownMinutes: 5,
     dailyCap: 50,
     preventLoops: true,
   });
-  const [isEnabled, setIsEnabled] = useState(false);
-
   // Scope state
   const [scope, setScope] = useState<InstructionScope>('channel');
 
@@ -78,10 +94,39 @@ export function InstructionDetailDrawerV2({
   const [autoApprove, setAutoApprove] = useState(false);
   const allInstructionCards = useStore((s) => s.instructionCards);
 
+  // When this runs — the three modes cover everything the engine can actually do
+  // unattended. Threshold and reaction triggers exist in the type but have no
+  // server-side runner, so they'd be a promise the app can't keep.
+  const [runWhen, setRunWhen] = useState<'manual' | 'card' | 'schedule'>('manual');
+  const [watchColumnId, setWatchColumnId] = useState<ID>('');
+  const [scheduleInterval, setScheduleInterval] = useState<ScheduleInterval>('daily');
+  const [scheduleTime, setScheduleTime] = useState('09:00');
+
+  // Email-after-run state
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailBrief, setEmailBrief] = useState('');
+  const [emailSkipWhenEmpty, setEmailSkipWhenEmpty] = useState(true);
+  const [testEmailState, setTestEmailState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [testEmailError, setTestEmailError] = useState<string | null>(null);
+
   const isSyncingRef = useRef(false);
   const instructionCardId = instructionCard?.id;
 
   // Sync form state from props
+  // Load what this shroom has learned from rejections
+  useEffect(() => {
+    if (!isOpen || !instructionCard) {
+      setLearnings(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/channels/${channel.id}/instructions/${instructionCard.id}/learnings`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (!cancelled && data) setLearnings(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isOpen, instructionCard, channel.id]);
+
   useEffect(() => {
     if (instructionCard) {
       isSyncingRef.current = true;
@@ -108,14 +153,41 @@ export function InstructionDetailDrawerV2({
         setContextColumnIds(ctx.columnIds);
       }
 
-      setTriggers(instructionCard.triggers || []);
       setSafeguards(instructionCard.safeguards || { cooldownMinutes: 5, dailyCap: 50, preventLoops: true });
-      setIsEnabled(instructionCard.isEnabled || false);
       setScope(instructionCard.scope || 'channel');
       setIsGlobalResource(instructionCard.isGlobalResource || false);
       setCoverImageUrl(instructionCard.coverImageUrl);
       setNextInstructionId(instructionCard.nextInstructionId ?? undefined);
       setAutoApprove(instructionCard.autoApprove || false);
+
+      const saved = instructionCard.triggers ?? [];
+      const event = saved.find((t) => t.type === 'event') as EventTrigger | undefined;
+      const scheduled = saved.find((t) => t.type === 'scheduled') as ScheduledTrigger | undefined;
+      if (instructionCard.isEnabled && event) {
+        setRunWhen('card');
+        setWatchColumnId(event.columnId);
+      } else if (instructionCard.isEnabled && scheduled) {
+        setRunWhen('schedule');
+        setScheduleInterval(scheduled.interval);
+        setScheduleTime(scheduled.specificTime || '09:00');
+      } else {
+        setRunWhen('manual');
+      }
+      if (!event) {
+        // Default the watched column to whatever the shroom already acts on
+        const t = instructionCard.target;
+        setWatchColumnId(
+          t.type === 'column' ? t.columnId
+            : t.type === 'columns' ? (t.columnIds[0] ?? channel.columns[0]?.id ?? '')
+            : channel.columns[0]?.id ?? ''
+        );
+      }
+
+      setEmailEnabled(instructionCard.emailConfig?.enabled ?? false);
+      setEmailBrief(instructionCard.emailConfig?.brief ?? '');
+      setEmailSkipWhenEmpty(instructionCard.emailConfig?.skipWhenNothingHappened !== false);
+      setTestEmailState('idle');
+      setTestEmailError(null);
 
       setTimeout(() => { isSyncingRef.current = false; }, 0);
     }
@@ -148,23 +220,71 @@ export function InstructionDetailDrawerV2({
       ? null
       : { type: 'columns', columnIds: contextColumnIds };
 
+    // "When a card lands in X" means both ways a card can arrive — typed in, or dragged
+    // over from another column. Two triggers, one idea, so the user never has to know
+    // the difference.
+    const nextTriggers: AutomaticTrigger[] =
+      runWhen === 'card' && watchColumnId
+        ? [
+            { type: 'event', eventType: 'card_created_in', columnId: watchColumnId },
+            { type: 'event', eventType: 'card_moved_to', columnId: watchColumnId },
+          ]
+        : runWhen === 'schedule'
+          ? [{ type: 'scheduled', interval: scheduleInterval, specificTime: scheduleTime }]
+          : [];
+
+    const nextEnabled = nextTriggers.length > 0;
+
     updateInstructionCard(instructionCard.id, {
       title,
       instructions,
       action,
       target,
       contextColumns,
-      runMode: isEnabled ? 'automatic' : 'manual',
+      runMode: nextEnabled ? 'automatic' : 'manual',
       cardCount: action === 'generate' ? cardCount : undefined,
-      triggers,
+      triggers: nextTriggers,
       safeguards,
-      isEnabled,
+      isEnabled: nextEnabled,
+      // Cron only picks up a shroom whose next run is due, so a schedule that never gets
+      // a first due-date would sit there looking enabled and never fire.
+      nextScheduledRun:
+        runWhen === 'schedule'
+          ? calculateNextScheduledRun(scheduleInterval, scheduleTime).toISOString()
+          : undefined,
       scope,
       isGlobalResource,
       coverImageUrl,
       nextInstructionId: nextInstructionId || undefined,
       autoApprove,
+      // Untouched shrooms shouldn't carry an empty email object around
+      emailConfig: emailEnabled || emailBrief.trim()
+        ? { enabled: emailEnabled, brief: emailBrief, skipWhenNothingHappened: emailSkipWhenEmpty }
+        : undefined,
     });
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!instructionCard || testEmailState === 'sending') return;
+    handleSave();
+    setTestEmailState('sending');
+    setTestEmailError(null);
+    try {
+      const res = await fetch(
+        `/api/channels/${channel.id}/instructions/${instructionCard.id}/test-email`,
+        { method: 'POST' }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setTestEmailError(data.error || 'Could not send the test email.');
+        setTestEmailState('error');
+        return;
+      }
+      setTestEmailState('sent');
+    } catch {
+      setTestEmailError('Could not reach the server.');
+      setTestEmailState('error');
+    }
   };
 
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -240,6 +360,15 @@ export function InstructionDetailDrawerV2({
         </svg>
       ),
       description: 'Move cards between columns',
+    },
+    report: {
+      label: 'Report',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+      description: 'Summarize what is happening, without changing cards',
     },
   };
 
@@ -459,13 +588,15 @@ export function InstructionDetailDrawerV2({
             placeholder="Action name..."
             className="text-lg font-semibold bg-transparent border-none outline-none text-neutral-900 dark:text-white placeholder:text-neutral-400 w-full"
           />
-          {/* Action Type - Button Group */}
-          <div className="flex gap-2">
+          {/* Action Type - Button Group. Four actions don't fit a phone width, so the row
+              scrolls sideways; the negative margin lets it bleed to the drawer edges so it
+              reads as scrollable rather than clipped. */}
+          <div className="flex gap-2 overflow-x-auto -mx-6 px-6 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {(Object.entries(actionLabels) as [InstructionAction, typeof actionLabels['generate']][]).map(([key, { label, icon }]) => (
               <button
                 key={key}
                 onClick={() => setAction(key)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`flex flex-shrink-0 items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
                   action === key
                     ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
                     : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700'
@@ -608,6 +739,99 @@ export function InstructionDetailDrawerV2({
             </div>
           </div>
 
+          {/* When this runs. Three options, phrased as sentences, because "does this
+              happen on its own?" is the first thing anyone wants to know about an
+              automation — and it used to be a checkbox that did nothing. */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 mb-3">
+              When this runs
+            </h3>
+            <div className="space-y-2">
+              {([
+                { key: 'manual', label: 'Only when I run it' },
+                { key: 'card', label: 'When a card lands in' },
+                { key: 'schedule', label: 'On a schedule' },
+              ] as const).map(({ key, label }) => {
+                const selected = runWhen === key;
+                return (
+                  <div
+                    key={key}
+                    className={`rounded-xl border transition-colors ${
+                      selected
+                        ? 'border-violet-300 bg-violet-50/60 dark:border-violet-700 dark:bg-violet-950/20'
+                        : 'border-neutral-200 dark:border-neutral-800'
+                    }`}
+                  >
+                    <button
+                      onClick={() => { setRunWhen(key); setTimeout(() => handleSave(), 0); }}
+                      className="w-full flex items-center gap-3 px-3.5 py-3 text-left"
+                    >
+                      <span
+                        className={`flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                          selected
+                            ? 'border-violet-500'
+                            : 'border-neutral-300 dark:border-neutral-600'
+                        }`}
+                      >
+                        {selected && <span className="w-2 h-2 rounded-full bg-violet-500" />}
+                      </span>
+                      <span className={`text-sm ${selected ? 'font-medium text-neutral-900 dark:text-white' : 'text-neutral-600 dark:text-neutral-400'}`}>
+                        {label}
+                      </span>
+                    </button>
+
+                    {selected && key === 'card' && (
+                      <div className="px-3.5 pb-3 pl-10">
+                        <select
+                          value={watchColumnId}
+                          onChange={(e) => { setWatchColumnId(e.target.value); setTimeout(() => handleSave(), 0); }}
+                          className="w-full bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-violet-500"
+                        >
+                          {channel.columns.map((col) => (
+                            <option key={col.id} value={col.id}>{col.name}</option>
+                          ))}
+                        </select>
+                        <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                          Runs whether or not you have Kanthink open. Cards this shroom
+                          created itself won&apos;t set it off again.
+                        </p>
+                      </div>
+                    )}
+
+                    {selected && key === 'schedule' && (
+                      <div className="px-3.5 pb-3 pl-10 flex flex-wrap items-center gap-2">
+                        <select
+                          value={scheduleInterval}
+                          onChange={(e) => { setScheduleInterval(e.target.value as ScheduleInterval); setTimeout(() => handleSave(), 0); }}
+                          className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-violet-500"
+                        >
+                          <option value="hourly">Every hour</option>
+                          <option value="every4hours">Every 4 hours</option>
+                          <option value="daily">Every day</option>
+                          <option value="weekly">Every week</option>
+                        </select>
+                        {(scheduleInterval === 'daily' || scheduleInterval === 'weekly') && (
+                          <>
+                            <span className="text-sm text-neutral-500">at</span>
+                            <input
+                              type="time"
+                              value={scheduleTime}
+                              onChange={(e) => { setScheduleTime(e.target.value); setTimeout(() => handleSave(), 0); }}
+                              className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-violet-500"
+                            />
+                          </>
+                        )}
+                        <p className="w-full mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                          Runs on the server, so it happens even with every tab closed.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Conversation History - Collapsible */}
           {instructionCard.conversationHistory && instructionCard.conversationHistory.length > 0 && (
             <div className="border-t border-neutral-100 dark:border-neutral-800 pt-4">
@@ -725,25 +949,9 @@ export function InstructionDetailDrawerV2({
                 </div>
 
                 {/* Automatic execution toggle */}
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isEnabled}
-                    onChange={(e) => {
-                      setIsEnabled(e.target.checked);
-                      setTimeout(() => handleSave(), 0);
-                    }}
-                    className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                      Run automatically
-                    </span>
-                    <p className="text-xs text-neutral-500">
-                      Execute this action on a schedule or when conditions are met
-                    </p>
-                  </div>
-                </label>
+                {/* "Run automatically" used to live here as a checkbox with no trigger
+                    editor behind it, so ticking it did nothing. Scheduling and card
+                    triggers are now the "When this runs" control above. */}
 
                 {/* Auto-approve: skip review queue for generate shrooms */}
                 {action === 'generate' && (
@@ -821,6 +1029,175 @@ export function InstructionDetailDrawerV2({
               </div>
             )}
           </div>
+
+          {/* Email after run. The brief is prose, not a template — Kan writes the actual
+              email per run from this plus what the run found. */}
+          <div className="border-t border-neutral-100 dark:border-neutral-800 px-6 py-4 space-y-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={emailEnabled}
+                onChange={(e) => { setEmailEnabled(e.target.checked); }}
+                onBlur={handleSave}
+                className="mt-0.5 w-4 h-4 rounded border-neutral-300 dark:border-neutral-600 text-violet-600 focus:ring-violet-500"
+              />
+              <span className="flex-1">
+                <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                  Email me after this runs
+                </span>
+                <span className="block text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  Goes to the board owner&apos;s account email.
+                </span>
+              </span>
+            </label>
+
+            {emailEnabled && (
+              <div className="pl-7 space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1.5">
+                    What should the email say?
+                  </label>
+                  <Textarea
+                    value={emailBrief}
+                    onChange={(e) => setEmailBrief(e.target.value)}
+                    onBlur={handleSave}
+                    placeholder="e.g. Short summary of what came in. Lead with anything urgent, then up to five bullets. Casual tone, under 150 words."
+                    rows={3}
+                    className="text-sm"
+                  />
+                  <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+                    Describe the email, don&apos;t write it — Kan composes each one from this
+                    plus what the run actually found.
+                  </p>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={emailSkipWhenEmpty}
+                    onChange={(e) => { setEmailSkipWhenEmpty(e.target.checked); }}
+                    onBlur={handleSave}
+                    className="w-3.5 h-3.5 rounded border-neutral-300 dark:border-neutral-600 text-violet-600 focus:ring-violet-500"
+                  />
+                  <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                    Skip the email when a run changes nothing
+                  </span>
+                </label>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleSendTestEmail}
+                    disabled={testEmailState === 'sending' || !emailBrief.trim()}
+                    className="px-3 py-1.5 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-xs font-medium hover:bg-neutral-200 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {testEmailState === 'sending' ? 'Sending…' : 'Send me a test'}
+                  </button>
+                  {testEmailState === 'sent' && (
+                    <span className="text-xs text-green-600 dark:text-green-400">
+                      Sent — check your inbox
+                    </span>
+                  )}
+                  {testEmailState === 'error' && testEmailError && (
+                    <span className="text-xs text-red-500 dark:text-red-400">{testEmailError}</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Recent activity. An automatic shroom is invisible by nature — if it declines
+              to run (daily cap, loop prevention) the only other evidence is a server log,
+              which makes "not running" and "broken" look identical from here. */}
+          {(instructionCard.executionHistory?.length ?? 0) > 0 && (
+            <div className="border-t border-neutral-100 dark:border-neutral-800 px-6 py-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 mb-3">
+                Recent activity
+              </h3>
+              <ul className="space-y-1.5">
+                {instructionCard.executionHistory!.slice(0, 6).map((run, i) => (
+                  <li key={`${run.timestamp}-${i}`} className="flex items-baseline gap-2 text-xs">
+                    <span
+                      className={`mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        run.skippedReason
+                          ? 'bg-amber-400'
+                          : run.success
+                            ? 'bg-green-500'
+                            : 'bg-red-400'
+                      }`}
+                    />
+                    <span className="text-neutral-600 dark:text-neutral-400 flex-1">
+                      {run.skippedReason
+                        ? SKIP_LABELS[run.skippedReason] ?? 'Skipped'
+                        : run.success
+                          ? `Ran on ${run.cardsAffected} card${run.cardsAffected === 1 ? '' : 's'}`
+                          : 'Failed'}
+                      <span className="text-neutral-400 dark:text-neutral-500"> · {run.triggeredBy}</span>
+                    </span>
+                    <span className="text-neutral-400 dark:text-neutral-500 flex-shrink-0">
+                      {new Date(run.timestamp).toLocaleString(undefined, {
+                        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                      })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* What this shroom has learned from rejections — the same rows that get
+              injected into its prompts, so the feedback loop is visible. */}
+          {learnings && learnings.total > 0 && (
+            <div className="border-t border-neutral-100 dark:border-neutral-800">
+              <button
+                onClick={() => setShowLearnings(!showLearnings)}
+                className="w-full flex items-center gap-2 px-6 py-4 text-left"
+              >
+                <svg
+                  className={`w-4 h-4 transition-transform ${showLearnings ? 'rotate-90' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 flex-1">
+                  What this shroom has learned
+                </span>
+                <span className="text-xs text-neutral-400">{learnings.total}</span>
+              </button>
+
+              {showLearnings && (
+                <div className="px-6 pb-5 space-y-3">
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Cards you rejected. This history goes into the shroom&apos;s prompt so it
+                    stops producing more like them.
+                  </p>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(learnings.byReason).map(([reason, count]) => (
+                      <span
+                        key={reason}
+                        className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300"
+                      >
+                        {REJECTION_REASONS.find((r) => r.key === reason)?.label ?? 'No reason given'} · {count}
+                      </span>
+                    ))}
+                  </div>
+
+                  <ul className="space-y-2">
+                    {learnings.rejections.slice(0, 10).map((r) => (
+                      <li key={r.id} className="text-xs">
+                        <span className="text-neutral-700 dark:text-neutral-300 line-through">{r.cardTitle}</span>
+                        {r.feedback && (
+                          <span className="block text-neutral-500 dark:text-neutral-400 mt-0.5">
+                            &ldquo;{r.feedback}&rdquo;
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

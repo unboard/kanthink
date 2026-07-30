@@ -4,19 +4,27 @@ import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 
 interface ShroomConfigStep {
-  action: 'generate' | 'modify' | 'move';
+  action: 'generate' | 'modify' | 'move' | 'report';
   targetColumnName: string;
   description: string;
   cardCount?: number;
 }
 
+interface ShroomConfigEmail {
+  enabled: boolean;
+  brief: string;
+  subjectHint?: string;
+  skipWhenNothingHappened?: boolean;
+}
+
 interface ShroomConfig {
   title: string;
   instructions: string;
-  action: 'generate' | 'modify' | 'move';
+  action: 'generate' | 'modify' | 'move' | 'report';
   targetColumnName: string;
   cardCount?: number;
   steps?: ShroomConfigStep[];
+  email?: ShroomConfigEmail;
 }
 
 interface InstructionChatRequest {
@@ -56,7 +64,10 @@ function buildPrompt(
 - Action: ${existingShroomConfig.action}
 - Instructions: "${existingShroomConfig.instructions}"
 - Target column: "${existingShroomConfig.targetColumnName}"
-${existingShroomConfig.cardCount ? `- Card count: ${existingShroomConfig.cardCount}` : ''}`
+${existingShroomConfig.cardCount ? `- Card count: ${existingShroomConfig.cardCount}` : ''}
+${existingShroomConfig.email?.enabled
+  ? `- Emails the owner after each run. Current brief: "${existingShroomConfig.email.brief}"`
+  : '- Does not email after running'}`
     : '';
 
   const systemPrompt = `You are Kan, a helpful AI assistant for configuring "shrooms" — AI-powered automations for a Kanban board.
@@ -70,10 +81,20 @@ Channel context:
 
 A shroom has these fields:
 - **title**: A short, descriptive name (e.g., "Generate article ideas", "Review and promote best idea")
-- **action**: The primary action — one of "generate" (create new cards), "modify" (update existing cards), or "move" (move cards between columns)
+- **action**: The primary action — one of "generate" (create new cards), "modify" (update existing cards), "move" (move cards between columns), or "report" (read the board and write a single summary card, changing nothing else)
 - **instructions**: Detailed instructions for the AI to follow when running this shroom. This is the core of the shroom — the AI reads these instructions and acts accordingly.
 - **targetColumnName**: The SOURCE column — where the AI looks for cards. For "generate", cards are added here. For "modify", cards in this column are updated. For "move", cards in this column are analyzed and may be moved elsewhere. The destination for move is determined by the instructions, not targetColumnName. Must be one of the available columns.
 - **cardCount**: Number of cards to generate (only for generate action, typically 3-5)
+- **email**: Optional. If set, the shroom emails the board owner after every run.
+
+**The email field.** Shrooms can email the owner once a run finishes. This is off unless the user asks for it. What you save is a *brief* — a plain-English description of what the email should say and how — not a fixed template. Kan writes the actual email at send time from the brief plus what the run really did, so a quiet run and a busy one produce different emails.
+
+- **enabled**: true when the user wants the email
+- **brief**: what to cover, tone, length, what to lead with. Write this in the user's own terms, specific enough to act on. Good: "Summarise the new cards in one short paragraph, then bullet anything tagged urgent. Casual tone, under 150 words." Weak: "Send me a summary."
+- **subjectHint**: optional steer on the subject line, only if the user expressed one
+- **skipWhenNothingHappened**: default true — don't email when the run changed nothing. Set false only if the user explicitly wants an email every time.
+
+Ask about email when the user's description implies being told about something ("let me know", "send me", "so I don't have to check", "every morning") — and otherwise only when the rest of the config is settled, as a brief one-line offer. Never ask about recipients: mail always goes to the board owner's own account email, and there is no way to send it elsewhere. If asked, say so plainly.
 
 **Multi-step shrooms**: A single shroom can combine multiple actions in sequence. For example, a user might want to "review all cards in Ideas, add feedback as a note, then move the best one to This Week." This is a multi-step shroom. For these:
 - Set the **action** to the primary/final action (e.g., "move" if the end goal is moving cards)
@@ -92,7 +113,12 @@ When you're ready to propose a configuration, include it in your response using 
 
 For a simple single-action shroom:
 [SHROOM_CONFIG]
-{"title": "...", "instructions": "...", "action": "generate|modify|move", "targetColumnName": "...", "cardCount": 5}
+{"title": "...", "instructions": "...", "action": "generate|modify|move|report", "targetColumnName": "...", "cardCount": 5}
+[/SHROOM_CONFIG]
+
+For a shroom that emails the owner after it runs:
+[SHROOM_CONFIG]
+{"title": "Morning inbox digest", "instructions": "Read every card added to Inbox since the last run. Summarise what came in and flag anything that looks urgent or blocked.", "action": "report", "targetColumnName": "Inbox", "email": {"enabled": true, "brief": "Short morning summary of what landed overnight. Open with a one-line headline, then up to five bullets. Lead with anything urgent. Casual tone, under 150 words.", "skipWhenNothingHappened": true}}
 [/SHROOM_CONFIG]
 
 For a multi-step shroom (e.g., review cards in Ideas, add a note, then move the best to This Week):
@@ -108,7 +134,9 @@ Important guidelines:
 - If the user gives a clear description, propose the config right away
 - The targetColumnName must match one of the available column names exactly
 - For "generate" action, always include cardCount (default 5)
-- For "modify" or "move" actions, don't include cardCount
+- For "modify", "move" or "report" actions, don't include cardCount
+- For "report", targetColumnName is the column to read and summarise
+- Only include the "email" object when the user actually wants an email — omit it otherwise
 - Don't duplicate existing shrooms — suggest variations if similar ones exist
 - Keep instructions specific and actionable
 - When proposing, also include a brief conversational message explaining what it does
@@ -152,6 +180,24 @@ function extractInstructions(response: string): string | null {
   return null;
 }
 
+/**
+ * An email with no brief has nothing to compose from, so treat it as absent rather
+ * than saving a shroom that would silently fail to send.
+ */
+function parseEmail(raw: unknown): ShroomConfigEmail | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const e = raw as Record<string, unknown>;
+  const brief = typeof e.brief === 'string' ? e.brief.trim() : '';
+  if (!brief) return undefined;
+
+  return {
+    enabled: e.enabled !== false,
+    brief,
+    subjectHint: typeof e.subjectHint === 'string' && e.subjectHint.trim() ? e.subjectHint.trim() : undefined,
+    skipWhenNothingHappened: e.skipWhenNothingHappened !== false,
+  };
+}
+
 function extractShroomConfig(response: string): ShroomConfig | null {
   const match = response.match(/\[SHROOM_CONFIG\]([\s\S]*?)\[\/SHROOM_CONFIG\]/);
   if (match) {
@@ -166,6 +212,7 @@ function extractShroomConfig(response: string): ShroomConfig | null {
           targetColumnName: parsed.targetColumnName,
           cardCount: parsed.action === 'generate' ? (parsed.cardCount ?? 5) : undefined,
           steps: Array.isArray(parsed.steps) ? parsed.steps : undefined,
+          email: parseEmail(parsed.email),
         };
       }
     } catch {

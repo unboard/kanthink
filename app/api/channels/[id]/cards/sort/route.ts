@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { cards } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { inBucket } from '@/lib/db/cardBuckets'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -36,7 +37,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       )
     }
 
-    // Update each card's position based on its index in the array
+    // Update each card's position based on its index in the array.
+    // Scoped to the active bucket so a stray archived or pending-review id in the
+    // list can't be given an active position number.
     for (let i = 0; i < cardIds.length; i++) {
       await db
         .update(cards)
@@ -45,7 +48,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           and(
             eq(cards.id, cardIds[i]),
             eq(cards.channelId, channelId),
-            eq(cards.columnId, columnId)
+            eq(cards.columnId, columnId),
+            inBucket('active')
           )
         )
     }

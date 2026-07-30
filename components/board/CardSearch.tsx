@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import type { Card, ID } from '@/lib/types';
 
-type ResultType = 'card' | 'channel' | 'task';
+type ResultType = 'card' | 'channel' | 'task' | 'shroom';
 
 interface SearchResult {
   type: ResultType;
@@ -43,6 +43,7 @@ export function CardSearch() {
   const cards = useStore((s) => s.cards);
   const channels = useStore((s) => s.channels);
   const tasks = useStore((s) => s.tasks);
+  const instructionCards = useStore((s) => s.instructionCards);
 
   // Listen for external open requests (e.g. from nav search button)
   useEffect(() => {
@@ -145,6 +146,30 @@ export function CardSearch() {
           }
         });
 
+        // Search shrooms across every channel, so one can be run from anywhere
+        Object.values(channels).forEach((channel) => {
+          (channel.instructionCardIds ?? []).forEach((id) => {
+            const shroom = instructionCards[id];
+            if (!shroom) return;
+            const title = shroom.title.toLowerCase();
+            let score = 0;
+            if (title === q) score = 95;
+            else if (title.startsWith(q)) score = 75;
+            else if (title.includes(q)) score = 55;
+            else if (shroom.instructions?.toLowerCase().includes(q)) score = 25;
+            if (score > 0) {
+              all.push({
+                type: 'shroom',
+                id: shroom.id,
+                title: shroom.title,
+                subtitle: `${channel.name} · ${shroom.action}`,
+                score,
+                channelId: channel.id,
+              });
+            }
+          });
+        });
+
         return all.sort((a, b) => b.score - a.score).slice(0, 12);
       })()
     : [];
@@ -153,10 +178,15 @@ export function CardSearch() {
     setIsOpen(false);
     if (result.type === 'channel') {
       router.push(`/channel/${result.id}`);
+    } else if (result.type === 'shroom' && result.channelId) {
+      // Reuses the URL contract ShroomsPanel already speaks — the board picks this up
+      // and runs the shroom on arrival.
+      router.push(`/channel/${result.channelId}?shrooms=open&run=${result.id}`);
     } else if (result.type === 'card' && result.channelId) {
-      router.push(`/channel/${result.channelId}`);
+      // Open the card, not just its channel
+      router.push(`/channel/${result.channelId}/card/${result.id}`);
     } else if (result.type === 'task' && result.channelId) {
-      router.push(`/channel/${result.channelId}`);
+      router.push(`/channel/${result.channelId}?task=${result.id}`);
     }
   }, [router]);
 
@@ -233,6 +263,9 @@ export function CardSearch() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                   </svg>
+                )}
+                {result.type === 'shroom' && (
+                  <span className="text-sm leading-none">🍄</span>
                 )}
               </div>
               <div className="flex-1 min-w-0">

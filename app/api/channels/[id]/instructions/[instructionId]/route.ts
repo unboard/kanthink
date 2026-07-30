@@ -4,6 +4,9 @@ import { db } from '@/lib/db'
 import { instructionCards } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { ensureSchema } from '@/lib/db/ensure-schema'
+import { generateShroomSummary } from '@/lib/shrooms/generateSummary'
+import { afterResponse } from '@/lib/afterResponse'
 
 interface RouteParams {
   params: Promise<{ id: string; instructionId: string }>
@@ -24,6 +27,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'edit')
 
     // Verify instruction belongs to this channel
@@ -62,6 +66,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       steps,
       coverImageUrl,
       nextInstructionId,
+      scope,
+      emailConfig,
+      summary,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -89,6 +96,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (steps !== undefined) updates.steps = steps
     if (coverImageUrl !== undefined) updates.coverImageUrl = coverImageUrl
     if (nextInstructionId !== undefined) updates.nextInstructionId = nextInstructionId || null
+    if (scope !== undefined) updates.scope = scope === 'global' ? 'global' : 'channel'
+    if (emailConfig !== undefined) updates.emailConfig = emailConfig || null
+    if (summary !== undefined) updates.summary = summary || null
     if (body.autoApprove !== undefined) updates.autoApprove = body.autoApprove ? 1 : 0
 
     // Handle isGlobalResource toggle (admin only)
@@ -104,6 +114,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const updated = await db.query.instructionCards.findFirst({
       where: eq(instructionCards.id, instructionId),
     })
+
+    // The description is derived from the instructions, so it goes stale the moment they
+    // change. Skipped when the caller set a summary itself.
+    const instructionsChanged =
+      instructions !== undefined && instructions !== instruction.instructions
+    if (summary === undefined && (instructionsChanged || !instruction.summary)) {
+      afterResponse(() => generateShroomSummary(instructionId))
+    }
 
     return NextResponse.json({
       instructionCard: {
@@ -139,6 +157,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'edit')
 
     // Verify instruction belongs to this channel

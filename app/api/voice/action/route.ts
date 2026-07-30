@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
+import { runEventTriggers } from '@/lib/shrooms/runEventTriggers';
+import { afterResponse } from '@/lib/afterResponse';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { cards, channels, columns, tasks } from '@/lib/db/schema';
 import { eq, and, desc, asc, gt, like, sql } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
+import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
 
 /** Find a task by ID, or fallback to title search if ID doesn't match */
 async function findTask(taskId: string) {
@@ -150,7 +153,7 @@ export async function POST(request: Request) {
         if (!col) return NextResponse.json({ result: `Column "${args.columnName}" not found` });
 
         const existing = await db.query.cards.findMany({
-          where: and(eq(cards.columnId, col.id), eq(cards.isArchived, false)),
+          where: inColumnBucket(col.id, 'active'),
           orderBy: [desc(cards.position)],
           limit: 1,
         });
@@ -165,6 +168,18 @@ export async function POST(request: Request) {
           source: 'ai', position: pos, createdAt: now, updatedAt: now,
         });
         const channelInfo = await db.query.channels.findFirst({ where: eq(channels.id, cardChannelId), columns: { name: true } });
+
+        // Same as the cards route and the bookmark inbox: a card arriving by voice should
+        // wake a shroom watching that column too.
+        afterResponse(() =>
+          runEventTriggers({
+            channelId: cardChannelId,
+            columnId: col.id,
+            eventType: 'card_created_in',
+            cardId: id,
+          })
+        );
+
         return NextResponse.json({
           result: `Created card "${args.title}" in ${col.name}`,
           cardId: id,
@@ -240,14 +255,14 @@ export async function POST(request: Request) {
         if (args.query) {
           // Search by keyword
           results = await db.query.cards.findMany({
-            where: and(eq(cards.channelId, chId), eq(cards.isArchived, false), like(cards.title, `%${args.query}%`)),
+            where: and(eq(cards.channelId, chId), inBucket('active'), like(cards.title, `%${args.query}%`)),
             orderBy: [desc(cards.updatedAt)],
             limit,
           });
         } else {
           // Most recent cards
           results = await db.query.cards.findMany({
-            where: and(eq(cards.channelId, chId), eq(cards.isArchived, false)),
+            where: and(eq(cards.channelId, chId), inBucket('active')),
             orderBy: [desc(cards.updatedAt)],
             limit,
           });
@@ -382,29 +397,56 @@ export async function POST(request: Request) {
       case 'archive_card': {
         const card = await findCard(args.cardId);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
-        await db.update(cards).set({ isArchived: true, updatedAt: new Date() }).where(eq(cards.id, card.id));
+        if (card.isPendingReview) {
+          return NextResponse.json({ result: `Card "${card.title}" is awaiting review — approve or reject it on the board first`, cardId: card.id });
+        }
+        if (card.isArchived) {
+          return NextResponse.json({ result: `Card "${card.title}" is already archived`, cardId: card.id });
+        }
+        // Move it to the end of the archived bucket and close the gap it leaves behind,
+        // so the active bucket keeps contiguous positions.
+        const maxPosResult = await db
+          .select({ maxPos: sql<number>`COALESCE(MAX(${cards.position}), -1)` })
+          .from(cards)
+          .where(inColumnBucket(card.columnId, 'archived'));
+        const nextPosition = (maxPosResult[0]?.maxPos ?? -1) + 1;
+        await db.update(cards).set({ isArchived: true, position: nextPosition, updatedAt: new Date() }).where(eq(cards.id, card.id));
+        await db
+          .update(cards)
+          .set({ position: sql`${cards.position} - 1` })
+          .where(and(inColumnBucket(card.columnId, 'active'), gt(cards.position, card.position)));
         return NextResponse.json({ result: `Archived card "${card.title}"`, cardId: card.id });
       }
 
       case 'unarchive_card': {
         const card = await findCard(args.cardId);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        if (card.isPendingReview) {
+          return NextResponse.json({ result: `Card "${card.title}" is awaiting review, not archived`, cardId: card.id });
+        }
         if (!card.isArchived) {
           return NextResponse.json({ result: `Card "${card.title}" is not archived`, cardId: card.id });
         }
-        // Restore to the end of its column so it doesn't collide with existing positions
+        // Restore to the end of the active bucket, then close the gap in the archived bucket
         const maxPosResult = await db
           .select({ maxPos: sql<number>`COALESCE(MAX(${cards.position}), -1)` })
           .from(cards)
-          .where(and(eq(cards.columnId, card.columnId), eq(cards.isArchived, false)));
+          .where(inColumnBucket(card.columnId, 'active'));
         const nextPosition = (maxPosResult[0]?.maxPos ?? -1) + 1;
         await db.update(cards).set({ isArchived: false, position: nextPosition, updatedAt: new Date() }).where(eq(cards.id, card.id));
+        await db
+          .update(cards)
+          .set({ position: sql`${cards.position} - 1` })
+          .where(and(inColumnBucket(card.columnId, 'archived'), gt(cards.position, card.position)));
         return NextResponse.json({ result: `Unarchived card "${card.title}"`, cardId: card.id });
       }
 
       case 'move_card': {
         const card = await findCard(args.cardId);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        if (card.isPendingReview) {
+          return NextResponse.json({ result: `Card "${card.title}" is awaiting review — approve it before moving it`, cardId: card.id });
+        }
 
         // Find the target column by name within the card's channel
         const channelCols = await db.query.columns.findMany({
@@ -422,11 +464,12 @@ export async function POST(request: Request) {
           return NextResponse.json({ result: `Card "${card.title}" is already in "${targetCol.name}"` });
         }
 
-        // Get next position in target column
+        // Get next position in the target column's matching bucket
+        const moveBucket = bucketOf(card);
         const maxPosResult = await db
           .select({ maxPos: sql<number>`COALESCE(MAX(${cards.position}), -1)` })
           .from(cards)
-          .where(and(eq(cards.columnId, targetCol.id), eq(cards.isArchived, false)));
+          .where(inColumnBucket(targetCol.id, moveBucket));
         const toPosition = (maxPosResult[0]?.maxPos ?? -1) + 1;
 
         // Shift positions in the old column
@@ -435,8 +478,7 @@ export async function POST(request: Request) {
             .update(cards)
             .set({ position: sql`${cards.position} - 1` })
             .where(and(
-              eq(cards.columnId, card.columnId),
-              eq(cards.isArchived, card.isArchived ?? false),
+              inColumnBucket(card.columnId, moveBucket),
               gt(cards.position, card.position)
             ));
         }

@@ -94,6 +94,23 @@ export async function ensureSchema() {
     // Migration 0027 — recording thumbnails (first frame / scene frame / AI image)
     `ALTER TABLE recordings ADD thumb_url text`,
     `ALTER TABLE recordings ADD thumb_time integer DEFAULT 0`,
+    // Migration 0030 — pending-review card state (third position bucket)
+    `ALTER TABLE cards ADD is_pending_review integer DEFAULT 0`,
+    `ALTER TABLE cards ADD review_run_id text`,
+    // Migration 0031 — shroom scope ('channel' | 'global'), previously client-only
+    `ALTER TABLE instruction_cards ADD scope text DEFAULT 'channel'`,
+    // Migration 0032 — "email me after this runs" brief on a shroom
+    `ALTER TABLE instruction_cards ADD email_config text`,
+    // Migration 0033 — generated one-line description shown on the shroom card
+    `ALTER TABLE instruction_cards ADD summary text`,
+    // Migration 0034 — sticky per-column sort preference. Deliberately no DEFAULT:
+    // pre-existing rows stay NULL so "never chose a sort" is distinguishable from
+    // "explicitly chose manual", which lets one-time backfills target only the former.
+    // Drizzle supplies 'manual' on new inserts, and readers coerce NULL to 'manual'.
+    `ALTER TABLE columns ADD sort_order text`,
+    // Migration 0035 — default share-sheet destination, per user
+    `ALTER TABLE users ADD save_default_channel_id text`,
+    `ALTER TABLE users ADD save_default_column_id text`,
   ]
 
   for (const stmt of alterStatements) {
@@ -302,6 +319,22 @@ export async function ensureSchema() {
     )`))
   } catch {}
 
+  // Migration 0030 — rejected shroom output (feeds back into shroom prompts)
+  try {
+    await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS card_rejections (
+      id text PRIMARY KEY NOT NULL,
+      channel_id text NOT NULL,
+      instruction_card_id text,
+      card_id text,
+      card_title text NOT NULL,
+      reason text,
+      feedback text,
+      created_by text,
+      created_at integer,
+      FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE cascade
+    )`))
+  } catch {}
+
   // Migration 0029 — /calendar marketing calendar
   try {
     await db.run(sql.raw(`CREATE TABLE IF NOT EXISTS marketing_ideas (
@@ -389,6 +422,10 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS marketing_ideas_business_date_idx ON marketing_ideas (business, date)`,
     `CREATE INDEX IF NOT EXISTS marketing_assets_business_idx ON marketing_assets (business)`,
     `CREATE INDEX IF NOT EXISTS marketing_assets_business_kind_idx ON marketing_assets (business, kind)`,
+    // Migration 0030 indexes
+    `CREATE INDEX IF NOT EXISTS cards_review_idx ON cards (column_id, is_pending_review)`,
+    `CREATE INDEX IF NOT EXISTS card_rejections_instruction_idx ON card_rejections (instruction_card_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS card_rejections_channel_idx ON card_rejections (channel_id, created_at)`,
   ]
 
   for (const idx of indexes) {

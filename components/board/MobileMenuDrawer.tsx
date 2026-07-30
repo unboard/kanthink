@@ -8,6 +8,12 @@ interface MobileMenuDrawerProps {
   onClose: () => void;
   children: React.ReactNode;
   title?: string;
+  /**
+   * Floor for the sheet height (any CSS length, e.g. `40vh`). Menus with a
+   * variable number of rows look broken when a single item collapses the sheet
+   * into a sliver — pass this to keep it a deliberate-looking panel.
+   */
+  minHeight?: string;
 }
 
 /**
@@ -15,7 +21,7 @@ interface MobileMenuDrawerProps {
  * On desktop, renders nothing (caller should render the normal dropdown).
  * Supports: tap backdrop to close, drag handle down to dismiss.
  */
-export function MobileMenuDrawer({ isOpen, onClose, children, title }: MobileMenuDrawerProps) {
+export function MobileMenuDrawer({ isOpen, onClose, children, title, minHeight }: MobileMenuDrawerProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -80,19 +86,20 @@ export function MobileMenuDrawer({ isOpen, onClose, children, title }: MobileMen
       {/* Bottom sheet */}
       <div
         ref={sheetRef}
-        className={`absolute bottom-0 left-0 right-0 bg-white dark:bg-neutral-900 rounded-t-2xl shadow-2xl ${
+        className={`absolute bottom-0 left-0 right-0 flex flex-col bg-white dark:bg-neutral-900 rounded-t-2xl shadow-2xl ${
           isDragging.current && dragY > 0 ? '' : 'transition-transform duration-200 ease-out'
         } ${
           isOpen ? 'translate-y-0' : 'translate-y-full'
         }`}
         style={{
           maxHeight: '50vh',
+          minHeight,
           transform: isOpen && dragY > 0 ? `translateY(${dragY}px)` : undefined,
         }}
       >
         {/* Drag handle — touch to drag down */}
         <div
-          className="flex justify-center pt-3 pb-1 cursor-grab"
+          className="flex flex-shrink-0 justify-center pt-3 pb-1 cursor-grab"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -102,15 +109,15 @@ export function MobileMenuDrawer({ isOpen, onClose, children, title }: MobileMen
 
         {/* Optional title */}
         {title && (
-          <div className="px-4 pb-2">
-            <h3 className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{title}</h3>
+          <div className="flex-shrink-0 px-4 pb-2">
+            <h3 className="text-sm font-medium text-neutral-500 dark:text-neutral-400 wrap-anywhere">{title}</h3>
           </div>
         )}
 
         {/* Scrollable menu content */}
         <div
           ref={contentRef}
-          className="overflow-y-auto overscroll-contain px-2 pb-8"
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-2 pb-8"
           style={{ maxHeight: title ? 'calc(50vh - 64px)' : 'calc(50vh - 40px)' }}
         >
           {children}

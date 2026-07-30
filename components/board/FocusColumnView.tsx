@@ -22,6 +22,7 @@ import type { Column as ColumnType, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Card } from './Card';
 import { BacksideCard } from './BacksideCard';
+import { ReviewCard } from './ReviewCard';
 import { BacksideTask } from './BacksideTask';
 import { SkeletonCard } from './SkeletonCard';
 import { CardDetailDrawer } from './CardDetailDrawer';
@@ -53,7 +54,9 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [newTaskId, setNewTaskId] = useState<ID | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  // Mirrors Column.tsx: one 3-way value rather than two competing booleans
+  const [view, setView] = useState<'front' | 'review' | 'archive'>('front');
+  const showArchived = view === 'archive';
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(column.name);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -63,17 +66,18 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
   const backsideCards = (column.backsideCardIds ?? []).map((id) => cards[id]).filter(Boolean);
   const backsideTasks = (column.backsideTaskIds ?? []).map((id) => tasks[id]).filter(Boolean);
   const backsideCount = backsideCards.length + backsideTasks.length;
+  const reviewCards = (column.reviewCardIds ?? []).map((id) => cards[id]).filter(Boolean);
+  const reviewCount = reviewCards.length;
   const completedTaskCount = (column.taskIds ?? []).filter((id) => tasks[id]?.status === 'done').length;
   const itemOrder = column.itemOrder ?? column.cardIds;
   const activeCard = activeType === 'card' && activeId ? cards[activeId] : null;
   const activeTaskItem = activeType === 'task' && activeId ? tasks[activeId] : null;
 
-  // Auto-flip back when all backside items are gone
+  // Return to the front when the side being viewed empties out
   useEffect(() => {
-    if (showArchived && backsideCount === 0) {
-      setShowArchived(false);
-    }
-  }, [showArchived, backsideCount]);
+    if (view === 'archive' && backsideCount === 0) setView('front');
+    else if (view === 'review' && reviewCount === 0) setView('front');
+  }, [view, backsideCount, reviewCount]);
 
   useEffect(() => {
     if (isRenaming && inputRef.current) {
@@ -200,10 +204,26 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
             )}
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-xs text-neutral-400">{showArchived ? backsideCount : itemOrder.length}</span>
+            {reviewCount > 0 && (
+              <button
+                onClick={() => setView(view === 'review' ? 'front' : 'review')}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium transition-colors ${
+                  view === 'review'
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-900/60'
+                }`}
+                title={`${reviewCount} card${reviewCount === 1 ? '' : 's'} awaiting review`}
+              >
+                <span className="leading-none">🍄</span>
+                <span>{reviewCount}</span>
+              </button>
+            )}
+            <span className="text-xs text-neutral-400">
+              {view === 'archive' ? backsideCount : view === 'review' ? reviewCount : itemOrder.length}
+            </span>
             {backsideCount > 0 && (
               <button
-                onClick={() => setShowArchived(!showArchived)}
+                onClick={() => setView(view === 'archive' ? 'front' : 'archive')}
                 className={`rounded p-1 transition-colors ${
                   showArchived
                     ? 'text-amber-500 hover:bg-neutral-200 dark:hover:bg-neutral-700'
@@ -219,6 +239,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
             <ColumnMenu
               channelId={channelId}
               columnId={column.id}
+              sortOrder={column.sortOrder}
               columnCount={1}
               cardCount={columnCards.length}
               columnCardIds={column.cardIds}
@@ -235,7 +256,14 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
 
         {/* Content area - scrollable */}
         <div className="flex-1 overflow-y-auto space-y-2 px-2 pb-4">
-          {showArchived ? (
+          {view === 'review' ? (
+            /* Shroom output awaiting per-card approval */
+            <>
+              {reviewCards.map((card) => (
+                <ReviewCard key={card.id} card={card} />
+              ))}
+            </>
+          ) : showArchived ? (
             /* Archived cards + hidden tasks */
             <>
               {backsideCards.map((card) => (

@@ -347,6 +347,10 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  // The audio session has been stopped but the window is still up, holding the
+  // session's cards/transcripts as browsable history. Stopping used to unmount the
+  // whole overlay, which threw away everything the conversation just produced.
+  const [hasEnded, setHasEnded] = useState(false);
   const [voiceName, setVoiceName] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
   );
@@ -365,6 +369,10 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const processingNodesRef = useRef<{ osc1: OscillatorNode; osc2: OscillatorNode; gain: GainNode } | null>(null);
   // Latest resumption handle from Gemini — used to transparently resume if the transport drops.
   const resumptionHandleRef = useRef<string | null>(null);
+  // saveSession creates a fresh operator-chat thread each call. Now that ending the
+  // audio and closing the window are two separate steps, this guards against saving
+  // the same session twice and leaving a duplicate thread behind.
+  const sessionSavedRef = useRef(false);
 
   const stop = useCallback(() => {
     activeRef.current = false;
@@ -992,12 +1000,14 @@ NEVER claim you completed an action unless you actually called the corresponding
   }, [expandedEmail]);
 
   useEffect(() => {
-    if (isOpen) { start(); threadIdRef.current = null; }
-    else {
-      // Save session before clearing
+    if (isOpen) {
+      start(); threadIdRef.current = null; setHasEnded(false); sessionSavedRef.current = false;
+    } else {
+      // Save session before clearing — unless ending the audio already saved it.
       const currentActions = actions;
-      if (currentActions.length > 0) saveSession(currentActions);
-      stop(); setStatus(''); setError(null); setActions([]);
+      if (currentActions.length > 0 && !sessionSavedRef.current) saveSession(currentActions);
+      stop(); setStatus(''); setError(null); setActions([]); setHasEnded(false);
+      sessionSavedRef.current = false;
     }
     return () => stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1023,6 +1033,19 @@ NEVER claim you completed an action unless you actually called the corresponding
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
+
+  // End the audio session but keep the window up so the cards, transcripts and
+  // charts the conversation produced stay reachable. Saves the session now rather
+  // than on close, so a refresh from this state doesn't lose it.
+  const endSession = useCallback(() => {
+    stop();
+    setHasEnded(true);
+    setStatus('');
+    if (actions.length > 0 && !sessionSavedRef.current) {
+      sessionSavedRef.current = true;
+      saveSession(actions);
+    }
+  }, [stop, actions, saveSession]);
 
   const toggleMute = useCallback(() => {
     if (streamRef.current) {
@@ -1052,7 +1075,12 @@ NEVER claim you completed an action unless you actually called the corresponding
         <div className="flex items-center gap-3">
           <KanthinkIcon size={32} className="text-white" />
           <div className="flex items-center gap-1.5 bg-neutral-800/80 rounded-full px-3 py-1.5">
-            {connected && !isMuted && (
+            {hasEnded && (
+              <svg className="h-3.5 w-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            {!hasEnded && connected && !isMuted && (
               <div className="flex items-center gap-0.5 h-4">
                 {bars.map((s, i) => (
                   <div key={i} className={`w-1 rounded-full ${isAiSpeaking ? 'bg-violet-400 animate-voice-bar' : 'bg-cyan-400 transition-all duration-75'}`}
@@ -1063,14 +1091,14 @@ NEVER claim you completed an action unless you actually called the corresponding
                 ))}
               </div>
             )}
-            {isMuted && (
+            {!hasEnded && isMuted && (
               <svg className="h-3.5 w-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
               </svg>
             )}
-            <span className={`text-xs ml-1 ${isMuted ? 'text-red-400' : isAiSpeaking ? 'text-violet-300' : 'text-neutral-300'}`}>
-              {!connected ? 'Connecting...' : isMuted ? 'Muted' : isProcessing ? 'Processing...' : isAiSpeaking ? 'Kan is speaking' : 'Listening'}
+            <span className={`text-xs ml-1 ${hasEnded ? 'text-neutral-400' : isMuted ? 'text-red-400' : isAiSpeaking ? 'text-violet-300' : 'text-neutral-300'}`}>
+              {hasEnded ? 'Conversation ended' : !connected ? 'Connecting...' : isMuted ? 'Muted' : isProcessing ? 'Processing...' : isAiSpeaking ? 'Kan is speaking' : 'Listening'}
             </span>
           </div>
           <button onClick={() => setShowSettings(!showSettings)}
@@ -1109,6 +1137,12 @@ NEVER claim you completed an action unless you actually called the corresponding
             <div className="flex flex-col items-center justify-center gap-2 py-8">
               <p className="text-sm text-red-400">{error}</p>
               <button onClick={start} className="text-xs text-violet-400 hover:underline">Try again</button>
+            </div>
+          )}
+          {hasEnded && actions.length === 0 && !error && (
+            <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
+              <p className="text-sm text-neutral-400">Conversation ended</p>
+              <p className="text-xs text-neutral-500">Nothing was created this session.</p>
             </div>
           )}
 
@@ -1372,8 +1406,18 @@ NEVER claim you completed an action unless you actually called the corresponding
           </div>
         </div>
 
-        {/* Bottom buttons — Mute + Stop */}
-        {connected && (
+        {/* Bottom buttons — Mute + Stop while live, Close once the session has ended */}
+        {hasEnded ? (
+          <div className="flex gap-3 px-4 pb-2">
+            <button onClick={onClose}
+              className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-neutral-800 text-neutral-200 border border-neutral-700 hover:bg-neutral-700 text-sm font-medium transition-colors">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Close
+            </button>
+          </div>
+        ) : connected && (
           <div className="flex gap-3 px-4 pb-2">
             <button onClick={toggleMute}
               className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-medium transition-colors ${
@@ -1391,10 +1435,10 @@ NEVER claim you completed an action unless you actually called the corresponding
               )}
               {isMuted ? 'Unmute' : 'Mute'}
             </button>
-            <button onClick={() => { stop(); onClose(); }}
+            <button onClick={endSession}
               className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl bg-neutral-800 text-neutral-300 border border-neutral-700 hover:bg-neutral-700 text-sm font-medium transition-colors">
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <rect x={7} y={7} width={10} height={10} rx={1.5} strokeWidth={2} strokeLinejoin="round" />
               </svg>
               Stop
             </button>

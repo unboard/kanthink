@@ -7,6 +7,7 @@ import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { createNotification, createNotificationForChannelMembers } from '@/lib/notifications/createNotification'
 import { logChannelActivity } from '@/lib/db/activity'
 import { ensureSchema } from '@/lib/db/ensure-schema'
+import { bucketOf, inColumnBucket } from '@/lib/db/cardBuckets'
 
 interface RouteParams {
   params: Promise<{ id: string; cardId: string }>
@@ -282,7 +283,8 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Card not found' }, { status: 404 })
     }
 
-    const { columnId, position, isArchived } = existingCard
+    const { columnId, position } = existingCard
+    const bucket = bucketOf(existingCard)
 
     // Log activity for digests
     logChannelActivity(channelId, userId, 'card_deleted', 'card', cardId, { title: existingCard.title }).catch(() => {})
@@ -293,14 +295,13 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     // Delete the card
     await db.delete(cards).where(eq(cards.id, cardId))
 
-    // Shift positions of remaining cards in the column
+    // Shift positions of remaining cards in the same bucket
     await db
       .update(cards)
       .set({ position: sql`${cards.position} - 1` })
       .where(
         and(
-          eq(cards.columnId, columnId),
-          eq(cards.isArchived, isArchived ?? false),
+          inColumnBucket(columnId, bucket),
           gt(cards.position, position)
         )
       )

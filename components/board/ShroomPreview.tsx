@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { InstructionAction } from '@/lib/types';
+import type { InstructionAction, ShroomEmailConfig } from '@/lib/types';
 
 interface ShroomConfigStep {
   action: InstructionAction;
@@ -17,6 +17,7 @@ interface ShroomConfig {
   targetColumnName: string;
   cardCount?: number;
   steps?: ShroomConfigStep[];
+  email?: ShroomEmailConfig;
 }
 
 interface ShroomPreviewProps {
@@ -54,6 +55,15 @@ const actionInfo: Record<InstructionAction, { label: string; icon: React.ReactNo
       </svg>
     ),
     color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+  },
+  report: {
+    label: 'Report',
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    ),
+    color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
   },
 };
 
@@ -220,6 +230,49 @@ export function ShroomPreview({
             </p>
           )}
         </div>
+
+        {/* Email brief — only when the conversation actually set one up */}
+        {localConfig.email?.enabled && localConfig.email.brief && (
+          <div className="px-4 pb-4">
+            <div className="rounded-lg border border-teal-200 dark:border-teal-900/60 bg-teal-50/60 dark:bg-teal-950/20 p-2.5">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <svg className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span className="text-xs font-medium text-teal-700 dark:text-teal-300">
+                  Emails you after each run
+                </span>
+              </div>
+              {editingField === 'emailBrief' ? (
+                <textarea
+                  autoFocus
+                  value={localConfig.email.brief}
+                  onChange={(e) =>
+                    setLocalConfig({
+                      ...localConfig,
+                      email: { ...localConfig.email!, brief: e.target.value },
+                    })
+                  }
+                  onBlur={() => setEditingField(null)}
+                  rows={3}
+                  className="w-full text-xs bg-white dark:bg-neutral-800 rounded-md border border-teal-300 dark:border-teal-700 p-2 outline-none text-neutral-700 dark:text-neutral-300 resize-none"
+                />
+              ) : (
+                <p
+                  onClick={() => setEditingField('emailBrief')}
+                  className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed cursor-pointer hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+                >
+                  {localConfig.email.brief}
+                </p>
+              )}
+              {localConfig.email.skipWhenNothingHappened !== false && (
+                <p className="mt-1.5 text-[11px] text-teal-700/70 dark:text-teal-400/60">
+                  Skipped when a run changes nothing
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action buttons */}

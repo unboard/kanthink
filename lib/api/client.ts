@@ -100,7 +100,7 @@ export async function deleteChannel(channelId: string): Promise<void> {
 
 export async function createCard(
   channelId: string,
-  input: { id?: string; columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number }
+  input: { id?: string; columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number; createdByInstructionId?: string }
 ): Promise<{ card: Card }> {
   const res = await fetch(`/api/channels/${channelId}/cards`, {
     method: 'POST',
@@ -123,6 +123,22 @@ export async function updateCard(channelId: string, cardId: string, updates: Par
     throw new Error('Failed to update card')
   }
   return res.json()
+}
+
+export async function reviewCard(
+  channelId: string,
+  cardId: string,
+  decision: 'approve' | 'reject',
+  detail?: { reason?: string; feedback?: string }
+): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/cards/${cardId}/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision, ...detail }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to resolve card review')
+  }
 }
 
 export async function deleteCard(channelId: string, cardId: string): Promise<void> {

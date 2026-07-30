@@ -119,7 +119,7 @@ export function syncChannelDelete(channelId: string) {
 export function syncCardCreate(
   channelId: string,
   cardId: string,
-  data: { columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number }
+  data: { columnId: string; title: string; initialMessage?: string; source?: 'manual' | 'ai'; position?: number; createdByInstructionId?: string }
 ) {
   pendingCardIds.add(cardId)
   syncInBackground(async () => {
@@ -133,6 +133,17 @@ export function syncCardUpdate(channelId: string, cardId: string, updates: Recor
   syncInBackground(async () => {
     await api.updateCard(channelId, cardId, updates)
   }, 'update card')
+}
+
+export function syncCardReview(
+  channelId: string,
+  cardId: string,
+  decision: 'approve' | 'reject',
+  detail?: { reason?: string; feedback?: string }
+) {
+  syncInBackground(async () => {
+    await api.reviewCard(channelId, cardId, decision, detail)
+  }, decision === 'approve' ? 'approve card' : 'reject card')
 }
 
 export function syncCardDelete(channelId: string, cardId: string) {

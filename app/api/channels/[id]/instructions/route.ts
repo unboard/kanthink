@@ -4,6 +4,9 @@ import { db } from '@/lib/db'
 import { instructionCards } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { ensureSchema } from '@/lib/db/ensure-schema'
+import { generateShroomSummary } from '@/lib/shrooms/generateSummary'
+import { afterResponse } from '@/lib/afterResponse'
 import { nanoid } from 'nanoid'
 
 interface RouteParams {
@@ -25,6 +28,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   const userId = session.user.id
 
   try {
+    await ensureSchema()
     await requirePermission(channelId, userId, 'edit')
 
     const body = await req.json()
@@ -44,6 +48,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       conversationHistory,
       steps,
       coverImageUrl,
+      scope = 'channel',
+      emailConfig,
+      summary,
     } = body
 
     if (!title || instructions === undefined || instructions === null || !action || !target) {
@@ -84,6 +91,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       conversationHistory,
       steps,
       coverImageUrl,
+      scope: scope === 'global' ? 'global' : 'channel',
+      emailConfig: emailConfig ?? null,
+      summary: summary ?? null,
       position,
       createdAt: now,
       updatedAt: now,
@@ -92,6 +102,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const created = await db.query.instructionCards.findFirst({
       where: eq(instructionCards.id, instructionId),
     })
+
+    // Deferred: it's an LLM call, and nobody should wait on prose to see their new shroom
+    if (!summary) {
+      afterResponse(() => generateShroomSummary(instructionId))
+    }
 
     return NextResponse.json(
       {

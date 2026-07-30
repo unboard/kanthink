@@ -328,6 +328,7 @@ export function applyBroadcastEvent(
           ...col,
           cardIds: col.cardIds.filter((cid) => cid !== event.id),
           backsideCardIds: col.backsideCardIds?.filter((cid) => cid !== event.id),
+          reviewCardIds: col.reviewCardIds?.filter((cid) => cid !== event.id),
         }))
 
         return {
@@ -447,6 +448,55 @@ export function applyBroadcastEvent(
         })
 
         return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: { ...channel, columns: updatedColumns, updatedAt: now() },
+          },
+        }
+      })
+      break
+
+    case 'card:reviewApprove':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+
+        const updatedColumns = channel.columns.map((col) => {
+          if (col.id === event.columnId) {
+            return {
+              ...col,
+              reviewCardIds: (col.reviewCardIds ?? []).filter((id) => id !== event.cardId),
+              cardIds: [...col.cardIds, event.cardId],
+              itemOrder: [...(col.itemOrder ?? col.cardIds), event.cardId],
+            }
+          }
+          return col
+        })
+
+        return {
+          channels: {
+            ...state.channels,
+            [event.channelId]: { ...channel, columns: updatedColumns, updatedAt: now() },
+          },
+        }
+      })
+      break
+
+    case 'card:reviewReject':
+      set((state) => {
+        const channel = state.channels[event.channelId]
+        if (!channel) return state
+
+        const updatedColumns = channel.columns.map((col) =>
+          col.id === event.columnId
+            ? { ...col, reviewCardIds: (col.reviewCardIds ?? []).filter((id) => id !== event.cardId) }
+            : col
+        )
+
+        const { [event.cardId]: _removed, ...remainingCards } = state.cards
+
+        return {
+          cards: remainingCards,
           channels: {
             ...state.channels,
             [event.channelId]: { ...channel, columns: updatedColumns, updatedAt: now() },
