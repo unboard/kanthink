@@ -674,10 +674,6 @@ export function OperatorHome() {
         {/* Kan's desk — what the shrooms have left for you, across every channel */}
         {!hasConversation && !input.trim() && <KanDesk />}
 
-        {/* Noteworthy platform changes. Below Kan's desk on purpose: your own pending
-            work outranks news about the product. */}
-        {!hasConversation && !input.trim() && <WhatsNew />}
-
         {/* Input area */}
         <div className={`relative ${hasConversation ? 'pb-4' : ''}`}>
           <SproutSearch query={input} onSelect={handleSproutSelect} onPeek={setPeek} />
@@ -723,6 +719,10 @@ export function OperatorHome() {
             </div>
           </div>
         </div>
+
+        {/* Noteworthy platform changes. Below the composer on purpose — it's reference
+            material, not something to read before you've said what you came to say. */}
+        {!hasConversation && !input.trim() && <WhatsNew />}
       </div>
     </div>
   );

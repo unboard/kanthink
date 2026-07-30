@@ -93,7 +93,7 @@ export function WhatsNew() {
   };
 
   return (
-    <div className="mb-3 rounded-xl border border-neutral-700/60 bg-neutral-900/60">
+    <div className="mt-3 rounded-xl border border-neutral-700/60 bg-neutral-900/60">
       <button
         onClick={toggle}
         className="w-full flex items-center gap-2 px-4 py-3 text-left"
