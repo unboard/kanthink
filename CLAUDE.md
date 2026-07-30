@@ -126,14 +126,23 @@ Do NOT use the Vercel CLI (`vercel --prod`). The repo is connected to Vercel via
 
 ## CRITICAL: Database Schema Changes (DO NOT SKIP MIGRATIONS)
 
-When adding columns to any table in `lib/db/schema.ts`, you **MUST** also add a corresponding `ALTER TABLE` statement to `lib/db/ensure-schema.ts`. The Turso database is not auto-migrated — Drizzle generates explicit column lists in SELECT queries, so missing columns crash ALL queries on that table.
+When adding columns to any table in `lib/db/schema.ts`, you **MUST** also add a corresponding `ALTER TABLE` statement to `lib/db/migrations.mjs`. The Turso database is not auto-migrated — Drizzle generates explicit column lists in SELECT queries, so missing columns crash ALL queries on that table.
 
 **Checklist for every schema change:**
 1. Add column to `lib/db/schema.ts`
-2. Add `ALTER TABLE <table> ADD <column> <type> [DEFAULT <value>]` to `lib/db/ensure-schema.ts`
-3. If the API route for that table doesn't already call `ensureSchema()`, add it
+2. Add `ALTER TABLE <table> ADD <column> <type> [DEFAULT <value>]` to the `ALTER_STATEMENTS` array in `lib/db/migrations.mjs`
+3. Run `npm test` — the schema migration guard fails if step 2 was missed
 
-Failure to do this will silently break the entire app for all users.
+That's it. You do **not** need to touch `ensure-schema.ts` or add `ensureSchema()` calls to routes.
+
+### How migrations run
+
+`lib/db/migrations.mjs` is the single source of truth for all DDL. Two things consume it:
+
+- **`scripts/migrate.mjs`** — the real mechanism. Wired into `npm run build`, so Vercel applies migrations *before* the new deployment serves traffic. It fails the build if a migration errors, or if any migrated column is missing afterwards.
+- **`ensureSchema()`** — a fallback for local dev and drifted databases. It runs at request time.
+
+**Why the deploy step exists:** `auth()` uses a database session strategy, so it reads the `users` table, and in almost every route `auth()` runs *before* `ensureSchema()`. Request-time migration therefore had a cold-start window where Drizzle SELECTed a column that didn't exist yet, breaking every query on the table. Migrating before traffic arrives removes the race. Don't move migration back to request time.
 
 ## CRITICAL: Mobile Drag-and-Drop (DO NOT BREAK)
 
