@@ -2,7 +2,7 @@
  * Schema Migration Guard
  *
  * Verifies that every column defined in schema.ts has a corresponding
- * migration in ensure-schema.ts (either an ALTER TABLE ADD or a CREATE TABLE).
+ * migration in lib/db/migrations.mjs (either an ALTER TABLE ADD or a CREATE TABLE).
  *
  * This catches the #1 cause of production crashes: adding a column to schema.ts
  * without a matching migration, which causes Drizzle's explicit SELECT to fail.
@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
+import { ALL_STATEMENTS, REQUIRED_COLUMNS } from '../lib/db/migrations.mjs'
 
 // Parse schema.ts to extract table definitions and their columns
 function parseSchemaColumns(schemaSource: string): Map<string, Set<string>> {
@@ -70,8 +71,9 @@ function parseEnsureSchemaColumns(ensureSource: string): {
     alteredColumns.get(table)!.add(col)
   }
 
-  // Match CREATE TABLE IF NOT EXISTS <table> (...columns...)
-  const createRegex = /CREATE TABLE IF NOT EXISTS (\w+)\s*\(([\s\S]*?)\)\s*`\)/g
+  // Match CREATE TABLE IF NOT EXISTS <table> (...columns...) up to the closing
+  // backtick of the template literal holding it.
+  const createRegex = /CREATE TABLE IF NOT EXISTS (\w+)\s*\(([\s\S]*?)\)\s*`/g
   while ((match = createRegex.exec(ensureSource)) !== null) {
     const table = match[1]
     const body = match[2]
@@ -163,12 +165,14 @@ const INITIAL_TABLES: Record<string, Set<string>> = {
 describe('Schema Migration Guard', () => {
   const schemaPath = path.resolve(__dirname, '../lib/db/schema.ts')
   const ensurePath = path.resolve(__dirname, '../lib/db/ensure-schema.ts')
+  const migrationsPath = path.resolve(__dirname, '../lib/db/migrations.mjs')
 
   const schemaSource = fs.readFileSync(schemaPath, 'utf-8')
   const ensureSource = fs.readFileSync(ensurePath, 'utf-8')
+  const migrationsSource = fs.readFileSync(migrationsPath, 'utf-8')
 
   const schemaTables = parseSchemaColumns(schemaSource)
-  const { alteredColumns, createdTables } = parseEnsureSchemaColumns(ensureSource)
+  const { alteredColumns, createdTables } = parseEnsureSchemaColumns(migrationsSource)
 
   it('should parse at least 10 tables from schema.ts', () => {
     expect(schemaTables.size).toBeGreaterThanOrEqual(10)
@@ -193,9 +197,9 @@ describe('Schema Migration Guard', () => {
 
     if (missing.length > 0) {
       throw new Error(
-        `Missing migrations in ensure-schema.ts for:\n` +
+        `Missing migrations in lib/db/migrations.mjs for:\n` +
         missing.map(m => `  - ${m}`).join('\n') +
-        `\n\nAdd ALTER TABLE statements to lib/db/ensure-schema.ts for each.`
+        `\n\nAdd ALTER TABLE statements to lib/db/migrations.mjs for each.`
       )
     }
   })
@@ -204,5 +208,42 @@ describe('Schema Migration Guard', () => {
     expect(ensureSource).toContain('let ensured = false')
     expect(ensureSource).toContain('if (ensured) return')
     expect(ensureSource).toContain('ensured = true')
+  })
+
+  // The deploy step (scripts/migrate.mjs) is the primary migration mechanism; the
+  // runtime ensureSchema() is only a fallback. Both must run the identical statement
+  // list, or a migration could be applied by one path and missed by the other.
+  it('should drive both the deploy step and ensureSchema from one statement list', () => {
+    expect(ensureSource).toContain("from './migrations.mjs'")
+    expect(ensureSource).toContain('ALL_STATEMENTS')
+
+    const migrateSource = fs.readFileSync(
+      path.resolve(__dirname, '../scripts/migrate.mjs'),
+      'utf-8'
+    )
+    expect(migrateSource).toContain('ALL_STATEMENTS')
+    expect(migrateSource).toContain('REQUIRED_COLUMNS')
+
+    // And the build must actually run it, otherwise the whole thing is decorative.
+    const pkg = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')
+    )
+    expect(pkg.scripts.build).toContain('migrate')
+  })
+
+  // REQUIRED_COLUMNS is what the deploy step asserts against. It's derived from the
+  // ALTER statements so it can't silently fall behind them.
+  it('should derive a required-column assertion for every ALTER TABLE ADD', () => {
+    const altersInList = ALL_STATEMENTS
+      .map(s => s.match(/^ALTER TABLE (\w+) ADD (?:COLUMN )?(\w+)/i))
+      .filter((m): m is RegExpMatchArray => m !== null)
+      .map(m => `${m[1]}.${m[2]}`)
+
+    const asserted = new Set(REQUIRED_COLUMNS.map(([t, c]) => `${t}.${c}`))
+
+    expect(altersInList.length).toBeGreaterThan(50)
+    for (const col of altersInList) {
+      expect(asserted.has(col), `${col} is migrated but never asserted`).toBe(true)
+    }
   })
 })

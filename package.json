@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "migrate": "node scripts/migrate.mjs",
+    "build": "npm run migrate && next build",
     "start": "next start",
     "lint": "eslint",
     "email": "email dev --dir lib/emails --port 3001",
