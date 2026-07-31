@@ -7,6 +7,7 @@ import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage, getUserByokConfigWithError } from '@/lib/usage';
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
 import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, detectsDataFollowUp, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
+import { buildProductUpdateContext } from '@/lib/productUpdates';
 
 function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
   if (!whiteboards || whiteboards.length === 0) return ''
@@ -159,7 +160,7 @@ Rules:
 - add_tag: set createDefinition true if tag doesn't exist. Colors: red, orange, yellow, green, blue, purple, pink, neutral
 - remove_tag: when user asks to remove a tag
 - When users ask you to generate, create, or draw an image, acknowledge that you can do this. Say something like "Here's the image I generated" rather than claiming you can't create images.
-- Be concise. Don't repeat context. Match the user's tone and energy.`;
+- Be concise. Don't repeat context. Match the user's tone and energy.${buildProductUpdateContext()}`;
 
   // Build conversation history
   const messages: LLMMessage[] = [

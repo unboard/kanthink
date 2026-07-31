@@ -8,6 +8,7 @@ import { db } from '@/lib/db';
 import { cards, columns, operatorChatThreads } from '@/lib/db/schema';
 import { eq, and, desc, asc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
+import { buildProductUpdateContext } from '@/lib/productUpdates';
 
 export const runtime = 'nodejs';
 // Actions here fan out to /api/voice/action, which can wait on a slow Mixpanel
@@ -316,7 +317,7 @@ Respond with valid JSON:
   ]
 }
 
-The "actions" array is optional — only include it when the user asks you to do something. The "response" field is always required. Always respond with valid JSON.`;
+The "actions" array is optional — only include it when the user asks you to do something. The "response" field is always required. Always respond with valid JSON.${buildProductUpdateContext()}`;
 }
 
 interface ParsedResponse {

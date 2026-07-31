@@ -13,7 +13,6 @@ import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 import { FreshTicker } from '@/components/home/FreshTicker';
 import { KanDesk } from '@/components/home/KanDesk';
-import { WhatsNew } from '@/components/home/WhatsNew';
 import { SproutSearch, type SproutResult } from '@/components/home/SproutSearch';
 import { ChannelPreviewDrawer } from '@/components/home/ChannelPreviewDrawer';
 import { PeekPreview, type PeekTarget } from '@/components/home/PeekPreview';
@@ -762,7 +761,7 @@ export function OperatorHome() {
 
         {/* Noteworthy platform changes. Below the composer on purpose — it's reference
             material, not something to read before you've said what you came to say. */}
-        {!hasConversation && !input.trim() && <WhatsNew />}
+
       </div>
     </div>
   );

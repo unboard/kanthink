@@ -77,6 +77,35 @@ export function latestProductUpdate(): ProductUpdate | null {
 }
 
 /**
+ * The same list, written for Kan rather than for a panel.
+ *
+ * Kan is asked "what's new?" in conversation far more often than anyone opens a
+ * changelog, so these belong in the prompt. Capped because this rides along on
+ * every turn — recent entries are what people mean by "new"; older ones are on
+ * the system log page.
+ */
+export function buildProductUpdateContext(limit = 8): string {
+  const entries = PRODUCT_UPDATES.slice(0, limit);
+  if (entries.length === 0) return '';
+
+  const lines = entries.map((u) => {
+    const label = PRODUCT_UPDATE_KIND_LABELS[u.kind];
+    return `- [${u.date}] ${label}: ${u.title} — ${u.body}`;
+  });
+
+  return `\n\n## RECENT KANTHINK UPDATES
+
+These are the meaningful changes shipped recently, newest first. You know about these — if the user asks what's new, what changed, what features were added, or whether something they remember is available yet, answer from this list in your own words.
+
+${lines.join('\n')}
+
+Rules:
+- Lead with the ones that change what the user can do, not the fixes.
+- Summarize conversationally; never read the list verbatim or recite dates unless asked.
+- This list is not exhaustive and only covers recent notable changes. If asked about something not here, say you don't have it in your notes rather than guessing — the full history is on the system log page at /system-log.`;
+}
+
+/**
  * Updates newer than the last one the user acknowledged.
  *
  * Position-based rather than date-based: an unrecognised id (an entry that was removed,

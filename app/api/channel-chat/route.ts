@@ -8,6 +8,7 @@ import { db } from '@/lib/db';
 import { channelChatThreads } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
+import { buildProductUpdateContext } from '@/lib/productUpdates';
 import {
   getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat,
   detectsDataFollowUp, extractRawResultBlock, buildRetainedDataContext, trimRetainedData,
@@ -221,7 +222,7 @@ Rules:
 
 Any card in Kanthink can be turned into a Playground — a chat-driven mini-app builder. The card splits into a chat panel and a live preview, the user describes what they want (a flyer maker, timer, game, AI tool — anything that runs in a browser), and Gemini writes a single-file React + Tailwind app rendered in a sandboxed iframe. Users iterate by chatting. Playgrounds can be flipped public to get a kanthink.com/play/<token> share URL.
 
-If the user asks how to "build", "actually make", "prototype", or "do something with" an idea card, point them at Playground — they can flip a card via the card menu's "Turn into Playground" option. Generated apps have access to image upload (window.kanthinkUpload via Cloudinary) and AI calls (window.kanthinkAI.generate via the user's BYOK Gemini), so AI-flavored apps work out of the box. You can't create playgrounds via tools; just be aware they exist and reference them when relevant.`;
+If the user asks how to "build", "actually make", "prototype", or "do something with" an idea card, point them at Playground — they can flip a card via the card menu's "Turn into Playground" option. Generated apps have access to image upload (window.kanthinkUpload via Cloudinary) and AI calls (window.kanthinkAI.generate via the user's BYOK Gemini), so AI-flavored apps work out of the box. You can't create playgrounds via tools; just be aware they exist and reference them when relevant.${buildProductUpdateContext()}`;
 
   // Inject data source context if any are connected
   let dataSourceContext = '';

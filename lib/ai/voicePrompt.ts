@@ -1,4 +1,5 @@
 import type { Card, Channel, Folder, Task } from '@/lib/types';
+import { buildProductUpdateContext } from '@/lib/productUpdates';
 
 interface SessionLike {
   user?: { id?: string | null; name?: string | null; email?: string | null } | null;
@@ -134,5 +135,5 @@ Any card can be turned into a "Playground" — a chat-driven mini-app builder. T
 
 If the user mentions wanting to "build", "make an app", "prototype", "vibe code", "create a tool", "make a flyer maker / timer / game / etc.", or asks where to actually do something with an idea card — point them at Playground. They can turn an existing card into one from the card menu ("Turn into Playground"), or you can mention it conversationally. Generated apps have access to image upload (window.kanthinkUpload) and AI calls (window.kanthinkAI.generate) backed by Cloudinary and the user's BYOK Gemini account, so AI-flavored apps work out of the box.
 
-You don't have a tool to create playgrounds directly — the user does that from the card menu in the UI. Just be aware it exists and reference it when relevant.`;
+You don't have a tool to create playgrounds directly — the user does that from the card menu in the UI. Just be aware it exists and reference it when relevant.${buildProductUpdateContext()}`;
 }
