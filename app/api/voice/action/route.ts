@@ -44,7 +44,13 @@ export async function POST(request: Request) {
   }
 
   await ensureSchema();
-  const { action, args }: ActionRequest = await request.json();
+  const { action, args: rawArgs }: ActionRequest = await request.json();
+
+  // Live-model tool arguments are not schema-enforced — a non-string here reaches
+  // string methods downstream and throws, which used to surface as "no data found".
+  const args = Object.fromEntries(
+    Object.entries(rawArgs || {}).map(([k, v]) => [k, v == null ? '' : String(v)]),
+  ) as typeof rawArgs;
 
   try {
     switch (action) {
@@ -399,7 +405,14 @@ export async function POST(request: Request) {
             toDate,
             chartType: (args.chartType as 'line' | 'bar' | 'pie' | 'donut' | 'value') || undefined,
           });
-          if (!fullData) return NextResponse.json({ result: 'No Mixpanel data found for that query.' });
+          // An empty result now only means the query genuinely produced nothing;
+          // real failures come back as a MIXPANEL QUERY FAILED message with a reason.
+          if (!fullData) {
+            console.error('[voice/action] query_mixpanel returned nothing', { question: args.question, fromDate, toDate });
+            return NextResponse.json({
+              result: `No data came back for that query (${fromDate} to ${toDate}). This is not necessarily an error — try a different event, a wider date range, or ask what events are tracked.`,
+            });
+          }
 
           // `result` is rendered on screen, so it must not contain model-only
           // sections — the client only strips chart/table fences, and anything

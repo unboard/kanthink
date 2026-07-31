@@ -184,6 +184,19 @@ describe('a stalled Mixpanel never hangs the caller', () => {
     await assertion;
   });
 
+  it('names a failing HTTP status instead of reporting no data', async () => {
+    const mod = await loadWithCredentials();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('Unable to authenticate request', { status: 400 })));
+
+    const out = await mod.queryForChat('how many print orders today');
+
+    // "" would surface as "no data found" — an empty account, not a broken call.
+    expect(out).not.toBe('');
+    expect(out).toContain('MIXPANEL QUERY FAILED');
+    expect(out).toContain('400');
+    expect(out).toContain('Unable to authenticate request');
+  });
+
   it('reports the timeout to the model rather than an empty result', async () => {
     const mod = await loadWithCredentials();
     vi.useFakeTimers();
