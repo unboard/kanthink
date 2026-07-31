@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   detectsDataFollowUp,
   detectsMixpanelIntent,
@@ -143,6 +143,60 @@ describe('date windows from natural language', () => {
 
   it('returns null when no window is named, so the caller keeps its default', () => {
     expect(parseDateWindow('how many print orders do we have', now)).toBeNull();
+  });
+});
+
+describe('a stalled Mixpanel never hangs the caller', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    vi.resetModules();
+  });
+
+  /** Stand-in for a Mixpanel request that never answers, but honours abort. */
+  function hangingFetch() {
+    return vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    }));
+  }
+
+  /** Credentials are captured at module load, so reload with them stubbed in. */
+  async function loadWithCredentials() {
+    vi.stubEnv('MIXPANEL_API_SECRET', 'test-secret');
+    vi.stubEnv('MIXPANEL_PROJECT_ID', '12345');
+    vi.resetModules();
+    return import('@/lib/ai/mixpanelDirect');
+  }
+
+  it('aborts an export that stalls, instead of waiting forever', async () => {
+    const mod = await loadWithCredentials();
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', hangingFetch());
+
+    const pending = mod.exportEvents({ event: 'print_order', fromDate: '2026-07-31', toDate: '2026-07-31' });
+    const assertion = expect(pending).rejects.toBeInstanceOf(mod.MixpanelTimeoutError);
+    await vi.advanceTimersByTimeAsync(21000);
+    await assertion;
+  });
+
+  it('reports the timeout to the model rather than an empty result', async () => {
+    const mod = await loadWithCredentials();
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', hangingFetch());
+
+    const pending = mod.queryForChat('how many print orders today');
+    await vi.advanceTimersByTimeAsync(21000);
+    const out = await pending;
+
+    // An empty string would surface as "no data found" — an empty account, not a slow API.
+    expect(out).not.toBe('');
+    expect(out).toMatch(/timed out/i);
+    expect(out).toMatch(/do not report zero|do not.*invent/i);
   });
 });
 

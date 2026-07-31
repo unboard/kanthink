@@ -15,13 +15,40 @@ function getAuth(): string {
   return 'Basic ' + Buffer.from(API_SECRET + ':').toString('base64');
 }
 
+/** Mixpanel's export endpoint usually answers in about a second, but it can stall
+ *  for minutes. Unbounded, that outlives the serverless function and the caller
+ *  is left waiting on a request that will never return. */
+const MIXPANEL_TIMEOUT_MS = 20000;
+
+export class MixpanelTimeoutError extends Error {
+  constructor(seconds: number) {
+    super(`Mixpanel did not respond within ${seconds}s`);
+    this.name = 'MixpanelTimeoutError';
+  }
+}
+
+async function mixpanelFetch(url: string, init?: RequestInit, timeoutMs = MIXPANEL_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new MixpanelTimeoutError(Math.round(timeoutMs / 1000));
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function isMixpanelConfigured(): boolean {
   return !!(API_SECRET && PROJECT_ID);
 }
 
 /** Get top events with counts */
 export async function getTopEvents(limit = 10): Promise<{ event: string; amount: number }[]> {
-  const res = await fetch(`https://mixpanel.com/api/2.0/events/top?type=general&limit=${limit}`, {
+  const res = await mixpanelFetch(`https://mixpanel.com/api/2.0/events/top?type=general&limit=${limit}`, {
     headers: { Authorization: getAuth() },
   });
   if (!res.ok) throw new Error(`Mixpanel API ${res.status}`);
@@ -31,7 +58,7 @@ export async function getTopEvents(limit = 10): Promise<{ event: string; amount:
 
 /** Get event properties */
 export async function getEventProperties(event: string): Promise<string[]> {
-  const res = await fetch(`https://mixpanel.com/api/2.0/events/properties/top?event=${encodeURIComponent(event)}&limit=30`, {
+  const res = await mixpanelFetch(`https://mixpanel.com/api/2.0/events/properties/top?event=${encodeURIComponent(event)}&limit=30`, {
     headers: { Authorization: getAuth() },
   });
   if (!res.ok) throw new Error(`Mixpanel API ${res.status}`);
@@ -51,7 +78,7 @@ export async function getPropertyValues(event: string, property: string, limit =
     limit: String(limit),
     type: 'general',
   });
-  const res = await fetch(`https://mixpanel.com/api/2.0/events/properties/values?${urlParams}`, {
+  const res = await mixpanelFetch(`https://mixpanel.com/api/2.0/events/properties/values?${urlParams}`, {
     headers: { Authorization: getAuth() },
   });
   if (!res.ok) throw new Error(`Mixpanel API ${res.status}`);
@@ -113,7 +140,7 @@ export async function querySegmentation(params: {
     urlParams.set('where', params.where);
   }
 
-  const res = await fetch(`https://mixpanel.com/api/2.0/segmentation?${urlParams}`, {
+  const res = await mixpanelFetch(`https://mixpanel.com/api/2.0/segmentation?${urlParams}`, {
     headers: { Authorization: getAuth() },
   });
   if (!res.ok) throw new Error(`Mixpanel API ${res.status}`);
@@ -141,7 +168,7 @@ export async function exportEvents(params: {
     urlParams.set('where', params.where);
   }
 
-  const res = await fetch(`https://data.mixpanel.com/api/2.0/export?${urlParams}`, {
+  const res = await mixpanelFetch(`https://data.mixpanel.com/api/2.0/export?${urlParams}`, {
     headers: { Authorization: getAuth() },
   });
   if (!res.ok) throw new Error(`Mixpanel API ${res.status}`);
@@ -192,7 +219,7 @@ async function lookupEmails(distinctIds: string[]): Promise<Record<string, strin
         try {
           const body = new URLSearchParams();
           body.set('distinct_id', id);
-          const res = await fetch('https://mixpanel.com/api/2.0/engage', {
+          const res = await mixpanelFetch('https://mixpanel.com/api/2.0/engage', {
             method: 'POST',
             headers: { Authorization: getAuth(), 'Content-Type': 'application/x-www-form-urlencoded' },
             body: body.toString(),
@@ -966,6 +993,11 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
 
   } catch (err) {
     console.error('[Mixpanel Direct]', err);
+    // A timeout is worth reporting — returning '' makes the caller show a generic
+    // "no data found", which reads as an empty account rather than a slow API.
+    if (err instanceof MixpanelTimeoutError) {
+      return `MIXPANEL DATA: The query timed out — Mixpanel did not respond in time. This is usually temporary. Tell the user the request timed out and offer to retry or narrow the date range; do not report zero or invent numbers.`;
+    }
     return '';
   }
 }

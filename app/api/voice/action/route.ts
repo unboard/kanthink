@@ -28,6 +28,9 @@ async function findCard(cardId: string) {
 }
 
 export const runtime = 'nodejs';
+// Mixpanel exports normally take ~1s but can stall; the default ceiling cut those
+// requests off mid-flight, leaving the caller hanging with no response at all.
+export const maxDuration = 60;
 
 interface ActionRequest {
   action: string;

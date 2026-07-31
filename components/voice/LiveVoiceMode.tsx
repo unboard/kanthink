@@ -670,11 +670,18 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         ? { ...args, previousDateRange: `${lastRange.fromDate}:${lastRange.toDate}` }
         : args;
 
+      // Never leave the card stuck on "Fetching…" — if the request dies or the
+      // function is cut off, the placeholder would otherwise stay forever.
+      const abort = new AbortController();
+      const abortTimer = setTimeout(() => abort.abort(), 45000);
+
       fetch('/api/voice/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: name, args: queryArgs }),
+        signal: abort.signal,
       }).then(async (res) => {
+        clearTimeout(abortTimer);
         const data = await res.json();
         setActions(prev => prev.map(a =>
           a.id === queryId
@@ -706,12 +713,26 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
             },
           }));
         }
-      }).catch(() => {
+      }).catch((err) => {
+        clearTimeout(abortTimer);
+        const timedOut = err?.name === 'AbortError';
+        const msg = timedOut
+          ? 'That analytics query timed out. Mixpanel was slow to respond — try again, or ask for a narrower date range.'
+          : 'Query failed.';
         setActions(prev => prev.map(a =>
-          a.id === queryId
-            ? { ...a, result: 'Query failed.', success: false }
-            : a
+          a.id === queryId ? { ...a, result: msg, success: false } : a
         ));
+
+        // Tell Kan too, so it doesn't keep waiting on data that will never arrive.
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            clientContent: {
+              turns: [{ role: 'user', parts: [{ text: `[System] The analytics query failed: ${msg} Tell the user plainly; do not invent numbers.` }] }],
+              turnComplete: false,
+            },
+          }));
+        }
       });
 
       return 'Pulling that data up now — it will appear on screen, and the full result will reach you a moment later so you can answer questions about it.';

@@ -10,6 +10,9 @@ import { eq, and, desc, asc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 
 export const runtime = 'nodejs';
+// Actions here fan out to /api/voice/action, which can wait on a slow Mixpanel
+// export. Without headroom the whole chat turn is cut off and returns nothing.
+export const maxDuration = 60;
 
 interface ChannelSummary {
   id: string;
