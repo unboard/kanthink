@@ -15,10 +15,14 @@ export interface ChartDataPoint {
   label: string;
   value: number;
   value2?: number;
+  /** Rendered before the number on metric cards, e.g. "$" */
+  prefix?: string;
+  /** Rendered after the number on metric cards, e.g. "%" */
+  suffix?: string;
   [key: string]: unknown;  // allow arbitrary extra fields
 }
 
-export type ChartType = 'area' | 'bar' | 'line' | 'pie' | 'donut' | 'radar' | 'radialBar' | 'scatter' | 'treemap' | 'funnel' | 'composed';
+export type ChartType = 'area' | 'bar' | 'line' | 'pie' | 'donut' | 'radar' | 'radialBar' | 'scatter' | 'treemap' | 'funnel' | 'composed' | 'value';
 
 export interface ChartConfig {
   type: ChartType;
@@ -83,6 +87,38 @@ function XYChildren() {
   );
 }
 
+// ── Metric cards ──────────────────────────────────────────────────
+// A single number renders as a stat tile, never as a lone bar — a one-bar
+// bar chart carries no comparison and just adds noise.
+function formatMetric(value: number): string {
+  return Number.isInteger(value)
+    ? value.toLocaleString()
+    : value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function MetricCards({ data, title, color }: { data: ChartDataPoint[]; title?: string; color: string }) {
+  return (
+    <div className="my-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-3">
+      {title && (
+        <h4 className="text-xs font-semibold text-neutral-600 dark:text-neutral-300 mb-2 uppercase tracking-wide">{title}</h4>
+      )}
+      <div className={`grid gap-3 ${data.length > 1 ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1'}`}>
+        {data.map((d, i) => (
+          <div key={i} className="min-w-0">
+            <p className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400 truncate">{d.label}</p>
+            <p className="text-2xl font-semibold tabular-nums truncate" style={{ color }}>
+              {d.prefix || ''}{formatMetric(d.value)}{d.suffix || ''}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Chart types that say nothing useful with a single data point. */
+const DEGENERATE_WITH_ONE_POINT: ChartType[] = ['bar', 'line', 'area', 'pie', 'donut', 'scatter', 'composed', 'radialBar', 'funnel'];
+
 // ── Main chart component ──────────────────────────────────────────
 export function KanChart({ config }: { config: ChartConfig }) {
   const { type, title, data, color, color2, label = 'Value', label2 = 'Value 2', height = 220, stacked, composedTypes } = config;
@@ -91,6 +127,11 @@ export function KanChart({ config }: { config: ChartConfig }) {
   const hasSeries2 = data.some(d => d.value2 !== undefined);
 
   if (!data?.length) return null;
+
+  // Metric card: requested explicitly, or a chart that degenerates to one point.
+  if (type === 'value' || (data.length === 1 && !hasSeries2 && DEGENERATE_WITH_ONE_POINT.includes(type))) {
+    return <MetricCards data={data} title={title} color={c1} />;
+  }
 
   const margin = { top: 4, right: 4, bottom: 0, left: -12 };
 

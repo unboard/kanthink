@@ -250,21 +250,121 @@ export interface QueryOptions {
 }
 
 type AutoChartHint = 'pie' | 'bar' | 'line' | 'value' | undefined;
+type ChartType = 'line' | 'bar' | 'pie' | 'donut' | 'value';
 
 function detectChartHint(question: string): AutoChartHint {
   const q = question.toLowerCase();
-  if (/\b(pie|donut|share|proportion|split|distribution|breakdown|by category|by product|by type|percent|%)\b/.test(q)) return 'pie';
-  if (/\b(how many|total|sum|count)\b/.test(q) && !/\b(per|each|by|across)\b/.test(q)) return 'value';
+  if (/\b(pie|donut|share|proportion|split|percent|%)\b/.test(q)) return 'pie';
   if (/\b(trend|over time|per day|by day|daily|weekly|monthly|timeline|history)\b/.test(q)) return 'line';
-  if (/\b(top|rank|compare|versus|vs\.?|which)\b/.test(q)) return 'bar';
+  if (/\b(top|rank|compare|comparison|versus|vs\.?|which)\b/.test(q)) return 'bar';
   return undefined;
 }
 
-function resolveChartType(options: QueryOptions | undefined, question: string, fallback: 'line' | 'bar' | 'pie' | 'donut' | 'value'): 'line' | 'bar' | 'pie' | 'donut' | 'value' {
-  if (options?.chartType) return options.chartType;
-  const hint = detectChartHint(question);
-  if (hint) return hint;
-  return fallback;
+/**
+ * Pick a chart type. Priority: explicit request > phrasing hint > structural default.
+ * A result with one data point always becomes a metric card — a single bar or a
+ * one-slice pie is noise, not a visualization.
+ */
+function resolveChartType(
+  options: QueryOptions | undefined,
+  question: string,
+  fallback: ChartType,
+  pointCount = 2,
+): ChartType {
+  const chosen = options?.chartType || detectChartHint(question) || fallback;
+  return pointCount <= 1 ? 'value' : chosen;
+}
+
+// ── Breakdown parsing ─────────────────────────────────────────────
+// "print orders by user", "revenue per category", "orders broken down by day".
+// A recognized dimension always produces a data table, so breakdowns stop being
+// hit or miss.
+type BreakdownDimension = 'user' | 'category' | 'day' | 'week' | 'month';
+
+const DIMENSION_SYNONYMS: Array<{ dimension: BreakdownDimension; terms: string[] }> = [
+  { dimension: 'user', terms: ['user', 'users', 'customer', 'customers', 'email', 'emails', 'person', 'people', 'buyer', 'buyers', 'account', 'accounts'] },
+  { dimension: 'category', terms: ['category', 'categories', 'product', 'products', 'type', 'types', 'item', 'items', 'sku', 'skus'] },
+  { dimension: 'day', terms: ['day', 'days', 'date', 'dates', 'daily'] },
+  { dimension: 'week', terms: ['week', 'weeks', 'weekly'] },
+  { dimension: 'month', terms: ['month', 'months', 'monthly'] },
+];
+
+interface BreakdownRequest {
+  /** null when the user clearly asked for a breakdown but the dimension isn't supported */
+  dimension: BreakdownDimension | null;
+  /** the raw phrase the user used, for clarification messages */
+  rawTerm: string;
+}
+
+/** Phrasings that can only mean "break this down", so an unknown term is worth asking about. */
+const EXPLICIT_BREAKDOWN = /^(broken\s+down\s+by|breakdown\s+by|grouped?\s+by|group\s+by|split\s+by|for\s+each)$/;
+
+function parseBreakdown(question: string): BreakdownRequest | null {
+  const q = question.toLowerCase();
+  const match = q.match(/\b(broken\s+down\s+by|breakdown\s+by|grouped?\s+by|group\s+by|split\s+by|by|per|across|for\s+each)\s+(?:each\s+)?([a-z_]+)/);
+  if (!match) {
+    // "daily"/"weekly"/"monthly" imply a time breakdown without a "by" phrase
+    if (/\bdaily\b/.test(q)) return { dimension: 'day', rawTerm: 'daily' };
+    if (/\bweekly\b/.test(q)) return { dimension: 'week', rawTerm: 'weekly' };
+    if (/\bmonthly\b/.test(q)) return { dimension: 'month', rawTerm: 'monthly' };
+    return null;
+  }
+
+  const [, connector, term] = match;
+  for (const { dimension, terms } of DIMENSION_SYNONYMS) {
+    if (terms.includes(term)) return { dimension, rawTerm: term };
+  }
+  // A bare "by"/"per"/"across" followed by something unrecognized is usually just
+  // prose ("driven by growth"), not a breakdown request — don't ask about it.
+  return EXPLICIT_BREAKDOWN.test(connector) ? { dimension: null, rawTerm: term } : null;
+}
+
+/** Default chart for a given breakdown: time trends line, comparisons bar, no breakdown a metric card. */
+function defaultChartForBreakdown(dimension: BreakdownDimension | null | undefined): ChartType {
+  if (dimension === 'day' || dimension === 'week' || dimension === 'month') return 'line';
+  if (dimension === 'user' || dimension === 'category') return 'bar';
+  return 'value';
+}
+
+/** Does the question pin down a time window, or are we silently assuming one? */
+function specifiesDateRange(question: string): boolean {
+  const q = question.toLowerCase();
+  return /\b(today|yesterday|this week|last week|this month|last month|this year|last year|since|between|ytd)\b/.test(q)
+    || /\blast\s+\d+\s*(day|week|month)/.test(q)
+    || /\d{4}-\d{2}-\d{2}/.test(q)
+    || /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(q);
+}
+
+/**
+ * Append clarification guidance so the AI can resolve ambiguity with the user
+ * instead of quietly guessing at a metric definition.
+ */
+function buildClarificationBlock(notes: string[], questions: string[]): string {
+  if (notes.length === 0 && questions.length === 0) return '';
+  let block = '\nASSUMPTIONS MADE FOR THIS QUERY:\n';
+  for (const n of notes) block += `  • ${n}\n`;
+  if (questions.length > 0) {
+    block += '\nAMBIGUITY — resolve with the user:\n';
+    for (const q of questions) block += `  • ${q}\n`;
+    block += 'End your answer with exactly ONE short follow-up question covering the most important item above. Answer with the data you have first — never withhold the numbers while waiting for an answer.\n';
+  } else {
+    block += 'Briefly state the time window you used so the user can correct it. Do not ask a follow-up question otherwise.\n';
+  }
+  return block;
+}
+
+/** Format a UTC-ish epoch seconds value into a period bucket label. */
+function bucketLabel(epochSeconds: number, dimension: 'day' | 'week' | 'month'): string {
+  if (!epochSeconds) return '?';
+  const d = new Date(epochSeconds * 1000);
+  if (dimension === 'month') {
+    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'America/Chicago' });
+  }
+  if (dimension === 'week') {
+    const weekStart = new Date(d.getTime() - d.getDay() * 24 * 60 * 60 * 1000);
+    return `Week of ${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' })}`;
+  }
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' });
 }
 
 /** High-level query function for AI chat — takes natural language intent and returns formatted data */
@@ -292,8 +392,20 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
     const fromDate = options?.fromDate || weekAgo.toISOString().split('T')[0];
 
     const lowerQ = question.toLowerCase();
-    const wantsEmails = /emails?|users?|customers?|who ordered|who bought|who placed|show me.*(people|customers|users)/.test(lowerQ);
+    const breakdown = parseBreakdown(question);
+    const wantsEmails = /emails?|users?|customers?|who ordered|who bought|who placed|show me.*(people|customers|users)/.test(lowerQ)
+      || breakdown?.dimension === 'user';
     const categoryFilter = detectCategory(lowerQ);
+
+    // Track what we had to assume so the AI can surface it instead of guessing silently.
+    const clarifyNotes: string[] = [];
+    const clarifyQuestions: string[] = [];
+    if (!options?.fromDate && !specifiesDateRange(question)) {
+      clarifyNotes.push(`No time window was given — used ${fromDate} to ${toDate} (last 7 days).`);
+    }
+    if (breakdown && !breakdown.dimension) {
+      clarifyQuestions.push(`The user asked to break down by "${breakdown.rawTerm}", which is not an available dimension. Supported breakdowns are: user, category, day, week, month. Ask which one they meant.`);
+    }
 
     const eventMatch = lowerQ.match(/print.?orders?|orders?|revenue|sales|emails?|users?|customers?|pocket|business card|postcard|yard sign|door hanger|brochure|flyer/);
     if (eventMatch) {
@@ -364,8 +476,77 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
       context += `Revenue: $${totalRevenue.toFixed(2)}\n`;
       if (totalQuantity) context += `Quantity: ${totalQuantity.toLocaleString()}\n`;
 
-      // Include order details — with emails if available, as a structured table
-      if (wantsEmails) {
+      const emailOf = (o: typeof orderDetails[number]) => ((o as Record<string, unknown>).email as string) || '';
+
+      // A recognized breakdown ALWAYS emits a data table plus one chart matched to
+      // the dimension. This is what makes "print orders by user" deterministic
+      // instead of hit or miss.
+      if (breakdown?.dimension && totalOrders > 0) {
+        const dim = breakdown.dimension;
+        const groups = new Map<string, { orders: number; revenue: number; last: number }>();
+        const addTo = (key: string, revenue: number, date: number) => {
+          const g = groups.get(key) || { orders: 0, revenue: 0, last: 0 };
+          g.orders += 1;
+          g.revenue += revenue;
+          if (date > g.last) g.last = date;
+          groups.set(key, g);
+        };
+
+        for (const o of orderDetails) {
+          if (dim === 'user') {
+            addTo(emailOf(o) || o.resolvedId || 'Unknown', o.total, o.date);
+          } else if (dim === 'category') {
+            // One order can span categories — split its revenue evenly so the
+            // column still sums to the reported total.
+            const cats = o.categories.length ? Array.from(new Set(o.categories)) : ['Uncategorized'];
+            for (const c of cats) addTo(c, o.total / cats.length, o.date);
+          } else {
+            addTo(bucketLabel(o.date, dim), o.total, o.date);
+          }
+        }
+
+        const isTimeDim = dim === 'day' || dim === 'week' || dim === 'month';
+        const entries = Array.from(groups.entries()).sort((a, b) =>
+          isTimeDim ? a[1].last - b[1].last : b[1].orders - a[1].orders || b[1].revenue - a[1].revenue
+        );
+
+        if (dim === 'user' && !hasAnyEmail) {
+          context += `\nNote: Customer emails are not available for these orders — users are identified by Mixpanel distinct ID.\n`;
+        }
+
+        const dimColumn = dim === 'user' ? 'user' : dim === 'category' ? 'category' : dim;
+        const columns = dim === 'user'
+          ? [dimColumn, 'orders', 'revenue', 'last order']
+          : [dimColumn, 'orders', 'revenue'];
+        const rows = entries.map(([key, g]) => {
+          const row: Record<string, string> = {
+            [dimColumn]: key,
+            orders: String(g.orders),
+            revenue: `$${g.revenue.toFixed(2)}`,
+          };
+          if (dim === 'user') row['last order'] = g.last ? bucketLabel(g.last, 'day') : '—';
+          return row;
+        });
+
+        const titleDim = dimColumn.charAt(0).toUpperCase() + dimColumn.slice(1);
+        context += `\n\`\`\`table\n${JSON.stringify({
+          title: `${catLabel} Orders by ${titleDim}`,
+          columns,
+          rows,
+        })}\n\`\`\`\n`;
+
+        const chartData = (isTimeDim ? entries : entries.slice(0, 10))
+          .map(([label, g]) => ({ label, value: g.orders }));
+        const chartType = resolveChartType(options, question, defaultChartForBreakdown(dim), chartData.length);
+        context += `\n\`\`\`chart\n${JSON.stringify({
+          type: chartType,
+          title: `${catLabel} Orders by ${titleDim}`,
+          data: chartType === 'value' ? [{ label: 'Orders', value: totalOrders }] : chartData,
+          color: 'violet',
+          label: 'Orders',
+        })}\n\`\`\`\n`;
+      } else if (wantsEmails) {
+        // Individual order rows — with emails when we could resolve them
         if (!hasAnyEmail) {
           context += `\nNote: Customer emails are not available for these orders.\n`;
         }
@@ -382,13 +563,9 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
           columns: hasAnyEmail ? ['email', 'order', 'product', 'total', 'date'] : ['order', 'product', 'total', 'date'],
           rows: tableRows,
         })}\n\`\`\`\n`;
-      }
-
-      // ONE chart — the most relevant one for the question
-      if (!wantsEmails && totalOrders > 0) {
-        const chartType = resolveChartType(options, question, 'line');
-
-        // Build category breakdown for pie/donut charts
+      } else if (totalOrders > 0) {
+        // No breakdown asked for — a headline metric card, unless the phrasing
+        // asks for a trend or a comparison.
         const categoryMap: Record<string, number> = {};
         for (const o of orderDetails) {
           const cat = o.categories[0] || 'Other';
@@ -398,30 +575,33 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
           .map(([label, value]) => ({ label, value }))
           .sort((a, b) => b.value - a.value);
 
-        // Build daily breakdown for line/bar charts
         const dailyMap: Record<string, number> = {};
         for (const o of orderDetails) {
-          const d = o.date ? new Date(o.date * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
-          dailyMap[d] = (dailyMap[d] || 0) + 1;
+          dailyMap[bucketLabel(o.date, 'day')] = (dailyMap[bucketLabel(o.date, 'day')] || 0) + 1;
         }
         const dailyData = Object.entries(dailyMap).map(([label, value]) => ({ label, value }));
 
-        if (chartType === 'pie' || chartType === 'donut') {
-          // Breakdown view — use categories if we have more than one, else fall back to daily
+        const chartType = resolveChartType(options, question, 'value', dailyData.length);
+
+        if (chartType === 'value') {
+          const metrics: Array<{ label: string; value: number; prefix?: string }> = [
+            { label: `${catLabel} Orders`, value: totalOrders },
+            { label: 'Revenue', value: Number(totalRevenue.toFixed(2)), prefix: '$' },
+          ];
+          if (totalQuantity) metrics.push({ label: 'Quantity', value: totalQuantity });
+          context += `\n\`\`\`chart\n${JSON.stringify({
+            type: 'value',
+            title: `${catLabel} Orders — ${fromDate} to ${toDate}`,
+            data: metrics,
+            color: 'violet',
+          })}\n\`\`\`\n`;
+        } else if (chartType === 'pie' || chartType === 'donut') {
           const pieData = categoryData.length > 1 ? categoryData : dailyData;
           const pieTitle = categoryData.length > 1 ? `${catLabel} Orders by Category` : `${catLabel} Orders by Day`;
           context += `\n\`\`\`chart\n${JSON.stringify({
             type: chartType,
             title: pieTitle,
             data: pieData,
-            color: 'violet',
-            label: 'Orders',
-          })}\n\`\`\`\n`;
-        } else if (chartType === 'value') {
-          context += `\n\`\`\`chart\n${JSON.stringify({
-            type: 'value',
-            title: `${catLabel} Orders`,
-            data: [{ label: 'Orders', value: totalOrders }],
             color: 'violet',
             label: 'Orders',
           })}\n\`\`\`\n`;
@@ -435,6 +615,8 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
           })}\n\`\`\`\n`;
         }
       }
+
+      context += buildClarificationBlock(clarifyNotes, clarifyQuestions);
 
       return context;
     }
@@ -457,14 +639,15 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
       } catch { /* non-critical */ }
 
       if (rawEvents.length > 0) {
-        // Build daily counts
-        const dailyMap: Record<string, number> = {};
+        // Bucket by the requested time grain (day unless the user asked otherwise)
+        const timeDim: 'day' | 'week' | 'month' =
+          breakdown?.dimension === 'week' || breakdown?.dimension === 'month' ? breakdown.dimension : 'day';
+        const bucketMap: Record<string, number> = {};
         for (const evt of rawEvents) {
-          const ts = (evt.properties.time as number) || 0;
-          const d = ts ? new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '?';
-          dailyMap[d] = (dailyMap[d] || 0) + 1;
+          const label = bucketLabel((evt.properties.time as number) || 0, timeDim);
+          bucketMap[label] = (bucketMap[label] || 0) + 1;
         }
-        const dailyData = Object.entries(dailyMap).map(([label, value]) => ({ label, value }));
+        const bucketData = Object.entries(bucketMap).map(([label, value]) => ({ label, value }));
 
         const filterLabel = filter ? ` (filtered: ${filter.property} = "${filter.value}")` : '';
         let context = `MIXPANEL DATA for "${eventName}"${filterLabel} (${fromDate} to ${toDate}):\n`;
@@ -476,25 +659,62 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
           context += `(Ask about any property to see its values, or filter by property = value)\n`;
         }
 
-        const chartType = resolveChartType(options, question, 'line');
+        // A property breakdown on an arbitrary event needs a property name we
+        // don't have — surface the options rather than guessing at one.
+        if (breakdown && !['day', 'week', 'month'].includes(breakdown.dimension || '') && availableProps.length > 0) {
+          const propMatch = availableProps.find(p => p.toLowerCase() === breakdown.rawTerm || p.toLowerCase().includes(breakdown.rawTerm));
+          if (propMatch) {
+            const values = await getPropertyValues(eventName, propMatch).catch(() => [] as string[]);
+            if (values.length > 0) {
+              const counts = new Map<string, number>();
+              for (const evt of rawEvents) {
+                const v = evt.properties[propMatch];
+                const key = v === undefined || v === null || v === '' ? '(not set)' : String(v);
+                counts.set(key, (counts.get(key) || 0) + 1);
+              }
+              const rows = Array.from(counts.entries())
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, n]) => ({ [propMatch]: k, events: String(n) }));
+              context += `\n\`\`\`table\n${JSON.stringify({
+                title: `${eventName} by ${propMatch}`,
+                columns: [propMatch, 'events'],
+                rows,
+              })}\n\`\`\`\n`;
+              const chartData = rows.slice(0, 10).map(r => ({ label: r[propMatch], value: Number(r.events) }));
+              context += `\n\`\`\`chart\n${JSON.stringify({
+                type: resolveChartType(options, question, 'bar', chartData.length),
+                title: `${eventName} by ${propMatch}`,
+                data: chartData,
+                color: 'violet',
+                label: 'Events',
+              })}\n\`\`\`\n`;
+              context += buildClarificationBlock(clarifyNotes, clarifyQuestions);
+              return context;
+            }
+          } else {
+            clarifyQuestions.push(`The user asked to break down "${eventName}" by "${breakdown.rawTerm}", which is not a tracked property. Available properties: ${availableProps.join(', ')}. Ask which one they meant.`);
+          }
+        }
+
+        const chartType = resolveChartType(options, question, defaultChartForBreakdown(breakdown?.dimension), bucketData.length);
         if (chartType === 'value') {
           context += `\n\`\`\`chart\n${JSON.stringify({
             type: 'value',
             title: `${eventName}${filterLabel}`,
             data: [{ label: 'Events', value: rawEvents.length }],
             color: 'violet',
-            label: 'Events',
           })}\n\`\`\`\n`;
         } else {
           context += `\n\`\`\`chart\n${JSON.stringify({
             type: chartType,
-            title: `${eventName}${filterLabel} by Day`,
-            data: dailyData,
+            title: `${eventName}${filterLabel} by ${timeDim.charAt(0).toUpperCase() + timeDim.slice(1)}`,
+            data: bucketData,
             color: 'violet',
             label: 'Events',
           })}\n\`\`\`\n`;
         }
 
+        context += buildClarificationBlock(clarifyNotes, clarifyQuestions);
         return context;
       } else {
         const filterNote = filter ? ` with filter ${filter.property} = "${filter.value}"` : '';
@@ -518,24 +738,20 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
       context += `  ${evt.event}: ${evt.amount.toLocaleString()}\n`;
     }
 
-    // Bar chart for top events
+    // ONE chart. Ranking many events is a real comparison, so bar is the default —
+    // but a share-of-total question gets the donut instead, and a single event
+    // collapses to a metric card.
     const eventData = topEvents.map(e => ({ label: e.event, value: e.amount }));
+    const topChartType = resolveChartType(options, question, 'bar', eventData.length);
     context += `\n\`\`\`chart\n${JSON.stringify({
-      type: 'bar',
-      title: 'Top Events (Last 30 Days)',
-      data: eventData,
+      type: topChartType,
+      title: topChartType === 'pie' || topChartType === 'donut' ? 'Event Distribution' : 'Top Events (Last 30 Days)',
+      data: topChartType === 'pie' || topChartType === 'donut' ? eventData.slice(0, 6) : eventData,
       color: 'violet',
       label: 'Events',
     })}\n\`\`\`\n`;
 
-    // Pie chart for event distribution
-    context += `\n\`\`\`chart\n${JSON.stringify({
-      type: 'donut',
-      title: 'Event Distribution',
-      data: eventData.slice(0, 6),
-      color: 'blue',
-      label: 'Events',
-    })}\n\`\`\`\n`;
+    context += buildClarificationBlock([], clarifyQuestions);
 
     return context;
 

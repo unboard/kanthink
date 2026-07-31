@@ -61,10 +61,23 @@ When you have data to visualize, include a chart using this format:
 \`\`\`chart
 {"type":"area","title":"Chart Title","data":[{"label":"Mon","value":120},{"label":"Tue","value":150}],"color":"violet","label":"Users"}
 \`\`\`
-Available chart types: "area", "bar", "line", "pie", "donut", "radar", "radialBar", "scatter", "treemap", "funnel", "composed".
+Available chart types: "value", "area", "bar", "line", "pie", "donut", "radar", "radialBar", "scatter", "treemap", "funnel", "composed".
 Colors: "violet", "blue", "green", "orange", "pink", "teal", "amber", "red", "indigo", "lime".
 Options: "stacked":true for stacked bar/area. "composedTypes":["bar","line"] for mixed charts. Two series: add "value2", "color2", "label2".
-Choose the chart type that best fits the data — pie/donut for proportions, funnel for conversion stages, area for time series, bar for comparisons, radar for multi-dimensional, treemap for hierarchies.`);
+
+CHOOSING THE RIGHT VISUAL — this matters as much as the numbers:
+- A single number is a METRIC CARD, never a chart. Use {"type":"value","title":"Print Orders","data":[{"label":"Orders","value":128}]}. Never render one bar, one line point, or a one-slice pie.
+- "value" also takes several tiles for headline stats side by side: data:[{"label":"Orders","value":128},{"label":"Revenue","value":4210.55,"prefix":"$"}]. Add "prefix" ("$") or "suffix" ("%") per tile.
+- Only reach for a chart when there is something to compare: bar for ranking 3+ items, line/area for a trend over time, pie/donut for share of a total, funnel for conversion stages.
+- Breakdowns ("by user", "per category") belong in a data table, optionally with a bar chart alongside. Emit a table with:
+\`\`\`table
+{"title":"Orders by User","columns":["user","orders","revenue"],"rows":[{"user":"a@b.com","orders":"3","revenue":"$120.00"}]}
+\`\`\`
+- One visual per answer. Don't emit the same data as both a bar chart and a donut.
+
+ASKING BEFORE GUESSING:
+- If a metric's definition is ambiguous — "users" could mean unique users or a list of people, "orders" could mean count or revenue, no time window given — answer with the most reasonable reading, state the assumption in one clause, and end with ONE short clarifying question.
+- Never withhold the data while waiting for the answer, and never ask more than one question per reply.`);
     }
   }
 
@@ -96,6 +109,22 @@ function getMixpanelMcpUrl(metadata: Record<string, unknown> | null): string {
 }
 
 /**
+ * MCP protocol version we speak. Mixpanel's server runs the stateless
+ * streamable-HTTP transport, which expects this header on every call — without a
+ * session handshake, it is the only thing that pins the negotiated version.
+ */
+const MCP_PROTOCOL_VERSION = '2025-06-18';
+
+function mcpHeaders(token: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream',
+    'Authorization': `Bearer ${token}`,
+    'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+  };
+}
+
+/**
  * Call a Mixpanel MCP tool and return the text result.
  */
 async function callMcpTool(
@@ -107,11 +136,7 @@ async function callMcpTool(
   try {
     const res = await fetch(mcpUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream',
-        'Authorization': `Bearer ${token}`,
-      },
+      headers: mcpHeaders(token),
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: Date.now(),
@@ -290,9 +315,17 @@ async function buildQueryWithLLM(
   eventNames: string[],
   userProperties: string,
   previousMessages?: MixpanelChatMessage[],
+  previousError?: { report: Record<string, unknown>; error: string },
 ): Promise<Record<string, unknown> | null> {
   const conversationContext = previousMessages && previousMessages.length > 0
     ? `\nRecent conversation:\n${previousMessages.slice(-5).map(m => `${m.type}: ${m.content}`).join('\n')}`
+    : '';
+
+  const retryContext = previousError
+    ? `\nYOUR PREVIOUS ATTEMPT WAS REJECTED. Fix it.
+Rejected report: ${JSON.stringify(previousError.report)}
+Validation error: ${previousError.error.slice(0, 800)}
+Correct the offending fields. If a breakdown caused the failure, re-read the breakdown schema and fix its shape rather than dropping the breakdown — the user asked for it.\n`
     : '';
 
   const prompt = `You are a Mixpanel query builder. Given the user's question and the Mixpanel query schema, output ONLY valid JSON for the "report" parameter of Run-Query.
@@ -308,7 +341,7 @@ ${conversationContext}
 
 FULL query schema (follow this EXACTLY for breakdowns, filters, etc.):
 ${querySchema.slice(0, 8000)}
-
+${retryContext}
 User question: "${userQuestion}"
 
 Rules:
@@ -316,8 +349,10 @@ Rules:
 - ALWAYS include: name (string), metrics (array), chartType, unit, dateRange.
 - metrics format: [{"eventName": "...", "measurement": {"type": "basic", "math": "total|unique"}}]
 - For breakdowns, follow the EXACT breakdown schema from above. Every breakdown MUST have a "metric" field (integer, 0 = first metric).
+- If the question contains "by X", "per X", "grouped by X", or "for each X", it IS a breakdown query. Include the breakdown — do not answer it with a plain total.
+- When breaking down by a person (user, customer, buyer), break down on the user property that identifies them (e.g. "$email" or "email") from the user properties listed above.
 - For absolute dates like "March 25, 2026", use: {"type":"absolute","from":"2026-03-25","to":"2026-03-25"}
-- Use chartType "table" for breakdown queries, "line" for time series.
+- chartType: "table" for ANY breakdown query, "line" for time series, "metric" for a single number with no breakdown.
 
 Output the JSON:`;
 
@@ -378,7 +413,7 @@ export async function queryMixpanelForChat(
     try {
       const toolsRes = await fetch(mcpUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'Authorization': `Bearer ${token}` },
+        headers: mcpHeaders(token),
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
       });
       if (toolsRes.ok) {
@@ -515,19 +550,33 @@ export async function queryMixpanelForChat(
 
         if (querySchema) {
           console.log('[MCP] Running LLM-constructed query');
-          const report = await buildQueryWithLLM(llm, userQuestion, querySchema, eventNames, userProperties, previousMessages);
-          if (report) {
+          // Breakdown queries are the ones that most often fail schema validation.
+          // Feed the error back and retry once instead of silently dropping the
+          // result — that retry is the difference between a table and nothing.
+          let report = await buildQueryWithLLM(llm, userQuestion, querySchema, eventNames, userProperties, previousMessages);
+          for (let attempt = 0; attempt < 2 && report; attempt++) {
+            const attemptedReport = report;
             advancedResult = await callMcpTool(mcpUrl, token, 'Run-Query', {
               project_id: projectId,
               report_type: 'insights',
-              report,
+              report: attemptedReport,
             });
-            // Discard if it's a validation error
-            if (advancedResult.result?.includes('Validation error')) {
-              console.error('[MCP] LLM query validation error:', advancedResult.result.slice(0, 300));
-              advancedResult = {};
-            } else {
+
+            const validationError = advancedResult.result?.includes('Validation error')
+              ? advancedResult.result
+              : advancedResult.error;
+            if (!validationError) {
               console.log('[MCP] LLM query succeeded:', (advancedResult.result || '').slice(0, 300));
+              break;
+            }
+
+            console.error(`[MCP] LLM query attempt ${attempt + 1} failed:`, validationError.slice(0, 300));
+            advancedResult = {};
+            if (attempt === 0) {
+              report = await buildQueryWithLLM(
+                llm, userQuestion, querySchema, eventNames, userProperties, previousMessages,
+                { report: attemptedReport, error: validationError },
+              );
             }
           }
         }
@@ -567,7 +616,7 @@ export async function queryMixpanelForChat(
       return '\n\n[Mixpanel connected but no data returned — the MCP query may have failed. Check Vercel logs for details.]';
     }
 
-    parts.push('\n⚠️ CRITICAL — READ BEFORE ANSWERING:\n1. ONLY cite numbers that appear VERBATIM in the "QUERY RESULTS" section above. Copy-paste them exactly as they appear.\n2. NEVER invent, estimate, round, or fabricate numbers. The number 56 is not 5. The number 8559 is not 8500. Copy the exact digits.\n3. Before writing any number in your response, find it in the QUERY RESULTS section and verify it matches character-for-character.\n4. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n5. If no QUERY RESULTS section appears above, say "I could not retrieve data for this query" — do NOT make up numbers.\n6. When including a chart, use the EXACT data points from the query results.\n7. If the results contain individual user data (emails, IDs), present ALL of them to the user in a table.');
+    parts.push('\n⚠️ CRITICAL — READ BEFORE ANSWERING:\n1. ONLY cite numbers that appear VERBATIM in the "QUERY RESULTS" section above. Copy-paste them exactly as they appear.\n2. NEVER invent, estimate, round, or fabricate numbers. The number 56 is not 5. The number 8559 is not 8500. Copy the exact digits.\n3. Before writing any number in your response, find it in the QUERY RESULTS section and verify it matches character-for-character.\n4. If the user asks about an event not in the tracked events list, say "that event is not tracked in your Mixpanel project" and list similar events.\n5. If no QUERY RESULTS section appears above, say "I could not retrieve data for this query" — do NOT make up numbers.\n6. When including a chart, use the EXACT data points from the query results.\n7. If the results contain individual user data (emails, IDs), present ALL of them to the user in a table.\n8. If the user asked for a breakdown ("by user", "per category"), you MUST render a table of the grouped rows. A single total is not an acceptable answer to a breakdown question — if the results only contain a total, say the breakdown could not be retrieved and ask which property to group by.\n9. A single number is a metric card ({"type":"value"}), not a one-bar chart.\n10. If the metric definition was ambiguous, answer with your best reading, name the assumption in one clause, and end with exactly one short clarifying question.');
 
     return parts.join('\n');
   } catch (err) {
