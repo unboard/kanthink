@@ -184,6 +184,52 @@ describe('a stalled Mixpanel never hangs the caller', () => {
     await assertion;
   });
 
+  it('retries a transient 500 and succeeds', async () => {
+    const mod = await loadWithCredentials();
+    // "500: error completing export request" is Mixpanel's intermittent export
+    // failure — the same window succeeds on a retry.
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('error completing export request', { status: 500 }))
+      .mockResolvedValueOnce(new Response('{"event":"print_order","properties":{"time":1}}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const rows = await mod.exportEvents({ event: 'print_order', fromDate: '2026-07-31', toDate: '2026-07-31' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('retries a 429 rate limit', async () => {
+    const mod = await loadWithCredentials();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('rate limited', { status: 429 }))
+      .mockResolvedValueOnce(new Response('{"event":"print_order","properties":{"time":1}}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(mod.exportEvents({ event: 'print_order', fromDate: '2026-07-31', toDate: '2026-07-31' }))
+      .resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after repeated 500s and reports the reason', async () => {
+    const mod = await loadWithCredentials();
+    const fetchMock = vi.fn(async () => new Response('error completing export request', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const out = await mod.queryForChat('how many print orders today');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(out).toContain('MIXPANEL QUERY FAILED');
+    expect(out).toContain('500');
+  });
+
+  it('does not retry a deterministic 400', async () => {
+    const mod = await loadWithCredentials();
+    const fetchMock = vi.fn(async () => new Response('invalid event name', { status: 400 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(mod.exportEvents({ event: 'nope', fromDate: '2026-07-31', toDate: '2026-07-31' })).rejects.toThrow(/400/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('names a failing HTTP status instead of reporting no data', async () => {
     const mod = await loadWithCredentials();
     vi.stubGlobal('fetch', vi.fn(async () => new Response('Unable to authenticate request', { status: 400 })));

@@ -37,21 +37,57 @@ export function isTimeoutError(err: unknown): boolean {
   return !!e && (e.isMixpanelTimeout === true || e.name === 'MixpanelTimeoutError' || e.name === 'AbortError');
 }
 
-async function mixpanelFetch(url: string, init?: RequestInit, timeoutMs = MIXPANEL_TIMEOUT_MS): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch (err) {
-    // An abort can surface as DOMException, TypeError, or Error depending on the
-    // runtime, so key off the name rather than the constructor.
-    if ((err as { name?: string })?.name === 'AbortError') {
-      throw new MixpanelTimeoutError(Math.round(timeoutMs / 1000));
+/** Per-attempt ceiling, so a stall still leaves budget for a retry. */
+const MIXPANEL_ATTEMPT_TIMEOUT_MS = 10000;
+const MIXPANEL_MAX_ATTEMPTS = 3;
+
+/**
+ * Mixpanel's export endpoint intermittently answers "500: error completing
+ * export request" for a window it will serve correctly a second later, and
+ * rate-limits with 429. Both are transient, so one unlucky call should not fail
+ * the whole question. Deterministic 4xx are not retried — they will not change.
+ */
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function mixpanelFetch(url: string, init?: RequestInit, budgetMs = MIXPANEL_TIMEOUT_MS): Promise<Response> {
+  const deadline = Date.now() + budgetMs;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MIXPANEL_MAX_ATTEMPTS; attempt++) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.min(MIXPANEL_ATTEMPT_TIMEOUT_MS, remaining));
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      const canRetry = attempt < MIXPANEL_MAX_ATTEMPTS && Date.now() < deadline;
+      if (isRetryableStatus(res.status) && canRetry) {
+        // Drain the body so the socket is released before trying again.
+        await res.text().catch(() => {});
+        console.warn(`[Mixpanel] ${res.status} on attempt ${attempt}, retrying`);
+        await sleep(attempt * 400);
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err;
+      // An abort surfaces as DOMException, TypeError, or Error depending on the
+      // runtime, so key off the name rather than the constructor.
+      const aborted = (err as { name?: string })?.name === 'AbortError';
+      if (aborted) lastError = new MixpanelTimeoutError(Math.round(budgetMs / 1000));
+      if (attempt >= MIXPANEL_MAX_ATTEMPTS || Date.now() >= deadline) break;
+      await sleep(attempt * 400);
+    } finally {
+      clearTimeout(timer);
     }
-    throw err;
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw lastError ?? new MixpanelTimeoutError(Math.round(budgetMs / 1000));
 }
 
 /** Include the response body on a failure — "Mixpanel API 400" alone says nothing. */
