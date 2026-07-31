@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
 import { AudioLines } from 'lucide-react';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
@@ -22,7 +23,11 @@ import { TaskDrawer } from '@/components/board/TaskDrawer';
 interface ActionResult {
   type: string;
   success: boolean;
+  /** Shown on screen. Never contains model-only sections. */
   description: string;
+  /** Full result including raw data, fed back into conversation history so
+   *  follow-up questions can be answered. Never rendered. */
+  modelDescription?: string;
   cardId?: string;
   channelId?: string;
   taskId?: string;
@@ -268,7 +273,7 @@ export function OperatorHome() {
             if (r.type === 'unarchive_card' && r.cardPreview) return `[action: unarchive_card — "${r.cardPreview.title}"]`;
             if (r.type === 'move_card' && r.cardPreview) return `[action: move_card — "${r.cardPreview.title}" to ${r.cardPreview.columnName || 'column'}]`;
             if (r.type === 'complete_task' && r.taskPreview) return `[action: complete_task — "${r.taskPreview.title}"]`;
-            return `[action: ${r.type} — ${r.description || 'succeeded'}]`;
+            return `[action: ${r.type} — ${r.modelDescription || r.description || 'succeeded'}]`;
           });
         return lines.length > 0 ? `\n\n${lines.join('\n')}` : '';
       };
@@ -622,18 +627,53 @@ export function OperatorHome() {
                                 </div>
                               </div>
                             ) : (
-                              /* Default action result */
-                              <div className="flex items-center gap-2 text-xs">
-                                {ar.success ? (
-                                  <svg className="h-3.5 w-3.5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                ) : (
-                                  <svg className="h-3.5 w-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                )}
-                                <span className={ar.success ? 'text-green-300' : 'text-red-300'}>{ar.description}</span>
-                                {ar.success && ar.cardId && ar.channelId && (
-                                  <button onClick={() => router.push(`/channel/${ar.channelId}/card/${ar.cardId}`)} className="text-violet-400 hover:underline ml-1">View</button>
-                                )}
-                              </div>
+                              /* Default action result — data results carry chart/table
+                                 directives, which must be rendered rather than printed. */
+                              (() => {
+                                const { cleanText, charts, tables } = parseChartDirectives(ar.description || '');
+                                return (
+                                  <div className="text-xs">
+                                    <div className="flex items-center gap-2">
+                                      {ar.success ? (
+                                        <svg className="h-3.5 w-3.5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                      ) : (
+                                        <svg className="h-3.5 w-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                      )}
+                                      <span className={`whitespace-pre-line ${ar.success ? 'text-green-300' : 'text-red-300'}`}>{cleanText}</span>
+                                      {ar.success && ar.cardId && ar.channelId && (
+                                        <button onClick={() => router.push(`/channel/${ar.channelId}/card/${ar.cardId}`)} className="text-violet-400 hover:underline ml-1">View</button>
+                                      )}
+                                    </div>
+                                    {tables.map((table, ti) => (
+                                      <div key={ti} className="mt-2 overflow-x-auto rounded-lg border border-neutral-800">
+                                        <table className="w-full text-[11px]">
+                                          <thead>
+                                            <tr className="border-b border-neutral-800">
+                                              {table.columns.map(col => (
+                                                <th key={col} className="px-2 py-1.5 text-left font-medium text-neutral-400 whitespace-nowrap">{col}</th>
+                                              ))}
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {table.rows.map((row, ri) => (
+                                              <tr key={ri} className="border-b border-neutral-900 last:border-0">
+                                                {table.columns.map(col => (
+                                                  <td key={col} className="px-2 py-1.5 text-neutral-300 whitespace-nowrap">{row[col] ?? ''}</td>
+                                                ))}
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    ))}
+                                    {charts.map((chart, ci) => (
+                                      <div key={ci} className="mt-2">
+                                        <KanChart config={chart} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              })()
                             )}
                           </div>
                         ))}

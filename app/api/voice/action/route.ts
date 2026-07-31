@@ -384,11 +384,18 @@ export async function POST(request: Request) {
           });
           if (!fullData) return NextResponse.json({ result: 'No Mixpanel data found for that query.' });
 
-          const voiceText = fullData
+          // `result` is rendered on screen, so it must not contain model-only
+          // sections — the client only strips chart/table fences, and anything
+          // else survives as a wall of text. Chart/table fences stay so the UI
+          // can render them; the spoken copy drops those too.
+          const { stripModelOnlyBlocks } = await import('@/lib/ai/mixpanelDirect');
+          const displayText = stripModelOnlyBlocks(fullData);
+          const voiceText = displayText
             .replace(/```chart\n[\s\S]*?```/g, '')
             .replace(/```table\n[\s\S]*?```/g, '')
             .replace(/\n{2,}/g, '\n').trim();
-          return NextResponse.json({ result: fullData, voiceResult: voiceText });
+          // modelResult keeps the raw rows for follow-up questions; it is never rendered.
+          return NextResponse.json({ result: displayText, voiceResult: voiceText, modelResult: fullData });
         } catch (err) {
           return NextResponse.json({ result: `Mixpanel error: ${err instanceof Error ? err.message : 'Unknown'}` });
         }

@@ -5,7 +5,7 @@ import {
   extractRawResultBlock,
   trimRetainedData,
 } from '@/lib/ai/dataSourceContext';
-import { buildRawResultBlock } from '@/lib/ai/mixpanelDirect';
+import { buildRawResultBlock, stripModelOnlyBlocks, parseDateWindow } from '@/lib/ai/mixpanelDirect';
 
 describe('raw result round-trip', () => {
   const payload = {
@@ -60,6 +60,89 @@ describe('raw result round-trip', () => {
   it('caps the retained copy stored on a thread', () => {
     expect(trimRetainedData('x'.repeat(20000)).length).toBe(8000);
     expect(trimRetainedData('short')).toBe('short');
+  });
+});
+
+describe('model-only blocks never reach the user', () => {
+  const payload = {
+    event: 'print_order',
+    fromDate: '2026-07-31',
+    toDate: '2026-07-31',
+    filters: {},
+    totals: { orders: 4 },
+    rows: [{ orderId: '508494', email: null, total: 332.32 }],
+  };
+
+  it('strips the raw JSON block from a display payload', () => {
+    const context = 'MIXPANEL DATA (2026-07-31):\nPrint Orders: 4\n'
+      + '```chart\n{"type":"value","data":[{"label":"Orders","value":4}]}\n```\n'
+      + buildRawResultBlock(payload);
+
+    const display = stripModelOnlyBlocks(context);
+    expect(display).toContain('Print Orders: 4');
+    expect(display).not.toContain('RAW RESULT');
+    expect(display).not.toContain('508494');
+    expect(display).not.toContain('orderId');
+    // Chart directives survive so the UI can still render the visual.
+    expect(display).toContain('```chart');
+  });
+
+  it('strips assumption/instruction blocks meant for the model', () => {
+    const context = 'MIXPANEL DATA (2026-07-24 to 2026-07-31):\nPrint Orders: 47\n'
+      + '<<<KAN_MODEL_ONLY>>>\nASSUMPTIONS MADE FOR THIS QUERY:\n  • No time window was given.\n'
+      + 'End your answer with exactly ONE short follow-up question.\n<<<END_KAN_MODEL_ONLY>>>\n';
+
+    const display = stripModelOnlyBlocks(context);
+    expect(display).toContain('Print Orders: 47');
+    expect(display).not.toContain('ASSUMPTIONS');
+    expect(display).not.toContain('follow-up question');
+  });
+
+  it('still strips a raw block whose markers were lost', () => {
+    const unmarked = buildRawResultBlock(payload)
+      .replace('<<<KAN_MODEL_ONLY>>>\n', '')
+      .replace('<<<END_KAN_MODEL_ONLY>>>', '');
+    expect(stripModelOnlyBlocks(`Orders: 4\n${unmarked}`)).not.toContain('508494');
+  });
+
+  it('leaves the raw block intact for the model', () => {
+    const context = `Orders: 4\n${buildRawResultBlock(payload)}`;
+    expect(extractRawResultBlock(context)).not.toBeNull();
+  });
+});
+
+describe('date windows from natural language', () => {
+  // 2026-07-31 was a Friday.
+  const now = new Date('2026-07-31T15:00:00-05:00');
+
+  it('honours "today" instead of falling back to the 7-day default', () => {
+    expect(parseDateWindow('How many print order events did we have today', now))
+      .toEqual({ fromDate: '2026-07-31', toDate: '2026-07-31' });
+  });
+
+  it('reads an explicit slash date like 7/31/26', () => {
+    expect(parseDateWindow('print orders today 7/31/26', now))
+      .toEqual({ fromDate: '2026-07-31', toDate: '2026-07-31' });
+  });
+
+  it('reads ISO and month-name dates', () => {
+    expect(parseDateWindow('orders on 2026-07-04', now))
+      .toEqual({ fromDate: '2026-07-04', toDate: '2026-07-04' });
+    expect(parseDateWindow('orders on July 4, 2026', now))
+      .toEqual({ fromDate: '2026-07-04', toDate: '2026-07-04' });
+  });
+
+  it('handles yesterday and relative ranges', () => {
+    expect(parseDateWindow('orders yesterday', now))
+      .toEqual({ fromDate: '2026-07-30', toDate: '2026-07-30' });
+    expect(parseDateWindow('orders in the last 3 days', now))
+      .toEqual({ fromDate: '2026-07-28', toDate: '2026-07-31' });
+    expect(parseDateWindow('orders this month', now))
+      .toEqual({ fromDate: '2026-07-01', toDate: '2026-07-31' });
+  });
+
+  it('returns null when no window is named, so the caller keeps its default', () => {
+    expect(parseDateWindow('how many print orders do we have', now)).toBeNull();
   });
 });
 

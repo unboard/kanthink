@@ -91,7 +91,10 @@ interface OperatorAction {
 interface ActionResult {
   type: string;
   success: boolean;
+  /** Shown on screen. Never contains model-only sections. */
   description: string;
+  /** Full result including raw data, for conversation history only. Never rendered. */
+  modelDescription?: string;
   cardId?: string;
   channelId?: string;
   taskId?: string;
@@ -344,7 +347,7 @@ async function executeVoiceAction(
   actionType: string,
   args: Record<string, string>,
   cookie: string,
-): Promise<{ result: string; cardId?: string; channelId?: string; taskId?: string; cardPreview?: ActionResult['cardPreview']; taskPreview?: ActionResult['taskPreview'] }> {
+): Promise<{ result: string; modelResult?: string; cardId?: string; channelId?: string; taskId?: string; cardPreview?: ActionResult['cardPreview']; taskPreview?: ActionResult['taskPreview'] }> {
   const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
   const res = await fetch(`${baseUrl}/api/voice/action`, {
     method: 'POST',
@@ -388,6 +391,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
           type: action.type,
           success,
           description: data.result,
+          modelDescription: data.modelResult,
           cardId: data.cardId,
           channelId: data.channelId,
           taskId: data.taskId,

@@ -326,6 +326,76 @@ function defaultChartForBreakdown(dimension: BreakdownDimension | null | undefin
   return 'value';
 }
 
+// ── Date windows ──────────────────────────────────────────────────
+// Mixpanel's export API takes YYYY-MM-DD. Without this, "today" silently fell
+// through to the 7-day default and reported a week of orders as today's.
+const REPORT_TZ = 'America/Chicago';
+
+/** YYYY-MM-DD for a Date in the reporting timezone (en-CA formats as ISO). */
+function ymd(d: Date): string {
+  return d.toLocaleDateString('en-CA', { timeZone: REPORT_TZ });
+}
+
+function daysAgo(n: number): Date {
+  return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+}
+
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+
+/**
+ * Resolve a time window from natural language. Returns null when the question
+ * doesn't name one, so the caller keeps its default.
+ */
+export function parseDateWindow(question: string, now = new Date()): { fromDate: string; toDate: string } | null {
+  const q = question.toLowerCase();
+  const today = ymd(now);
+  const day = (d: Date) => ({ fromDate: ymd(d), toDate: ymd(d) });
+
+  // Explicit calendar dates win — "7/31/26", "2026-07-31", "July 31, 2026"
+  const iso = q.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return { fromDate: iso[0], toDate: iso[0] };
+
+  const slash = q.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
+  if (slash) {
+    const [, m, d, rawY] = slash;
+    const year = rawY.length === 2 ? 2000 + Number(rawY) : Number(rawY);
+    const stamp = `${year}-${String(Number(m)).padStart(2, '0')}-${String(Number(d)).padStart(2, '0')}`;
+    return { fromDate: stamp, toDate: stamp };
+  }
+
+  const named = q.match(new RegExp(`\\b(${MONTHS.join('|')})\\s+(\\d{1,2})(?:\\w{0,2})?(?:,?\\s*(\\d{4}))?`));
+  if (named) {
+    const month = MONTHS.indexOf(named[1]) + 1;
+    const year = named[3] ? Number(named[3]) : Number(today.slice(0, 4));
+    const stamp = `${year}-${String(month).padStart(2, '0')}-${String(Number(named[2])).padStart(2, '0')}`;
+    return { fromDate: stamp, toDate: stamp };
+  }
+
+  if (/\btoday\b|\bso far today\b|\bthis hour\b/.test(q)) return { fromDate: today, toDate: today };
+  if (/\byesterday\b/.test(q)) return day(daysAgo(1));
+
+  const lastNDays = q.match(/\blast\s+(\d+)\s*days?\b/);
+  if (lastNDays) return { fromDate: ymd(daysAgo(Number(lastNDays[1]))), toDate: today };
+
+  const lastNWeeks = q.match(/\blast\s+(\d+)\s*weeks?\b/);
+  if (lastNWeeks) return { fromDate: ymd(daysAgo(Number(lastNWeeks[1]) * 7)), toDate: today };
+
+  const lastNMonths = q.match(/\blast\s+(\d+)\s*months?\b/);
+  if (lastNMonths) return { fromDate: ymd(daysAgo(Number(lastNMonths[1]) * 30)), toDate: today };
+
+  if (/\bthis week\b/.test(q)) return { fromDate: ymd(daysAgo(now.getDay())), toDate: today };
+  if (/\blast week\b/.test(q)) return { fromDate: ymd(daysAgo(now.getDay() + 7)), toDate: ymd(daysAgo(now.getDay() + 1)) };
+  if (/\bthis month\b/.test(q)) return { fromDate: `${today.slice(0, 7)}-01`, toDate: today };
+  if (/\blast month\b/.test(q)) {
+    const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const last = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { fromDate: ymd(first), toDate: ymd(last) };
+  }
+  if (/\bthis year\b/.test(q)) return { fromDate: `${today.slice(0, 4)}-01-01`, toDate: today };
+
+  return null;
+}
+
 /** Does the question pin down a time window, or are we silently assuming one? */
 function specifiesDateRange(question: string): boolean {
   const q = question.toLowerCase();
@@ -341,7 +411,7 @@ function specifiesDateRange(question: string): boolean {
  */
 function buildClarificationBlock(notes: string[], questions: string[]): string {
   if (notes.length === 0 && questions.length === 0) return '';
-  let block = '\nASSUMPTIONS MADE FOR THIS QUERY:\n';
+  let block = `\n${MODEL_ONLY_START}\nASSUMPTIONS MADE FOR THIS QUERY:\n`;
   for (const n of notes) block += `  • ${n}\n`;
   if (questions.length > 0) {
     block += '\nAMBIGUITY — resolve with the user:\n';
@@ -350,7 +420,7 @@ function buildClarificationBlock(notes: string[], questions: string[]): string {
   } else {
     block += 'Briefly state the time window you used so the user can correct it. Do not ask a follow-up question otherwise.\n';
   }
-  return block;
+  return `${block}${MODEL_ONLY_END}\n`;
 }
 
 /** Cap on rows serialized into the raw block — keeps the prompt (and the retained
@@ -379,7 +449,28 @@ export function buildRawResultBlock(payload: RawResultPayload): string {
     rows: truncated ? payload.rows.slice(0, MAX_RAW_ROWS) : payload.rows,
     ...(truncated ? { rowsTruncated: { shown: MAX_RAW_ROWS, total: payload.rows.length } } : {}),
   };
-  return `\nRAW RESULT (JSON — the exact data behind the visual above. Use it to answer questions about specific rows, totals, or values. Quote figures from here verbatim; do not print this block back to the user):\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\`\n`;
+  return `\n${MODEL_ONLY_START}\nRAW RESULT (JSON — the exact data behind the visual above. Use it to answer questions about specific rows, totals, or values. Quote figures from here verbatim; do not print this block back to the user):\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\`\n${MODEL_ONLY_END}\n`;
+}
+
+/**
+ * Everything between these markers is written for the model, not the user: raw
+ * JSON and instructions about how to answer. Any surface that renders a query
+ * result to a human MUST strip it — the client's chart/table parser does not,
+ * so leaving it in dumps the whole payload on screen.
+ */
+export const MODEL_ONLY_START = '<<<KAN_MODEL_ONLY>>>';
+export const MODEL_ONLY_END = '<<<END_KAN_MODEL_ONLY>>>';
+
+const MODEL_ONLY_RE = new RegExp(`${MODEL_ONLY_START}[\\s\\S]*?${MODEL_ONLY_END}`, 'g');
+
+/** Remove model-only sections so the remainder is safe to show or speak. */
+export function stripModelOnlyBlocks(context: string): string {
+  return context
+    .replace(MODEL_ONLY_RE, '')
+    // Defensive: strip a raw block even if the markers were lost in transit.
+    .replace(/RAW RESULT \(JSON[\s\S]*?```json\n[\s\S]*?\n```/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /** Format a UTC-ish epoch seconds value into a period bucket label. */
@@ -415,10 +506,12 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
       return `MIXPANEL VALUES for "${options.property}" on "${options.event}":\n${values.map(v => `  • ${v}`).join('\n')}\n\nWant me to filter ${options.event} events where ${options.property} is one of these values?`;
     }
 
+    // Explicit options win, then a window named in the question, then the default.
     const now = new Date();
+    const asked = parseDateWindow(question, now);
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const toDate = options?.toDate || now.toISOString().split('T')[0];
-    const fromDate = options?.fromDate || weekAgo.toISOString().split('T')[0];
+    const toDate = options?.toDate || asked?.toDate || ymd(now);
+    const fromDate = options?.fromDate || asked?.fromDate || ymd(weekAgo);
 
     const lowerQ = question.toLowerCase();
     const breakdown = parseBreakdown(question);
@@ -429,7 +522,7 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
     // Track what we had to assume so the AI can surface it instead of guessing silently.
     const clarifyNotes: string[] = [];
     const clarifyQuestions: string[] = [];
-    if (!options?.fromDate && !specifiesDateRange(question)) {
+    if (!options?.fromDate && !asked && !specifiesDateRange(question)) {
       clarifyNotes.push(`No time window was given — used ${fromDate} to ${toDate} (last 7 days).`);
     }
     if (breakdown && !breakdown.dimension) {
@@ -499,9 +592,15 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
         }
       }
 
+      // "How many people ordered?" is a distinct-person count, not an order count —
+      // report both so the answer matches whichever was asked.
+      const uniquePeople = new Set(orderDetails.map(o => o.resolvedId)).size;
+
       // Build context — focused on what was asked
-      let context = `MIXPANEL DATA (${fromDate} to ${toDate}):\n`;
+      const rangeLabel = fromDate === toDate ? fromDate : `${fromDate} to ${toDate}`;
+      let context = `MIXPANEL DATA (${rangeLabel}):\n`;
       context += `${catLabel} Orders: ${totalOrders}\n`;
+      context += `People who ordered (distinct users): ${uniquePeople}\n`;
       context += `Revenue: $${totalRevenue.toFixed(2)}\n`;
       if (totalQuantity) context += `Quantity: ${totalQuantity.toLocaleString()}\n`;
 
@@ -518,6 +617,7 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
         breakdown: breakdown?.dimension || null,
         totals: {
           orders: totalOrders,
+          uniquePeople,
           revenue: Number(totalRevenue.toFixed(2)),
           ...(totalQuantity ? { quantity: totalQuantity } : {}),
         },
