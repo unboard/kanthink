@@ -8,7 +8,20 @@ import { db } from '@/lib/db';
 import { channelChatThreads } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
-import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
+import {
+  getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat,
+  detectsDataFollowUp, extractRawResultBlock, buildRetainedDataContext, trimRetainedData,
+  type MixpanelChatMessage,
+} from '@/lib/ai/dataSourceContext';
+
+/** Most recent raw data result carried on a thread, if any. */
+function findRetainedData(messages: ChannelChatMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const raw = messages[i]?.dataResult;
+    if (raw) return raw;
+  }
+  return null;
+}
 
 export const runtime = 'nodejs';
 
@@ -384,14 +397,26 @@ export async function POST(request: Request) {
     // Mixpanel context — only fetch when the user has explicitly asked for analytics.
     // Having the integration connected is NOT enough; otherwise every unrelated chat turn
     // would pull in Mixpanel data and confuse the response.
+    //
+    // The exception is a follow-up about data we just returned ("what's the email on
+    // the $600 order?"). That never says "mixpanel", so we also re-supply the retained
+    // rows whenever the last answer in this thread carried data.
+    const retainedData = findRetainedData(context.threadMessages || []);
+    const isDataFollowUp = !!retainedData && detectsDataFollowUp(questionContent);
+
     let mixpanelContext = '';
-    if (channelId && detectsMixpanelIntent(questionContent)) {
+    let retainedContext = '';
+    if (channelId && (detectsMixpanelIntent(questionContent) || isDataFollowUp)) {
       try {
         const sources = await getChannelDataSources(channelId);
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
 
         if (hasMixpanel) {
           useWebSearch = false;
+
+          if (retainedData) {
+            retainedContext = buildRetainedDataContext(retainedData);
+          }
 
           try {
             const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
@@ -411,7 +436,7 @@ export async function POST(request: Request) {
       } catch { /* non-critical */ }
     }
 
-    const messages = await buildPrompt(questionContent, context, channelId, imageUrls, webContext + mixpanelContext);
+    const messages = await buildPrompt(questionContent, context, channelId, imageUrls, webContext + retainedContext + mixpanelContext);
 
     try {
       let llmResponse;
@@ -443,6 +468,12 @@ export async function POST(request: Request) {
         createdAt: now,
       };
 
+      // Carry the raw rows forward so the next question can be answered against
+      // them. Falls back to the previous turn's copy when this turn only re-read
+      // the same data.
+      const freshRaw = mixpanelContext ? extractRawResultBlock(mixpanelContext) : null;
+      const dataResult = freshRaw || (isDataFollowUp ? retainedData : null);
+
       const aiMessage: ChannelChatMessage = {
         id: nanoid(),
         type: 'ai_response',
@@ -450,6 +481,7 @@ export async function POST(request: Request) {
         createdAt: new Date().toISOString(),
         replyToMessageId: userMessage.id,
         proposedActions: actions && actions.length > 0 ? actions : undefined,
+        dataResult: dataResult ? trimRetainedData(dataResult) : undefined,
       };
 
       // Persist messages to thread

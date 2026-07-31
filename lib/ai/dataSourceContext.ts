@@ -75,6 +75,12 @@ CHOOSING THE RIGHT VISUAL — this matters as much as the numbers:
 \`\`\`
 - One visual per answer. Don't emit the same data as both a bar chart and a donut.
 
+READING THE DATA:
+- Every query result includes a "RAW RESULT (JSON)" block with the exact rows, totals, event name, date range, and filters applied. That block is the source of truth — the chart and table are rendered for the user, and you cannot read them back.
+- Answer questions about specific data points ("which order was $600?", "what's that customer's email?") straight from the raw rows. Quote values verbatim.
+- Never print the raw JSON block back to the user. Summarize it, or render the relevant slice as a table.
+- If a value genuinely is not in the raw data, say so and offer to run a different query. Do not infer it.
+
 ASKING BEFORE GUESSING:
 - If a metric's definition is ambiguous — "users" could mean unique users or a list of people, "orders" could mean count or revenue, no time window given — answer with the most reasonable reading, state the assumption in one clause, and end with ONE short clarifying question.
 - Never withhold the data while waiting for the answer, and never ask more than one question per reply.`);
@@ -96,6 +102,54 @@ export function detectsMixpanelIntent(message: string): boolean {
       lower.includes('how many') || lower.includes('show me') || lower.includes('what') ||
       lower.includes('query') || lower.includes('data') || lower.includes('analytics')
     ));
+}
+
+// ── Follow-up questions about data already on screen ──────────────
+// "what's the email for the $600 order?" never says "mixpanel", so intent
+// detection alone drops it and the raw rows are never re-supplied. These
+// patterns only apply when the previous turn actually produced data, which keeps
+// ordinary chat from being mistaken for an analytics question.
+const DATA_FOLLOWUP_PATTERNS: RegExp[] = [
+  /\$\s?[\d,]+/,                                            // "$600"
+  /\b(that|those|these|the)\s+(order|row|user|customer|number|total|entry|record|result|chart|table|value)s?\b/,
+  /\b(which|who|whose|what)\b.*\b(order|user|customer|email|row|one|account|product|category)\b/,
+  /\b(highest|lowest|biggest|smallest|largest|top|bottom|first|last)\s+(one|order|row|user|customer|value|entry|result)s?\b/,
+  /\b(drill|break\s*(it|that)?\s*down|group\s+(it|that)|same\s+(data|query|thing)|again|instead)\b/,
+  /\b(in|from)\s+(the|that)\s+(table|chart|list|results?|data)\b/,
+  /\bemails?\b/,
+];
+
+/** Does this message read like a question about data from the previous turn? */
+export function detectsDataFollowUp(message: string): boolean {
+  const lower = message.toLowerCase();
+  return DATA_FOLLOWUP_PATTERNS.some(p => p.test(lower));
+}
+
+/** Pull the machine-readable result block out of a query context string. */
+export function extractRawResultBlock(context: string): string | null {
+  const match = context.match(/RAW RESULT \(JSON[\s\S]*?```json\n([\s\S]*?)\n```/);
+  return match ? match[1] : null;
+}
+
+/** Cap on the retained copy stored per message, so threads stay small. */
+const MAX_RETAINED_CHARS = 8000;
+
+/** Trim a raw result payload down to what is safe to persist on a thread. */
+export function trimRetainedData(raw: string): string {
+  return raw.length > MAX_RETAINED_CHARS ? raw.slice(0, MAX_RETAINED_CHARS) : raw;
+}
+
+/**
+ * Re-inject the most recent retained result so follow-up questions can be
+ * answered against the exact rows the user is looking at.
+ */
+export function buildRetainedDataContext(raw: string): string {
+  return `\n\n--- DATA FROM THE PREVIOUS ANSWER IN THIS THREAD ---
+This is the exact result behind the table/chart already shown above in this conversation. The user is most likely asking about a specific row or value in it. Answer from this data directly — quote figures verbatim and do not re-print the JSON.
+\`\`\`json
+${raw}
+\`\`\`
+If the answer genuinely is not in this data, say so and offer to run a new query rather than guessing.`;
 }
 
 /**
@@ -603,6 +657,21 @@ export async function queryMixpanelForChat(
     }
     if (advancedResult.result) {
       parts.push(`\n>>> ADVANCED QUERY RESULTS <<<\n${advancedResult.result.slice(0, 5000)}`);
+    }
+
+    // Machine-readable echo of what was actually run and what came back, so
+    // follow-up questions have the same metadata the direct API path provides.
+    // Gated on a real result — an empty block would defeat the "no data" guard below.
+    if (queryResult.result || advancedResult.result) {
+      parts.push(`\nRAW RESULT (JSON — the exact data behind the answer. Use it for questions about specific rows or values; do not print it back to the user):
+\`\`\`json
+${JSON.stringify({
+        source: 'mixpanel-mcp',
+        project: projectName,
+        queriedAt: new Date().toISOString().split('T')[0],
+        result: (advancedResult.result || queryResult.result || '').slice(0, 6000),
+      })}
+\`\`\``);
     }
 
     // Log errors

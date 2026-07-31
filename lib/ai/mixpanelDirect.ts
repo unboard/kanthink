@@ -353,6 +353,35 @@ function buildClarificationBlock(notes: string[], questions: string[]): string {
   return block;
 }
 
+/** Cap on rows serialized into the raw block — keeps the prompt (and the retained
+ *  copy stored on the thread) bounded on large exports. */
+const MAX_RAW_ROWS = 200;
+
+export interface RawResultPayload {
+  event: string;
+  fromDate: string;
+  toDate: string;
+  filters: Record<string, unknown>;
+  breakdown?: string | null;
+  totals: Record<string, number>;
+  rows: Record<string, unknown>[];
+}
+
+/**
+ * Emit the underlying rows and totals as JSON so the AI can reason over
+ * individual data points — the rendered chart and table are for the human, and
+ * the AI cannot read pixels.
+ */
+export function buildRawResultBlock(payload: RawResultPayload): string {
+  const truncated = payload.rows.length > MAX_RAW_ROWS;
+  const body = {
+    ...payload,
+    rows: truncated ? payload.rows.slice(0, MAX_RAW_ROWS) : payload.rows,
+    ...(truncated ? { rowsTruncated: { shown: MAX_RAW_ROWS, total: payload.rows.length } } : {}),
+  };
+  return `\nRAW RESULT (JSON — the exact data behind the visual above. Use it to answer questions about specific rows, totals, or values. Quote figures from here verbatim; do not print this block back to the user):\n\`\`\`json\n${JSON.stringify(body)}\n\`\`\`\n`;
+}
+
 /** Format a UTC-ish epoch seconds value into a period bucket label. */
 function bucketLabel(epochSeconds: number, dimension: 'day' | 'week' | 'month'): string {
   if (!epochSeconds) return '?';
@@ -477,6 +506,30 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
       if (totalQuantity) context += `Quantity: ${totalQuantity.toLocaleString()}\n`;
 
       const emailOf = (o: typeof orderDetails[number]) => ((o as Record<string, unknown>).email as string) || '';
+
+      // Raw rows in machine-readable form. The rendered table/chart is for the
+      // user; this is what lets the AI answer "which order was $600 and whose
+      // was it?" without re-querying.
+      context += buildRawResultBlock({
+        event: 'print_order',
+        fromDate,
+        toDate,
+        filters: categoryFilter ? { category: categoryFilter } : {},
+        breakdown: breakdown?.dimension || null,
+        totals: {
+          orders: totalOrders,
+          revenue: Number(totalRevenue.toFixed(2)),
+          ...(totalQuantity ? { quantity: totalQuantity } : {}),
+        },
+        rows: orderDetails.map(o => ({
+          orderId: o.id,
+          email: emailOf(o) || null,
+          userId: o.resolvedId,
+          total: o.total,
+          categories: o.categories,
+          date: o.date ? new Date(o.date * 1000).toISOString().split('T')[0] : null,
+        })),
+      });
 
       // A recognized breakdown ALWAYS emits a data table plus one chart matched to
       // the dimension. This is what makes "print orders by user" deterministic
@@ -688,6 +741,15 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
                 color: 'violet',
                 label: 'Events',
               })}\n\`\`\`\n`;
+              context += buildRawResultBlock({
+                event: eventName,
+                fromDate,
+                toDate,
+                filters: filter ? { [filter.property]: filter.value } : {},
+                breakdown: propMatch,
+                totals: { events: rawEvents.length, groups: rows.length },
+                rows: Array.from(counts.entries()).map(([k, n]) => ({ [propMatch]: k, events: n })),
+              });
               context += buildClarificationBlock(clarifyNotes, clarifyQuestions);
               return context;
             }
@@ -714,6 +776,15 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
           })}\n\`\`\`\n`;
         }
 
+        context += buildRawResultBlock({
+          event: eventName,
+          fromDate,
+          toDate,
+          filters: filter ? { [filter.property]: filter.value } : {},
+          breakdown: timeDim,
+          totals: { events: rawEvents.length },
+          rows: bucketData.map(b => ({ [timeDim]: b.label, events: b.value })),
+        });
         context += buildClarificationBlock(clarifyNotes, clarifyQuestions);
         return context;
       } else {
@@ -751,6 +822,15 @@ export async function queryForChat(question: string, options?: QueryOptions): Pr
       label: 'Events',
     })}\n\`\`\`\n`;
 
+    context += buildRawResultBlock({
+      event: '(all events)',
+      fromDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      toDate: new Date().toISOString().split('T')[0],
+      filters: {},
+      breakdown: 'event',
+      totals: { events: topEvents.reduce((sum, e) => sum + e.amount, 0) },
+      rows: topEvents.map(e => ({ event: e.event, count: e.amount })),
+    });
     context += buildClarificationBlock([], clarifyQuestions);
 
     return context;

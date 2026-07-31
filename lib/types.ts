@@ -647,6 +647,9 @@ export interface ChannelChatMessage {
   createdAt: string;
   replyToMessageId?: string;
   proposedActions?: ChannelStoredAction[];
+  /** Raw JSON result behind a data answer (e.g. Mixpanel rows + totals), kept so
+   *  follow-up questions can be answered against the same numbers. Not rendered. */
+  dataResult?: string;
 }
 
 export interface ChannelChatThread {

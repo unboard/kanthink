@@ -6,7 +6,7 @@ import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart
 import { auth } from '@/lib/auth';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage, getUserByokConfigWithError } from '@/lib/usage';
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
-import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
+import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, detectsDataFollowUp, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
 
 function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
   if (!whiteboards || whiteboards.length === 0) return ''
@@ -441,7 +441,16 @@ export async function POST(request: Request) {
         dataSourceContext = buildDataSourcePromptContext(sources);
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
 
-        if (hasMixpanel && detectsMixpanelIntent(questionContent)) {
+        // Card threads aren't persisted server-side, so there is no retained copy
+        // to fall back on — instead, treat a data-shaped follow-up as analytics
+        // intent when the conversation is already about Mixpanel, and re-query.
+        const recentlyDiscussedData = (context.previousMessages || [])
+          .slice(-4)
+          .some(m => /mixpanel|analytics/i.test(m.content));
+        const wantsMixpanel = detectsMixpanelIntent(questionContent)
+          || (recentlyDiscussedData && detectsDataFollowUp(questionContent));
+
+        if (hasMixpanel && wantsMixpanel) {
           useWebSearch = false;
 
           // Prefer direct API; fall back to MCP-based query.
