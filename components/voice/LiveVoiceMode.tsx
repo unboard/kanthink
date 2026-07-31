@@ -114,7 +114,7 @@ const TOOLS = [
       },
       {
         name: 'query_mixpanel',
-        description: 'Query Mixpanel analytics data. Use conversationally: show overview first, then suggest properties to drill into. Use action="list_properties" to discover what properties an event has. Use action="list_values" to see values for a property. Filter with property + value params. Pass chartType when the user asks for a specific visualization (e.g. "pie chart of orders by category") — otherwise omit and a sensible default is picked.',
+        description: 'Query Mixpanel analytics data. Use conversationally: show overview first, then suggest properties to drill into. Use action="list_properties" to discover what properties an event has. Use action="list_values" to see values for a property. Filter with property + value params. Pass chartType when the user asks for a specific visualization (e.g. "pie chart of orders by category") — otherwise omit and a sensible default is picked. The tool returns immediately and the underlying data arrives a moment later as a system message — once it does, you CAN read it and answer questions about specific rows, totals, and which values are most common, so never claim you cannot see the data. Keep the agreed date range across follow-ups: if the user settled on "today" and then asks for a breakdown, omit dateRange so the same window carries over, and only set it when they name a new one.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -356,6 +356,8 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   );
 
   const wsRef = useRef<WebSocket | null>(null);
+  /** Window the last analytics query used, carried into follow-ups. */
+  const lastMixpanelRangeRef = useRef<{ fromDate: string; toDate: string } | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const procRef = useRef<ScriptProcessorNode | null>(null);
@@ -661,10 +663,17 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         success: true, timestamp: new Date(),
       }]);
 
+      // Reuse the window the last query settled on unless this call names its own,
+      // so an agreed-upon "today" survives a follow-up like "break that down".
+      const lastRange = lastMixpanelRangeRef.current;
+      const queryArgs = lastRange && !args.dateRange
+        ? { ...args, previousDateRange: `${lastRange.fromDate}:${lastRange.toDate}` }
+        : args;
+
       fetch('/api/voice/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: name, args }),
+        body: JSON.stringify({ action: name, args: queryArgs }),
       }).then(async (res) => {
         const data = await res.json();
         setActions(prev => prev.map(a =>
@@ -672,6 +681,31 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
             ? { ...a, result: data.result || 'No data found.' }
             : a
         ));
+
+        if (data.dateWindow?.fromDate) lastMixpanelRangeRef.current = data.dateWindow;
+
+        // The tool response was sent before this fetch resolved, so Kan has not
+        // seen the numbers yet — without this it truthfully says it cannot read
+        // the data on screen. Feed the result in silently (turnComplete: false)
+        // so it can answer follow-ups about specific rows.
+        const ws = wsRef.current;
+        const modelText = data.modelResult || data.voiceResult || data.result;
+        if (ws && ws.readyState === WebSocket.OPEN && modelText) {
+          const capped = modelText.length > 12000
+            ? `${modelText.slice(0, 12000)}\n[truncated — ask for a narrower range for full detail]`
+            : modelText;
+          ws.send(JSON.stringify({
+            clientContent: {
+              turns: [{
+                role: 'user',
+                parts: [{
+                  text: `[System] The analytics result you requested is now on screen. This is the underlying data — you can read and reason over it to answer follow-up questions such as which products were most popular. Never read the JSON aloud; summarize in plain speech and quote figures exactly.\n\n${capped}`,
+                }],
+              }],
+              turnComplete: false,
+            },
+          }));
+        }
       }).catch(() => {
         setActions(prev => prev.map(a =>
           a.id === queryId
@@ -680,7 +714,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         ));
       });
 
-      return 'I\'m pulling up that data now — it\'ll appear on screen in a moment.';
+      return 'Pulling that data up now — it will appear on screen, and the full result will reach you a moment later so you can answer questions about it.';
     }
 
     try {

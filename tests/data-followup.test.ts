@@ -5,7 +5,7 @@ import {
   extractRawResultBlock,
   trimRetainedData,
 } from '@/lib/ai/dataSourceContext';
-import { buildRawResultBlock, stripModelOnlyBlocks, parseDateWindow } from '@/lib/ai/mixpanelDirect';
+import { buildRawResultBlock, stripModelOnlyBlocks, parseDateWindow, resolveDateWindow } from '@/lib/ai/mixpanelDirect';
 
 describe('raw result round-trip', () => {
   const payload = {
@@ -143,6 +143,39 @@ describe('date windows from natural language', () => {
 
   it('returns null when no window is named, so the caller keeps its default', () => {
     expect(parseDateWindow('how many print orders do we have', now)).toBeNull();
+  });
+});
+
+describe('date window carries across follow-ups', () => {
+  const now = new Date('2026-07-31T15:00:00-05:00');
+  const today = { fromDate: '2026-07-31', toDate: '2026-07-31' };
+
+  it('keeps the agreed day when the follow-up names no date', () => {
+    // "orders today" → then "yes, break that down by product"
+    const first = resolveDateWindow('how many orders today', {}, now);
+    expect(first).toMatchObject({ ...today, source: 'question' });
+
+    const second = resolveDateWindow('yes, break that down by product', { previous: first }, now);
+    expect(second).toMatchObject({ ...today, source: 'previous' });
+  });
+
+  it('lets a new date in the follow-up override the carried window', () => {
+    const second = resolveDateWindow('what about last 30 days', { previous: today }, now);
+    expect(second.source).toBe('question');
+    expect(second.fromDate).toBe('2026-07-01');
+    expect(second.toDate).toBe('2026-07-31');
+  });
+
+  it('prefers an explicit caller override over everything', () => {
+    const w = resolveDateWindow('orders today', {
+      fromDate: '2026-01-01', toDate: '2026-01-31', previous: today,
+    }, now);
+    expect(w).toMatchObject({ fromDate: '2026-01-01', toDate: '2026-01-31', source: 'explicit' });
+  });
+
+  it('falls back to the 7-day default with nothing to go on', () => {
+    const w = resolveDateWindow('how are orders doing', {}, now);
+    expect(w).toMatchObject({ fromDate: '2026-07-24', toDate: '2026-07-31', source: 'default' });
   });
 });
 

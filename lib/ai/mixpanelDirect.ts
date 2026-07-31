@@ -396,6 +396,35 @@ export function parseDateWindow(question: string, now = new Date()): { fromDate:
   return null;
 }
 
+export interface DateWindow { fromDate: string; toDate: string }
+
+/** The fallback window when nothing else names one. */
+export function defaultDateWindow(now = new Date()): DateWindow {
+  return { fromDate: ymd(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)), toDate: ymd(now) };
+}
+
+/**
+ * Resolve the window for a query. Priority: an explicit caller override, then a
+ * window named in the question, then the window the previous query used, then
+ * the default. Carrying the previous window forward is what keeps "break that
+ * down by product" on the same day the user already agreed to.
+ */
+export function resolveDateWindow(
+  question: string,
+  opts?: { fromDate?: string; toDate?: string; previous?: DateWindow | null },
+  now = new Date(),
+): DateWindow & { source: 'explicit' | 'question' | 'previous' | 'default' } {
+  if (opts?.fromDate && opts?.toDate) {
+    return { fromDate: opts.fromDate, toDate: opts.toDate, source: 'explicit' };
+  }
+  const asked = parseDateWindow(question, now);
+  if (asked) return { ...asked, source: 'question' };
+  if (opts?.previous?.fromDate && opts.previous.toDate) {
+    return { ...opts.previous, source: 'previous' };
+  }
+  return { ...defaultDateWindow(now), source: 'default' };
+}
+
 /** Does the question pin down a time window, or are we silently assuming one? */
 function specifiesDateRange(question: string): boolean {
   const q = question.toLowerCase();

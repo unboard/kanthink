@@ -358,20 +358,34 @@ export async function POST(request: Request) {
             return NextResponse.json({ result: 'Mixpanel not configured. Add MIXPANEL_API_SECRET to environment.' });
           }
 
-          // Parse date range if provided
-          let fromDate: string | undefined;
-          let toDate: string | undefined;
+          // Resolve the window explicitly. A follow-up like "yes, break that down
+          // by product" names no date, so without carrying the previous window
+          // forward it would silently snap back to the 7-day default.
+          const { resolveDateWindow } = await import('@/lib/ai/mixpanelDirect');
+          let explicitFrom: string | undefined;
+          let explicitTo: string | undefined;
           if (args.dateRange) {
             const dr = args.dateRange;
             if (dr.includes(':')) {
-              [fromDate, toDate] = dr.split(':');
+              [explicitFrom, explicitTo] = dr.split(':');
             } else {
               const now = new Date();
-              toDate = now.toISOString().split('T')[0];
               const days = dr === 'last_90_days' ? 90 : dr === 'last_30_days' ? 30 : 7;
-              fromDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+              explicitTo = now.toISOString().split('T')[0];
+              explicitFrom = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             }
           }
+
+          const previous = args.previousDateRange?.includes(':')
+            ? { fromDate: args.previousDateRange.split(':')[0], toDate: args.previousDateRange.split(':')[1] }
+            : null;
+          const window = resolveDateWindow(args.question || '', {
+            fromDate: explicitFrom,
+            toDate: explicitTo,
+            previous,
+          });
+          const fromDate = window.fromDate;
+          const toDate = window.toDate;
 
           const fullData = await queryForChat(args.question || 'top events', {
             action: (args.action as 'query' | 'list_properties' | 'list_values') || undefined,
@@ -395,7 +409,13 @@ export async function POST(request: Request) {
             .replace(/```table\n[\s\S]*?```/g, '')
             .replace(/\n{2,}/g, '\n').trim();
           // modelResult keeps the raw rows for follow-up questions; it is never rendered.
-          return NextResponse.json({ result: displayText, voiceResult: voiceText, modelResult: fullData });
+          // dateWindow lets the caller reuse this window on the next follow-up.
+          return NextResponse.json({
+            result: displayText,
+            voiceResult: voiceText,
+            modelResult: fullData,
+            dateWindow: { fromDate, toDate },
+          });
         } catch (err) {
           return NextResponse.json({ result: `Mixpanel error: ${err instanceof Error ? err.message : 'Unknown'}` });
         }
