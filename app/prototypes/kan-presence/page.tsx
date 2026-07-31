@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { SOUND_OPTIONS, CURRENT_SOUND, type SoundOption } from './sounds';
+import { SOUND_OPTIONS, SOUND_OPTIONS_2, CURRENT_SOUND, type SoundOption } from './sounds';
 import {
   CurrentDots, BreathingCap, GillShimmer, PoppingCaps, SporeOrbit,
+  MyceliumWeb, LiquidCap, SoilRipple, TimeLapseGrowth, ScanningBeam,
   CurrentFetching, StageChecklist, MyceliumBar, CompactPulse,
 } from './Indicators';
 
@@ -98,6 +99,24 @@ export default function KanPresencePage() {
         .kp-orbit { animation: kp-orbit 3s linear infinite; }
         @keyframes kp-crawl { 0% { transform: translateX(-100%) } 100% { transform: translateX(300%) } }
         .kp-crawl { animation: kp-crawl 1.8s ease-in-out infinite; }
+
+        /* bolder set */
+        @keyframes kp-thread { 0% { stroke-dasharray: 0 20; opacity: 0 } 25% { opacity: 1 } 60% { stroke-dasharray: 20 20; opacity: 1 } 100% { stroke-dasharray: 20 20; opacity: 0 } }
+        .kp-thread { stroke-dasharray: 0 20; animation: kp-thread 2.4s ease-in-out infinite; }
+        @keyframes kp-node { 0%,20% { transform: scale(0); opacity: 0 } 45% { transform: scale(1); opacity: 1 } 100% { transform: scale(.4); opacity: 0 } }
+        .kp-node { transform-origin: center; transform-box: fill-box; animation: kp-node 2.4s ease-in-out infinite; }
+        @keyframes kp-blob {
+          0%,100% { border-radius: 58% 42% 47% 53% / 62% 55% 45% 38%; transform: rotate(0deg) scale(1) }
+          33% { border-radius: 40% 60% 65% 35% / 40% 45% 55% 60%; transform: rotate(120deg) scale(1.08) }
+          66% { border-radius: 62% 38% 35% 65% / 52% 63% 37% 48%; transform: rotate(240deg) scale(.94) }
+        }
+        .kp-blob { animation: kp-blob 3.4s ease-in-out infinite; }
+        @keyframes kp-ripple { 0% { transform: scale(.35); opacity: .9 } 100% { transform: scale(1.5); opacity: 0 } }
+        .kp-ripple { animation: kp-ripple 2.1s ease-out infinite; }
+        @keyframes kp-grow { 0% { transform: scaleY(.15) scaleX(.5); opacity: .3 } 55% { transform: scaleY(1) scaleX(1); opacity: 1 } 85% { transform: scaleY(1) scaleX(1); opacity: 1 } 100% { transform: scaleY(.15) scaleX(.5); opacity: .3 } }
+        .kp-grow { animation: kp-grow 2.6s cubic-bezier(.34,1.3,.64,1) infinite; }
+        @keyframes kp-scan { 0% { transform: translateX(-140%) } 100% { transform: translateX(340%) } }
+        .kp-scan { animation: kp-scan 1.9s ease-in-out infinite; }
       `}</style>
 
       <div className="mx-auto max-w-4xl px-5 py-10">
@@ -132,7 +151,7 @@ export default function KanPresencePage() {
             <Option label="Stage checklist" note="Most informative: names each step and ticks it off. Best when the wait is genuinely multi-step, as an analytics query is.">
               <StageChecklist active={fetching} />
             </Option>
-            <Option label="Mycelium bar" note="A thread crawling along the track — motion without claiming a percentage. Lighter than the checklist.">
+            <Option label="Mycelium bar ✓ chosen" note="Your pick. A thread crawling along the track — motion without claiming a percentage. Lighter than the checklist.">
               <MyceliumBar active={fetching} />
             </Option>
             <Option label="Compact pulse" note="One line with a spore-ping. For tight spots where a full card is too heavy.">
@@ -162,6 +181,29 @@ export default function KanPresencePage() {
               <SporeOrbit />
             </Option>
           </div>
+
+          <h3 className="mb-1 mt-8 text-xs font-semibold uppercase tracking-wide text-violet-300">Bolder set</h3>
+          <p className="mb-4 max-w-2xl text-sm text-neutral-500">
+            The set above keeps the mascot still and animates something beside it. These change shape,
+            draw themselves, or move the whole mark — built to be noticed rather than tolerated.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Option label="Mycelium web" note="Threads branch out to nodes and retract. Reads as actively searching — the most literal picture of what Kan is doing.">
+              <MyceliumWeb />
+            </Option>
+            <Option label="Liquid cap" note="An abstract blob morphing continuously. Drops the mushroom shape entirely for something organic and strange. Boldest of the ten.">
+              <LiquidCap />
+            </Option>
+            <Option label="Soil ripple" note="Rings pulse outward from beneath the cap, like a signal underground. Calm but unmistakably active.">
+              <SoilRipple />
+            </Option>
+            <Option label="Time-lapse growth" note="A mushroom grows from spore to full cap and starts over. Playful, and the one that most rewards a second look.">
+              <TimeLapseGrowth />
+            </Option>
+            <Option label="Scanning beam" note="A light sweeps across the mark as if reading it. Suggests machine work rather than biology — the most 'processing' of the set.">
+              <ScanningBeam />
+            </Option>
+          </div>
         </Section>
 
         <Section
@@ -170,6 +212,22 @@ export default function KanPresencePage() {
         >
           <div className="grid gap-3">
             {[CURRENT_SOUND, ...SOUND_OPTIONS].map((option) => (
+              <SoundRow
+                key={option.id}
+                option={option}
+                playing={playingId === option.id}
+                onToggle={() => toggleSound(option)}
+              />
+            ))}
+          </div>
+
+          <h3 className="mb-1 mt-8 text-xs font-semibold uppercase tracking-wide text-violet-300">Second batch</h3>
+          <p className="mb-4 max-w-2xl text-sm text-neutral-500">
+            Further from an ambient drone — these use pitch movement, rhythm and timbre, so they read as
+            activity from across a room instead of blending into the background.
+          </p>
+          <div className="grid gap-3">
+            {SOUND_OPTIONS_2.map((option) => (
               <SoundRow
                 key={option.id}
                 option={option}

@@ -252,6 +252,240 @@ export const SOUND_OPTIONS: SoundOption[] = [
   },
 ];
 
+/**
+ * Second batch — further from an ambient drone. These lean on pitch movement,
+ * rhythm and timbre rather than texture alone, so they read as "something is
+ * happening" from across a room.
+ */
+export const SOUND_OPTIONS_2: SoundOption[] = [
+  {
+    id: 'underground-pulse',
+    name: 'Underground pulse',
+    description:
+      'A slow sub-bass heartbeat with a soft skin of noise on each beat. Feels like something large and patient working below ground. The steady pulse reads as alive rather than as a machine.',
+    start: (ctx) => {
+      const out = ctx.createGain();
+      out.gain.value = 1;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 320;
+      out.connect(lp); lp.connect(ctx.destination);
+
+      let stopped = false;
+      const timers: number[] = [];
+      const beat = (strong: boolean) => {
+        if (stopped) return;
+        const t = ctx.currentTime;
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(strong ? 74 : 62, t);
+        o.frequency.exponentialRampToValueAtTime(38, t + 0.28);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(strong ? 0.06 : 0.035, t + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0004, t + 0.42);
+        o.connect(g); g.connect(out);
+        o.start(t); o.stop(t + 0.45);
+
+        const skin = ctx.createBufferSource();
+        skin.buffer = noiseBuffer(ctx, 0.12);
+        const sg = ctx.createGain();
+        sg.gain.setValueAtTime(0.012, t);
+        sg.gain.exponentialRampToValueAtTime(0.0003, t + 0.1);
+        skin.connect(sg); sg.connect(out);
+        skin.start(t); skin.stop(t + 0.13);
+
+        timers.push(window.setTimeout(() => beat(!strong), strong ? 380 : 900));
+      };
+      beat(true);
+
+      return () => {
+        stopped = true;
+        timers.forEach(clearTimeout);
+        out.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.25);
+      };
+    },
+  },
+  {
+    id: 'glass-spores',
+    name: 'Glass spores',
+    description:
+      'Sparse bell tones from a pentatonic set, struck at random with long tails. Delicate and slightly magical — the most "charming" option, and the one people are most likely to comment on.',
+    start: (ctx) => {
+      const out = ctx.createGain();
+      out.gain.value = 1;
+      out.connect(ctx.destination);
+
+      const notes = [523.25, 587.33, 698.46, 783.99, 1046.5];
+      let stopped = false;
+      const timers: number[] = [];
+
+      const chime = () => {
+        if (stopped) return;
+        const t = ctx.currentTime;
+        const freq = notes[Math.floor(Math.random() * notes.length)];
+        [1, 2.76].forEach((ratio, i) => {
+          const o = ctx.createOscillator();
+          o.type = 'sine';
+          o.frequency.value = freq * ratio;
+          const g = ctx.createGain();
+          const peak = i === 0 ? 0.035 : 0.008;
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(peak, t + 0.01);
+          g.gain.exponentialRampToValueAtTime(0.0003, t + (i === 0 ? 1.9 : 0.9));
+          o.connect(g); g.connect(out);
+          o.start(t); o.stop(t + 2);
+        });
+        timers.push(window.setTimeout(chime, 700 + Math.random() * 1300));
+      };
+      chime();
+
+      return () => {
+        stopped = true;
+        timers.forEach(clearTimeout);
+        out.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+      };
+    },
+  },
+  {
+    id: 'rain-on-leaves',
+    name: 'Rain on leaves',
+    description:
+      'A continuous wash of fine rain with heavier drops landing now and then. Very easy to ignore, which is the point — it can run for thirty seconds without wearing on you.',
+    start: (ctx) => {
+      const out = ctx.createGain();
+      out.gain.setValueAtTime(0, ctx.currentTime);
+      out.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 1);
+      out.connect(ctx.destination);
+
+      const rain = ctx.createBufferSource();
+      rain.buffer = noiseBuffer(ctx, 4);
+      rain.loop = true;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 3200;
+      bp.Q.value = 0.6;
+      const rg = ctx.createGain();
+      rg.gain.value = 0.035;
+      rain.connect(bp); bp.connect(rg); rg.connect(out);
+      rain.start();
+
+      // Slow shimmer so it never sits perfectly still
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.09;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 900;
+      lfo.connect(lfoGain); lfoGain.connect(bp.frequency);
+      lfo.start();
+
+      let stopped = false;
+      const timers: number[] = [];
+      const bigDrop = () => {
+        if (stopped) return;
+        const t = ctx.currentTime;
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(900 + Math.random() * 500, t);
+        o.frequency.exponentialRampToValueAtTime(300, t + 0.1);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.03, t);
+        g.gain.exponentialRampToValueAtTime(0.0004, t + 0.25);
+        o.connect(g); g.connect(out);
+        o.start(t); o.stop(t + 0.28);
+        timers.push(window.setTimeout(bigDrop, 800 + Math.random() * 2200));
+      };
+      timers.push(window.setTimeout(bigDrop, 600));
+
+      return () => {
+        stopped = true;
+        timers.forEach(clearTimeout);
+        out.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
+        try { rain.stop(ctx.currentTime + 0.5); lfo.stop(ctx.currentTime + 0.5); } catch { /* already stopped */ }
+      };
+    },
+  },
+  {
+    id: 'growth-swell',
+    name: 'Growth swell',
+    description:
+      'A tone that rises slowly through a fifth, then resets and climbs again. The only option that suggests forward motion, so a long wait feels like progress rather than a hang.',
+    start: (ctx) => {
+      const out = ctx.createGain();
+      out.gain.value = 1;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1400;
+      out.connect(lp); lp.connect(ctx.destination);
+
+      let stopped = false;
+      const timers: number[] = [];
+      const swell = () => {
+        if (stopped) return;
+        const t = ctx.currentTime;
+        const o = ctx.createOscillator();
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(160, t);
+        o.frequency.exponentialRampToValueAtTime(240, t + 2.4);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.04, t + 0.9);
+        g.gain.linearRampToValueAtTime(0.028, t + 2);
+        g.gain.exponentialRampToValueAtTime(0.0004, t + 2.7);
+        o.connect(g); g.connect(out);
+        o.start(t); o.stop(t + 2.8);
+        timers.push(window.setTimeout(swell, 2600));
+      };
+      swell();
+
+      return () => {
+        stopped = true;
+        timers.forEach(clearTimeout);
+        out.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+      };
+    },
+  },
+  {
+    id: 'bubbling-loam',
+    name: 'Bubbling loam',
+    description:
+      'Short wet blips at irregular intervals, like soil fizzing after rain. Playful and a bit odd — the least serious of the ten, and the most obviously mushroom.',
+    start: (ctx) => {
+      const out = ctx.createGain();
+      out.gain.value = 1;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2000;
+      out.connect(lp); lp.connect(ctx.destination);
+
+      let stopped = false;
+      const timers: number[] = [];
+      const blip = () => {
+        if (stopped) return;
+        const t = ctx.currentTime;
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        const base = 220 + Math.random() * 380;
+        o.frequency.setValueAtTime(base, t);
+        o.frequency.exponentialRampToValueAtTime(base * 2.6, t + 0.09);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.045, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0004, t + 0.14);
+        o.connect(g); g.connect(out);
+        o.start(t); o.stop(t + 0.16);
+        timers.push(window.setTimeout(blip, 260 + Math.random() * 900));
+      };
+      blip();
+
+      return () => {
+        stopped = true;
+        timers.forEach(clearTimeout);
+        out.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+      };
+    },
+  },
+];
+
 /** The tone shipping today, for A/B comparison. */
 export const CURRENT_SOUND: SoundOption = {
   id: 'current',

@@ -91,6 +91,95 @@ export function SporeOrbit() {
   );
 }
 
+/* ── Bolder thinking indicators ──────────────────────────────────
+   The first set kept the mascot sitting still and animated something near it.
+   These change shape, draw themselves, or move the whole mark — meant to be
+   noticed rather than tolerated. */
+
+/** Threads branch outward and retract, like a network searching for something. */
+export function MyceliumWeb() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <svg viewBox="0 0 32 32" className="h-6 w-6 overflow-visible">
+        <g stroke="currentColor" className="text-violet-400" strokeWidth="1.2" strokeLinecap="round" fill="none">
+          {[
+            'M16 16 L6 8', 'M16 16 L27 10', 'M16 16 L8 26',
+            'M16 16 L26 25', 'M16 16 L16 4', 'M16 16 L3 17',
+          ].map((d, i) => (
+            <path key={d} d={d} className="kp-thread" style={{ animationDelay: `${i * 220}ms` }} />
+          ))}
+        </g>
+        {[[6, 8], [27, 10], [8, 26], [26, 25], [16, 4], [3, 17]].map(([cx, cy], i) => (
+          <circle
+            key={`${cx}-${cy}`}
+            cx={cx} cy={cy} r="1.6"
+            className="kp-node fill-violet-300"
+            style={{ animationDelay: `${i * 220 + 400}ms` }}
+          />
+        ))}
+        <circle cx="16" cy="16" r="2.6" className="fill-violet-500" />
+      </svg>
+      <span className="text-xs text-neutral-400">Kan is thinking</span>
+    </div>
+  );
+}
+
+/** The cap morphs like a liquid blob, never settling on one shape. */
+export function LiquidCap() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="kp-blob inline-block h-5 w-5 bg-gradient-to-br from-violet-400 to-fuchsia-500" />
+      <span className="text-xs text-neutral-400">Kan is thinking</span>
+    </div>
+  );
+}
+
+/** Rings pulse outward from beneath, like something signalling underground. */
+export function SoilRipple() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="relative inline-flex h-6 w-6 items-center justify-center">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="kp-ripple absolute inset-0 rounded-full border border-violet-400"
+            style={{ animationDelay: `${i * 700}ms` }}
+          />
+        ))}
+        <KanthinkIcon size={14} className="relative text-violet-400" />
+      </span>
+      <span className="text-xs text-neutral-400">Kan is thinking</span>
+    </div>
+  );
+}
+
+/** A mushroom grows from spore to full cap, then starts over. */
+export function TimeLapseGrowth() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="relative inline-flex h-6 w-6 items-end justify-center overflow-hidden">
+        <span className="kp-grow inline-flex origin-bottom">
+          <KanthinkIcon size={20} className="text-violet-400" />
+        </span>
+      </span>
+      <span className="text-xs text-neutral-400">Kan is thinking</span>
+    </div>
+  );
+}
+
+/** A light sweeps across the mark, as if reading it line by line. */
+export function ScanningBeam() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="relative inline-flex h-6 w-6 items-center justify-center overflow-hidden rounded-md">
+        <KanthinkIcon size={19} className="text-violet-500/40" />
+        <span className="kp-scan pointer-events-none absolute inset-y-0 w-3 bg-gradient-to-r from-transparent via-violet-200/70 to-transparent" />
+      </span>
+      <span className="text-xs text-neutral-400">Kan is thinking</span>
+    </div>
+  );
+}
+
 /* ── Working / fetching states ───────────────────────────────────
    The current version is the bare text "Fetching analytics data...".
    These show what is happening and that time is passing. Real progress is
