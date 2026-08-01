@@ -1,14 +1,21 @@
 /**
- * Candidate "Kan is working" loops for voice mode.
+ * "Kan is working" loops for voice mode.
  *
- * The earlier attempts were bare oscillators straight into the destination:
- * mono, dry, centered, with arbitrary pitches. That is why they sounded like
- * test tones rather than something designed. This set is built on a small rig
- * instead — convolution reverb for space, stereo placement for width, FM for
- * timbre, and pitches drawn from one pentatonic set so overlapping voices
- * always consonate.
+ * The brief: a mushroom closing its eyes and thinking hard, with spores going
+ * out and working. That is three distinct gestures, and earlier attempts had
+ * none of them —
  *
- * Everything stays quiet on purpose: these play underneath speech.
+ *   closing its eyes → the sound settles inward. Brightness closes down over
+ *     the first second and stays muffled, as if heard from inside the cap.
+ *   thinking hard    → a low throb underneath. Concentration, not prettiness:
+ *     slightly tense intervals and a pulse that never fully relaxes.
+ *   spores going out → events that physically travel. Each one starts at the
+ *     centre and moves outward across the stereo field, dropping in pitch and
+ *     volume as it goes, trailing an echo behind it.
+ *
+ * The travelling is the part that makes it read as dispatch rather than
+ * decoration, and it is why these need stereo — on a mono speaker they will
+ * lose most of their character.
  */
 
 export interface SoundOption {
@@ -18,21 +25,22 @@ export interface SoundOption {
   start: (ctx: AudioContext) => () => void;
 }
 
-/* ── Rig ──────────────────────────────────────────────────────────
-   A dry path and a reverb send into a shared master, so every voice in a
-   given sound sits in the same room. */
+/* ── Rig ────────────────────────────────────────────────────────── */
 
 interface Rig {
   ctx: AudioContext;
-  /** Connect voices here for the dry signal. */
+  /** Dry path. */
   input: GainNode;
-  /** Connect voices here as well to place them in the room. */
+  /** Reverb send. */
   send: GainNode;
+  /** Echo send — spore trails bounce out through here. */
+  echo: GainNode;
+  /** The "eyelid": lowpass that closes at the start and stays shut. */
+  lid: BiquadFilterNode;
   master: GainNode;
   stop: (release?: number) => void;
 }
 
-/** Procedural impulse response: noise shaped by an exponential decay. */
 function makeImpulse(ctx: AudioContext, seconds: number, decay: number): AudioBuffer {
   const rate = ctx.sampleRate;
   const length = Math.max(1, Math.floor(rate * seconds));
@@ -40,7 +48,6 @@ function makeImpulse(ctx: AudioContext, seconds: number, decay: number): AudioBu
   for (let ch = 0; ch < 2; ch++) {
     const data = buf.getChannelData(ch);
     for (let i = 0; i < length; i++) {
-      // Slight per-channel difference is what gives the tail its width.
       data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
     }
   }
@@ -49,20 +56,27 @@ function makeImpulse(ctx: AudioContext, seconds: number, decay: number): AudioBu
 
 function createRig(
   ctx: AudioContext,
-  opts: { seconds?: number; decay?: number; wet?: number; tone?: number; level?: number } = {},
+  opts: { seconds?: number; decay?: number; wet?: number; openFrom?: number; closeTo?: number; closeIn?: number; level?: number } = {},
 ): Rig {
-  const { seconds = 2.8, decay = 2.4, wet = 0.5, tone = 4200, level = 0.9 } = opts;
+  const {
+    seconds = 3.4, decay = 2.2, wet = 0.55,
+    openFrom = 2400, closeTo = 460, closeIn = 1.4, level = 0.9,
+  } = opts;
+  const t = ctx.currentTime;
 
   const master = ctx.createGain();
-  master.gain.setValueAtTime(0, ctx.currentTime);
-  master.gain.linearRampToValueAtTime(level, ctx.currentTime + 0.4);
+  master.gain.setValueAtTime(0, t);
+  master.gain.linearRampToValueAtTime(level, t + 0.5);
 
-  // Tame the top end so nothing gets brittle under speech.
-  const tilt = ctx.createBiquadFilter();
-  tilt.type = 'lowpass';
-  tilt.frequency.value = tone;
-  master.connect(tilt);
-  tilt.connect(ctx.destination);
+  // The eyelid closing: bright for a moment, then shut and muffled.
+  const lid = ctx.createBiquadFilter();
+  lid.type = 'lowpass';
+  lid.Q.value = 0.9;
+  lid.frequency.setValueAtTime(openFrom, t);
+  lid.frequency.exponentialRampToValueAtTime(closeTo, t + closeIn);
+
+  master.connect(lid);
+  lid.connect(ctx.destination);
 
   const input = ctx.createGain();
   input.connect(master);
@@ -76,74 +90,151 @@ function createRig(
   convolver.connect(wetGain);
   wetGain.connect(master);
 
+  // Ping-pong echo: a trail that leaves in one direction, answers in the other.
+  const echo = ctx.createGain();
+  const dL = ctx.createDelay(1);
+  const dR = ctx.createDelay(1);
+  dL.delayTime.value = 0.23;
+  dR.delayTime.value = 0.34;
+  const fb = ctx.createGain();
+  fb.gain.value = 0.34;
+  const panL = ctx.createStereoPanner();
+  panL.pan.value = -0.85;
+  const panR = ctx.createStereoPanner();
+  panR.pan.value = 0.85;
+  const echoTone = ctx.createBiquadFilter();
+  echoTone.type = 'lowpass';
+  echoTone.frequency.value = 1500;
+
+  echo.connect(dL);
+  dL.connect(panL); panL.connect(echoTone);
+  dL.connect(dR);
+  dR.connect(panR); panR.connect(echoTone);
+  dR.connect(fb); fb.connect(dL);
+  echoTone.connect(master);
+
   return {
-    ctx,
-    input,
-    send,
-    master,
-    stop: (release = 0.5) => {
-      const t = ctx.currentTime;
-      master.gain.cancelScheduledValues(t);
-      master.gain.setValueAtTime(master.gain.value, t);
-      master.gain.linearRampToValueAtTime(0, t + release);
+    ctx, input, send, echo, lid, master,
+    stop: (release = 0.6) => {
+      const now = ctx.currentTime;
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.linearRampToValueAtTime(0, now + release);
+      fb.gain.setValueAtTime(0, now);
     },
   };
 }
 
-/** Route one voice into both the dry path and the room. */
-function place(rig: Rig, node: AudioNode, pan: number, sendAmount = 0.8): AudioNode {
-  const panner = rig.ctx.createStereoPanner();
-  panner.pan.value = Math.max(-1, Math.min(1, pan));
-  node.connect(panner);
-  panner.connect(rig.input);
-  const s = rig.ctx.createGain();
-  s.gain.value = sendAmount;
-  panner.connect(s);
-  s.connect(rig.send);
-  return panner;
-}
-
 /**
- * A struck tone via frequency modulation — the modulator's decay is faster than
- * the carrier's, which is what gives a mallet its bright attack and warm tail.
+ * A spore: leaves the centre, travels outward, loses pitch and weight on the
+ * way, and leaves a trail behind it.
  */
-function mallet(
+function spore(
   rig: Rig,
-  opts: { freq: number; at?: number; dur?: number; gain?: number; ratio?: number; index?: number; pan?: number },
+  opts: { freq?: number; at?: number; dur?: number; gain?: number; dir?: number; echo?: number } = {},
 ) {
   const { ctx } = rig;
-  const { freq, at = ctx.currentTime, dur = 2.2, gain = 0.05, ratio = 2.4, index = 340, pan = 0 } = opts;
+  const {
+    freq = 520, at = ctx.currentTime, dur = 1.5, gain = 0.05,
+    dir = Math.random() < 0.5 ? -1 : 1, echo = 0.5,
+  } = opts;
 
   const carrier = ctx.createOscillator();
   carrier.type = 'sine';
-  carrier.frequency.value = freq;
+  carrier.frequency.setValueAtTime(freq, at);
+  // Falls away as it travels — the cue that it is moving off, not just fading.
+  carrier.frequency.exponentialRampToValueAtTime(freq * 0.62, at + dur);
 
+  // A little grit so it reads as a body, not a beep.
   const mod = ctx.createOscillator();
   mod.type = 'sine';
-  mod.frequency.value = freq * ratio;
+  mod.frequency.value = freq * 1.51;
   const modGain = ctx.createGain();
-  modGain.gain.setValueAtTime(index, at);
-  modGain.gain.exponentialRampToValueAtTime(0.5, at + dur * 0.35);
+  modGain.gain.setValueAtTime(freq * 0.5, at);
+  modGain.gain.exponentialRampToValueAtTime(1, at + dur * 0.5);
   mod.connect(modGain);
   modGain.connect(carrier.frequency);
 
   const env = ctx.createGain();
   env.gain.setValueAtTime(0, at);
-  env.gain.linearRampToValueAtTime(gain, at + 0.012);
+  env.gain.linearRampToValueAtTime(gain, at + 0.03);
   env.gain.exponentialRampToValueAtTime(0.0004, at + dur);
 
-  carrier.connect(env);
-  place(rig, env, pan);
+  // Outward travel — this is the whole point.
+  const panner = ctx.createStereoPanner();
+  panner.pan.setValueAtTime(0, at);
+  panner.pan.linearRampToValueAtTime(dir * 0.95, at + dur);
 
-  carrier.start(at);
-  mod.start(at);
+  carrier.connect(env);
+  env.connect(panner);
+  panner.connect(rig.input);
+
+  const s = ctx.createGain();
+  s.gain.value = 0.7;
+  panner.connect(s); s.connect(rig.send);
+
+  const e = ctx.createGain();
+  e.gain.value = echo;
+  panner.connect(e); e.connect(rig.echo);
+
+  carrier.start(at); mod.start(at);
   carrier.stop(at + dur + 0.1);
   mod.stop(at + dur + 0.1);
 }
 
-/** F# pentatonic — no semitone clashes, so overlapping tails stay consonant. */
-const SCALE = [370, 415.3, 493.9, 554.4, 622.3, 740, 830.6];
-const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+/** The low effort underneath: a held tone that throbs rather than drones. */
+function concentration(
+  rig: Rig,
+  opts: { root?: number; throb?: number; depth?: number; level?: number; tension?: boolean } = {},
+) {
+  const { ctx } = rig;
+  const { root = 58, throb = 2.6, depth = 0.5, level = 0.05, tension = true } = opts;
+
+  const bus = ctx.createGain();
+  bus.gain.value = level;
+  bus.connect(rig.input);
+  const s = ctx.createGain();
+  s.gain.value = 0.4;
+  bus.connect(s); s.connect(rig.send);
+
+  // Root, octave, and — when tense — a flat fifth-ish partial that beats slowly.
+  const partials = tension ? [root, root * 2, root * 2.98] : [root, root * 2, root * 3];
+  const oscs = partials.map((f, i) => {
+    const o = ctx.createOscillator();
+    o.type = i === 0 ? 'sine' : 'triangle';
+    o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.value = i === 0 ? 1 : i === 1 ? 0.34 : 0.16;
+    o.connect(g); g.connect(bus);
+    o.start();
+    return o;
+  });
+
+  // The throb: never returns fully to silence, so it reads as sustained effort.
+  const pulse = ctx.createOscillator();
+  pulse.type = 'sine';
+  pulse.frequency.value = 1 / throb;
+  const pulseAmt = ctx.createGain();
+  pulseAmt.gain.value = level * depth;
+  pulse.connect(pulseAmt);
+  pulseAmt.connect(bus.gain);
+  pulse.start();
+
+  return () => {
+    const t = ctx.currentTime + 0.8;
+    oscs.forEach(o => { try { o.stop(t); } catch { /* already stopped */ } });
+    try { pulse.stop(t); } catch { /* already stopped */ }
+  };
+}
+
+function loop(fn: (again: (ms: number) => void) => void): () => void {
+  let stopped = false;
+  const timers: number[] = [];
+  const again = (ms: number) => { if (!stopped) timers.push(window.setTimeout(run, ms)); };
+  const run = () => { if (!stopped) fn(again); };
+  run();
+  return () => { stopped = true; timers.forEach(clearTimeout); };
+}
 
 function noiseBuffer(ctx: AudioContext, seconds = 2): AudioBuffer {
   const length = Math.floor(ctx.sampleRate * seconds);
@@ -153,245 +244,127 @@ function noiseBuffer(ctx: AudioContext, seconds = 2): AudioBuffer {
   return buffer;
 }
 
-/** Schedule a repeating callback that can be cleanly torn down. */
-function loop(fn: (again: (ms: number) => void) => void): () => void {
-  let stopped = false;
-  const timers: number[] = [];
-  const again = (ms: number) => {
-    if (stopped) return;
-    timers.push(window.setTimeout(run, ms));
-  };
-  const run = () => { if (!stopped) fn(again); };
-  run();
-  return () => { stopped = true; timers.forEach(clearTimeout); };
+/** Breath in — the inhale before concentrating. */
+function inhale(rig: Rig, at = rig.ctx.currentTime, dur = 1.1) {
+  const { ctx } = rig;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(ctx, dur + 0.2);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(320, at);
+  bp.frequency.exponentialRampToValueAtTime(900, at + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(0.03, at + dur * 0.6);
+  g.gain.exponentialRampToValueAtTime(0.0004, at + dur);
+  src.connect(bp); bp.connect(g); g.connect(rig.input);
+  const s = ctx.createGain(); s.gain.value = 0.6;
+  g.connect(s); s.connect(rig.send);
+  src.start(at); src.stop(at + dur + 0.2);
 }
 
 /* ── The set ──────────────────────────────────────────────────── */
 
+const SPORE_PITCHES = [392, 440, 523.3, 587.3, 659.3];
+const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+
 export const SOUND_OPTIONS: SoundOption[] = [
   {
-    id: 'spore-bloom',
-    name: 'Spore bloom',
+    id: 'eyes-closed',
+    name: 'Eyes closed',
     description:
-      'Soft mallet tones from a pentatonic set, panned wide and left to ring out into a long tail. Warm and unhurried — the tails overlap into a slowly shifting chord, so it never repeats exactly.',
+      'The literal brief. A breath in, the brightness closes down like eyelids, then a low throb of concentration underneath while spores leave the centre one at a time and drift outward, falling in pitch as they go. Trails echo out behind them.',
     start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 3.6, decay: 2.2, wet: 0.62, level: 0.85 });
+      const rig = createRig(ctx, { openFrom: 2600, closeTo: 420, closeIn: 1.5, seconds: 3.6, decay: 2.2, wet: 0.5 });
+      inhale(rig);
+      const stopDrone = concentration(rig, { root: 58, throb: 2.8, depth: 0.55, level: 0.05 });
+
       const stopLoop = loop((again) => {
-        mallet(rig, {
-          freq: pick(SCALE),
-          dur: 2.4 + Math.random(),
-          gain: 0.032 + Math.random() * 0.016,
-          ratio: 2.01,
-          index: 260,
-          pan: (Math.random() * 2 - 1) * 0.75,
+        spore(rig, {
+          freq: pick(SPORE_PITCHES),
+          dur: 1.4 + Math.random() * 0.8,
+          gain: 0.03 + Math.random() * 0.015,
+          echo: 0.55,
         });
-        again(620 + Math.random() * 900);
+        again(900 + Math.random() * 900);
       });
-      return () => { stopLoop(); rig.stop(0.9); };
+
+      return () => { stopLoop(); stopDrone(); rig.stop(0.8); };
     },
   },
   {
-    id: 'cavern-breath',
-    name: 'Cavern breath',
+    id: 'deep-focus',
+    name: 'Deep focus',
     description:
-      'A slow pad of detuned voices under a filter that opens and closes like breathing, drifting gently across the stereo field. The most "ambient record" of the set — closest to the current hum, but with somewhere to live.',
+      'Heavier on the thinking. The throb is slower and closer to the front, with a slight beat between partials so it sounds like strain rather than calm. Spores are rarer and travel further — it is concentrating more than it is dispatching.',
     start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 4.5, decay: 1.8, wet: 0.72, tone: 2600, level: 0.9 });
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 420;
-      filter.Q.value = 3.5;
-      place(rig, filter, 0, 0.9);
-
-      // Breathing filter sweep
-      const sweep = ctx.createOscillator();
-      sweep.frequency.value = 0.075;
-      const sweepAmt = ctx.createGain();
-      sweepAmt.gain.value = 260;
-      sweep.connect(sweepAmt);
-      sweepAmt.connect(filter.frequency);
-      sweep.start();
-
-      // Root, fifth, octave, plus a detuned pair for movement
-      const voices = [92.5, 92.9, 138.6, 185, 277.2].map((f, i) => {
-        const o = ctx.createOscillator();
-        o.type = i === 4 ? 'triangle' : 'sawtooth';
-        o.frequency.value = f;
-        const g = ctx.createGain();
-        g.gain.value = i === 4 ? 0.016 : 0.026;
-        o.connect(g);
-        g.connect(filter);
-        o.start();
-        return o;
-      });
-
-      // Slow stereo drift so it never sits perfectly still
-      const drift = ctx.createOscillator();
-      drift.frequency.value = 0.04;
-      const driftAmt = ctx.createGain();
-      driftAmt.gain.value = 0.5;
-      drift.connect(driftAmt);
-      drift.start();
-
-      return () => {
-        rig.stop(1.1);
-        const t = ctx.currentTime + 1.3;
-        voices.forEach(o => o.stop(t));
-        sweep.stop(t);
-        drift.stop(t);
-      };
-    },
-  },
-  {
-    id: 'petrichor',
-    name: 'Petrichor',
-    description:
-      'Fine rain with pitched droplets falling into a large reverberant space. The droplets are tuned to the same scale as the mallets, so it reads as designed rather than as a field recording.',
-    start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 3.2, decay: 2.6, wet: 0.55, tone: 6000, level: 0.85 });
-
-      // Rain bed
-      const rain = ctx.createBufferSource();
-      rain.buffer = noiseBuffer(ctx, 4);
-      rain.loop = true;
-      const bp = ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.value = 2600;
-      bp.Q.value = 0.7;
-      const rainGain = ctx.createGain();
-      rainGain.gain.value = 0.022;
-      rain.connect(bp);
-      bp.connect(rainGain);
-      place(rig, rainGain, 0, 0.35);
-      rain.start();
-
-      const shimmer = ctx.createOscillator();
-      shimmer.frequency.value = 0.11;
-      const shimmerAmt = ctx.createGain();
-      shimmerAmt.gain.value = 800;
-      shimmer.connect(shimmerAmt);
-      shimmerAmt.connect(bp.frequency);
-      shimmer.start();
+      const rig = createRig(ctx, { openFrom: 1800, closeTo: 300, closeIn: 1.8, seconds: 4.2, decay: 1.9, wet: 0.62, level: 0.95 });
+      inhale(rig, ctx.currentTime, 1.4);
+      const stopDrone = concentration(rig, { root: 49, throb: 3.6, depth: 0.7, level: 0.062, tension: true });
 
       const stopLoop = loop((again) => {
-        mallet(rig, {
-          freq: pick(SCALE) * (Math.random() < 0.3 ? 2 : 1),
-          dur: 1.5 + Math.random(),
-          gain: 0.022 + Math.random() * 0.012,
-          ratio: 3.02,
-          index: 180,
-          pan: (Math.random() * 2 - 1) * 0.85,
+        spore(rig, {
+          freq: pick(SPORE_PITCHES) * 0.75,
+          dur: 2.2 + Math.random() * 0.9,
+          gain: 0.026,
+          echo: 0.7,
         });
-        again(700 + Math.random() * 1500);
+        again(1800 + Math.random() * 1600);
       });
 
-      return () => {
-        stopLoop();
-        rig.stop(0.9);
-        const t = ctx.currentTime + 1.1;
-        try { rain.stop(t); shimmer.stop(t); } catch { /* already stopped */ }
-      };
+      return () => { stopLoop(); stopDrone(); rig.stop(1); };
     },
   },
   {
-    id: 'mycelium-choir',
-    name: 'Mycelium choir',
+    id: 'spore-dispatch',
+    name: 'Spore dispatch',
     description:
-      'A soft chord that swells in, changes voicing, and fades — like breath through a pipe organ heard from another room. The most beautiful of the set, and the least busy.',
+      'Heavier on the working. Spores leave in small clusters — three or four fanning out left and right in quick succession — then a pause while it thinks, then another batch. The busiest option, and the clearest that something is being sent out to do a job.',
     start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 5, decay: 1.6, wet: 0.8, tone: 3000, level: 0.9 });
-
-      const voicings = [
-        [185, 277.2, 370],
-        [207.7, 311.1, 415.3],
-        [164.8, 246.9, 329.6],
-        [185, 246.9, 370],
-      ];
-      let step = 0;
+      const rig = createRig(ctx, { openFrom: 2200, closeTo: 520, closeIn: 1.2, seconds: 3, decay: 2.4, wet: 0.45 });
+      inhale(rig, ctx.currentTime, 0.9);
+      const stopDrone = concentration(rig, { root: 55, throb: 2.2, depth: 0.4, level: 0.042 });
 
       const stopLoop = loop((again) => {
-        const chord = voicings[step % voicings.length];
-        step++;
-        const t0 = ctx.currentTime;
-        chord.forEach((freq, i) => {
-          const o = ctx.createOscillator();
-          o.type = 'triangle';
-          o.frequency.value = freq;
-          const detune = ctx.createOscillator();
-          detune.type = 'sine';
-          detune.frequency.value = 0.18 + i * 0.05;
-          const detuneAmt = ctx.createGain();
-          detuneAmt.gain.value = 1.4;
-          detune.connect(detuneAmt);
-          detuneAmt.connect(o.frequency);
-
-          const env = ctx.createGain();
-          env.gain.setValueAtTime(0, t0);
-          env.gain.linearRampToValueAtTime(0.026, t0 + 1.4);
-          env.gain.linearRampToValueAtTime(0.02, t0 + 2.6);
-          env.gain.exponentialRampToValueAtTime(0.0004, t0 + 4.2);
-
-          o.connect(env);
-          place(rig, env, (i - 1) * 0.55, 0.9);
-          o.start(t0); detune.start(t0);
-          o.stop(t0 + 4.4); detune.stop(t0 + 4.4);
-        });
-        again(3600);
-      });
-
-      return () => { stopLoop(); rig.stop(1.2); };
-    },
-  },
-  {
-    id: 'loam-pulse',
-    name: 'Loam pulse',
-    description:
-      'A gentle heartbeat with a soft shaker and an occasional mallet accent over the top. The only one with a pulse you can follow, so a long wait feels measured instead of open-ended.',
-    start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 2.4, decay: 2.8, wet: 0.4, tone: 5200, level: 0.9 });
-      let beat = 0;
-
-      const stopLoop = loop((again) => {
-        const t = ctx.currentTime;
-        const downbeat = beat % 4 === 0;
-
-        // Low pulse
-        const o = ctx.createOscillator();
-        o.type = 'sine';
-        o.frequency.setValueAtTime(downbeat ? 88 : 74, t);
-        o.frequency.exponentialRampToValueAtTime(46, t + 0.24);
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(downbeat ? 0.055 : 0.03, t + 0.015);
-        g.gain.exponentialRampToValueAtTime(0.0004, t + 0.38);
-        o.connect(g);
-        place(rig, g, 0, 0.25);
-        o.start(t); o.stop(t + 0.4);
-
-        // Shaker
-        const sh = ctx.createBufferSource();
-        sh.buffer = noiseBuffer(ctx, 0.09);
-        const shf = ctx.createBiquadFilter();
-        shf.type = 'highpass';
-        shf.frequency.value = 5200;
-        const shg = ctx.createGain();
-        shg.gain.setValueAtTime(downbeat ? 0.014 : 0.008, t);
-        shg.gain.exponentialRampToValueAtTime(0.0003, t + 0.07);
-        sh.connect(shf); shf.connect(shg);
-        place(rig, shg, beat % 2 === 0 ? -0.35 : 0.35, 0.5);
-        sh.start(t); sh.stop(t + 0.1);
-
-        // Occasional melodic accent
-        if (beat % 8 === 2) {
-          mallet(rig, { freq: pick(SCALE), dur: 1.8, gain: 0.026, ratio: 2.01, index: 220, pan: 0.4 });
+        const count = 3 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < count; i++) {
+          spore(rig, {
+            freq: SPORE_PITCHES[i % SPORE_PITCHES.length],
+            at: ctx.currentTime + i * 0.16,
+            dur: 1.2 + Math.random() * 0.5,
+            gain: 0.026,
+            dir: i % 2 === 0 ? -1 : 1,
+            echo: 0.45,
+          });
         }
-
-        beat++;
-        again(560);
+        again(2200 + Math.random() * 1200);
       });
 
-      return () => { stopLoop(); rig.stop(0.6); };
+      return () => { stopLoop(); stopDrone(); rig.stop(0.7); };
+    },
+  },
+  {
+    id: 'under-the-cap',
+    name: 'Under the cap',
+    description:
+      'The most inward. Everything is heard from inside — the lid shuts almost completely, the throb is felt more than heard, and the spores are distant, as though they have already travelled some way off. Quietest of the four and the easiest to sit under a long wait.',
+    start: (ctx) => {
+      const rig = createRig(ctx, { openFrom: 1200, closeTo: 220, closeIn: 2.2, seconds: 5, decay: 1.7, wet: 0.8, level: 1 });
+      inhale(rig, ctx.currentTime, 1.6);
+      const stopDrone = concentration(rig, { root: 43.7, throb: 4.2, depth: 0.6, level: 0.07 });
+
+      const stopLoop = loop((again) => {
+        spore(rig, {
+          freq: pick(SPORE_PITCHES) * 0.5,
+          dur: 2.6 + Math.random(),
+          gain: 0.03,
+          echo: 0.85,
+        });
+        again(1500 + Math.random() * 1800);
+      });
+
+      return () => { stopLoop(); stopDrone(); rig.stop(1.2); };
     },
   },
 ];
@@ -400,7 +373,7 @@ export const SOUND_OPTIONS: SoundOption[] = [
 export const CURRENT_SOUND: SoundOption = {
   id: 'current',
   name: 'Current (for comparison)',
-  description: 'A 220Hz sine with a 0.3Hz LFO sweep plus a 660Hz harmonic — dry, mono, no space. The "wuuurrruuuur".',
+  description: 'A 220Hz sine with a 0.3Hz LFO sweep plus a 660Hz harmonic — dry, mono, motionless. The "wuuurrruuuur".',
   start: (ctx) => {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, ctx.currentTime);

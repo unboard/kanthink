@@ -208,7 +208,7 @@ export default function KanPresencePage() {
 
         <Section
           title="3 · Voice processing sound"
-          blurb="Rebuilt from scratch. The earlier attempts were bare oscillators straight to the output — mono, dry and centered, which is why they sounded like test tones. These run through convolution reverb for space, stereo placement for width, FM for timbre, and one pentatonic set so overlapping tails stay consonant. Quiet by design, since they play under speech. Press play to audition — one at a time."
+          blurb="Built to one image: a mushroom closing its eyes and thinking hard while spores go out and work. Each has the same three gestures — an inward settle as the brightness closes down, a low throb of concentration underneath, and spores that leave the centre and travel outward across the stereo field, dropping in pitch and trailing echoes as they go. Use headphones or stereo speakers: the travelling is most of the character, and mono flattens it."
         >
           <div className="grid gap-3">
             {[CURRENT_SOUND, ...SOUND_OPTIONS].map((option) => (
