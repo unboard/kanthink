@@ -418,8 +418,13 @@ function ymd(d: Date): string {
   return d.toLocaleDateString('en-CA', { timeZone: REPORT_TZ });
 }
 
-function daysAgo(n: number): Date {
-  return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+/**
+ * `from` is not optional by accident. Every relative window here is measured
+ * against the anchor its caller was given, not the wall clock — mixing the two
+ * silently shifts "yesterday" by a day whenever they disagree.
+ */
+function daysAgo(n: number, from: Date): Date {
+  return new Date(from.getTime() - n * 24 * 60 * 60 * 1000);
 }
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
@@ -454,19 +459,19 @@ export function parseDateWindow(question: string, now = new Date()): { fromDate:
   }
 
   if (/\btoday\b|\bso far today\b|\bthis hour\b/.test(q)) return { fromDate: today, toDate: today };
-  if (/\byesterday\b/.test(q)) return day(daysAgo(1));
+  if (/\byesterday\b/.test(q)) return day(daysAgo(1, now));
 
   const lastNDays = q.match(/\blast\s+(\d+)\s*days?\b/);
-  if (lastNDays) return { fromDate: ymd(daysAgo(Number(lastNDays[1]))), toDate: today };
+  if (lastNDays) return { fromDate: ymd(daysAgo(Number(lastNDays[1]), now)), toDate: today };
 
   const lastNWeeks = q.match(/\blast\s+(\d+)\s*weeks?\b/);
-  if (lastNWeeks) return { fromDate: ymd(daysAgo(Number(lastNWeeks[1]) * 7)), toDate: today };
+  if (lastNWeeks) return { fromDate: ymd(daysAgo(Number(lastNWeeks[1]) * 7, now)), toDate: today };
 
   const lastNMonths = q.match(/\blast\s+(\d+)\s*months?\b/);
-  if (lastNMonths) return { fromDate: ymd(daysAgo(Number(lastNMonths[1]) * 30)), toDate: today };
+  if (lastNMonths) return { fromDate: ymd(daysAgo(Number(lastNMonths[1]) * 30, now)), toDate: today };
 
-  if (/\bthis week\b/.test(q)) return { fromDate: ymd(daysAgo(now.getDay())), toDate: today };
-  if (/\blast week\b/.test(q)) return { fromDate: ymd(daysAgo(now.getDay() + 7)), toDate: ymd(daysAgo(now.getDay() + 1)) };
+  if (/\bthis week\b/.test(q)) return { fromDate: ymd(daysAgo(now.getDay(), now)), toDate: today };
+  if (/\blast week\b/.test(q)) return { fromDate: ymd(daysAgo(now.getDay() + 7, now)), toDate: ymd(daysAgo(now.getDay() + 1, now)) };
   if (/\bthis month\b/.test(q)) return { fromDate: `${today.slice(0, 7)}-01`, toDate: today };
   if (/\blast month\b/.test(q)) {
     const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
