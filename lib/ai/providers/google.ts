@@ -78,6 +78,9 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
 
       return {
         content,
+        // Gemini counts thinking against maxOutputTokens, so a reasoning model can
+        // burn the whole budget before writing anything the caller can use.
+        truncated: response.candidates?.[0]?.finishReason === 'MAX_TOKENS',
         usage: response.usageMetadata
           ? {
               inputTokens: response.usageMetadata.promptTokenCount || 0,

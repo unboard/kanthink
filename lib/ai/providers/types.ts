@@ -9,6 +9,14 @@ export interface LLMMessage {
 
 export interface LLMResponse {
   content: string;
+  /**
+   * The model ran out of output budget mid-sentence.
+   *
+   * Callers that parse JSON out of `content` need this: a truncated response
+   * looks exactly like a model that decided to do nothing, and silently doing
+   * nothing is the worst of the two outcomes to be wrong about.
+   */
+  truncated?: boolean;
   usage?: {
     inputTokens: number;
     outputTokens: number;

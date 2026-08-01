@@ -37,6 +37,7 @@ export function createOpenAIProvider(apiKey: string, model?: string): LLMProvide
 
       return {
         content,
+        truncated: response.choices[0]?.finish_reason === 'length',
         usage: response.usage
           ? {
               inputTokens: response.usage.prompt_tokens,

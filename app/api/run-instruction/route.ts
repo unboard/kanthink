@@ -18,6 +18,22 @@ marked.setOptions({
   gfm: true,
 });
 
+/**
+ * Output budget for a shroom run.
+ *
+ * A shroom answers with JSON that carries whole card bodies, so its response is far
+ * longer than a chat reply — and on a reasoning model the thinking tokens come out of
+ * the same allowance before a single character of that JSON is written. The provider
+ * default of 4096 was enough for a short card and not for a long one, so a shroom over
+ * a pasted article would truncate mid-JSON, parse as zero changes, and record a
+ * successful run that did nothing.
+ */
+const SHROOM_MAX_TOKENS = 32000;
+
+/** The response ran out of room, so an empty parse means "cut off", not "no changes". */
+const TRUNCATED_ERROR =
+  'The AI response was cut off before it finished. The cards involved are likely too long — try running on fewer cards, or shortening the card content.';
+
 // Stub ideas for fallback when no LLM is configured
 const STUB_IDEAS = [
   'Try a new approach to this',
@@ -938,6 +954,18 @@ Respond with ONLY the JSON object, no other text.`;
   ];
 }
 
+function isMultiStepEmpty(result: {
+  modifiedCards: unknown[];
+  movedCards: unknown[];
+  generatedCards: unknown[];
+}): boolean {
+  return (
+    result.modifiedCards.length === 0 &&
+    result.movedCards.length === 0 &&
+    result.generatedCards.length === 0
+  );
+}
+
 /**
  * Parse the unified multi-step response.
  * Returns a flat object with modifiedCards, movedCards, and generatedCards.
@@ -1113,6 +1141,24 @@ export async function POST(request: Request) {
       }
     };
 
+    /**
+     * Tell the owner a run ended without doing anything, and why.
+     *
+     * The email is the usual way a shroom reports in, but a run that produced nothing
+     * has nothing to email about — `skipWhenNothingHappened` suppresses it. Without
+     * this, a run that failed for a real reason is indistinguishable from a quiet one.
+     */
+    const notifyRunFailed = (reason: string): void => {
+      if (!apply || !userId) return;
+      createNotification({
+        userId,
+        type: 'shroom_failed',
+        title: `"${instructionCard.title}" couldn't finish`,
+        body: reason,
+        data: { channelId: channel.id, instructionCardId: instructionCard.id },
+      }).catch(() => {});
+    };
+
     const columnName = (columnId: string): string =>
       channel.columns.find((c) => c.id === columnId)?.name ?? 'another column';
 
@@ -1191,8 +1237,14 @@ export async function POST(request: Request) {
       appendRejectionContext(messages, await resolveRejections());
 
       try {
-        const response = await llm.complete(messages);
+        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
         const multiStepResult = parseMultiStepResponse(response.content);
+
+        if (response.truncated && isMultiStepEmpty(multiStepResult)) {
+          console.error(`[shrooms] "${instructionCard.title}" response truncated at ${SHROOM_MAX_TOKENS} tokens`);
+          notifyRunFailed(TRUNCATED_ERROR);
+          return NextResponse.json({ action: 'multi-step', error: TRUNCATED_ERROR });
+        }
 
         await recordUsageAfterSuccess();
 
@@ -1396,9 +1448,21 @@ export async function POST(request: Request) {
       debug.userPrompt = messages[1].content as string;
 
       try {
-        const response = await llm.complete(messages);
+        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
         debug.rawResponse = response.content;
         const generatedCards = parseGenerateResponse(response.content);
+
+        if (response.truncated && generatedCards.length === 0) {
+          console.error(`[shrooms] "${instructionCard.title}" response truncated at ${SHROOM_MAX_TOKENS} tokens`);
+          notifyRunFailed(TRUNCATED_ERROR);
+          return NextResponse.json({
+            action: 'generate',
+            targetColumnIds,
+            generatedCards: [],
+            error: TRUNCATED_ERROR,
+            debug,
+          });
+        }
 
         if (generatedCards.length === 0) {
           return NextResponse.json({
@@ -1647,9 +1711,24 @@ export async function POST(request: Request) {
       debug.userPrompt = messages[1].content as string;
 
       try {
-        const response = await llm.complete(messages);
+        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
         debug.rawResponse = response.content;
         const modifiedCards = parseModifyResponse(response.content);
+
+        // A truncated response usually ends mid-string inside a card body, so the JSON
+        // never parses and this looks like "the AI chose to change nothing" — which then
+        // suppresses the run email as a quiet run. Fail loudly instead.
+        if (response.truncated && modifiedCards.length === 0) {
+          console.error(`[shrooms] "${instructionCard.title}" response truncated at ${SHROOM_MAX_TOKENS} tokens`);
+          notifyRunFailed(TRUNCATED_ERROR);
+          return NextResponse.json({
+            action: 'modify',
+            modifiedCards: [],
+            skippedCardIds: skippedCardIds.length > 0 ? skippedCardIds : undefined,
+            error: TRUNCATED_ERROR,
+            debug,
+          });
+        }
 
         // Remap simple IDs (card_1, card_2) back to real card IDs
         // Also try title-based fallback matching for robustness
@@ -1752,7 +1831,7 @@ export async function POST(request: Request) {
       debug.userPrompt = messages[1].content as string;
 
       try {
-        const response = await llm.complete(messages);
+        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
         debug.rawResponse = response.content;
         const report = parseReportResponse(response.content);
 
@@ -1872,9 +1951,15 @@ export async function POST(request: Request) {
       debug.userPrompt = messages[1].content as string;
 
       try {
-        const response = await llm.complete(messages);
+        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
         debug.rawResponse = response.content;
         const moveDecisions = parseMoveResponse(response.content);
+
+        if (response.truncated && moveDecisions.length === 0) {
+          console.error(`[shrooms] "${instructionCard.title}" response truncated at ${SHROOM_MAX_TOKENS} tokens`);
+          notifyRunFailed(TRUNCATED_ERROR);
+          return NextResponse.json({ action: 'move', movedCards: [], error: TRUNCATED_ERROR, debug });
+        }
 
         // Record usage after successful move analysis
         await recordUsageAfterSuccess();

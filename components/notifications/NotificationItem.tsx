@@ -114,6 +114,7 @@ function getTypeLabel(notification: NotificationData): string | null {
     case 'channel_shared': return 'Shared'
     case 'channel_join_via_link': return 'Joined'
     case 'shroom_completed': return 'Shroom'
+    case 'shroom_failed': return 'Shroom'
     case 'shroom_report': return 'Report'
     case 'ai_generation_completed': return 'AI'
     case 'ai_instruction_refinement': return 'AI'

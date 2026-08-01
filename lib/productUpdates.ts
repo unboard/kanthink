@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shrooms-handle-long-cards',
+    date: '2026-08-01',
+    kind: 'fix',
+    title: 'Shrooms now finish on long cards',
+    body: 'A shroom running over a long card — a pasted article, a full transcript — used to run out of room mid-answer and quietly record a run that changed nothing, taking its email with it. It now has room to finish, and if a run genuinely can\'t complete you get a notification saying so instead of silence.',
+  },
+  {
     id: 'ask-kan-whats-new',
     date: '2026-07-31',
     kind: 'capability',
