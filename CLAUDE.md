@@ -175,3 +175,43 @@ MouseSensor + TouchSensor + touch-manipulation = works (proper long-press to dra
 ## Bug/Feature Workflow
 
 The user logs bugs and features as cards in a Kanthink channel from their phone. Use the `/bugs` slash command to read and implement them. See `.claude/commands/bugs.md` for the full workflow.
+
+## System Log (product updates)
+
+`lib/productUpdates.ts` is the changelog. It feeds two things: the `/system-log` page, and Kan's own knowledge — the most recent entries are injected into the system prompt on every AI surface, so Kan can answer "what's new?" in chat and in voice.
+
+**After shipping, ask one question: would someone who read nothing else behave differently tomorrow?** If yes, add an entry. If no, don't. That is the whole test.
+
+Add an entry for:
+- A new capability, or a new surface to work in
+- A changed default that alters how something behaves
+- A workflow that was broken or missing and now works
+
+Do **not** add an entry for:
+- Visual polish, copy tweaks, refactors, perf work, dependency bumps
+- Bug fixes in paths nobody hit, or fixes to something shipped the same day
+- Prototypes and anything behind `/prototypes` — those aren't shipped
+- Internal work with no user-visible surface (migrations, logging, tests, error handling)
+
+Most commits do not earn an entry. A short list people trust beats a long one they skim — when unsure, leave it out.
+
+### Writing an entry
+
+```ts
+{
+  id: 'stable-kebab-case-id',   // permanent — see below
+  date: '2026-07-31',           // ISO date it reached users, not the commit date
+  kind: 'capability',           // capability | workflow | automation | fix
+  title: 'Short, in plain language',
+  body: 'One or two sentences: what changed, and what it lets you do now.',
+}
+```
+
+- **Newest first.** Add to the top of the array.
+- **`id` is permanent.** The "seen" marker is stored against it, so editing an existing id re-surfaces that entry to everyone. Never reuse or rewrite one.
+- Write the `title` and `body` for the user, not the changelog. Say what they can now do, not what was refactored.
+- Kan is given the most recent 8 entries; everything older lives on `/system-log` only. That cap exists because this rides along on every AI turn — keep entries tight.
+
+### Kan's use of it
+
+Kan treats the list as reference material only and must never raise it unprompted — no announcing, teasing or steering conversation toward what's new. This matters most in voice mode, where a chatty model will otherwise turn a conversation into a changelog reading. The prompt in `buildProductUpdateContext()` enforces this, and `tests/product-updates.test.ts` guards it. If you edit that prompt, keep the "do not raise unprompted" block.

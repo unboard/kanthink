@@ -35,6 +35,20 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'ask-kan-whats-new',
+    date: '2026-07-31',
+    kind: 'capability',
+    title: 'Ask Kan what has changed',
+    body: 'Kan now knows what has shipped recently, so you can ask "what\'s new?" in chat or out loud in voice mode instead of hunting for a changelog. The full history lives on the system log page.',
+  },
+  {
+    id: 'analytics-breakdowns-and-followups',
+    date: '2026-07-31',
+    kind: 'capability',
+    title: 'Analytics breakdowns, and questions about the answer',
+    body: 'Asking for something "by user" or "per category" now reliably returns a table rather than a single total, and you can keep asking about what came back — which order was largest, whose email is on it — without running the query again.',
+  },
+  {
     id: 'playground-card-tab',
     date: '2026-07-30',
     kind: 'workflow',
@@ -93,13 +107,21 @@ export function buildProductUpdateContext(limit = 8): string {
     return `- [${u.date}] ${label}: ${u.title} — ${u.body}`;
   });
 
-  return `\n\n## RECENT KANTHINK UPDATES
+  return `\n\n## RECENT KANTHINK UPDATES (reference only — do not raise unprompted)
 
-These are the meaningful changes shipped recently, newest first. You know about these — if the user asks what's new, what changed, what features were added, or whether something they remember is available yet, answer from this list in your own words.
+This is background knowledge for answering a question, not a topic to steer toward. Treat it like a manual on the shelf: consult it when asked, otherwise ignore it completely.
+
+DO NOT:
+- Open a conversation, or a reply, by mentioning what is new.
+- Announce, tease, promote or recommend anything from this list on your own initiative.
+- Circle back to it, or work it into an answer about something else.
+- Treat a passing mention of a feature as an invitation to list related updates.
+
+DO use it when the user actually asks — "what's new?", "what changed?", "what features were added?", "is X available yet?" — or when they hit a problem that one of these updates directly solves.
 
 ${lines.join('\n')}
 
-Rules:
+When you are answering such a question:
 - Lead with the ones that change what the user can do, not the fixes.
 - Summarize conversationally; never read the list verbatim or recite dates unless asked.
 - This list is not exhaustive and only covers recent notable changes. If asked about something not here, say you don't have it in your notes rather than guessing — the full history is on the system log page at /system-log.`;

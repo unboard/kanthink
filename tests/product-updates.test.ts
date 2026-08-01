@@ -22,6 +22,16 @@ describe('product updates reach Kan', () => {
     expect(ctx).toContain('/system-log');
   });
 
+  it('forbids raising updates unprompted', () => {
+    // A prominent list of shiny features at the end of a system prompt will get
+    // volunteered unless the prompt explicitly says not to. In voice mode that
+    // turns every conversation into a changelog reading.
+    const ctx = buildProductUpdateContext();
+    expect(ctx).toMatch(/do not raise unprompted|reference only/i);
+    expect(ctx).toMatch(/announce|promote|unprompted/i);
+    expect(ctx).toMatch(/do not[\s\S]*open a conversation/i);
+  });
+
   it('caps how much rides along on every turn', () => {
     const two = buildProductUpdateContext(2);
     expect(two).toContain(PRODUCT_UPDATES[0].title);
