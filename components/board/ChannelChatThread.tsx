@@ -1,4 +1,5 @@
 'use client';
+import { MyceliumWeb } from '@/components/kan/KanThinking';
 
 import { useRef, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
@@ -396,12 +397,8 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
 
         {isLoading && (
           <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/50">
-            <div className="flex gap-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-            <span className="text-xs text-neutral-400">Kan is thinking...</span>
+            <MyceliumWeb size={20} className="text-violet-400" />
+            <span className="text-xs text-neutral-400">Kan is thinking</span>
           </div>
         )}
 

@@ -1,4 +1,5 @@
 'use client';
+import { MyceliumWeb } from '@/components/kan/KanThinking';
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { Channel, ID, Card as CardType } from '@/lib/types';
@@ -520,11 +521,7 @@ Guidelines for your response:
                   className="w-7 h-7 flex-shrink-0 mt-0.5 animate-pulse"
                 />
                 <div className="bg-neutral-100 dark:bg-neutral-800 rounded-2xl rounded-bl-md px-4 py-3">
-                  <div className="flex gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
+                  <MyceliumWeb size={20} className="text-violet-500 dark:text-violet-400" />
                 </div>
               </div>
             )}
@@ -878,11 +875,7 @@ Keep it conversational and brief. No bullet lists or markdown.`,
                     <div className="flex gap-2 justify-start">
                       <img src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg" alt="Kan" className="w-6 h-6 flex-shrink-0 animate-pulse" />
                       <div className="bg-neutral-100 dark:bg-neutral-800 rounded-2xl rounded-bl-md px-4 py-3">
-                        <div className="flex gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                          <span className="w-1.5 h-1.5 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                        </div>
+                        <MyceliumWeb size={20} className="text-violet-500 dark:text-violet-400" />
                       </div>
                     </div>
                   )}

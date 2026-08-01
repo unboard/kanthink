@@ -1,4 +1,5 @@
 'use client';
+import { MyceliumWeb } from '@/components/kan/KanThinking';
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useStore } from '@/lib/store';
@@ -612,11 +613,7 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
                     <span className="text-[10px] font-semibold uppercase tracking-wide">Kan</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-                    <span className="inline-flex gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </span>
+                    <MyceliumWeb size={18} className="text-violet-500 dark:text-violet-400" />
                     <span className="italic">{generationCount === 0 ? 'Designing your app…' : 'Updating…'}</span>
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 'use client';
+import { MyceliumWeb } from '@/components/kan/KanThinking';
 
 import { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -109,11 +110,7 @@ export function ChatPanel({
         {loading && (
           <div className="flex justify-start">
             <div className="rounded-2xl border border-neutral-200 bg-white px-4 py-3">
-              <div className="flex gap-1.5">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-neutral-300" style={{ animationDelay: '0ms' }} />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-neutral-300" style={{ animationDelay: '150ms' }} />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-neutral-300" style={{ animationDelay: '300ms' }} />
-              </div>
+              <MyceliumWeb size={20} className="text-violet-500" />
             </div>
           </div>
         )}

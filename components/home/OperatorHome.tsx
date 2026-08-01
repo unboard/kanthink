@@ -8,6 +8,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
+import { MyceliumWeb } from '@/components/kan/KanThinking';
 import { AudioLines } from 'lucide-react';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
@@ -689,11 +690,7 @@ export function OperatorHome() {
                     <KanthinkIcon size={20} className="text-violet-400" />
                   </div>
                   <div className="rounded-2xl bg-neutral-900 border border-neutral-800 px-4 py-3">
-                    <div className="flex gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </div>
+                    <MyceliumWeb size={22} className="text-violet-400" />
                   </div>
                 </div>
               )}

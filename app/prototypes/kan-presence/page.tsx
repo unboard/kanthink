@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { SOUND_OPTIONS, SOUND_OPTIONS_2, CURRENT_SOUND, type SoundOption } from './sounds';
+import { SOUND_OPTIONS, CURRENT_SOUND, type SoundOption } from './sounds';
 import {
   CurrentDots, BreathingCap, GillShimmer, PoppingCaps, SporeOrbit,
   MyceliumWeb, LiquidCap, SoilRipple, TimeLapseGrowth, ScanningBeam,
@@ -188,7 +188,7 @@ export default function KanPresencePage() {
             draw themselves, or move the whole mark — built to be noticed rather than tolerated.
           </p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Option label="Mycelium web" note="Threads branch out to nodes and retract. Reads as actively searching — the most literal picture of what Kan is doing.">
+            <Option label="Mycelium web ✓ chosen" note="Your pick — now wired into the real chat threads. Threads branch out to nodes and retract, so it reads as actively searching.">
               <MyceliumWeb />
             </Option>
             <Option label="Liquid cap" note="An abstract blob morphing continuously. Drops the mushroom shape entirely for something organic and strange. Boldest of the ten.">
@@ -208,7 +208,7 @@ export default function KanPresencePage() {
 
         <Section
           title="3 · Voice processing sound"
-          blurb="Five candidates to replace the current tone while Kan looks things up. All are quiet by design since they play under speech. Press play to audition — one at a time."
+          blurb="Rebuilt from scratch. The earlier attempts were bare oscillators straight to the output — mono, dry and centered, which is why they sounded like test tones. These run through convolution reverb for space, stereo placement for width, FM for timbre, and one pentatonic set so overlapping tails stay consonant. Quiet by design, since they play under speech. Press play to audition — one at a time."
         >
           <div className="grid gap-3">
             {[CURRENT_SOUND, ...SOUND_OPTIONS].map((option) => (
@@ -221,21 +221,6 @@ export default function KanPresencePage() {
             ))}
           </div>
 
-          <h3 className="mb-1 mt-8 text-xs font-semibold uppercase tracking-wide text-violet-300">Second batch</h3>
-          <p className="mb-4 max-w-2xl text-sm text-neutral-500">
-            Further from an ambient drone — these use pitch movement, rhythm and timbre, so they read as
-            activity from across a room instead of blending into the background.
-          </p>
-          <div className="grid gap-3">
-            {SOUND_OPTIONS_2.map((option) => (
-              <SoundRow
-                key={option.id}
-                option={option}
-                playing={playingId === option.id}
-                onToggle={() => toggleSound(option)}
-              />
-            ))}
-          </div>
         </Section>
 
         <Section

@@ -8,6 +8,7 @@ import { TaskDrawer } from '@/components/board/TaskDrawer';
 import { VoiceSpores } from './VoiceSpores';
 import { SwipeToDismiss } from './SwipeToDismiss';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
+import { KanWorkingBar } from '@/components/kan/KanThinking';
 
 const VOICE_OPTIONS = [
   { id: 'Kore', label: 'Kore' }, { id: 'Puck', label: 'Puck' },
@@ -323,6 +324,38 @@ function VoiceCardDrawer({ cardId, onClose }: { cardId: string; onClose: () => v
 function VoiceTaskDrawer({ taskId, onClose }: { taskId: string; onClose: () => void }) {
   const task = useStore((s) => s.tasks[taskId]);
   return <TaskDrawer task={task ?? null} isOpen={true} onClose={onClose} />;
+}
+
+/** Sentinel for an analytics query still in flight — rendered as a progress bar. */
+const ANALYTICS_PENDING = '__analytics_pending__';
+
+const ANALYTICS_STAGES = [
+  'Reaching Mixpanel',
+  'Reading events',
+  'Grouping the results',
+  'Building the view',
+];
+
+/**
+ * A Mixpanel export reports no real progress, so this names the stage it is
+ * most likely on and shows elapsed time — which is what makes a slow query
+ * visibly slow instead of ambiguous.
+ */
+function AnalyticsPending({ since }: { since: Date }) {
+  const [elapsed, setElapsed] = useState(() => Date.now() - since.getTime());
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(Date.now() - since.getTime()), 100);
+    return () => clearInterval(id);
+  }, [since]);
+  const step = Math.min(Math.floor(elapsed / 1600), ANALYTICS_STAGES.length - 1);
+  return (
+    <KanWorkingBar
+      stage={ANALYTICS_STAGES[step]}
+      step={step + 1}
+      totalSteps={ANALYTICS_STAGES.length}
+      elapsedMs={elapsed}
+    />
+  );
 }
 
 export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModeProps) {
@@ -659,7 +692,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       const queryId = crypto.randomUUID();
       setActions(prev => [...prev, {
         id: queryId, action: 'query_mixpanel',
-        result: 'Fetching analytics data...',
+        result: ANALYTICS_PENDING,
         success: true, timestamp: new Date(),
       }]);
 
@@ -1419,7 +1452,9 @@ NEVER claim you completed an action unless you actually called the corresponding
                   </div>
                 ) : (
                   /* Regular action result — card style with chart/table support */
-                  (() => {
+                  a.result === ANALYTICS_PENDING ? (
+                    <AnalyticsPending since={a.timestamp} />
+                  ) : (() => {
                     const parsed = parseChartDirectives(a.result);
                     const charts = parsed.charts;
                     const tables = parsed.tables || [];
