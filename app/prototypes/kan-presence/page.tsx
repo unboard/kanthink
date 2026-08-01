@@ -208,7 +208,7 @@ export default function KanPresencePage() {
 
         <Section
           title="3 · Voice processing sound"
-          blurb="Built to one image: a mushroom closing its eyes and thinking hard while spores go out and work. Each has the same three gestures — an inward settle as the brightness closes down, a low throb of concentration underneath, and spores that leave the centre and travel outward across the stereo field, dropping in pitch and trailing echoes as they go. Use headphones or stereo speakers: the travelling is most of the character, and mono flattens it."
+          blurb="Rebuilt again, and this time as five separate engines rather than one engine with different numbers — which is why the last batch all sounded alike. These are louder, brighter and punchier: runs that climb and land, pops with a real transient, an actual beat. Rising pitch that resolves is the thing that feels good, and nothing before this had it. Press play to audition — one at a time."
         >
           <div className="grid gap-3">
             {[CURRENT_SOUND, ...SOUND_OPTIONS].map((option) => (
