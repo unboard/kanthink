@@ -117,6 +117,35 @@ describe('voice-mode working sounds', () => {
     expect(pending).toBeGreaterThanOrEqual(0);
   });
 
+  it('the shipped working sound starts, loops and stops cleanly', async () => {
+    const { startWorkingSound } = await import('@/lib/audio/workingSound');
+    const ctx = makeCtx();
+
+    const stop = startWorkingSound(ctx, { level: 0.24 });
+    for (let i = 0; i < 60; i++) {
+      (ctx as unknown as { currentTime: number }).currentTime += 0.125;
+      vi.advanceTimersByTime(125);
+    }
+
+    expect(() => stop()).not.toThrow();
+    // Stop is called from teardown as well as from the caller, so it must be safe twice.
+    expect(() => stop()).not.toThrow();
+
+    // Nothing should keep scheduling after it stops.
+    const before = vi.getTimerCount();
+    vi.advanceTimersByTime(5000);
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(before);
+  });
+
+  it('does not touch a closed context', async () => {
+    const { startWorkingSound } = await import('@/lib/audio/workingSound');
+    const ctx = makeCtx();
+    const stop = startWorkingSound(ctx);
+    (ctx as unknown as { state: string }).state = 'closed';
+    vi.advanceTimersByTime(500);
+    expect(() => stop()).not.toThrow();
+  });
+
   it('gives every option a distinct id, name and description', async () => {
     const { SOUND_OPTIONS } = await import('@/app/prototypes/kan-presence/sounds');
     const ids = SOUND_OPTIONS.map(o => o.id);

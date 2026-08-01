@@ -16,6 +16,8 @@
  * "still working" should feel like.
  */
 
+import { startWorkingSound } from '@/lib/audio/workingSound';
+
 export interface SoundOption {
   id: string;
   name: string;
@@ -347,58 +349,10 @@ export const SOUND_OPTIONS: SoundOption[] = [
   },
   {
     id: 'surge',
-    name: 'Surge',
+    name: 'Surge  ✓ shipping',
     description:
-      'A continuous sixteenth-note figure whose brightness and level rise and fall on a seven second cycle — the pattern never stops, it just comes forward and recedes like a wave washing in. Rhythmic without being a beat, and the busiest option that still loops seamlessly.',
-    start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 2.6, decay: 2.6, wet: 0.4, level: 0.58 });
-
-      const bus = ctx.createGain();
-      bus.gain.value = 0.02;
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.Q.value = 6;
-      lp.frequency.value = 700;
-      bus.connect(lp);
-      out(rig, lp, 0, 0.5);
-
-      // One wave drives both how bright and how loud the figure is.
-      const bright = waveLfo(ctx, 1 / 7, 2200, 2500);
-      bright.amt.connect(lp.frequency);
-      bright.bias.connect(lp.frequency);
-      const level = waveLfo(ctx, 1 / 7, 0.016, 0.024);
-      level.amt.connect(bus.gain);
-      level.bias.connect(bus.gain);
-
-      const pattern = [261.6, 392, 523.3, 392, 329.6, 523.3, 392, 261.6];
-      let i = 0;
-      let stopped = false;
-      const timers: ReturnType<typeof setTimeout>[] = [];
-      const tick = () => {
-        if (stopped) return;
-        const t = ctx.currentTime;
-        const o = ctx.createOscillator();
-        o.type = 'square';
-        o.frequency.value = pattern[i % pattern.length] * (i % 16 >= 8 ? 2 : 1);
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0, t);
-        g.gain.linearRampToValueAtTime(1, t + 0.004);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
-        o.connect(g); g.connect(bus);
-        o.start(t); o.stop(t + 0.18);
-        i++;
-        timers.push(setTimeout(tick, 125));
-      };
-      tick();
-
-      return () => {
-        stopped = true;
-        timers.forEach(clearTimeout);
-        rig.stop(0.7);
-        const t = ctx.currentTime + 0.9;
-        bright.stop(t); level.stop(t);
-      };
-    },
+      'A continuous sixteenth-note figure whose brightness and level rise and fall on a seven second cycle — the pattern never stops, it just comes forward and recedes like a wave washing in. This is now the live voice-mode sound; it plays here a little louder than it does under speech.',
+    start: (ctx) => startWorkingSound(ctx, { level: 0.58 }),
   },
   {
     id: 'deep-spiral',

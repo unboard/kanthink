@@ -9,6 +9,7 @@ import { VoiceSpores } from './VoiceSpores';
 import { SwipeToDismiss } from './SwipeToDismiss';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
 import { KanWorkingBar } from '@/components/kan/KanThinking';
+import { startWorkingSound } from '@/lib/audio/workingSound';
 
 const VOICE_OPTIONS = [
   { id: 'Kore', label: 'Kore' }, { id: 'Puck', label: 'Puck' },
@@ -401,7 +402,8 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const activeRef = useRef(false);
   const activeSources = useRef<AudioBufferSourceNode[]>([]);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-  const processingNodesRef = useRef<{ osc1: OscillatorNode; osc2: OscillatorNode; gain: GainNode } | null>(null);
+  /** Stop handle for the working sound, so it can be torn down from anywhere. */
+  const processingStopRef = useRef<(() => void) | null>(null);
   // Latest resumption handle from Gemini — used to transparently resume if the transport drops.
   const resumptionHandleRef = useRef<string | null>(null);
   // saveSession creates a fresh operator-chat thread each call. Now that ending the
@@ -422,10 +424,8 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     procRef.current = null; analyserRef.current = null; playCtxRef.current = null;
     nextPlayRef.current = 0;
     // Stop processing sound if active
-    if (processingNodesRef.current) {
-      try { processingNodesRef.current.osc1.stop(); processingNodesRef.current.osc2.stop(); } catch {}
-      processingNodesRef.current = null;
-    }
+    processingStopRef.current?.();
+    processingStopRef.current = null;
     // Release screen wake lock
     wakeLockRef.current?.release().catch(() => {});
     wakeLockRef.current = null;
@@ -433,61 +433,21 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   }, []);
 
   // Subtle processing tone — plays during tool execution
+  // The working sound — "Surge". Definition lives in lib/audio/workingSound.ts
+  // so the prototype gallery and voice mode cannot drift apart.
   const startProcessingSound = useCallback(() => {
     try {
       const ctx = playCtxRef.current;
       if (!ctx || ctx.state === 'closed') return;
-      // Clean up any existing processing sound
-      if (processingNodesRef.current) {
-        try { processingNodesRef.current.osc1.stop(); processingNodesRef.current.osc2.stop(); } catch {}
-        processingNodesRef.current = null;
-      }
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 0.5); // Very quiet
-      gain.connect(ctx.destination);
-      // Low sine — calm ambient hum
-      const osc1 = ctx.createOscillator();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(220, ctx.currentTime);
-      // Slow LFO sweep for subtle movement
-      const lfo = ctx.createOscillator();
-      lfo.type = 'sine';
-      lfo.frequency.setValueAtTime(0.3, ctx.currentTime);
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.setValueAtTime(15, ctx.currentTime);
-      lfo.connect(lfoGain);
-      lfoGain.connect(osc1.frequency);
-      lfo.start();
-      osc1.connect(gain);
-      osc1.start();
-      // Higher harmonic — airy texture
-      const osc2 = ctx.createOscillator();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(660, ctx.currentTime);
-      const gain2 = ctx.createGain();
-      gain2.gain.setValueAtTime(0.015, ctx.currentTime);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start();
-      processingNodesRef.current = { osc1, osc2, gain };
+      processingStopRef.current?.();
+      // Quieter than the audition level in the gallery — this plays under speech.
+      processingStopRef.current = startWorkingSound(ctx, { level: 0.24 });
     } catch { /* best effort */ }
   }, []);
 
   const stopProcessingSound = useCallback(() => {
-    if (!processingNodesRef.current) return;
-    try {
-      const ctx = playCtxRef.current;
-      const { osc1, osc2, gain } = processingNodesRef.current;
-      if (ctx && ctx.state !== 'closed') {
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
-        osc1.stop(ctx.currentTime + 0.4);
-        osc2.stop(ctx.currentTime + 0.4);
-      } else {
-        osc1.stop(); osc2.stop();
-      }
-    } catch {}
-    processingNodesRef.current = null;
+    processingStopRef.current?.();
+    processingStopRef.current = null;
   }, []);
 
   // Stop all queued AI audio (for interruption)
