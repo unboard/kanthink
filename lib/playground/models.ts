@@ -30,6 +30,24 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
     isDefault: true,
   },
 
+  // === Current GA (3.5 / 3.6) — frontier-class without preview risk =====
+  // Gemini 3.5 Flash is deliberately absent: 3.6 Flash costs the same on input,
+  // less on output, and is newer, so it is strictly the better pick.
+  {
+    id: 'gemini-3.6-flash',
+    label: 'Gemini 3.6 Flash',
+    blurb: 'Newest GA flash. Frontier-class, no preview risk.',
+    pricing: { input: 1.5, output: 7.5 },
+    thinkingBudget: 6000,
+  },
+  {
+    id: 'gemini-3.5-flash-lite',
+    label: 'Gemini 3.5 Flash-Lite',
+    blurb: 'Cheap GA. Good for small, well-scoped edits.',
+    pricing: { input: 0.3, output: 2.5 },
+    thinkingBudget: 2000,
+  },
+
   // === Frontier (3.x family) — best quality available ==================
   {
     id: 'gemini-3.1-pro-preview',
