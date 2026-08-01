@@ -246,6 +246,162 @@ export function CanopyRays({ active }: EffectProps) {
   );
 }
 
+/* ── Batch two ───────────────────────────────────────────────────
+   The first batch mostly added something on top of the spores. These try other
+   relationships: connecting them, recolouring the whole scene, moving them as a
+   body, or leaving the centre alone entirely. */
+
+/**
+ * 6. Mycelial threads — light branching between spores, the same idea as the
+ *    thinking indicator scaled up to the whole screen. Makes speaking look like
+ *    a network firing, and ties voice mode to the mark used everywhere else.
+ */
+export function MycelialThreads({ active }: EffectProps) {
+  const paths = [
+    'M195,350 C150,300 90,290 40,240', 'M195,350 C240,300 300,285 345,235',
+    'M195,350 C160,420 110,470 55,520', 'M195,350 C235,425 290,470 340,515',
+    'M195,350 C185,270 190,190 175,110', 'M195,350 C205,430 200,530 215,610',
+    'M40,240 C20,200 15,170 8,140', 'M345,235 C365,195 370,170 378,145',
+    'M55,520 C35,560 28,590 20,620', 'M340,515 C360,555 368,585 375,615',
+  ];
+  return (
+    <div className={base} style={{ opacity: active ? 1 : 0 }}>
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 390 700" preserveAspectRatio="xMidYMid slice">
+        <g stroke="rgba(167,139,250,0.55)" strokeWidth="1.1" fill="none" strokeLinecap="round">
+          {paths.map((d, i) => (
+            <path key={d} d={d} className="vs-thread" style={{ animationDelay: `${(i % 5) * 0.45}s` }} />
+          ))}
+        </g>
+        {[[40, 240], [345, 235], [55, 520], [340, 515], [175, 110], [215, 610]].map(([cx, cy], i) => (
+          <circle key={i} cx={cx} cy={cy} r="2.4" fill="rgba(196,181,253,0.9)"
+            className="vs-thread-node" style={{ animationDelay: `${(i % 5) * 0.45 + 0.6}s` }} />
+        ))}
+      </svg>
+      <style>{`
+        .vs-thread { stroke-dasharray: 0 260; animation: vs-branch 3.6s ease-in-out infinite; filter: drop-shadow(0 0 4px rgba(139,92,246,.6)); }
+        @keyframes vs-branch {
+          0% { stroke-dasharray: 0 260; opacity: 0 }
+          20% { opacity: .9 }
+          55% { stroke-dasharray: 260 260; opacity: .9 }
+          100% { stroke-dasharray: 260 260; opacity: 0 }
+        }
+        .vs-thread-node { animation: vs-node-pop 3.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+        @keyframes vs-node-pop { 0%,25% { opacity: 0; transform: scale(0) } 55% { opacity: 1; transform: scale(1) } 100% { opacity: 0; transform: scale(.5) } }
+      `}</style>
+    </div>
+  );
+}
+
+/**
+ * 7. Edge bloom — light gathers at the borders and breathes, leaving the middle
+ *    untouched. Nothing sits over the transcript, which makes it the safest of
+ *    the lot to read against, and the closest to how phone assistants signal.
+ */
+export function EdgeBloom({ active }: EffectProps) {
+  return (
+    <div className={base} style={{ opacity: active ? 1 : 0 }}>
+      <div className="vs-edge absolute inset-0" />
+      <style>{`
+        .vs-edge {
+          background:
+            radial-gradient(120% 42% at 50% -8%, rgba(167,139,250,0.34) 0%, transparent 62%),
+            radial-gradient(120% 42% at 50% 108%, rgba(34,211,238,0.30) 0%, transparent 62%),
+            radial-gradient(42% 90% at -8% 50%, rgba(139,92,246,0.24) 0%, transparent 60%),
+            radial-gradient(42% 90% at 108% 50%, rgba(103,232,249,0.22) 0%, transparent 60%);
+          animation: vs-edge-breathe 3.6s ease-in-out infinite;
+        }
+        @keyframes vs-edge-breathe { 0%,100% { opacity: .5; transform: scale(1) } 50% { opacity: 1; transform: scale(1.03) } }
+      `}</style>
+    </div>
+  );
+}
+
+/**
+ * 8. Warm shift — no new shapes at all. The scene moves from cool to warm while
+ *    Kan talks, so the change is a temperature you feel rather than an object
+ *    you notice. The most restrained option by a distance.
+ */
+export function WarmShift({ active }: EffectProps) {
+  return (
+    <div className={base} style={{ opacity: active ? 1 : 0 }}>
+      <div
+        className="vs-warm absolute inset-0"
+        style={{ mixBlendMode: 'screen' }}
+      />
+      <style>{`
+        .vs-warm {
+          background:
+            radial-gradient(90% 70% at 50% 60%, rgba(251,191,36,0.16) 0%, rgba(244,114,182,0.08) 45%, transparent 75%),
+            radial-gradient(60% 40% at 50% 100%, rgba(251,146,60,0.14) 0%, transparent 70%);
+          animation: vs-warm-breathe 4.4s ease-in-out infinite;
+        }
+        @keyframes vs-warm-breathe { 0%,100% { opacity: .6 } 50% { opacity: 1 } }
+      `}</style>
+    </div>
+  );
+}
+
+/**
+ * 9. Vortex — faint arms turning slowly about the centre, so the whole field
+ *    reads as circulating. Motion rather than brightness, which stays legible
+ *    over a long call because there is no repeating flash to catch the eye.
+ */
+export function Vortex({ active }: EffectProps) {
+  return (
+    <div className={base} style={{ opacity: active ? 1 : 0 }}>
+      <div className="vs-vortex absolute inset-[-25%]" />
+      <style>{`
+        .vs-vortex {
+          background: conic-gradient(from 0deg,
+            transparent 0deg, rgba(139,92,246,0.16) 28deg, transparent 74deg,
+            transparent 120deg, rgba(34,211,238,0.14) 150deg, transparent 196deg,
+            transparent 240deg, rgba(167,139,250,0.13) 270deg, transparent 318deg);
+          -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 12%, black 42%, transparent 78%);
+          mask-image: radial-gradient(circle at 50% 50%, transparent 12%, black 42%, transparent 78%);
+          animation: vs-spin 26s linear infinite;
+          filter: blur(14px);
+        }
+        @keyframes vs-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+      `}</style>
+    </div>
+  );
+}
+
+/**
+ * 10. Contour ripple — topographic rings expanding outward, like a map of the
+ *     sound. More graphic than the rest, and the only one that gives voice mode
+ *     a bit of an instrument-panel character.
+ */
+export function ContourRipple({ active }: EffectProps) {
+  return (
+    <div className={base} style={{ opacity: active ? 1 : 0 }}>
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="vs-contour absolute inset-[-40%]"
+          style={{ animationDelay: `${i * 2.2}s` }}
+        />
+      ))}
+      <style>{`
+        .vs-contour {
+          background: repeating-radial-gradient(circle at 50% 50%,
+            transparent 0px, transparent 16px,
+            rgba(167,139,250,0.20) 17px, rgba(167,139,250,0.20) 18px,
+            transparent 19px, transparent 34px);
+          -webkit-mask-image: radial-gradient(circle at 50% 50%, black 8%, transparent 55%);
+          mask-image: radial-gradient(circle at 50% 50%, black 8%, transparent 55%);
+          animation: vs-contour-out 6.6s ease-out infinite;
+        }
+        @keyframes vs-contour-out {
+          0% { transform: scale(.35); opacity: 0 }
+          18% { opacity: .85 }
+          100% { transform: scale(1.9); opacity: 0 }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export interface EffectOption {
   id: string;
   name: string;
@@ -254,7 +410,7 @@ export interface EffectOption {
   current?: boolean;
 }
 
-export const EFFECTS: EffectOption[] = [
+export const EFFECTS_V1: EffectOption[] = [
   {
     id: 'aurora',
     name: 'Aurora (current)',
@@ -293,3 +449,39 @@ export const EFFECTS: EffectOption[] = [
     Component: CanopyRays,
   },
 ];
+
+export const EFFECTS_V2: EffectOption[] = [
+  {
+    id: 'mycelial-threads',
+    name: 'Mycelial threads',
+    note: 'Light branching between points, the thinking indicator scaled to the whole screen. Speaking looks like a network firing, and it ties voice mode to the mark now used everywhere else in the app.',
+    Component: MycelialThreads,
+  },
+  {
+    id: 'edge-bloom',
+    name: 'Edge bloom',
+    note: 'Light gathers at the borders and breathes, leaving the middle clear. Nothing sits over the transcript, so it is the easiest to read against — and the closest to how phone assistants signal.',
+    Component: EdgeBloom,
+  },
+  {
+    id: 'warm-shift',
+    name: 'Warm shift',
+    note: 'No new shapes at all. The scene moves from cool to warm while Kan talks, so the change is a temperature you feel rather than an object you notice. Far and away the most restrained.',
+    Component: WarmShift,
+  },
+  {
+    id: 'vortex',
+    name: 'Vortex',
+    note: 'Faint arms turning slowly about the centre, so the field reads as circulating. Motion rather than brightness, which holds up over a long call because there is no repeating flash to catch the eye.',
+    Component: Vortex,
+  },
+  {
+    id: 'contour',
+    name: 'Contour ripple',
+    note: 'Topographic rings expanding outward, like a map of the sound. The most graphic option, and the only one that gives voice mode an instrument-panel character.',
+    Component: ContourRipple,
+  },
+];
+
+/** Everything, for pickers that want one flat list. */
+export const EFFECTS: EffectOption[] = [...EFFECTS_V1, ...EFFECTS_V2];

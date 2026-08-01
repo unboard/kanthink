@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { VoiceSpores } from '@/components/voice/VoiceSpores';
-import { EFFECTS } from './Effects';
+import { EFFECTS, EFFECTS_V1, EFFECTS_V2, type EffectOption } from './Effects';
 
 /**
  * Voice mode as it appears on a phone, with swappable "Kan is speaking" layers.
@@ -124,32 +124,40 @@ export default function VoiceSpeakingPrototype() {
 
           {/* Picker */}
           <div>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">Effects</h2>
-            <div className="space-y-2">
-              {EFFECTS.map((e) => {
-                const selected = e.id === effectId;
-                return (
-                  <button
-                    key={e.id}
-                    onClick={() => setEffectId(e.id)}
-                    className={`block w-full rounded-xl border p-4 text-left transition-colors ${
-                      selected ? 'border-violet-500 bg-violet-500/5' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-neutral-100">{e.name}</span>
-                      {e.current && (
-                        <span className="rounded-full border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-500">
-                          shipping today
-                        </span>
-                      )}
-                      {selected && <span className="ml-auto text-[11px] text-violet-300">showing</span>}
-                    </div>
-                    <p className="mt-1.5 text-xs leading-relaxed text-neutral-500">{e.note}</p>
-                  </button>
-                );
-              })}
-            </div>
+            {([
+              ['Batch one', 'Kept as-is — still on the table.', EFFECTS_V1],
+              ['Batch two', 'Other relationships to the spores: connecting them, recolouring the whole scene, moving them as a body, or leaving the middle alone.', EFFECTS_V2],
+            ] as [string, string, EffectOption[]][]).map(([heading, sub, list], gi) => (
+              <div key={heading} className={gi > 0 ? 'mt-8' : ''}>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">{heading}</h2>
+                <p className="mb-3 mt-1 text-xs text-neutral-500">{sub}</p>
+                <div className="space-y-2">
+                  {list.map((e) => {
+                    const selected = e.id === effectId;
+                    return (
+                      <button
+                        key={e.id}
+                        onClick={() => setEffectId(e.id)}
+                        className={`block w-full rounded-xl border p-4 text-left transition-colors ${
+                          selected ? 'border-violet-500 bg-violet-500/5' : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-600'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-neutral-100">{e.name}</span>
+                          {e.current && (
+                            <span className="rounded-full border border-neutral-700 px-1.5 py-0.5 text-[10px] text-neutral-500">
+                              shipping today
+                            </span>
+                          )}
+                          {selected && <span className="ml-auto text-[11px] text-violet-300">showing</span>}
+                        </div>
+                        <p className="mt-1.5 text-xs leading-relaxed text-neutral-500">{e.note}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
             <p className="mt-4 text-xs text-neutral-600">
               Nothing here is wired into voice mode yet. Tell me which one and I&rsquo;ll ship it.
             </p>
