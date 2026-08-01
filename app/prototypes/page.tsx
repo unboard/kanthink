@@ -9,10 +9,15 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'voice-speaking',
+    name: 'Voice mode — speaking effect',
+    blurb: 'Voice mode on a phone, with five alternatives to the aurora gradient that plays while Kan talks. The spore field underneath is the real one.',
+    status: 'newest',
+  },
+  {
     slug: 'kan-presence',
     name: 'Kan presence',
-    blurb: 'How Kan looks and sounds while working: four progress states, five thinking indicators built from the mushroom, and five candidate voice loops you can play.',
-    status: 'newest',
+    blurb: 'How Kan looks and sounds while working: progress states, thinking indicators built from the mushroom, and the voice loops you can play. Mycelium web and Surge shipped from here.',
   },
   {
     slug: 'shroom-cards',
