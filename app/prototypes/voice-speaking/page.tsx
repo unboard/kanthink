@@ -3,15 +3,15 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { VoiceSpores } from '@/components/voice/VoiceSpores';
+import { SporeBackground } from '@/components/ambient/SporeBackground';
 import { EFFECTS, EFFECTS_V1, EFFECTS_V2, type EffectOption } from './Effects';
 
 /**
  * Voice mode as it appears on a phone, with swappable "Kan is speaking" layers.
  *
- * The spore field is the real VoiceSpores component, which is now background
- * only — so what sits underneath here is exactly what ships, and only the layer
- * on top changes. Voice ribbon won and is live; the rest stay for reference.
+ * The spore field is the same SporeBackground the homescreen and voice mode
+ * use, so what sits underneath here is exactly what ships and only the layer on
+ * top changes. Voice ribbon won and is live; the rest stay for reference.
  */
 export default function VoiceSpeakingPrototype() {
   const [effectId, setEffectId] = useState('ribbon');
@@ -44,7 +44,10 @@ export default function VoiceSpeakingPrototype() {
               className="relative mx-auto overflow-hidden rounded-[2.75rem] border-[10px] border-neutral-800 bg-neutral-950 shadow-2xl"
               style={{ width: 340, height: 700 }}
             >
-              <VoiceSpores />
+              <SporeBackground
+                className="absolute inset-0 z-0 pointer-events-none overflow-hidden"
+                id="proto-voice-spores"
+              />
               <Effect active={speaking} />
 
               {/* UI chrome — mirrors the live layout */}

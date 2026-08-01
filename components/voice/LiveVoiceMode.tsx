@@ -5,8 +5,8 @@ import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
 import { TaskDrawer } from '@/components/board/TaskDrawer';
-import { VoiceSpores } from './VoiceSpores';
 import { VoiceRibbon } from './VoiceRibbon';
+import { SporeBackground } from '@/components/ambient/SporeBackground';
 import { SwipeToDismiss } from './SwipeToDismiss';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
 import { KanWorkingBar } from '@/components/kan/KanThinking';
@@ -1109,8 +1109,13 @@ NEVER claim you completed an action unless you actually called the corresponding
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950">
-      {/* Spore field — constant, never reacts to state */}
-      <VoiceSpores />
+      {/* The same spore field as the rest of the app. Voice mode used to run its
+          own denser, faster, twinkling copy; this is the homescreen component so
+          the two cannot drift. Scoped id — the layout renders one as well. */}
+      <SporeBackground
+        className="absolute inset-0 z-0 pointer-events-none overflow-hidden"
+        id="voice-spore-particles"
+      />
       {/* Speaking layer — the ribbon is the only thing that responds to Kan talking */}
       <VoiceRibbon active={isAiSpeaking} />
 
