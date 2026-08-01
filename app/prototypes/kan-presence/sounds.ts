@@ -1,25 +1,19 @@
 /**
  * "Kan is working" loops for voice mode.
  *
- * Earlier rounds failed for one structural reason: they were a single engine
- * parameterised four ways — same drone, same emitter, same closed filter — so
- * of course they sounded alike. They were also quiet (peak ~0.03), dark
- * (lowpass at 400Hz) and slow to attack, which is a recipe for tasteful
- * background rather than something you enjoy hearing.
+ * Every earlier round was discrete events with silence between them — a run, a
+ * pop, a cascade, then a gap. That is why none of them moved in a wave: there
+ * was nothing continuous to carry one. This set is built the opposite way. Each
+ * sound is a single unbroken texture whose brightness, level and pitch are all
+ * driven by one slow cycle, so it swells and recedes forever with no seam and
+ * no repeat point you can hear.
  *
- * This set inverts all of that. Each sound is its own engine, and each is built
- * on what actually feels good to hear:
- *
- *   rising pitch that lands  — anticipation then resolution, the coin-collect
- *     effect. A run that resolves is satisfying; a drone that never arrives
- *     anywhere is not.
- *   punchy transients        — 2ms attacks with a pitch blip on the front, so
- *     each event has a body you feel rather than a swell you tolerate.
- *   brightness               — presence up in 1–5kHz instead of everything
- *     buried under a closed filter.
- *   real level               — roughly four times louder than the last set.
- *
- * They still duck under speech, but they are no longer hiding.
+ * The centrepiece is a Risset glissando (the Shepard illusion): octave-spaced
+ * voices glide upward through a fixed amplitude window, each fading in at the
+ * bottom and out at the top. The ear hears a pitch that rises endlessly and
+ * never arrives, which is both seamless by construction and unusually
+ * compelling to listen to — motion without destination, which is exactly what
+ * "still working" should feel like.
  */
 
 export interface SoundOption {
@@ -29,9 +23,7 @@ export interface SoundOption {
   start: (ctx: AudioContext) => () => void;
 }
 
-/* ── Shared polish ───────────────────────────────────────────────
-   Deliberately thin: reverb and a touch of saturation. Everything that gives
-   each sound its identity lives in its own engine, not here. */
+/* ── Shared ─────────────────────────────────────────────────────── */
 
 interface Rig {
   ctx: AudioContext;
@@ -52,8 +44,7 @@ function makeImpulse(ctx: AudioContext, seconds: number, decay: number): AudioBu
   return buf;
 }
 
-/** Gentle soft-clip. Adds harmonics so notes read as present rather than thin. */
-function makeSaturator(ctx: AudioContext, amount = 8): WaveShaperNode {
+function makeSaturator(ctx: AudioContext, amount = 6): WaveShaperNode {
   const shaper = ctx.createWaveShaper();
   const n = 1024;
   const curve = new Float32Array(n);
@@ -70,19 +61,17 @@ function createRig(
   ctx: AudioContext,
   opts: { seconds?: number; decay?: number; wet?: number; level?: number; drive?: number } = {},
 ): Rig {
-  const { seconds = 2.4, decay = 2.6, wet = 0.32, level = 0.62, drive = 6 } = opts;
+  const { seconds = 3.2, decay = 2.2, wet = 0.4, level = 0.6, drive = 5 } = opts;
   const t = ctx.currentTime;
 
   const master = ctx.createGain();
   master.gain.setValueAtTime(0, t);
-  master.gain.linearRampToValueAtTime(level, t + 0.12);
+  master.gain.linearRampToValueAtTime(level, t + 0.9);
 
   const sat = makeSaturator(ctx, drive);
   const trim = ctx.createGain();
-  trim.gain.value = 0.7;
-  master.connect(sat);
-  sat.connect(trim);
-  trim.connect(ctx.destination);
+  trim.gain.value = 0.75;
+  master.connect(sat); sat.connect(trim); trim.connect(ctx.destination);
 
   const input = ctx.createGain();
   input.connect(master);
@@ -92,13 +81,11 @@ function createRig(
   const wetGain = ctx.createGain();
   wetGain.gain.value = wet;
   const send = ctx.createGain();
-  send.connect(convolver);
-  convolver.connect(wetGain);
-  wetGain.connect(master);
+  send.connect(convolver); convolver.connect(wetGain); wetGain.connect(master);
 
   return {
     ctx, input, send, master,
-    stop: (release = 0.35) => {
+    stop: (release = 0.7) => {
       const now = ctx.currentTime;
       master.gain.cancelScheduledValues(now);
       master.gain.setValueAtTime(master.gain.value, now);
@@ -107,27 +94,113 @@ function createRig(
   };
 }
 
-function out(rig: Rig, node: AudioNode, pan = 0, sendAmt = 0.6) {
+function out(rig: Rig, node: AudioNode, pan = 0, sendAmt = 0.5) {
   const p = rig.ctx.createStereoPanner();
   p.pan.value = Math.max(-1, Math.min(1, pan));
-  node.connect(p);
-  p.connect(rig.input);
+  node.connect(p); p.connect(rig.input);
   const s = rig.ctx.createGain();
   s.gain.value = sendAmt;
-  p.connect(s);
-  s.connect(rig.send);
+  p.connect(s); s.connect(rig.send);
 }
 
-function loop(fn: (again: (ms: number) => void) => void): () => void {
+/** A raised-cosine window: silent at both ends, so voices wrap inaudibly. */
+function windowCurve(peak: number, points = 256): Float32Array {
+  const c = new Float32Array(points);
+  for (let i = 0; i < points; i++) c[i] = peak * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (points - 1)));
+  return c;
+}
+
+/**
+ * Risset glissando. Each voice glides one full span, fading in as it enters and
+ * out as it leaves, staggered so the texture is always full. Voices are re-armed
+ * ahead of time by a scheduler, which is what makes the loop seamless.
+ */
+function risset(
+  rig: Rig,
+  opts: {
+    count?: number; fmin?: number; octaves?: number; cycle?: number;
+    peak?: number; rising?: boolean; type?: OscillatorType; spread?: number;
+  } = {},
+): () => void {
+  const { ctx } = rig;
+  const {
+    count = 7, fmin = 55, octaves = 5, cycle = 9,
+    peak = 0.05, rising = true, type = 'sine', spread = 0.7,
+  } = opts;
+
+  const span = Math.pow(2, octaves);
+  const curve = windowCurve(peak);
+
+  const voices = Array.from({ length: count }, (_, i) => {
+    const o = ctx.createOscillator();
+    o.type = type;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    o.connect(g);
+    out(rig, g, ((i / (count - 1)) * 2 - 1) * spread, 0.55);
+    o.start();
+    return { o, g, next: 0 };
+  });
+
+  const now = ctx.currentTime + 0.06;
+
+  // First arming starts each voice partway through the sweep so the texture is
+  // complete immediately rather than filling in over a whole cycle.
+  voices.forEach((v, i) => {
+    const phase = i / count;
+    const remain = cycle * (1 - phase);
+    const fStart = rising ? fmin * Math.pow(span, phase) : fmin * Math.pow(span, 1 - phase);
+    const fEnd = rising ? fmin * span : fmin;
+    v.o.frequency.setValueAtTime(fStart, now);
+    v.o.frequency.exponentialRampToValueAtTime(fEnd, now + remain);
+
+    const startIdx = Math.floor(phase * (curve.length - 1));
+    const partial = curve.slice(startIdx);
+    if (partial.length >= 2 && remain > 0.05) {
+      v.g.gain.setValueCurveAtTime(partial, now, remain);
+    }
+    v.next = now + remain;
+  });
+
   let stopped = false;
-  const timers: number[] = [];
-  const again = (ms: number) => { if (!stopped) timers.push(window.setTimeout(run, ms)); };
-  const run = () => { if (!stopped) fn(again); };
-  run();
-  return () => { stopped = true; timers.forEach(clearTimeout); };
+  const timer: ReturnType<typeof setInterval> = setInterval(() => {
+    if (stopped) return;
+    const horizon = ctx.currentTime + 2;
+    for (const v of voices) {
+      while (v.next < horizon) {
+        const at = v.next;
+        v.o.frequency.setValueAtTime(rising ? fmin : fmin * span, at);
+        v.o.frequency.exponentialRampToValueAtTime(rising ? fmin * span : fmin, at + cycle);
+        v.g.gain.setValueCurveAtTime(curve, at, cycle);
+        v.next = at + cycle;
+      }
+    }
+  }, 400);
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+    const t = ctx.currentTime + 0.9;
+    voices.forEach(v => { try { v.o.stop(t); } catch { /* already stopped */ } });
+  };
 }
 
-function noiseBuffer(ctx: AudioContext, seconds = 1): AudioBuffer {
+/** One slow cycle other parameters can ride on. Returns the LFO's output node. */
+function waveLfo(ctx: AudioContext, rateHz: number, depth: number, offset = 0) {
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = rateHz;
+  const amt = ctx.createGain();
+  amt.gain.value = depth;
+  osc.connect(amt);
+  osc.start();
+  const bias = ctx.createConstantSource();
+  bias.offset.value = offset;
+  bias.start();
+  return { osc, amt, bias, stop: (t: number) => { try { osc.stop(t); bias.stop(t); } catch { /* already stopped */ } } };
+}
+
+function noiseBuffer(ctx: AudioContext, seconds = 3): AudioBuffer {
   const length = Math.floor(ctx.sampleRate * seconds);
   const b = ctx.createBuffer(1, length, ctx.sampleRate);
   const d = b.getChannelData(0);
@@ -135,257 +208,230 @@ function noiseBuffer(ctx: AudioContext, seconds = 1): AudioBuffer {
   return b;
 }
 
-/* ── Voices ────────────────────────────────────────────────────── */
-
-/** Bright bell with a fast attack and a pitch blip on the front — reads as a "ping". */
-function bell(rig: Rig, freq: number, at: number, gain = 0.11, dur = 1.1, pan = 0) {
-  const { ctx } = rig;
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(gain, at + 0.004);
-  g.gain.exponentialRampToValueAtTime(0.0006, at + dur);
-
-  [1, 2.01, 3.02, 4.7].forEach((ratio, i) => {
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    // Quick upward blip on the attack is what makes it pop rather than fade in.
-    o.frequency.setValueAtTime(freq * ratio * 0.94, at);
-    o.frequency.exponentialRampToValueAtTime(freq * ratio, at + 0.03);
-    const vg = ctx.createGain();
-    vg.gain.value = [1, 0.38, 0.16, 0.07][i];
-    o.connect(vg); vg.connect(g);
-    o.start(at); o.stop(at + dur + 0.05);
-  });
-  out(rig, g, pan, 0.55);
-}
-
-/** Wet resonant pop — the bubble-wrap sound. */
-function pop(rig: Rig, freq: number, at: number, gain = 0.13, pan = 0) {
-  const { ctx } = rig;
-  const o = ctx.createOscillator();
-  o.type = 'sine';
-  o.frequency.setValueAtTime(freq * 0.35, at);
-  o.frequency.exponentialRampToValueAtTime(freq * 1.9, at + 0.045);
-
-  const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.setValueAtTime(freq * 1.4, at);
-  bp.frequency.exponentialRampToValueAtTime(freq * 3, at + 0.05);
-  bp.Q.value = 4;
-
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(gain, at + 0.003);
-  g.gain.exponentialRampToValueAtTime(0.0005, at + 0.16);
-
-  o.connect(bp); bp.connect(g);
-  out(rig, g, pan, 0.4);
-  o.start(at); o.stop(at + 0.2);
-}
-
-/** Tiny bright grain for cascades. */
-function grain(rig: Rig, freq: number, at: number, gain = 0.05, pan = 0) {
-  const { ctx } = rig;
-  const o = ctx.createOscillator();
-  o.type = 'triangle';
-  o.frequency.value = freq;
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, at);
-  g.gain.linearRampToValueAtTime(gain, at + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0004, at + 0.28);
-  o.connect(g);
-  out(rig, g, pan, 0.75);
-  o.start(at); o.stop(at + 0.3);
-}
-
-// C major pentatonic, high and bright.
-const PENTA = [523.3, 587.3, 659.3, 784, 880, 1046.5, 1174.7, 1318.5];
-
 /* ── The set ──────────────────────────────────────────────────── */
 
 export const SOUND_OPTIONS: SoundOption[] = [
   {
-    id: 'bloom',
-    name: 'Bloom',
+    id: 'endless-rise',
+    name: 'Endless rise',
     description:
-      'A six-note run climbs the scale and lands on the octave, with a shimmer on the resolve. The rise-then-arrival is the hook — it is the coin-collect shape, slowed down enough to live under a conversation. Repeats about every two and a half seconds, starting from a different rung each time so it never feels looped.',
+      'A Risset glissando — seven octave-spaced voices gliding upward through a fixed window, each fading in low and out high. The pitch appears to climb forever without ever arriving, and there is no loop point because there is no loop: it is one continuous sweep that renews itself. Hypnotic, and the clearest possible "still going".',
     start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 2.6, decay: 2.4, wet: 0.4, level: 0.6 });
-      let offset = 0;
+      const rig = createRig(ctx, { seconds: 3.4, decay: 2, wet: 0.45, level: 0.6 });
+      const stopRisset = risset(rig, { count: 7, fmin: 55, octaves: 5, cycle: 9, peak: 0.055, rising: true });
 
-      const stopLoop = loop((again) => {
-        const t = ctx.currentTime;
-        const start = offset % 3;
-        const run = [0, 1, 2, 3, 4].map(i => PENTA[start + i]);
-        run.forEach((f, i) => bell(rig, f, t + i * 0.085, 0.075, 0.75, (i - 2) * 0.25));
-        // The landing — louder, longer, an octave up, with a sparkle on top.
-        const landAt = t + run.length * 0.085;
-        bell(rig, PENTA[start + 5] ?? PENTA[PENTA.length - 1], landAt, 0.13, 1.9, 0);
-        grain(rig, (PENTA[start + 5] ?? 1318.5) * 2, landAt + 0.02, 0.045, 0.5);
-        offset++;
-        again(2400);
-      });
+      // A slow breath across the whole thing so the wave has a second, longer swell.
+      const breath = waveLfo(ctx, 1 / 11, 0.18, 0.82);
+      breath.amt.connect(rig.master.gain);
+      breath.bias.connect(rig.master.gain);
 
-      return () => { stopLoop(); rig.stop(0.5); };
+      return () => { stopRisset(); breath.stop(ctx.currentTime + 1); rig.stop(0.9); };
     },
   },
   {
-    id: 'bubble-pop',
-    name: 'Bubble pop',
+    id: 'tidal',
+    name: 'Tidal',
     description:
-      'Wet resonant pops, each one a tiny upward blip, arriving in loose clusters and climbing in pitch through the cluster. Tactile and a bit compulsive — closest to bubble wrap or water dripping into a tin. The most physically satisfying of the five and the least musical.',
+      'One big wave on an eight second cycle. A detuned bed swells up through an opening filter, crests with a wash of air, then draws back — and immediately begins again. The most literal reading of a wave, and the easiest to leave running for a long time.',
     start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 1.9, decay: 3, wet: 0.3, level: 0.62, drive: 10 });
+      const rig = createRig(ctx, { seconds: 4.4, decay: 1.9, wet: 0.6, level: 0.62 });
 
-      const stopLoop = loop((again) => {
-        const t = ctx.currentTime;
-        const count = 2 + Math.floor(Math.random() * 4);
-        const base = 260 + Math.random() * 180;
-        for (let i = 0; i < count; i++) {
-          // Rising through the cluster is what turns a noise into a gesture.
-          pop(rig, base * (1 + i * 0.28), t + i * (0.085 + Math.random() * 0.05), 0.12, (Math.random() * 2 - 1) * 0.7);
-        }
-        again(520 + Math.random() * 700);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.Q.value = 4;
+      lp.frequency.value = 300;
+      const bodyGain = ctx.createGain();
+      bodyGain.gain.value = 0.05;
+      lp.connect(bodyGain);
+      out(rig, bodyGain, 0, 0.7);
+
+      // Root plus detuned partners — the beating is what gives the swell its motion.
+      const oscs = [65.4, 65.9, 98, 130.8, 196].map((f, i) => {
+        const o = ctx.createOscillator();
+        o.type = i > 2 ? 'triangle' : 'sawtooth';
+        o.frequency.value = f;
+        const g = ctx.createGain();
+        g.gain.value = [1, 0.8, 0.5, 0.35, 0.2][i];
+        o.connect(g); g.connect(lp);
+        o.start();
+        return o;
       });
 
-      return () => { stopLoop(); rig.stop(0.3); };
+      // The wave itself: filter and level ride one 8s cycle together.
+      const sweep = waveLfo(ctx, 1 / 8, 1500, 1700);
+      sweep.amt.connect(lp.frequency);
+      sweep.bias.connect(lp.frequency);
+      const swell = waveLfo(ctx, 1 / 8, 0.03, 0.05);
+      swell.amt.connect(bodyGain.gain);
+      swell.bias.connect(bodyGain.gain);
+
+      // Crest: air that brightens with the peak of the wave.
+      const air = ctx.createBufferSource();
+      air.buffer = noiseBuffer(ctx, 4);
+      air.loop = true;
+      const airBp = ctx.createBiquadFilter();
+      airBp.type = 'bandpass';
+      airBp.frequency.value = 4200;
+      airBp.Q.value = 0.8;
+      const airGain = ctx.createGain();
+      airGain.gain.value = 0.006;
+      air.connect(airBp); airBp.connect(airGain);
+      out(rig, airGain, 0, 0.8);
+      const airWave = waveLfo(ctx, 1 / 8, 0.009, 0.01);
+      airWave.amt.connect(airGain.gain);
+      airWave.bias.connect(airGain.gain);
+      air.start();
+
+      return () => {
+        rig.stop(1.1);
+        const t = ctx.currentTime + 1.3;
+        oscs.forEach(o => { try { o.stop(t); } catch { /* already stopped */ } });
+        [sweep, swell, airWave].forEach(w => w.stop(t));
+        try { air.stop(t); } catch { /* already stopped */ }
+      };
     },
   },
   {
-    id: 'the-groove',
-    name: 'The groove',
+    id: 'phase-wash',
+    name: 'Phase wash',
     description:
-      'An actual beat: soft kick, shaker on the offbeat, a bouncing bass note and a melodic blip that answers it. Around 100bpm, so it nods along rather than rushing. Completely different family from everything else here — this one has momentum instead of atmosphere.',
+      'A rich bed pushed through a sweeping comb filter, so a notch travels up and down the harmonics on a six second cycle. That travelling notch is the jet-flyover whoosh — motion you feel as a shape moving through the sound rather than as a note changing pitch.',
     start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 1.6, decay: 3.2, wet: 0.22, level: 0.6, drive: 5 });
-      const step = 150; // ms per 16th at ~100bpm
-      let i = 0;
+      const rig = createRig(ctx, { seconds: 3, decay: 2.4, wet: 0.35, level: 0.6, drive: 8 });
 
-      const stopLoop = loop((again) => {
-        const t = ctx.currentTime;
-        const beat = i % 8;
-
-        if (beat === 0 || beat === 5) {
-          const o = ctx.createOscillator();
-          o.type = 'sine';
-          o.frequency.setValueAtTime(120, t);
-          o.frequency.exponentialRampToValueAtTime(44, t + 0.11);
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(0, t);
-          g.gain.linearRampToValueAtTime(0.16, t + 0.004);
-          g.gain.exponentialRampToValueAtTime(0.0005, t + 0.3);
-          o.connect(g); out(rig, g, 0, 0.12);
-          o.start(t); o.stop(t + 0.32);
-        }
-
-        if (beat % 2 === 1) {
-          const s = ctx.createBufferSource();
-          s.buffer = noiseBuffer(ctx, 0.06);
-          const hp = ctx.createBiquadFilter();
-          hp.type = 'highpass';
-          hp.frequency.value = 6500;
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(beat === 3 ? 0.05 : 0.03, t);
-          g.gain.exponentialRampToValueAtTime(0.0004, t + 0.05);
-          s.connect(hp); hp.connect(g);
-          out(rig, g, beat % 4 === 1 ? -0.4 : 0.4, 0.3);
-          s.start(t); s.stop(t + 0.07);
-        }
-
-        if (beat === 2 || beat === 6) {
-          const o = ctx.createOscillator();
-          o.type = 'triangle';
-          o.frequency.value = beat === 2 ? 130.8 : 174.6;
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(0, t);
-          g.gain.linearRampToValueAtTime(0.075, t + 0.006);
-          g.gain.exponentialRampToValueAtTime(0.0005, t + 0.26);
-          o.connect(g); out(rig, g, -0.2, 0.25);
-          o.start(t); o.stop(t + 0.28);
-        }
-
-        if (beat === 4) bell(rig, PENTA[2 + (Math.floor(i / 8) % 3)], t, 0.07, 0.7, 0.45);
-
-        i++;
-        again(step);
-      });
-
-      return () => { stopLoop(); rig.stop(0.3); };
-    },
-  },
-  {
-    id: 'sparkle-cascade',
-    name: 'Sparkle cascade',
-    description:
-      'Fast runs of tiny bright grains tumbling down the scale, like a thumb dragged across a harp. Pure ear candy, and the brightest thing here — it sparkles rather than hums, which is the fastest way to feel like something good just happened.',
-    start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 3, decay: 2, wet: 0.55, level: 0.55 });
-
-      const stopLoop = loop((again) => {
-        const t = ctx.currentTime;
-        const down = Math.random() < 0.6;
-        const n = 9;
-        for (let i = 0; i < n; i++) {
-          const idx = down ? PENTA.length - 1 - (i % PENTA.length) : i % PENTA.length;
-          grain(rig, PENTA[idx] * (i > 6 ? 2 : 1), t + i * 0.042, 0.05, ((i / n) * 2 - 1) * 0.8);
-        }
-        // A soft landing note so the run resolves rather than just stopping.
-        bell(rig, down ? PENTA[0] : PENTA[5], t + n * 0.042 + 0.05, 0.085, 1.5, 0);
-        again(1900 + Math.random() * 900);
-      });
-
-      return () => { stopLoop(); rig.stop(0.5); };
-    },
-  },
-  {
-    id: 'tension-reward',
-    name: 'Tension & reward',
-    description:
-      'A build and a payoff on a loop: pitch and brightness climb for a second and a half while a tremolo tightens, then it breaks into a resolved major chord with a sparkle over the top. The most overtly gratifying of the five — it is the dopamine loop in its plainest form, so it may be too much for a long wait.',
-    start: (ctx) => {
-      const rig = createRig(ctx, { seconds: 2.8, decay: 2.2, wet: 0.42, level: 0.58 });
-
-      const stopLoop = loop((again) => {
-        const t = ctx.currentTime;
-        const build = 1.5;
-
-        // Rising tension
+      const source = ctx.createGain();
+      source.gain.value = 0.028;
+      const oscs = [82.4, 123.5, 164.8, 247, 329.6].map((f, i) => {
         const o = ctx.createOscillator();
         o.type = 'sawtooth';
-        o.frequency.setValueAtTime(160, t);
-        o.frequency.exponentialRampToValueAtTime(430, t + build);
-        const lp = ctx.createBiquadFilter();
-        lp.type = 'lowpass';
-        lp.Q.value = 7;
-        lp.frequency.setValueAtTime(360, t);
-        lp.frequency.exponentialRampToValueAtTime(3200, t + build);
+        o.frequency.value = f;
+        o.detune.value = (i - 2) * 6;
         const g = ctx.createGain();
-        g.gain.setValueAtTime(0.004, t);
-        g.gain.exponentialRampToValueAtTime(0.06, t + build);
-        g.gain.exponentialRampToValueAtTime(0.0005, t + build + 0.12);
-        // Tremolo tightening as it climbs
-        const trem = ctx.createOscillator();
-        trem.frequency.setValueAtTime(5, t);
-        trem.frequency.linearRampToValueAtTime(17, t + build);
-        const tremAmt = ctx.createGain();
-        tremAmt.gain.value = 0.022;
-        trem.connect(tremAmt); tremAmt.connect(g.gain);
-        o.connect(lp); lp.connect(g);
-        out(rig, g, 0, 0.3);
-        o.start(t); trem.start(t);
-        o.stop(t + build + 0.2); trem.stop(t + build + 0.2);
-
-        // The payoff — a major triad, spread wide, with sparkle on top
-        const hit = t + build;
-        [523.3, 659.3, 784, 1046.5].forEach((f, i) => {
-          bell(rig, f, hit + i * 0.012, i === 3 ? 0.07 : 0.115, 2.2, (i - 1.5) * 0.4);
-        });
-        for (let i = 0; i < 5; i++) grain(rig, 1568 + i * 220, hit + 0.03 + i * 0.035, 0.035, (Math.random() * 2 - 1) * 0.8);
-
-        again(3400);
+        g.gain.value = [1, 0.6, 0.45, 0.3, 0.2][i];
+        o.connect(g); g.connect(source);
+        o.start();
+        return o;
       });
 
-      return () => { stopLoop(); rig.stop(0.5); };
+      // Flanger: short modulated delay summed with the dry signal.
+      const delay = ctx.createDelay(0.05);
+      delay.delayTime.value = 0.004;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.62;
+      const wet = ctx.createGain();
+      wet.gain.value = 0.85;
+      source.connect(delay);
+      delay.connect(fb); fb.connect(delay);
+      delay.connect(wet);
+
+      const sweep = waveLfo(ctx, 1 / 6, 0.0034, 0.0042);
+      sweep.amt.connect(delay.delayTime);
+      sweep.bias.connect(delay.delayTime);
+
+      // Dry and wet placed apart so the notch travels across the stereo image.
+      out(rig, source, -0.45, 0.4);
+      out(rig, wet, 0.45, 0.6);
+
+      const tone = ctx.createBiquadFilter();
+      tone.type = 'lowpass';
+      tone.frequency.value = 2600;
+      wet.connect(tone);
+
+      return () => {
+        rig.stop(0.9);
+        const t = ctx.currentTime + 1.1;
+        oscs.forEach(o => { try { o.stop(t); } catch { /* already stopped */ } });
+        sweep.stop(t);
+      };
+    },
+  },
+  {
+    id: 'surge',
+    name: 'Surge',
+    description:
+      'A continuous sixteenth-note figure whose brightness and level rise and fall on a seven second cycle — the pattern never stops, it just comes forward and recedes like a wave washing in. Rhythmic without being a beat, and the busiest option that still loops seamlessly.',
+    start: (ctx) => {
+      const rig = createRig(ctx, { seconds: 2.6, decay: 2.6, wet: 0.4, level: 0.58 });
+
+      const bus = ctx.createGain();
+      bus.gain.value = 0.02;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.Q.value = 6;
+      lp.frequency.value = 700;
+      bus.connect(lp);
+      out(rig, lp, 0, 0.5);
+
+      // One wave drives both how bright and how loud the figure is.
+      const bright = waveLfo(ctx, 1 / 7, 2200, 2500);
+      bright.amt.connect(lp.frequency);
+      bright.bias.connect(lp.frequency);
+      const level = waveLfo(ctx, 1 / 7, 0.016, 0.024);
+      level.amt.connect(bus.gain);
+      level.bias.connect(bus.gain);
+
+      const pattern = [261.6, 392, 523.3, 392, 329.6, 523.3, 392, 261.6];
+      let i = 0;
+      let stopped = false;
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      const tick = () => {
+        if (stopped) return;
+        const t = ctx.currentTime;
+        const o = ctx.createOscillator();
+        o.type = 'square';
+        o.frequency.value = pattern[i % pattern.length] * (i % 16 >= 8 ? 2 : 1);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(1, t + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+        o.connect(g); g.connect(bus);
+        o.start(t); o.stop(t + 0.18);
+        i++;
+        timers.push(setTimeout(tick, 125));
+      };
+      tick();
+
+      return () => {
+        stopped = true;
+        timers.forEach(clearTimeout);
+        rig.stop(0.7);
+        const t = ctx.currentTime + 0.9;
+        bright.stop(t); level.stop(t);
+      };
+    },
+  },
+  {
+    id: 'deep-spiral',
+    name: 'Deep spiral',
+    description:
+      'The inverse illusion — a Risset glissando falling forever instead of rising, on a longer cycle and pitched low. Endlessly descending reads as calm and settling where the rising version reads as effort, so this is the one to pick if a long wait should feel unhurried.',
+    start: (ctx) => {
+      const rig = createRig(ctx, { seconds: 5, decay: 1.7, wet: 0.6, level: 0.64 });
+      const stopRisset = risset(rig, {
+        count: 6, fmin: 41.2, octaves: 4, cycle: 13, peak: 0.07, rising: false, type: 'triangle', spread: 0.5,
+      });
+
+      // A quiet bed so the descent has a floor to settle onto.
+      const bed = ctx.createOscillator();
+      bed.type = 'sine';
+      bed.frequency.value = 41.2;
+      const bedGain = ctx.createGain();
+      bedGain.gain.value = 0.03;
+      bed.connect(bedGain);
+      out(rig, bedGain, 0, 0.5);
+      bed.start();
+
+      const breath = waveLfo(ctx, 1 / 13, 0.012, 0.03);
+      breath.amt.connect(bedGain.gain);
+      breath.bias.connect(bedGain.gain);
+
+      return () => {
+        stopRisset();
+        rig.stop(1.2);
+        const t = ctx.currentTime + 1.4;
+        try { bed.stop(t); } catch { /* already stopped */ }
+        breath.stop(t);
+      };
     },
   },
 ];

@@ -208,7 +208,7 @@ export default function KanPresencePage() {
 
         <Section
           title="3 · Voice processing sound"
-          blurb="Rebuilt again, and this time as five separate engines rather than one engine with different numbers — which is why the last batch all sounded alike. These are louder, brighter and punchier: runs that climb and land, pops with a real transient, an actual beat. Rising pitch that resolves is the thing that feels good, and nothing before this had it. Press play to audition — one at a time."
+          blurb="Continuous waves this time, not discrete events with gaps — which is what every earlier round actually was. Each one is a single unbroken texture with brightness, level and pitch driven by one slow cycle, so it swells and recedes forever with no seam. Two use a Risset glissando: octave-stacked voices gliding through a fixed window so the pitch climbs (or falls) endlessly and never arrives. Press play to audition — one at a time."
         >
           <div className="grid gap-3">
             {[CURRENT_SOUND, ...SOUND_OPTIONS].map((option) => (
