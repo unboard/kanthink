@@ -9,12 +9,12 @@ import { EFFECTS, EFFECTS_V1, EFFECTS_V2, type EffectOption } from './Effects';
 /**
  * Voice mode as it appears on a phone, with swappable "Kan is speaking" layers.
  *
- * The spore field is the real VoiceSpores component driven with isSpeaking
- * false, which suppresses its built-in aurora — so what sits underneath here is
- * exactly what ships, and only the layer on top changes.
+ * The spore field is the real VoiceSpores component, which is now background
+ * only — so what sits underneath here is exactly what ships, and only the layer
+ * on top changes. Voice ribbon won and is live; the rest stay for reference.
  */
 export default function VoiceSpeakingPrototype() {
-  const [effectId, setEffectId] = useState('spore-surge');
+  const [effectId, setEffectId] = useState('ribbon');
   const [speaking, setSpeaking] = useState(true);
 
   const effect = EFFECTS.find(e => e.id === effectId) ?? EFFECTS[0];
@@ -44,7 +44,7 @@ export default function VoiceSpeakingPrototype() {
               className="relative mx-auto overflow-hidden rounded-[2.75rem] border-[10px] border-neutral-800 bg-neutral-950 shadow-2xl"
               style={{ width: 340, height: 700 }}
             >
-              <VoiceSpores isSpeaking={false} isProcessing={false} />
+              <VoiceSpores />
               <Effect active={speaking} />
 
               {/* UI chrome — mirrors the live layout */}

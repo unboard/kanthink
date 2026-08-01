@@ -1,5 +1,7 @@
 'use client';
 
+import { VoiceRibbon as ShippedVoiceRibbon } from '@/components/voice/VoiceRibbon';
+
 /**
  * Candidate "Kan is speaking" layers, drawn on top of the spore field.
  *
@@ -157,46 +159,8 @@ export function Bioluminescence({ active }: EffectProps) {
  *    talks. The most literal representation of a voice, and the clearest at a
  *    glance which of the two of you is speaking.
  */
-export function VoiceRibbon({ active }: EffectProps) {
-  return (
-    <div className={base} style={{ opacity: active ? 1 : 0 }}>
-      <svg className="absolute inset-x-0 top-1/2 h-48 w-full -translate-y-1/2" viewBox="0 0 390 180" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="vs-ribbon-grad" x1="0" x2="1">
-            <stop offset="0%" stopColor="rgba(139,92,246,0)" />
-            <stop offset="25%" stopColor="rgba(167,139,250,0.85)" />
-            <stop offset="55%" stopColor="rgba(34,211,238,0.85)" />
-            <stop offset="100%" stopColor="rgba(103,232,249,0)" />
-          </linearGradient>
-        </defs>
-        {[0, 1, 2].map((i) => (
-          <path
-            key={i}
-            className="vs-ribbon"
-            d="M0,90 C 60,40 120,140 195,90 C 270,40 330,140 390,90"
-            fill="none"
-            stroke="url(#vs-ribbon-grad)"
-            strokeWidth={i === 0 ? 2.5 : 1.2}
-            opacity={i === 0 ? 0.95 : 0.4}
-            style={{ animationDelay: `${i * 0.5}s` }}
-          />
-        ))}
-      </svg>
-      <style>{`
-        .vs-ribbon {
-          transform-origin: center;
-          animation: vs-undulate 3.4s ease-in-out infinite;
-          filter: drop-shadow(0 0 8px rgba(139,92,246,.55));
-        }
-        @keyframes vs-undulate {
-          0%, 100% { transform: scaleY(1) translateY(0) }
-          25% { transform: scaleY(1.55) translateY(-4px) }
-          50% { transform: scaleY(.6) translateY(3px) }
-          75% { transform: scaleY(1.3) translateY(-2px) }
-        }
-      `}</style>
-    </div>
-  );
+export function VoiceRibbonEffect({ active }: EffectProps) {
+  return <ShippedVoiceRibbon active={active} idSuffix="proto" />;
 }
 
 /**
@@ -438,9 +402,9 @@ export const EFFECTS_V1: EffectOption[] = [
   },
   {
     id: 'ribbon',
-    name: 'Voice ribbon',
-    note: 'A luminous band across the middle that undulates while Kan talks. The most literal picture of a voice, and the clearest signal of who is speaking.',
-    Component: VoiceRibbon,
+    name: 'Voice ribbon  ✓ shipping',
+    note: 'A luminous band across the middle that undulates while Kan talks. Now live in voice mode — this renders the shipped component, so what you see here is exactly what plays.',
+    Component: VoiceRibbonEffect,
   },
   {
     id: 'canopy',

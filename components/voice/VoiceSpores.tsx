@@ -64,12 +64,13 @@ function buildConfig(): ISourceOptions {
   };
 }
 
-interface VoiceSporesProps {
-  isSpeaking: boolean;
-  isProcessing?: boolean;
-}
+/**
+ * The spore field only. The "Kan is speaking" layer used to live here as an
+ * aurora gradient; it is now VoiceRibbon, rendered separately, so this stays a
+ * constant background that never reacts to state.
+ */
 
-export const VoiceSpores = memo(function VoiceSpores({ isSpeaking, isProcessing = false }: VoiceSporesProps) {
+export const VoiceSpores = memo(function VoiceSpores() {
   const [init, setInit] = useState(false);
   const containerRef = useRef<Container | null>(null);
 
@@ -92,41 +93,6 @@ export const VoiceSpores = memo(function VoiceSpores({ isSpeaking, isProcessing 
           if (container) containerRef.current = container;
         }}
       />
-      {/* Aurora gradient — subtle Northern Lights that flows up from bottom when AI speaks */}
-      <div
-        className="absolute inset-0 aurora-glow"
-        style={{ opacity: isSpeaking ? 1 : isProcessing ? 0.5 : 0 }}
-      />
-      <style>{`
-        .aurora-glow {
-          transition: opacity 1.2s ease-in-out;
-          background:
-            linear-gradient(180deg,
-              transparent 30%,
-              rgba(139,92,246,0.06) 50%,
-              rgba(34,211,238,0.10) 65%,
-              rgba(103,232,249,0.08) 80%,
-              rgba(139,92,246,0.04) 90%,
-              transparent 100%
-            );
-          background-size: 200% 200%;
-          animation: aurora-flow 6s ease-in-out infinite;
-        }
-        @keyframes aurora-flow {
-          0%, 100% {
-            background-position: 50% 100%;
-            filter: hue-rotate(0deg);
-          }
-          33% {
-            background-position: 30% 80%;
-            filter: hue-rotate(15deg);
-          }
-          66% {
-            background-position: 70% 90%;
-            filter: hue-rotate(-10deg);
-          }
-        }
-      `}</style>
     </div>
   );
 });

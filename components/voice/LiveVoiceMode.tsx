@@ -6,6 +6,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
 import { TaskDrawer } from '@/components/board/TaskDrawer';
 import { VoiceSpores } from './VoiceSpores';
+import { VoiceRibbon } from './VoiceRibbon';
 import { SwipeToDismiss } from './SwipeToDismiss';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
 import { KanWorkingBar } from '@/components/kan/KanThinking';
@@ -1108,10 +1109,13 @@ NEVER claim you completed an action unless you actually called the corresponding
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950">
-      {/* Voice-specific spore particles — more particles, higher opacity, reactive to AI speaking */}
-      <VoiceSpores isSpeaking={isAiSpeaking} isProcessing={isProcessing} />
-      {/* Gradient glow at edges */}
-      <div className={`absolute inset-0 pointer-events-none transition-opacity duration-700 ${isAiSpeaking ? 'opacity-80' : 'opacity-40'}`}
+      {/* Spore field — constant, never reacts to state */}
+      <VoiceSpores />
+      {/* Speaking layer — the ribbon is the only thing that responds to Kan talking */}
+      <VoiceRibbon active={isAiSpeaking} />
+      {/* Ambient edge depth. Held steady: it used to brighten while speaking,
+          which stacked a second glow on top of the speaking cue. */}
+      <div className="absolute inset-0 pointer-events-none opacity-40"
         style={{
           background: 'radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.2) 0%, transparent 50%), radial-gradient(ellipse at 50% 100%, rgba(6,182,212,0.2) 0%, transparent 50%), radial-gradient(ellipse at 0% 50%, rgba(167,139,250,0.1) 0%, transparent 40%), radial-gradient(ellipse at 100% 50%, rgba(34,211,238,0.1) 0%, transparent 40%)',
         }}
