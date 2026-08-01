@@ -237,6 +237,33 @@ async function createCard(title: string, content: string, columnId: string = RAW
     args: [id, CHANNEL_ID, columnId, title, JSON.stringify(messages), position, nowEpoch, nowEpoch],
   })
 
+  // Without this the card exists only on the server. Every other mutation here
+  // broadcasts, so a card created by the agent was the one change a running
+  // client never heard about — it stayed invisible until a full refetch.
+  // `position` in this event is a splice index into the column's cardIds, not
+  // the DB position, and the two diverge because positions aren't dense.
+  const countRes = await db.execute({
+    sql: 'SELECT COUNT(*) as n FROM cards WHERE column_id = ? AND is_archived = 0',
+    args: [columnId],
+  })
+  const spliceIndex = Number(countRes.rows[0].n)
+  const createdAtIso = new Date(nowEpoch * 1000).toISOString()
+  await broadcastToChannel({
+    type: 'card:create',
+    columnId,
+    position: spliceIndex,
+    card: {
+      id,
+      channelId: CHANNEL_ID,
+      title,
+      messages,
+      source: 'ai',
+      isArchived: false,
+      createdAt: createdAtIso,
+      updatedAt: createdAtIso,
+    },
+  })
+
   console.log(`Created card "${title}" in column (${columnId})`)
   console.log(`  ID: ${id}`)
 }
