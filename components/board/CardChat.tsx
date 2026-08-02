@@ -24,9 +24,15 @@ interface CardChatProps {
   channelDescription: string;
   tagDefinitions?: TagDefinition[];
   tabBar?: React.ReactNode;
+  /**
+   * Rendered in place of the message composer. Used when the card is in a state
+   * where replying makes no sense and a decision does — a shroom card awaiting
+   * approval — so the thread stays readable while the input is swapped out.
+   */
+  composerSlot?: React.ReactNode;
 }
 
-export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar }: CardChatProps) {
+export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar, composerSlot }: CardChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
@@ -564,16 +570,18 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           </div>
         )}
         {tabBar}
-        <ChatInput
-          onSubmit={handleSubmit}
-          isLoading={isAILoading}
-          cardId={card.id}
-          onKeyboardFocus={handleKeyboardFocus}
-          onKeyboardBlur={handleKeyboardBlur}
-          members={members}
-          onOpenWhiteboard={() => setIsWhiteboardOpen(true)}
-          voiceContext={voiceSystemPrompt}
-        />
+        {composerSlot ?? (
+          <ChatInput
+            onSubmit={handleSubmit}
+            isLoading={isAILoading}
+            cardId={card.id}
+            onKeyboardFocus={handleKeyboardFocus}
+            onKeyboardBlur={handleKeyboardBlur}
+            members={members}
+            onOpenWhiteboard={() => setIsWhiteboardOpen(true)}
+            voiceContext={voiceSystemPrompt}
+          />
+        )}
       </div>
 
       {/* Whiteboard editor modal */}

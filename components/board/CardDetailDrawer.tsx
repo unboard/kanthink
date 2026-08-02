@@ -30,6 +30,7 @@ import { Drawer } from '@/components/ui';
 import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
 import { CardChat } from './CardChat';
+import { CardApprovalBar } from './CardApprovalBar';
 import { PlaygroundView } from '@/components/playground/PlaygroundView';
 import { TagPicker, getTagStyles } from './TagPicker';
 import { AssigneeAvatars } from './AssigneeAvatars';
@@ -160,6 +161,11 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const archiveCard = useStore((s) => s.archiveCard);
   const promoteCardToChannel = useStore((s) => s.promoteCardToChannel);
   const channels = useStore((s) => s.channels);
+  // Pending-review lives in the column's reviewCardIds, not on the card — that's
+  // the same place approveReviewCard/rejectReviewCard look it up.
+  const isPendingReview = !!channels[card?.channelId ?? '']?.columns.some(
+    (col) => col.reviewCardIds?.includes(card?.id ?? '')
+  );
   const tasks = useStore((s) => s.tasks);
   const toggleTaskStatus = useStore((s) => s.toggleTaskStatus);
   const reorderTasks = useStore((s) => s.reorderTasks);
@@ -1078,6 +1084,13 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 channelDescription={channels[card.channelId]?.description ?? ''}
                 tagDefinitions={channels[card.channelId]?.tagDefinitions ?? []}
                 tabBar={tabTiles}
+                composerSlot={
+                  isPendingReview ? (
+                    // Deciding the card removes it from review, so the drawer would
+                    // otherwise be left open on a card in a state it no longer has.
+                    <CardApprovalBar cardId={card.id} onDecided={handleClose} />
+                  ) : undefined
+                }
               />
             </div>
           )}

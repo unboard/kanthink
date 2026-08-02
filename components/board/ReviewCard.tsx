@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Card as CardType, RejectionReason } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { REJECTION_REASONS } from '@/lib/constants';
+import { CardDetailDrawer } from './CardDetailDrawer';
 
 interface ReviewCardProps {
   card: CardType;
@@ -12,13 +13,18 @@ interface ReviewCardProps {
 /**
  * A shroom-generated card awaiting approval. Each one is decided on its own — there's
  * no batch commit, so a run can be worked through a card at a time.
+ *
+ * The tile keeps its quick Approve/Reject so a run can be cleared without opening
+ * anything. Clicking the body opens the same drawer as any other card, because a
+ * two-line preview is not enough to judge a card on — the drawer shows the whole
+ * thread and swaps its composer for the same decision.
  */
 export function ReviewCard({ card }: ReviewCardProps) {
   const approveReviewCard = useStore((s) => s.approveReviewCard);
   const rejectReviewCard = useStore((s) => s.rejectReviewCard);
 
   const [isRejecting, setIsRejecting] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [reason, setReason] = useState<RejectionReason | undefined>();
   const [feedback, setFeedback] = useState('');
 
@@ -39,14 +45,14 @@ export function ReviewCard({ card }: ReviewCardProps) {
         </span>
         <div className="min-w-0 flex-1">
           <button
-            onClick={() => setIsExpanded((v) => !v)}
+            onClick={() => setIsDrawerOpen(true)}
             className="text-left w-full"
           >
             <h4 className="text-xs font-medium text-neutral-800 dark:text-neutral-200 wrap-anywhere">
               {card.title}
             </h4>
             {contentPreview && (
-              <p className={`mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 ${isExpanded ? '' : 'line-clamp-2'}`}>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2">
                 {contentPreview}
               </p>
             )}
@@ -113,6 +119,12 @@ export function ReviewCard({ card }: ReviewCardProps) {
           </div>
         </div>
       )}
+
+      <CardDetailDrawer
+        card={card}
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+      />
     </div>
   );
 }
