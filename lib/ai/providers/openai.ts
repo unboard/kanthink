@@ -22,6 +22,13 @@ export function createOpenAIProvider(apiKey: string, model?: string): LLMProvide
 
   return {
     name: 'openai',
+    model: modelId,
+
+    // No escalate() on purpose. Escalation must name a real model id, and the
+    // OpenAI ladder here has not been verified against the account the way the
+    // Gemini one has. A wrong id turns a truncated run into a 404, which is a
+    // worse failure than the one being fixed. Callers treat a missing escalate
+    // as "already at the top" and report the truncation as before.
 
     async complete(messages: LLMMessage[], options?: LLMCompleteOptions): Promise<LLMResponse> {
       const response = await client.chat.completions.create({

@@ -35,7 +35,17 @@ export interface LLMCompleteOptions {
 
 export interface LLMProvider {
   name: string;
+  /** The model id actually being called, so callers can report and compare it. */
+  model: string;
   complete(messages: LLMMessage[], options?: LLMCompleteOptions): Promise<LLMResponse>;
+  /**
+   * The same credentials pointed at a model with more room, or null when
+   * already at the top of the ladder.
+   *
+   * This exists so a caller that gets a `truncated` response can retry without
+   * ever handling an API key: the key stays inside the provider closure.
+   */
+  escalate?(): LLMProvider | null;
   // Optional web search capability
   webSearch?(query: string, systemPrompt?: string): Promise<LLMResponse>;
 }

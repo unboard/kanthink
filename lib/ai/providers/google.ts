@@ -3,6 +3,25 @@ import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteO
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
+/**
+ * Where to go when a model runs out of output room, by family tier.
+ *
+ * Lite tiers step up to flash, flash tiers step up to pro, and pro is the top —
+ * escalation has to terminate or a retry loop has no floor. Model ids here were
+ * confirmed callable against ListModels; do not add one from memory.
+ */
+const ESCALATION_TARGET = 'gemini-3.6-flash';
+const ESCALATION_TOP = 'gemini-3.1-pro-preview';
+
+function roomierModel(modelId: string): string | null {
+  if (modelId === ESCALATION_TOP) return null;
+  if (/pro/.test(modelId)) return ESCALATION_TOP;
+  if (/lite/.test(modelId)) return ESCALATION_TARGET;
+  if (/flash/.test(modelId)) return ESCALATION_TOP;
+  // An id we don't recognise: send it to the top rather than guess a middle rung.
+  return ESCALATION_TOP;
+}
+
 type GooglePart = { text: string } | { inlineData: { mimeType: string; data: string } };
 
 // Fetch an image URL and return it as base64 inline data for Gemini vision
@@ -44,6 +63,12 @@ export function createGoogleProvider(apiKey: string, model?: string): LLMProvide
 
   return {
     name: 'google',
+    model: modelId,
+
+    escalate(): LLMProvider | null {
+      const next = roomierModel(modelId);
+      return next ? createGoogleProvider(apiKey, next) : null;
+    },
 
     async complete(messages: LLMMessage[], options?: LLMCompleteOptions): Promise<LLMResponse> {
       const systemMessage = messages.find((m) => m.role === 'system');

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { marked } from 'marked';
 import type { Channel, Card, CardInput, InstructionCard, InstructionTarget, ContextColumnSelection, Task, CardRejection } from '@/lib/types';
-import { type LLMMessage, type LLMProvider, getLLMClientForUser } from '@/lib/ai/llm';
+import { type LLMMessage, type LLMProvider, type LLMResponse, getLLMClientForUser } from '@/lib/ai/llm';
 import { recordUsage } from '@/lib/usage';
 import { buildFeedbackContext, buildRejectionContext } from '@/lib/ai/feedbackAnalyzer';
 import { getAuthenticatedLLM } from '@/lib/ai/withAuth';
@@ -33,6 +33,48 @@ const SHROOM_MAX_TOKENS = 32000;
 /** The response ran out of room, so an empty parse means "cut off", not "no changes". */
 const TRUNCATED_ERROR =
   'The AI response was cut off before it finished. The cards involved are likely too long — try running on fewer cards, or shortening the card content.';
+
+/**
+ * Run a shroom completion, retrying once on a roomier model if the first answer
+ * was cut off before it produced anything usable.
+ *
+ * `parse` decides what "usable" means, because that differs per action — one path
+ * wants cards, another wants moves — and a truncated response that still parsed
+ * into real work should be kept rather than paid for twice.
+ *
+ * Exactly one retry. Escalation costs real money, so it is capped here rather
+ * than left to a loop, and `escalatedTo` is returned so the caller can say it
+ * happened instead of quietly spending more.
+ */
+async function completeWithEscalation<T>(
+  llm: LLMProvider,
+  messages: LLMMessage[],
+  parse: (raw: string) => T,
+  isEmpty: (parsed: T) => boolean,
+  label: string
+): Promise<{ response: LLMResponse; parsed: T; escalatedTo?: string }> {
+  const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
+  const parsed = parse(response.content);
+
+  if (!response.truncated || !isEmpty(parsed)) return { response, parsed };
+
+  const roomier = llm.escalate?.();
+  if (!roomier) {
+    console.error(`[shrooms] "${label}" truncated at ${SHROOM_MAX_TOKENS} tokens, no roomier model available`);
+    return { response, parsed };
+  }
+
+  console.warn(`[shrooms] "${label}" truncated on ${llm.model}, retrying on ${roomier.model}`);
+  const retry = await roomier.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
+  const retryParsed = parse(retry.content);
+
+  if (retry.truncated && isEmpty(retryParsed)) {
+    console.error(`[shrooms] "${label}" truncated again on ${roomier.model}`);
+    return { response: retry, parsed: retryParsed, escalatedTo: roomier.model };
+  }
+
+  return { response: retry, parsed: retryParsed, escalatedTo: roomier.model };
+}
 
 // Stub ideas for fallback when no LLM is configured
 const STUB_IDEAS = [
@@ -1237,11 +1279,15 @@ export async function POST(request: Request) {
       appendRejectionContext(messages, await resolveRejections());
 
       try {
-        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
-        const multiStepResult = parseMultiStepResponse(response.content);
+        const { response, parsed: multiStepResult } = await completeWithEscalation(
+          llm,
+          messages,
+          parseMultiStepResponse,
+          isMultiStepEmpty,
+          instructionCard.title
+        );
 
         if (response.truncated && isMultiStepEmpty(multiStepResult)) {
-          console.error(`[shrooms] "${instructionCard.title}" response truncated at ${SHROOM_MAX_TOKENS} tokens`);
           notifyRunFailed(TRUNCATED_ERROR);
           return NextResponse.json({ action: 'multi-step', error: TRUNCATED_ERROR });
         }
@@ -1448,12 +1494,16 @@ export async function POST(request: Request) {
       debug.userPrompt = messages[1].content as string;
 
       try {
-        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
+        const { response, parsed: generatedCards } = await completeWithEscalation(
+          llm,
+          messages,
+          parseGenerateResponse,
+          (cards) => cards.length === 0,
+          instructionCard.title
+        );
         debug.rawResponse = response.content;
-        const generatedCards = parseGenerateResponse(response.content);
 
         if (response.truncated && generatedCards.length === 0) {
-          console.error(`[shrooms] "${instructionCard.title}" response truncated at ${SHROOM_MAX_TOKENS} tokens`);
           notifyRunFailed(TRUNCATED_ERROR);
           return NextResponse.json({
             action: 'generate',
@@ -1711,15 +1761,19 @@ export async function POST(request: Request) {
       debug.userPrompt = messages[1].content as string;
 
       try {
-        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
+        const { response, parsed: modifiedCards } = await completeWithEscalation(
+          llm,
+          messages,
+          parseModifyResponse,
+          (cards) => cards.length === 0,
+          instructionCard.title
+        );
         debug.rawResponse = response.content;
-        const modifiedCards = parseModifyResponse(response.content);
 
         // A truncated response usually ends mid-string inside a card body, so the JSON
         // never parses and this looks like "the AI chose to change nothing" — which then
         // suppresses the run email as a quiet run. Fail loudly instead.
         if (response.truncated && modifiedCards.length === 0) {
-          console.error(`[shrooms] "${instructionCard.title}" response truncated at ${SHROOM_MAX_TOKENS} tokens`);
           notifyRunFailed(TRUNCATED_ERROR);
           return NextResponse.json({
             action: 'modify',
@@ -1831,15 +1885,24 @@ export async function POST(request: Request) {
       debug.userPrompt = messages[1].content as string;
 
       try {
-        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
+        const { response, parsed: report } = await completeWithEscalation(
+          llm,
+          messages,
+          parseReportResponse,
+          (r) => !r,
+          instructionCard.title
+        );
         debug.rawResponse = response.content;
-        const report = parseReportResponse(response.content);
 
         if (!report) {
+          const cutOff = response.truncated;
+          if (cutOff) notifyRunFailed(TRUNCATED_ERROR);
           return NextResponse.json({
             action: 'report',
             targetColumnIds,
-            error: 'Could not read the report back from the AI. Please try again.',
+            error: cutOff
+              ? TRUNCATED_ERROR
+              : 'Could not read the report back from the AI. Please try again.',
             debug,
           });
         }
@@ -1951,12 +2014,16 @@ export async function POST(request: Request) {
       debug.userPrompt = messages[1].content as string;
 
       try {
-        const response = await llm.complete(messages, { maxTokens: SHROOM_MAX_TOKENS });
+        const { response, parsed: moveDecisions } = await completeWithEscalation(
+          llm,
+          messages,
+          parseMoveResponse,
+          (moves) => moves.length === 0,
+          instructionCard.title
+        );
         debug.rawResponse = response.content;
-        const moveDecisions = parseMoveResponse(response.content);
 
         if (response.truncated && moveDecisions.length === 0) {
-          console.error(`[shrooms] "${instructionCard.title}" response truncated at ${SHROOM_MAX_TOKENS} tokens`);
           notifyRunFailed(TRUNCATED_ERROR);
           return NextResponse.json({ action: 'move', movedCards: [], error: TRUNCATED_ERROR, debug });
         }
