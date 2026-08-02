@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'open-cards-awaiting-approval',
+    date: '2026-08-01',
+    kind: 'workflow',
+    title: 'Open a card before you approve it',
+    body: 'Cards a shroom made now open like any other card, so you can read the whole thread, images and tasks before deciding. The approve and reject buttons move to the bottom of the card, and the quick buttons stay on the board for clearing a run without opening anything.',
+  },
+  {
     id: 'shrooms-handle-long-cards',
     date: '2026-08-01',
     kind: 'fix',
