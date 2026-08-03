@@ -443,6 +443,15 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
               conversationHistory: ic.conversationHistory || [],
               steps: ic.steps || undefined,
               isGlobalResource: true,
+              // Kept in step with the channel-shroom mapping above. Dropping summary
+              // here is why a global shroom's card always fell back to its raw
+              // instructions however many times a summary had been written for it.
+              scope: ic.scope || 'channel',
+              coverImageUrl: ic.coverImageUrl,
+              nextInstructionId: ic.nextInstructionId ?? undefined,
+              autoApprove: ic.autoApprove ?? false,
+              emailConfig: ic.emailConfig ?? undefined,
+              summary: ic.summary ?? undefined,
               createdAt: ic.createdAt,
               updatedAt: ic.updatedAt,
             }

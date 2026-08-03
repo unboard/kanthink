@@ -60,6 +60,9 @@ export function InstructionDetailDrawerV2({
   // Local form state
   const [title, setTitle] = useState('');
   const [instructions, setInstructions] = useState('');
+  const [summary, setSummary] = useState('');
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [action, setAction] = useState<InstructionAction>('generate');
   const [selectedColumnIds, setSelectedColumnIds] = useState<ID[]>([]);
   const [cardCount, setCardCount] = useState(5);
@@ -132,6 +135,7 @@ export function InstructionDetailDrawerV2({
       isSyncingRef.current = true;
       setTitle(instructionCard.title);
       setInstructions(instructionCard.instructions);
+      setSummary(instructionCard.summary ?? '');
       setAction(instructionCard.action);
       setCardCount(instructionCard.cardCount ?? 5);
 
@@ -238,6 +242,7 @@ export function InstructionDetailDrawerV2({
     updateInstructionCard(instructionCard.id, {
       title,
       instructions,
+      summary: summary.trim() || undefined,
       action,
       target,
       contextColumns,
@@ -262,6 +267,40 @@ export function InstructionDetailDrawerV2({
         ? { enabled: emailEnabled, brief: emailBrief, skipWhenNothingHappened: emailSkipWhenEmpty }
         : undefined,
     });
+  };
+
+  const handleGenerateSummary = async () => {
+    if (!instructionCard || isSummaryLoading) return;
+    if (!instructions.trim()) {
+      setSummaryError('Write the instructions first — there is nothing to summarise yet.');
+      return;
+    }
+    setIsSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      // Save first: the generator reads the instructions from the database, so an
+      // unsaved edit in the textarea would otherwise be summarised from the old text.
+      handleSave();
+      const res = await fetch('/api/shroom-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instructionId: instructionCard.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.summary) {
+        setSummaryError(data.error || 'Could not generate a summary.');
+        return;
+      }
+      setSummary(data.summary);
+      // Persist immediately. The textarea saves on blur, and a button press that
+      // visibly changes the field but only saves if you click elsewhere afterwards
+      // is the kind of thing that quietly loses work.
+      updateInstructionCard(instructionCard.id, { summary: data.summary });
+    } catch {
+      setSummaryError('Could not reach the server.');
+    } finally {
+      setIsSummaryLoading(false);
+    }
   };
 
   const handleSendTestEmail = async () => {
@@ -624,6 +663,40 @@ export function InstructionDetailDrawerV2({
               rows={5}
               className="text-base"
             />
+          </div>
+
+          {/* Board summary. Without one the card falls back to `instructions`, which is
+              written to the model rather than to a person and reads as a clipped fragment. */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide">
+                Card summary
+              </span>
+              <button
+                onClick={handleGenerateSummary}
+                disabled={isSummaryLoading}
+                className="text-xs font-medium px-2.5 py-1 rounded-lg text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/30 hover:bg-violet-100 dark:hover:bg-violet-900/50 disabled:opacity-50 transition-colors"
+              >
+                {isSummaryLoading ? 'Generating...' : 'Generate'}
+              </button>
+            </div>
+            <Textarea
+              value={summary}
+              onChange={(e) => { setSummary(e.target.value); setSummaryError(null); }}
+              onBlur={handleSave}
+              placeholder="One line describing what this does, shown on the board card."
+              rows={2}
+              className="text-sm"
+            />
+            {summaryError ? (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{summaryError}</p>
+            ) : (
+              !summary.trim() && (
+                <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+                  Empty, so the board shows the instructions instead.
+                </p>
+              )
+            )}
           </div>
 
           {/* Visual Flow: Context → Action → Destination */}

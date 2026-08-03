@@ -120,7 +120,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const instructionsChanged =
       instructions !== undefined && instructions !== instruction.instructions
     if (summary === undefined && (instructionsChanged || !instruction.summary)) {
-      afterResponse(() => generateShroomSummary(instructionId))
+      afterResponse(async () => { await generateShroomSummary(instructionId) })
     }
 
     return NextResponse.json({

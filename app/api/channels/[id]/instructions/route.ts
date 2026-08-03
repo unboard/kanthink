@@ -105,7 +105,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     // Deferred: it's an LLM call, and nobody should wait on prose to see their new shroom
     if (!summary) {
-      afterResponse(() => generateShroomSummary(instructionId))
+      afterResponse(async () => { await generateShroomSummary(instructionId) })
     }
 
     return NextResponse.json(

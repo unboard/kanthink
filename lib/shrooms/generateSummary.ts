@@ -14,21 +14,21 @@ import { getLLMClientForUser } from '@/lib/ai/llm'
  * Never throws. A missing summary just falls back to the instructions on the card, which
  * is exactly where we were before.
  */
-export async function generateShroomSummary(instructionId: string): Promise<void> {
+export async function generateShroomSummary(instructionId: string): Promise<string | null> {
   try {
     const shroom = await db.query.instructionCards.findFirst({
       where: eq(instructionCards.id, instructionId),
     })
-    if (!shroom) return
+    if (!shroom) return null
 
     const channel = await db.query.channels.findFirst({
       where: eq(channels.id, shroom.channelId),
       columns: { ownerId: true, name: true },
     })
-    if (!channel) return
+    if (!channel) return null
 
     const { client } = await getLLMClientForUser(channel.ownerId)
-    if (!client) return
+    if (!client) return null
 
     const response = await client.complete(
       [
@@ -57,17 +57,47 @@ ${shroom.instructions.slice(0, 2000)}
 Write the card description.`,
         },
       ],
-      { maxTokens: 200 }
+      // One sentence needs very few tokens to write, but a reasoning model spends its
+      // budget thinking first and only then starts writing. At 200 the whole allowance
+      // could go to thinking, and what got saved was a fragment — including, seen in the
+      // wild, a piece of the rule list above echoed back.
+      { maxTokens: 4000 }
     )
 
-    const summary = response.content.trim().replace(/^["']|["']$/g, '')
-    if (!summary || summary.length > 400) return
+    const summary = response.content.trim().replace(/^["']|["']$/g, '').trim()
+
+    // A cut-off answer is not a summary. Saving one replaces a readable fallback with
+    // an unreadable fragment, which is worse than having no summary at all.
+    if (response.truncated || !isUsableSummary(summary)) {
+      console.warn(`[shrooms] Discarded summary for ${instructionId}: ${
+        response.truncated ? 'truncated' : `unusable (${JSON.stringify(summary.slice(0, 80))})`
+      }`)
+      return null
+    }
 
     await db
       .update(instructionCards)
       .set({ summary, updatedAt: new Date() })
       .where(eq(instructionCards.id, instructionId))
+    return summary
   } catch (error) {
     console.error('[shrooms] Summary generation failed:', error)
+    return null
   }
+}
+
+/**
+ * Reject the answers that are worse than no answer.
+ *
+ * The failure mode seen on real cards was a fragment starting mid-word, and text lifted
+ * from the instruction block rather than written about it.
+ */
+export function isUsableSummary(summary: string): boolean {
+  if (summary.length < 12 || summary.length > 400) return false
+  // Starts mid-sentence: an ellipsis, a stray quote, or lowercase after no capital.
+  if (/^[.…"'/,;:)\]}-]/.test(summary)) return false
+  if (!/^[A-Z]/.test(summary)) return false
+  // Echoed rules from the prompt rather than a description.
+  if (/restating the title|third person|present tense|no preamble|one sentence/i.test(summary)) return false
+  return true
 }
