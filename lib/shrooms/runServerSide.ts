@@ -167,7 +167,7 @@ async function recordRun(
       // what actually gets stored.
       executionHistory: update.executionHistory as {
         timestamp: string
-        triggeredBy: 'scheduled' | 'event' | 'threshold'
+        triggeredBy: 'scheduled' | 'event' | 'threshold' | 'manual'
         success: boolean
         cardsAffected: number
       }[],

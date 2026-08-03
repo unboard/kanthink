@@ -29,6 +29,7 @@ import { type AIDebugInfo } from '@/lib/ai/generateCards';
 import { type RunInstructionResult } from '@/lib/ai/runInstruction';
 import { processCard } from '@/lib/ai/processCard';
 import { runInstruction } from '@/lib/ai/runInstruction';
+import { getExecutionUpdate } from '@/lib/automationSafeguards';
 import { generateProcessingStatus } from '@/lib/processingStatus';
 import { Button, Input, Modal } from '@/components/ui';
 import { useSettingsStore, requireSignInForAI } from '@/lib/settingsStore';
@@ -211,6 +212,7 @@ export function Board({ channel }: BoardProps) {
   const createColumn = useStore((s) => s.createColumn);
   const reorderColumns = useStore((s) => s.reorderColumns);
   const setCardProcessing = useStore((s) => s.setCardProcessing);
+  const updateInstructionCard = useStore((s) => s.updateInstructionCard);
   const setCardProperties = useStore((s) => s.setCardProperties);
   const addQuestion = useStore((s) => s.addQuestion);
   const startAIOperation = useStore((s) => s.startAIOperation);
@@ -734,6 +736,20 @@ export function Board({ channel }: BoardProps) {
           addToast(result.message, 'info');
         }
       }
+      // Record the run. Only the automation engine used to do this, so a shroom you
+      // ran by hand stayed on "Never run" forever no matter how often you pressed Run.
+      // A cancelled run is deliberately not recorded — nothing was attempted.
+      if (result.error !== 'cancelled') {
+        const cardsAffected =
+          (result.modifiedCards?.length ?? 0) +
+          (result.movedCards?.length ?? 0) +
+          (result.generatedCards?.length ?? 0);
+        updateInstructionCard(
+          instructionCard.id,
+          getExecutionUpdate(instructionCard, !result.error, cardsAffected, 'manual')
+        );
+      }
+
       // Chain: trigger next shroom if this one completed successfully.
       // Fires on run completion rather than on review completion — per-card review has
       // no single "done" moment to hang it off.
@@ -758,6 +774,12 @@ export function Board({ channel }: BoardProps) {
       console.error('Failed to run instruction:', error);
       if (error instanceof Error && error.name !== 'AbortError') {
         addToast(`Shroom failed: ${error.message}`, 'warning', 5000);
+        // A failed run is still a run, and a shroom that keeps failing should show it
+        // rather than looking untouched.
+        updateInstructionCard(
+          instructionCard.id,
+          getExecutionUpdate(instructionCard, false, 0, 'manual')
+        );
       }
     } finally {
       // Clear processing state on all target cards

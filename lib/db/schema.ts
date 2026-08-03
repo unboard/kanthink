@@ -660,7 +660,7 @@ interface AutomaticSafeguardsJson {
 
 interface ExecutionRecordJson {
   timestamp: string
-  triggeredBy: 'scheduled' | 'event' | 'threshold'
+  triggeredBy: 'scheduled' | 'event' | 'threshold' | 'manual'
   success: boolean
   cardsAffected: number
   /** Present when the run was declined (daily cap, loop prevention) rather than attempted. */

@@ -55,7 +55,12 @@ export interface ShroomEmailConfig {
 }
 
 // Automation trigger types
-export type TriggerType = 'scheduled' | 'event' | 'threshold' | 'reaction';
+/**
+ * 'manual' is a real trigger, not a placeholder: pressing Run is the most common
+ * way a shroom executes, and leaving it out of this union is why manual runs went
+ * unrecorded and every hand-run shroom read as "never run".
+ */
+export type TriggerType = 'scheduled' | 'event' | 'threshold' | 'reaction' | 'manual';
 export type ScheduleInterval = 'hourly' | 'every4hours' | 'daily' | 'weekly';
 export type EventTriggerType = 'card_moved_to' | 'card_created_in' | 'card_modified';
 export type ThresholdOperator = 'below' | 'above';
