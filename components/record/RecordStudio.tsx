@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
   Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Film, ArrowRight,
-  Captions, AudioLines, Pause, Play,
+  Captions, AudioLines, Pause, Play, Bookmark, Trash2, Smartphone, ExternalLink,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
@@ -20,6 +20,10 @@ import {
   type CamEffect, type LayoutTemplate, type StudioConfig,
   type SubtitleBackground, type SubtitlePosition, type SubtitleSize,
 } from '@/lib/record/types';
+import {
+  deletePreset, loadLastUsed, loadPresets, savePreset, saveLastUsed, type StudioPreset,
+} from '@/lib/record/presets';
+import { DEVICE_PRESETS, openSizedWindow } from '@/lib/record/sizedWindow';
 
 type Phase = 'setup' | 'recording' | 'review' | 'publishing';
 
@@ -58,6 +62,12 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const [uploadPct, setUploadPct] = useState(0);
 
   const [recordings, setRecordings] = useState<RecordingRow[]>([]);
+
+  const [presets, setPresets] = useState<StudioPreset[]>([]);
+  const [presetName, setPresetName] = useState('');
+  // Null until the stored settings have been read, so the auto-save effect below
+  // can't fire with defaults and overwrite them before restore happens.
+  const [settingsRestored, setSettingsRestored] = useState(false);
 
   // Refs that the rAF compositor reads each frame.
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -98,6 +108,68 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     stateRef.current.caption = t;
   }, []);
   const { supported: captionsSupported } = useSpeechCaptions(config.subtitles.enabled, setCaption);
+
+  // ----- Saved settings -----
+  // Restore last-used settings on mount. localStorage isn't available during SSR,
+  // so this has to happen in an effect rather than as initial state.
+  useEffect(() => {
+    setPresets(loadPresets());
+    const last = loadLastUsed();
+    if (last) {
+      setConfig(last.config);
+      setBubble(last.bubble);
+    }
+    setSettingsRestored(true);
+  }, []);
+
+  // Persist whatever is currently set, so the next visit opens where this one
+  // left off without anyone having to name a preset.
+  useEffect(() => {
+    if (!settingsRestored) return;
+    saveLastUsed({ config, bubble });
+  }, [config, bubble, settingsRestored]);
+
+  // ----- Sized demo window -----
+  const [demoUrl, setDemoUrl] = useState('');
+  const [deviceId, setDeviceId] = useState(DEVICE_PRESETS[0].id);
+  const [customSize, setCustomSize] = useState({ width: 390, height: 844 });
+  const [sizedNote, setSizedNote] = useState<string | null>(null);
+  const [openingWindow, setOpeningWindow] = useState(false);
+
+  const openDemoWindow = useCallback(async () => {
+    const device = DEVICE_PRESETS.find((d) => d.id === deviceId);
+    const w = device ? device.width : customSize.width;
+    const h = device ? device.height : customSize.height;
+
+    setOpeningWindow(true);
+    setSizedNote(null);
+    try {
+      const res = await openSizedWindow(demoUrl, w, h);
+      setSizedNote(
+        res.ok && res.actual
+          ? `Opened at ${res.actual.width}×${res.actual.height}. Now click "Share screen" and pick that window.`
+          : res.error ?? 'Could not open the window.'
+      );
+    } finally {
+      setOpeningWindow(false);
+    }
+  }, [demoUrl, deviceId, customSize]);
+
+  const applyPreset = useCallback((p: StudioPreset) => {
+    setConfig(p.config);
+    setBubble(p.bubble);
+  }, []);
+
+  const storePreset = useCallback(() => {
+    const name = presetName.trim();
+    if (!name) return;
+    setPresets(savePreset(name, { config, bubble }));
+    setPresetName('');
+  }, [presetName, config, bubble]);
+
+  const removePreset = useCallback((id: string) => {
+    setPresets(deletePreset(id));
+  }, []);
 
   // ----- Compositor lifecycle -----
   useEffect(() => {
@@ -496,6 +568,51 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
             />
           ) : (
             <>
+              {/* Presets */}
+              <Group label={<span className="flex items-center gap-1"><Bookmark className="h-3.5 w-3.5" /> Presets</span>}>
+                {presets.length > 0 && (
+                  <div className="space-y-1">
+                    {presets.map((p) => (
+                      <div key={p.id} className="flex items-center gap-1">
+                        <button
+                          onClick={() => applyPreset(p)}
+                          className="flex-1 truncate rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-left text-xs text-neutral-200 hover:border-emerald-500/60 hover:bg-neutral-800"
+                        >
+                          {p.name}
+                        </button>
+                        <button
+                          onClick={() => removePreset(p.id)}
+                          className="rounded-md p-1.5 text-neutral-600 hover:bg-neutral-800 hover:text-red-400"
+                          aria-label={`Delete preset ${p.name}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-1">
+                  <input
+                    value={presetName}
+                    onChange={(e) => setPresetName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') storePreset(); }}
+                    placeholder="Name this setup…"
+                    className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-500"
+                  />
+                  <button
+                    onClick={storePreset}
+                    disabled={!presetName.trim()}
+                    className="rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-200 enabled:hover:bg-neutral-800 disabled:opacity-40"
+                  >
+                    Save
+                  </button>
+                </div>
+                <p className="text-[11px] text-neutral-500">
+                  Your current settings are already remembered between visits. Save a preset when you
+                  want to keep more than one setup and switch between them.
+                </p>
+              </Group>
+
               {/* Sources */}
               <Group label="Sources">
                 <ToggleRow
@@ -510,6 +627,61 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                   active={hasWebcam}
                   onClick={toggleWebcam}
                 />
+              </Group>
+
+              {/* Sized demo window */}
+              <Group label={<span className="flex items-center gap-1"><Smartphone className="h-3.5 w-3.5" /> Open page at a device size</span>}>
+                <input
+                  value={demoUrl}
+                  onChange={(e) => setDemoUrl(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && demoUrl.trim()) openDemoWindow(); }}
+                  placeholder="yourapp.com/page"
+                  className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-500"
+                />
+                <Select
+                  label="Size"
+                  value={deviceId}
+                  options={[
+                    ...DEVICE_PRESETS.map((d) => ({
+                      value: d.id,
+                      label: `${d.label} — ${d.width}×${d.height}`,
+                    })),
+                    { value: 'custom', label: 'Custom…' },
+                  ]}
+                  onChange={setDeviceId}
+                />
+                {deviceId === 'custom' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" min={200} max={4000} value={customSize.width}
+                      onChange={(e) => setCustomSize((s) => ({ ...s, width: Number(e.target.value) }))}
+                      className="w-full min-w-0 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-200 outline-none focus:border-emerald-500"
+                      aria-label="Width in pixels"
+                    />
+                    <span className="text-xs text-neutral-500">×</span>
+                    <input
+                      type="number" min={200} max={4000} value={customSize.height}
+                      onChange={(e) => setCustomSize((s) => ({ ...s, height: Number(e.target.value) }))}
+                      className="w-full min-w-0 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-200 outline-none focus:border-emerald-500"
+                      aria-label="Height in pixels"
+                    />
+                  </div>
+                )}
+                <button
+                  onClick={openDemoWindow}
+                  disabled={!demoUrl.trim() || openingWindow}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-200 enabled:hover:bg-neutral-800 disabled:opacity-40"
+                >
+                  {openingWindow
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <ExternalLink className="h-3.5 w-3.5" />}
+                  Open sized window
+                </button>
+                {sizedNote && <p className="text-[11px] text-emerald-400">{sizedNote}</p>}
+                <p className="text-[11px] text-neutral-500">
+                  Sizes the window’s content area exactly, so you don’t have to drag the edge and
+                  guess. Pair it with the 9:16 aspect ratio for a phone-shaped recording.
+                </p>
               </Group>
 
               {/* Devices */}

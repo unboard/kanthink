@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   Play, Pause, Maximize, X, Link2, Check, MoreVertical, Trash2,
-  ImageIcon, Sparkles, Loader2, Film, Plus, Camera, Clapperboard, Pencil,
+  ImageIcon, Sparkles, Loader2, Film, Plus, Camera, Clapperboard, Pencil, Eye,
 } from 'lucide-react';
 
 interface Recording {
@@ -20,6 +20,8 @@ interface Recording {
   thumbTime: number;
   thumbnailUrl: string;
   createdAt: string | null;
+  views: number;
+  viewsLast24h: number;
 }
 
 // ---- helpers ----
@@ -269,9 +271,17 @@ function GalleryCard({
         ) : (
           <h3 className="truncate text-sm font-medium text-neutral-100">{rec.title}</h3>
         )}
-        <p className="mt-1 flex items-center gap-1.5 text-xs text-neutral-500">
+        <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-neutral-500">
           <span>{fmtDate(rec.createdAt)}</span>
           {rec.durationMs > 0 && (<><span aria-hidden>·</span><span className="tabular-nums">{fmtDuration(rec.durationMs)}</span></>)}
+          <span aria-hidden>·</span>
+          <span className="inline-flex items-center gap-1 tabular-nums">
+            <Eye className="h-3 w-3" />
+            {rec.views.toLocaleString()}
+          </span>
+          {rec.viewsLast24h > 0 && (
+            <span className="text-emerald-400 tabular-nums">+{rec.viewsLast24h.toLocaleString()} today</span>
+          )}
           {copied && <span className="ml-1 text-emerald-400">Link copied</span>}
         </p>
       </div>

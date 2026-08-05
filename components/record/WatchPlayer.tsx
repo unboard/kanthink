@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Play, Pause, Maximize, Check, Download, Scissors, Plus,
-  Trash2, Save, X, Loader2, MoreVertical, ChevronLeft, Link2,
+  Trash2, Save, X, Loader2, MoreVertical, ChevronLeft, Link2, Eye,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import type { RecordingEditSpecJson, RecordingMaskJson } from '@/lib/db/schema';
@@ -20,7 +20,20 @@ interface RecordingData {
   editSpec: RecordingEditSpecJson;
 }
 
-export default function WatchPlayer({ recording, isOwner }: { recording: RecordingData; isOwner: boolean }) {
+interface ViewStats {
+  total: number;
+  last24h: number;
+}
+
+export default function WatchPlayer({
+  recording,
+  isOwner,
+  views,
+}: {
+  recording: RecordingData;
+  isOwner: boolean;
+  views?: ViewStats | null;
+}) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -184,6 +197,21 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
   }, [pokeControls]);
 
   useEffect(() => () => { if (moveRaf.current) cancelAnimationFrame(moveRaf.current); }, []);
+
+  // Count this view, once per tab. Without the sessionStorage guard a refresh or
+  // a React remount would each add a view, which quietly inflates the only number
+  // the owner has — better to undercount a genuine second watch than to report
+  // traffic that didn't happen.
+  useEffect(() => {
+    const key = `kan-viewed-${recording.id}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch {
+      // Private mode / storage disabled: fall through and count it once per load.
+    }
+    fetch(`/api/record/${recording.id}/view`, { method: 'POST', keepalive: true }).catch(() => {});
+  }, [recording.id]);
 
   // progress within trimmed window
   const progress = Math.min(1, Math.max(0, (current - start) / span));
@@ -363,7 +391,21 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
           controlsShown ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
-        <h1 className="mb-2 line-clamp-2 text-sm font-medium text-white/90 drop-shadow">{title}</h1>
+        <h1 className="mb-1 line-clamp-2 text-sm font-medium text-white/90 drop-shadow">{title}</h1>
+        {isOwner && views && (
+          <div className="mb-2 flex items-center gap-1.5 text-xs text-white/60">
+            <Eye className="h-3.5 w-3.5" />
+            <span className="tabular-nums">
+              {views.total === 0
+                ? 'No views yet'
+                : `${views.total.toLocaleString()} view${views.total === 1 ? '' : 's'}`}
+            </span>
+            {views.last24h > 0 && (
+              <span className="text-emerald-400">· {views.last24h.toLocaleString()} today</span>
+            )}
+            <span className="text-white/35">· only you see this</span>
+          </div>
+        )}
         <div
           className="group mb-2 h-1.5 cursor-pointer rounded-full bg-white/25"
           onClick={(e) => {

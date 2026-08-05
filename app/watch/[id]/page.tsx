@@ -5,9 +5,12 @@ import { db } from '@/lib/db';
 import { recordings, type RecordingEditSpecJson } from '@/lib/db/schema';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { recordingDeliveryUrl } from '@/lib/cloudinary';
+import { getViewStats } from '@/lib/record/views';
 import WatchPlayer from '@/components/record/WatchPlayer';
 
 export const runtime = 'nodejs';
+// Views change on every load, so this page can never be statically cached.
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   await ensureSchema();
@@ -26,6 +29,9 @@ export default async function WatchPage({ params }: { params: Promise<{ id: stri
   const session = await auth();
   const isOwner = session?.user?.id === rec.ownerId;
 
+  // Only the owner sees the count, so only the owner's render pays for the query.
+  const views = isOwner ? await getViewStats(rec.id) : null;
+
   const spec: RecordingEditSpecJson = rec.editSpec ?? { trimStart: 0, trimEnd: null, masks: [] };
 
   return (
@@ -42,6 +48,7 @@ export default async function WatchPage({ params }: { params: Promise<{ id: stri
         editSpec: spec,
       }}
       isOwner={isOwner}
+      views={views}
     />
   );
 }

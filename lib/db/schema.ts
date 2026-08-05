@@ -833,6 +833,28 @@ export const recordings = sqliteTable('recordings', {
 export type DbRecording = typeof recordings.$inferSelect
 export type NewDbRecording = typeof recordings.$inferInsert
 
+// One row per view of a shared recording. A table rather than a counter column
+// so "when did the views happen" stays answerable — the question that actually
+// matters after sending a link is whether anyone watched it *today*, which a
+// running total can't answer.
+//
+// Owner views are recorded but flagged, not dropped: watching your own video is
+// real traffic worth seeing, it just shouldn't inflate the number you quote to
+// anyone else. Counts shown in the UI exclude them.
+export const recordingViews = sqliteTable('recording_views', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  recordingId: text('recording_id').notNull().references(() => recordings.id, { onDelete: 'cascade' }),
+  isOwner: integer('is_owner', { mode: 'boolean' }).notNull().default(false),
+  // Host only ("mail.google.com"), never the full URL — enough to tell a Slack
+  // click from an email click without collecting anyone's browsing history.
+  referrerHost: text('referrer_host'),
+  viewedAt: integer('viewed_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('recording_views_recording_idx').on(table.recordingId),
+])
+
+export type DbRecordingView = typeof recordingViews.$inferSelect
+
 // ===== /catlife — Whisker Wilds kid accounts + cloud saves =====
 // Standalone from Kanthink users: kids sign in with a simple username +
 // password (parent email kept for recovery). One row per kid, save JSON inline.
