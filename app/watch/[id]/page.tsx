@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { recordings, type RecordingEditSpecJson } from '@/lib/db/schema';
 import { ensureSchema } from '@/lib/db/ensure-schema';
+import { recordingDeliveryUrl } from '@/lib/cloudinary';
 import WatchPlayer from '@/components/record/WatchPlayer';
 
 export const runtime = 'nodejs';
@@ -32,7 +33,8 @@ export default async function WatchPage({ params }: { params: Promise<{ id: stri
       recording={{
         id: rec.id,
         title: rec.title,
-        cloudinaryUrl: rec.cloudinaryUrl,
+        // Derived, not the stored column — see recordingDeliveryUrl().
+        cloudinaryUrl: recordingDeliveryUrl(rec.cloudinaryPublicId),
         durationMs: rec.durationMs,
         width: rec.width,
         height: rec.height,

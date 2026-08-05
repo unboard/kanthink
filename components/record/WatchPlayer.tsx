@@ -166,10 +166,24 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
     }
   }, [playing, menuOpen]);
 
+  // Desktop fires mousemove up to ~120x/second, and each poke re-renders this
+  // component and churns a timer. Collapse a burst of movement into one poke
+  // per frame so moving the cursor over the video costs nothing.
+  const moveRaf = useRef(0);
+  const onMouseMove = useCallback(() => {
+    if (moveRaf.current) return;
+    moveRaf.current = requestAnimationFrame(() => {
+      moveRaf.current = 0;
+      pokeControls();
+    });
+  }, [pokeControls]);
+
   useEffect(() => {
     pokeControls();
     return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
   }, [pokeControls]);
+
+  useEffect(() => () => { if (moveRaf.current) cancelAnimationFrame(moveRaf.current); }, []);
 
   // progress within trimmed window
   const progress = Math.min(1, Math.max(0, (current - start) / span));
@@ -244,11 +258,16 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
   // Fixed + dynamic-viewport height pins the player to the visible viewport so it
   // escapes the app's scroll container; controls always sit at the visible bottom
   // edge (above the mobile browser address bar), never requiring a scroll.
+  //
+  // Nothing layered over the <video> may use backdrop-blur. These overlays stay
+  // mounted during playback (they only fade to opacity-0), and a backdrop-filter
+  // above a playing video pulls it out of the compositor's cheap overlay path
+  // into a per-frame copy-and-blur — which made desktop playback stutter.
   return (
     <main
       ref={wrapRef}
       className="fixed inset-x-0 top-0 z-50 h-[100dvh] overflow-hidden bg-black text-white"
-      onMouseMove={pokeControls}
+      onMouseMove={onMouseMove}
     >
       {/* Video — fills the viewport, portrait recordings fill the vertical space */}
       <div className="absolute inset-0 flex items-center justify-center">
@@ -287,7 +306,7 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
       >
         <button
           onClick={() => router.push('/record')}
-          className="rounded-full bg-black/30 p-2 backdrop-blur-sm transition hover:bg-black/50"
+          className="rounded-full bg-black/45 p-2 transition hover:bg-black/60"
           aria-label="Back"
         >
           <ChevronLeft className="h-5 w-5" />
@@ -297,7 +316,7 @@ export default function WatchPlayer({ recording, isOwner }: { recording: Recordi
           <div className="relative">
             <button
               onClick={() => setMenuOpen((o) => !o)}
-              className="rounded-full bg-black/30 p-2 backdrop-blur-sm transition hover:bg-black/50"
+              className="rounded-full bg-black/45 p-2 transition hover:bg-black/60"
               aria-label="More options"
             >
               <MoreVertical className="h-5 w-5" />

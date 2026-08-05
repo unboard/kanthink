@@ -1,7 +1,11 @@
-// One-shot backfill: pre-bake the mp4 delivery derivative for every existing
-// recording so playback streams a cached asset instead of triggering a live
-// webm→mp4 transcode on first request. New recordings do this automatically at
-// create time (see ensureRecordingTranscoded); this covers the back catalogue.
+// Backfill: pre-bake the mp4 delivery derivative for every existing recording so
+// playback streams a cached asset instead of triggering a live webm→mp4 transcode
+// on first request. New recordings do this automatically at create time (see
+// ensureRecordingTranscoded); this covers the back catalogue.
+//
+// Re-run this whenever RECORDING_DELIVERY_TRANSFORM changes. The transform is
+// imported rather than copied here — when it was duplicated inline, changing the
+// encode silently left the whole back catalogue serving the old derivative.
 //
 // Run: npx tsx scripts/backfill-recording-transcodes.ts
 
@@ -10,6 +14,7 @@ import { v2 as cloudinary } from 'cloudinary'
 import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { RECORDING_DELIVERY_TRANSFORM } from '../lib/cloudinary'
 
 function loadEnv(): Record<string, string> {
   const scriptDir = typeof __dirname !== 'undefined' ? __dirname : dirname(fileURLToPath(import.meta.url))
@@ -49,7 +54,7 @@ async function main() {
       await cloudinary.uploader.explicit(publicId, {
         type: 'upload',
         resource_type: 'video',
-        eager: [{ quality: 'auto', format: 'mp4' }],
+        eager: [{ ...RECORDING_DELIVERY_TRANSFORM, format: 'mp4' }],
         eager_async: true,
       })
       ok++

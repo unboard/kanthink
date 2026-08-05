@@ -6,6 +6,10 @@ import { loadSlim } from '@tsparticles/slim';
 import type { ISourceOptions } from '@tsparticles/engine';
 
 const particlesConfig: ISourceOptions = {
+  // tsparticles defaults to 120fps, so on a high-refresh desktop display this
+  // canvas repaints twice as often as anything can be perceived on a slow
+  // drifting particle field. 60 looks identical and halves the work.
+  fpsLimit: 60,
   particles: {
     number: {
       value: 60,

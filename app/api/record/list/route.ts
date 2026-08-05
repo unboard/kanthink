@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { recordings } from '@/lib/db/schema';
 import { ensureSchema } from '@/lib/db/ensure-schema';
-import { recordingFrameUrl } from '@/lib/cloudinary';
+import { recordingFrameUrl, recordingDeliveryUrl } from '@/lib/cloudinary';
 
 export const runtime = 'nodejs';
 
@@ -35,9 +35,12 @@ export async function GET() {
     .orderBy(desc(recordings.createdAt));
 
   // Resolve each recording's effective thumbnail: a custom/AI image if present,
-  // otherwise a Cloudinary-rendered video frame at the chosen time.
+  // otherwise a Cloudinary-rendered video frame at the chosen time. The playback
+  // URL is derived rather than read from the stored column, so every recording
+  // picks up the current delivery transform — see recordingDeliveryUrl().
   const withThumbs = rows.map((r) => ({
     ...r,
+    cloudinaryUrl: recordingDeliveryUrl(r.cloudinaryPublicId),
     thumbnailUrl:
       r.thumbUrl || recordingFrameUrl(r.cloudinaryPublicId, { timeSec: r.thumbTime ?? 0 }),
   }));
