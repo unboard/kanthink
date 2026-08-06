@@ -81,6 +81,34 @@ export interface SubtitleStyle {
   background: SubtitleBackground;
 }
 
+/**
+ * How the shared surface is framed inside the recording.
+ *
+ * This is what makes a fixed ratio actually produce that ratio. A browser page
+ * cannot resize a window it did not open, so picking 9:16 can't reshape what
+ * you shared — but cropping a 9:16 slice out of it gets the same result on
+ * screen, with no bars and nothing to drag. Zoom and focus then choose which
+ * slice, which doubles as "zoom in on this button while I talk".
+ */
+export interface ScreenView {
+  /** 1 = the whole surface. Above that, zooms in around the focal point. */
+  zoom: number;
+  /** Focal point in source-normalized coordinates (0..1), centred in frame. */
+  x: number;
+  y: number;
+  /** 'cover' crops to fill the frame; 'contain' fits it whole and leaves bars. */
+  fit: 'cover' | 'contain';
+}
+
+export const DEFAULT_SCREEN_VIEW: ScreenView = {
+  zoom: 1,
+  x: 0.5,
+  y: 0.5,
+  // Cropping is the better default: it's the only one that makes a chosen ratio
+  // look like that ratio. With 'auto' the shapes already match, so it's a no-op.
+  fit: 'cover',
+};
+
 export interface StudioConfig {
   shape: BubbleShape;
   effect: CamEffect;
@@ -89,6 +117,7 @@ export interface StudioConfig {
   borderWidth: number;       // px in canvas space for the bubble white border
   zoom: number;              // webcam zoom: 1 = fill (cover), <1 zooms out to reveal more of the frame
   showWebcam: boolean;
+  screenView: ScreenView;    // framing of the shared surface: crop, zoom, focus
   subtitles: SubtitleStyle;
   enhanceAudio: boolean;     // soften harsh mic audio with a Web Audio filter chain
 }
@@ -101,6 +130,7 @@ export const DEFAULT_CONFIG: StudioConfig = {
   borderWidth: 6,
   zoom: 1,
   showWebcam: true,
+  screenView: DEFAULT_SCREEN_VIEW,
   subtitles: {
     enabled: false,
     position: 'bottom',

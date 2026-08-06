@@ -6,11 +6,12 @@ import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
   Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Film, ArrowRight,
-  Captions, AudioLines, Pause, Play, Bookmark, Trash2,
+  Captions, AudioLines, Pause, Play, Bookmark, Trash2, Crop, Minimize2,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
-  Compositor, buildRecordingAudio, startRecording, type ActiveRecording, type CompositorState,
+  Compositor, buildRecordingAudio, startRecording, surfacePlacement,
+  type ActiveRecording, type CompositorState,
 } from '@/lib/record/compositor';
 import { publishRecording } from '@/lib/record/upload';
 import { useSpeechCaptions } from '@/lib/record/useSpeechCaptions';
@@ -422,20 +423,51 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
 
   // ----- Bubble drag -----
   const dragRef = useRef<{ dragging: boolean }>({ dragging: false });
+  /**
+   * Point on the source that the preview pixel under the cursor is showing.
+   *
+   * Inverts the same placement the compositor draws with, so clicking a button
+   * you can see targets that button — including when already zoomed, where the
+   * visible region is only a slice of the source.
+   */
+  const sourcePointAt = useCallback((nx: number, ny: number): { x: number; y: number } | null => {
+    if (!sourceSize) return null;
+    const frame = { x: 0, y: 0, w: dims.width, h: dims.height };
+    const { dx, dy, dw, dh } = surfacePlacement(
+      sourceSize.width, sourceSize.height, frame, config.screenView
+    );
+    return {
+      x: Math.min(1, Math.max(0, (nx * dims.width - dx) / dw)),
+      y: Math.min(1, Math.max(0, (ny * dims.height - dy) / dh)),
+    };
+  }, [sourceSize, dims, config.screenView]);
+
   const onCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (config.template !== 'overlay' || !config.showWebcam) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width;
     const ny = (e.clientY - rect.top) / rect.height;
-    // Bubble height is a fraction of canvas height; width follows the shape aspect.
-    // Box hit-test (with a little padding) so wider shapes can be grabbed at the edges.
-    const halfHy = bubble.size / 2;
-    const halfWx = (bubble.size * BUBBLE_ASPECT[config.shape] * (rect.height / rect.width)) / 2;
-    if (Math.abs(nx - bubble.x) <= halfWx + 0.04 && Math.abs(ny - bubble.y) <= halfHy + 0.04) {
-      dragRef.current.dragging = true;
-      e.currentTarget.setPointerCapture(e.pointerId);
+
+    // Grabbing the bubble wins over re-framing, so dragging your own face out of
+    // the way never yanks the shot somewhere else.
+    if (config.template === 'overlay' && config.showWebcam) {
+      // Bubble height is a fraction of canvas height; width follows the shape aspect.
+      // Box hit-test (with a little padding) so wider shapes can be grabbed at the edges.
+      const halfHy = bubble.size / 2;
+      const halfWx = (bubble.size * BUBBLE_ASPECT[config.shape] * (rect.height / rect.width)) / 2;
+      if (Math.abs(nx - bubble.x) <= halfWx + 0.04 && Math.abs(ny - bubble.y) <= halfHy + 0.04) {
+        dragRef.current.dragging = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        return;
+      }
     }
-  }, [config.template, config.showWebcam, config.shape, bubble]);
+
+    // Anywhere else re-aims the shot. Only meaningful once zoomed in — at 1x the
+    // whole surface is already in frame and there is nothing to aim at.
+    if (config.screenView.zoom > 1) {
+      const p = sourcePointAt(nx, ny);
+      if (p) setConfig((c) => ({ ...c, screenView: { ...c.screenView, x: p.x, y: p.y } }));
+    }
+  }, [config.template, config.showWebcam, config.shape, config.screenView.zoom, bubble, sourcePointAt]);
 
   const onCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!dragRef.current.dragging) return;
@@ -494,7 +526,9 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onCanvasPointerMove}
               onPointerUp={onCanvasPointerUp}
-              className="absolute inset-0 h-full w-full rounded-xl border border-neutral-800 bg-black touch-none"
+              className={`absolute inset-0 h-full w-full rounded-xl border border-neutral-800 bg-black touch-none ${
+                config.screenView.zoom > 1 ? 'cursor-crosshair' : ''
+              }`}
             />
             {!hasScreen && phase === 'setup' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
@@ -842,10 +876,57 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                   </p>
                 ) : (
                   <p className="text-[11px] text-neutral-500">
-                    Fixed {config.aspect}. Anything that doesn’t fit this shape gets bars —
-                    use <span className="text-neutral-300">Match window</span> to avoid them.
+                    Fixed {config.aspect}.{' '}
+                    {config.screenView.fit === 'cover'
+                      ? 'Your window is cropped to this shape — no bars.'
+                      : 'Your whole window is fitted inside, so it gets bars.'}
                   </p>
                 )}
+              </Group>
+
+              {/* Framing */}
+              <Group label={<span className="flex items-center gap-1"><Crop className="h-3.5 w-3.5" /> Framing</span>}>
+                <SegRow
+                  options={[
+                    { value: 'cover', label: 'Crop to fill' },
+                    { value: 'contain', label: 'Fit whole' },
+                  ]}
+                  value={config.screenView.fit}
+                  onChange={(v) => setConfig((c) => ({
+                    ...c, screenView: { ...c.screenView, fit: v as 'cover' | 'contain' },
+                  }))}
+                />
+                <label className="block text-xs text-neutral-400">
+                  <span className="flex justify-between">
+                    <span>Zoom</span>
+                    <span className="text-neutral-500">{config.screenView.zoom.toFixed(1)}×</span>
+                  </span>
+                  <input
+                    type="range" min={1} max={4} step={0.1} value={config.screenView.zoom}
+                    onChange={(e) => setConfig((c) => ({
+                      ...c, screenView: { ...c.screenView, zoom: Number(e.target.value) },
+                    }))}
+                    className="mt-1 w-full accent-emerald-500"
+                  />
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setConfig((c) => ({
+                      ...c, screenView: { ...c.screenView, zoom: 1, x: 0.5, y: 0.5 },
+                    }))}
+                    disabled={config.screenView.zoom === 1}
+                    className="flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-200 enabled:hover:bg-neutral-800 disabled:opacity-40"
+                  >
+                    <Minimize2 className="h-3.5 w-3.5" /> Back out
+                  </button>
+                  <span className="text-[11px] text-neutral-500">
+                    {config.screenView.zoom > 1 ? 'Click the preview to aim' : ''}
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-500">
+                  Zoom in on a button while you talk — the move eases in, and it&rsquo;s recorded, so
+                  it works even where browser zoom doesn&rsquo;t. Safe to use mid-recording.
+                </p>
               </Group>
             </>
           )}

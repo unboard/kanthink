@@ -3,7 +3,10 @@
 // cutout sticker, or a split-screen panel) into a canvas, which is then
 // captured into a MediaRecorder together with the mixed audio.
 
-import { BUBBLE_ASPECT, type AspectDims, type BubblePlacement, type StudioConfig, type SubtitleStyle } from './types';
+import {
+  BUBBLE_ASPECT,
+  type AspectDims, type BubblePlacement, type ScreenView, type StudioConfig, type SubtitleStyle,
+} from './types';
 import { WebcamEffectProcessor } from './segmentation';
 
 export interface CompositorState {
@@ -34,14 +37,54 @@ function mediaSize(m: Media): { w: number; h: number } {
   return { w: m.width, h: m.height };
 }
 
-/** Fit media inside rect, preserving aspect ratio, centered (letterboxed). */
-function drawContain(ctx: CanvasRenderingContext2D, m: Media, r: Rect) {
-  const { w: mw, h: mh } = mediaSize(m);
-  if (!mw || !mh) return;
-  const scale = Math.min(r.w / mw, r.h / mh);
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+/**
+ * Where a source of mw x mh lands inside rect r under a given view.
+ *
+ * Exported because the studio needs to invert it: clicking a button in the
+ * preview has to map back to a point on the source, and if that math were
+ * duplicated it would drift from what's actually drawn.
+ */
+export function surfacePlacement(
+  mw: number,
+  mh: number,
+  r: Rect,
+  view: ScreenView
+): { dx: number; dy: number; dw: number; dh: number } {
+  // 'cover' scales until the frame is full (overflow is cropped); 'contain'
+  // until the whole source fits (leftover is letterbox).
+  const base = view.fit === 'cover'
+    ? Math.max(r.w / mw, r.h / mh)
+    : Math.min(r.w / mw, r.h / mh);
+  const scale = base * Math.max(1, view.zoom);
   const dw = mw * scale;
   const dh = mh * scale;
-  ctx.drawImage(m, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
+
+  // Put the focal point in the middle of the frame, then pull back so the frame
+  // never shows past an edge — panning into empty space looks like a bug, and at
+  // zoom 1 with 'cover' this is what keeps the crop centred.
+  let dx = r.x + r.w / 2 - view.x * dw;
+  let dy = r.y + r.h / 2 - view.y * dh;
+  dx = dw >= r.w ? clamp(dx, r.x + r.w - dw, r.x) : r.x + (r.w - dw) / 2;
+  dy = dh >= r.h ? clamp(dy, r.y + r.h - dh, r.y) : r.y + (r.h - dh) / 2;
+
+  return { dx, dy, dw, dh };
+}
+
+/** Draw the shared surface into rect under the current view. */
+function drawSurface(ctx: CanvasRenderingContext2D, m: Media, r: Rect, view: ScreenView) {
+  const { w: mw, h: mh } = mediaSize(m);
+  if (!mw || !mh) return;
+  const { dx, dy, dw, dh } = surfacePlacement(mw, mh, r, view);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.clip();
+  ctx.drawImage(m, dx, dy, dw, dh);
+  ctx.restore();
 }
 
 /**
@@ -182,12 +225,35 @@ function drawCaption(
   });
 }
 
+// Seconds for the rendered view to close ~63% of the gap to the target. Small
+// enough to feel responsive, long enough that the move reads as a camera push
+// rather than a cut — a zoom that snaps looks like a glitch on playback.
+const VIEW_EASE_TAU = 0.16;
+
 export class Compositor {
   private ctx: CanvasRenderingContext2D;
   private rafId = 0;
   private running = false;
   private processor = new WebcamEffectProcessor();
   private effectInitStarted = false;
+
+  // The view actually being drawn, eased toward config.screenView each frame.
+  // Kept here rather than in React state because it changes every frame and
+  // nothing outside the draw loop needs to see it.
+  private view: ScreenView = { zoom: 1, x: 0.5, y: 0.5, fit: 'cover' };
+  private lastFrameAt = 0;
+
+  /** Ease the drawn view toward the target. Frame-rate independent. */
+  private advanceView(target: ScreenView, now: number) {
+    const dt = this.lastFrameAt ? Math.min(0.1, (now - this.lastFrameAt) / 1000) : 0;
+    this.lastFrameAt = now;
+    // fit is a discrete choice — easing between crop and letterbox is meaningless.
+    this.view.fit = target.fit;
+    const t = dt > 0 ? 1 - Math.exp(-dt / VIEW_EASE_TAU) : 1;
+    this.view.zoom += (target.zoom - this.view.zoom) * t;
+    this.view.x += (target.x - this.view.x) * t;
+    this.view.y += (target.y - this.view.y) * t;
+  }
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -228,6 +294,8 @@ export class Compositor {
     ctx.fillStyle = '#0b0b0c';
     ctx.fillRect(0, 0, W, H);
 
+    this.advanceView(config.screenView, performance.now());
+
     // Kick off model loading the first frame an effect is requested.
     if (config.effect !== 'none' && !this.effectInitStarted) {
       this.effectInitStarted = true;
@@ -238,7 +306,7 @@ export class Compositor {
 
     if (config.template === 'overlay') {
       if (screenVideo && screenVideo.readyState >= 2) {
-        drawContain(ctx, screenVideo, { x: 0, y: 0, w: W, h: H });
+        drawSurface(ctx, screenVideo, { x: 0, y: 0, w: W, h: H }, this.view);
       }
       if (haveCam) this.drawBubble(ctx, webcamVideo!, config, bubble, W, H);
       if (config.subtitles.enabled && caption) drawCaption(ctx, W, H, caption, config.subtitles);
@@ -261,7 +329,7 @@ export class Compositor {
     }
 
     if (screenVideo && screenVideo.readyState >= 2) {
-      drawContain(ctx, screenVideo, screenRect);
+      drawSurface(ctx, screenVideo, screenRect, this.view);
     }
     if (haveCam) this.drawCamPanel(ctx, webcamVideo!, config, camRect);
     if (config.subtitles.enabled && caption) drawCaption(ctx, W, H, caption, config.subtitles);
