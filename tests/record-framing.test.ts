@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { surfacePlacement } from '@/lib/record/compositor';
+import { focusForAnchoredZoom, surfacePlacement } from '@/lib/record/compositor';
 import type { ScreenView } from '@/lib/record/types';
 
 const view = (over: Partial<ScreenView> = {}): ScreenView => ({
@@ -80,5 +80,71 @@ describe('surfacePlacement — zoom and focus', () => {
     // Smaller than the frame in one axis, so the clamp must not apply there.
     const p = surfacePlacement(1920, 1080, { x: 0, y: 0, w: 1000, h: 1000 }, view({ fit: 'contain', x: 0, y: 0 }));
     expect(p.dy).toBeCloseTo((1000 - p.dh) / 2, 4);
+  });
+});
+
+/**
+ * Wheel-zoom anchors on the cursor: whatever pixel you are pointing at must stay
+ * under the pointer as the zoom changes, or the thing you're trying to zoom into
+ * slides out from under you.
+ */
+describe('focusForAnchoredZoom', () => {
+  const FRAME = { x: 0, y: 0, w: 1000, h: 1000 };
+  const SRC = { w: 1000, h: 1000 };
+
+  /** Where a source point is drawn, in frame coordinates. */
+  const screenPos = (v: ScreenView, s: { x: number; y: number }) => {
+    const p = surfacePlacement(SRC.w, SRC.h, FRAME, v);
+    return { x: p.dx + s.x * p.dw, y: p.dy + s.y * p.dh };
+  };
+
+  it('holds the anchored point under the cursor while zooming in', () => {
+    const from = view({ zoom: 1.5 });
+    // Cursor somewhere off-centre, and the source point currently beneath it.
+    const cursor = { x: 300, y: 700 };
+    const p = surfacePlacement(SRC.w, SRC.h, FRAME, from);
+    const anchor = { x: (cursor.x - p.dx) / p.dw, y: (cursor.y - p.dy) / p.dh };
+
+    const focus = focusForAnchoredZoom(SRC.w, SRC.h, FRAME, from.fit, 3, anchor, cursor);
+    const after = screenPos(view({ zoom: 3, ...focus }), anchor);
+
+    expect(after.x).toBeCloseTo(cursor.x, 3);
+    expect(after.y).toBeCloseTo(cursor.y, 3);
+  });
+
+  it('holds the anchored point while zooming back out', () => {
+    const from = view({ zoom: 3.5, x: 0.3, y: 0.6 });
+    const cursor = { x: 640, y: 220 };
+    const p = surfacePlacement(SRC.w, SRC.h, FRAME, from);
+    const anchor = { x: (cursor.x - p.dx) / p.dw, y: (cursor.y - p.dy) / p.dh };
+
+    const focus = focusForAnchoredZoom(SRC.w, SRC.h, FRAME, from.fit, 2, anchor, cursor);
+    const after = screenPos(view({ zoom: 2, ...focus }), anchor);
+
+    expect(after.x).toBeCloseTo(cursor.x, 3);
+    expect(after.y).toBeCloseTo(cursor.y, 3);
+  });
+
+  it('keeps the focus a valid 0..1 point even anchored at a corner', () => {
+    const focus = focusForAnchoredZoom(
+      SRC.w, SRC.h, FRAME, 'cover', 4, { x: 0, y: 0 }, { x: 0, y: 0 }
+    );
+    expect(focus.x).toBeGreaterThanOrEqual(0);
+    expect(focus.x).toBeLessThanOrEqual(1);
+    expect(focus.y).toBeGreaterThanOrEqual(0);
+    expect(focus.y).toBeLessThanOrEqual(1);
+  });
+
+  it('never lets zoom below 1 pull the surface off the frame edges', () => {
+    // Guards the "no zooming out past full screen" rule at the maths level: a
+    // sub-1 zoom is treated as 1, so the frame stays covered.
+    const focus = focusForAnchoredZoom(
+      SRC.w, SRC.h, FRAME, 'cover', 0.25, { x: 0.5, y: 0.5 }, { x: 500, y: 500 }
+    );
+    const p = surfacePlacement(SRC.w, SRC.h, FRAME, view({ zoom: 0.25, ...focus }));
+    expect(p.dx).toBeLessThanOrEqual(0);
+    expect(p.dy).toBeLessThanOrEqual(0);
+    expect(p.dx + p.dw).toBeGreaterThanOrEqual(FRAME.w);
+    expect(p.dy + p.dh).toBeGreaterThanOrEqual(FRAME.h);
   });
 });

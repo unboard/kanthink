@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
-  Compositor, buildRecordingAudio, startRecording, surfacePlacement,
+  Compositor, buildRecordingAudio, focusForAnchoredZoom, startRecording, surfacePlacement,
   type ActiveRecording, type CompositorState,
 } from '@/lib/record/compositor';
 import { publishRecording } from '@/lib/record/upload';
@@ -43,6 +43,13 @@ const GROUP_DEFAULT_OPEN: Record<string, boolean> = {
   effect: false,
   subtitles: false,
 };
+
+// Zoom range. The floor is 1 by definition, not by taste: at 1 the frame already
+// shows everything the shape allows, so anything below it would pull the surface
+// away from the edges and record background.
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 4;
+const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
 interface RecordingRow {
   id: string;
@@ -481,6 +488,58 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     };
   }, [sourceSize, dims, config.screenView]);
 
+  // Wheel-zoom reads these, but attaching the listener is a one-time effect (see
+  // below), so it needs the current values without re-subscribing on every tick.
+  const zoomInputRef = useRef({ sourceSize, dims, view: config.screenView });
+  useEffect(() => {
+    zoomInputRef.current = { sourceSize, dims, view: config.screenView };
+  }, [sourceSize, dims, config.screenView]);
+
+  /**
+   * Wheel over the preview zooms toward the cursor.
+   *
+   * Registered manually rather than as an onWheel prop because React attaches
+   * wheel listeners passively, so preventDefault there is ignored — and without
+   * it the wheel scrolls the column behind the canvas instead of zooming.
+   */
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      const { sourceSize: src, dims: d, view } = zoomInputRef.current;
+      if (!src) return;
+      e.preventDefault();
+
+      // deltaMode 1 is lines and 2 is pages; normalise both to pixel-ish units
+      // so a notched mouse wheel and a trackpad land in the same ballpark.
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
+      const next = clampZoom(view.zoom * Math.exp(-e.deltaY * unit * 0.0015));
+      if (next === view.zoom) return;
+
+      const rect = el.getBoundingClientRect();
+      // Cursor in canvas pixel space, which is what the placement maths uses.
+      const point = {
+        x: ((e.clientX - rect.left) / rect.width) * d.width,
+        y: ((e.clientY - rect.top) / rect.height) * d.height,
+      };
+      const frame = { x: 0, y: 0, w: d.width, h: d.height };
+      const { dx, dy, dw, dh } = surfacePlacement(src.width, src.height, frame, view);
+      const anchor = {
+        x: Math.min(1, Math.max(0, (point.x - dx) / dw)),
+        y: Math.min(1, Math.max(0, (point.y - dy) / dh)),
+      };
+      const focus = focusForAnchoredZoom(
+        src.width, src.height, frame, view.fit, next, anchor, point
+      );
+
+      setConfig((c) => ({ ...c, screenView: { ...c.screenView, zoom: next, ...focus } }));
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   const onCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width;
@@ -796,9 +855,9 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                     <span className="text-neutral-500">{config.screenView.zoom.toFixed(1)}×</span>
                   </span>
                   <input
-                    type="range" min={1} max={4} step={0.1} value={config.screenView.zoom}
+                    type="range" min={ZOOM_MIN} max={ZOOM_MAX} step={0.1} value={config.screenView.zoom}
                     onChange={(e) => setConfig((c) => ({
-                      ...c, screenView: { ...c.screenView, zoom: Number(e.target.value) },
+                      ...c, screenView: { ...c.screenView, zoom: clampZoom(Number(e.target.value)) },
                     }))}
                     className="mt-1 w-full accent-emerald-500"
                   />
@@ -808,18 +867,19 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                     onClick={() => setConfig((c) => ({
                       ...c, screenView: { ...c.screenView, zoom: 1, x: 0.5, y: 0.5 },
                     }))}
-                    disabled={config.screenView.zoom === 1}
+                    disabled={config.screenView.zoom === ZOOM_MIN}
                     className="flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-200 enabled:hover:bg-neutral-800 disabled:opacity-40"
                   >
                     <Minimize2 className="h-3.5 w-3.5" /> Back out
                   </button>
                   <span className="text-[11px] text-neutral-500">
-                    {config.screenView.zoom > 1 ? 'Click the preview to aim' : ''}
+                    {config.screenView.zoom > ZOOM_MIN ? 'Click the preview to aim' : ''}
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-500">
-                  Zoom in on a button while you talk — the move eases in, and it&rsquo;s recorded, so
-                  it works even where browser zoom doesn&rsquo;t. Safe to use mid-recording.
+                  Scroll on the preview to zoom toward your cursor. Zoom in on a button while you
+                  talk — the move eases in, and it&rsquo;s recorded, so it works even where browser
+                  zoom doesn&rsquo;t. Safe to use mid-recording.
                 </p>
               </Group>
 

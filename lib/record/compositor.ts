@@ -42,6 +42,46 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /**
+ * Scale at zoom 1: 'cover' fills the frame (overflow cropped), 'contain' fits
+ * the whole source inside it (leftover is letterbox).
+ */
+export function surfaceBaseScale(mw: number, mh: number, r: Rect, fit: ScreenView['fit']): number {
+  return fit === 'cover'
+    ? Math.max(r.w / mw, r.h / mh)
+    : Math.min(r.w / mw, r.h / mh);
+}
+
+/**
+ * Focal point that holds a source point still under a fixed screen point while
+ * the zoom changes — what makes wheel-zoom track the cursor instead of drifting.
+ *
+ * Solves the placement equation for the focus: a source point s is drawn at
+ * `dx + s*dw`, and `dx = frameCentre - focus*dw`, so pinning that to the cursor
+ * gives `focus = s + (frameCentre - cursor) / dw`.
+ *
+ * Returned unclamped in the sense that it may sit outside 0..1; surfacePlacement
+ * clamps the resulting pan to the surface edges, which is what stops the frame
+ * running off into background when you zoom at a corner.
+ */
+export function focusForAnchoredZoom(
+  mw: number,
+  mh: number,
+  r: Rect,
+  fit: ScreenView['fit'],
+  newZoom: number,
+  anchorSource: { x: number; y: number },
+  anchorPoint: { x: number; y: number }
+): { x: number; y: number } {
+  const scale = surfaceBaseScale(mw, mh, r, fit) * Math.max(1, newZoom);
+  const dw = mw * scale;
+  const dh = mh * scale;
+  return {
+    x: clamp(anchorSource.x + (r.x + r.w / 2 - anchorPoint.x) / dw, 0, 1),
+    y: clamp(anchorSource.y + (r.y + r.h / 2 - anchorPoint.y) / dh, 0, 1),
+  };
+}
+
+/**
  * Where a source of mw x mh lands inside rect r under a given view.
  *
  * Exported because the studio needs to invert it: clicking a button in the
@@ -54,12 +94,7 @@ export function surfacePlacement(
   r: Rect,
   view: ScreenView
 ): { dx: number; dy: number; dw: number; dh: number } {
-  // 'cover' scales until the frame is full (overflow is cropped); 'contain'
-  // until the whole source fits (leftover is letterbox).
-  const base = view.fit === 'cover'
-    ? Math.max(r.w / mw, r.h / mh)
-    : Math.min(r.w / mw, r.h / mh);
-  const scale = base * Math.max(1, view.zoom);
+  const scale = surfaceBaseScale(mw, mh, r, view.fit) * Math.max(1, view.zoom);
   const dw = mw * scale;
   const dh = mh * scale;
 
