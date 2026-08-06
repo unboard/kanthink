@@ -8,7 +8,11 @@
 import { DEFAULT_BUBBLE, DEFAULT_CONFIG, type BubblePlacement, type StudioConfig } from './types';
 
 const PRESETS_KEY = 'kan-record-presets';
-const LAST_USED_KEY = 'kan-record-last-used';
+// Versioned. 'auto' aspect became the default after v1 shipped, and a stored v1
+// snapshot would keep restoring the old fixed ratio forever. Bumping resets the
+// implicit last-state once; explicitly saved presets are left alone, because a
+// ratio someone chose and named is a decision, not a stale default.
+const LAST_USED_KEY = 'kan-record-last-used-v2';
 
 export interface StudioPreset {
   id: string;

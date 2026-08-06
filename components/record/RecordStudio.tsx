@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
   Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Film, ArrowRight,
-  Captions, AudioLines, Pause, Play, Bookmark, Trash2, Smartphone, ExternalLink,
+  Captions, AudioLines, Pause, Play, Bookmark, Trash2,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
@@ -15,15 +15,14 @@ import {
 import { publishRecording } from '@/lib/record/upload';
 import { useSpeechCaptions } from '@/lib/record/useSpeechCaptions';
 import {
-  ASPECT_DIMS, BUBBLE_ASPECT, DEFAULT_BUBBLE, DEFAULT_CONFIG,
-  type AspectRatio, type BubblePlacement, type BubbleShape,
+  ASPECT_DIMS, BUBBLE_ASPECT, DEFAULT_BUBBLE, DEFAULT_CONFIG, aspectLabel, autoDims,
+  type AspectDims, type AspectRatio, type BubblePlacement, type BubbleShape,
   type CamEffect, type LayoutTemplate, type StudioConfig,
   type SubtitleBackground, type SubtitlePosition, type SubtitleSize,
 } from '@/lib/record/types';
 import {
   deletePreset, loadLastUsed, loadPresets, savePreset, saveLastUsed, type StudioPreset,
 } from '@/lib/record/presets';
-import { DEVICE_PRESETS, openSizedWindow } from '@/lib/record/sizedWindow';
 
 type Phase = 'setup' | 'recording' | 'review' | 'publishing';
 
@@ -52,6 +51,9 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
 
   const [hasWebcam, setHasWebcam] = useState(false);
   const [hasScreen, setHasScreen] = useState(false);
+  // Live pixel size of the shared surface. Updates as you resize the window
+  // you're sharing, which is what makes 'auto' aspect track it.
+  const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -90,18 +92,32 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   // Live captions: written to a ref (high frequency) so they don't re-render.
   const captionRef = useRef('');
 
+  // Canvas size for the current settings. 'auto' means "match the shape of what
+  // you shared", which is the default — see AspectRatio.
+  //
+  // Frozen while recording: the MediaRecorder is fed canvas.captureStream(), and
+  // changing canvas dimensions mid-stream resizes the encoder's input, which
+  // corrupts the track. If the shared window is resized mid-take the recording
+  // keeps the shape it started with.
+  const recordingDimsRef = useRef<AspectDims | null>(null);
+  const liveDims = useMemo<AspectDims>(() => {
+    if (config.aspect !== 'auto') return ASPECT_DIMS[config.aspect];
+    return sourceSize ? autoDims(sourceSize.width, sourceSize.height) : ASPECT_DIMS['16:9'];
+  }, [config.aspect, sourceSize]);
+  const dims = phase === 'recording' ? recordingDimsRef.current ?? liveDims : liveDims;
+
   // Live state object the compositor reads (kept in a ref so the loop sees latest).
   const stateRef = useRef<CompositorState>({
-    config, bubble, screenVideo: null, webcamVideo: null, caption: '',
+    config, dims: liveDims, bubble, screenVideo: null, webcamVideo: null, caption: '',
   });
   useEffect(() => {
     stateRef.current = {
-      config, bubble,
+      config, dims, bubble,
       screenVideo: screenVideoRef.current,
       webcamVideo: webcamVideoRef.current,
       caption: captionRef.current,
     };
-  }, [config, bubble]);
+  }, [config, dims, bubble]);
 
   const setCaption = useCallback((t: string) => {
     captionRef.current = t;
@@ -128,32 +144,6 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     if (!settingsRestored) return;
     saveLastUsed({ config, bubble });
   }, [config, bubble, settingsRestored]);
-
-  // ----- Sized demo window -----
-  const [demoUrl, setDemoUrl] = useState('');
-  const [deviceId, setDeviceId] = useState(DEVICE_PRESETS[0].id);
-  const [customSize, setCustomSize] = useState({ width: 390, height: 844 });
-  const [sizedNote, setSizedNote] = useState<string | null>(null);
-  const [openingWindow, setOpeningWindow] = useState(false);
-
-  const openDemoWindow = useCallback(async () => {
-    const device = DEVICE_PRESETS.find((d) => d.id === deviceId);
-    const w = device ? device.width : customSize.width;
-    const h = device ? device.height : customSize.height;
-
-    setOpeningWindow(true);
-    setSizedNote(null);
-    try {
-      const res = await openSizedWindow(demoUrl, w, h);
-      setSizedNote(
-        res.ok && res.actual
-          ? `Opened at ${res.actual.width}×${res.actual.height}. Now click "Share screen" and pick that window.`
-          : res.error ?? 'Could not open the window.'
-      );
-    } finally {
-      setOpeningWindow(false);
-    }
-  }, [demoUrl, deviceId, customSize]);
 
   const applyPreset = useCallback((p: StudioPreset) => {
     setConfig(p.config);
@@ -282,9 +272,27 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       }
       stateRef.current.screenVideo = screenVideoRef.current;
       setHasScreen(true);
+
+      const track = stream.getVideoTracks()[0];
+      const readSize = () => {
+        const s = track.getSettings();
+        if (s.width && s.height) setSourceSize({ width: s.width, height: s.height });
+      };
+      readSize();
+      // Chrome delivers a new frame size when the shared window is resized. The
+      // video element's resize event is the reliable signal for it — track
+      // settings alone don't notify.
+      screenVideoRef.current?.addEventListener('resize', () => {
+        const v = screenVideoRef.current;
+        if (v && v.videoWidth > 0 && v.videoHeight > 0) {
+          setSourceSize({ width: v.videoWidth, height: v.videoHeight });
+        }
+      });
+
       // If the user stops sharing via the browser UI, reflect it.
-      stream.getVideoTracks()[0].addEventListener('ended', () => {
+      track.addEventListener('ended', () => {
         setHasScreen(false);
+        setSourceSize(null);
         screenStreamRef.current = null;
       });
     } catch {
@@ -320,6 +328,10 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       enhance: config.enhanceAudio,
     });
 
+    // Lock the canvas size for the whole take — see recordingDimsRef.
+    recordingDimsRef.current = liveDims;
+    stateRef.current.dims = liveDims;
+
     recordingRef.current = startRecording(canvasRef.current, audio, 30);
     setElapsed(0);
     setIsPaused(false);
@@ -331,7 +343,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       () => setElapsed(elapsedBaseRef.current + (Date.now() - segmentStartRef.current)),
       200
     );
-  }, [hasScreen, micEnabled, includeBrowserAudio, config.enhanceAudio]);
+  }, [hasScreen, micEnabled, includeBrowserAudio, config.enhanceAudio, liveDims]);
 
   const pauseRecording = useCallback(() => {
     if (!recordingRef.current || pausedRef.current) return;
@@ -386,15 +398,18 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     setPhase('publishing');
     setUploadPct(0);
     try {
-      const dims = ASPECT_DIMS[config.aspect];
+      // The dims the take was actually recorded at, not whatever is selected now.
+      const recorded = recordingDimsRef.current ?? liveDims;
       const result = await publishRecording(
         reviewBlob,
         {
           title: title.trim() || 'Untitled recording',
           durationMs: elapsed,
-          width: dims.width,
-          height: dims.height,
-          aspectRatio: config.aspect,
+          width: recorded.width,
+          height: recorded.height,
+          // Always a concrete ratio — 'auto' is a studio setting, and storing it
+          // would leave the gallery with no shape to lay the card out with.
+          aspectRatio: aspectLabel(recorded),
         },
         (f) => setUploadPct(Math.round(f * 100))
       );
@@ -403,7 +418,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       setError(e instanceof Error ? e.message : 'Publish failed');
       setPhase('review');
     }
-  }, [reviewBlob, title, elapsed, config.aspect, router]);
+  }, [reviewBlob, title, elapsed, liveDims, router]);
 
   // ----- Bubble drag -----
   const dragRef = useRef<{ dragging: boolean }>({ dragging: false });
@@ -439,13 +454,10 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   // height. Width is the smallest of: the column width, a max cap, and the width
   // implied by the height budget for this aspect ratio. Height follows from the
   // aspect ratio, so the box always matches what's recorded (keeps drag math sound).
-  const stageStyle = useMemo(() => {
-    const d = ASPECT_DIMS[config.aspect];
-    return {
-      aspectRatio: `${d.width} / ${d.height}`,
-      width: `min(100%, 56rem, calc((100dvh - 12rem) * ${d.width} / ${d.height}))`,
-    } as React.CSSProperties;
-  }, [config.aspect]);
+  const stageStyle = useMemo(() => ({
+    aspectRatio: `${dims.width} / ${dims.height}`,
+    width: `min(100%, 56rem, calc((100dvh - 12rem) * ${dims.width} / ${dims.height}))`,
+  } as React.CSSProperties), [dims]);
 
   const canRecord = hasScreen && phase === 'setup';
 
@@ -629,61 +641,6 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                 />
               </Group>
 
-              {/* Sized demo window */}
-              <Group label={<span className="flex items-center gap-1"><Smartphone className="h-3.5 w-3.5" /> Open page at a device size</span>}>
-                <input
-                  value={demoUrl}
-                  onChange={(e) => setDemoUrl(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && demoUrl.trim()) openDemoWindow(); }}
-                  placeholder="yourapp.com/page"
-                  className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-200 outline-none placeholder:text-neutral-600 focus:border-emerald-500"
-                />
-                <Select
-                  label="Size"
-                  value={deviceId}
-                  options={[
-                    ...DEVICE_PRESETS.map((d) => ({
-                      value: d.id,
-                      label: `${d.label} — ${d.width}×${d.height}`,
-                    })),
-                    { value: 'custom', label: 'Custom…' },
-                  ]}
-                  onChange={setDeviceId}
-                />
-                {deviceId === 'custom' && (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number" min={200} max={4000} value={customSize.width}
-                      onChange={(e) => setCustomSize((s) => ({ ...s, width: Number(e.target.value) }))}
-                      className="w-full min-w-0 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-200 outline-none focus:border-emerald-500"
-                      aria-label="Width in pixels"
-                    />
-                    <span className="text-xs text-neutral-500">×</span>
-                    <input
-                      type="number" min={200} max={4000} value={customSize.height}
-                      onChange={(e) => setCustomSize((s) => ({ ...s, height: Number(e.target.value) }))}
-                      className="w-full min-w-0 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-xs text-neutral-200 outline-none focus:border-emerald-500"
-                      aria-label="Height in pixels"
-                    />
-                  </div>
-                )}
-                <button
-                  onClick={openDemoWindow}
-                  disabled={!demoUrl.trim() || openingWindow}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-200 enabled:hover:bg-neutral-800 disabled:opacity-40"
-                >
-                  {openingWindow
-                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : <ExternalLink className="h-3.5 w-3.5" />}
-                  Open sized window
-                </button>
-                {sizedNote && <p className="text-[11px] text-emerald-400">{sizedNote}</p>}
-                <p className="text-[11px] text-neutral-500">
-                  Sizes the window’s content area exactly, so you don’t have to drag the edge and
-                  guess. Pair it with the 9:16 aspect ratio for a phone-shaped recording.
-                </p>
-              </Group>
-
               {/* Devices */}
               <Group label="Devices">
                 <Select
@@ -857,17 +814,38 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
               </Group>
 
               {/* Aspect ratio */}
-              <Group label="Aspect ratio">
+              <Group label="Shape">
                 <SegRow
                   options={[
+                    { value: 'auto', label: 'Match window' },
                     { value: '16:9', label: '16:9' },
                     { value: '9:16', label: '9:16' },
                     { value: '1:1', label: '1:1' },
-                    { value: '4:3', label: '4:3' },
                   ]}
                   value={config.aspect}
                   onChange={(v) => setConfig((c) => ({ ...c, aspect: v as AspectRatio }))}
                 />
+                {config.aspect === 'auto' ? (
+                  <p className="text-[11px] text-neutral-500">
+                    {sourceSize ? (
+                      <>
+                        Recording at{' '}
+                        <span className="tabular-nums text-neutral-300">
+                          {dims.width}×{dims.height}
+                        </span>{' '}
+                        — the exact shape of the window you shared, so there are no bars.
+                        Resize that window and this follows it.
+                      </>
+                    ) : (
+                      <>Share a window and the recording takes its shape automatically.</>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-neutral-500">
+                    Fixed {config.aspect}. Anything that doesn’t fit this shape gets bars —
+                    use <span className="text-neutral-300">Match window</span> to avoid them.
+                  </p>
+                )}
               </Group>
             </>
           )}

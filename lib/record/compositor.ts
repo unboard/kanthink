@@ -3,11 +3,17 @@
 // cutout sticker, or a split-screen panel) into a canvas, which is then
 // captured into a MediaRecorder together with the mixed audio.
 
-import { ASPECT_DIMS, BUBBLE_ASPECT, type BubblePlacement, type StudioConfig, type SubtitleStyle } from './types';
+import { BUBBLE_ASPECT, type AspectDims, type BubblePlacement, type StudioConfig, type SubtitleStyle } from './types';
 import { WebcamEffectProcessor } from './segmentation';
 
 export interface CompositorState {
   config: StudioConfig;
+  /**
+   * Canvas size for this frame. Passed in rather than derived from config.aspect
+   * because 'auto' resolves against the live shared surface, which only the
+   * studio component observes.
+   */
+  dims: AspectDims;
   bubble: BubblePlacement;
   screenVideo: HTMLVideoElement | null;
   webcamVideo: HTMLVideoElement | null;
@@ -212,8 +218,7 @@ export class Compositor {
   }
 
   private draw() {
-    const { config, bubble, screenVideo, webcamVideo, caption } = this.getState();
-    const dims = ASPECT_DIMS[config.aspect];
+    const { config, dims, bubble, screenVideo, webcamVideo, caption } = this.getState();
     if (this.canvas.width !== dims.width) this.canvas.width = dims.width;
     if (this.canvas.height !== dims.height) this.canvas.height = dims.height;
     const W = this.canvas.width;
