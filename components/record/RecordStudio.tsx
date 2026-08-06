@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
   Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Film, ArrowRight,
-  Captions, AudioLines, Pause, Play, Bookmark, Trash2, Crop, Minimize2,
+  Captions, AudioLines, Pause, Play, Bookmark, Trash2, Crop, Minimize2, ChevronRight,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
@@ -22,10 +22,27 @@ import {
   type SubtitleBackground, type SubtitlePosition, type SubtitleSize,
 } from '@/lib/record/types';
 import {
-  deletePreset, loadLastUsed, loadPresets, savePreset, saveLastUsed, type StudioPreset,
+  deletePreset, loadLastUsed, loadOpenGroups, loadPresets, savePreset, saveLastUsed,
+  saveOpenGroups, type StudioPreset,
 } from '@/lib/record/presets';
 
 type Phase = 'setup' | 'recording' | 'review' | 'publishing';
+
+// Which control sections start expanded. Open by default are the ones touched
+// per-recording; the configure-once sections start collapsed so the controls you
+// reach for mid-take aren't pushed below the fold. User toggles are remembered.
+const GROUP_DEFAULT_OPEN: Record<string, boolean> = {
+  presets: true,
+  sources: true,
+  shape: true,
+  framing: true,
+  layout: false,
+  webcam: false,
+  devices: false,
+  audio: false,
+  effect: false,
+  subtitles: false,
+};
 
 interface RecordingRow {
   id: string;
@@ -68,6 +85,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
 
   const [presets, setPresets] = useState<StudioPreset[]>([]);
   const [presetName, setPresetName] = useState('');
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   // Null until the stored settings have been read, so the auto-save effect below
   // can't fire with defaults and overwrite them before restore happens.
   const [settingsRestored, setSettingsRestored] = useState(false);
@@ -100,12 +118,14 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   // changing canvas dimensions mid-stream resizes the encoder's input, which
   // corrupts the track. If the shared window is resized mid-take the recording
   // keeps the shape it started with.
-  const recordingDimsRef = useRef<AspectDims | null>(null);
+  // State, not a ref: the preview stage is laid out from this, so it has to
+  // participate in rendering.
+  const [recordingDims, setRecordingDims] = useState<AspectDims | null>(null);
   const liveDims = useMemo<AspectDims>(() => {
     if (config.aspect !== 'auto') return ASPECT_DIMS[config.aspect];
     return sourceSize ? autoDims(sourceSize.width, sourceSize.height) : ASPECT_DIMS['16:9'];
   }, [config.aspect, sourceSize]);
-  const dims = phase === 'recording' ? recordingDimsRef.current ?? liveDims : liveDims;
+  const dims = phase === 'recording' ? recordingDims ?? liveDims : liveDims;
 
   // Live state object the compositor reads (kept in a ref so the loop sees latest).
   const stateRef = useRef<CompositorState>({
@@ -127,10 +147,17 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const { supported: captionsSupported } = useSpeechCaptions(config.subtitles.enabled, setCaption);
 
   // ----- Saved settings -----
-  // Restore last-used settings on mount. localStorage isn't available during SSR,
-  // so this has to happen in an effect rather than as initial state.
+  // Restore last-used settings on mount.
+  //
+  // This is the documented exception to set-state-in-effect: the values live in
+  // localStorage, which does not exist during SSR. Reading them in a lazy state
+  // initialiser would make the client's first render disagree with the server's
+  // HTML and trip a hydration mismatch, so the read has to happen after mount.
+  // It runs once, so the extra render is a single pass at startup.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setPresets(loadPresets());
+    setOpenGroups(loadOpenGroups());
     const last = loadLastUsed();
     if (last) {
       setConfig(last.config);
@@ -138,6 +165,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     }
     setSettingsRestored(true);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Persist whatever is currently set, so the next visit opens where this one
   // left off without anyone having to name a preset.
@@ -145,6 +173,17 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     if (!settingsRestored) return;
     saveLastUsed({ config, bubble });
   }, [config, bubble, settingsRestored]);
+
+  /** Props wiring one collapsible control section to its remembered state. */
+  const group = useCallback((id: string) => ({
+    open: openGroups[id] ?? GROUP_DEFAULT_OPEN[id] ?? true,
+    onToggle: () => setOpenGroups((g) => {
+      const current = g[id] ?? GROUP_DEFAULT_OPEN[id] ?? true;
+      const next = { ...g, [id]: !current };
+      saveOpenGroups(next);
+      return next;
+    }),
+  }), [openGroups]);
 
   const applyPreset = useCallback((p: StudioPreset) => {
     setConfig(p.config);
@@ -329,8 +368,8 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       enhance: config.enhanceAudio,
     });
 
-    // Lock the canvas size for the whole take — see recordingDimsRef.
-    recordingDimsRef.current = liveDims;
+    // Lock the canvas size for the whole take — see recordingDims.
+    setRecordingDims(liveDims);
     stateRef.current.dims = liveDims;
 
     recordingRef.current = startRecording(canvasRef.current, audio, 30);
@@ -400,7 +439,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     setUploadPct(0);
     try {
       // The dims the take was actually recorded at, not whatever is selected now.
-      const recorded = recordingDimsRef.current ?? liveDims;
+      const recorded = recordingDims ?? liveDims;
       const result = await publishRecording(
         reviewBlob,
         {
@@ -419,7 +458,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       setError(e instanceof Error ? e.message : 'Publish failed');
       setPhase('review');
     }
-  }, [reviewBlob, title, elapsed, liveDims, router]);
+  }, [reviewBlob, title, elapsed, recordingDims, liveDims, router]);
 
   // ----- Bubble drag -----
   const dragRef = useRef<{ dragging: boolean }>({ dragging: false });
@@ -493,9 +532,13 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
 
   const canRecord = hasScreen && phase === 'setup';
 
+  // Desktop pins the whole studio to the viewport and lets the two columns scroll
+  // independently, so reaching a control never scrolls the preview off screen.
+  // Below lg the columns stack, where two nested scroll areas would be worse than
+  // the page simply scrolling — so the constraint is lg-only throughout.
   return (
-    <main className="min-h-screen bg-[#0b0b0c] text-neutral-200">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
+    <main className="min-h-screen bg-[#0b0b0c] text-neutral-200 lg:flex lg:h-[100dvh] lg:min-h-0 lg:flex-col lg:overflow-hidden">
+      <header className="flex items-center justify-between border-b border-neutral-800 px-5 py-3 lg:shrink-0">
         <div className="flex items-center gap-2">
           <KanthinkIcon size={22} className="text-emerald-400" />
           <span className="font-semibold">Kan Record</span>
@@ -517,9 +560,9 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
         <div className="bg-red-500/10 border-b border-red-500/30 px-5 py-2 text-sm text-red-300">{error}</div>
       )}
 
-      <div className="grid lg:grid-cols-[1fr_340px] gap-0">
+      <div className="grid gap-0 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_340px]">
         {/* ===== Stage ===== */}
-        <section className="p-5">
+        <section className="flex flex-col p-5 lg:min-h-0 lg:overflow-y-auto">
           <div className="relative mx-auto" style={stageStyle}>
             <canvas
               ref={canvasRef}
@@ -597,10 +640,33 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
               </>
             )}
           </div>
+
+          {/* Lives in the scrolling stage column, not below the grid — the desktop
+              layout is viewport-height, so anything outside a scroll container
+              would be unreachable. */}
+          {recordings.length > 0 && phase === 'setup' && (
+            <section className="mt-6">
+              <Link
+                href="/record/gallery"
+                className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/40 px-5 py-4 transition hover:border-neutral-700 hover:bg-neutral-900"
+              >
+                <div className="flex items-center gap-3">
+                  <Film className="h-5 w-5 text-emerald-400" />
+                  <div>
+                    <div className="text-sm font-medium text-neutral-100">Your recordings</div>
+                    <div className="text-xs text-neutral-500">
+                      {recordings.length} video{recordings.length === 1 ? '' : 's'} · open the gallery to play, share & set thumbnails
+                    </div>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 text-neutral-500" />
+              </Link>
+            </section>
+          )}
         </section>
 
         {/* ===== Controls ===== */}
-        <aside className="border-l border-neutral-800 p-5 space-y-6">
+        <aside className="space-y-5 border-l border-neutral-800 p-5 lg:min-h-0 lg:overflow-y-auto">
           {phase === 'review' || phase === 'publishing' ? (
             <ReviewPanel
               url={reviewUrl}
@@ -615,7 +681,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
           ) : (
             <>
               {/* Presets */}
-              <Group label={<span className="flex items-center gap-1"><Bookmark className="h-3.5 w-3.5" /> Presets</span>}>
+              <Group label={<span className="flex items-center gap-1"><Bookmark className="h-3.5 w-3.5" /> Presets</span>} {...group('presets')}>
                 {presets.length > 0 && (
                   <div className="space-y-1">
                     {presets.map((p) => (
@@ -660,7 +726,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
               </Group>
 
               {/* Sources */}
-              <Group label="Sources">
+              <Group label="Sources" {...group('sources')}>
                 <ToggleRow
                   icon={<Monitor className="h-4 w-4" />}
                   label={hasScreen ? 'Screen shared' : 'Share screen'}
@@ -675,56 +741,103 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                 />
               </Group>
 
-              {/* Devices */}
-              <Group label="Devices">
-                <Select
-                  label="Camera"
-                  value={cameraId}
-                  options={cameras.map((c) => ({ value: c.deviceId, label: c.label || 'Camera' }))}
-                  onChange={(v) => { setCameraId(v); acquireWebcam(v); }}
-                  disabled={!hasWebcam}
+              {/* Aspect ratio */}
+              <Group label="Shape" {...group('shape')}>
+                <SegRow
+                  options={[
+                    { value: 'auto', label: 'Match window' },
+                    { value: '16:9', label: '16:9' },
+                    { value: '9:16', label: '9:16' },
+                    { value: '1:1', label: '1:1' },
+                  ]}
+                  value={config.aspect}
+                  onChange={(v) => setConfig((c) => ({ ...c, aspect: v as AspectRatio }))}
                 />
-                <Select
-                  label="Microphone"
-                  value={micId}
-                  options={mics.map((m) => ({ value: m.deviceId, label: m.label || 'Microphone' }))}
-                  onChange={(v) => { setMicId(v); acquireMic(v); }}
-                />
-              </Group>
-
-              {/* Audio */}
-              <Group label="Audio">
-                <ToggleRow
-                  icon={micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                  label="Record microphone"
-                  active={micEnabled}
-                  onClick={() => setMicEnabled((v) => !v)}
-                />
-                <ToggleRow
-                  icon={includeBrowserAudio ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-                  label="Record tab / browser audio"
-                  active={includeBrowserAudio}
-                  onClick={() => setIncludeBrowserAudio((v) => !v)}
-                />
-                <ToggleRow
-                  icon={<AudioLines className="h-4 w-4" />}
-                  label="Soften harsh mic audio"
-                  active={config.enhanceAudio}
-                  onClick={() => setConfig((c) => ({ ...c, enhanceAudio: !c.enhanceAudio }))}
-                />
-                <p className="text-[11px] text-neutral-500">
-                  De-esses sharp &ldquo;s&rdquo; sounds and takes the edge off bright mics. Test with a short clip.
-                </p>
-                {micHz !== null && micHz <= 32000 && (
-                  <p className="text-[11px] text-amber-400">
-                    This mic is running in Bluetooth hands-free mode ({Math.round(micHz / 1000)} kHz) —
-                    that caps voice quality no matter the settings. A built-in or wired mic will sound noticeably clearer.
+                {config.aspect === 'auto' ? (
+                  <p className="text-[11px] text-neutral-500">
+                    {sourceSize ? (
+                      <>
+                        Recording at{' '}
+                        <span className="tabular-nums text-neutral-300">
+                          {dims.width}×{dims.height}
+                        </span>{' '}
+                        — the exact shape of the window you shared, so there are no bars.
+                        Resize that window and this follows it.
+                      </>
+                    ) : (
+                      <>Share a window and the recording takes its shape automatically.</>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-neutral-500">
+                    Fixed {config.aspect}.{' '}
+                    {config.screenView.fit === 'cover'
+                      ? 'Your window is cropped to this shape — no bars.'
+                      : 'Your whole window is fitted inside, so it gets bars.'}
                   </p>
                 )}
               </Group>
 
+              {/* Framing */}
+              <Group label={<span className="flex items-center gap-1"><Crop className="h-3.5 w-3.5" /> Framing</span>} {...group('framing')}>
+                <SegRow
+                  options={[
+                    { value: 'cover', label: 'Crop to fill' },
+                    { value: 'contain', label: 'Fit whole' },
+                  ]}
+                  value={config.screenView.fit}
+                  onChange={(v) => setConfig((c) => ({
+                    ...c, screenView: { ...c.screenView, fit: v as 'cover' | 'contain' },
+                  }))}
+                />
+                <label className="block text-xs text-neutral-400">
+                  <span className="flex justify-between">
+                    <span>Zoom</span>
+                    <span className="text-neutral-500">{config.screenView.zoom.toFixed(1)}×</span>
+                  </span>
+                  <input
+                    type="range" min={1} max={4} step={0.1} value={config.screenView.zoom}
+                    onChange={(e) => setConfig((c) => ({
+                      ...c, screenView: { ...c.screenView, zoom: Number(e.target.value) },
+                    }))}
+                    className="mt-1 w-full accent-emerald-500"
+                  />
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setConfig((c) => ({
+                      ...c, screenView: { ...c.screenView, zoom: 1, x: 0.5, y: 0.5 },
+                    }))}
+                    disabled={config.screenView.zoom === 1}
+                    className="flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-200 enabled:hover:bg-neutral-800 disabled:opacity-40"
+                  >
+                    <Minimize2 className="h-3.5 w-3.5" /> Back out
+                  </button>
+                  <span className="text-[11px] text-neutral-500">
+                    {config.screenView.zoom > 1 ? 'Click the preview to aim' : ''}
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-500">
+                  Zoom in on a button while you talk — the move eases in, and it&rsquo;s recorded, so
+                  it works even where browser zoom doesn&rsquo;t. Safe to use mid-recording.
+                </p>
+              </Group>
+
+              {/* Layout */}
+              <Group label={<span className="flex items-center gap-1"><Layout className="h-3.5 w-3.5" /> Layout</span>} {...group('layout')}>
+                <SegRow
+                  options={[
+                    { value: 'overlay', label: 'Bubble' },
+                    { value: 'split-50', label: '50 / 50' },
+                    { value: 'split-33', label: '33 / 67' },
+                  ]}
+                  value={config.template}
+                  onChange={(v) => setConfig((c) => ({ ...c, template: v as LayoutTemplate }))}
+                />
+              </Group>
+
               {/* Webcam style */}
-              <Group label="Webcam style">
+              <Group label="Webcam style" {...group('webcam')}>
                 <SegRow
                   options={[
                     { value: 'circle', label: 'Circle', icon: <Circle className="h-4 w-4" /> },
@@ -759,8 +872,56 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                 </label>
               </Group>
 
+              {/* Devices */}
+              <Group label="Devices" {...group('devices')}>
+                <Select
+                  label="Camera"
+                  value={cameraId}
+                  options={cameras.map((c) => ({ value: c.deviceId, label: c.label || 'Camera' }))}
+                  onChange={(v) => { setCameraId(v); acquireWebcam(v); }}
+                  disabled={!hasWebcam}
+                />
+                <Select
+                  label="Microphone"
+                  value={micId}
+                  options={mics.map((m) => ({ value: m.deviceId, label: m.label || 'Microphone' }))}
+                  onChange={(v) => { setMicId(v); acquireMic(v); }}
+                />
+              </Group>
+
+              {/* Audio */}
+              <Group label="Audio" {...group('audio')}>
+                <ToggleRow
+                  icon={micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  label="Record microphone"
+                  active={micEnabled}
+                  onClick={() => setMicEnabled((v) => !v)}
+                />
+                <ToggleRow
+                  icon={includeBrowserAudio ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                  label="Record tab / browser audio"
+                  active={includeBrowserAudio}
+                  onClick={() => setIncludeBrowserAudio((v) => !v)}
+                />
+                <ToggleRow
+                  icon={<AudioLines className="h-4 w-4" />}
+                  label="Soften harsh mic audio"
+                  active={config.enhanceAudio}
+                  onClick={() => setConfig((c) => ({ ...c, enhanceAudio: !c.enhanceAudio }))}
+                />
+                <p className="text-[11px] text-neutral-500">
+                  De-esses sharp &ldquo;s&rdquo; sounds and takes the edge off bright mics. Test with a short clip.
+                </p>
+                {micHz !== null && micHz <= 32000 && (
+                  <p className="text-[11px] text-amber-400">
+                    This mic is running in Bluetooth hands-free mode ({Math.round(micHz / 1000)} kHz) —
+                    that caps voice quality no matter the settings. A built-in or wired mic will sound noticeably clearer.
+                  </p>
+                )}
+              </Group>
+
               {/* AI effects */}
-              <Group label={<span className="flex items-center gap-1"><Sparkles className="h-3.5 w-3.5" /> AI effect</span>}>
+              <Group label={<span className="flex items-center gap-1"><Sparkles className="h-3.5 w-3.5" /> AI effect</span>} {...group('effect')}>
                 <SegRow
                   options={[
                     { value: 'none', label: 'None' },
@@ -776,7 +937,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
               </Group>
 
               {/* Subtitles */}
-              <Group label={<span className="flex items-center gap-1"><Captions className="h-3.5 w-3.5" /> Subtitles</span>}>
+              <Group label={<span className="flex items-center gap-1"><Captions className="h-3.5 w-3.5" /> Subtitles</span>} {...group('subtitles')}>
                 <ToggleRow
                   icon={<Captions className="h-4 w-4" />}
                   label={config.subtitles.enabled ? 'Live captions on' : 'Live captions off'}
@@ -834,125 +995,10 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                 )}
               </Group>
 
-              {/* Layout */}
-              <Group label={<span className="flex items-center gap-1"><Layout className="h-3.5 w-3.5" /> Layout</span>}>
-                <SegRow
-                  options={[
-                    { value: 'overlay', label: 'Bubble' },
-                    { value: 'split-50', label: '50 / 50' },
-                    { value: 'split-33', label: '33 / 67' },
-                  ]}
-                  value={config.template}
-                  onChange={(v) => setConfig((c) => ({ ...c, template: v as LayoutTemplate }))}
-                />
-              </Group>
-
-              {/* Aspect ratio */}
-              <Group label="Shape">
-                <SegRow
-                  options={[
-                    { value: 'auto', label: 'Match window' },
-                    { value: '16:9', label: '16:9' },
-                    { value: '9:16', label: '9:16' },
-                    { value: '1:1', label: '1:1' },
-                  ]}
-                  value={config.aspect}
-                  onChange={(v) => setConfig((c) => ({ ...c, aspect: v as AspectRatio }))}
-                />
-                {config.aspect === 'auto' ? (
-                  <p className="text-[11px] text-neutral-500">
-                    {sourceSize ? (
-                      <>
-                        Recording at{' '}
-                        <span className="tabular-nums text-neutral-300">
-                          {dims.width}×{dims.height}
-                        </span>{' '}
-                        — the exact shape of the window you shared, so there are no bars.
-                        Resize that window and this follows it.
-                      </>
-                    ) : (
-                      <>Share a window and the recording takes its shape automatically.</>
-                    )}
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-neutral-500">
-                    Fixed {config.aspect}.{' '}
-                    {config.screenView.fit === 'cover'
-                      ? 'Your window is cropped to this shape — no bars.'
-                      : 'Your whole window is fitted inside, so it gets bars.'}
-                  </p>
-                )}
-              </Group>
-
-              {/* Framing */}
-              <Group label={<span className="flex items-center gap-1"><Crop className="h-3.5 w-3.5" /> Framing</span>}>
-                <SegRow
-                  options={[
-                    { value: 'cover', label: 'Crop to fill' },
-                    { value: 'contain', label: 'Fit whole' },
-                  ]}
-                  value={config.screenView.fit}
-                  onChange={(v) => setConfig((c) => ({
-                    ...c, screenView: { ...c.screenView, fit: v as 'cover' | 'contain' },
-                  }))}
-                />
-                <label className="block text-xs text-neutral-400">
-                  <span className="flex justify-between">
-                    <span>Zoom</span>
-                    <span className="text-neutral-500">{config.screenView.zoom.toFixed(1)}×</span>
-                  </span>
-                  <input
-                    type="range" min={1} max={4} step={0.1} value={config.screenView.zoom}
-                    onChange={(e) => setConfig((c) => ({
-                      ...c, screenView: { ...c.screenView, zoom: Number(e.target.value) },
-                    }))}
-                    className="mt-1 w-full accent-emerald-500"
-                  />
-                </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setConfig((c) => ({
-                      ...c, screenView: { ...c.screenView, zoom: 1, x: 0.5, y: 0.5 },
-                    }))}
-                    disabled={config.screenView.zoom === 1}
-                    className="flex items-center gap-1.5 rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-200 enabled:hover:bg-neutral-800 disabled:opacity-40"
-                  >
-                    <Minimize2 className="h-3.5 w-3.5" /> Back out
-                  </button>
-                  <span className="text-[11px] text-neutral-500">
-                    {config.screenView.zoom > 1 ? 'Click the preview to aim' : ''}
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-500">
-                  Zoom in on a button while you talk — the move eases in, and it&rsquo;s recorded, so
-                  it works even where browser zoom doesn&rsquo;t. Safe to use mid-recording.
-                </p>
-              </Group>
-            </>
+                          </>
           )}
         </aside>
       </div>
-
-      {/* ===== My recordings ===== */}
-      {recordings.length > 0 && phase === 'setup' && (
-        <section className="border-t border-neutral-800 p-5">
-          <Link
-            href="/record/gallery"
-            className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/40 px-5 py-4 transition hover:border-neutral-700 hover:bg-neutral-900"
-          >
-            <div className="flex items-center gap-3">
-              <Film className="h-5 w-5 text-emerald-400" />
-              <div>
-                <div className="text-sm font-medium text-neutral-100">Your recordings</div>
-                <div className="text-xs text-neutral-500">
-                  {recordings.length} video{recordings.length === 1 ? '' : 's'} · open the gallery to play, share & set thumbnails
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="h-4 w-4 text-neutral-500" />
-          </Link>
-        </section>
-      )}
 
       {/* Source videos feeding the compositor — kept rendered but off-screen so
           browsers keep decoding frames (display:none can pause decode). */}
@@ -1027,11 +1073,37 @@ function ReviewPanel(props: {
   );
 }
 
-function Group({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+function Group({
+  label, children, open = true, onToggle,
+}: {
+  label: React.ReactNode;
+  children: React.ReactNode;
+  open?: boolean;
+  onToggle?: () => void;
+}) {
+  if (!onToggle) {
+    return (
+      <div className="space-y-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{label}</div>
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
-      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{label}</div>
-      {children}
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 transition hover:text-neutral-300"
+      >
+        <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+        <span className="min-w-0 flex-1">{label}</span>
+      </button>
+      {/* Unmounted rather than hidden: these sections hold range inputs and live
+          previews, and keeping a collapsed one mounted would leave it in the tab
+          order and still re-rendering every frame the config changes. */}
+      {open && <div className="space-y-2 pl-[1.125rem]">{children}</div>}
     </div>
   );
 }

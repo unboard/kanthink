@@ -13,6 +13,7 @@ const PRESETS_KEY = 'kan-record-presets';
 // implicit last-state once; explicitly saved presets are left alone, because a
 // ratio someone chose and named is a decision, not a stale default.
 const LAST_USED_KEY = 'kan-record-last-used-v2';
+const GROUPS_KEY = 'kan-record-open-groups';
 
 export interface StudioPreset {
   id: string;
@@ -108,4 +109,20 @@ export function loadLastUsed(): StudioSnapshot | null {
 
 export function saveLastUsed(snapshot: StudioSnapshot): void {
   write(LAST_USED_KEY, snapshot);
+}
+
+/**
+ * Which control sections are expanded, by id.
+ *
+ * Only sections the user has actually toggled are stored, so a section added
+ * later still gets its intended default instead of inheriting a stale `false`
+ * from a map written before it existed.
+ */
+export function loadOpenGroups(): Record<string, boolean> {
+  const raw = read<Record<string, boolean>>(GROUPS_KEY, {});
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+}
+
+export function saveOpenGroups(next: Record<string, boolean>): void {
+  write(GROUPS_KEY, next);
 }
