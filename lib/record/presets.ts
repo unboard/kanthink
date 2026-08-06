@@ -14,6 +14,7 @@ const PRESETS_KEY = 'kan-record-presets';
 // ratio someone chose and named is a decision, not a stale default.
 const LAST_USED_KEY = 'kan-record-last-used-v2';
 const GROUPS_KEY = 'kan-record-open-groups';
+const MIC_KEY = 'kan-record-mic';
 
 export interface StudioPreset {
   id: string;
@@ -125,4 +126,22 @@ export function loadOpenGroups(): Record<string, boolean> {
 
 export function saveOpenGroups(next: Record<string, boolean>): void {
   write(GROUPS_KEY, next);
+}
+
+/**
+ * The microphone chosen last time, so it doesn't silently revert to the system
+ * default on the next visit.
+ *
+ * Kept out of presets and out of last-used settings on purpose: those are about
+ * how a recording looks, and switching preset shouldn't switch your mic. A
+ * device id is only meaningful on the browser profile that issued it, which is
+ * exactly the scope of this key.
+ */
+export function loadPreferredMic(): string | null {
+  const raw = read<string | null>(MIC_KEY, null);
+  return typeof raw === 'string' && raw ? raw : null;
+}
+
+export function savePreferredMic(deviceId: string): void {
+  write(MIC_KEY, deviceId);
 }

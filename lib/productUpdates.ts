@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'record-pick-your-microphone',
+    date: '2026-08-06',
+    kind: 'fix',
+    title: 'Pick your microphone before you record',
+    body: 'The record studio now shows which mic it is using right under the screen and webcam buttons, with a level bar that moves when you talk and a picker for switching devices. Screen-only recordings previously captured no voice at all unless you had turned the webcam on first — that is fixed, and your mic choice is remembered.',
+  },
+  {
     id: 'open-cards-awaiting-approval',
     date: '2026-08-01',
     kind: 'workflow',

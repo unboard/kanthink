@@ -22,8 +22,8 @@ import {
   type SubtitleBackground, type SubtitlePosition, type SubtitleSize,
 } from '@/lib/record/types';
 import {
-  deletePreset, loadLastUsed, loadOpenGroups, loadPresets, savePreset, saveLastUsed,
-  saveOpenGroups, type StudioPreset,
+  deletePreset, loadLastUsed, loadOpenGroups, loadPreferredMic, loadPresets, savePreset,
+  saveLastUsed, saveOpenGroups, savePreferredMic, type StudioPreset,
 } from '@/lib/record/presets';
 
 type Phase = 'setup' | 'recording' | 'review' | 'publishing';
@@ -72,6 +72,13 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   const [micId, setMicId] = useState<string>('');
   const [micHz, setMicHz] = useState<number | null>(null);
   const [micEnabled, setMicEnabled] = useState(true);
+  // Mirrors micStreamRef so the level meter can react to the mic changing. The
+  // ref stays the source of truth for the recording path, which reads it outside
+  // of render.
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  // True once a mic request has actually failed, so the panel can offer a retry
+  // instead of implying a mic is live. Distinct from "not asked yet".
+  const [micDenied, setMicDenied] = useState(false);
   const [includeBrowserAudio, setIncludeBrowserAudio] = useState(false);
 
   const [hasWebcam, setHasWebcam] = useState(false);
@@ -279,31 +286,95 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   }, [refreshDevices]);
 
   const acquireMic = useCallback(async (deviceId?: string) => {
+    // Browser-level cleanup helps tame harsh/noisy headset mics. Ask for
+    // 48 kHz so capture matches the Opus encoder rate (no resample step).
+    const enhanceConstraints: MediaTrackConstraints = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      sampleRate: { ideal: 48000 },
+    };
+    const open = (id?: string) => navigator.mediaDevices.getUserMedia({
+      audio: id ? { deviceId: { exact: id }, ...enhanceConstraints } : enhanceConstraints,
+      video: false,
+    });
+
     try {
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
-      // Browser-level cleanup helps tame harsh/noisy headset mics. Ask for
-      // 48 kHz so capture matches the Opus encoder rate (no resample step).
-      const enhanceConstraints: MediaTrackConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: { ideal: 48000 },
-      };
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: deviceId ? { deviceId: { exact: deviceId }, ...enhanceConstraints } : enhanceConstraints,
-        video: false,
+      const stream = await open(deviceId).catch((err: unknown) => {
+        // The remembered mic is gone — headset unplugged, Bluetooth disconnected.
+        // Fall back to the system default rather than leaving the studio with no
+        // audio, which is the failure the user can't see until playback.
+        if (!deviceId || (err as DOMException)?.name === 'NotAllowedError') throw err;
+        return open();
       });
       micStreamRef.current = stream;
+      setMicStream(stream);
+      setMicDenied(false);
       const settings = stream.getAudioTracks()[0]?.getSettings();
-      if (settings?.deviceId) setMicId(settings.deviceId);
+      if (settings?.deviceId) {
+        setMicId(settings.deviceId);
+        savePreferredMic(settings.deviceId);
+      }
       // Bluetooth hands-free mics report 8/16/32 kHz — surface that the
       // quality ceiling comes from the mic link, not the recording.
       setMicHz(settings?.sampleRate ?? null);
+      // Labels are blank until a mic has been granted, so this second pass is
+      // what turns "Microphone" into the real device names in the picker.
       await refreshDevices();
+      return stream;
     } catch {
-      setError('Could not access the microphone.');
+      micStreamRef.current = null;
+      setMicStream(null);
+      setMicDenied(true);
+      setError('Could not access the microphone. Check browser permissions.');
+      return null;
     }
   }, [refreshDevices]);
+
+  // Open the mic as soon as the studio loads, but only when permission was
+  // already granted — that fills in the device names and starts the level meter
+  // without ambushing a first-time visitor with a permission prompt.
+  //
+  // This also closes a hole where a screen-only recording captured no voice at
+  // all: the mic used to be acquired solely as a side effect of turning the
+  // webcam on, so "Record microphone" could read as on with nothing behind it.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await refreshDevices();
+      if (cancelled) return;
+      const granted = await navigator.permissions
+        .query({ name: 'microphone' as PermissionName })
+        .then((status) => status.state === 'granted')
+        // Safari and Firefox reject the 'microphone' descriptor. Leave it to the
+        // explicit button rather than prompting on load.
+        .catch(() => false);
+      if (granted && !cancelled) await acquireMic(loadPreferredMic() ?? undefined);
+    })();
+    return () => { cancelled = true; };
+  }, [refreshDevices, acquireMic]);
+
+  // Plugging in a headset mid-setup should put it in the picker.
+  useEffect(() => {
+    const onChange = () => { void refreshDevices(); };
+    navigator.mediaDevices.addEventListener('devicechange', onChange);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', onChange);
+  }, [refreshDevices]);
+
+  const toggleMic = useCallback(async () => {
+    if (micEnabled) {
+      // Release the device so the OS "in use" indicator goes out and the meter
+      // stops — an off toggle that leaves the mic open reads as still listening.
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+      setMicStream(null);
+      setMicEnabled(false);
+    } else {
+      setMicEnabled(true);
+      await acquireMic(micId || loadPreferredMic() || undefined);
+    }
+  }, [micEnabled, micId, acquireMic]);
 
   const shareScreen = useCallback(async () => {
     setError(null);
@@ -357,14 +428,20 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     } else {
       setConfig((c) => ({ ...c, showWebcam: true }));
       await acquireWebcam(cameraId || undefined);
-      if (!micStreamRef.current) await acquireMic(micId || undefined);
+      if (micEnabled && !micStreamRef.current) await acquireMic(micId || undefined);
     }
-  }, [hasWebcam, cameraId, micId, acquireWebcam, acquireMic]);
+  }, [hasWebcam, cameraId, micId, micEnabled, acquireWebcam, acquireMic]);
 
   // ----- Recording -----
   const beginRecording = useCallback(async () => {
     if (!canvasRef.current) return;
     if (!hasScreen) { setError('Share your screen before recording.'); return; }
+
+    // Last line of defence against a silent take: the toggle says the mic is
+    // being recorded, so open it now if nothing is holding it open yet.
+    if (micEnabled && !micStreamRef.current) {
+      await acquireMic(micId || loadPreferredMic() || undefined);
+    }
 
     // 48 kHz matches the Opus encoder's native rate — avoids a 44.1→48 resample.
     const audioCtx = new AudioContext({ sampleRate: 48000 });
@@ -390,7 +467,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       () => setElapsed(elapsedBaseRef.current + (Date.now() - segmentStartRef.current)),
       200
     );
-  }, [hasScreen, micEnabled, includeBrowserAudio, config.enhanceAudio, liveDims]);
+  }, [hasScreen, micEnabled, micId, acquireMic, includeBrowserAudio, config.enhanceAudio, liveDims]);
 
   const pauseRecording = useCallback(() => {
     if (!recordingRef.current || pausedRef.current) return;
@@ -798,6 +875,43 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                   active={hasWebcam}
                   onClick={toggleWebcam}
                 />
+                <ToggleRow
+                  icon={micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  label={micEnabled ? 'Microphone on' : 'Microphone off'}
+                  active={micEnabled}
+                  onClick={toggleMic}
+                />
+                {/* The mic picker lives here, next to the other sources, rather
+                    than in Devices — which mic is recording is a thing you check
+                    before every take, not a thing you configure once. */}
+                {micEnabled && (
+                  <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-900/60 p-2">
+                    <Select
+                      label="Recording from"
+                      value={micId}
+                      options={mics.map((m, i) => ({
+                        value: m.deviceId,
+                        // Labels stay blank until permission is granted; number
+                        // them so the options are at least distinguishable.
+                        label: m.label || `Microphone ${i + 1}`,
+                      }))}
+                      onChange={(v) => { setMicId(v); void acquireMic(v); }}
+                    />
+                    {micStream ? (
+                      <>
+                        <MicMeter stream={micStream} />
+                        <p className="text-[11px] text-neutral-500">Speak — the bar moves if this is the right mic.</p>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => void acquireMic(micId || undefined)}
+                        className="w-full rounded-md border border-emerald-500/50 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-300 hover:bg-emerald-500/20"
+                      >
+                        {micDenied ? 'Retry microphone access' : 'Turn on the mic to check it'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </Group>
 
               {/* Aspect ratio */}
@@ -932,31 +1046,22 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                 </label>
               </Group>
 
-              {/* Devices */}
-              <Group label="Devices" {...group('devices')}>
+              {/* Camera device — the mic picker sits up in Sources. */}
+              <Group label="Camera device" {...group('devices')}>
                 <Select
                   label="Camera"
                   value={cameraId}
-                  options={cameras.map((c) => ({ value: c.deviceId, label: c.label || 'Camera' }))}
+                  options={cameras.map((c, i) => ({
+                    value: c.deviceId,
+                    label: c.label || `Camera ${i + 1}`,
+                  }))}
                   onChange={(v) => { setCameraId(v); acquireWebcam(v); }}
                   disabled={!hasWebcam}
-                />
-                <Select
-                  label="Microphone"
-                  value={micId}
-                  options={mics.map((m) => ({ value: m.deviceId, label: m.label || 'Microphone' }))}
-                  onChange={(v) => { setMicId(v); acquireMic(v); }}
                 />
               </Group>
 
               {/* Audio */}
               <Group label="Audio" {...group('audio')}>
-                <ToggleRow
-                  icon={micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                  label="Record microphone"
-                  active={micEnabled}
-                  onClick={() => setMicEnabled((v) => !v)}
-                />
                 <ToggleRow
                   icon={includeBrowserAudio ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                   label="Record tab / browser audio"
@@ -1164,6 +1269,60 @@ function Group({
           previews, and keeping a collapsed one mounted would leave it in the tab
           order and still re-rendering every frame the config changes. */}
       {open && <div className="space-y-2 pl-[1.125rem]">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * Live input level for the selected mic.
+ *
+ * This is the part that actually answers "which microphone is it using" — a
+ * device name in a dropdown is a claim, a bar that moves when you talk is proof.
+ * Driven by writing to the DOM node inside rAF rather than through state,
+ * because a 60 fps re-render of the whole studio panel is not worth a meter.
+ */
+function MicMeter({ stream }: { stream: MediaStream }) {
+  const barRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const ctx = new AudioContext();
+    void ctx.resume().catch(() => {});
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    // Source → analyser only. Never to ctx.destination: monitoring a mic through
+    // the speakers it's sitting next to is a feedback loop.
+    ctx.createMediaStreamSource(stream).connect(analyser);
+
+    const buf = new Float32Array(analyser.fftSize);
+    let raf = 0;
+    let level = 0;
+    const tick = () => {
+      analyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i += 1) sum += buf[i] * buf[i];
+      // Conversational speech sits well under full scale, so scale it up to put
+      // normal talking around the middle of the bar instead of a twitch at 5%.
+      const rms = Math.min(1, Math.sqrt(sum / buf.length) * 6);
+      // Snap up, ease down — a peak stays visible long enough to register.
+      level = rms > level ? rms : level * 0.85 + rms * 0.15;
+      if (barRef.current) barRef.current.style.transform = `scaleX(${level.toFixed(3)})`;
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      void ctx.close().catch(() => {});
+    };
+  }, [stream]);
+
+  return (
+    <div className="h-1.5 overflow-hidden rounded-full bg-neutral-800" aria-hidden>
+      <div
+        ref={barRef}
+        className="h-full origin-left rounded-full bg-emerald-500"
+        style={{ transform: 'scaleX(0)' }}
+      />
     </div>
   );
 }
