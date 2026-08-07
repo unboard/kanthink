@@ -4,9 +4,10 @@ import { eq, and, gt, lte } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { sendChannelDigestEmail } from '@/lib/emails/send'
 
-const BASE_URL = process.env.NEXTAUTH_URL || process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : 'https://kanthink.com'
+// Matches every other module that puts links in an email (sendRunEmail,
+// createNotification, usage). VERCEL_URL is deliberately not consulted: it names a
+// single deployment, so it outlives neither the deploy nor the inbox it lands in.
+const BASE_URL = process.env.NEXTAUTH_URL || 'https://kanthink.com'
 
 interface DigestResult {
   userId: string
