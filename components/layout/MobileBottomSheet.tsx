@@ -1143,6 +1143,7 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
   const [includeBacksideInAI, setIncludeBacksideInAI] = useState(false);
   const [isGlobalHelp, setIsGlobalHelp] = useState(false);
   const [coverImageUrl, setCoverImageUrl] = useState('');
+  const [showDescriptionOnBoard, setShowDescriptionOnBoard] = useState(false);
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [showCoverPrompt, setShowCoverPrompt] = useState(false);
   const [coverPromptText, setCoverPromptText] = useState('');
@@ -1162,6 +1163,9 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
       setIncludeBacksideInAI(currentChannel.includeBacksideInAI ?? false);
       setIsGlobalHelp(currentChannel.isGlobalHelp ?? false);
       setCoverImageUrl(currentChannel.coverImageUrl || '');
+      setShowDescriptionOnBoard(
+        localStorage.getItem(`channel-desc-${currentChannel.id}`) === 'visible'
+      );
       // Fetch data sources
       fetch(`/api/channels/${currentChannel.id}/data-sources`)
         .then(r => r.json())
@@ -1407,17 +1411,19 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
 
             {/* Show description on board */}
             {description && (
-              <label className="flex items-center gap-3 cursor-pointer">
+              <label className="flex items-center gap-3 cursor-pointer py-1.5 touch-manipulation">
                 <input
                   type="checkbox"
-                  checked={typeof window !== 'undefined' && localStorage.getItem(`channel-desc-${currentChannelId}`) === 'visible'}
+                  checked={showDescriptionOnBoard}
                   onChange={(e) => {
+                    const next = e.target.checked;
+                    setShowDescriptionOnBoard(next);
                     if (currentChannelId) {
-                      localStorage.setItem(`channel-desc-${currentChannelId}`, e.target.checked ? 'visible' : 'hidden');
+                      localStorage.setItem(`channel-desc-${currentChannelId}`, next ? 'visible' : 'hidden');
                       window.dispatchEvent(new Event('description-banner-toggle'));
                     }
                   }}
-                  className="w-4 h-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
+                  className="w-4 h-4 shrink-0 rounded border-neutral-300 text-violet-600 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
                 />
                 <span className="text-sm text-neutral-600 dark:text-neutral-400">Show description on board</span>
               </label>

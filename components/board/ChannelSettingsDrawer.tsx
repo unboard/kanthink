@@ -158,6 +158,7 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [showCoverPrompt, setShowCoverPrompt] = useState(false);
   const [coverPromptText, setCoverPromptText] = useState('');
+  const [showDescriptionOnBoard, setShowDescriptionOnBoard] = useState(false);
 
   // Check if current user is admin (set server-side in session)
   const isAdminUser = session?.user?.isAdmin ?? false;
@@ -182,6 +183,9 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
       setShowExport(false);
       setImportJson('');
       setImportError(null);
+      setShowDescriptionOnBoard(
+        localStorage.getItem(`channel-desc-${channel.id}`) === 'visible'
+      );
 
       // Fetch data sources
       setIsLoadingDataSources(true);
@@ -535,16 +539,18 @@ export function ChannelSettingsDrawer({ channel, isOpen, onClose }: ChannelSetti
 
         {/* Show description on board toggle */}
         {description && (
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex items-center gap-2 cursor-pointer py-1 touch-manipulation">
             <input
               type="checkbox"
-              checked={typeof window !== 'undefined' && localStorage.getItem(`channel-desc-${channel.id}`) === 'visible'}
+              checked={showDescriptionOnBoard}
               onChange={(e) => {
-                localStorage.setItem(`channel-desc-${channel.id}`, e.target.checked ? 'visible' : 'hidden');
+                const next = e.target.checked;
+                setShowDescriptionOnBoard(next);
+                localStorage.setItem(`channel-desc-${channel.id}`, next ? 'visible' : 'hidden');
                 // Dispatch storage event so Board picks it up
                 window.dispatchEvent(new Event('description-banner-toggle'));
               }}
-              className="rounded border-neutral-300 text-violet-500 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
+              className="h-4 w-4 shrink-0 rounded border-neutral-300 text-violet-500 focus:ring-violet-500 dark:border-neutral-600 dark:bg-neutral-800"
             />
             <span className="text-sm text-neutral-600 dark:text-neutral-400">Show description on board</span>
           </label>
