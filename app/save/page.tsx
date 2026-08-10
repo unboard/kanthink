@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useSession, signIn } from 'next-auth/react'
+import { SavedConfirmation } from './SavedConfirmation'
 
 interface DestinationColumn {
   id: string
@@ -33,6 +34,8 @@ function SaveContent() {
   const [note, setNote] = useState('')
   const [rememberDestination, setRememberDestination] = useState(false)
   const [savedChannelId, setSavedChannelId] = useState('')
+  const [savedColumnId, setSavedColumnId] = useState('')
+  const [landedAtTop, setLandedAtTop] = useState(false)
   const [cardTitle, setCardTitle] = useState('')
   const [error, setError] = useState('')
 
@@ -40,6 +43,16 @@ function SaveContent() {
     () => destinations.find((d) => d.channelId === channelId),
     [destinations, channelId]
   )
+
+  // Where it actually landed, which isn't always where it was aimed: the server
+  // falls back to Kan Bookmarks rather than lose a share. The confirmation shows
+  // that channel's real columns, so read them off the resolved destination.
+  const landed = useMemo(() => {
+    const channel = destinations.find((d) => d.channelId === savedChannelId)
+    const index = channel?.columns.findIndex((c) => c.id === savedColumnId) ?? -1
+    if (!channel || index < 0) return null
+    return { channel, index, columns: channel.columns.map((c) => c.name) }
+  }, [destinations, savedChannelId, savedColumnId])
 
   // Derived, not state: a share with no payload is knowable from the URL on the first
   // render, so it doesn't need an effect to discover it.
@@ -127,6 +140,11 @@ function SaveContent() {
       .then((data) => {
         setCardTitle(data.card?.title || 'Saved')
         setSavedChannelId(data.channelId || '')
+        setSavedColumnId(data.columnId || '')
+        // Position 0 means it really did take the top slot — columns sorted
+        // oldest-first append instead, and the confirmation shouldn't claim
+        // otherwise.
+        setLandedAtTop(data.card?.position === 0)
         setState('saved')
       })
       .catch((err) => {
@@ -257,28 +275,42 @@ function SaveContent() {
         )}
 
         {state === 'saved' && (
-          <div className="text-center">
-            <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+          landed ? (
+            <SavedConfirmation
+              title={cardTitle}
+              channelName={landed.channel.channelName}
+              columns={landed.columns}
+              targetIndex={landed.index}
+              landedAtTop={landedAtTop}
+              channelHref={`/channel/${savedChannelId}`}
+              onDone={handleDone}
+            />
+          ) : (
+            // No destination list (it failed to load, or the save fell back to a
+            // channel we never fetched), so there's no board to draw.
+            <div className="text-center">
+              <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="text-white font-medium mb-1">Saved</p>
+              <p className="text-neutral-400 text-sm truncate max-w-[280px] mx-auto">{cardTitle}</p>
+              <div className="mt-4 flex flex-col items-center gap-2">
+                {savedChannelId && (
+                  <a
+                    href={`/channel/${savedChannelId}`}
+                    className="text-violet-400 hover:text-violet-300 text-sm underline underline-offset-2"
+                  >
+                    Open {activeChannel?.channelName || 'channel'}
+                  </a>
+                )}
+                <button onClick={handleDone} className="text-neutral-500 hover:text-neutral-300 text-xs">
+                  Done
+                </button>
+              </div>
             </div>
-            <p className="text-white font-medium mb-1">Saved</p>
-            <p className="text-neutral-400 text-sm truncate max-w-[280px] mx-auto">{cardTitle}</p>
-            <div className="mt-4 flex flex-col items-center gap-2">
-              {savedChannelId && (
-                <a
-                  href={`/channel/${savedChannelId}`}
-                  className="text-violet-400 hover:text-violet-300 text-sm underline underline-offset-2"
-                >
-                  Open {activeChannel?.channelName || 'channel'}
-                </a>
-              )}
-              <button onClick={handleDone} className="text-neutral-500 hover:text-neutral-300 text-xs">
-                Done
-              </button>
-            </div>
-          </div>
+          )
         )}
 
         {state === 'error' && (

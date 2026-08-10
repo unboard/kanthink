@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { SavedConfirmation } from '@/app/save/SavedConfirmation';
 
 /**
  * Five alternatives to the "Saved ✓" screen that ends a share into Kanthink.
@@ -15,6 +16,8 @@ export interface ConfirmProps {
   title: string;
   channelName: string;
   columnName: string;
+  /** Every column in the destination channel, in board order. */
+  columns: string[];
 }
 
 export interface ConfirmOption {
@@ -116,72 +119,23 @@ function SporeBurst({ title, channelName, columnName }: ConfirmProps) {
 /* 2. It lands on the board                                            */
 /* ------------------------------------------------------------------ */
 
-function BoardLanding({ title, channelName, columnName }: ConfirmProps) {
-  const columns = ['Raw ideas', columnName, 'Later'];
+/**
+ * The one we're shipping — this renders the real component from /save, so the
+ * prototype can't drift from what users get. Columns here are the destination
+ * channel's actual columns; the prototype just feeds it sample ones.
+ */
+function BoardLanding({ title, channelName, columnName, columns }: ConfirmProps) {
+  const targetIndex = Math.max(0, columns.indexOf(columnName));
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-      <div className="flex w-full items-end gap-2" style={{ height: 168 }}>
-        {columns.map((name, i) => {
-          const isTarget = i === 1;
-          return (
-            <div key={name} className="relative min-w-0 flex-1">
-              <p
-                className={`mb-1.5 truncate text-[10px] uppercase tracking-wide ${
-                  isTarget ? 'text-violet-300' : 'text-neutral-600'
-                }`}
-              >
-                {name}
-              </p>
-              <div
-                className="relative rounded-lg border border-neutral-800 bg-neutral-900/70 p-1.5"
-                style={
-                  isTarget
-                    ? { animation: 'sc-columnglow 1.2s ease-out .35s both', height: 132 }
-                    : { height: 132 }
-                }
-              >
-                {/* resident cards, so the new one has somewhere to land */}
-                {[0, 1].map((c) => (
-                  <div key={c} className="mb-1.5 h-6 rounded bg-neutral-800/80" />
-                ))}
-
-                {isTarget && (
-                  <>
-                    <div
-                      className="overflow-hidden rounded bg-gradient-to-br from-violet-500 to-violet-700 px-1.5 py-1 text-left shadow-lg shadow-violet-900/50"
-                      style={{ animation: 'sc-fly 1s cubic-bezier(.2,.9,.3,1) .1s both' }}
-                    >
-                      <p className="truncate text-[8px] font-medium leading-tight text-white">{title}</p>
-                      <p className="mt-0.5 text-[7px] text-violet-200/80">just now</p>
-                    </div>
-                    <span
-                      className="absolute -top-1 left-1/2 -translate-x-1/2 text-xs font-semibold text-violet-300"
-                      style={{ animation: 'sc-plusone 1.1s ease-out .55s both' }}
-                    >
-                      +1
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <p
-        className="mt-6 text-[26px] font-semibold leading-tight tracking-tight text-white"
-        style={{ animation: 'sc-rise .55s cubic-bezier(.2,.8,.3,1) .75s both' }}
-      >
-        It&rsquo;s on the board
-      </p>
-      <p
-        className="mt-2 text-sm text-neutral-400"
-        style={{ animation: 'sc-rise .55s cubic-bezier(.2,.8,.3,1) .9s both' }}
-      >
-        Top of <span className="text-neutral-200">{columnName}</span> in {channelName}
-      </p>
-
-      <Actions channelName={channelName} />
+    <div className="flex h-full flex-col justify-center px-6">
+      <SavedConfirmation
+        title={title}
+        channelName={channelName}
+        columns={columns}
+        targetIndex={targetIndex}
+        landedAtTop
+        channelHref="#"
+      />
     </div>
   );
 }
@@ -431,7 +385,7 @@ export const CONFIRMATIONS: ConfirmOption[] = [
   {
     id: 'board',
     name: 'It lands on the board',
-    note: 'A miniature board, and your card flies in and settles on top of the column you chose. Shows you the place, not a promise.',
+    note: 'A miniature of the destination channel — its real columns, in board order — and your card flies in and settles into the one you chose. Shipping on /save.',
     Component: BoardLanding,
   },
   {
@@ -482,23 +436,6 @@ export function ConfirmStyles() {
         0%   { opacity: 0; transform: translate(0,0) scale(.3); }
         18%  { opacity: 1; }
         100% { opacity: 0; transform: translate(var(--sx), var(--sy)) scale(1); }
-      }
-      @keyframes sc-fly {
-        0%   { opacity: 0; transform: translate(64px, -150px) rotate(10deg) scale(1.25); }
-        22%  { opacity: 1; }
-        72%  { transform: translate(0, 5px) rotate(-1.5deg) scale(1); }
-        86%  { transform: translate(0, -3px); }
-        100% { opacity: 1; transform: none; }
-      }
-      @keyframes sc-columnglow {
-        0%, 45%  { box-shadow: none; }
-        62%      { box-shadow: 0 0 0 2px rgba(167,139,250,.8), 0 0 34px rgba(139,92,246,.55); }
-        100%     { box-shadow: 0 0 0 1px rgba(167,139,250,.3); }
-      }
-      @keyframes sc-plusone {
-        0%, 40%  { opacity: 0; transform: translateY(4px); }
-        55%      { opacity: 1; }
-        100%     { opacity: 0; transform: translateY(-26px); }
       }
       @keyframes sc-catchdrop {
         0%   { opacity: 0; transform: translate(-50%, -110px) rotate(-7deg) scale(1.05); }
