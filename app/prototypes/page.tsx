@@ -9,10 +9,15 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'kan-toggle',
+    name: 'Note / Ask Kan switch',
+    blurb: 'The switch at the bottom of the card composer, five ways, each with Kan riding in the knob. Shown inside a mock of the real input so the whole moment can be judged, not just the control.',
+    status: 'newest',
+  },
+  {
     slug: 'save-confirm',
     name: 'Share confirmation',
-    blurb: 'The screen you land on after sharing something in. Five alternatives to the green tick, each trying to make the moment land without promising what Kan will do next.',
-    status: 'newest',
+    blurb: 'The screen you land on after sharing something in. Five alternatives to the green tick, each trying to make the moment land without promising what Kan will do next. The board landing shipped from here.',
   },
   {
     slug: 'voice-speaking',
