@@ -9,10 +9,15 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'kan-intent',
+    name: 'Does Kan answer this?',
+    blurb: 'Five answers to the actual question rather than five skins on a switch: decide on the way out, let it read what you wrote, address it to him, fork the field on focus, or two ways to send. Real fields — type in them. Also where upload and whiteboard move into the + menu.',
+    status: 'newest',
+  },
+  {
     slug: 'kan-button',
     name: 'Chat with Kan — the button',
-    blurb: 'Ten press-and-latch buttons, walkie-talkie style. The button is a shortcut for typing @kan, not a mode — so the placeholder stops changing and the mention does the talking.',
-    status: 'newest',
+    blurb: 'Ten press-and-latch buttons, walkie-talkie style. Superseded by the round above — a nicer control was still the wrong shape for the problem.',
   },
   {
     slug: 'kan-toggle',
