@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useCallback, useImperativeHandle, useMemo, type ReactNode, type Ref } from 'react';
 import type { CardMessageType, ChannelMember, Card as CardType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
-import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { AskKanSwitch } from './AskKanSwitch';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { AudioLines } from 'lucide-react';
 import { MentionDropdown } from './MentionDropdown';
@@ -124,7 +124,17 @@ interface ImageSettings {
   quality: 'standard' | 'hd';
 }
 
+export interface ChatInputHandle {
+  /**
+   * Put the composer in a mode and hand it the cursor. Used by the empty-thread
+   * suggestions in CardChat, which used to reach in and click the mode buttons
+   * through the DOM — that broke the moment the two buttons became one switch.
+   */
+  setMode: (mode: InputMode) => void;
+}
+
 interface ChatInputProps {
+  ref?: Ref<ChatInputHandle>;
   onSubmit: (content: string, type: CardMessageType, imageUrls?: string[], imageSettings?: ImageSettings) => void;
   isLoading?: boolean;
   placeholder?: string;
@@ -141,7 +151,7 @@ interface ChatInputProps {
   voiceContext?: string;
 }
 
-export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext }: ChatInputProps) {
+export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext }: ChatInputProps) {
   const [mode, setMode] = useState<InputMode>(forceQuestionMode ? 'question' : 'note');
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
@@ -231,6 +241,22 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
   // Use parent's handlers if provided, otherwise use hook's handlers
   const onFocus = onKeyboardFocus ?? hookOnFocus;
   const onBlur = onKeyboardBlur ?? hookOnBlur;
+
+  // The box ignores focus until it's been deliberately opened, so anything that
+  // wants the cursor has to go through here.
+  const activateInput = useCallback(() => {
+    setInputActivated((already) => {
+      if (!already) setTimeout(() => textareaRef.current?.focus(), 50);
+      return true;
+    });
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    setMode: (next: InputMode) => {
+      setMode(next);
+      activateInput();
+    },
+  }), [activateInput]);
 
   // Sync scroll between textarea and backdrop (for keyword highlighting)
   const handleScroll = useCallback(() => {
@@ -873,49 +899,14 @@ export function ChatInput({ onSubmit, isLoading = false, placeholder, cardId, me
         {/* Mode toggle at bottom — hidden when forceQuestionMode */}
         {!forceQuestionMode && (
           <div className="flex items-center mt-1.5 ml-8">
-            <div className="inline-flex items-center gap-1 rounded-md p-0.5">
-              <button
-                data-mode="note"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setMode('note');
-                  // Activate input when mode is clicked
-                  if (!inputActivated) {
-                    setInputActivated(true);
-                    setTimeout(() => textareaRef.current?.focus(), 50);
-                  }
-                }}
-                disabled={isLoading}
-                className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                  mode === 'note'
-                    ? 'bg-neutral-100 dark:bg-neutral-700 text-neutral-900 dark:text-white'
-                    : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
-                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                Note
-              </button>
-              <button
-                data-mode="question"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setMode('question');
-                  // Activate input when mode is clicked
-                  if (!inputActivated) {
-                    setInputActivated(true);
-                    setTimeout(() => textareaRef.current?.focus(), 50);
-                  }
-                }}
-                disabled={isLoading}
-                className={`px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1 ${
-                  mode === 'question'
-                    ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                    : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
-                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <KanthinkIcon size={12} />
-                Ask Kan
-              </button>
-            </div>
+            <AskKanSwitch
+              on={mode === 'question'}
+              onChange={(next) => {
+                setMode(next ? 'question' : 'note');
+                activateInput();
+              }}
+              disabled={isLoading}
+            />
             {onOpenWhiteboard && (
               <button
                 onMouseDown={(e) => e.preventDefault()}

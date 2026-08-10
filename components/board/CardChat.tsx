@@ -9,7 +9,7 @@ import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { fetchShares } from '@/lib/api/client';
 import { ChatMessage } from './ChatMessage';
-import { ChatInput, useKeyboardOffset } from './ChatInput';
+import { ChatInput, useKeyboardOffset, type ChatInputHandle } from './ChatInput';
 import { nanoid } from 'nanoid';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 
@@ -34,6 +34,7 @@ interface CardChatProps {
 
 export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar, composerSlot }: CardChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<ChatInputHandle>(null);
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -514,10 +515,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         {messages.length === 0 && (
           <div className="px-3 pb-2 space-y-1">
             <button
-              onClick={() => {
-                const noteBtn = document.querySelector('[data-mode="note"]') as HTMLButtonElement;
-                noteBtn?.click();
-              }}
+              onClick={() => chatInputRef.current?.setMode('note')}
               className="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
             >
               <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">
@@ -531,10 +529,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
               </div>
             </button>
             <button
-              onClick={() => {
-                const askKanBtn = document.querySelector('[data-mode="question"]') as HTMLButtonElement;
-                askKanBtn?.click();
-              }}
+              onClick={() => chatInputRef.current?.setMode('question')}
               className="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors group"
             >
               <div className="w-7 h-7 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center flex-shrink-0 group-hover:bg-violet-200 dark:group-hover:bg-violet-900/60 transition-colors">
@@ -572,6 +567,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         {tabBar}
         {composerSlot ?? (
           <ChatInput
+            ref={chatInputRef}
             onSubmit={handleSubmit}
             isLoading={isAILoading}
             cardId={card.id}

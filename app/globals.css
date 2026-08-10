@@ -676,3 +676,47 @@ body {
   50% { opacity: 0.8; transform: scale(1.3); }
 }
 
+/* ===========================================
+   NOTE / ASK KAN SWITCH (components/board/AskKanSwitch.tsx)
+   =========================================== */
+
+@keyframes kan-switch-snooze {
+  0%   { opacity: 0; transform: translate(0, 2px) scale(0.7); }
+  30%  { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(5px, -9px) scale(1.1); }
+}
+
+@keyframes kan-switch-pulse {
+  0%   { opacity: 0.8; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.75); }
+}
+
+@keyframes kan-switch-ask {
+  0%   { opacity: 0; transform: scale(0.3); }
+  70%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes kan-switch-wiggle {
+  0%, 100% { rotate: 0deg; }
+  25%      { rotate: -9deg; }
+  75%      { rotate: 9deg; }
+}
+
+.kan-switch-snooze { animation: kan-switch-snooze 2.6s ease-in-out infinite; }
+.kan-switch-pulse  { animation: kan-switch-pulse 1.8s ease-out infinite; }
+.kan-switch-ask    { transform-origin: bottom left; animation: kan-switch-ask 0.38s cubic-bezier(0.2, 1.5, 0.4, 1) 0.12s both; }
+
+/* He wiggles when you go near him. */
+.kan-switch:hover:not(:disabled) .kan-switch-knob { animation: kan-switch-wiggle 0.5s ease-in-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kan-switch-snooze,
+  .kan-switch-pulse,
+  .kan-switch-ask,
+  .kan-switch:hover:not(:disabled) .kan-switch-knob {
+    animation: none;
+  }
+  .kan-switch-knob { transition-duration: 0.01ms; }
+}
+

@@ -1,6 +1,7 @@
 'use client';
 
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { AskKanSwitch } from '@/components/board/AskKanSwitch';
 
 /**
  * Five ways to switch the card composer between writing a note and asking Kan.
@@ -250,71 +251,9 @@ function SentenceSwitch({ on, onChange }: ToggleProps) {
 /* 5. Nudge him awake                                                  */
 /* ------------------------------------------------------------------ */
 
+/** The one that shipped — this is the real component from the composer. */
 function WakeHimUp({ on, onChange }: ToggleProps) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label="Ask Kan"
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={() => onChange(!on)}
-      className="kt-group flex items-center gap-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400"
-    >
-      <span
-        className={`relative h-[22px] w-[42px] rounded-full border transition-colors duration-300 ${
-          on ? 'border-violet-400/60 bg-violet-500/20' : 'border-neutral-700 bg-neutral-800'
-        }`}
-      >
-        {/* Asleep on the left, with a z drifting off him. */}
-        {!on && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute left-[15px] top-[-3px] text-[8px] leading-none text-neutral-500"
-            style={{ animation: 'kt-snooze 2.6s ease-in-out infinite' }}
-          >
-            z
-          </span>
-        )}
-
-        {/* Listening pulse once he's awake. */}
-        {on && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute right-[1px] top-[1px] h-[20px] w-[20px] rounded-full border border-violet-400/70"
-            style={{ animation: 'kt-pulse 1.8s ease-out infinite' }}
-          />
-        )}
-
-        <span
-          className={`kt-wiggle absolute left-[2px] top-[2px] flex h-[18px] w-[18px] items-center justify-center rounded-full transition-all duration-300 ${
-            on ? 'bg-violet-500 text-white' : 'bg-neutral-700 text-neutral-500'
-          }`}
-          style={{
-            transform: on ? 'translateX(20px) rotate(0deg)' : 'rotate(-16deg)',
-            transitionTimingFunction: 'cubic-bezier(.34,1.6,.5,1)',
-          }}
-        >
-          <KanthinkIcon size={12} />
-        </span>
-
-        {/* The question mark he pops up with. */}
-        {on && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -top-[7px] right-[-2px] rounded-full bg-violet-400 px-[4px] text-[8px] font-bold leading-[12px] text-neutral-900"
-            style={{ transformOrigin: 'bottom left', animation: 'kt-pop .38s cubic-bezier(.2,1.5,.4,1) .12s both' }}
-          >
-            ?
-          </span>
-        )}
-      </span>
-
-      <span className={on ? 'font-medium text-violet-300' : 'text-neutral-400'}>
-        {on ? 'Ask Kan' : 'Wake Kan'}
-      </span>
-    </button>
-  );
+  return <AskKanSwitch on={on} onChange={onChange} />;
 }
 
 /* ------------------------------------------------------------------ */
@@ -348,7 +287,7 @@ export const TOGGLES: ToggleOption[] = [
   {
     id: 'wake',
     name: 'Nudge him awake',
-    note: 'Kan is asleep on the left with a z drifting off him, tipped over at an angle. Flick it and he snaps upright, pops a "?", and sits there pulsing while he listens. Most personality, least conventional.',
+    note: 'Kan is asleep on the left with a z drifting off him, tipped over at an angle. Flick it and he snaps upright, pops a "?", and sits there pulsing while he listens. This is the real component from the composer — shipped.',
     Component: WakeHimUp,
   },
 ];
@@ -410,21 +349,6 @@ export function ToggleStyles() {
         from { opacity: 0; }
         to   { opacity: 1; }
       }
-      @keyframes kt-snooze {
-        0%   { opacity: 0; transform: translate(0, 2px) scale(.7); }
-        30%  { opacity: .9; }
-        100% { opacity: 0; transform: translate(5px, -9px) scale(1.1); }
-      }
-      @keyframes kt-pulse {
-        0%   { opacity: .8; transform: scale(1); }
-        100% { opacity: 0; transform: scale(1.75); }
-      }
-      @keyframes kt-wiggle {
-        0%, 100% { rotate: 0deg; }
-        25%      { rotate: -9deg; }
-        75%      { rotate: 9deg; }
-      }
-      .kt-group:hover .kt-wiggle { animation: kt-wiggle .5s ease-in-out; }
       @media (prefers-reduced-motion: reduce) {
         .kt-stage *, .kt-stage { animation: none !important; transition-duration: .01ms !important; }
       }
