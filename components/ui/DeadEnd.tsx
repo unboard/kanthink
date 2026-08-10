@@ -27,6 +27,12 @@ interface DeadEndProps {
   title: string;
   body: string;
   actions: DeadEndAction[];
+  /**
+   * Fill the pane it's given instead of the viewport. For dead ends rendered
+   * inside the board shell, where a screen-height block would scroll past the
+   * bottom of an already screen-height layout.
+   */
+  fill?: boolean;
 }
 
 // Spores drift up and fade. Positions and delays are hand-picked rather than
@@ -41,9 +47,13 @@ const SPORES = [
   { left: '86%', size: 2, delay: '6s', duration: '22s', tint: '#a5f3fc' },
 ];
 
-export function DeadEnd({ eyebrow, title, body, actions }: DeadEndProps) {
+export function DeadEnd({ eyebrow, title, body, actions, fill = false }: DeadEndProps) {
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#151515] px-6 py-16">
+    <div
+      className={`relative flex w-full items-center justify-center overflow-hidden bg-[#151515] px-6 py-16 ${
+        fill ? 'h-full min-h-[32rem]' : 'min-h-screen'
+      }`}
+    >
       <style>{`
         @keyframes kan-drift {
           0%   { transform: translateY(12vh) scale(0.9); opacity: 0; }
