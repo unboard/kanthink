@@ -9,10 +9,15 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'kan-button',
+    name: 'Chat with Kan — the button',
+    blurb: 'Ten press-and-latch buttons, walkie-talkie style. The button is a shortcut for typing @kan, not a mode — so the placeholder stops changing and the mention does the talking.',
+    status: 'newest',
+  },
+  {
     slug: 'kan-toggle',
     name: 'Note / Ask Kan switch',
-    blurb: 'The switch at the bottom of the card composer, five ways, each with Kan riding in the knob. Shown inside a mock of the real input so the whole moment can be judged, not just the control.',
-    status: 'newest',
+    blurb: 'The switch at the bottom of the card composer, five ways, each with Kan riding in the knob. "Nudge him awake" shipped from here, then got reconsidered — see the button round above.',
   },
   {
     slug: 'save-confirm',
