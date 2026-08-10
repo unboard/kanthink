@@ -9,10 +9,15 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'save-confirm',
+    name: 'Share confirmation',
+    blurb: 'The screen you land on after sharing something in. Five alternatives to the green tick, each trying to make the moment land without promising what Kan will do next.',
+    status: 'newest',
+  },
+  {
     slug: 'voice-speaking',
     name: 'Voice mode — speaking effect',
     blurb: 'Voice mode on a phone, with five alternatives to the aurora gradient that plays while Kan talks. The spore field underneath is the real one.',
-    status: 'newest',
   },
   {
     slug: 'kan-presence',
