@@ -9,6 +9,7 @@ import { createNotification } from '@/lib/notifications/createNotification';
 import { auth } from '@/lib/auth';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { createShroomCards, createShroomReport, applyShroomModifications, applyShroomMoves } from '@/lib/shrooms/apply';
+import { stripEchoedContent, cardContentStrings } from '@/lib/shrooms/stripEchoedContent';
 import { loadChannelRejections } from '@/lib/shrooms/rejections';
 import { sendShroomRunEmail, type ShroomRunOutcome } from '@/lib/shrooms/sendRunEmail';
 
@@ -314,7 +315,7 @@ function buildModifyPrompt(
   const jsonFields: string[] = [
     '"id": "card_1"',
     '"title": "Updated Title"',
-    '"content": "Updated content in markdown"',
+    '"content": "The new note to add, in markdown"',
   ];
 
   if (allowTags) {
@@ -396,7 +397,13 @@ For each card, analyze its content and apply the requested modifications.
 Respond with a JSON array of modified cards, maintaining the original card ID:
 ${jsonExample}
 
-${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\n' : ''}${restrictions.length > 0 ? 'IMPORTANT: ' + restrictions.join(' ') + '\n\n' : ''}IMPORTANT: You MUST return a modification for EVERY card. The "content" field is REQUIRED — always provide updated or enriched content based on the instructions. The "id" field must exactly match the card ID shown (e.g. "card_1", "card_2").`;
+The "content" field is APPENDED to the card as a new note. It is not a replacement body — the card keeps everything already on it.
+- Write ONLY your new material: your analysis, findings, or additions.
+- Do NOT copy, quote at length, restate or summarize back the card's existing content. The reader already has it directly above your note.
+- Start straight at your contribution. No "here is the original" preamble, no reproduction of the source text.
+Even when the instructions say to "update the description" or "rewrite the card", write only the new note — appending is how the update happens.
+
+${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\n' : ''}${restrictions.length > 0 ? 'IMPORTANT: ' + restrictions.join(' ') + '\n\n' : ''}IMPORTANT: You MUST return a modification for EVERY card. The "content" field is REQUIRED — always provide the new note called for by the instructions. The "id" field must exactly match the card ID shown (e.g. "card_1", "card_2").`;
 
   // USER PROMPT
   const userParts: string[] = [];
@@ -409,7 +416,8 @@ ${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\
   userParts.push(contextSection);
 
   // Cards to modify (using simple numeric IDs for reliable LLM echo-back)
-  let cardsSection = '## Cards to Modify';
+  let cardsSection =
+    '## Cards to Modify\n(Everything below is already on these cards. Your note is added underneath it — do not repeat any of it back.)';
   for (let i = 0; i < cardsToModify.length; i++) {
     const card = cardsToModify[i];
     const simpleId = `card_${i + 1}`;
@@ -875,7 +883,7 @@ function buildMultiStepPrompt(
   }
 
   if (hasModify) {
-    const modifyFields: string[] = ['"id": "original-card-id"', '"title": "Updated Title"', '"content": "Updated content in markdown"'];
+    const modifyFields: string[] = ['"id": "original-card-id"', '"title": "Updated Title"', '"content": "The new note to add, in markdown"'];
     if (allowTags) modifyFields.push('"tags": ["TagName"]');
     if (allowProperties) modifyFields.push('"properties": [{"key": "category", "value": "Example", "displayType": "chip", "color": "blue"}]');
     if (allowTasks) {
@@ -907,7 +915,7 @@ Rules:
 - For modifiedCards: only include cards that have actual changes. Use the original card ID.
 - For movedCards: only include cards that should actually move. Use the column ID (not name) for destinationColumnId.
 - For generatedCards: include the targetColumnId for where each card should go.
-${hasModify ? '- Content in modifiedCards will be added as a new note/message on the card' : ''}
+${hasModify ? '- Content in modifiedCards is APPENDED to the card as a new note. Write only your new material — never copy back or restate the card\'s existing content.' : ''}
 ${!allowTags ? '- Do NOT add tags.' : ''}
 ${!allowProperties ? '- Do NOT add properties.' : ''}
 ${!allowTasks ? '- Do NOT create tasks.' : ''}
@@ -1321,6 +1329,15 @@ export async function POST(request: Request) {
             autoApprove: !!instructionCard.autoApprove,
             validMemberIds: members?.map((m) => m.id),
           });
+        }
+
+        // Same appended-note contract as the single-step modify path, so a multi-step
+        // shroom can't reproduce a card onto itself either.
+        for (const modified of multiStepResult.modifiedCards) {
+          const source = cards[modified.id];
+          if (source && modified.content) {
+            modified.content = stripEchoedContent(modified.content, cardContentStrings(source));
+          }
         }
 
         // Edits before relocations — a card should be updated in the column it was
@@ -1797,6 +1814,15 @@ export async function POST(request: Request) {
             if (matchByTitle) {
               modified.id = matchByTitle;
             }
+          }
+        }
+
+        // A note is appended, so anything the model copied from the card would appear on
+        // it twice. Cut the echo before it reaches the card *or* the run email.
+        for (const modified of modifiedCards) {
+          const source = cardsToModify.find((c) => c.id === modified.id);
+          if (source && modified.content) {
+            modified.content = stripEchoedContent(modified.content, cardContentStrings(source));
           }
         }
 
