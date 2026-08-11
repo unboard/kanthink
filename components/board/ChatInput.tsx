@@ -319,28 +319,28 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   }, []);
 
   /**
-   * Add or remove @kan, and leave the cursor where you can keep typing.
+   * Type an @ and open the picker, exactly as typing one by hand would.
    *
-   * It goes at the front because that's how you address someone, and because
-   * it puts the one part of the message that changes what happens to it in the
-   * place you read first.
+   * The button is a shortcut to the mention list, not to Kan specifically —
+   * he's the first name in it, but he's one of the people you can address here
+   * rather than the only one. Typing the character is also why this needs to
+   * set the mention state itself: that normally comes off the textarea's own
+   * onChange, which a programmatic edit doesn't fire.
    */
-  const toggleKanMention = useCallback(() => {
-    setContent((current) => {
-      if (KAN_MENTION.test(current)) {
-        return current.replace(/(^|\s)@kan\b[ \t]*/i, (_m, lead: string) => lead).trimStart();
-      }
-      return current ? `@kan ${current}` : '@kan ';
-    });
+  const insertAtMention = useCallback(() => {
+    const needsSpace = content.length > 0 && !/\s$/.test(content);
+    const next = content + (needsSpace ? ' @' : '@');
+    setContent(next);
+    setMention({ isActive: true, query: '', startIndex: next.length - 1 });
+    setMentionSelectedIndex(0);
     activateInput();
-    // Cursor to the end, so the click doesn't cost you your place.
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (!el) return;
       el.focus();
-      el.selectionStart = el.selectionEnd = el.value.length;
+      el.selectionStart = el.selectionEnd = next.length;
     });
-  }, [activateInput]);
+  }, [content, activateInput]);
 
   useImperativeHandle(ref, () => ({
     focusInput: activateInput,
@@ -834,252 +834,247 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
           </div>
         )}
 
-        {/* Input row: add menu + textarea + send button */}
-        <div className="flex items-start gap-1">
-          {/*
-            Everything you can attach lives behind the plus. Upload used to be
-            the plus and Draw sat in the row below, which spent a whole line of
-            the composer on a button most messages don't need.
-          */}
-          <div ref={addMenuRef} className="relative flex-shrink-0">
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                if (!onOpenWhiteboard) {
-                  fileInputRef.current?.click();
-                  return;
-                }
-                setShowAddMenu((v) => !v);
-              }}
-              disabled={isLoading || isUploading}
-              className={`h-[26px] w-7 flex items-center justify-center rounded-md transition-all disabled:opacity-50 ${
-                showAddMenu
-                  ? 'rotate-45 bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
-                  : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
-              }`}
-              title={onOpenWhiteboard ? 'Add' : 'Attach image'}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-
-            {showAddMenu && onOpenWhiteboard && (
-              <div className="absolute bottom-full left-0 z-50 mb-1.5 w-44 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-xl">
-                <button
-                  type="button"
-                  onClick={() => { setShowAddMenu(false); fileInputRef.current?.click(); }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-700/60"
-                >
-                  <svg className="w-4 h-4 flex-shrink-0 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span>
-                    <span className="block text-[12px] text-neutral-900 dark:text-neutral-100">Upload image</span>
-                    <span className="block text-[10px] text-neutral-400 dark:text-neutral-500">Photo or screenshot</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowAddMenu(false); onOpenWhiteboard(); }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-700/60"
-                >
-                  <svg className="w-4 h-4 flex-shrink-0 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
-                  </svg>
-                  <span>
-                    <span className="block text-[12px] text-neutral-900 dark:text-neutral-100">Whiteboard</span>
-                    <span className="block text-[10px] text-neutral-400 dark:text-neutral-500">Sketch it out</span>
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-          />
-
-          {/* Textarea with keyword/mention highlighting */}
-          <div
-            ref={inputWrapperRef}
-            className="relative flex-1 min-w-0"
-            onMouseMove={mode === 'question' ? handleBackdropMouseMove : undefined}
-            onMouseLeave={() => setTooltip(null)}
-          >
-            {/* Backdrop for mention + keyword highlighting */}
-            {showBackdrop && (
-              <div
-                ref={backdropRef}
-                className="absolute inset-0 px-1 text-sm leading-[26px] whitespace-pre-wrap break-words pointer-events-none overflow-hidden font-[inherit]"
-                style={{ wordBreak: 'break-word', letterSpacing: 'inherit' }}
-                aria-hidden="true"
-              >
-                {renderBackdropContent()}
-              </div>
-            )}
-
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => {
-                const val = e.target.value;
-                setContent(val);
-
-                // Detect @mention (members)
-                const cursorPos = e.target.selectionStart;
-                const textBeforeCursor = val.slice(0, cursorPos);
-
-                // Always on, not just when the channel has other people in it —
-                // Kan is always in the list.
-                const atMatch = textBeforeCursor.match(/(?:^|[\s])@([^\s@]*)$/);
-                if (atMatch) {
-                  const query = atMatch[1];
-                  const startIndex = cursorPos - query.length - 1;
-                  setMention({ isActive: true, query, startIndex });
-                  setMentionSelectedIndex(0);
-                } else {
-                  setMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
-                }
-
-                // Detect #mention (cards)
-                const hashMatch = textBeforeCursor.match(/(?:^|[\s])#([^\s#]*)$/);
-                if (hashMatch) {
-                  const query = hashMatch[1];
-                  const startIndex = cursorPos - query.length - 1;
-                  setCardMention({ isActive: true, query, startIndex });
-                  setCardMentionSelectedIndex(0);
-                } else {
-                  setCardMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
-                }
-              }}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              onFocus={(e) => {
-                if (!inputActivated) {
-                  // Prevent focus if not activated - blur immediately
-                  e.target.blur();
-                  return;
-                }
-                onFocus();
-              }}
-              onBlur={onBlur}
-              onScroll={handleScroll}
-              onClick={() => {
-                if (!inputActivated) {
-                  setInputActivated(true);
-                  // Focus after activation
-                  setTimeout(() => {
-                    textareaRef.current?.focus();
-                  }, 50);
-                }
-              }}
-              readOnly={!inputActivated}
-              placeholder={placeholder ?? defaultPlaceholder}
-              disabled={isLoading}
-              rows={1}
-              className={`chat-textarea w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none whitespace-pre-wrap break-words font-[inherit] ${
-                needsScroll ? 'overflow-y-auto' : 'overflow-y-hidden'
-              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''} ${
-                showBackdrop
-                  ? 'bg-transparent text-transparent caret-neutral-900 dark:caret-white selection:bg-violet-500/30'
-                  : 'bg-transparent text-neutral-900 dark:text-white'
-              } ${!inputActivated ? 'cursor-pointer' : ''}`}
+        {/*
+          Two rows: the text gets the first one to itself, the tools sit under
+          it. The plus used to be inline with the textarea, which started the
+          caret a button-width in and cost the field that much of every line —
+          the row underneath was already reserved for the @kan hint, so this
+          buys the width back without making the composer taller.
+        */}
+        <div
+          ref={inputWrapperRef}
+          className="relative"
+          onMouseMove={mode === 'question' ? handleBackdropMouseMove : undefined}
+          onMouseLeave={() => setTooltip(null)}
+        >
+          {/* Backdrop for mention + keyword highlighting */}
+          {showBackdrop && (
+            <div
+              ref={backdropRef}
+              className="absolute inset-0 px-1 text-sm leading-[26px] whitespace-pre-wrap break-words pointer-events-none overflow-hidden font-[inherit]"
               style={{ wordBreak: 'break-word', letterSpacing: 'inherit' }}
-            />
+              aria-hidden="true"
+            >
+              {renderBackdropContent()}
+            </div>
+          )}
 
-            {/* Tooltip for keywords */}
-            {tooltip && showBackdrop && (
-              <div
-                className="absolute z-50 px-2 py-1 text-xs text-white bg-neutral-800 dark:bg-neutral-700 rounded shadow-lg whitespace-nowrap pointer-events-none"
-                style={{
-                  left: tooltip.x,
-                  top: tooltip.y,
-                  transform: 'translate(-50%, -100%)',
-                }}
-              >
-                {tooltip.text}
-                <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-neutral-800 dark:border-t-neutral-700" />
-              </div>
-            )}
-          </div>
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => {
+              const val = e.target.value;
+              setContent(val);
 
-          {/* Live voice conversation button */}
-          <button
-            type="button"
-            onClick={() => setShowLiveVoice(true)}
-            title="Live voice conversation"
-            className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-violet-400 transition-colors rounded-full hover:bg-violet-500/10"
-          >
-            <AudioLines className="w-4 h-4" />
-          </button>
+              // Detect @mention (members)
+              const cursorPos = e.target.selectionStart;
+              const textBeforeCursor = val.slice(0, cursorPos);
 
-          <LiveVoiceMode
-            isOpen={showLiveVoice}
-            onClose={() => setShowLiveVoice(false)}
-            systemPrompt={voiceContext}
+              // Always on, not just when the channel has other people in it —
+              // Kan is always in the list.
+              const atMatch = textBeforeCursor.match(/(?:^|[\s])@([^\s@]*)$/);
+              if (atMatch) {
+                const query = atMatch[1];
+                const startIndex = cursorPos - query.length - 1;
+                setMention({ isActive: true, query, startIndex });
+                setMentionSelectedIndex(0);
+              } else {
+                setMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
+              }
+
+              // Detect #mention (cards)
+              const hashMatch = textBeforeCursor.match(/(?:^|[\s])#([^\s#]*)$/);
+              if (hashMatch) {
+                const query = hashMatch[1];
+                const startIndex = cursorPos - query.length - 1;
+                setCardMention({ isActive: true, query, startIndex });
+                setCardMentionSelectedIndex(0);
+              } else {
+                setCardMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
+              }
+            }}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onFocus={(e) => {
+              if (!inputActivated) {
+                // Prevent focus if not activated - blur immediately
+                e.target.blur();
+                return;
+              }
+              onFocus();
+            }}
+            onBlur={onBlur}
+            onScroll={handleScroll}
+            onClick={() => {
+              if (!inputActivated) {
+                setInputActivated(true);
+                // Focus after activation
+                setTimeout(() => {
+                  textareaRef.current?.focus();
+                }, 50);
+              }
+            }}
+            readOnly={!inputActivated}
+            placeholder={placeholder ?? defaultPlaceholder}
+            disabled={isLoading}
+            rows={1}
+            className={`chat-textarea w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none whitespace-pre-wrap break-words font-[inherit] ${
+              needsScroll ? 'overflow-y-auto' : 'overflow-y-hidden'
+            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''} ${
+              showBackdrop
+                ? 'bg-transparent text-transparent caret-neutral-900 dark:caret-white selection:bg-violet-500/30'
+                : 'bg-transparent text-neutral-900 dark:text-white'
+            } ${!inputActivated ? 'cursor-pointer' : ''}`}
+            style={{ wordBreak: 'break-word', letterSpacing: 'inherit' }}
           />
 
-          {/* Send button - height matches single-line textarea */}
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className={`flex-shrink-0 h-[26px] w-7 flex items-center justify-center rounded-md transition-colors ${
-              canSubmit
-                ? mode === 'question'
-                  ? 'text-violet-500 hover:text-violet-600'
-                  : 'text-neutral-900 dark:text-white hover:text-neutral-600 dark:hover:text-neutral-300'
-                : 'text-neutral-300 dark:text-neutral-600 cursor-not-allowed'
-            }`}
-            title={`Send ${mode === 'question' ? 'question' : 'note'} (Cmd+Enter)`}
-          >
-            {isLoading ? (
-              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-            )}
-          </button>
+          {/* Tooltip for keywords */}
+          {tooltip && showBackdrop && (
+            <div
+              className="absolute z-50 px-2 py-1 text-xs text-white bg-neutral-800 dark:bg-neutral-700 rounded shadow-lg whitespace-nowrap pointer-events-none"
+              style={{
+                left: tooltip.x,
+                top: tooltip.y,
+                transform: 'translate(-50%, -100%)',
+              }}
+            >
+              {tooltip.text}
+              <div className="absolute left-1/2 -translate-x-1/2 top-full border-4 border-transparent border-t-neutral-800 dark:border-t-neutral-700" />
+            </div>
+          )}
         </div>
 
-        {/*
-          The offer to bring Kan in, and only while it's still an offer. Once
-          @kan is in the message the mention says so itself, in the same violet,
-          two lines up — repeating it here was the same fact twice.
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          multiple
+          className="hidden"
+          onChange={handleFileSelect}
+        />
 
-          The row keeps its height in every state, so the composer is one size
-          whether it's empty, being typed into, or addressed to Kan.
-        */}
-        {!forceQuestionMode && (
-          <div className="flex items-center h-5 mt-1.5 ml-8">
-            {hasContent && !isAskingKan && (
+        <LiveVoiceMode
+          isOpen={showLiveVoice}
+          onClose={() => setShowLiveVoice(false)}
+          systemPrompt={voiceContext}
+        />
+
+        {/* Tools on the left, the two ways out on the right. The row is sized to
+            the one it replaced, so the composer is exactly as tall as before. */}
+        <div className="mt-0.5 flex items-center justify-between">
+          <div className="flex items-center gap-0.5">
+            {/* Everything you can attach lives behind the plus. */}
+            <div ref={addMenuRef} className="relative">
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={toggleKanMention}
-                disabled={isLoading}
-                title="Add @kan to this message"
-                className={`flex items-center gap-1 text-[11px] leading-none text-neutral-400 dark:text-neutral-500 transition-colors hover:text-neutral-600 dark:hover:text-neutral-300 ${
-                  isLoading ? 'opacity-50 cursor-not-allowed' : ''
+                onClick={() => {
+                  if (!onOpenWhiteboard) {
+                    fileInputRef.current?.click();
+                    return;
+                  }
+                  setShowAddMenu((v) => !v);
+                }}
+                disabled={isLoading || isUploading}
+                className={`h-6 w-7 flex items-center justify-center rounded-md transition-all disabled:opacity-50 ${
+                  showAddMenu
+                    ? 'rotate-45 bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
+                    : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
                 }`}
+                title={onOpenWhiteboard ? 'Add' : 'Attach image'}
               >
-                <span className="rounded bg-neutral-100 dark:bg-neutral-700 px-1 py-0.5 font-mono text-violet-600 dark:text-violet-300">
-                  @kan
-                </span>
-                to have him reply
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+
+              {showAddMenu && onOpenWhiteboard && (
+                <div className="absolute bottom-full left-0 z-50 mb-1.5 w-44 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-xl">
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddMenu(false); fileInputRef.current?.click(); }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-700/60"
+                  >
+                    <svg className="w-4 h-4 flex-shrink-0 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span>
+                      <span className="block text-[12px] text-neutral-900 dark:text-neutral-100">Upload image</span>
+                      <span className="block text-[10px] text-neutral-400 dark:text-neutral-500">Photo or screenshot</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddMenu(false); onOpenWhiteboard(); }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-700/60"
+                  >
+                    <svg className="w-4 h-4 flex-shrink-0 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
+                    </svg>
+                    <span>
+                      <span className="block text-[12px] text-neutral-900 dark:text-neutral-100">Whiteboard</span>
+                      <span className="block text-[10px] text-neutral-400 dark:text-neutral-500">Sketch it out</span>
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/*
+              The @ button is the discovery mechanism the hint line used to be:
+              it opens the same picker typing @ does, with Kan first in it. It
+              types a plain @ rather than jumping straight to Kan, because he's
+              one of the people you can address here, not the only one.
+            */}
+            {!forceQuestionMode && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={insertAtMention}
+                disabled={isLoading}
+                title="Mention someone — Kan included"
+                className="h-6 w-7 flex items-center justify-center rounded-md text-[15px] font-medium leading-none text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors disabled:opacity-50"
+              >
+                @
               </button>
             )}
           </div>
-        )}
+
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => setShowLiveVoice(true)}
+              title="Live voice conversation"
+              className="h-6 w-7 flex items-center justify-center rounded-full text-neutral-400 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
+            >
+              <AudioLines className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              className={`h-6 w-7 flex items-center justify-center rounded-md transition-colors ${
+                canSubmit
+                  ? mode === 'question'
+                    ? 'text-violet-500 hover:text-violet-600'
+                    : 'text-neutral-900 dark:text-white hover:text-neutral-600 dark:hover:text-neutral-300'
+                  : 'text-neutral-300 dark:text-neutral-600 cursor-not-allowed'
+              }`}
+              title={`Send ${mode === 'question' ? 'question' : 'note'} (Cmd+Enter)`}
+            >
+              {isLoading ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

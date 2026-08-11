@@ -90,10 +90,10 @@ function Shipped() {
         </span>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-        This is the live component. Empty, it says nothing — the @kan line only appears once there
-        is something to send, and its row keeps its height so the box never changes size. Type{' '}
-        <span className="font-mono text-violet-300">@</span> and Kan is the first name in the list,
-        in the same place every time. Upload and whiteboard are behind the +.
+        This is the live component. The text has the first row to itself, so the caret starts at the
+        left edge; the tools sit underneath, in the row the @kan hint used to occupy — same height as
+        before. The <span className="font-mono text-violet-300">@</span> button opens the same picker
+        typing @ does, with Kan first in it. Upload and whiteboard are behind the +.
       </p>
 
       <ChatInput
