@@ -178,6 +178,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [inputActivated, setInputActivated] = useState(false);
   const [showLiveVoice, setShowLiveVoice] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
   const [mention, setMention] = useState<MentionState>({ isActive: false, query: '', startIndex: 0 });
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
   const [mentionsMap, setMentionsMap] = useState<Record<string, string>>({}); // name -> userId
@@ -191,6 +192,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   const containerRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const inputWrapperRef = useRef<HTMLDivElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
 
   // Data sources you can @ — only the ones this channel actually has. Offering
   // @mixpanel to a channel with no Mixpanel connected produced a question Kan
@@ -286,6 +288,23 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   useEffect(() => {
     setInputActivated(false);
   }, [cardId]);
+
+  // Close the add menu on an outside click or Escape.
+  useEffect(() => {
+    if (!showAddMenu) return;
+    const onPointer = (e: MouseEvent) => {
+      if (!addMenuRef.current?.contains(e.target as Node)) setShowAddMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowAddMenu(false);
+    };
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showAddMenu]);
 
   // Use parent's handlers if provided, otherwise use hook's handlers
   const onFocus = onKeyboardFocus ?? hookOnFocus;
@@ -816,19 +835,68 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
           </div>
         )}
 
-        {/* Input row: attach + textarea + send button */}
+        {/* Input row: add menu + textarea + send button */}
         <div className="flex items-start gap-1">
-          {/* Attach button - height matches single-line textarea */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading || isUploading}
-            className="flex-shrink-0 h-[26px] w-7 flex items-center justify-center rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors disabled:opacity-50"
-            title="Attach image"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+          {/*
+            Everything you can attach lives behind the plus. Upload used to be
+            the plus and Draw sat in the row below, which spent a whole line of
+            the composer on a button most messages don't need.
+          */}
+          <div ref={addMenuRef} className="relative flex-shrink-0">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (!onOpenWhiteboard) {
+                  fileInputRef.current?.click();
+                  return;
+                }
+                setShowAddMenu((v) => !v);
+              }}
+              disabled={isLoading || isUploading}
+              className={`h-[26px] w-7 flex items-center justify-center rounded-md transition-all disabled:opacity-50 ${
+                showAddMenu
+                  ? 'rotate-45 bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200'
+                  : 'text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300'
+              }`}
+              title={onOpenWhiteboard ? 'Add' : 'Attach image'}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+
+            {showAddMenu && onOpenWhiteboard && (
+              <div className="absolute bottom-full left-0 z-50 mb-1.5 w-44 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddMenu(false); fileInputRef.current?.click(); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-700/60"
+                >
+                  <svg className="w-4 h-4 flex-shrink-0 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span>
+                    <span className="block text-[12px] text-neutral-900 dark:text-neutral-100">Upload image</span>
+                    <span className="block text-[10px] text-neutral-400 dark:text-neutral-500">Photo or screenshot</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowAddMenu(false); onOpenWhiteboard(); }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-700/60"
+                >
+                  <svg className="w-4 h-4 flex-shrink-0 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
+                  </svg>
+                  <span>
+                    <span className="block text-[12px] text-neutral-900 dark:text-neutral-100">Whiteboard</span>
+                    <span className="block text-[10px] text-neutral-400 dark:text-neutral-500">Sketch it out</span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -985,50 +1053,38 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
         </div>
 
         {/*
-          Who's getting this. The row is a fixed height whether or not Kan is in
-          the message, so nothing below it ever moves — the text swaps inside a
-          box that was already the right size.
+          Who's getting this — and nothing at all until there is something to
+          send. The row keeps its height empty, so the composer is the same size
+          before you type as after, and the hint appears without moving anything.
         */}
         {!forceQuestionMode && (
           <div className="flex items-center h-5 mt-1.5 ml-8">
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={toggleKanMention}
-              disabled={isLoading}
-              title={isAskingKan ? 'Remove @kan — nobody replies' : 'Add @kan to this message'}
-              className={`flex items-center gap-1 text-[11px] leading-none transition-colors ${
-                isAskingKan
-                  ? 'text-violet-600 dark:text-violet-300'
-                  : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
-              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isAskingKan ? (
-                <>
-                  <KanthinkIcon size={11} />
-                  Kan will reply to this
-                </>
-              ) : (
-                <>
-                  <span className="rounded bg-neutral-100 dark:bg-neutral-700 px-1 py-0.5 font-mono text-violet-600 dark:text-violet-300">
-                    @kan
-                  </span>
-                  to have him reply
-                </>
-              )}
-            </button>
-            {onOpenWhiteboard && (
+            {hasContent && (
               <button
+                type="button"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={onOpenWhiteboard}
+                onClick={toggleKanMention}
                 disabled={isLoading}
-                className={`ml-1 px-2 py-0.5 text-xs rounded transition-colors text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 flex items-center gap-1 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title="Add whiteboard"
+                title={isAskingKan ? 'Remove @kan — nobody replies' : 'Add @kan to this message'}
+                className={`flex items-center gap-1 text-[11px] leading-none transition-colors ${
+                  isAskingKan
+                    ? 'text-violet-600 dark:text-violet-300'
+                    : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
+                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
-                </svg>
-                Draw
+                {isAskingKan ? (
+                  <>
+                    <KanthinkIcon size={11} />
+                    Kan will reply to this
+                  </>
+                ) : (
+                  <>
+                    <span className="rounded bg-neutral-100 dark:bg-neutral-700 px-1 py-0.5 font-mono text-violet-600 dark:text-violet-300">
+                      @kan
+                    </span>
+                    to have him reply
+                  </>
+                )}
               </button>
             )}
           </div>

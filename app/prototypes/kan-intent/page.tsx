@@ -90,9 +90,10 @@ function Shipped() {
         </span>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-        This is the live component. Type <span className="font-mono text-violet-300">@</span> and Kan
-        is the first name in the list, in the same place every time. The line under the field is
-        clickable and always occupies its row, so nothing shifts when it changes.
+        This is the live component. Empty, it says nothing — the @kan line only appears once there
+        is something to send, and its row keeps its height so the box never changes size. Type{' '}
+        <span className="font-mono text-violet-300">@</span> and Kan is the first name in the list,
+        in the same place every time. Upload and whiteboard are behind the +.
       </p>
 
       <ChatInput
@@ -104,6 +105,8 @@ function Shipped() {
           { id: 'u1', name: 'Alex Reyes', email: 'alex@example.com', image: null },
           { id: 'u2', name: 'Sam Okafor', email: 'sam@example.com', image: null },
         ]}
+        // Present so the + opens its menu here, as it does on a card.
+        onOpenWhiteboard={() => setSent('The whiteboard would open here.')}
       />
 
       <p className="ml-3 mt-1 h-4 text-[11px] text-neutral-500">{sent}</p>
