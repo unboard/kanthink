@@ -76,8 +76,22 @@ const sanitizeSchema = {
 const MENTION_REGEX = /@\[([^\]]+)\]\(([^)]+)\)/g;
 // Regex to match #[Title](cardId) card mention format
 const CARD_MENTION_REGEX = /#\[([^\]]+)\]\(([^)]+)\)/g;
-// Combined regex for both mention types
-const ALL_MENTIONS_REGEX = /(@\[([^\]]+)\]\(([^)]+)\)|#\[([^\]]+)\]\(([^)]+)\))/g;
+/**
+ * Every mention shape a message can contain.
+ *
+ * People and cards are stored as markup with an id behind them. Kan isn't — he
+ * stays literal `@kan`, so that picking him from the list and typing his name
+ * produce the same message. That's why he needs his own branch here: without
+ * one he was the only mention that rendered as bare text in the thread.
+ *
+ * The leading boundary is captured rather than looked behind, so this doesn't
+ * depend on lookbehind support, and it's re-emitted as text.
+ */
+const ALL_MENTIONS_REGEX = /(@\[([^\]]+)\]\(([^)]+)\)|#\[([^\]]+)\]\(([^)]+)\)|(^|\s)(@kan)\b)/gi;
+
+/** Grey pill, ordinary text colour — a mention should read as part of the sentence. */
+const MENTION_CHIP =
+  'inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-neutral-200/80 dark:bg-neutral-600/50 text-neutral-900 dark:text-white';
 
 /** Strip mention markup to plain @Name or #Title (for previews, etc.) */
 export function stripMentionMarkup(text: string): string {
@@ -177,7 +191,7 @@ function buildMarkdownComponents(linkHandlers?: LinkHandlers, unwrapP?: boolean)
 /** Render message content with mentions as styled spans, rest through ReactMarkdown */
 function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers) {
   // Split content by all mention patterns (@ members and # cards)
-  const parts: Array<{ type: 'text' | 'mention' | 'cardMention'; value: string; name?: string; id?: string }> = [];
+  const parts: Array<{ type: 'text' | 'mention' | 'cardMention' | 'kanMention'; value: string; name?: string; id?: string }> = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -192,6 +206,10 @@ function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers)
     } else if (match[4]) {
       // #[Title](cardId) — card mention
       parts.push({ type: 'cardMention', value: match[0], name: match[4], id: match[5] });
+    } else if (match[7]) {
+      // Literal @kan, with whatever whitespace preceded it put back.
+      if (match[6]) parts.push({ type: 'text', value: match[6] });
+      parts.push({ type: 'kanMention', value: match[7], name: 'kan' });
     }
     lastIndex = match.index + match[0].length;
   }
@@ -216,16 +234,25 @@ function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers)
   return (
     <>
       {parts.map((part, i) => {
+        if (part.type === 'kanMention') {
+          return (
+            <span key={i} className={MENTION_CHIP}>
+              @{part.name}
+            </span>
+          );
+        }
         if (part.type === 'mention') {
+          // Data sources keep their own colour — @mixpanel is a different kind
+          // of thing from a person, and the chip is the only place that shows.
           const isIntegration = part.id?.startsWith('integration-');
           return (
             <span
               key={i}
-              className={`inline-flex items-center px-1 py-0.5 rounded text-xs font-medium ${
+              className={
                 isIntegration
-                  ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300'
-                  : 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-              }`}
+                  ? 'inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300'
+                  : MENTION_CHIP
+              }
             >
               @{part.name}
             </span>

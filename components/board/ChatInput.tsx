@@ -441,7 +441,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
         segments.push(
           <span
             key={`mention-${match.start}`}
-            className="rounded bg-neutral-200/80 dark:bg-neutral-600/50 text-violet-600 dark:text-violet-300"
+            className="rounded bg-neutral-200/80 dark:bg-neutral-600/50 text-neutral-900 dark:text-white"
             style={{
               paddingTop: 1,
               paddingBottom: 1,
