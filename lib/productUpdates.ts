@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'mention-kan-to-get-a-reply',
+    date: '2026-08-10',
+    kind: 'workflow',
+    title: 'Mention Kan when you want him to answer',
+    body: 'The Note / Ask Kan toggle is gone. Kan replies when you put @kan in the message and stays out of it otherwise — type it, tap the @kan under the box, or pick him from the @ list, where he is always the first name. Data sources like @mixpanel now only appear on channels that have them connected.',
+  },
+  {
     id: 'record-pick-your-microphone',
     date: '2026-08-06',
     kind: 'fix',

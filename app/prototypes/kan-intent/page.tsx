@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AudioLines } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { ChatInput } from '@/components/board/ChatInput';
 import { APPROACHES, type IntentApproach, type IntentProps } from './Approaches';
 
 /**
@@ -57,6 +58,8 @@ export default function KanIntentPrototype() {
           </p>
         </div>
 
+        <Shipped />
+
         <div className="space-y-5">
           {APPROACHES.map((approach) => (
             <Sample key={approach.id} approach={approach} />
@@ -69,6 +72,42 @@ export default function KanIntentPrototype() {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * The real composer, not a mock of it — so what shipped can be poked at here
+ * instead of only inside a card. Type @ and Kan is the first name in the list.
+ */
+function Shipped() {
+  const [sent, setSent] = useState<string | null>(null);
+  return (
+    <section className="mb-5 rounded-xl border border-violet-500/30 bg-violet-500/[0.04] p-4">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-medium text-neutral-100">Address it to him</h2>
+        <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-violet-300">
+          shipped
+        </span>
+      </div>
+      <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+        This is the live component. Type <span className="font-mono text-violet-300">@</span> and Kan
+        is the first name in the list, in the same place every time. The line under the field is
+        clickable and always occupies its row, so nothing shifts when it changes.
+      </p>
+
+      <ChatInput
+        onSubmit={(content, type) => {
+          setSent(type === 'question' ? `Kan is replying to: “${content}”` : `Noted: “${content}”`);
+          window.setTimeout(() => setSent(null), 3200);
+        }}
+        members={[
+          { id: 'u1', name: 'Alex Reyes', email: 'alex@example.com', image: null },
+          { id: 'u2', name: 'Sam Okafor', email: 'sam@example.com', image: null },
+        ]}
+      />
+
+      <p className="ml-3 mt-1 h-4 text-[11px] text-neutral-500">{sent}</p>
+    </section>
   );
 }
 

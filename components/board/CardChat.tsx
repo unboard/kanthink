@@ -515,7 +515,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         {messages.length === 0 && (
           <div className="px-3 pb-2 space-y-1">
             <button
-              onClick={() => chatInputRef.current?.setMode('note')}
+              onClick={() => chatInputRef.current?.focusInput()}
               className="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
             >
               <div className="w-7 h-7 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center flex-shrink-0 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">
@@ -529,7 +529,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
               </div>
             </button>
             <button
-              onClick={() => chatInputRef.current?.setMode('question')}
+              onClick={() => chatInputRef.current?.mentionKan()}
               className="w-full flex items-center gap-3 px-3 py-2 text-left rounded-lg hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors group"
             >
               <div className="w-7 h-7 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center flex-shrink-0 group-hover:bg-violet-200 dark:group-hover:bg-violet-900/60 transition-colors">
@@ -571,6 +571,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             onSubmit={handleSubmit}
             isLoading={isAILoading}
             cardId={card.id}
+            channelId={card.channelId}
             onKeyboardFocus={handleKeyboardFocus}
             onKeyboardBlur={handleKeyboardBlur}
             members={members}

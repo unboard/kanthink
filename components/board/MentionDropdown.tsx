@@ -2,6 +2,7 @@
 
 import { useRef, useEffect } from 'react';
 import type { ChannelMember } from '@/lib/types';
+import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
 interface MentionDropdownProps {
   members: ChannelMember[];
@@ -57,7 +58,11 @@ export function MentionDropdown({ members, query, selectedIndex, onSelect, onClo
               : 'hover:bg-neutral-50 dark:hover:bg-neutral-700/50'
           }`}
         >
-          {member.role === 'integration' ? (
+          {member.role === 'kan' ? (
+            <div className="w-5 h-5 rounded-full bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center flex-shrink-0">
+              <KanthinkIcon size={13} className="text-violet-600 dark:text-violet-300" />
+            </div>
+          ) : member.role === 'integration' ? (
             <div className="w-5 h-5 rounded-md bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0">
               <svg className="w-3 h-3 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -74,7 +79,15 @@ export function MentionDropdown({ members, query, selectedIndex, onSelect, onClo
             </div>
           )}
           <div className="min-w-0">
-            <div className={`text-sm font-medium truncate ${member.role === 'integration' ? 'text-orange-600 dark:text-orange-400' : 'text-neutral-900 dark:text-white'}`}>
+            <div
+              className={`text-sm font-medium truncate ${
+                member.role === 'kan'
+                  ? 'text-violet-600 dark:text-violet-300'
+                  : member.role === 'integration'
+                    ? 'text-orange-600 dark:text-orange-400'
+                    : 'text-neutral-900 dark:text-white'
+              }`}
+            >
               @{member.name}
             </div>
             {member.email !== member.name && (

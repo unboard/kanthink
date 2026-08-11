@@ -760,6 +760,7 @@ export function TaskDrawer({
               onSubmit={(content, type, imageUrls) => handleAddNote(content, type, imageUrls)}
               isLoading={isAILoading}
               cardId={task.id}
+              channelId={task.channelId}
               members={members}
               onKeyboardFocus={handleKeyboardFocus}
               onKeyboardBlur={handleKeyboardBlur}

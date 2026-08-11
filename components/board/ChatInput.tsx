@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, useImperativeHandle, useMemo,
 import type { CardMessageType, ChannelMember, Card as CardType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
-import { AskKanSwitch } from './AskKanSwitch';
+import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { AudioLines } from 'lucide-react';
 import { MentionDropdown } from './MentionDropdown';
@@ -44,6 +44,26 @@ function getTooltipForKeyword(keyword: string): string {
 type InputMode = 'note' | 'question';
 
 const MAX_HEIGHT = 140;
+
+/**
+ * Kan answers when you address him, and not otherwise.
+ *
+ * There is no mode any more. Whether Kan replies is a property of the message —
+ * it's true when his name is in it — which means the answer is in the words you
+ * already wrote instead of in a control you had to find first. Typing @kan and
+ * picking him out of the mention list are the same act, and both are undone by
+ * deleting the text.
+ */
+const KAN_MENTION = /(^|\s)@kan\b/i;
+
+/** Kan sits at the top of the @ list, in the same place every time. */
+const KAN_MEMBER: ChannelMember = {
+  id: 'kan',
+  name: 'kan',
+  email: 'Have Kan reply in this thread',
+  image: null,
+  role: 'kan',
+};
 
 // Hook to handle mobile keyboard visibility
 // Returns the keyboard height so parent components can position inputs above it
@@ -125,12 +145,10 @@ interface ImageSettings {
 }
 
 export interface ChatInputHandle {
-  /**
-   * Put the composer in a mode and hand it the cursor. Used by the empty-thread
-   * suggestions in CardChat, which used to reach in and click the mode buttons
-   * through the DOM — that broke the moment the two buttons became one switch.
-   */
-  setMode: (mode: InputMode) => void;
+  /** Open the box and hand it the cursor. */
+  focusInput: () => void;
+  /** Put @kan in the message, which is the only way Kan gets involved. */
+  mentionKan: () => void;
 }
 
 interface ChatInputProps {
@@ -139,11 +157,13 @@ interface ChatInputProps {
   isLoading?: boolean;
   placeholder?: string;
   cardId?: string;
+  /** Channel this composer belongs to. Decides which data sources are mentionable. */
+  channelId?: string;
   members?: ChannelMember[];
   // Optional keyboard handlers from parent - when provided, parent controls keyboard offset
   onKeyboardFocus?: () => void;
   onKeyboardBlur?: () => void;
-  // Force question mode and hide the Note/Ask Kan toggle (for dedicated AI chat UIs)
+  // Always ask Kan, and drop the @kan hint (for dedicated AI chat UIs)
   forceQuestionMode?: boolean;
   // Whiteboard support
   onOpenWhiteboard?: () => void;
@@ -151,8 +171,7 @@ interface ChatInputProps {
   voiceContext?: string;
 }
 
-export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext }: ChatInputProps) {
-  const [mode, setMode] = useState<InputMode>(forceQuestionMode ? 'question' : 'note');
+export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardId, channelId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext }: ChatInputProps) {
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
@@ -173,23 +192,48 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   const backdropRef = useRef<HTMLDivElement>(null);
   const inputWrapperRef = useRef<HTMLDivElement>(null);
 
-  // Filtered members for mention dropdown
-  // Integration mentions (data sources connected to the channel)
-  const INTEGRATION_MENTIONS: ChannelMember[] = [
-    { id: 'integration-mixpanel', name: 'mixpanel', email: 'Mixpanel Analytics', image: null, role: 'integration' },
-  ];
+  // Data sources you can @ — only the ones this channel actually has. Offering
+  // @mixpanel to a channel with no Mixpanel connected produced a question Kan
+  // had no way to answer.
+  const [connectedProviders, setConnectedProviders] = useState<string[] | null>(null);
+
+  // Asked for the first time the @ list opens, not on every card you look at.
+  useEffect(() => {
+    if (!mention.isActive || !channelId || connectedProviders !== null) return;
+    let cancelled = false;
+    fetch(`/api/channels/${channelId}/data-sources`)
+      .then((res) => (res.ok ? res.json() : { sources: [] }))
+      .then((data) => {
+        if (cancelled) return;
+        const sources = (data.sources || []) as Array<{ provider: string }>;
+        setConnectedProviders(sources.map((s) => s.provider));
+      })
+      .catch(() => {
+        if (!cancelled) setConnectedProviders([]);
+      });
+    return () => { cancelled = true; };
+  }, [mention.isActive, channelId, connectedProviders]);
+
+  const integrationMentions = useMemo<ChannelMember[]>(() => {
+    if (!connectedProviders?.includes('mixpanel')) return [];
+    return [
+      { id: 'integration-mixpanel', name: 'mixpanel', email: 'Mixpanel Analytics', image: null, role: 'integration' },
+    ];
+  }, [connectedProviders]);
+
+  /** Everyone you could @, Kan first — his place in the list never moves. */
+  const mentionableMembers = useMemo(
+    () => [KAN_MEMBER, ...integrationMentions, ...members],
+    [integrationMentions, members]
+  );
 
   const filteredMembers = useMemo(() => {
     if (!mention.isActive) return [];
     const q = mention.query.toLowerCase();
-    const people = members.filter((m) =>
-      m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
+    return mentionableMembers.filter(
+      (m) => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
     );
-    const integrations = INTEGRATION_MENTIONS.filter((m) =>
-      m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
-    );
-    return [...integrations, ...people];
-  }, [mention.isActive, mention.query, members]);
+  }, [mention.isActive, mention.query, mentionableMembers]);
 
   // Filtered cards for # card mention dropdown
   const allCards = useStore((s) => s.cards);
@@ -226,6 +270,11 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardMentionNames.join(',')]);
 
+  // Not state: Kan replying is a fact about the message, so it's read off the
+  // message. Delete his name and it stops being true, with nothing to reset.
+  const isAskingKan = forceQuestionMode || KAN_MENTION.test(content);
+  const mode: InputMode = isAskingKan ? 'question' : 'note';
+
   const hasMentions = mentionRegex !== null || cardMentionRegex !== null;
   const showBackdrop = mode === 'question' || hasMentions;
 
@@ -251,9 +300,34 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
     });
   }, []);
 
+  /**
+   * Add or remove @kan, and leave the cursor where you can keep typing.
+   *
+   * It goes at the front because that's how you address someone, and because
+   * it puts the one part of the message that changes what happens to it in the
+   * place you read first.
+   */
+  const toggleKanMention = useCallback(() => {
+    setContent((current) => {
+      if (KAN_MENTION.test(current)) {
+        return current.replace(/(^|\s)@kan\b[ \t]*/i, (_m, lead: string) => lead).trimStart();
+      }
+      return current ? `@kan ${current}` : '@kan ';
+    });
+    activateInput();
+    // Cursor to the end, so the click doesn't cost you your place.
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = el.value.length;
+    });
+  }, [activateInput]);
+
   useImperativeHandle(ref, () => ({
-    setMode: (next: InputMode) => {
-      setMode(next);
+    focusInput: activateInput,
+    mentionKan: () => {
+      setContent((current) => (KAN_MENTION.test(current) ? current : current ? `@kan ${current}` : '@kan '));
       activateInput();
     },
   }), [activateInput]);
@@ -288,6 +362,15 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
       while ((m = cardMentionRegex.exec(text)) !== null) {
         matches.push({ start: m.index, end: m.index + m[0].length, type: 'mention', text: m[0] });
       }
+    }
+
+    // @kan, however it got there — typed by hand or picked from the list. It
+    // isn't in mentionsMap, so it needs its own pass.
+    const kanRegex = /(^|\s)(@kan)\b/gi;
+    let k;
+    while ((k = kanRegex.exec(text)) !== null) {
+      const start = k.index + k[1].length;
+      matches.push({ start, end: start + k[2].length, type: 'mention', text: k[2] });
     }
 
     // Keyword matches (question mode only)
@@ -503,7 +586,12 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
     const insert = `@${member.name} `;
     const newContent = before + insert + after;
     setContent(newContent);
-    setMentionsMap((prev) => ({ ...prev, [member.name]: member.id }));
+    // Kan stays plain text rather than becoming an @[name](id) link, so that
+    // picking him from the list and typing his name by hand produce exactly the
+    // same message.
+    if (member.id !== KAN_MEMBER.id) {
+      setMentionsMap((prev) => ({ ...prev, [member.name]: member.id }));
+    }
     setMention({ isActive: false, query: '', startIndex: 0 });
 
     // Reposition cursor after the inserted mention
@@ -592,9 +680,9 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
     }
   };
 
-  const defaultPlaceholder = mode === 'note'
-    ? 'Add a note...'
-    : 'Ask Kan a question...';
+  // One placeholder. The field is a field — what happens to the message is said
+  // by the mention in it, not by the prompt in front of it.
+  const defaultPlaceholder = 'Add a note...';
 
   // Note: Keyboard positioning is now handled by the parent component (CardChat)
   // which adjusts the `bottom` position of the input wrapper
@@ -608,7 +696,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
         {/* @mention dropdown (members) */}
         {mention.isActive && filteredMembers.length > 0 && (
           <MentionDropdown
-            members={[...INTEGRATION_MENTIONS, ...members]}
+            members={mentionableMembers}
             query={mention.query}
             selectedIndex={mentionSelectedIndex}
             onSelect={handleMentionSelect}
@@ -780,16 +868,16 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
                 const cursorPos = e.target.selectionStart;
                 const textBeforeCursor = val.slice(0, cursorPos);
 
-                if (members.length > 0) {
-                  const atMatch = textBeforeCursor.match(/(?:^|[\s])@([^\s@]*)$/);
-                  if (atMatch) {
-                    const query = atMatch[1];
-                    const startIndex = cursorPos - query.length - 1;
-                    setMention({ isActive: true, query, startIndex });
-                    setMentionSelectedIndex(0);
-                  } else {
-                    setMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
-                  }
+                // Always on, not just when the channel has other people in it —
+                // Kan is always in the list.
+                const atMatch = textBeforeCursor.match(/(?:^|[\s])@([^\s@]*)$/);
+                if (atMatch) {
+                  const query = atMatch[1];
+                  const startIndex = cursorPos - query.length - 1;
+                  setMention({ isActive: true, query, startIndex });
+                  setMentionSelectedIndex(0);
+                } else {
+                  setMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
                 }
 
                 // Detect #mention (cards)
@@ -896,17 +984,39 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
           </button>
         </div>
 
-        {/* Mode toggle at bottom — hidden when forceQuestionMode */}
+        {/*
+          Who's getting this. The row is a fixed height whether or not Kan is in
+          the message, so nothing below it ever moves — the text swaps inside a
+          box that was already the right size.
+        */}
         {!forceQuestionMode && (
-          <div className="flex items-center mt-1.5 ml-8">
-            <AskKanSwitch
-              on={mode === 'question'}
-              onChange={(next) => {
-                setMode(next ? 'question' : 'note');
-                activateInput();
-              }}
+          <div className="flex items-center h-5 mt-1.5 ml-8">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={toggleKanMention}
               disabled={isLoading}
-            />
+              title={isAskingKan ? 'Remove @kan — nobody replies' : 'Add @kan to this message'}
+              className={`flex items-center gap-1 text-[11px] leading-none transition-colors ${
+                isAskingKan
+                  ? 'text-violet-600 dark:text-violet-300'
+                  : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isAskingKan ? (
+                <>
+                  <KanthinkIcon size={11} />
+                  Kan will reply to this
+                </>
+              ) : (
+                <>
+                  <span className="rounded bg-neutral-100 dark:bg-neutral-700 px-1 py-0.5 font-mono text-violet-600 dark:text-violet-300">
+                    @kan
+                  </span>
+                  to have him reply
+                </>
+              )}
+            </button>
             {onOpenWhiteboard && (
               <button
                 onMouseDown={(e) => e.preventDefault()}
