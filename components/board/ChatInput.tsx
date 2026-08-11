@@ -328,6 +328,16 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
    * onChange, which a programmatic edit doesn't fire.
    */
   const insertAtMention = useCallback(() => {
+    // One @ at a time. There's already an unfinished one if the picker is open
+    // or the text trails off in a half-typed mention, and pressing the button
+    // again should take you back to finishing it rather than start @@@.
+    const alreadyPending = mention.isActive || /(?:^|\s)@[^\s@]*$/.test(content);
+    if (alreadyPending) {
+      activateInput();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+      return;
+    }
+
     const needsSpace = content.length > 0 && !/\s$/.test(content);
     const next = content + (needsSpace ? ' @' : '@');
     setContent(next);
@@ -340,7 +350,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
       el.focus();
       el.selectionStart = el.selectionEnd = next.length;
     });
-  }, [content, activateInput]);
+  }, [content, mention.isActive, activateInput]);
 
   useImperativeHandle(ref, () => ({
     focusInput: activateInput,
@@ -421,8 +431,30 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
       }
 
       if (match.type === 'mention') {
+        // A finished mention reads as a chip. This layer is an overlay sitting
+        // exactly on top of a transparent textarea, so it can only be styled in
+        // ways that don't change how wide the text is: the horizontal padding
+        // that makes the pill is handed straight back as negative margin, and
+        // there's no weight change, or every character after it would drift out
+        // from under the caret.
+        const atLineStart = match.start === 0;
         segments.push(
-          <span key={`mention-${match.start}`} className="text-violet-500 dark:text-violet-400 font-medium">
+          <span
+            key={`mention-${match.start}`}
+            className="rounded bg-neutral-200/80 dark:bg-neutral-600/50 text-violet-600 dark:text-violet-300"
+            style={{
+              paddingTop: 1,
+              paddingBottom: 1,
+              // Nothing to bleed into at the very start of the box, so that
+              // side stays flush and only the right gets room.
+              paddingLeft: atLineStart ? 0 : 3,
+              marginLeft: atLineStart ? 0 : -3,
+              paddingRight: 3,
+              marginRight: -3,
+              boxDecorationBreak: 'clone',
+              WebkitBoxDecorationBreak: 'clone',
+            }}
+          >
             {match.text}
           </span>
         );
