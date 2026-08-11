@@ -198,13 +198,29 @@ export function InstructionDetailDrawerV2({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instructionCardId]);
 
-  // Auto-save on changes
+  /**
+   * Save whenever a committed choice changes.
+   *
+   * Every control here used to do `setX(value)`,
+   * which saved the value it had *before* the click. Deferring when handleSave
+   * runs doesn't change what it closed over, and the closure came from the
+   * render before the state changed — so switching "Only when I run it" to
+   * "When a card lands in" wrote the old setting straight back over the new
+   * one. An effect can't get this wrong: it runs after the render that applied
+   * the state, so it always reads the value the user just chose.
+   *
+   * Free-text fields stay on onBlur, so this isn't a write per keystroke.
+   */
   useEffect(() => {
-    if (!isSyncingRef.current && instructionCard) {
-      handleSave();
-    }
+    if (isSyncingRef.current || !instructionCard) return;
+    handleSave();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextAllColumns, contextColumnIds, selectedColumnIds, action]);
+  }, [
+    contextAllColumns, contextColumnIds, selectedColumnIds, action, cardCount,
+    runWhen, watchColumnId, scheduleInterval, scheduleTime,
+    scope, isGlobalResource, autoApprove, nextInstructionId, coverImageUrl,
+    safeguards, emailEnabled, emailSkipWhenEmpty,
+  ]);
 
   const handleSave = () => {
     if (!instructionCard) return;
@@ -476,7 +492,7 @@ export function InstructionDetailDrawerV2({
                           body: JSON.stringify({ context: title || 'shroom', type: 'shroom' }),
                         });
                         const data = await res.json();
-                        if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                        if (data.url) { setCoverImageUrl(data.url); }
                       } finally { setIsGeneratingImage(false); }
                     }}
                     disabled={isGeneratingImage}
@@ -485,7 +501,7 @@ export function InstructionDetailDrawerV2({
                     {isGeneratingImage ? 'Generating...' : 'Regenerate'}
                   </button>
                   <button
-                    onClick={() => { setCoverImageUrl(undefined); setTimeout(handleSave, 0); }}
+                    onClick={() => { setCoverImageUrl(undefined); }}
                     className="px-3 py-1.5 rounded-lg bg-red-500/90 text-white text-xs font-medium hover:bg-red-500 transition-colors"
                   >
                     Remove
@@ -513,7 +529,7 @@ export function InstructionDetailDrawerV2({
                           body: JSON.stringify({ context: title || 'shroom', type: 'shroom' }),
                         });
                         const data = await res.json();
-                        if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                        if (data.url) { setCoverImageUrl(data.url); }
                       } finally { setIsGeneratingImage(false); }
                     }}
                     disabled={isGeneratingImage}
@@ -558,7 +574,7 @@ export function InstructionDetailDrawerV2({
                         form.append('file', file);
                         const res = await fetch('/api/upload-image', { method: 'POST', body: form });
                         const data = await res.json();
-                        if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                        if (data.url) { setCoverImageUrl(data.url); }
                       }}
                     />
                   </label>
@@ -579,7 +595,7 @@ export function InstructionDetailDrawerV2({
                               body: JSON.stringify({ prompt: imagePromptText.trim() }),
                             });
                             const data = await res.json();
-                            if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                            if (data.url) { setCoverImageUrl(data.url); }
                           } finally {
                             setIsGeneratingImage(false);
                             setShowImagePrompt(false);
@@ -601,7 +617,7 @@ export function InstructionDetailDrawerV2({
                             body: JSON.stringify({ prompt: imagePromptText.trim() }),
                           });
                           const data = await res.json();
-                          if (data.url) { setCoverImageUrl(data.url); setTimeout(handleSave, 0); }
+                          if (data.url) { setCoverImageUrl(data.url); }
                         } finally {
                           setIsGeneratingImage(false);
                           setShowImagePrompt(false);
@@ -836,7 +852,7 @@ export function InstructionDetailDrawerV2({
                     }`}
                   >
                     <button
-                      onClick={() => { setRunWhen(key); setTimeout(() => handleSave(), 0); }}
+                      onClick={() => { setRunWhen(key); }}
                       className="w-full flex items-center gap-3 px-3.5 py-3 text-left"
                     >
                       <span
@@ -857,7 +873,7 @@ export function InstructionDetailDrawerV2({
                       <div className="px-3.5 pb-3 pl-10">
                         <select
                           value={watchColumnId}
-                          onChange={(e) => { setWatchColumnId(e.target.value); setTimeout(() => handleSave(), 0); }}
+                          onChange={(e) => { setWatchColumnId(e.target.value); }}
                           className="w-full bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-violet-500"
                         >
                           {channel.columns.map((col) => (
@@ -875,7 +891,7 @@ export function InstructionDetailDrawerV2({
                       <div className="px-3.5 pb-3 pl-10 flex flex-wrap items-center gap-2">
                         <select
                           value={scheduleInterval}
-                          onChange={(e) => { setScheduleInterval(e.target.value as ScheduleInterval); setTimeout(() => handleSave(), 0); }}
+                          onChange={(e) => { setScheduleInterval(e.target.value as ScheduleInterval); }}
                           className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-violet-500"
                         >
                           <option value="hourly">Every hour</option>
@@ -889,7 +905,7 @@ export function InstructionDetailDrawerV2({
                             <input
                               type="time"
                               value={scheduleTime}
-                              onChange={(e) => { setScheduleTime(e.target.value); setTimeout(() => handleSave(), 0); }}
+                              onChange={(e) => { setScheduleTime(e.target.value); }}
                               className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-violet-500"
                             />
                           </>
@@ -984,7 +1000,6 @@ export function InstructionDetailDrawerV2({
                     <button
                       onClick={() => {
                         setScope('channel');
-                        setTimeout(() => handleSave(), 0);
                       }}
                       className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
                         scope === 'channel'
@@ -1000,7 +1015,6 @@ export function InstructionDetailDrawerV2({
                     <button
                       onClick={() => {
                         setScope('global');
-                        setTimeout(() => handleSave(), 0);
                       }}
                       className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
                         scope === 'global'
@@ -1034,7 +1048,6 @@ export function InstructionDetailDrawerV2({
                       checked={autoApprove}
                       onChange={(e) => {
                         setAutoApprove(e.target.checked);
-                        setTimeout(() => handleSave(), 0);
                       }}
                       className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
                     />
@@ -1058,7 +1071,6 @@ export function InstructionDetailDrawerV2({
                     value={nextInstructionId || ''}
                     onChange={(e) => {
                       setNextInstructionId(e.target.value || undefined);
-                      setTimeout(() => handleSave(), 0);
                     }}
                     className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 focus:outline-none focus:ring-1 focus:ring-violet-500"
                   >
@@ -1084,7 +1096,6 @@ export function InstructionDetailDrawerV2({
                         checked={isGlobalResource}
                         onChange={(e) => {
                           setIsGlobalResource(e.target.checked);
-                          setTimeout(() => handleSave(), 0);
                         }}
                         className="h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
                       />
@@ -1111,7 +1122,6 @@ export function InstructionDetailDrawerV2({
                 type="checkbox"
                 checked={emailEnabled}
                 onChange={(e) => { setEmailEnabled(e.target.checked); }}
-                onBlur={handleSave}
                 className="mt-0.5 w-4 h-4 rounded border-neutral-300 dark:border-neutral-600 text-violet-600 focus:ring-violet-500"
               />
               <span className="flex-1">
@@ -1149,7 +1159,6 @@ export function InstructionDetailDrawerV2({
                     type="checkbox"
                     checked={emailSkipWhenEmpty}
                     onChange={(e) => { setEmailSkipWhenEmpty(e.target.checked); }}
-                    onBlur={handleSave}
                     className="w-3.5 h-3.5 rounded border-neutral-300 dark:border-neutral-600 text-violet-600 focus:ring-violet-500"
                   />
                   <span className="text-xs text-neutral-600 dark:text-neutral-400">

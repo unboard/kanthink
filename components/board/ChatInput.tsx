@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback, useImperativeHandle, useMemo,
 import type { CardMessageType, ChannelMember, Card as CardType } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
-import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { AudioLines } from 'lucide-react';
 import { MentionDropdown } from './MentionDropdown';
@@ -1053,38 +1052,30 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
         </div>
 
         {/*
-          Who's getting this — and nothing at all until there is something to
-          send. The row keeps its height empty, so the composer is the same size
-          before you type as after, and the hint appears without moving anything.
+          The offer to bring Kan in, and only while it's still an offer. Once
+          @kan is in the message the mention says so itself, in the same violet,
+          two lines up — repeating it here was the same fact twice.
+
+          The row keeps its height in every state, so the composer is one size
+          whether it's empty, being typed into, or addressed to Kan.
         */}
         {!forceQuestionMode && (
           <div className="flex items-center h-5 mt-1.5 ml-8">
-            {hasContent && (
+            {hasContent && !isAskingKan && (
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={toggleKanMention}
                 disabled={isLoading}
-                title={isAskingKan ? 'Remove @kan — nobody replies' : 'Add @kan to this message'}
-                className={`flex items-center gap-1 text-[11px] leading-none transition-colors ${
-                  isAskingKan
-                    ? 'text-violet-600 dark:text-violet-300'
-                    : 'text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300'
-                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title="Add @kan to this message"
+                className={`flex items-center gap-1 text-[11px] leading-none text-neutral-400 dark:text-neutral-500 transition-colors hover:text-neutral-600 dark:hover:text-neutral-300 ${
+                  isLoading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
               >
-                {isAskingKan ? (
-                  <>
-                    <KanthinkIcon size={11} />
-                    Kan will reply to this
-                  </>
-                ) : (
-                  <>
-                    <span className="rounded bg-neutral-100 dark:bg-neutral-700 px-1 py-0.5 font-mono text-violet-600 dark:text-violet-300">
-                      @kan
-                    </span>
-                    to have him reply
-                  </>
-                )}
+                <span className="rounded bg-neutral-100 dark:bg-neutral-700 px-1 py-0.5 font-mono text-violet-600 dark:text-violet-300">
+                  @kan
+                </span>
+                to have him reply
               </button>
             )}
           </div>
