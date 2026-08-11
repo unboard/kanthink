@@ -78,6 +78,7 @@ export function InstructionDetailDrawerV2({
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [showImagePrompt, setShowImagePrompt] = useState(false);
   const [imagePromptText, setImagePromptText] = useState('');
+  const [showCoverTools, setShowCoverTools] = useState(false);
 
   // Cooldown / daily cap / loop prevention. Not surfaced in the UI — the defaults are
   // the guard rails, and the same values apply whether a run comes from cron, a card
@@ -495,6 +496,14 @@ export function InstructionDetailDrawerV2({
 
         {/* Main Content - Scrollable */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Shroom name input */}
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={handleSave}
+            placeholder="Action name..."
+            className="text-lg font-semibold bg-transparent border-none outline-none text-neutral-900 dark:text-white placeholder:text-neutral-400 w-full"
+          />
           {/* Cover image */}
           <div className="relative group">
             {coverImageUrl ? (
@@ -537,7 +546,20 @@ export function InstructionDetailDrawerV2({
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
+                {/*
+                  Cover art is the least important thing in here, and three
+                  dashed buttons above the title made it the first thing. One
+                  quiet line, opened only if you want it.
+                */}
+                {!showCoverTools && (
+                  <button
+                    onClick={() => setShowCoverTools(true)}
+                    className="text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                  >
+                    + Add a cover image
+                  </button>
+                )}
+                <div className={`items-center gap-2 ${showCoverTools ? 'flex' : 'hidden'}`}>
                   <button
                     onClick={async () => {
                       setIsGeneratingImage(true);
@@ -654,14 +676,6 @@ export function InstructionDetailDrawerV2({
             )}
           </div>
 
-          {/* Shroom name input */}
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleSave}
-            placeholder="Action name..."
-            className="text-lg font-semibold bg-transparent border-none outline-none text-neutral-900 dark:text-white placeholder:text-neutral-400 w-full"
-          />
           {/*
             What this shroom does. A shroom built in chat can have a sequence —
             modify a card and then move it — and the engine runs all of it off
@@ -686,18 +700,18 @@ export function InstructionDetailDrawerV2({
               )}
             </div>
           ) : (
-            /* Action Type - Button Group. Four actions don't fit a phone width, so the row
-               scrolls sideways; the negative margin lets it bleed to the drawer edges so it
-               reads as scrollable rather than clipped. */
-            <div className="flex gap-2 overflow-x-auto -mx-6 px-6 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            /* Four actions in a grid rather than a sideways scroll. The old row
+               ran off the drawer edge, so Report was permanently half-visible
+               behind a scrollbar and looked like a rendering fault. */
+            <div className="grid grid-cols-2 gap-2">
               {(Object.entries(actionLabels) as [InstructionAction, typeof actionLabels['generate']][]).map(([key, { label, icon }]) => (
                 <button
                   key={key}
                   onClick={() => setAction(key)}
-                  className={`flex flex-shrink-0 items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+                  className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap border transition-colors ${
                     action === key
-                      ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
-                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700'
+                      ? 'border-violet-500/60 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                      : 'border-transparent bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700'
                   }`}
                 >
                   {icon}
@@ -745,7 +759,9 @@ export function InstructionDetailDrawerV2({
               onChange={(e) => { setSummary(e.target.value); setSummaryError(null); }}
               onBlur={handleSave}
               placeholder="One line describing what this does, shown on the board card."
-              rows={2}
+              // Three lines: two clipped a typical summary mid-word behind an
+              // inner scrollbar, which read as a broken field.
+              rows={3}
               className="text-sm"
             />
             {summaryError ? (
@@ -759,8 +775,9 @@ export function InstructionDetailDrawerV2({
             )}
           </div>
 
-          {/* Visual Flow: Context → Action → Destination */}
-          <div className="bg-neutral-50 dark:bg-neutral-800/50 rounded-xl p-4 space-y-4">
+          {/* Where it acts, and what it can see. Flat rather than a panel — a
+              filled box inside an already-boxed drawer just added an edge. */}
+          <div className="space-y-4">
             {/* Destination Columns */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -795,10 +812,13 @@ export function InstructionDetailDrawerV2({
                     <button
                       key={col.id}
                       onClick={() => toggleColumn(col.id)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      // Selected reads the same here as it does on the action
+                      // buttons above. A solid violet chip next to a tinted
+                      // violet button made two selections look like two ranks.
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
                         isSelected
-                          ? 'bg-violet-600 text-white shadow-sm'
-                          : 'bg-white dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-600 border border-neutral-200 dark:border-neutral-600'
+                          ? 'border-violet-500/60 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                          : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
                       }`}
                     >
                       {col.name}
