@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shroom-settings-save-and-show-steps',
+    date: '2026-08-10',
+    kind: 'fix',
+    title: 'Shroom settings save, and multi-step shrooms show all their steps',
+    body: 'Changing when a shroom runs quietly saved the previous setting instead of the new one, so shrooms set to "when a card lands in" could still be sitting on manual — worth reopening yours to check. Shrooms that do more than one thing, like modify a card and then move it, now show the whole sequence in the drawer and on the board instead of just the first action.',
+  },
+  {
     id: 'mention-kan-to-get-a-reply',
     date: '2026-08-10',
     kind: 'workflow',

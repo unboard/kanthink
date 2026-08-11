@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope, ScheduleInterval, EventTrigger, ScheduledTrigger } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { calculateNextScheduledRun } from '@/lib/automationSafeguards';
 import { REJECTION_REASONS } from '@/lib/constants';
 import { Drawer } from '@/components/ui/Drawer';
+import { ShroomStepList, type ShroomStepView } from './ShroomStepList';
 import { Button, Textarea } from '@/components/ui';
 
 const SKIP_LABELS: Record<string, string> = {
@@ -114,6 +115,24 @@ export function InstructionDetailDrawerV2({
 
   const isSyncingRef = useRef(false);
   const instructionCardId = instructionCard?.id;
+
+  /**
+   * The sequence, with column names looked up now rather than stored.
+   *
+   * Steps bind to column ids, so renaming a column doesn't break the shroom —
+   * and reading the name at render time is what keeps this list honest about
+   * the rename instead of showing the name the column had when it was built.
+   */
+  const stepViews = useMemo<ShroomStepView[] | null>(() => {
+    const steps = instructionCard?.steps;
+    if (!steps || steps.length === 0) return null;
+    return steps.map((step) => ({
+      action: step.action,
+      columnName:
+        channel.columns.find((c) => c.id === step.targetColumnId)?.name ?? 'a deleted column',
+      description: step.description,
+    }));
+  }, [instructionCard?.steps, channel.columns]);
 
   // Sync form state from props
   // Load what this shroom has learned from rejections
@@ -643,25 +662,50 @@ export function InstructionDetailDrawerV2({
             placeholder="Action name..."
             className="text-lg font-semibold bg-transparent border-none outline-none text-neutral-900 dark:text-white placeholder:text-neutral-400 w-full"
           />
-          {/* Action Type - Button Group. Four actions don't fit a phone width, so the row
-              scrolls sideways; the negative margin lets it bleed to the drawer edges so it
-              reads as scrollable rather than clipped. */}
-          <div className="flex gap-2 overflow-x-auto -mx-6 px-6 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {(Object.entries(actionLabels) as [InstructionAction, typeof actionLabels['generate']][]).map(([key, { label, icon }]) => (
-              <button
-                key={key}
-                onClick={() => setAction(key)}
-                className={`flex flex-shrink-0 items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
-                  action === key
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700'
-                }`}
-              >
-                {icon}
-                {label}
-              </button>
-            ))}
-          </div>
+          {/*
+            What this shroom does. A shroom built in chat can have a sequence —
+            modify a card and then move it — and the engine runs all of it off
+            `steps`. The single-action row can only ever show one of them, and
+            clicking it writes a field a stepped shroom ignores, so it used to
+            claim a modify-and-move shroom merely moved. When there's a
+            sequence, show the sequence.
+          */}
+          {stepViews ? (
+            <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 p-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Runs in order
+              </p>
+              <ShroomStepList steps={stepViews} stacked />
+              {onChatWithKan && instructionCard && (
+                <button
+                  onClick={() => onChatWithKan(instructionCard)}
+                  className="mt-3 text-xs text-violet-600 dark:text-violet-400 hover:underline"
+                >
+                  Change the sequence in chat →
+                </button>
+              )}
+            </div>
+          ) : (
+            /* Action Type - Button Group. Four actions don't fit a phone width, so the row
+               scrolls sideways; the negative margin lets it bleed to the drawer edges so it
+               reads as scrollable rather than clipped. */
+            <div className="flex gap-2 overflow-x-auto -mx-6 px-6 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {(Object.entries(actionLabels) as [InstructionAction, typeof actionLabels['generate']][]).map(([key, { label, icon }]) => (
+                <button
+                  key={key}
+                  onClick={() => setAction(key)}
+                  className={`flex flex-shrink-0 items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+                    action === key
+                      ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-700'
+                  }`}
+                >
+                  {icon}
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Instructions - The Hero */}
           <div>

@@ -95,6 +95,12 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
 
   const action = actionConfig[card.action];
 
+  // A shroom built in chat can run a sequence, and `card.action` only holds one
+  // of them — so "Modify → Move" rather than a word that's two thirds true.
+  const actionLabel = card.steps?.length
+    ? card.steps.map((s) => actionConfig[s.action as keyof typeof actionConfig]?.label ?? s.action).join(' → ')
+    : action.label;
+
   // Edit (pencil) icon
   const EditIcon = () => (
     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +153,7 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
           {/* Action type - subtle dot + text */}
           <div className="flex items-center gap-1.5 text-xs text-neutral-500">
             <span className={`w-1.5 h-1.5 rounded-full ${action.dotClass}`} />
-            <span>{action.label}</span>
+            <span>{actionLabel}</span>
           </div>
 
           {/* Auto mode indicator */}
