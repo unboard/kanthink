@@ -710,7 +710,16 @@ body {
 /* He wiggles when you go near him. */
 .kan-switch:hover:not(:disabled) .kan-switch-knob { animation: kan-switch-wiggle 0.5s ease-in-out; }
 
+/* The @kan offer fades in as you start typing rather than snapping on. */
+@keyframes kan-hint-in {
+  from { opacity: 0; transform: translateX(-3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.kan-hint { animation: kan-hint-in 0.18s ease-out both; }
+
 @media (prefers-reduced-motion: reduce) {
+  .kan-hint { animation: none; }
   .kan-switch-snooze,
   .kan-switch-pulse,
   .kan-switch-ask,

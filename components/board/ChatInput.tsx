@@ -352,13 +352,27 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
     });
   }, [content, mention.isActive, activateInput]);
 
+  /**
+   * Put @kan at the front of the message.
+   *
+   * The front because that's how you address someone, and because it puts the
+   * one word that changes what happens to the message where you read first.
+   */
+  const addKanMention = useCallback(() => {
+    setContent((current) => (KAN_MENTION.test(current) ? current : current ? `@kan ${current}` : '@kan '));
+    activateInput();
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = el.value.length;
+    });
+  }, [activateInput]);
+
   useImperativeHandle(ref, () => ({
     focusInput: activateInput,
-    mentionKan: () => {
-      setContent((current) => (KAN_MENTION.test(current) ? current : current ? `@kan ${current}` : '@kan '));
-      activateInput();
-    },
-  }), [activateInput]);
+    mentionKan: addKanMention,
+  }), [activateInput, addKanMention]);
 
   // Sync scroll between textarea and backdrop (for keyword highlighting)
   const handleScroll = useCallback(() => {
@@ -1068,6 +1082,30 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
                 className="h-6 w-7 flex items-center justify-center rounded-md text-[15px] font-medium leading-none text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors disabled:opacity-50"
               >
                 @
+              </button>
+            )}
+
+            {/*
+              The offer, and only while it's still one: once you're writing
+              there's something for Kan to answer, and once he's named the
+              mention in the field says so itself. It lives in the row the
+              tools are already in, so nothing moves when it appears.
+            */}
+            {!forceQuestionMode && hasContent && !isAskingKan && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={addKanMention}
+                disabled={isLoading}
+                title="Add @kan so he replies to this"
+                className={`kan-hint ml-1 flex min-w-0 items-center gap-1 truncate text-[11px] leading-none text-neutral-400 dark:text-neutral-500 transition-colors hover:text-neutral-600 dark:hover:text-neutral-300 ${
+                  isLoading ? 'cursor-not-allowed opacity-50' : ''
+                }`}
+              >
+                <span className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                  @kan
+                </span>
+                <span className="truncate">to have him reply</span>
               </button>
             )}
           </div>
