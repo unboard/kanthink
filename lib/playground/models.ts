@@ -45,7 +45,9 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
     id: 'gemini-3.6-flash',
     label: 'Gemini 3.6 Flash',
     blurb: 'Previous GA flash. Frontier-class, no preview risk.',
-    pricing: { input: 1.5, output: 7.5 },
+    // Same introductory pricing as 3.7 through 2026-12-31, and the same rise to
+    // 1.5 / 7.5 on 2027-01-01 — so 3.7 is strictly better at equal cost.
+    pricing: { input: 0.75, output: 3.75 },
     thinkingBudget: 6000,
   },
   {

@@ -21,9 +21,15 @@ import { runPreflight } from '@/lib/playground/preflight';
 
 export const runtime = 'nodejs';
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
-// cleanly exceed 60s; bumping to the Vercel Pro plan max prevents 504 gateway
-// timeouts from killing in-flight calls before Gemini responds.
-export const maxDuration = 300;
+// cleanly exceed 60s. 800s is the Vercel Pro ceiling (300s is only the default),
+// so this buys the most headroom the plan allows before the gateway 504s.
+export const maxDuration = 800;
+
+// Abort the Gemini call just short of the function ceiling. Without this, the
+// platform kills the request mid-flight and the browser gets an HTML 504 that
+// JSON.parse chokes on — the user sees "unexpected response" instead of a real
+// explanation. Aborting ourselves means we always own the error message.
+const GENERATION_DEADLINE_MS = 760_000;
 
 interface PlaygroundUsage {
   modelId: string;
@@ -413,6 +419,7 @@ export async function POST(request: Request) {
 
   let parsed: { title: string; summary: string; code: string; notes: string; designNotes?: string } | null = null;
   let usage: { promptTokenCount?: number; candidatesTokenCount?: number } | null = null;
+  const deadline = AbortSignal.timeout(GENERATION_DEADLINE_MS);
   try {
     const response = await client.models.generateContent({
       model: model.id,
@@ -421,10 +428,28 @@ export async function POST(request: Request) {
         systemInstruction: SYSTEM_PROMPT,
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
-        maxOutputTokens: 16000,
+        // A whole single-file app plus design notes. Every model in the picker
+        // tops out at 65,536 output tokens, so this is a ceiling for runaway
+        // generations, not a budget an ordinary app should ever reach.
+        maxOutputTokens: 32000,
         thinkingConfig: model.thinkingBudget > 0 ? { thinkingBudget: model.thinkingBudget } : undefined,
+        abortSignal: deadline,
       },
     });
+
+    // Gemini counts thinking against maxOutputTokens, so a run that thinks too
+    // hard returns truncated JSON. Say that plainly — JSON.parse would otherwise
+    // fail with "Unexpected end of JSON input", which explains nothing.
+    if (response.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      return NextResponse.json(
+        {
+          error:
+            'The app got too long for one response and was cut off. Try asking for it in smaller pieces — build the core first, then add features in follow-up messages.',
+        },
+        { status: 502 }
+      );
+    }
+
     const text = response.text || '';
     parsed = JSON.parse(text);
     usage = response.usageMetadata
@@ -434,6 +459,14 @@ export async function POST(request: Request) {
         }
       : null;
   } catch (err) {
+    if (deadline.aborted) {
+      return NextResponse.json(
+        {
+          error: `${model.label} ran past ${Math.round(GENERATION_DEADLINE_MS / 60_000)} minutes without finishing. Try a smaller change, or switch to Gemini 3.7 Flash — it is the fastest model in the picker.`,
+        },
+        { status: 504 }
+      );
+    }
     const msg = err instanceof Error ? err.message : 'Unknown error from Gemini';
     return NextResponse.json({ error: `Gemini error: ${msg}` }, { status: 502 });
   }

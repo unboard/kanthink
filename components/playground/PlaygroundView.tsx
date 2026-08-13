@@ -408,13 +408,17 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
       }
 
       if (!res.ok || !data) {
+        // The server's own message wins whenever it sent one. It knows whether
+        // the run actually timed out, got cut off, or failed some other way —
+        // guessing from the status code alone reported real Gemini errors as
+        // "timed out", which sent people chasing a timeout that never happened.
         let friendly: string;
-        if (res.status === 504 || res.status === 502) {
-          friendly = 'Generation took too long and timed out. Try a smaller change, or switch to a faster model like Gemini 3 Flash.';
+        if (data?.error) {
+          friendly = data.error;
+        } else if (res.status === 504 || res.status === 502) {
+          friendly = 'Generation took too long and timed out. Try a smaller change, or switch to a faster model like Gemini 3.7 Flash.';
         } else if (res.status === 408) {
           friendly = 'Request timed out. Try again, or switch to a faster model.';
-        } else if (data?.error) {
-          friendly = data.error;
         } else if (!data) {
           friendly = `Server returned an unexpected response (${res.status}). Try again.`;
         } else {

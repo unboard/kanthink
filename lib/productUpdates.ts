@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'playground-generation-headroom-and-honest-errors',
+    date: '2026-08-13',
+    kind: 'fix',
+    title: 'Bigger playground apps, and errors that say what actually happened',
+    body: 'Long generations had well under half the time they can now use, and apps that outgrew one response were cut off. Both have much more room. Failures also used to be reported as "took too long and timed out" no matter the real cause — you now get the actual reason, so a real timeout means a real timeout.',
+  },
+  {
     id: 'gemini-3-7-flash-in-playground',
     date: '2026-08-13',
     kind: 'capability',
