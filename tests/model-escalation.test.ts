@@ -16,13 +16,13 @@ describe('model escalation ladder', () => {
   });
 
   it('steps a lite model up to flash', () => {
-    expect(escalateFrom('gemini-3.5-flash-lite')).toBe('gemini-3.6-flash');
-    expect(escalateFrom('gemini-2.5-flash-lite')).toBe('gemini-3.6-flash');
+    expect(escalateFrom('gemini-3.5-flash-lite')).toBe('gemini-3.7-flash');
+    expect(escalateFrom('gemini-2.5-flash-lite')).toBe('gemini-3.7-flash');
   });
 
   it('steps a flash model up to pro', () => {
     expect(escalateFrom('gemini-2.5-flash')).toBe('gemini-3.1-pro-preview');
-    expect(escalateFrom('gemini-3.6-flash')).toBe('gemini-3.1-pro-preview');
+    expect(escalateFrom('gemini-3.7-flash')).toBe('gemini-3.1-pro-preview');
   });
 
   it('stops at the top instead of escalating forever', () => {
@@ -35,6 +35,8 @@ describe('model escalation ladder', () => {
       'gemini-2.5-flash',
       'gemini-2.5-pro',
       'gemini-3.6-flash',
+      'gemini-3.7-flash',
+      'gemini-3.5-flash-lite',
       'something-unrecognised',
     ]) {
       let current = createGoogleProvider('test-key', start);

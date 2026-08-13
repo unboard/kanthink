@@ -10,7 +10,7 @@ const DEFAULT_MODEL = 'gemini-2.5-flash';
  * escalation has to terminate or a retry loop has no floor. Model ids here were
  * confirmed callable against ListModels; do not add one from memory.
  */
-const ESCALATION_TARGET = 'gemini-3.6-flash';
+const ESCALATION_TARGET = 'gemini-3.7-flash';
 const ESCALATION_TOP = 'gemini-3.1-pro-preview';
 
 function roomierModel(modelId: string): string | null {

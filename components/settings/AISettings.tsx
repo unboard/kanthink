@@ -31,6 +31,8 @@ const MODEL_OPTIONS: Record<LLMProvider, { value: string; label: string }[]> = {
   ],
   google: [
     { value: '', label: 'Default (Gemini 2.5 Flash)' },
+    { value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
+    { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
     { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
     { value: 'gemini-3-flash-lite', label: 'Gemini 3 Flash Lite' },
     { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)' },

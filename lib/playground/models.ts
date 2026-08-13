@@ -23,20 +23,28 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
   {
     id: AUTO_MODEL_ID,
     label: 'Auto',
-    blurb: 'Cosmetic → 3 Flash. Structural / first build → 3.1 Pro.',
+    blurb: 'Cosmetic → 3.7 Flash. Structural / first build → 3.1 Pro.',
     pricing: { input: 0, output: 0 },
     thinkingBudget: 0,
     isAuto: true,
     isDefault: true,
   },
 
-  // === Current GA (3.5 / 3.6) — frontier-class without preview risk =====
+  // === Current GA (3.5 / 3.6 / 3.7) — frontier-class without preview risk ===
   // Gemini 3.5 Flash is deliberately absent: 3.6 Flash costs the same on input,
   // less on output, and is newer, so it is strictly the better pick.
   {
+    id: 'gemini-3.7-flash',
+    label: 'Gemini 3.7 Flash',
+    blurb: 'Newest GA flash. Big coding gains, half price until 2027.',
+    // Introductory pricing through 2026-12-31; rises to 1.5 / 7.5 on 2027-01-01.
+    pricing: { input: 0.75, output: 3.75 },
+    thinkingBudget: 6000,
+  },
+  {
     id: 'gemini-3.6-flash',
     label: 'Gemini 3.6 Flash',
-    blurb: 'Newest GA flash. Frontier-class, no preview risk.',
+    blurb: 'Previous GA flash. Frontier-class, no preview risk.',
     pricing: { input: 1.5, output: 7.5 },
     thinkingBudget: 6000,
   },
@@ -112,7 +120,7 @@ export function getPlaygroundModel(id: string | undefined | null): PlaygroundMod
 /**
  * Resolve the actual model to call given the user's choice and an optional edit type.
  * 'auto' routes to the FRONTIER family — 3.x is our best:
- *   cosmetic   → Gemini 3 Flash Preview      (fast/cheap, frontier-class)
+ *   cosmetic   → Gemini 3.7 Flash           (GA, fast, leads on web-layout codegen)
  *   behavior   → Gemini 3.1 Pro Preview      (touches logic; needs best reasoning)
  *   structural → Gemini 3.1 Pro Preview      (layout / new components / state changes)
  *   redesign   → Gemini 3.1 Pro Preview
@@ -126,7 +134,9 @@ export function resolveActiveModelId(
 ): string {
   if (selectedId && selectedId !== AUTO_MODEL_ID) return selectedId;
   // Auto routing — frontier 3.x family
-  if (editType === 'cosmetic') return 'gemini-3-flash-preview';
+  // Cosmetic edits are mostly layout/styling, which is exactly where 3.7 Flash
+  // leads — and it is GA, so no preview risk on the most-travelled auto path.
+  if (editType === 'cosmetic') return 'gemini-3.7-flash';
   // first / behavior / structural / redesign / unknown → best available
   return 'gemini-3.1-pro-preview';
 }

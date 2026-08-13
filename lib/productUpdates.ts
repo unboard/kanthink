@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'gemini-3-7-flash-in-playground',
+    date: '2026-08-13',
+    kind: 'capability',
+    title: 'Gemini 3.7 Flash is available in the playground',
+    body: 'Google\'s newest Flash model is in the model picker and in the settings list if you bring your own key. It is markedly better at building web layouts, and Auto now sends cosmetic edits to it instead of Gemini 3 Flash — so small visual tweaks should land right more often, in fewer tries.',
+  },
+  {
     id: 'shroom-settings-save-and-show-steps',
     date: '2026-08-10',
     kind: 'fix',
