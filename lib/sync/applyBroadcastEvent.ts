@@ -1467,6 +1467,11 @@ export function applyBroadcastEvent(
       console.log('[BroadcastSync] Another tab loaded from server at', event.timestamp)
       break
 
+    case 'sync:refetch':
+      // Handled by ServerSyncProvider, which owns fetching. Named here so it doesn't
+      // trip the unhandled-event warning below.
+      break
+
     case 'server:clear':
       // Another tab cleared data - clear ours too
       set(() => ({

@@ -113,6 +113,13 @@ export type BroadcastEvent =
   // Server sync events
   | { type: 'server:load'; timestamp: string }
   | { type: 'server:clear' }
+  /**
+   * "Something changed server-side that isn't expressible as a single mutation —
+   * pull fresh data." Published by unattended shroom runs, which write straight to the
+   * database. Handled in ServerSyncProvider, not applyBroadcastEvent, because it triggers
+   * a fetch rather than a store edit.
+   */
+  | { type: 'sync:refetch'; channelId: ID; reason?: string }
 
 // Wrapper message with metadata
 interface BroadcastMessage {

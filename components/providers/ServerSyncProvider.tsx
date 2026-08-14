@@ -534,8 +534,29 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
     }
   }, [sessionStatus, session?.user?.id, hasFetched, fetchServerData])
 
+  // Held in a ref so the event handler below can stay identity-stable — it's a dependency
+  // of the BroadcastChannel and Pusher setup effects.
+  const fetchServerDataRef = useRef(fetchServerData)
+  useEffect(() => {
+    fetchServerDataRef.current = fetchServerData
+  }, [fetchServerData])
+
   // Handler for applying events from BroadcastChannel or Pusher
   const applyEventHandler = useCallback((event: Parameters<typeof applyBroadcastEvent>[0]) => {
+    // A shroom that ran without a browser wrote its changes straight to the database, so
+    // there are no per-mutation events to apply — just a nudge to go and read them. Ignore
+    // the nudge while our own writes are still in flight, or the fetch would overwrite them.
+    if (event.type === 'sync:refetch') {
+      if (hasPendingSyncs()) {
+        setTimeout(() => {
+          if (!hasPendingSyncs()) void fetchServerDataRef.current()
+        }, 3000)
+      } else {
+        void fetchServerDataRef.current()
+      }
+      return
+    }
+
     // Apply the event to our local store
     const set = useStore.setState
     const get = useStore.getState

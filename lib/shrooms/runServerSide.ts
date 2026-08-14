@@ -2,7 +2,11 @@ import { db } from '@/lib/db'
 import { instructionCards } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { loadChannelForShroom } from '@/lib/shrooms/loadChannelForShroom'
+import { setCardProcessingServerSide } from '@/lib/shrooms/cardProcessing'
+import { publishToChannel } from '@/lib/sync/pusherServer'
+import { generateEventId } from '@/lib/sync/broadcastSync'
 import { checkSafeguards, getExecutionUpdate } from '@/lib/automationSafeguards'
+import { generateProcessingStatus } from '@/lib/processingStatus'
 import type { InstructionCard, TriggerType } from '@/lib/types'
 
 export interface ServerRunResult {
@@ -63,6 +67,19 @@ export async function runShroomServerSide(options: {
 
   const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com'
 
+  // Show the card as working for the length of the run. A card-scoped run is the one case
+  // where there's an obvious place to put it, and it's also the case the user is most
+  // likely watching — they just dropped the card in the column that set this off.
+  if (triggeringCardId) {
+    await setCardProcessingServerSide({
+      cardId: triggeringCardId,
+      channelId: instruction.channelId,
+      status: generateProcessingStatus(instruction),
+    })
+  }
+
+  let cardsChanged = 0
+
   try {
     const res = await fetch(`${baseUrl}/api/run-instruction`, {
       method: 'POST',
@@ -89,6 +106,7 @@ export async function runShroomServerSide(options: {
       (data.modifiedCards?.length ?? 0) ||
       (data.movedCards?.length ?? 0)
 
+    cardsChanged = cardsAffected
     await recordRun(instruction, succeeded, cardsAffected, triggerType, nextScheduledRun)
 
     return {
@@ -103,6 +121,27 @@ export async function runShroomServerSide(options: {
       status: 'failed',
       detail: error instanceof Error ? error.message : 'unknown error',
       cardsAffected: 0,
+    }
+  } finally {
+    // In `finally` so a failed run doesn't leave the card shimmering forever.
+    if (triggeringCardId) {
+      await setCardProcessingServerSide({
+        cardId: triggeringCardId,
+        channelId: instruction.channelId,
+        status: null,
+      })
+    }
+
+    // The run wrote its edits straight to the database, so an open board has no idea they
+    // happened until its 60s safety poll. That delay is what made an auto-triggered shroom
+    // look like it did nothing: the card sat there unchanged long after the work was done.
+    if (cardsChanged > 0) {
+      await publishToChannel(
+        instruction.channelId,
+        { type: 'sync:refetch', channelId: instruction.channelId, reason: 'shroom-run' },
+        'shroom-server',
+        generateEventId()
+      ).catch(() => {})
     }
   }
 }
