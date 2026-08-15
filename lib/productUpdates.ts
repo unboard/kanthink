@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shrooms-trigger-on-ai-made-cards',
+    date: '2026-08-14',
+    kind: 'automation',
+    title: 'Automatic shrooms now fire on AI-made cards too',
+    body: 'A card a shroom had generated could never set off an automatic shroom again — drag one into a watched column and nothing happened, silently. Any card you move now triggers whatever is watching that column; the only thing a shroom still skips is a card it created itself. Cards run this way also show a working indicator while it happens, and the board updates the moment it finishes.',
+  },
+  {
     id: 'playground-generation-headroom-and-honest-errors',
     date: '2026-08-13',
     kind: 'fix',
