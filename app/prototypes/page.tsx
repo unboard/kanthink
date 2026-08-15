@@ -9,10 +9,16 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'shrooms-in-channel',
+    name: 'Shrooms in a channel',
+    blurb:
+      'Shrooms live in a global nav panel, so a channel gives no sign they exist. Ten places to put them inside the board — edge rail, header facepile, column watchers, a shroom column, threads in the gutters — each shown against the same board so the space it takes is visible.',
+    status: 'newest',
+  },
+  {
     slug: 'kan-intent',
     name: 'Does Kan answer this?',
     blurb: 'Five answers to the actual question rather than five skins on a switch: decide on the way out, let it read what you wrote, address it to him, fork the field on focus, or two ways to send. Real fields — type in them. Also where upload and whiteboard move into the + menu.',
-    status: 'newest',
   },
   {
     slug: 'kan-button',

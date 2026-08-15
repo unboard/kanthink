@@ -943,6 +943,20 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         React
                       </button>
 
+                      {/* Run a shroom on this card. Same action the card's own menu
+                          offers — the drawer had it only as a row in the Info tab, which
+                          is not where anyone looks for a card action. */}
+                      {cardShrooms.length > 0 && (
+                        <button
+                          onClick={() => { setShowCardMenu(false); setShowShroomPicker(true); }}
+                          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                        >
+                          <span className="w-4 h-4 text-sm leading-none flex items-center justify-center">🍄</span>
+                          Run shroom
+                          <span className="ml-auto text-xs text-neutral-400">{cardShrooms.length}</span>
+                        </button>
+                      )}
+
                       {/* Open Playground. Just a jump to the tab now — the playground is
                           no longer a card mode you have to convert into and back out of. */}
                       <button
