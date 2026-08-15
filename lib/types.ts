@@ -54,6 +54,28 @@ export interface ShroomEmailConfig {
   skipWhenNothingHappened?: boolean;
 }
 
+/**
+ * A shroom's Web ability.
+ *
+ * Before this, web research was inferred: if the instructions happened to contain
+ * "article" or "youtube", the run quietly went and searched. That made research a
+ * property of your wording rather than a choice, and there was no way to ask for it
+ * without saying a magic word — or to stop it once you'd said one by accident.
+ *
+ * 'auto' keeps that inference, so existing shrooms behave exactly as before.
+ */
+export type ShroomWebMode = 'auto' | 'always' | 'off';
+
+export interface ShroomWebAccess {
+  mode: ShroomWebMode;
+  /**
+   * What to go and look for, in the user's words. When set, this is the search query
+   * instead of one derived from the instructions — so a shroom can research one thing
+   * while its instructions describe what to do with the findings.
+   */
+  focus?: string;
+}
+
 // Automation trigger types
 /**
  * 'manual' is a real trigger, not a placeholder: pressing Run is the most common
@@ -239,6 +261,18 @@ export interface InstructionCard {
   autoApprove?: boolean;                  // Skip review queue for generate actions
   emailConfig?: ShroomEmailConfig;        // Email the channel owner after a run
   /**
+   * Which model this shroom runs on, stored provider-qualified ("google:gemini-3.7-flash").
+   * Unset means the account default. Honoured only when there's a key for that provider —
+   * see `resolveShroomModel`.
+   */
+  modelId?: string;
+  /**
+   * Whether this shroom can go to the web, and what it should look for there.
+   * Unset means 'auto' — inferred from the instructions, which is what shrooms did
+   * before the ability was made explicit.
+   */
+  webAccess?: ShroomWebAccess;
+  /**
    * One generated sentence describing what this shroom does, for the card on the board.
    * `instructions` is written *to* the model and reads like configuration, which is why
    * cards showing it felt like settings rather than a description.
@@ -334,6 +368,12 @@ export interface CardMessage {
   replyToMessageId?: ID;     // For AI responses, links to the question
   proposedActions?: StoredAction[];  // Smart snippets for AI responses
   reactions?: MessageReaction[];
+  /**
+   * Set when this message records a shroom being run against the card. The thread
+   * renders the shroom's own card in place of a text bubble, so a run leaves a
+   * visible trace you can re-run, open, or clear — instead of happening silently.
+   */
+  shroomRunId?: ID;
 }
 
 export interface ChannelMember {

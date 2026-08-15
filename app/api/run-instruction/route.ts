@@ -5,6 +5,8 @@ import { type LLMMessage, type LLMProvider, type LLMResponse, getLLMClientForUse
 import { recordUsage } from '@/lib/usage';
 import { buildFeedbackContext, buildRejectionContext } from '@/lib/ai/feedbackAnalyzer';
 import { getAuthenticatedLLM } from '@/lib/ai/withAuth';
+import { parseModelChoice } from '@/lib/ai/modelCatalog';
+import { shouldResearchWeb, baseSearchQuery, researchWeb, formatResearchBlock } from '@/lib/shrooms/webResearch';
 import { createNotification } from '@/lib/notifications/createNotification';
 import { auth } from '@/lib/auth';
 import { ensureSchema } from '@/lib/db/ensure-schema';
@@ -91,22 +93,6 @@ function getRandomIdeas(count: number): string[] {
   return shuffled.slice(0, count);
 }
 
-/**
- * Detect if instructions suggest the AI needs real web data
- * (e.g., finding YouTube videos, linking articles, referencing real URLs)
- */
-function detectWebSearchIntent(instructions: string): boolean {
-  if (!instructions) return false;
-  const lower = instructions.toLowerCase();
-  const webKeywords = [
-    'youtube', 'video', 'link', 'url', 'website', 'webpage',
-    'search for', 'find online', 'look up', 'browse',
-    'article', 'blog post', 'podcast', 'episode',
-    'reddit', 'twitter', 'github', 'stack overflow',
-    'http', 'www', '.com', '.org', '.io',
-  ];
-  return webKeywords.some(kw => lower.includes(kw));
-}
 
 function markdownToHtml(markdown: string): string {
   try {
@@ -1212,7 +1198,10 @@ export async function POST(request: Request) {
     const columnName = (columnId: string): string =>
       channel.columns.find((c) => c.id === columnId)?.name ?? 'another column';
 
-    // Get authenticated LLM client
+    // Get authenticated LLM client. A shroom can name its own model; it's honoured only
+    // when a key for that provider exists, otherwise the run falls back to the account
+    // default rather than failing.
+    const preferredModel = parseModelChoice(instructionCard.modelId) ?? undefined;
     let llm: LLMProvider;
     let recordUsageAfterSuccess: () => Promise<void>;
 
@@ -1222,7 +1211,7 @@ export async function POST(request: Request) {
       if (!userId) {
         return NextResponse.json({ error: 'asUserId is required for internal runs' }, { status: 400 });
       }
-      const internalLlm = await getLLMClientForUser(userId);
+      const internalLlm = await getLLMClientForUser(userId, preferredModel);
       if (!internalLlm.client) {
         return NextResponse.json(
           { error: internalLlm.error ?? 'No LLM configured for this user' },
@@ -1234,7 +1223,7 @@ export async function POST(request: Request) {
         await recordUsage(userId, 'run-instruction').catch(() => {});
       };
     } else {
-      const authResult = await getAuthenticatedLLM('run-instruction');
+      const authResult = await getAuthenticatedLLM('run-instruction', preferredModel);
       if (authResult.error) {
         // Check if we should return stub data for unauthenticated users
         if (instructionCard.action === 'generate') {
@@ -1266,10 +1255,10 @@ export async function POST(request: Request) {
     if (instructionCard.steps && instructionCard.steps.length > 0) {
       const messages = buildMultiStepPrompt(instructionCard, channel, cards, tasks, effectiveSystemInstructions, members, allowAssignment);
 
-      // Web research if needed
-      if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
+      // Web research if the shroom's Web ability calls for it
+      if (llm.webSearch && shouldResearchWeb(instructionCard)) {
         try {
-          const searchQuery = (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+          const searchQuery = baseSearchQuery(instructionCard);
           const webResult = await llm.webSearch(searchQuery, `Search the web and return detailed, factual information including real URLs. Return specific URLs, titles, and descriptions.`);
           if (webResult.content) {
             const userMsg = messages[messages.length - 1];
@@ -1422,11 +1411,11 @@ export async function POST(request: Request) {
         allowAssignment
       );
 
-      // Web research: if instructions reference URLs, videos, articles etc.,
-      // do a real web search first so the AI has factual data to work with
-      if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
+      // Web research: when the shroom's Web ability is on (explicitly, or inferred from
+      // the instructions), search first so the AI has factual data to work with
+      if (llm.webSearch && shouldResearchWeb(instructionCard)) {
         try {
-          const instructionLower = (instructionCard.instructions || '').toLowerCase();
+          const instructionLower = (instructionCard.webAccess?.focus || instructionCard.instructions || '').toLowerCase();
 
           // Detect content type for focused searching
           let contentType = '';
@@ -1450,10 +1439,7 @@ export async function POST(request: Request) {
               searchQueries.push(`best ${contentType} ${topic} 2025`);
             }
           } else {
-            // Fall back to instruction-based query
-            searchQueries.push(
-              (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
-            );
+            searchQueries.push(baseSearchQuery(instructionCard));
           }
 
           const searchSystemPrompt = contentType.includes('YouTube')
@@ -1669,9 +1655,9 @@ export async function POST(request: Request) {
       );
 
       // Web research for modify: run targeted per-topic searches using card context
-      if (llm.webSearch && detectWebSearchIntent(instructionCard.instructions || '')) {
+      if (llm.webSearch && shouldResearchWeb(instructionCard)) {
         try {
-          const instructionLower = (instructionCard.instructions || '').toLowerCase();
+          const instructionLower = (instructionCard.webAccess?.focus || instructionCard.instructions || '').toLowerCase();
 
           // Detect the content type the user wants
           let contentType = '';
@@ -1708,10 +1694,8 @@ export async function POST(request: Request) {
               searchQueries.push(topics.slice(mid).join(', '));
             }
           } else {
-            // No topic cards found — fall back to instruction-based query
-            searchQueries.push(
-              (instructionCard.instructions || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
-            );
+            // No topic cards found — fall back to the shroom's own focus/instructions
+            searchQueries.push(baseSearchQuery(instructionCard));
           }
 
           // Run all searches in parallel (cap at 5)
@@ -1907,6 +1891,26 @@ export async function POST(request: Request) {
       }
 
       const messages = buildReportPrompt(instructionCard, channel, reportCards, effectiveSystemInstructions);
+
+      // A report shroom with the Web ability on is a research mission: it goes and looks
+      // something up, then writes what it found back to the board as a digest card.
+      if (llm.webSearch && shouldResearchWeb(instructionCard)) {
+        try {
+          const findings = await researchWeb(
+            llm,
+            [baseSearchQuery(instructionCard)],
+            `Search the web and return detailed, factual information with real URLs. The findings will be written up as a digest on a Kanban board called "${channel.name}". Return specific URLs, titles, and descriptions.`
+          );
+          const block = formatResearchBlock(findings);
+          if (block) {
+            const userMsg = messages[messages.length - 1];
+            userMsg.content = (userMsg.content as string) + block;
+          }
+        } catch (e) {
+          console.warn('Web search failed, proceeding without:', e);
+        }
+      }
+
       debug.systemPrompt = messages[0].content as string;
       debug.userPrompt = messages[1].content as string;
 

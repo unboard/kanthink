@@ -100,6 +100,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (emailConfig !== undefined) updates.emailConfig = emailConfig || null
     if (summary !== undefined) updates.summary = summary || null
     if (body.autoApprove !== undefined) updates.autoApprove = body.autoApprove ? 1 : 0
+    if (body.modelId !== undefined) updates.modelId = body.modelId || null
+    if (body.webAccess !== undefined) updates.webAccess = body.webAccess || null
 
     // Handle isGlobalResource toggle (admin only)
     if (isGlobalResource !== undefined) {

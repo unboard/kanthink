@@ -35,6 +35,27 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shroom-web-ability',
+    date: '2026-08-15',
+    kind: 'capability',
+    title: 'Shrooms can be sent to the web on purpose',
+    body: 'A shroom now has a Web setting — Auto, Always, or Off — plus an optional line saying what to look for. Before, research only happened if your instructions happened to mention links or articles; now you can ask for it outright, or switch it off. A report shroom with Web on becomes a research mission: it goes and looks something up, then writes what it found back to the board.',
+  },
+  {
+    id: 'shroom-model-selection',
+    date: '2026-08-15',
+    kind: 'capability',
+    title: 'Pick which model a shroom runs on',
+    body: 'Each shroom can be pinned to a specific model in its advanced settings, listed by provider. Use a cheap fast model for a tidy-up shroom and your best one for the shroom that writes. It needs a key for that provider — without one, the run quietly falls back to your default rather than failing.',
+  },
+  {
+    id: 'shroom-run-posts-to-card-thread',
+    date: '2026-08-15',
+    kind: 'workflow',
+    title: 'Running a shroom on a card leaves a record on the card',
+    body: 'Running a shroom against a card used to be silent — things changed and nothing said why. The shroom now appears in that card\'s thread, with Run again, Open and Delete on it, so the run is part of the card\'s history and the same shroom is one tap away.',
+  },
+  {
     id: 'shrooms-trigger-on-ai-made-cards',
     date: '2026-08-14',
     kind: 'automation',

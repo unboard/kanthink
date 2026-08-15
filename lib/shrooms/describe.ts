@@ -13,6 +13,8 @@ export interface ShroomCardFacts {
   chainsTo: string | null;
   /** The sentence to show. Falls back to the raw instructions until one is generated. */
   summary: string;
+  /** This shroom goes online every run — worth showing, since it leaves the board. */
+  usesWeb: boolean;
 }
 
 const INTERVAL_LABEL: Record<string, string> = {
@@ -82,5 +84,6 @@ export function describeShroom(
     totalRuns: (shroom.executionHistory ?? []).filter((r) => !r.skippedReason).length,
     chainsTo: next?.title ?? null,
     summary: shroom.summary?.trim() || shroom.instructions,
+    usesWeb: shroom.webAccess?.mode === 'always',
   };
 }

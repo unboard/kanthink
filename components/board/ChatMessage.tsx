@@ -17,6 +17,7 @@ import { LinkPreview, extractUrls } from './LinkPreview';
 import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
 import { WhiteboardPreview } from './WhiteboardPreview';
 import { SpeakerButton } from '@/components/ui/SpeakerButton';
+import { ThreadShroomCard } from './ThreadShroomCard';
 
 interface ChatMessageProps {
   message: CardMessage;
@@ -35,6 +36,8 @@ interface ChatMessageProps {
   // Navigation callbacks for kanthink:// links
   onOpenCard?: (cardId: string) => void;
   onOpenTask?: (taskId: string) => void;
+  /** The card this thread belongs to. Needed to re-run a shroom against it. */
+  cardId?: string;
 }
 
 function formatTime(dateString: string): string {
@@ -323,6 +326,7 @@ export function ChatMessage({
   renderAction,
   onOpenCard,
   onOpenTask,
+  cardId,
 }: ChatMessageProps) {
   const isAI = message.type === 'ai_response';
   const isQuestion = message.type === 'question';
@@ -407,6 +411,19 @@ export function ChatMessage({
       handleCancelEdit();
     }
   };
+
+  // A shroom run isn't a text message — it's the shroom itself, dropped in where it ran.
+  // Placed after the hooks above so the hook order never changes between message kinds.
+  if (message.shroomRunId && cardId) {
+    return (
+      <ThreadShroomCard
+        shroomId={message.shroomRunId}
+        cardId={cardId}
+        createdAt={message.createdAt}
+        onDelete={onDelete}
+      />
+    );
+  }
 
   return (
     <div className="group relative">

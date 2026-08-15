@@ -137,7 +137,12 @@ export function SavedConfirmation({
           </a>
         )}
         {onDone && (
-          <button onClick={onDone} className="text-xs text-neutral-500 hover:text-neutral-300">
+          // A real tap target rather than a text link — this is the last thing on
+          // the screen and the one thing most people reach for.
+          <button
+            onClick={onDone}
+            className="mt-1 w-full max-w-[260px] rounded-lg border border-neutral-700 px-5 py-3 text-sm font-medium text-neutral-300 transition-colors hover:border-neutral-600 hover:text-neutral-100 active:bg-neutral-900"
+          >
             Done
           </button>
         )}

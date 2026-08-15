@@ -133,6 +133,9 @@ export function ShroomCard({
               {ACTION_LABEL[shroom.action] ?? shroom.action}
               {facts.trigger ? ` / ${facts.trigger}` : ''}
             </span>
+            {facts.usesWeb && (
+              <span className="text-neutral-400 dark:text-neutral-500">Web</span>
+            )}
             {shroom.isGlobalResource && (
               <span className="text-violet-500 dark:text-violet-400">By Kanthink</span>
             )}

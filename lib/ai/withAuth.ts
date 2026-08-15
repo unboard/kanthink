@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { auth } from '@/lib/auth';
-import { getLLMClientForUser, getLLMClient, type LLMProvider } from './llm';
+import { getLLMClientForUser, getLLMClient, type LLMProvider, type PreferredModel } from './llm';
 import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
 
 const ANON_COOKIE_NAME = 'kanthink_anon_id';
@@ -42,7 +42,9 @@ export async function getOrCreateAnonId(): Promise<string> {
  * - { error: NextResponse } on failure (return this directly)
  */
 export async function getAuthenticatedLLM(
-  requestType: string
+  requestType: string,
+  /** A specific model to run on, used only if a key for its provider is available. */
+  preferred?: PreferredModel
 ): Promise<
   | { context: AuthenticatedLLMContext; error?: never; anonId?: string }
   | { context?: never; error: NextResponse; anonId?: string }
@@ -56,7 +58,7 @@ export async function getAuthenticatedLLM(
 
   if (userId) {
     // Authenticated user - check BYOK first, then owner key
-    const result = await getLLMClientForUser(userId);
+    const result = await getLLMClientForUser(userId, preferred);
     if (!result.client) {
       return {
         error: NextResponse.json(

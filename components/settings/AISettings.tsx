@@ -3,47 +3,27 @@
 import { useState, useEffect } from 'react';
 import { useSettingsStore, type LLMProvider, fetchAIStatus } from '@/lib/settingsStore';
 import { Button, Input } from '@/components/ui';
+import { MODEL_CATALOG } from '@/lib/ai/modelCatalog';
 
-const PROVIDERS: { value: LLMProvider; label: string; description: string }[] = [
-  { value: 'openai', label: 'OpenAI', description: 'GPT models' },
-  { value: 'google', label: 'Google', description: 'Gemini models' },
-];
+// Both lists come from the shared catalogue, so the models offered here and the ones a
+// shroom can be pinned to can't drift apart.
+const PROVIDERS: { value: LLMProvider; label: string; description: string }[] =
+  MODEL_CATALOG.map((g) => ({ value: g.provider, label: g.label, description: g.blurb }));
 
-const DEFAULT_MODELS: Record<LLMProvider, string> = {
-  openai: 'gpt-5',
-  google: 'gemini-2.5-flash',
-};
+const DEFAULT_MODELS = Object.fromEntries(
+  MODEL_CATALOG.map((g) => [g.provider, g.defaultModel])
+) as Record<LLMProvider, string>;
 
-const MODEL_OPTIONS: Record<LLMProvider, { value: string; label: string }[]> = {
-  openai: [
-    { value: '', label: 'Default (GPT-5)' },
-    { value: 'gpt-5.2', label: 'GPT-5.2' },
-    { value: 'gpt-5.1', label: 'GPT-5.1' },
-    { value: 'gpt-5', label: 'GPT-5' },
-    { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
-    { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
-    { value: 'gpt-5-pro', label: 'GPT-5 Pro' },
-    { value: 'gpt-4.1', label: 'GPT-4.1' },
-    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
-    { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'other', label: 'Other...' },
-  ],
-  google: [
-    { value: '', label: 'Default (Gemini 2.5 Flash)' },
-    { value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
-    { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
-    { value: 'gemini-3-flash', label: 'Gemini 3 Flash' },
-    { value: 'gemini-3-flash-lite', label: 'Gemini 3 Flash Lite' },
-    { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)' },
-    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-    { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
-    { value: 'other', label: 'Other...' },
-  ],
-};
+const MODEL_OPTIONS = Object.fromEntries(
+  MODEL_CATALOG.map((g) => [
+    g.provider,
+    [
+      { value: '', label: `Default (${g.models.find((m) => m.model === g.defaultModel)?.label ?? g.defaultModel})` },
+      ...g.models.map((m) => ({ value: m.model, label: m.label })),
+      { value: 'other', label: 'Other...' },
+    ],
+  ])
+) as Record<LLMProvider, { value: string; label: string }[]>;
 
 export function AISettings() {
   const ai = useSettingsStore((s) => s.ai);

@@ -444,6 +444,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
               <ChatMessage
                 key={message.id}
                 message={message}
+                cardId={card.id}
                 onDelete={() => handleDeleteMessage(message.id)}
                 onEdit={(content) => editMessage(card.id, message.id, content)}
                 onToggleReaction={session?.user ? (emoji) => toggleReaction(card.id, message.id, emoji, { id: session.user.id!, name: session.user.name ?? session.user.email ?? 'Unknown' }) : undefined}

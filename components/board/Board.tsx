@@ -220,6 +220,7 @@ export function Board({ channel }: BoardProps) {
   const setGeneratingSkeletons = useStore((s) => s.setGeneratingSkeletons);
   const clearGeneratingSkeletons = useStore((s) => s.clearGeneratingSkeletons);
   const createInstructionCard = useStore((s) => s.createInstructionCard);
+  const addShroomRunMessage = useStore((s) => s.addShroomRunMessage);
   const addToast = useToastStore((s) => s.addToast);
 
   // Find the folder this channel belongs to (if any)
@@ -915,6 +916,12 @@ export function Board({ channel }: BoardProps) {
   const shroomRunValue = useMemo(
     () => ({
       runShroom: (instructionCard: InstructionCard, options?: { cardIds?: string[] }) => {
+        // A run aimed at specific cards leaves its mark in those cards' threads, so
+        // what happened to a card — and which shroom did it — is on the card itself.
+        // Board-wide runs don't: there's no single thread they belong to.
+        for (const id of options?.cardIds ?? []) {
+          addShroomRunMessage(id, instructionCard.id, instructionCard.title);
+        }
         void executeInstruction(instructionCard, options?.cardIds);
       },
       shrooms: channelShrooms,
@@ -923,7 +930,7 @@ export function Board({ channel }: BoardProps) {
     // executeInstruction is redefined every render; depending on it would thrash the
     // context. The shroom list and running set are what consumers actually re-render on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [channelShrooms, aiOperation.runningInstructionIds]
+    [channelShrooms, aiOperation.runningInstructionIds, addShroomRunMessage]
   );
 
   // Handle pending shroom actions (run or create)

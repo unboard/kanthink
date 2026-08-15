@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope, ScheduleInterval, EventTrigger, ScheduledTrigger } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope, ScheduleInterval, EventTrigger, ScheduledTrigger, ShroomWebMode } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { calculateNextScheduledRun } from '@/lib/automationSafeguards';
 import { REJECTION_REASONS } from '@/lib/constants';
 import { Drawer } from '@/components/ui/Drawer';
 import { ShroomStepList, type ShroomStepView } from './ShroomStepList';
 import { Button, Textarea } from '@/components/ui';
+import { MODEL_CATALOG, formatModelChoice } from '@/lib/ai/modelCatalog';
 
 const SKIP_LABELS: Record<string, string> = {
   daily_cap_reached: 'Skipped — daily limit reached',
@@ -97,6 +98,9 @@ export function InstructionDetailDrawerV2({
   // Chain state
   const [nextInstructionId, setNextInstructionId] = useState<string | undefined>();
   const [autoApprove, setAutoApprove] = useState(false);
+  const [modelId, setModelId] = useState('');
+  const [webMode, setWebMode] = useState<ShroomWebMode>('auto');
+  const [webFocus, setWebFocus] = useState('');
   const allInstructionCards = useStore((s) => s.instructionCards);
 
   // When this runs — the three modes cover everything the engine can actually do
@@ -183,6 +187,9 @@ export function InstructionDetailDrawerV2({
       setCoverImageUrl(instructionCard.coverImageUrl);
       setNextInstructionId(instructionCard.nextInstructionId ?? undefined);
       setAutoApprove(instructionCard.autoApprove || false);
+      setModelId(instructionCard.modelId ?? '');
+      setWebMode(instructionCard.webAccess?.mode ?? 'auto');
+      setWebFocus(instructionCard.webAccess?.focus ?? '');
 
       const saved = instructionCard.triggers ?? [];
       const event = saved.find((t) => t.type === 'event') as EventTrigger | undefined;
@@ -239,7 +246,7 @@ export function InstructionDetailDrawerV2({
     contextAllColumns, contextColumnIds, selectedColumnIds, action, cardCount,
     runWhen, watchColumnId, scheduleInterval, scheduleTime,
     scope, isGlobalResource, autoApprove, nextInstructionId, coverImageUrl,
-    safeguards, emailEnabled, emailSkipWhenEmpty,
+    safeguards, emailEnabled, emailSkipWhenEmpty, modelId, webMode,
   ]);
 
   const handleSave = () => {
@@ -298,6 +305,10 @@ export function InstructionDetailDrawerV2({
       coverImageUrl,
       nextInstructionId: nextInstructionId || undefined,
       autoApprove,
+      // Sent as '' rather than undefined when cleared: undefined vanishes in JSON, so
+      // switching back to the default would never reach the server.
+      modelId,
+      webAccess: { mode: webMode, focus: webFocus.trim() || undefined },
       // Untouched shrooms shouldn't carry an empty email object around
       emailConfig: emailEnabled || emailBrief.trim()
         ? { enabled: emailEnabled, brief: emailBrief, skipWhenNothingHappened: emailSkipWhenEmpty }
@@ -1125,6 +1136,83 @@ export function InstructionDetailDrawerV2({
                     </div>
                   </label>
                 )}
+
+                {/* Web ability. Research used to be inferred from whether the
+                    instructions happened to say "article" or "youtube" — this makes it
+                    a choice, and gives it something to aim at. */}
+                <div>
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2 block">
+                    Web
+                  </span>
+                  <div className="flex gap-2">
+                    {([
+                      { value: 'auto', label: 'Auto' },
+                      { value: 'always', label: 'Always' },
+                      { value: 'off', label: 'Off' },
+                    ] as { value: ShroomWebMode; label: string }[]).map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => setWebMode(opt.value)}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          webMode === opt.value
+                            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                            : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200 dark:bg-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-600'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-neutral-500 mt-2">
+                    {webMode === 'always'
+                      ? 'Searches the web on every run and brings verified links back into the board.'
+                      : webMode === 'off'
+                      ? 'Never goes online, even if the instructions mention links or articles.'
+                      : 'Goes online only when the instructions call for it — links, articles, videos.'}
+                  </p>
+                  {webMode !== 'off' && (
+                    <input
+                      type="text"
+                      value={webFocus}
+                      onChange={(e) => setWebFocus(e.target.value)}
+                      onBlur={handleSave}
+                      placeholder="What to look for (optional)"
+                      className="mt-2 w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    />
+                  )}
+                </div>
+
+                {/* Which model powers this shroom. Grouped by provider, because the
+                    choice is only usable if there's a key for that provider — a run
+                    falls back to the account default rather than failing. */}
+                <div>
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2 block">
+                    Model
+                  </span>
+                  <select
+                    value={modelId}
+                    onChange={(e) => setModelId(e.target.value)}
+                    className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                  >
+                    <option value="">Default (your AI settings)</option>
+                    {MODEL_CATALOG.map((group) => (
+                      <optgroup key={group.provider} label={group.label}>
+                        {group.models.map((m) => (
+                          <option
+                            key={m.model}
+                            value={formatModelChoice(group.provider, m.model)}
+                          >
+                            {m.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Runs this shroom on a specific model. Needs a key for that provider —
+                    without one it falls back to your default.
+                  </p>
+                </div>
 
                 {/* Chain: Then run another shroom */}
                 <div>

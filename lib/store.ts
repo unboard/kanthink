@@ -103,6 +103,7 @@ interface KanthinkState {
 
   // Card message actions
   addMessage: (cardId: ID, type: CardMessageType, content: string, imageUrls?: string[], author?: { id: string; name: string; image?: string }, whiteboards?: { id: string; snapshot: string; snapshotImageUrl?: string }[]) => CardMessage | null;
+  addShroomRunMessage: (cardId: ID, shroomId: ID, shroomTitle: string) => CardMessage | null;
   addAIResponse: (cardId: ID, questionId: ID, content: string, actions?: StoredAction[], imageUrls?: string[]) => CardMessage | null;
   updateMessageAction: (cardId: ID, messageId: ID, actionId: string, updates: Partial<StoredAction>) => void;
   editMessage: (cardId: ID, messageId: ID, content: string) => void;
@@ -1845,6 +1846,54 @@ export const useStore = create<KanthinkState>()(
         }
 
         // Broadcast to other tabs and devices
+        if (result) {
+          broadcastAndPublish({ type: 'card:addMessage', cardId, message: result });
+        }
+
+        return result;
+      },
+
+      /**
+       * Record a shroom run in a card's thread.
+       *
+       * The content is a plain sentence so anything that reads the thread as text —
+       * summaries, AI context, notifications — still makes sense of it; the thread UI
+       * renders the shroom's card off `shroomRunId` instead.
+       */
+      addShroomRunMessage: (cardId, shroomId, shroomTitle) => {
+        const id = nanoid();
+        const timestamp = now();
+        const message: CardMessage = {
+          id,
+          type: 'note',
+          content: `Ran shroom: ${shroomTitle}`,
+          createdAt: timestamp,
+          shroomRunId: shroomId,
+        };
+
+        let result: CardMessage | null = null;
+        let channelId: string | null = null;
+        let updatedMessages: CardMessage[] = [];
+
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card) return state;
+
+          result = message;
+          channelId = card.channelId;
+          updatedMessages = [...(card.messages ?? []), message];
+
+          return {
+            cards: {
+              ...state.cards,
+              [cardId]: { ...card, messages: updatedMessages, updatedAt: timestamp },
+            },
+          };
+        });
+
+        if (channelId) {
+          sync.syncCardUpdate(channelId, cardId, { messages: updatedMessages });
+        }
         if (result) {
           broadcastAndPublish({ type: 'card:addMessage', cardId, message: result });
         }

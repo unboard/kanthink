@@ -305,7 +305,10 @@ function SaveContent() {
                     Open {activeChannel?.channelName || 'channel'}
                   </a>
                 )}
-                <button onClick={handleDone} className="text-neutral-500 hover:text-neutral-300 text-xs">
+                <button
+                  onClick={handleDone}
+                  className="mt-1 w-full max-w-[260px] rounded-lg border border-neutral-700 px-5 py-3 text-sm font-medium text-neutral-300 transition-colors hover:border-neutral-600 hover:text-neutral-100 active:bg-neutral-900"
+                >
                   Done
                 </button>
               </div>

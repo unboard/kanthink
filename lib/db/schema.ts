@@ -316,6 +316,13 @@ export const instructionCards = sqliteTable('instruction_cards', {
   // Generated one-liner shown on the card, distinct from the instructions sent to the model
   summary: text('summary'),
 
+  // Per-shroom model override, provider-qualified ("google:gemini-3.7-flash").
+  // NULL means the account default.
+  modelId: text('model_id'),
+
+  // Web ability: { mode: 'auto' | 'always' | 'off', focus?: string }. NULL means 'auto'.
+  webAccess: text('web_access', { mode: 'json' }).$type<ShroomWebAccessJson>(),
+
   lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
   nextScheduledRun: integer('next_scheduled_run', { mode: 'timestamp' }),
   dailyExecutionCount: integer('daily_execution_count').default(0),
@@ -634,6 +641,7 @@ interface CardMessageJson {
   createdAt: string
   replyToMessageId?: string
   reactions?: { emoji: string; userId: string; userName?: string }[]
+  shroomRunId?: string
 }
 
 interface CardPropertyJson {
@@ -707,6 +715,11 @@ interface ShroomEmailConfigJson {
   brief: string
   subjectHint?: string
   skipWhenNothingHappened?: boolean
+}
+
+interface ShroomWebAccessJson {
+  mode: 'auto' | 'always' | 'off'
+  focus?: string
 }
 
 interface EmailBuilderMessageJson {

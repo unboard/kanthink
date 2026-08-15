@@ -30,13 +30,34 @@ export interface LLMClientResult {
   client: LLMProvider | null;
   source: 'byok' | 'owner' | 'env' | 'none';
   error?: string;
+  /**
+   * A specific model was asked for and could not be used — there is no key for its
+   * provider. The client returned is the account default; callers that care can say so
+   * rather than silently running on something else.
+   */
+  requestedModelUnavailable?: boolean;
+}
+
+/**
+ * A caller's model preference — a shroom's per-run override, say.
+ *
+ * Honoured only when we hold a key for that provider. A key belongs to one provider, so
+ * picking an OpenAI model with only a Google key configured cannot work, and falling back
+ * to the default beats failing the run.
+ */
+export interface PreferredModel {
+  provider: 'openai' | 'google';
+  model: string;
 }
 
 /**
  * Get an LLM client for an authenticated user
  * Priority: User's BYOK > Owner's key (if user has quota) > Environment variables
  */
-export async function getLLMClientForUser(userId: string): Promise<LLMClientResult> {
+export async function getLLMClientForUser(
+  userId: string,
+  preferred?: PreferredModel
+): Promise<LLMClientResult> {
   // 1. Check if user has BYOK configured
   const byokResult = await getUserByokConfigWithError(userId);
 
@@ -53,12 +74,13 @@ export async function getLLMClientForUser(userId: string): Promise<LLMClientResu
 
   if (byokResult.config?.apiKey && byokResult.config?.provider) {
     console.log(`Using BYOK for user ${userId}, provider: ${byokResult.config.provider}`);
+    const matches = preferred?.provider === byokResult.config.provider;
     const client = createLLMClient({
       provider: byokResult.config.provider,
       apiKey: byokResult.config.apiKey,
-      model: byokResult.config.model || undefined,
+      model: (matches ? preferred!.model : byokResult.config.model) || undefined,
     });
-    return { client, source: 'byok' };
+    return { client, source: 'byok', requestedModelUnavailable: !!preferred && !matches };
   }
 
   // 2. Check if user has quota remaining
@@ -71,7 +93,21 @@ export async function getLLMClientForUser(userId: string): Promise<LLMClientResu
     };
   }
 
-  // 3. Use owner's key
+  // 3. Use owner's key. A preference is taken only if the owner holds that provider's key.
+  const preferredOwnerKey = preferred
+    ? preferred.provider === 'openai'
+      ? process.env.OWNER_OPENAI_API_KEY
+      : process.env.OWNER_GOOGLE_API_KEY
+    : undefined;
+  if (preferredOwnerKey) {
+    const client = createLLMClient({
+      provider: preferred!.provider,
+      apiKey: preferredOwnerKey,
+      model: preferred!.model,
+    });
+    return { client, source: 'owner' };
+  }
+
   const ownerApiKey = process.env.OWNER_OPENAI_API_KEY || process.env.OWNER_GOOGLE_API_KEY;
   if (ownerApiKey) {
     const provider = process.env.OWNER_OPENAI_API_KEY ? 'openai' : 'google';
@@ -79,10 +115,24 @@ export async function getLLMClientForUser(userId: string): Promise<LLMClientResu
       provider,
       apiKey: ownerApiKey,
     });
-    return { client, source: 'owner' };
+    return { client, source: 'owner', requestedModelUnavailable: !!preferred };
   }
 
   // 4. Fall back to legacy environment variables (for development)
+  const preferredLegacyKey = preferred
+    ? preferred.provider === 'openai'
+      ? process.env.OPENAI_API_KEY
+      : process.env.GOOGLE_API_KEY
+    : undefined;
+  if (preferredLegacyKey) {
+    const client = createLLMClient({
+      provider: preferred!.provider,
+      apiKey: preferredLegacyKey,
+      model: preferred!.model,
+    });
+    return { client, source: 'env' };
+  }
+
   const legacyApiKey = process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY;
   if (legacyApiKey) {
     const provider = process.env.OPENAI_API_KEY ? 'openai' : 'google';
@@ -90,7 +140,7 @@ export async function getLLMClientForUser(userId: string): Promise<LLMClientResu
       provider,
       apiKey: legacyApiKey,
     });
-    return { client, source: 'env' };
+    return { client, source: 'env', requestedModelUnavailable: !!preferred };
   }
 
   return {
