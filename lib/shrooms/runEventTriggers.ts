@@ -11,21 +11,23 @@ import type { AutomaticTrigger, EventTrigger, EventTriggerType } from '@/lib/typ
  * meant "run when a card lands in Inbox" quietly stopped working the moment you closed
  * the board — the one time you'd most want it working.
  *
- * Deliberately does not fire for cards a shroom itself created. A generate shroom
- * writing into a column that another shroom watches is the obvious way to build an
- * accidental loop, and `createdByInstructionId` is the cheapest place to cut it.
+ * A shroom never re-triggers on its own output, and that is the whole of the loop
+ * prevention here. It used to skip cards created by *any* shroom, which quietly meant an
+ * AI-generated card could never trigger anything again for the rest of its life — drag one
+ * into a watched column by hand and nothing happened, forever. Nothing else was defending
+ * against: a shroom's own writes go straight to the database (lib/shrooms/apply.ts) and
+ * never re-enter this function, so every event that reaches here is a person or an inbound
+ * API call. Per-shroom daily caps remain the backstop.
  */
 export async function runEventTriggers(options: {
   channelId: string
   columnId: string
   eventType: EventTriggerType
   cardId: string
-  /** Set when the card was written by a shroom — those don't re-trigger. */
+  /** Set when the card was written by a shroom — that shroom won't act on it again. */
   createdByInstructionId?: string | null
 }): Promise<void> {
   const { channelId, columnId, eventType, cardId, createdByInstructionId } = options
-
-  if (createdByInstructionId) return
 
   const candidates = await db.query.instructionCards.findMany({
     where: eq(instructionCards.channelId, channelId),
@@ -33,6 +35,7 @@ export async function runEventTriggers(options: {
 
   for (const row of candidates) {
     if (!row.isEnabled) continue
+    if (createdByInstructionId && createdByInstructionId === row.id) continue
 
     const instruction = rowToInstructionCard(row)
     const matches = (instruction.triggers ?? []).some((t: AutomaticTrigger) => {
