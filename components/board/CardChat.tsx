@@ -9,7 +9,7 @@ import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { fetchShares } from '@/lib/api/client';
 import { ChatMessage } from './ChatMessage';
-import { ChatInput, useKeyboardOffset, type ChatInputHandle } from './ChatInput';
+import { ChatInput, useKeyboardOffset, useComposerHeight, type ChatInputHandle } from './ChatInput';
 import { nanoid } from 'nanoid';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 
@@ -35,6 +35,8 @@ interface CardChatProps {
 export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar, composerSlot }: CardChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<ChatInputHandle>(null);
+  // The composer floats over the thread, so the scroll area pads by its measured height.
+  const { composerRef, composerHeight } = useComposerHeight();
   const [isAILoading, setIsAILoading] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -429,8 +431,12 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         </div>
       )}
 
-      {/* Messages area - extra bottom padding so content scrolls behind input */}
-      <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-3">
+      {/* Messages area. Bottom padding is the measured composer height plus a little
+          air, so the last message always clears the floating input. */}
+      <div
+        className="flex-1 overflow-y-auto p-4 space-y-3"
+        style={{ paddingBottom: composerHeight + 16 }}
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="w-10 h-10 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-2">
@@ -510,6 +516,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       {/* On mobile, position above keyboard using keyboardOffset */}
       {/* Subtract ~60px to account for the tab bar below this container (keyboardOffset is from screen bottom) */}
       <div
+        ref={composerRef}
         className="absolute left-0 right-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
         style={{ bottom: keyboardOffset > 0 ? `${Math.max(0, keyboardOffset - 60)}px` : 0 }}
       >

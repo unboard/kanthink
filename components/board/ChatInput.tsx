@@ -121,6 +121,31 @@ export function useKeyboardOffset() {
   return { keyboardOffset, isFocused, onFocus, onBlur };
 }
 
+/**
+ * Measure the composer stack so the thread above it can reserve exactly that much room.
+ *
+ * The composer floats over the messages, so a scroll area that doesn't account for it
+ * hides its own last message — you scroll to the bottom and the newest thing is still
+ * underneath the input. A fixed padding can't get this right: the stack grows with
+ * staged images, the image-settings row, a tab bar, and the suggestions shown on an
+ * empty thread. Attach the ref to the floating container and pad by the number.
+ */
+export function useComposerHeight() {
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
+
+  useEffect(() => {
+    const node = composerRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setComposerHeight(node.offsetHeight));
+    observer.observe(node);
+    setComposerHeight(node.offsetHeight);
+    return () => observer.disconnect();
+  }, []);
+
+  return { composerRef, composerHeight };
+}
+
 interface StagedImage {
   url: string;
   isLoading?: boolean;

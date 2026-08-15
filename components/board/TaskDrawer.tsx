@@ -8,7 +8,7 @@ import type { Task, TaskStatus, TaskNote, Card, CardMessage, CardMessageType } f
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
-import { ChatInput, useKeyboardOffset } from './ChatInput';
+import { ChatInput, useKeyboardOffset, useComposerHeight } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
 import { Drawer } from '@/components/ui';
 import { AssigneeAvatars } from './AssigneeAvatars';
@@ -90,6 +90,8 @@ export function TaskDrawer({
 
   const { data: session } = useSession();
   const { keyboardOffset, onFocus: handleKeyboardFocus, onBlur: handleKeyboardBlur } = useKeyboardOffset();
+  // The composer floats over the notes, so the scroll area pads by its measured height.
+  const { composerRef, composerHeight } = useComposerHeight();
 
   const updateTask = useStore((s) => s.updateTask);
   const deleteTask = useStore((s) => s.deleteTask);
@@ -690,7 +692,10 @@ export function TaskDrawer({
 
         {/* Scrollable thread body */}
         <div className="relative flex flex-col flex-1 min-h-0">
-          <div className="flex-1 overflow-y-auto p-4 pb-28 space-y-3">
+          <div
+            className="flex-1 overflow-y-auto p-4 space-y-3"
+            style={{ paddingBottom: composerHeight + 16 }}
+          >
             {/* Notes thread — reuses ChatMessage from card detail */}
             {currentNotes.length > 0 ? (
               <div className="space-y-3">
@@ -753,6 +758,7 @@ export function TaskDrawer({
 
           {/* Fixed bottom input with gradient fade */}
           <div
+            ref={composerRef}
             className="absolute left-0 right-0 bottom-0 bg-gradient-to-t from-white from-70% dark:from-neutral-900 to-transparent pt-8 transition-[bottom] duration-100"
             style={{ bottom: keyboardOffset > 0 ? `${Math.max(0, keyboardOffset - 60)}px` : 0 }}
           >

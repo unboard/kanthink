@@ -92,6 +92,14 @@ interface ShroomCardProps {
   isRunning?: boolean;
   onRun?: () => void;
   onEdit: () => void;
+  /**
+   * Take this card off whatever surface it's on. Only the thread passes it: a shroom
+   * in a card thread is a copy you put there, so it can be cleared away without the
+   * shroom itself going anywhere.
+   */
+  onRemove?: () => void;
+  /** Override the run button's wording where "Run" alone would be ambiguous. */
+  runLabel?: string;
 }
 
 /**
@@ -108,6 +116,8 @@ export function ShroomCard({
   isRunning = false,
   onRun,
   onEdit,
+  onRemove,
+  runLabel = 'Run',
 }: ShroomCardProps) {
   const facts = describeShroom(shroom, channel, allShrooms);
   const accent = isRunning ? '#8b5cf6' : STATE_COLOR[facts.state];
@@ -192,7 +202,7 @@ export function ShroomCard({
               disabled={isRunning}
               className="rounded border border-neutral-300 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-700 transition-colors hover:border-violet-500 hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 disabled:opacity-40 dark:border-neutral-600 dark:text-neutral-200 dark:hover:border-violet-500 dark:hover:bg-violet-500/15 dark:hover:text-violet-300"
             >
-              {isRunning ? 'Running' : 'Run'}
+              {isRunning ? 'Running' : runLabel}
             </button>
           )}
           <button
@@ -201,6 +211,23 @@ export function ShroomCard({
           >
             Edit
           </button>
+          {onRemove && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              aria-label="Remove from thread"
+              title="Remove from thread"
+              className="rounded p-1 text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:text-neutral-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" aria-hidden>
+                <path
+                  d="M3 3l8 8M11 3l-8 8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>
