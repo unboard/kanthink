@@ -642,6 +642,7 @@ interface CardMessageJson {
   replyToMessageId?: string
   reactions?: { emoji: string; userId: string; userName?: string }[]
   shroomRunId?: string
+  shroomRan?: boolean
 }
 
 interface CardPropertyJson {

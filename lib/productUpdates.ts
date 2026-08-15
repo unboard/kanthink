@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'slash-shrooms-in-card-thread',
+    date: '2026-08-15',
+    kind: 'workflow',
+    title: 'Type / in a card thread to reach for a shroom',
+    body: 'Start a message with a slash and you get a command list; /shrooms then lists the channel\'s shrooms. Picking one drops it into the thread as a card you can run on this card, open, or remove — without leaving the conversation. A shroom that can\'t act on a single card says so in a sentence instead of running and doing nothing.',
+  },
+  {
     id: 'shroom-web-ability',
     date: '2026-08-15',
     kind: 'capability',

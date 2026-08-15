@@ -103,7 +103,7 @@ interface KanthinkState {
 
   // Card message actions
   addMessage: (cardId: ID, type: CardMessageType, content: string, imageUrls?: string[], author?: { id: string; name: string; image?: string }, whiteboards?: { id: string; snapshot: string; snapshotImageUrl?: string }[]) => CardMessage | null;
-  addShroomRunMessage: (cardId: ID, shroomId: ID, shroomTitle: string) => CardMessage | null;
+  addShroomRunMessage: (cardId: ID, shroomId: ID, shroomTitle: string, ran?: boolean) => CardMessage | null;
   addAIResponse: (cardId: ID, questionId: ID, content: string, actions?: StoredAction[], imageUrls?: string[]) => CardMessage | null;
   updateMessageAction: (cardId: ID, messageId: ID, actionId: string, updates: Partial<StoredAction>) => void;
   editMessage: (cardId: ID, messageId: ID, content: string) => void;
@@ -1854,21 +1854,23 @@ export const useStore = create<KanthinkState>()(
       },
 
       /**
-       * Record a shroom run in a card's thread.
+       * Put a shroom in a card's thread — either because it just ran, or because the
+       * user summoned it with /shrooms and hasn't run it yet.
        *
        * The content is a plain sentence so anything that reads the thread as text —
        * summaries, AI context, notifications — still makes sense of it; the thread UI
        * renders the shroom's card off `shroomRunId` instead.
        */
-      addShroomRunMessage: (cardId, shroomId, shroomTitle) => {
+      addShroomRunMessage: (cardId, shroomId, shroomTitle, ran = true) => {
         const id = nanoid();
         const timestamp = now();
         const message: CardMessage = {
           id,
           type: 'note',
-          content: `Ran shroom: ${shroomTitle}`,
+          content: ran ? `Ran shroom: ${shroomTitle}` : `Shroom: ${shroomTitle}`,
           createdAt: timestamp,
           shroomRunId: shroomId,
+          shroomRan: ran,
         };
 
         let result: CardMessage | null = null;

@@ -420,6 +420,9 @@ export function ChatMessage({
         shroomId={message.shroomRunId}
         cardId={cardId}
         createdAt={message.createdAt}
+        // Messages written before /shrooms existed all recorded runs, so an absent
+        // flag means "ran".
+        hasRun={message.shroomRan !== false}
         onDelete={onDelete}
       />
     );

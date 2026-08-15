@@ -50,6 +50,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const { keyboardOffset, onFocus: handleKeyboardFocus, onBlur: handleKeyboardBlur } = useKeyboardOffset();
 
   const addMessage = useStore((s) => s.addMessage);
+  const addShroomRunMessage = useStore((s) => s.addShroomRunMessage);
   const addAIResponse = useStore((s) => s.addAIResponse);
   const editMessage = useStore((s) => s.editMessage);
   const deleteMessage = useStore((s) => s.deleteMessage);
@@ -578,6 +579,9 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             members={members}
             onOpenWhiteboard={() => setIsWhiteboardOpen(true)}
             voiceContext={voiceSystemPrompt}
+            // /shrooms drops the shroom in without running it — you decide from the
+            // card in the thread whether it should act on this card.
+            onInsertShroom={(shroom) => addShroomRunMessage(card.id, shroom.id, shroom.title, false)}
           />
         )}
       </div>

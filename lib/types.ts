@@ -369,11 +369,16 @@ export interface CardMessage {
   proposedActions?: StoredAction[];  // Smart snippets for AI responses
   reactions?: MessageReaction[];
   /**
-   * Set when this message records a shroom being run against the card. The thread
-   * renders the shroom's own card in place of a text bubble, so a run leaves a
-   * visible trace you can re-run, open, or clear — instead of happening silently.
+   * Set when this message carries a shroom rather than text. The thread renders the
+   * shroom's own card in place of a bubble, so a run leaves a visible trace you can
+   * re-run, open, or clear — instead of happening silently.
    */
   shroomRunId?: ID;
+  /**
+   * Whether the shroom above actually ran. False when it was summoned with /shrooms
+   * and is sitting in the thread waiting to be run.
+   */
+  shroomRan?: boolean;
 }
 
 export interface ChannelMember {

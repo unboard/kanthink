@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useImperativeHandle, useMemo, type ReactNode, type Ref } from 'react';
-import type { CardMessageType, ChannelMember, Card as CardType } from '@/lib/types';
+import type { CardMessageType, ChannelMember, Card as CardType, InstructionCard } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { useShroomRun, canRunOnCard } from './ShroomRunContext';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { AudioLines } from 'lucide-react';
@@ -143,6 +144,28 @@ interface ImageSettings {
   quality: 'standard' | 'hd';
 }
 
+/**
+ * A slash command in progress.
+ *
+ * Two stages, because `/shrooms` is a command that then needs an argument: while you're
+ * still typing the command name you're picking from the command list, and once there's a
+ * space after it you're picking a shroom. A slash only counts at the very start of the
+ * message — mid-sentence it's a date, a URL, or an and/or.
+ */
+interface SlashState {
+  isActive: boolean;
+  stage: 'commands' | 'shrooms';
+  query: string;
+}
+
+const SLASH_COMMANDS = [
+  {
+    name: 'shrooms',
+    label: '/shrooms',
+    description: 'Drop a shroom into this thread to run on the card',
+  },
+] as const;
+
 export interface ChatInputHandle {
   /** Open the box and hand it the cursor. */
   focusInput: () => void;
@@ -168,9 +191,14 @@ interface ChatInputProps {
   onOpenWhiteboard?: () => void;
   // Voice context for live voice mode
   voiceContext?: string;
+  /**
+   * Drop a shroom into the thread, from /shrooms. Absent in composers with no thread
+   * to drop it into, which is what hides the command there.
+   */
+  onInsertShroom?: (shroom: InstructionCard) => void;
 }
 
-export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardId, channelId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext }: ChatInputProps) {
+export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardId, channelId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext, onInsertShroom }: ChatInputProps) {
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
@@ -186,6 +214,8 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   const [cardMentionsMap, setCardMentionsMap] = useState<Record<string, string>>({}); // title -> cardId
   const [imageSettings, setImageSettings] = useState<ImageSettings>({ aspectRatio: '1:1', quality: 'standard' });
   const [showImageSettings, setShowImageSettings] = useState(false);
+  const [slash, setSlash] = useState<SlashState>({ isActive: false, stage: 'commands', query: '' });
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -252,6 +282,38 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
       })
       .slice(0, 8);
   }, [cardMention.isActive, cardMention.query, allCards]);
+
+  // Slash commands. Only offered where there's a thread to act on, so the menu never
+  // advertises something the surface can't do.
+  const { shrooms } = useShroomRun();
+  const slashEnabled = !!onInsertShroom;
+
+  const filteredCommands = useMemo(() => {
+    if (!slash.isActive || slash.stage !== 'commands') return [];
+    const q = slash.query.toLowerCase();
+    return SLASH_COMMANDS.filter((c) => c.name.startsWith(q));
+  }, [slash.isActive, slash.stage, slash.query]);
+
+  /**
+   * Every shroom in the channel, not only the ones that take a card.
+   *
+   * Hiding the rest would leave you wondering where a shroom went; showing them with a
+   * note about what they do instead is the honest version, and pressing Run explains
+   * itself rather than doing nothing.
+   */
+  const filteredShrooms = useMemo(() => {
+    if (!slash.isActive || slash.stage !== 'shrooms') return [];
+    const q = slash.query.toLowerCase();
+    return shrooms
+      .filter((s) => s.title.toLowerCase().includes(q))
+      .sort((a, b) => Number(canRunOnCard(b)) - Number(canRunOnCard(a)))
+      .slice(0, 8);
+  }, [slash.isActive, slash.stage, slash.query, shrooms]);
+
+  const closeSlash = useCallback(() => {
+    setSlash({ isActive: false, stage: 'commands', query: '' });
+    setSlashSelectedIndex(0);
+  }, []);
 
   // Build regex to detect inserted mentions in content
   const mentionNames = Object.keys(mentionsMap);
@@ -598,6 +660,8 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
 
   const handleSubmit = () => {
     if (!canSubmit) return;
+    // Mid-command. The send button shouldn't post "/shrooms" as a note either.
+    if (slash.isActive) return;
 
     const imageUrls = stagedImages
       .filter((img) => !img.isLoading)
@@ -689,7 +753,56 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
     });
   }, [content, cardMention]);
 
+  /** Complete a command name, moving the picker on to its argument. */
+  const handleCommandSelect = useCallback((name: string) => {
+    setContent(`/${name} `);
+    setSlash({ isActive: true, stage: 'shrooms', query: '' });
+    setSlashSelectedIndex(0);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
+  const handleShroomSelect = useCallback((shroom: InstructionCard) => {
+    onInsertShroom?.(shroom);
+    setContent('');
+    closeSlash();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [onInsertShroom, closeSlash]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Intercept keys when a slash command picker is open
+    const slashOptionCount = slash.stage === 'commands' ? filteredCommands.length : filteredShrooms.length;
+    if (slash.isActive) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSlash();
+        return;
+      }
+      if (slashOptionCount > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setSlashSelectedIndex((prev) => (prev + 1) % slashOptionCount);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setSlashSelectedIndex((prev) => (prev - 1 + slashOptionCount) % slashOptionCount);
+          return;
+        }
+      }
+      // Enter never falls through while a command is being typed — a half-finished
+      // "/shrooms wrong-name" posted as a note is nobody's intent.
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        if (slashOptionCount === 0) return;
+        if (slash.stage === 'commands') {
+          handleCommandSelect(filteredCommands[slashSelectedIndex].name);
+        } else {
+          handleShroomSelect(filteredShrooms[slashSelectedIndex]);
+        }
+        return;
+      }
+    }
+
     // Intercept keys when card mention dropdown is active
     if (cardMention.isActive && filteredCards.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -745,8 +858,9 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   };
 
   // One placeholder. The field is a field — what happens to the message is said
-  // by the mention in it, not by the prompt in front of it.
-  const defaultPlaceholder = 'Add a note...';
+  // by the mention in it, not by the prompt in front of it. The slash is the one
+  // exception: an unadvertised command is one nobody finds.
+  const defaultPlaceholder = slashEnabled ? 'Add a note, or / for commands' : 'Add a note...';
 
   // Note: Keyboard positioning is now handled by the parent component (CardChat)
   // which adjusts the `bottom` position of the input wrapper
@@ -766,6 +880,67 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
             onSelect={handleMentionSelect}
             onClose={() => setMention({ isActive: false, query: '', startIndex: 0 })}
           />
+        )}
+        {/* /command dropdown — command names, then the shrooms one takes */}
+        {slash.isActive && slash.stage === 'commands' && filteredCommands.length > 0 && (
+          <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 max-h-48 overflow-y-auto z-50">
+            <div className="px-3 py-1.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider border-b border-neutral-100 dark:border-neutral-700">
+              Commands
+            </div>
+            {filteredCommands.map((command, i) => (
+              <button
+                key={command.name}
+                onMouseDown={(e) => { e.preventDefault(); handleCommandSelect(command.name); }}
+                className={`w-full flex items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                  i === slashSelectedIndex
+                    ? 'bg-violet-50 dark:bg-violet-900/20'
+                    : 'hover:bg-neutral-50 dark:hover:bg-neutral-700/50'
+                }`}
+              >
+                <span className="mt-0.5 text-sm leading-none flex-shrink-0">🍄</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-neutral-900 dark:text-white truncate">{command.label}</div>
+                  <div className="text-[10px] text-neutral-400 truncate">{command.description}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+        {slash.isActive && slash.stage === 'shrooms' && (
+          <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 max-h-48 overflow-y-auto z-50">
+            <div className="px-3 py-1.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider border-b border-neutral-100 dark:border-neutral-700">
+              Shrooms
+            </div>
+            {filteredShrooms.length === 0 ? (
+              <p className="px-3 py-3 text-xs text-neutral-500 dark:text-neutral-400">
+                {shrooms.length === 0
+                  ? 'No shrooms in this channel yet.'
+                  : 'No shroom matches that.'}
+              </p>
+            ) : (
+              filteredShrooms.map((shroom, i) => (
+                <button
+                  key={shroom.id}
+                  onMouseDown={(e) => { e.preventDefault(); handleShroomSelect(shroom); }}
+                  className={`w-full flex items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                    i === slashSelectedIndex
+                      ? 'bg-violet-50 dark:bg-violet-900/20'
+                      : 'hover:bg-neutral-50 dark:hover:bg-neutral-700/50'
+                  }`}
+                >
+                  <span className="mt-0.5 text-sm leading-none flex-shrink-0">🍄</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-neutral-900 dark:text-white truncate">{shroom.title}</div>
+                    <div className="text-[10px] text-neutral-400 truncate">
+                      {canRunOnCard(shroom)
+                        ? 'Can run on this card'
+                        : "Doesn't act on a single card"}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
         )}
         {/* #mention dropdown (cards) */}
         {cardMention.isActive && filteredCards.length > 0 && (
@@ -926,6 +1101,25 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
                 setMentionSelectedIndex(0);
               } else {
                 setMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
+              }
+
+              // Detect a slash command. Anchored to the start of the message: a slash
+              // anywhere else is a date, a URL, or an and/or.
+              // Single line only: once the message grows a newline it's prose, not a
+              // command, and the picker gets out of the way.
+              const slashMatch = slashEnabled ? val.match(/^\/(\S*)(?:[ ]([^\n]*))?$/) : null;
+              if (slashMatch) {
+                const [, command, argument] = slashMatch;
+                if (argument === undefined) {
+                  setSlash({ isActive: true, stage: 'commands', query: command });
+                } else if (command === 'shrooms' || command === 'shroom') {
+                  setSlash({ isActive: true, stage: 'shrooms', query: argument });
+                } else {
+                  closeSlash();
+                }
+                setSlashSelectedIndex(0);
+              } else if (slash.isActive) {
+                closeSlash();
               }
 
               // Detect #mention (cards)

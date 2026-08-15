@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { describeShroom } from '@/lib/shrooms/describe';
-import { useShroomRun } from './ShroomRunContext';
+import { useShroomRun, explainCardConflict } from './ShroomRunContext';
 
 const ACTION_LABEL: Record<string, string> = {
   generate: 'Generate',
@@ -17,8 +18,10 @@ interface ThreadShroomCardProps {
   shroomId: string;
   /** The card whose thread this sits in — the run is scoped back to it. */
   cardId: string;
-  /** When the run happened. */
+  /** When the run happened, or when the shroom was dropped in. */
   createdAt: string;
+  /** False when the shroom was summoned with /shrooms and hasn't been run yet. */
+  hasRun?: boolean;
   /** Remove this entry from the thread. */
   onDelete?: () => void;
 }
@@ -44,12 +47,19 @@ function formatWhen(iso: string): string {
  * print and a specimen number. Here the shroom is a thing that happened, so it reads as
  * a receipt.
  */
-export function ThreadShroomCard({ shroomId, cardId, createdAt, onDelete }: ThreadShroomCardProps) {
+export function ThreadShroomCard({
+  shroomId,
+  cardId,
+  createdAt,
+  hasRun = true,
+  onDelete,
+}: ThreadShroomCardProps) {
   const router = useRouter();
   const instructionCards = useStore((s) => s.instructionCards);
   const cards = useStore((s) => s.cards);
   const channels = useStore((s) => s.channels);
   const { runShroom, runningIds } = useShroomRun();
+  const [conflict, setConflict] = useState<string | null>(null);
 
   const shroom = instructionCards[shroomId];
   const card = cards[cardId];
@@ -80,10 +90,24 @@ export function ThreadShroomCard({ shroomId, cardId, createdAt, onDelete }: Thre
   const facts = describeShroom(shroom, channel, instructionCards);
   const isRunning = runningIds.includes(shroom.id);
 
+  // Pressing Run on a shroom that can't act on a single card explains itself rather than
+  // running and quietly doing nothing.
+  const handleRun = () => {
+    const problem = explainCardConflict(shroom);
+    if (problem) {
+      setConflict(problem);
+      return;
+    }
+    setConflict(null);
+    runShroom(shroom, { cardIds: [cardId] });
+  };
+
   return (
     <div className="rounded-xl border border-violet-200 bg-violet-50/60 px-4 py-3 dark:border-violet-900/60 dark:bg-violet-950/20">
       <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[9.5px] uppercase tracking-[0.16em]">
-        <span className="text-violet-600 dark:text-violet-400">Shroom run</span>
+        <span className="text-violet-600 dark:text-violet-400">
+          {hasRun ? 'Shroom run' : 'Shroom'}
+        </span>
         <span className="text-neutral-400 dark:text-neutral-500">
           {ACTION_LABEL[shroom.action] ?? shroom.action}
         </span>
@@ -99,11 +123,11 @@ export function ThreadShroomCard({ shroomId, cardId, createdAt, onDelete }: Thre
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-dashed border-violet-200 pt-2.5 dark:border-violet-900/60">
         <button
-          onClick={() => runShroom(shroom, { cardIds: [cardId] })}
+          onClick={handleRun}
           disabled={isRunning}
           className="rounded border border-violet-300 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-40 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-500/15"
         >
-          {isRunning ? 'Running' : 'Run again'}
+          {isRunning ? 'Running' : hasRun ? 'Run again' : 'Run on this card'}
         </button>
         <button
           onClick={() =>
@@ -126,6 +150,12 @@ export function ThreadShroomCard({ shroomId, cardId, createdAt, onDelete }: Thre
           </button>
         )}
       </div>
+
+      {conflict && (
+        <p className="mt-2.5 rounded-lg bg-white/70 px-3 py-2 text-[13px] leading-relaxed text-neutral-700 dark:bg-neutral-900/50 dark:text-neutral-300 wrap-anywhere">
+          {conflict}
+        </p>
+      )}
     </div>
   );
 }
