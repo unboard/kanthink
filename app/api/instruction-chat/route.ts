@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
+import type { ShroomCapabilities, ShroomInputRequirements } from '@/lib/types';
 
 interface ShroomConfigStep {
   action: 'generate' | 'modify' | 'move' | 'report';
@@ -25,6 +26,8 @@ interface ShroomConfig {
   cardCount?: number;
   steps?: ShroomConfigStep[];
   email?: ShroomConfigEmail;
+  capabilities?: ShroomCapabilities;
+  inputRequirements?: ShroomInputRequirements;
 }
 
 interface InstructionChatRequest {
@@ -83,9 +86,24 @@ A shroom has these fields:
 - **title**: A short, descriptive name (e.g., "Generate article ideas", "Review and promote best idea")
 - **action**: The primary action — one of "generate" (create new cards), "modify" (update existing cards), "move" (move cards between columns), or "report" (read the board and write a single summary card, changing nothing else)
 - **instructions**: Detailed instructions for the AI to follow when running this shroom. This is the core of the shroom — the AI reads these instructions and acts accordingly.
-- **targetColumnName**: The SOURCE column — where the AI looks for cards. For "generate", cards are added here. For "modify", cards in this column are updated. For "move", cards in this column are analyzed and may be moved elsewhere. The destination for move is determined by the instructions, not targetColumnName. Must be one of the available columns.
+- **targetColumnName**: The shroom's DEFAULT SCOPE — the cards a run acts on when whoever runs it doesn't supply any. For "generate", new cards are also added here. For "move", this is where cards are found; the destination is decided per card and belongs in the instructions. Must be one of the available columns.
 - **cardCount**: Number of cards to generate (only for generate action, typically 3-5)
+- **capabilities**: What the shroom is allowed to do beyond writing a note — {"tasks": bool, "tags": bool, "properties": bool, "assignment": bool}. Always include it.
+- **inputRequirements**: {"minCards": number, "reason": "..."} — the fewest cards a run needs to mean anything. Always include it.
 - **email**: Optional. If set, the shroom emails the board owner after every run.
+
+**Instructions must be scope-free.** Instructions say WHAT to do to a card. They must never say WHICH cards, because targetColumnName already records that — and a shroom gets run at scopes it was never written for: on one card from that card's thread, on a hand-picked selection, on a whole column overnight. Instructions saying "every card in Inbox" become a lie in three of those four cases.
+- Write: "Expand the card into a PRD covering problem, audience, key features and success metrics."
+- Not: "Write a PRD for all the cards in Inbox."
+The one exception is a **move** destination ("...then move it to This Week"), which has nowhere else to live — the destination is chosen per card, so it is criteria, not configuration.
+
+**Capabilities are permissions, not requests.** Set one true when the user's intent could reasonably call for it, false when it plainly could not. A shroom that summarises a card doesn't need properties. A shroom told to "break this down into steps I can work through" needs tasks — even though the word "task" never appears. Judge the intent, not the vocabulary. When unsure leave it true: an unused capability costs nothing, a missing one silently prevents the thing the user asked for.
+
+**Input requirements** stop a shroom being run where it cannot make sense. Set minCards to:
+- **1** for most modify/move shrooms — they transform whatever card they are handed.
+- **2 or more** when the instructions compare, rank, or choose between cards ("pick the best", "find duplicates", "summarise the week"). One card cannot be ranked against itself.
+- **0** for generate shrooms — they write new cards and need no input; a card handed to one is just a seed.
+Write reason as a plain sentence the person will read when a run is refused: "Picks the strongest of several ideas, so it needs at least two cards to compare."
 
 **The email field.** Shrooms can email the owner once a run finishes. This is off unless the user asks for it. What you save is a *brief* — a plain-English description of what the email should say and how — not a fixed template. Kan writes the actual email at send time from the brief plus what the run really did, so a quiet run and a busy one produce different emails.
 
@@ -113,19 +131,19 @@ When you're ready to propose a configuration, include it in your response using 
 
 For a simple single-action shroom:
 [SHROOM_CONFIG]
-{"title": "...", "instructions": "...", "action": "generate|modify|move|report", "targetColumnName": "...", "cardCount": 5}
+{"title": "...", "instructions": "...", "action": "generate|modify|move|report", "targetColumnName": "...", "cardCount": 5, "capabilities": {"tasks": true, "tags": true, "properties": false, "assignment": false}, "inputRequirements": {"minCards": 0}}
 [/SHROOM_CONFIG]
 
 For a shroom that emails the owner after it runs:
 [SHROOM_CONFIG]
-{"title": "Morning inbox digest", "instructions": "Read every card added to Inbox since the last run. Summarise what came in and flag anything that looks urgent or blocked.", "action": "report", "targetColumnName": "Inbox", "email": {"enabled": true, "brief": "Short morning summary of what landed overnight. Open with a one-line headline, then up to five bullets. Lead with anything urgent. Casual tone, under 150 words.", "skipWhenNothingHappened": true}}
+{"title": "Morning inbox digest", "instructions": "Summarise what has come in and flag anything that looks urgent or blocked.", "action": "report", "targetColumnName": "Inbox", "capabilities": {"tasks": false, "tags": false, "properties": false, "assignment": false}, "inputRequirements": {"minCards": 2, "reason": "Writes one digest across a set of cards, so a single card gives it nothing to summarise."}, "email": {"enabled": true, "brief": "Short morning summary of what landed overnight. Open with a one-line headline, then up to five bullets. Lead with anything urgent. Casual tone, under 150 words.", "skipWhenNothingHappened": true}}
 [/SHROOM_CONFIG]
 
 For a multi-step shroom (e.g., review cards in Ideas, add a note, then move the best to This Week):
 [SHROOM_CONFIG]
-{"title": "Review and promote best idea", "instructions": "Step 1: Review all cards in the Ideas column and select the most compelling idea.\\nStep 2: Add a note to the selected card explaining why it stands out.\\nStep 3: Move that card to the This Week column.", "action": "move", "targetColumnName": "Ideas", "steps": [{"action": "modify", "targetColumnName": "Ideas", "description": "Review and add note to best card"}, {"action": "move", "targetColumnName": "Ideas", "description": "Move best card to This Week"}]}
+{"title": "Review and promote best idea", "instructions": "Step 1: Review the cards and select the most compelling idea.\\nStep 2: Add a note to the selected card explaining why it stands out.\\nStep 3: Move that card to the This Week column.", "action": "move", "targetColumnName": "Ideas", "capabilities": {"tasks": false, "tags": false, "properties": false, "assignment": false}, "inputRequirements": {"minCards": 2, "reason": "Picks the strongest of several ideas, so it needs at least two cards to compare."}, "steps": [{"action": "modify", "targetColumnName": "Ideas", "description": "Review and add note to best card"}, {"action": "move", "targetColumnName": "Ideas", "description": "Move best card to This Week"}]}
 [/SHROOM_CONFIG]
-Note: Every step's targetColumnName is the SOURCE column (Ideas) — the column where the AI finds cards. The move destination (This Week) is in the instructions, not in targetColumnName.
+Note two things. Every step's targetColumnName is the SOURCE column (Ideas) — where cards are found — while the move destination (This Week) stays in the instructions, because it is chosen per card. And the instructions say "the cards", never "the cards in Ideas": the column is already in targetColumnName, and repeating it would break this shroom the moment someone ran it on a selection.
 
 Important guidelines:
 - Be conversational, warm, and concise
@@ -133,6 +151,8 @@ Important guidelines:
 - 1-3 exchanges should be enough before proposing a config
 - If the user gives a clear description, propose the config right away
 - The targetColumnName must match one of the available column names exactly
+- Never name a column inside instructions — targetColumnName carries it. The only exception is a move destination
+- Always include capabilities and inputRequirements
 - For "generate" action, always include cardCount (default 5)
 - For "modify", "move" or "report" actions, don't include cardCount
 - For "report", targetColumnName is the column to read and summarise
@@ -198,6 +218,31 @@ function parseEmail(raw: unknown): ShroomConfigEmail | undefined {
   };
 }
 
+/**
+ * Capabilities from the model, or undefined.
+ *
+ * Undefined means unrestricted downstream, which is the right reading of "the model
+ * didn't say" — a permission nobody narrowed shouldn't narrow itself. Only a well-formed
+ * object counts, so a half-filled one can't quietly switch three things off.
+ */
+function parseCapabilities(raw: unknown): ShroomCapabilities | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const c = raw as Record<string, unknown>;
+  const keys = ['tasks', 'tags', 'properties', 'assignment'] as const;
+  if (!keys.every((k) => typeof c[k] === 'boolean')) return undefined;
+  return { tasks: !!c.tasks, tags: !!c.tags, properties: !!c.properties, assignment: !!c.assignment };
+}
+
+function parseInputRequirements(raw: unknown): ShroomInputRequirements | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.minCards !== 'number' || !Number.isFinite(r.minCards) || r.minCards < 0) {
+    return undefined;
+  }
+  const reason = typeof r.reason === 'string' ? r.reason.trim() : '';
+  return { minCards: Math.floor(r.minCards), reason: reason || undefined };
+}
+
 function extractShroomConfig(response: string): ShroomConfig | null {
   const match = response.match(/\[SHROOM_CONFIG\]([\s\S]*?)\[\/SHROOM_CONFIG\]/);
   if (match) {
@@ -213,6 +258,8 @@ function extractShroomConfig(response: string): ShroomConfig | null {
           cardCount: parsed.action === 'generate' ? (parsed.cardCount ?? 5) : undefined,
           steps: Array.isArray(parsed.steps) ? parsed.steps : undefined,
           email: parseEmail(parsed.email),
+          capabilities: parseCapabilities(parsed.capabilities),
+          inputRequirements: parseInputRequirements(parsed.inputRequirements),
         };
       }
     } catch {

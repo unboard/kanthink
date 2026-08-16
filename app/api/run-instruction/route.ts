@@ -7,6 +7,12 @@ import { buildFeedbackContext, buildRejectionContext } from '@/lib/ai/feedbackAn
 import { getAuthenticatedLLM } from '@/lib/ai/withAuth';
 import { parseModelChoice } from '@/lib/ai/modelCatalog';
 import { shouldResearchWeb, baseSearchQuery, researchWeb, formatResearchBlock } from '@/lib/shrooms/webResearch';
+import {
+  resolveCapabilities,
+  explainScopeConflict,
+  describeScope,
+  type ShroomScope,
+} from '@/lib/shrooms/invocation';
 import { createNotification } from '@/lib/notifications/createNotification';
 import { auth } from '@/lib/auth';
 import { ensureSchema } from '@/lib/db/ensure-schema';
@@ -130,21 +136,6 @@ function getContextColumnIds(contextColumns: ContextColumnSelection | null | und
  * Parse instruction text to determine which capabilities to enable.
  * STRICT mode: Only enable tasks/properties/tags if explicitly mentioned.
  */
-function parseInstructionKeywords(text: string): { allowTasks: boolean; allowProperties: boolean; allowTags: boolean; allowAssignment: boolean } {
-  const lowerText = text.toLowerCase();
-
-  const taskKeywords = ['task', 'tasks', 'action item', 'action items', 'todo', 'to-do', 'checklist'];
-  const propertyKeywords = ['property', 'properties', 'categorize', 'category', 'metadata'];
-  const tagKeywords = ['tag', 'tags', 'label', 'labels'];
-  const assignmentKeywords = ['assign', 'assignee', 'assigned to', 'delegate', 'responsibility', 'responsible', 'who should', 'allocate', 'owner of', 'point person'];
-
-  return {
-    allowTasks: taskKeywords.some(kw => lowerText.includes(kw)),
-    allowProperties: propertyKeywords.some(kw => lowerText.includes(kw)),
-    allowTags: tagKeywords.some(kw => lowerText.includes(kw)),
-    allowAssignment: assignmentKeywords.some(kw => lowerText.includes(kw)),
-  };
-}
 
 interface MemberInfo {
   id: string;
@@ -172,9 +163,10 @@ function buildGeneratePrompt(
   systemInstructions?: string,
   targetColumnIds?: string[],
   members?: MemberInfo[],
-  allowAssignment?: boolean
+  scope?: ShroomScope
 ): LLMMessage[] {
   const count = instructionCard.cardCount ?? 5;
+  const allowAssignment = resolveCapabilities(instructionCard).assignment;
 
   // Get target column instructions if targeting a specific column
   let targetColumnInfo = '';
@@ -229,6 +221,10 @@ Respond with ONLY the JSON array:
     contextSection += targetColumnInfo;
   }
   userParts.push(contextSection);
+
+  // Only worth saying when the run was actually pointed at cards. A generate shroom on
+  // its usual schedule has none, and inventing a scope line for that is noise.
+  if (scope && scope.cardIds.length > 0) userParts.push(describeScope(scope, 'seed'));
 
   // Board state - show existing cards in context columns
   let boardState = '\n## Current Board';
@@ -285,7 +281,7 @@ function buildModifyPrompt(
   allCards: Record<string, Card>,
   systemInstructions?: string,
   members?: MemberInfo[],
-  allowAssignment?: boolean
+  scope?: ShroomScope
 ): { messages: LLMMessage[]; cardIdMap: Record<string, string> } {
   // Build a mapping from simple numeric IDs to real card IDs
   // This prevents LLMs from mangling complex nanoid strings
@@ -294,8 +290,12 @@ function buildModifyPrompt(
     cardIdMap[`card_${i + 1}`] = cardsToModify[i].id;
   }
 
-  // Parse instruction text to determine allowed capabilities
-  const { allowTasks, allowProperties, allowTags } = parseInstructionKeywords(instructionCard.instructions || '');
+  // What the shroom is permitted to do — a stored decision, not a guess about its prose.
+  const caps = resolveCapabilities(instructionCard);
+  const allowTasks = caps.tasks;
+  const allowProperties = caps.properties;
+  const allowTags = caps.tags;
+  const allowAssignment = caps.assignment;
 
   // Build the JSON example dynamically based on allowed capabilities
   const jsonFields: string[] = [
@@ -400,6 +400,11 @@ ${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
   }
   userParts.push(contextSection);
+
+  // Say what this run's scope actually is. The same shroom is invoked on one card from a
+  // thread and on a whole column from a schedule; without this the model has to infer
+  // which it's in from what it wasn't given.
+  if (scope) userParts.push(describeScope(scope));
 
   // Cards to modify (using simple numeric IDs for reliable LLM echo-back)
   let cardsSection =
@@ -608,7 +613,8 @@ function buildMovePrompt(
   instructionCard: InstructionCard,
   channel: Channel,
   cardsToMove: Card[],
-  systemInstructions?: string
+  systemInstructions?: string,
+  scope?: ShroomScope
 ): LLMMessage[] {
   // Build list of available destination columns with their instructions
   const columnsList = channel.columns.map((c) => {
@@ -642,6 +648,8 @@ If no cards should be moved, return an empty array: []`;
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
   }
   userParts.push(contextSection);
+
+  if (scope) userParts.push(describeScope(scope, 'transform'));
 
   // Cards to analyze
   let cardsSection = '## Cards to Analyze';
@@ -692,7 +700,8 @@ function buildReportPrompt(
   instructionCard: InstructionCard,
   channel: Channel,
   contextCards: Card[],
-  systemInstructions?: string
+  systemInstructions?: string,
+  scope?: ShroomScope
 ): LLMMessage[] {
   const systemPrompt = `You are analyzing a Kanban channel and writing a short, useful status report for its owner.
 
@@ -723,6 +732,8 @@ Rules:
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
   }
   userParts.push(contextSection);
+
+  if (scope) userParts.push(describeScope(scope, 'read'));
 
   let cardsSection = '## Cards';
   if (contextCards.length === 0) {
@@ -823,7 +834,7 @@ function buildMultiStepPrompt(
   allTasks: Record<string, Task>,
   systemInstructions?: string,
   members?: MemberInfo[],
-  allowAssignment?: boolean
+  scope?: ShroomScope
 ): LLMMessage[] {
   // Collect all unique source column IDs from steps
   const sourceColumnIds = new Set<string>();
@@ -841,8 +852,12 @@ function buildMultiStepPrompt(
     }
   }
 
-  // Parse instruction keywords for capabilities
-  const { allowTasks, allowProperties, allowTags } = parseInstructionKeywords(instructionCard.instructions || '');
+  // What the shroom is permitted to do — a stored decision, not a guess about its prose.
+  const caps = resolveCapabilities(instructionCard);
+  const allowTasks = caps.tasks;
+  const allowProperties = caps.properties;
+  const allowTags = caps.tags;
+  const allowAssignment = caps.assignment;
 
   // Determine which action types are involved
   const hasGenerate = instructionCard.steps?.some(s => s.action === 'generate') ?? false;
@@ -921,6 +936,8 @@ Respond with ONLY the JSON object, no other text.`;
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
   }
   userParts.push(contextSection);
+
+  if (scope) userParts.push(describeScope(scope));
 
   // Cards in source columns
   let cardsSection = '## Cards to Work With';
@@ -1135,6 +1152,39 @@ export async function POST(request: Request) {
     const targetColumnIds = getTargetColumnIds(instructionCard.target, channel);
     const contextColumnIds = getContextColumnIds(instructionCard.contextColumns, channel);
 
+    /**
+     * The invocation's scope: which cards this run is actually about.
+     *
+     * Resolved once, here, rather than re-derived inside each action branch — the branches
+     * used to each contain their own copy of this ladder, which is how the prompt ended up
+     * never mentioning the answer. Narrowest wins: a triggering card, then an explicit
+     * selection, then the shroom's default scope.
+     */
+    const scope: ShroomScope = triggeringCardId && cards[triggeringCardId]
+      ? { cardIds: [triggeringCardId], kind: 'card' }
+      : cardIds?.length
+        ? { cardIds, kind: cardIds.length === 1 ? 'card' : 'selection' }
+        : {
+            cardIds: targetColumnIds.flatMap(
+              (columnId) => channel.columns.find((c) => c.id === columnId)?.cardIds ?? []
+            ),
+            kind: instructionCard.target.type === 'board' ? 'board' : 'column',
+            columnNames: targetColumnIds
+              .map((id) => channel.columns.find((c) => c.id === id)?.name)
+              .filter((n): n is string => Boolean(n)),
+          };
+
+    // Refuse a run the shroom can't make sense of, before spending a model call. The
+    // reason comes from what the shroom declares it needs, so it's the author's words.
+    const scopeConflict = explainScopeConflict(instructionCard, scope.cardIds.length);
+    if (scopeConflict) {
+      return NextResponse.json({
+        action: instructionCard.action,
+        targetColumnIds,
+        error: scopeConflict,
+      });
+    }
+
     // Rejection history lives on the server so a shroom learns from every device, not
     // just the one it happened to run on. `rejections` in the body is the legacy
     // client-passed array, kept only as a fallback while old clients are in flight.
@@ -1249,11 +1299,8 @@ export async function POST(request: Request) {
     // ==========================================
     // MULTI-STEP EXECUTION (unified single-prompt)
     // ==========================================
-    // Parse assignment capability from instruction keywords (shared across all paths)
-    const { allowAssignment } = parseInstructionKeywords(instructionCard.instructions || '');
-
     if (instructionCard.steps && instructionCard.steps.length > 0) {
-      const messages = buildMultiStepPrompt(instructionCard, channel, cards, tasks, effectiveSystemInstructions, members, allowAssignment);
+      const messages = buildMultiStepPrompt(instructionCard, channel, cards, tasks, effectiveSystemInstructions, members, scope);
 
       // Web research if the shroom's Web ability calls for it
       if (llm.webSearch && shouldResearchWeb(instructionCard)) {
@@ -1408,7 +1455,7 @@ export async function POST(request: Request) {
         effectiveSystemInstructions,
         targetColumnIds,
         members,
-        allowAssignment
+        scope
       );
 
       // Web research: when the shroom's Web ability is on (explicitly, or inferred from
@@ -1651,7 +1698,9 @@ export async function POST(request: Request) {
         cards,
         effectiveSystemInstructions,
         members,
-        allowAssignment
+        // Cards already processed by this shroom were filtered out above, so the scope
+        // the model is told about is the one it actually receives.
+        { ...scope, cardIds: cardsToModify.map((c) => c.id) }
       );
 
       // Web research for modify: run targeted per-topic searches using card context
@@ -1890,7 +1939,13 @@ export async function POST(request: Request) {
         }
       }
 
-      const messages = buildReportPrompt(instructionCard, channel, reportCards, effectiveSystemInstructions);
+      const messages = buildReportPrompt(
+        instructionCard,
+        channel,
+        reportCards,
+        effectiveSystemInstructions,
+        { ...scope, cardIds: reportCards.map((c) => c.id) }
+      );
 
       // A report shroom with the Web ability on is a research mission: it goes and looks
       // something up, then writes what it found back to the board as a digest card.
@@ -2037,7 +2092,8 @@ export async function POST(request: Request) {
         instructionCard,
         channel,
         cardsToMove,
-        effectiveSystemInstructions
+        effectiveSystemInstructions,
+        { ...scope, cardIds: cardsToMove.map((c) => c.id) }
       );
 
       debug.systemPrompt = messages[0].content as string;

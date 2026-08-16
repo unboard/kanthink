@@ -102,6 +102,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (body.autoApprove !== undefined) updates.autoApprove = body.autoApprove ? 1 : 0
     if (body.modelId !== undefined) updates.modelId = body.modelId || null
     if (body.webAccess !== undefined) updates.webAccess = body.webAccess || null
+    if (body.capabilities !== undefined) updates.capabilities = body.capabilities || null
+    if (body.inputRequirements !== undefined) updates.inputRequirements = body.inputRequirements || null
 
     // Handle isGlobalResource toggle (admin only)
     if (isGlobalResource !== undefined) {

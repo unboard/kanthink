@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shrooms-portable-scope-and-capabilities',
+    date: '2026-08-16',
+    kind: 'capability',
+    title: 'Shrooms are portable now — write what to do, not which cards',
+    body: 'A shroom no longer guesses what it may do by scanning its own instructions for words like "task" or "label", which is why "break this into steps" used to produce nothing. Tasks, tags, properties and assignment are settings you can see and change, and a shroom can declare it needs more than one card so a run that makes no sense is refused with a reason instead of quietly doing something odd. Write instructions about the card, not the column — the column is already a setting, and the same shroom now runs correctly from a thread, a selection, or a schedule.',
+  },
+  {
     id: 'slash-shrooms-in-card-thread',
     date: '2026-08-15',
     kind: 'workflow',

@@ -38,8 +38,9 @@ export async function generateShroomSummary(instructionId: string): Promise<stri
 
 Rules:
 - One sentence, at most two. Under 30 words.
-- Third person, present tense, starting with a verb: "Reads every bookmark…", "Sorts anything in Raw Ideas…".
-- Say what it does to the board and what comes out of it. Skip the how.
+- Third person, present tense, starting with a verb: "Rewrites a card as a product brief…", "Sorts an idea into the column it belongs in…".
+- Describe the TRANSFORMATION — what it does to a card and what comes out. Never say which column or how many cards. The same automation gets run on one card, on a selection, and on a whole column, so any scope you name will be wrong most of the time.
+- The instructions may mention a column. Ignore it; that is where it usually runs, not what it does.
 - Plain language. No jargon, no marketing, no "This shroom…", no restating the title.
 - Reply with the sentence only. No quotes, no preamble.`,
         },

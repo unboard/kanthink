@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope, ScheduleInterval, EventTrigger, ScheduledTrigger, ShroomWebMode } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope, ScheduleInterval, EventTrigger, ScheduledTrigger, ShroomWebMode, ShroomCapabilities } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { calculateNextScheduledRun } from '@/lib/automationSafeguards';
 import { REJECTION_REASONS } from '@/lib/constants';
@@ -10,6 +10,27 @@ import { Drawer } from '@/components/ui/Drawer';
 import { ShroomStepList, type ShroomStepView } from './ShroomStepList';
 import { Button, Textarea } from '@/components/ui';
 import { MODEL_CATALOG, formatModelChoice } from '@/lib/ai/modelCatalog';
+import { resolveInputRequirements } from '@/lib/shrooms/invocation';
+
+/** The minimum this action would default to, for pre-selecting the control. */
+function defaultMinCardsFor(action: InstructionAction): number {
+  return resolveInputRequirements({ action, inputRequirements: undefined }).minCards;
+}
+
+/** Matches `resolveCapabilities`: unset means unrestricted. */
+const DEFAULT_CAPABILITIES: ShroomCapabilities = {
+  tasks: true,
+  tags: true,
+  properties: true,
+  assignment: true,
+};
+
+const CAPABILITY_LABELS: { key: keyof ShroomCapabilities; label: string; blurb: string }[] = [
+  { key: 'tasks', label: 'Tasks', blurb: 'Pull action items out onto the card' },
+  { key: 'tags', label: 'Tags', blurb: 'Add tags' },
+  { key: 'properties', label: 'Properties', blurb: 'Write key/value fields' },
+  { key: 'assignment', label: 'Assignment', blurb: 'Assign people to cards and tasks' },
+];
 
 const SKIP_LABELS: Record<string, string> = {
   daily_cap_reached: 'Skipped — daily limit reached',
@@ -101,6 +122,9 @@ export function InstructionDetailDrawerV2({
   const [modelId, setModelId] = useState('');
   const [webMode, setWebMode] = useState<ShroomWebMode>('auto');
   const [webFocus, setWebFocus] = useState('');
+  const [capabilities, setCapabilities] = useState<ShroomCapabilities>(DEFAULT_CAPABILITIES);
+  const [minCards, setMinCards] = useState(1);
+  const [minCardsReason, setMinCardsReason] = useState('');
   const allInstructionCards = useStore((s) => s.instructionCards);
 
   // When this runs — the three modes cover everything the engine can actually do
@@ -190,6 +214,9 @@ export function InstructionDetailDrawerV2({
       setModelId(instructionCard.modelId ?? '');
       setWebMode(instructionCard.webAccess?.mode ?? 'auto');
       setWebFocus(instructionCard.webAccess?.focus ?? '');
+      setCapabilities(instructionCard.capabilities ?? DEFAULT_CAPABILITIES);
+      setMinCards(instructionCard.inputRequirements?.minCards ?? defaultMinCardsFor(instructionCard.action));
+      setMinCardsReason(instructionCard.inputRequirements?.reason ?? '');
 
       const saved = instructionCard.triggers ?? [];
       const event = saved.find((t) => t.type === 'event') as EventTrigger | undefined;
@@ -246,7 +273,7 @@ export function InstructionDetailDrawerV2({
     contextAllColumns, contextColumnIds, selectedColumnIds, action, cardCount,
     runWhen, watchColumnId, scheduleInterval, scheduleTime,
     scope, isGlobalResource, autoApprove, nextInstructionId, coverImageUrl,
-    safeguards, emailEnabled, emailSkipWhenEmpty, modelId, webMode,
+    safeguards, emailEnabled, emailSkipWhenEmpty, modelId, webMode, capabilities, minCards,
   ]);
 
   const handleSave = () => {
@@ -309,6 +336,8 @@ export function InstructionDetailDrawerV2({
       // switching back to the default would never reach the server.
       modelId,
       webAccess: { mode: webMode, focus: webFocus.trim() || undefined },
+      capabilities,
+      inputRequirements: { minCards, reason: minCardsReason.trim() || undefined },
       // Untouched shrooms shouldn't carry an empty email object around
       emailConfig: emailEnabled || emailBrief.trim()
         ? { enabled: emailEnabled, brief: emailBrief, skipWhenNothingHappened: emailSkipWhenEmpty }
@@ -1136,6 +1165,65 @@ export function InstructionDetailDrawerV2({
                     </div>
                   </label>
                 )}
+
+                {/* What the shroom may do, as opposed to what it's asked to do. These
+                    used to be inferred per run by scanning the instructions for words
+                    like "task" — so they were neither visible nor anyone's decision. */}
+                <div>
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1 block">
+                    Can also
+                  </span>
+                  <p className="text-xs text-neutral-500 mb-2">
+                    A ceiling, not a request — the instructions still decide what actually happens.
+                  </p>
+                  <div className="space-y-2">
+                    {CAPABILITY_LABELS.map(({ key, label, blurb }) => (
+                      <label key={key} className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={capabilities[key]}
+                          onChange={(e) =>
+                            setCapabilities((prev) => ({ ...prev, [key]: e.target.checked }))
+                          }
+                          className="mt-0.5 h-4 w-4 rounded border-neutral-300 text-violet-600 focus:ring-violet-500"
+                        />
+                        <span>
+                          <span className="text-sm text-neutral-700 dark:text-neutral-300">{label}</span>
+                          <span className="block text-xs text-neutral-500">{blurb}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* What a run must be handed. Lets any surface refuse a run it can't make
+                    sense of — and say why — before spending a model call. */}
+                <div>
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2 block">
+                    Needs at least
+                  </span>
+                  <select
+                    value={minCards}
+                    onChange={(e) => setMinCards(Number(e.target.value))}
+                    className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                  >
+                    <option value={0}>No cards — it writes its own</option>
+                    <option value={1}>1 card</option>
+                    <option value={2}>2 cards — it compares or ranks</option>
+                    <option value={3}>3 cards</option>
+                    <option value={5}>5 cards</option>
+                  </select>
+                  {minCards > 1 && (
+                    <input
+                      type="text"
+                      value={minCardsReason}
+                      onChange={(e) => setMinCardsReason(e.target.value)}
+                      onBlur={handleSave}
+                      placeholder="Why, in a sentence — shown when a run is refused"
+                      className="mt-2 w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    />
+                  )}
+                </div>
 
                 {/* Web ability. Research used to be inferred from whether the
                     instructions happened to say "article" or "youtube" — this makes it

@@ -2,7 +2,7 @@
 import { MyceliumWeb } from '@/components/kan/KanThinking';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ShroomChatMessage, ShroomStep, ShroomEmailConfig } from '@/lib/types';
+import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ShroomChatMessage, ShroomStep, ShroomEmailConfig, ShroomCapabilities, ShroomInputRequirements } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
 import { ShroomPreview } from './ShroomPreview';
@@ -22,6 +22,8 @@ interface ShroomConfig {
   cardCount?: number;
   steps?: ShroomConfigStep[];
   email?: ShroomEmailConfig;
+  capabilities?: ShroomCapabilities;
+  inputRequirements?: ShroomInputRequirements;
 }
 
 interface ShroomChatDrawerProps {
@@ -342,8 +344,11 @@ export function ShroomChatDrawer({
         conversationHistory,
         steps: resolvedSteps,
         // Omitting email leaves whatever's already configured alone; the chat only
-        // proposes an email object when the conversation actually covered it.
+        // proposes an email object when the conversation actually covered it. Same for
+        // capabilities and requirements — a silent chat shouldn't reset a hand-tuned one.
         ...(finalConfig.email ? { emailConfig: finalConfig.email } : {}),
+        ...(finalConfig.capabilities ? { capabilities: finalConfig.capabilities } : {}),
+        ...(finalConfig.inputRequirements ? { inputRequirements: finalConfig.inputRequirements } : {}),
       });
       onShroomUpdated?.();
     } else {
@@ -358,6 +363,8 @@ export function ShroomChatDrawer({
         conversationHistory,
         steps: resolvedSteps,
         emailConfig: finalConfig.email,
+        capabilities: finalConfig.capabilities,
+        inputRequirements: finalConfig.inputRequirements,
       });
       onShroomCreated?.(newCard);
     }

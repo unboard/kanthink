@@ -55,6 +55,46 @@ export interface ShroomEmailConfig {
 }
 
 /**
+ * What a shroom is allowed to do, as distinct from what it's asked to do.
+ *
+ * These are a ceiling, not a request. The instructions decide what actually happens;
+ * this decides what's even on the table. They exist because the run used to infer them
+ * by scanning the instructions for words like "task" or "label" — so "break this into
+ * steps" was told *not* to make tasks (no magic word), and "identify the category"
+ * silently gained the power to write properties. Both were invisible and neither was
+ * anyone's decision.
+ *
+ * Unset means unrestricted. A permission nobody has narrowed shouldn't quietly narrow
+ * itself, and a prohibition should only ever reach the model because someone chose it.
+ */
+export interface ShroomCapabilities {
+  /** Extract action items onto the card as tasks. */
+  tasks: boolean;
+  /** Add tags. */
+  tags: boolean;
+  /** Write key/value properties. */
+  properties: boolean;
+  /** Assign channel members to cards and tasks. */
+  assignment: boolean;
+}
+
+/**
+ * What a run has to be handed for this shroom to mean anything.
+ *
+ * A shroom is invoked at wildly different scopes — one card from a thread, a selection,
+ * a whole column on a schedule. Some don't survive the narrow end of that: "pick the
+ * best of these and say why" is not a question you can ask about one card. Declaring the
+ * requirement lets any surface refuse the run *and say why* before spending a model call,
+ * instead of running and producing something quietly nonsensical.
+ */
+export interface ShroomInputRequirements {
+  /** Fewest cards a run needs. 0 means it doesn't act on existing cards at all. */
+  minCards: number;
+  /** Why, in the user's words. Shown when a run can't meet it. */
+  reason?: string;
+}
+
+/**
  * A shroom's Web ability.
  *
  * Before this, web research was inferred: if the instructions happened to contain
@@ -236,7 +276,14 @@ export interface InstructionCard {
   title: string;
   instructions: string;
   action: InstructionAction;
-  target: InstructionTarget;              // Destination: where cards are added
+  /**
+   * The shroom's **default scope**: the cards a run acts on when the invoker doesn't
+   * supply any. A thread run, a multi-select, or a chained run all override it.
+   *
+   * Not "where this shroom belongs" — a shroom belongs nowhere in particular, which is
+   * what makes it reusable. For `generate` this is also where new cards land.
+   */
+  target: InstructionTarget;
   contextColumns?: ContextColumnSelection | null; // Context: what AI sees (null/undefined = all)
   runMode: InstructionRunMode;
   scope?: InstructionScope;               // 'channel' (default), 'global', or 'public'
@@ -272,6 +319,10 @@ export interface InstructionCard {
    * before the ability was made explicit.
    */
   webAccess?: ShroomWebAccess;
+  /** What this shroom may do beyond writing a note. Unset means unrestricted. */
+  capabilities?: ShroomCapabilities;
+  /** What a run must be handed for this shroom to make sense. */
+  inputRequirements?: ShroomInputRequirements;
   /**
    * One generated sentence describing what this shroom does, for the card on the board.
    * `instructions` is written *to* the model and reads like configuration, which is why
@@ -496,6 +547,8 @@ export interface InstructionCardInput {
   conversationHistory?: ShroomChatMessage[];
   steps?: ShroomStep[];
   emailConfig?: ShroomEmailConfig;
+  capabilities?: ShroomCapabilities;
+  inputRequirements?: ShroomInputRequirements;
 }
 
 export interface TaskInput {

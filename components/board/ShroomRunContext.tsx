@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from 'react';
 import type { InstructionCard } from '@/lib/types';
+import { canRunOnSingleCard, explainScopeConflict } from '@/lib/shrooms/invocation';
 
 export interface ShroomRunOptions {
   /** Restrict the run to these cards. Without it, the shroom runs on its whole target. */
@@ -47,26 +48,18 @@ export function shroomsForCard(shrooms: InstructionCard[]): InstructionCard[] {
   return shrooms.filter(canRunOnCard);
 }
 
-/** Whether pointing this shroom at one card is a meaningful thing to ask for. */
+/**
+ * Whether pointing this shroom at one card is a meaningful thing to ask for.
+ *
+ * Answered from what the shroom declares it needs, not from a switch on its action — so
+ * a shroom that needs a set for reasons of its own ("rank these against each other") is
+ * refused for the reason its author gave.
+ */
 export function canRunOnCard(shroom: InstructionCard): boolean {
-  return shroom.action === 'modify' || shroom.action === 'move' || (shroom.steps?.length ?? 0) > 0;
+  return canRunOnSingleCard(shroom);
 }
 
-/**
- * Why this shroom can't be run against a single card, in a sentence.
- *
- * Every surface that lets you pick any shroom needs this — you can only find out a
- * shroom is the wrong shape for a card by trying it, and "nothing happened" is the
- * worst possible answer. Says what the shroom does instead, and where to run it.
- */
+/** Why this shroom can't be run against a single card, in a sentence. */
 export function explainCardConflict(shroom: InstructionCard): string | null {
-  if (canRunOnCard(shroom)) return null;
-
-  if (shroom.action === 'generate') {
-    return `“${shroom.title}” writes new cards rather than changing an existing one, so there's nothing for it to do here. Run it from the Shrooms panel and it'll add cards to the board.`;
-  }
-  if (shroom.action === 'report') {
-    return `“${shroom.title}” reads a whole column and writes up what it found, so it needs more than one card to look at. Run it from the Shrooms panel.`;
-  }
-  return `“${shroom.title}” doesn't act on a single card. Run it from the Shrooms panel instead.`;
+  return explainScopeConflict(shroom, 1);
 }

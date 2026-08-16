@@ -323,6 +323,13 @@ export const instructionCards = sqliteTable('instruction_cards', {
   // Web ability: { mode: 'auto' | 'always' | 'off', focus?: string }. NULL means 'auto'.
   webAccess: text('web_access', { mode: 'json' }).$type<ShroomWebAccessJson>(),
 
+  // What the shroom may do beyond writing a note. NULL means unrestricted.
+  capabilities: text('capabilities', { mode: 'json' }).$type<ShroomCapabilitiesJson>(),
+
+  // What a run must be handed for this shroom to make sense. NULL falls back to the
+  // action's natural minimum.
+  inputRequirements: text('input_requirements', { mode: 'json' }).$type<ShroomInputRequirementsJson>(),
+
   lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
   nextScheduledRun: integer('next_scheduled_run', { mode: 'timestamp' }),
   dailyExecutionCount: integer('daily_execution_count').default(0),
@@ -721,6 +728,18 @@ interface ShroomEmailConfigJson {
 interface ShroomWebAccessJson {
   mode: 'auto' | 'always' | 'off'
   focus?: string
+}
+
+interface ShroomCapabilitiesJson {
+  tasks: boolean
+  tags: boolean
+  properties: boolean
+  assignment: boolean
+}
+
+interface ShroomInputRequirementsJson {
+  minCards: number
+  reason?: string
 }
 
 interface EmailBuilderMessageJson {
