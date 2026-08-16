@@ -33,8 +33,6 @@ import { Button } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { signInWithGoogle } from '@/lib/actions/auth';
-import { shrooms as marketplaceShrooms } from '@/lib/marketplace-data';
-import { addCommunityShroom } from '@/lib/shrooms/addFromCommunity';
 import { ShroomCard } from '@/components/shrooms/ShroomCard';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import type { Channel, ChannelStatus, Folder, ID, Card, Task } from '@/lib/types';
@@ -838,11 +836,6 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
   const channels = useStore((s) => s.channels);
   const currentChannelId = pathname.startsWith('/channel/') ? pathname.split('/')[2] : null;
   const currentChannel = currentChannelId ? channels[currentChannelId] : null;
-  const [activeTab, setActiveTab] = useState<'mine' | 'community'>('mine');
-  const [communitySearch, setCommunitySearch] = useState('');
-  const [addedSlugs, setAddedSlugs] = useState<Set<string>>(new Set());
-  const [addError, setAddError] = useState<string | null>(null);
-
   const allShrooms = Object.values(instructionCards);
   const channelShrooms = currentChannelId
     ? allShrooms.filter((ic) => ic.channelId === currentChannelId && ic.scope !== 'global')
@@ -880,61 +873,11 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
 
   const allChannelShrooms = [...channelShrooms, ...globalShrooms];
 
-  // Community tab filtering
-  const existingTitles = useMemo(() => {
-    return new Set(allShrooms.map(s => s.title));
-  }, [allShrooms]);
-
-  const filteredCommunityShrooms = useMemo(() => {
-    if (!communitySearch) return marketplaceShrooms;
-    const q = communitySearch.toLowerCase();
-    return marketplaceShrooms.filter(s =>
-      s.name.toLowerCase().includes(q) ||
-      s.tagline.toLowerCase().includes(q) ||
-      s.tags.some(t => t.includes(q))
-    );
-  }, [communitySearch]);
-
-  const handleAddCommunityShroom = (shroom: typeof marketplaceShrooms[0]) => {
-    const result = addCommunityShroom(shroom, currentChannelId);
-    if (!result.ok) {
-      setAddError('Create a channel first — shrooms need a board to live on.');
-      return;
-    }
-    setAddError(null);
-    setAddedSlugs(prev => new Set([...prev, shroom.slug]));
-  };
-
   return (
     <div className="flex flex-col h-full">
-      {/* Tabs */}
-      <div className="flex-shrink-0 flex border-b border-neutral-200 dark:border-neutral-800 px-4">
-        <button
-          onClick={() => setActiveTab('mine')}
-          className={`flex-1 py-3 text-sm font-medium text-center transition-colors border-b-2 ${
-            activeTab === 'mine'
-              ? 'text-violet-600 dark:text-violet-400 border-violet-600 dark:border-violet-400'
-              : 'text-neutral-500 border-transparent'
-          }`}
-        >
-          My Shrooms
-        </button>
-        <button
-          onClick={() => setActiveTab('community')}
-          className={`flex-1 py-3 text-sm font-medium text-center transition-colors border-b-2 ${
-            activeTab === 'community'
-              ? 'text-violet-600 dark:text-violet-400 border-violet-600 dark:border-violet-400'
-              : 'text-neutral-500 border-transparent'
-          }`}
-        >
-          Community
-        </button>
-      </div>
-
-      {/* My Shrooms tab */}
-      {activeTab === 'mine' && (
-        <>
-          <div className="flex-1 p-4 space-y-3 overflow-y-auto">
+      {/* The My Shrooms / Community tab pair went with the shroom catalogue — there is
+          only one kind of shroom now, the ones on your board. */}
+      <div className="flex-1 p-4 space-y-3 overflow-y-auto">
             {allChannelShrooms.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16">
                 <div className="w-16 h-16 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mb-3">
@@ -973,72 +916,7 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           )}
-        </>
-      )}
 
-      {/* Community tab */}
-      {activeTab === 'community' && (
-        <div className="flex-1 p-4 space-y-3 overflow-y-auto">
-          {/* Search */}
-          <input
-            type="text"
-            placeholder="Search community shrooms..."
-            value={communitySearch}
-            onChange={e => setCommunitySearch(e.target.value)}
-            className="w-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-4 py-3 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:border-violet-500/40 focus:ring-1 focus:ring-violet-500/20"
-          />
-
-          {addError && (
-            <p className="text-xs text-red-500 dark:text-red-400">{addError}</p>
-          )}
-
-          {/* Community shroom list */}
-          {filteredCommunityShrooms.map(shroom => {
-            const alreadyAdded = existingTitles.has(shroom.name) || addedSlugs.has(shroom.slug);
-            return (
-              <div
-                key={shroom.slug}
-                className="flex items-center gap-3 p-4 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700"
-              >
-                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center text-xl">
-                  {shroom.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="font-medium text-sm text-neutral-900 dark:text-white truncate block">
-                    {shroom.name}
-                  </span>
-                  <p className="text-xs text-neutral-500 truncate mt-0.5">{shroom.tagline}</p>
-                </div>
-                <button
-                  onClick={() => handleAddCommunityShroom(shroom)}
-                  disabled={alreadyAdded}
-                  className={`flex-shrink-0 px-4 py-2 rounded-xl text-xs font-medium transition-colors ${
-                    alreadyAdded
-                      ? 'bg-neutral-200 dark:bg-neutral-700 text-neutral-400 cursor-default'
-                      : 'bg-violet-600 text-white hover:bg-violet-500 active:bg-violet-700'
-                  }`}
-                >
-                  {alreadyAdded ? 'Added' : 'Add'}
-                </button>
-              </div>
-            );
-          })}
-
-          {/* Browse full marketplace link */}
-          <div className="pt-2 pb-4 text-center">
-            <Link
-              href="/marketplace"
-              onClick={onClose}
-              className="inline-flex items-center gap-1.5 text-sm text-violet-500 hover:text-violet-400 transition-colors"
-            >
-              Browse full marketplace
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </Link>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

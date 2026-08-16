@@ -1,18 +1,9 @@
 // Static seed data for the Kanthink Marketplace
-// 20 Shrooms (AI automation templates) + 20 Channels (collaborative spaces)
-
-export interface MarketplaceShroom {
-  slug: string
-  name: string
-  tagline: string
-  description: string
-  category: string
-  tags: string[]
-  icon: string // emoji
-  action: 'generate' | 'modify' | 'move'
-  instructions: string
-  usageCount: number
-}
+//
+// Channels only. The shroom catalogue was removed: a shroom is defined by its
+// instructions, capabilities and input requirements, and the templates here carried
+// none of that — they were prose blobs that pre-dated the model. Shrooms are built by
+// talking to Kan instead.
 
 export interface MarketplaceChannel {
   slug: string
@@ -27,15 +18,6 @@ export interface MarketplaceChannel {
   usageCount: number
 }
 
-export const SHROOM_CATEGORIES = [
-  'Productivity',
-  'Engineering',
-  'Design',
-  'Marketing',
-  'Personal',
-  'Team',
-] as const
-
 export const CHANNEL_CATEGORIES = [
   'Team',
   'Community',
@@ -44,249 +26,6 @@ export const CHANNEL_CATEGORIES = [
   'Creative',
   'Operations',
 ] as const
-
-export const shrooms: MarketplaceShroom[] = [
-  {
-    slug: 'daily-standup',
-    name: 'Daily Standup',
-    tagline: 'Generate standup cards from yesterday\'s activity',
-    description: 'Automatically creates standup cards each morning based on card movements from the previous day. Summarizes what was completed, what\'s in progress, and surfaces blockers. Drop this into any team channel to replace manual standup updates.',
-    category: 'Team',
-    tags: ['standup', 'agile', 'daily', 'team'],
-    icon: '🌅',
-    action: 'generate',
-    instructions: 'Every morning, scan the channel for cards that moved yesterday. Generate a standup summary card with three sections: Done (cards moved to completed), In Progress (cards currently being worked on), and Blockers (cards that haven\'t moved in 3+ days).',
-    usageCount: 2847,
-  },
-  {
-    slug: 'bug-triage',
-    name: 'Bug Triage',
-    tagline: 'Auto-classify and prioritize incoming bugs',
-    description: 'Analyzes new bug reports and automatically classifies them by severity (critical, high, medium, low) and area (frontend, backend, infra, UX). Moves cards to the appropriate priority column and adds structured tags. Works best with a channel that has severity-based columns.',
-    category: 'Engineering',
-    tags: ['bugs', 'triage', 'priority', 'engineering'],
-    icon: '🐛',
-    action: 'move',
-    instructions: 'When a new card appears in the Inbox column, analyze its title and description. Classify by severity (P0-P3) and affected area. Add tags, set priority, and move to the appropriate column. P0/P1 → Urgent, P2 → This Week, P3 → Backlog.',
-    usageCount: 1923,
-  },
-  {
-    slug: 'weekly-planner',
-    name: 'Weekly Planner',
-    tagline: 'Plan your week with AI-suggested priorities',
-    description: 'Every Monday morning, reviews your backlog and in-progress items, then generates a suggested weekly plan. Creates cards in your "This Week" column ranked by urgency, dependencies, and deadlines. Learns from your patterns over time.',
-    category: 'Productivity',
-    tags: ['planning', 'weekly', 'priorities', 'organization'],
-    icon: '📅',
-    action: 'generate',
-    instructions: 'On Monday, review all cards across columns. Identify items by urgency and deadline. Generate a "Weekly Plan" card listing the top 5-7 items to focus on this week, with brief reasoning for each. Move suggested items to the "This Week" column.',
-    usageCount: 3412,
-  },
-  {
-    slug: 'sprint-retro',
-    name: 'Sprint Retrospective',
-    tagline: 'Generate retro insights from sprint activity',
-    description: 'At the end of each sprint, analyzes all card movements, completion rates, and patterns to generate a retrospective summary. Highlights what went well, what could improve, and suggests action items for the next sprint.',
-    category: 'Team',
-    tags: ['retro', 'sprint', 'agile', 'reflection'],
-    icon: '🔄',
-    action: 'generate',
-    instructions: 'Analyze all card activity from the past two weeks. Calculate completion rate, average time in each column, and identify bottlenecks. Generate a retro card with: What Went Well, What Could Improve, and Action Items sections.',
-    usageCount: 1567,
-  },
-  {
-    slug: 'content-calendar',
-    name: 'Content Calendar',
-    tagline: 'AI-generated content ideas on a schedule',
-    description: 'Generates content ideas based on your brand voice, target audience, and content pillars. Creates cards with titles, hooks, key points, and suggested publish dates. Maintains variety across content types (blog, social, video, newsletter).',
-    category: 'Marketing',
-    tags: ['content', 'calendar', 'social', 'marketing'],
-    icon: '📝',
-    action: 'generate',
-    instructions: 'Based on the channel\'s content pillars and target audience described in instructions, generate 5 content ideas per week. Each card should include: title, content type, hook/angle, 3 key points, and suggested publish date. Maintain variety across types.',
-    usageCount: 2156,
-  },
-  {
-    slug: 'onboarding-tracker',
-    name: 'Onboarding Tracker',
-    tagline: 'Structured onboarding checklists for new hires',
-    description: 'Creates a complete onboarding checklist when a new team member joins. Generates cards for each onboarding step: accounts setup, tool access, team introductions, training sessions, and 30/60/90 day goals. Tracks progress as cards move through columns.',
-    category: 'Team',
-    tags: ['onboarding', 'hr', 'checklist', 'new-hire'],
-    icon: '🎯',
-    action: 'generate',
-    instructions: 'When triggered, generate a complete onboarding checklist as individual cards: Day 1 setup, tool access requests, team intro meetings, training schedule, culture doc review, first project assignment, 30-day check-in, 60-day review, 90-day goals.',
-    usageCount: 987,
-  },
-  {
-    slug: 'personal-crm',
-    name: 'Personal CRM',
-    tagline: 'Track relationships and follow-up reminders',
-    description: 'Turns your channel into a lightweight CRM. Creates contact cards with context from your notes, suggests follow-up timing based on relationship strength, and generates reminders when it\'s been too long since your last interaction.',
-    category: 'Personal',
-    tags: ['crm', 'contacts', 'networking', 'follow-up'],
-    icon: '🤝',
-    action: 'generate',
-    instructions: 'Monitor contact cards in the channel. When a card hasn\'t been updated in the timeframe matching its priority (VIP: 2 weeks, Regular: 1 month, Casual: 3 months), generate a follow-up reminder card with context from previous interactions and suggested talking points.',
-    usageCount: 1345,
-  },
-  {
-    slug: 'meeting-notes',
-    name: 'Meeting Notes',
-    tagline: 'Structure raw meeting notes into action items',
-    description: 'Takes raw, unstructured meeting notes and transforms them into organized cards. Extracts action items, decisions made, key discussion points, and follow-ups. Each action item becomes its own card assigned to the relevant column.',
-    category: 'Productivity',
-    tags: ['meetings', 'notes', 'actions', 'organization'],
-    icon: '📋',
-    action: 'generate',
-    instructions: 'When a card with meeting notes is added to Inbox, parse the content. Extract: key decisions (add to a summary card), action items (create individual cards with owners if mentioned), and open questions (create cards in a Questions column). Link all generated cards back to the original notes.',
-    usageCount: 2789,
-  },
-  {
-    slug: 'habit-tracker',
-    name: 'Habit Tracker',
-    tagline: 'Daily habit cards with streak tracking',
-    description: 'Generates daily habit check-in cards based on your configured habits. Tracks streaks, celebrates milestones, and gently nudges when habits are missed. Visual progress through card movements between "To Do" and "Done" columns.',
-    category: 'Personal',
-    tags: ['habits', 'daily', 'streaks', 'wellness'],
-    icon: '✨',
-    action: 'generate',
-    instructions: 'Each morning, generate a daily habits card listing all configured habits as checkboxes. Track consecutive days completed. At 7, 30, and 100 day streaks, add a celebration note. If a habit is missed for 2+ days, generate a gentle nudge card with motivation.',
-    usageCount: 1876,
-  },
-  {
-    slug: 'goal-setting',
-    name: 'Goal Architect',
-    tagline: 'Break ambitious goals into actionable milestones',
-    description: 'Takes a high-level goal and breaks it down into quarterly milestones, monthly targets, and weekly actionable tasks. Creates a card hierarchy that makes overwhelming goals feel manageable. Reviews and adjusts based on actual progress.',
-    category: 'Personal',
-    tags: ['goals', 'planning', 'milestones', 'okr'],
-    icon: '🏔️',
-    action: 'generate',
-    instructions: 'When a goal card is added, analyze it and generate a breakdown: 1 card per quarterly milestone, each with monthly targets. Generate this week\'s actionable tasks as separate cards. Every week, review progress and suggest adjustments to the timeline.',
-    usageCount: 2234,
-  },
-  {
-    slug: 'book-tracker',
-    name: 'Book Tracker',
-    tagline: 'Track reading with notes and key takeaways',
-    description: 'Manage your reading list as a Kanban flow. When you finish a book, generates a summary card with key takeaways, memorable quotes, and how it connects to other books you\'ve read. Suggests next reads based on your patterns.',
-    category: 'Personal',
-    tags: ['books', 'reading', 'notes', 'learning'],
-    icon: '📚',
-    action: 'generate',
-    instructions: 'Track books through columns: Want to Read → Reading → Finished. When a book card moves to Finished, generate a summary card with: 3 key takeaways, 2 memorable quotes, a one-paragraph review, and 2 suggested next reads based on themes.',
-    usageCount: 1654,
-  },
-  {
-    slug: 'feedback-collector',
-    name: 'Feedback Collector',
-    tagline: 'Aggregate and theme user feedback automatically',
-    description: 'Collects scattered user feedback from various sources and organizes it into themed clusters. Identifies patterns, sentiment trends, and surfaces the most impactful feedback. Generates insight cards that connect individual feedback to product themes.',
-    category: 'Engineering',
-    tags: ['feedback', 'users', 'product', 'insights'],
-    icon: '💬',
-    action: 'generate',
-    instructions: 'Analyze all feedback cards in the channel. Group by theme (UX, performance, features, bugs). For each theme with 3+ pieces of feedback, generate an insight card summarizing the pattern, affected user count, and suggested product response.',
-    usageCount: 1432,
-  },
-  {
-    slug: 'expense-tracker',
-    name: 'Expense Tracker',
-    tagline: 'Categorize expenses and flag anomalies',
-    description: 'Turns expense entries into organized cards categorized by type. Tracks spending against budgets, generates weekly summaries, and flags unusual expenses. Simple card-based expense management without a spreadsheet.',
-    category: 'Personal',
-    tags: ['expenses', 'budget', 'finance', 'tracking'],
-    icon: '💰',
-    action: 'modify',
-    instructions: 'When an expense card is added, auto-categorize it (food, transport, subscriptions, entertainment, etc.) and add the category tag. Weekly, generate a summary card with total spend by category and comparison to the previous week. Flag any expense that\'s 2x above the category average.',
-    usageCount: 876,
-  },
-  {
-    slug: 'roadmap-planner',
-    name: 'Roadmap Planner',
-    tagline: 'Turn ideas into a sequenced product roadmap',
-    description: 'Takes feature ideas and customer requests from your Inbox and organizes them into a sequenced roadmap. Considers dependencies, effort estimates, and impact to suggest optimal ordering. Generates quarterly roadmap overview cards.',
-    category: 'Engineering',
-    tags: ['roadmap', 'product', 'planning', 'features'],
-    icon: '🗺️',
-    action: 'move',
-    instructions: 'Analyze cards in the Ideas column. Score each by estimated impact (1-5) and effort (1-5). Prioritize high-impact, low-effort items first. Generate a quarterly roadmap card showing the suggested sequence. Move top items to the "Next Up" column.',
-    usageCount: 1789,
-  },
-  {
-    slug: 'launch-checklist',
-    name: 'Product Launch',
-    tagline: 'Complete launch checklist from announcement to follow-up',
-    description: 'Generates a comprehensive product launch checklist covering pre-launch prep, launch day tasks, and post-launch follow-up. Includes marketing, engineering, support, and analytics tasks. Each item becomes a trackable card.',
-    category: 'Marketing',
-    tags: ['launch', 'checklist', 'product', 'go-to-market'],
-    icon: '🚀',
-    action: 'generate',
-    instructions: 'Generate a complete launch checklist as individual cards: Pre-launch (landing page, email sequence, social assets, press kit, beta testing), Launch Day (deploy, announce, monitor, support), Post-Launch (analytics review, user feedback, iteration plan, case study).',
-    usageCount: 1234,
-  },
-  {
-    slug: 'brainstorm-board',
-    name: 'Brainstorm Board',
-    tagline: 'AI-facilitated brainstorming with idea expansion',
-    description: 'Supercharges brainstorming sessions. When you add a seed idea, generates 5 related variations, counter-perspectives, and "what if" expansions. Groups related ideas together and identifies the most promising directions based on novelty and feasibility.',
-    category: 'Creative',
-    tags: ['brainstorm', 'ideas', 'creative', 'innovation'],
-    icon: '💡',
-    action: 'generate',
-    instructions: 'When a new idea card appears in Inbox, generate 5 expansion cards: 2 variations on the idea, 1 opposite/contrarian take, 1 "what if we 10x this" version, and 1 simplified MVP version. Add a connections card showing how this relates to existing ideas.',
-    usageCount: 2567,
-  },
-  {
-    slug: 'okr-tracker',
-    name: 'OKR Tracker',
-    tagline: 'Track objectives and key results with auto-scoring',
-    description: 'Manages your OKRs as a Kanban flow. Each objective gets a card with linked key results. Auto-calculates progress scores based on key result completion. Generates weekly check-in cards and quarterly review summaries.',
-    category: 'Team',
-    tags: ['okr', 'objectives', 'tracking', 'quarterly'],
-    icon: '📊',
-    action: 'generate',
-    instructions: 'Track OKR cards through the quarter. Each objective card should have key results as checklist items with targets. Weekly, generate a check-in card showing progress % for each objective. At quarter end, generate a review card with scores (0.0-1.0) and learnings.',
-    usageCount: 1456,
-  },
-  {
-    slug: 'applicant-tracker',
-    name: 'Applicant Tracker',
-    tagline: 'Lightweight ATS in your Kanban board',
-    description: 'Track job applicants through your hiring pipeline. Cards move through Applied → Screening → Interview → Offer → Hired columns. Auto-generates interview prep cards, sends follow-up reminders, and maintains candidate notes.',
-    category: 'Team',
-    tags: ['hiring', 'ats', 'recruitment', 'candidates'],
-    icon: '👥',
-    action: 'generate',
-    instructions: 'Track candidate cards through the pipeline. When a card moves to Interview, generate an interview prep card with suggested questions based on the role and candidate background. If a card stays in any column for 5+ days, generate a follow-up reminder.',
-    usageCount: 678,
-  },
-  {
-    slug: 'support-ticket-manager',
-    name: 'Support Tickets',
-    tagline: 'Triage and track support requests efficiently',
-    description: 'Manages customer support tickets as cards. Auto-categorizes by type (bug, feature request, question, billing), suggests response templates, and escalates based on severity and wait time. Generates daily support health summaries.',
-    category: 'Engineering',
-    tags: ['support', 'tickets', 'customer', 'helpdesk'],
-    icon: '🎫',
-    action: 'move',
-    instructions: 'Auto-categorize incoming support cards by type and severity. Suggest response templates based on similar past tickets. If a ticket is unresponded for 24h, move to Urgent. Daily, generate a health card: open tickets, avg response time, top categories.',
-    usageCount: 1123,
-  },
-  {
-    slug: 'time-tracker',
-    name: 'Time Tracker',
-    tagline: 'Log time spent and analyze work patterns',
-    description: 'Simple time tracking through card movements. Logs when cards enter and leave each column to calculate time spent. Generates weekly time reports showing where your hours went, identifies time sinks, and suggests efficiency improvements.',
-    category: 'Productivity',
-    tags: ['time', 'tracking', 'productivity', 'reports'],
-    icon: '⏱️',
-    action: 'generate',
-    instructions: 'Track time by monitoring when cards move between columns. Log entry/exit timestamps. Weekly, generate a time report card: total hours by column, longest-running tasks, average cycle time, and comparison to previous week. Flag tasks over 2x average time.',
-    usageCount: 1987,
-  },
-]
 
 export const channels: MarketplaceChannel[] = [
   {
@@ -531,17 +270,10 @@ export const channels: MarketplaceChannel[] = [
   },
 ]
 
-// Helper functions
-export function getShroom(slug: string): MarketplaceShroom | undefined {
-  return shrooms.find(s => s.slug === slug)
-}
 
+// Helper functions
 export function getChannel(slug: string): MarketplaceChannel | undefined {
   return channels.find(c => c.slug === slug)
-}
-
-export function getShroomsByCategory(category: string): MarketplaceShroom[] {
-  return shrooms.filter(s => s.category === category)
 }
 
 export function getChannelsByCategory(category: string): MarketplaceChannel[] {
