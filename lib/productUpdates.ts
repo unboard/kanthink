@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shroom-map',
+    date: '2026-08-16',
+    kind: 'capability',
+    title: 'See the shape of your automations',
+    body: 'A map of your shrooms — one per board, and one showing every board at once. Colour says how each one starts: watching a column, on a schedule, or only when you run it. Lines show what feeds what, and a line turns red when the shroom downstream needs more cards than the one upstream can produce, which you could previously only discover by running it. Drag from a shroom\'s right dot onto another to chain them, or onto empty space to unchain.',
+  },
+  {
     id: 'shrooms-portable-scope-and-capabilities',
     date: '2026-08-16',
     kind: 'capability',

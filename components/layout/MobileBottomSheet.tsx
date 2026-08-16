@@ -904,7 +904,7 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
           </div>
 
           {currentChannelId && (
-            <div className="flex-shrink-0 sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-4">
+            <div className="flex-shrink-0 sticky bottom-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 p-4 space-y-2">
               <button
                 onClick={handleCreate}
                 className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-violet-600 hover:bg-violet-500 active:bg-violet-700 text-white font-medium transition-colors"
@@ -914,6 +914,17 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
                 </svg>
                 Add Shroom
               </button>
+              {allChannelShrooms.length > 0 && (
+                <button
+                  onClick={() => {
+                    onClose();
+                    requestAnimationFrame(() => router.push(`/channel/${currentChannelId}/shrooms`));
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-neutral-200 dark:border-neutral-700 text-sm text-neutral-600 dark:text-neutral-300 transition-colors active:bg-neutral-100 dark:active:bg-neutral-800"
+                >
+                  See the map
+                </button>
+              )}
             </div>
           )}
 

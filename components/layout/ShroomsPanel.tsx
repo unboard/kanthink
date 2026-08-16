@@ -136,6 +136,29 @@ export function ShroomsPanel() {
               ))}
             </div>
 
+            {/* The map is a page, not a tab — a graph squeezed into this column would be
+                a list with extra steps. */}
+            {allChannelShrooms.length > 0 && (
+              <button
+                onClick={() => {
+                  if (isMobile) closePanel();
+                  router.push(channelId ? `/channel/${channelId}/shrooms` : '/shrooms');
+                }}
+                className="flex w-full items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500 dark:hover:text-violet-400"
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4}>
+                  <rect x="1" y="5" width="5" height="4" rx="1" />
+                  <rect x="10" y="2" width="5" height="4" rx="1" />
+                  <rect x="10" y="9" width="5" height="4" rx="1" />
+                  <path d="M6 7h2a1 1 0 0 1 1 1v3M6 7h2a1 1 0 0 0 1-1V4" strokeLinecap="round" />
+                </svg>
+                See the map
+                <span className="ml-auto font-mono text-[9.5px] uppercase tracking-[0.12em] text-neutral-400">
+                  {allChannelShrooms.length}
+                </span>
+              </button>
+            )}
+
             {/* Tab content */}
             {activeTab === 'channel' && (
               <>
