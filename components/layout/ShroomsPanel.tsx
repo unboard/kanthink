@@ -17,6 +17,18 @@ const TAB_CONFIG: { key: ShroomTab; label: string }[] = [
   { key: 'favorites', label: 'Favorites' },
 ];
 
+/** Three boxes and the wires between them — the map, in 16px. */
+function MapIcon() {
+  return (
+    <svg className="h-3.5 w-3.5 flex-shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4}>
+      <rect x="1" y="5" width="5" height="4" rx="1" />
+      <rect x="10" y="2" width="5" height="4" rx="1" />
+      <rect x="10" y="9" width="5" height="4" rx="1" />
+      <path d="M6 7h2a1 1 0 0 1 1 1v3M6 7h2a1 1 0 0 0 1-1V4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function ShroomsPanel() {
   const pathname = usePathname();
   const router = useRouter();
@@ -137,27 +149,44 @@ export function ShroomsPanel() {
             </div>
 
             {/* The map is a page, not a tab — a graph squeezed into this column would be
-                a list with extra steps. */}
-            {allChannelShrooms.length > 0 && (
+                a list with extra steps.
+
+                Deliberately not hidden when there are no shrooms. It was, and that made
+                the map unreachable exactly when someone was most likely to go looking for
+                it: on a fresh board, before anything exists. The empty map explains
+                itself; a missing link explains nothing. */}
+            <div className="flex gap-1.5">
               <button
                 onClick={() => {
                   if (isMobile) closePanel();
                   router.push(channelId ? `/channel/${channelId}/shrooms` : '/shrooms');
                 }}
-                className="flex w-full items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500 dark:hover:text-violet-400"
+                className="flex flex-1 items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-600 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500 dark:hover:text-violet-400"
               >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4}>
-                  <rect x="1" y="5" width="5" height="4" rx="1" />
-                  <rect x="10" y="2" width="5" height="4" rx="1" />
-                  <rect x="10" y="9" width="5" height="4" rx="1" />
-                  <path d="M6 7h2a1 1 0 0 1 1 1v3M6 7h2a1 1 0 0 0 1-1V4" strokeLinecap="round" />
-                </svg>
-                See the map
-                <span className="ml-auto font-mono text-[9.5px] uppercase tracking-[0.12em] text-neutral-400">
-                  {allChannelShrooms.length}
-                </span>
+                <MapIcon />
+                {channelId ? 'Map this board' : 'See the map'}
+                {allChannelShrooms.length > 0 && (
+                  <span className="ml-auto font-mono text-[9.5px] uppercase tracking-[0.12em] text-neutral-400">
+                    {allChannelShrooms.length}
+                  </span>
+                )}
               </button>
-            )}
+
+              {/* Every board at once. Only worth a second button when you're inside one,
+                  since otherwise the button above already goes here. */}
+              {channelId && (
+                <button
+                  onClick={() => {
+                    if (isMobile) closePanel();
+                    router.push('/shrooms');
+                  }}
+                  title="Every board"
+                  className="flex items-center rounded-lg border border-neutral-200 px-3 py-2 font-mono text-[9.5px] uppercase tracking-[0.12em] text-neutral-500 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500 dark:hover:text-violet-400"
+                >
+                  All
+                </button>
+              )}
+            </div>
 
             {/* Tab content */}
             {activeTab === 'channel' && (
