@@ -8,7 +8,7 @@ import { SporeBackground } from './SporeBackground';
 // spore canvas is completely hidden behind them but keeps repainting, and on
 // /watch that invisible work competes with video decode for the GPU — which is
 // what made desktop playback stutter. Skip it entirely there.
-const NO_AMBIENT = [/^\/watch(\/|$)/];
+const NO_AMBIENT = [/^\/watch(\/|$)/, /^\/snailblast(\/|$)/];
 
 export function AmbientBackground() {
   const pathname = usePathname();

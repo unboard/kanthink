@@ -15,7 +15,8 @@ export function MainContent({ children }: MainContentProps) {
 
   // On mobile or marketplace pages, no margin adjustment needed
   const isMarketplace = pathname.startsWith('/marketplace') || pathname.startsWith('/public');
-  const marginLeft = isMobile || isMarketplace ? 0 : getPanelWidth(activePanel);
+  const isStandalone = isMarketplace || pathname.startsWith('/snailblast');
+  const marginLeft = isMobile || isStandalone ? 0 : getPanelWidth(activePanel);
 
   // No bottom padding on card pages (mobile nav is hidden, card has its own tabs)
   const isCardPage = /\/channel\/[^/]+\/card\//.test(pathname);
@@ -26,7 +27,8 @@ export function MainContent({ children }: MainContentProps) {
     pathname.startsWith('/play') ||
     pathname.startsWith('/wildwood') ||
     pathname.startsWith('/rescue') ||
-    pathname.startsWith('/catlife');
+    pathname.startsWith('/catlife') ||
+    pathname.startsWith('/snailblast');
   const needsBottomPadding = isMobile && !isCardPage && !isFullViewport;
 
   return (
