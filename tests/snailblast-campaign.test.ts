@@ -12,6 +12,7 @@ import {
   POSTCARD_SIZES,
 } from '../lib/snailblast/campaign';
 import { derivePanel } from '../lib/snailblast/panels';
+import { parseCampaignReply } from '../lib/snailblast/parse';
 
 describe('EDDM dimensional rules', () => {
   it('accepts a piece that exceeds the short-side minimum only', () => {
@@ -252,5 +253,52 @@ describe('panel routing', () => {
 
   it('returns null when the reply needs no tool at all', () => {
     expect(derivePanel(null, 'What kind of work do you do?', base())).toBeNull();
+  });
+});
+
+describe('reply parsing', () => {
+  it('parses the clean case', () => {
+    const r = parseCampaignReply('{"reply":"Hello there","panel":"map","chips":["a","b"]}');
+    expect(r.reply).toBe('Hello there');
+    expect(r.panel).toBe('map');
+    expect(r.chips).toEqual(['a', 'b']);
+  });
+
+  it('unwraps a markdown fence', () => {
+    const r = parseCampaignReply('```json\n{"reply":"Fenced","panel":null}\n```');
+    expect(r.reply).toBe('Fenced');
+  });
+
+  it('never leaks JSON into the bubble when prose precedes the object', () => {
+    // Verbatim shape of a real production response: sentence, blank line, object.
+    const raw =
+      "Perfect — dental does well mailing a tight radius around the practice. I've opened the map; pick the routes around your office and I'll price it.\n\n" +
+      '{"updates":{"industry":"dental","goal":"new patient acquisition"},"panel":"map","chips":[]}';
+    const r = parseCampaignReply(raw);
+    expect(r.reply).not.toMatch(/[{}]/);
+    expect(r.reply).toMatch(/^Perfect/);
+    expect(r.panel).toBe('map');
+    expect(r.updates?.industry).toBe('dental');
+  });
+
+  it('prefers the object\u2019s own reply field over surrounding prose', () => {
+    const r = parseCampaignReply('noise {"reply":"The real one","panel":null} more noise');
+    expect(r.reply).toBe('The real one');
+  });
+
+  it('strips a broken brace remnant rather than showing it', () => {
+    const r = parseCampaignReply('Just talking here. {not valid json at all}');
+    expect(r.reply).not.toMatch(/[{}]/);
+    expect(r.reply).toMatch(/Just talking here/);
+  });
+
+  it('passes plain prose straight through', () => {
+    const r = parseCampaignReply('No JSON at all, just a sentence.');
+    expect(r.reply).toBe('No JSON at all, just a sentence.');
+    expect(r.panel).toBeNull();
+  });
+
+  it('handles an empty response without throwing', () => {
+    expect(parseCampaignReply('   ').reply).toBe('');
   });
 });

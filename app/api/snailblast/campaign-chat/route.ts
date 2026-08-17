@@ -3,7 +3,8 @@ import { createLLMClient } from '@/lib/ai/llm';
 import type { LLMMessage } from '@/lib/ai/providers/types';
 import { buildCampaignPrompt } from '@/lib/snailblast/prompt';
 import { emptyCampaign, type CampaignState } from '@/lib/snailblast/campaign';
-import { derivePanel, type PanelId } from '@/lib/snailblast/panels';
+import { derivePanel } from '@/lib/snailblast/panels';
+import { parseCampaignReply } from '@/lib/snailblast/parse';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -14,13 +15,6 @@ const MAX_CHARS = 4000;
 interface ChatRequest {
   messages: { role: 'user' | 'assistant'; content: string }[];
   state?: CampaignState;
-}
-
-interface CampaignReply {
-  reply: string;
-  updates?: Partial<CampaignState>;
-  panel?: PanelId | null;
-  chips?: string[];
 }
 
 /** Matches the mcs-chat resolution order: owner OpenAI key first, Google as fallback. */
@@ -69,17 +63,7 @@ export async function POST(req: Request) {
   try {
     const response = await client.complete(llmMessages, { maxTokens: 900 });
 
-    let parsed: CampaignReply;
-    try {
-      let raw = response.content.trim();
-      const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (fenced) raw = fenced[1].trim();
-      parsed = JSON.parse(raw);
-    } catch {
-      // A model that ignored the schema still said something useful — show it
-      // rather than failing the turn, and just skip the structured half.
-      parsed = { reply: response.content.trim(), panel: null, chips: [] };
-    }
+    const parsed = parseCampaignReply(response.content);
 
     if (!parsed.reply || typeof parsed.reply !== 'string') {
       return NextResponse.json({ error: 'Empty response from model' }, { status: 502 });
