@@ -200,6 +200,17 @@
   font-size: 1rem;
 }
 
+/* After the variant hovers, so a disabled button cannot still lift and glow. */
+.sb-btn:disabled,
+.sb-btn:disabled:hover {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+.sb-btn-primary:disabled:hover { background: var(--sb-accent); }
+
 /* ----------------------------------------------------------------- sections */
 .sb-section {
   padding-block: clamp(4rem, 9vw, 7.5rem);

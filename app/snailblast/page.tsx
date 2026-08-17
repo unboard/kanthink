@@ -12,7 +12,8 @@ import {
   ArrowRight,
 } from 'lucide-react';
 
-const TRY_IT_FREE = 'https://www.mycreativeshop.com/snailblast';
+/** Every CTA opens the conversational campaign builder. */
+const TRY_IT_FREE = '/snailblast/start';
 
 /* ------------------------------------------------------------------ mascot */
 
