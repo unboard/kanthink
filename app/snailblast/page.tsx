@@ -11,6 +11,7 @@ import {
   Star,
   ArrowRight,
 } from 'lucide-react';
+import { ConceptSwitcher } from '@/components/snailblast/ConceptSwitcher';
 
 /** Every CTA opens the conversational campaign builder. */
 const TRY_IT_FREE = '/snailblast/start';
@@ -632,6 +633,8 @@ export default function SnailBlastPage() {
           </div>
         </footer>
       </div>
+
+      <ConceptSwitcher />
     </div>
   );
 }

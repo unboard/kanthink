@@ -1,0 +1,267 @@
+/* Concept B — "Payback".
+   The page has one job: turn "is direct mail worth it for me?" into a number
+   the visitor produced themselves. The calculator is the hero, not a section
+   further down, and every assumption behind the number is on screen and
+   adjustable rather than buried in a footnote. */
+
+.pb-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  height: 4.25rem;
+}
+
+.pb-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.02em;
+  color: var(--mcs-primary);
+  margin-right: auto;
+}
+
+.pb-mark-glyph { width: 1.625rem; height: 1.625rem; }
+
+/* ------------------------------------------------------------------- hero */
+.pb-hero { padding-top: clamp(1.5rem, 3vw, 2.5rem); padding-bottom: clamp(3rem, 6vw, 5rem); }
+
+/* Headline and lede sit side by side on desktop. Stacked, the headline alone
+   ate the whole fold and pushed the calculator — the actual hero — off screen. */
+.pb-hero-head { max-width: 46ch; }
+
+@media (min-width: 62rem) {
+  .pb-hero-head {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: clamp(2rem, 5vw, 4rem);
+    align-items: end;
+    max-width: none;
+  }
+
+  .pb-hero-head .mcs-lede { margin-top: 0; padding-bottom: 0.5rem; }
+}
+
+.pb-hero-head .mcs-h1 em {
+  font-style: normal;
+  color: var(--mcs-primary);
+}
+
+/* --------------------------------------------------------------- the slab */
+.pb-slab {
+  margin-top: clamp(2rem, 4vw, 3rem);
+  background: var(--mcs-primary);
+  color: #fff;
+  border-radius: 1.5rem;
+  overflow: hidden;
+  box-shadow: 0 40px 80px -40px #5e2dc199;
+  display: grid;
+}
+
+@media (min-width: 62rem) { .pb-slab { grid-template-columns: 1.05fr 0.95fr; } }
+
+/* ------------------------------------------------------------- the inputs */
+.pb-inputs { padding: clamp(1.5rem, 3vw, 2.25rem); }
+
+.pb-sentence {
+  font-size: clamp(1.125rem, 2.1vw, 1.5rem);
+  font-weight: 500;
+  line-height: 2.1;
+  letter-spacing: -0.015em;
+}
+
+/* Inline controls, so the inputs read as a sentence the visitor completes
+   rather than a form they fill in. */
+.pb-slot {
+  appearance: none;
+  background: #ffffff1f;
+  border: 1px solid #ffffff3d;
+  border-bottom: 2px solid var(--mcs-amber);
+  border-radius: 0.5rem;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.125rem 0.5rem;
+  margin-inline: 0.1875rem;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.pb-slot:hover { background: #ffffff33; }
+.pb-slot:focus { outline: none; border-color: var(--mcs-amber); background: #ffffff33; }
+
+.pb-slot option { background: #46209c; color: #fff; }
+
+.pb-slot-num {
+  width: 6.5rem;
+  text-align: center;
+  cursor: text;
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-slot-money { width: 5.5rem; }
+
+/* ------------------------------------------------------------ rate slider */
+.pb-rate { margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid #ffffff2e; }
+
+.pb-rate-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.pb-rate-label { font-size: 0.875rem; font-weight: 600; color: #ffffffd9; }
+
+.pb-rate-val {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--mcs-amber);
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-range {
+  appearance: none;
+  width: 100%;
+  height: 0.375rem;
+  border-radius: 999px;
+  background: #ffffff33;
+  outline: none;
+  cursor: pointer;
+}
+
+.pb-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--mcs-amber);
+  border: 3px solid var(--mcs-primary);
+  cursor: grab;
+  box-shadow: 0 2px 6px #00000059;
+}
+
+.pb-range::-moz-range-thumb {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--mcs-amber);
+  border: 3px solid var(--mcs-primary);
+  cursor: grab;
+}
+
+.pb-rate-note { margin-top: 0.625rem; font-size: 0.75rem; line-height: 1.6; color: #ffffff8f; }
+.pb-rate-note strong { color: #ffffffd9; font-weight: 600; }
+
+/* ------------------------------------------------------------ the payoff */
+.pb-out {
+  background: #46209c;
+  padding: clamp(1.5rem, 3vw, 2.25rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.pb-hero-num {
+  font-size: clamp(3.25rem, 9vw, 5rem);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  color: var(--mcs-amber);
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-hero-num-sub {
+  margin-top: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #ffffffd9;
+}
+
+.pb-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #ffffff2e;
+}
+
+.pb-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9375rem;
+}
+
+.pb-line-key { color: #ffffffb3; }
+
+.pb-line-val {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pb-line-strong .pb-line-key { color: #fff; font-weight: 600; }
+.pb-line-strong .pb-line-val { color: var(--mcs-amber); }
+
+.pb-out-foot { margin-top: auto; padding-top: 1.25rem; }
+
+.pb-out-note { margin-top: 0.875rem; font-size: 0.6875rem; line-height: 1.6; color: #ffffff8a; }
+
+/* Loss case — never dress a bad answer up as a good one. */
+.pb-warn {
+  display: flex;
+  gap: 0.625rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.625rem;
+  background: #ffffff17;
+  border: 1px solid #ffffff33;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: #ffffffd9;
+}
+
+/* --------------------------------------------------------------- sections */
+.pb-math { display: grid; gap: 1rem; margin-top: 2.5rem; }
+
+@media (min-width: 42rem) { .pb-math { grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr)); } }
+
+.pb-math-key {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mcs-accent);
+}
+
+.pb-math-title { margin-top: 0.5rem; font-size: 1rem; font-weight: 700; }
+.pb-math-body { margin-top: 0.5rem; font-size: 0.875rem; line-height: 1.6; color: var(--mcs-muted); }
+
+.pb-routes { display: grid; gap: 1rem; margin-top: 2.5rem; }
+
+@media (min-width: 56rem) { .pb-routes { grid-template-columns: repeat(3, 1fr); } }
+
+.pb-route-rate {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--mcs-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-route-rate span { font-size: 0.8125rem; font-weight: 600; color: var(--mcs-muted); margin-left: 0.375rem; }
+
+.pb-route-body { margin-top: 0.625rem; font-size: 0.875rem; line-height: 1.6; color: var(--mcs-muted); }
+
+/* --------------------------------------------------------------- last cta */
+.pb-final { text-align: center; padding-block: clamp(3.5rem, 7vw, 5.5rem); }
+
+.pb-final .mcs-lede { margin-inline: auto; }
+
+.pb-foot {
+  border-top: 1px solid var(--mcs-line);
+  padding-block: 2rem 6rem;
+}

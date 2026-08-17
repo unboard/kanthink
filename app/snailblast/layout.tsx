@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, IBM_Plex_Mono } from 'next/font/google';
+import { Inter, IBM_Plex_Mono, Poppins } from 'next/font/google';
 import './snailblast.css';
 
 // Inter is shipaton.com's face, so it comes with the borrowed UI style.
@@ -19,6 +19,14 @@ const sbMono = IBM_Plex_Mono({
   display: 'swap',
 });
 
+// MyCreativeShop's own brand face, for the concept pages rendered in MCS theme.
+const mcsSans = Poppins({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-mcs-sans',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
   title: 'SnailBlast — nobody deletes a postcard',
   description:
@@ -30,5 +38,7 @@ export default function SnailBlastLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <div className={`${sbSans.variable} ${sbMono.variable}`}>{children}</div>;
+  return (
+    <div className={`${sbSans.variable} ${sbMono.variable} ${mcsSans.variable}`}>{children}</div>
+  );
 }
