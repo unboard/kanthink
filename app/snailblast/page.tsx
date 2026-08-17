@@ -12,6 +12,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { ConceptSwitcher } from '@/components/snailblast/ConceptSwitcher';
+import { PaybackCalculator } from '@/components/snailblast/PaybackCalculator';
 
 /** Every CTA opens the conversational campaign builder. */
 const TRY_IT_FREE = '/snailblast/start';
@@ -282,6 +283,7 @@ export default function SnailBlastPage() {
             </a>
             <nav className="sb-nav-links">
               <a href="#why">Why mail</a>
+              <a href="#worth">Your number</a>
               <a href="#how">How it works</a>
               <a href="#reviews">Reviews</a>
               <a href="#faq">FAQ</a>
@@ -481,6 +483,21 @@ export default function SnailBlastPage() {
               and email volumes per ANA-cited industry benchmarks. Figures are
               category averages, not a guarantee of campaign performance.
             </p>
+          </div>
+        </section>
+
+        {/* -------------------------------------------------- your number */}
+        <section id="worth" className="sb-section">
+          <div className="sb-wrap">
+            <p className="sb-eyebrow">Your number</p>
+            <h2 className="sb-h2">Now run it on your own business.</h2>
+            <p className="sb-lede">
+              Everything above is somebody else&rsquo;s campaign. Change these to
+              match yours &mdash; and if the answer comes back no, it will say so.
+            </p>
+            <div className="sb-calc">
+              <PaybackCalculator />
+            </div>
           </div>
         </section>
 

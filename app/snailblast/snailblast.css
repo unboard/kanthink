@@ -1059,3 +1059,28 @@
   .sb-card-stage:hover .sb-postcard { transform: rotate(-3.5deg); }
   .sb-bar-fill { width: var(--sb-w); }
 }
+
+/* ------------------------------------------- payback calculator (Shipaton) */
+/* The Shipaton skin for the shared calculator component. Same markup as the
+   MyCreativeShop concept, re-tokenised: a raised panel standing on the deep
+   field rather than a violet slab. */
+.sb-root .pbc {
+  --pbc-field: var(--sb-surface);
+  --pbc-field-deep: var(--sb-subtle);
+  --pbc-on-field: var(--sb-paper);
+  --pbc-on-field-dim: var(--sb-muted);
+  --pbc-on-field-faint: #ddcbbc8a;
+  --pbc-accent: var(--sb-gold);
+  --pbc-border: #fff7ec1a;
+  --pbc-slot-bg: #fff7ec14;
+  --pbc-slot-bg-hover: #fff7ec26;
+  --pbc-slot-border: #fff7ec2e;
+  --pbc-option-bg: #2d1e3d;
+  --pbc-cta-bg: var(--sb-accent);
+  --pbc-cta-fg: #241200;
+  --pbc-cta-bg-hover: var(--sb-gold);
+  --pbc-radius: var(--sb-radius);
+  --pbc-shadow: 0 40px 80px -40px #07050ecc;
+}
+
+.sb-calc { margin-top: clamp(2rem, 4vw, 3rem); }
