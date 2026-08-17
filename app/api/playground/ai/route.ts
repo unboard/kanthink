@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { decryptIfNeeded } from '@/lib/crypto';
 import { verifyCardToken } from '@/lib/playground/cardToken';
 import { PLAYGROUND_MODELS, FALLBACK_GENERATION_MODEL_ID, getPlaygroundModel } from '@/lib/playground/models';
+import { IMAGE_MODEL_PRIMARY, IMAGE_MODEL_FALLBACK } from '@/lib/ai/nanoBanana';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -16,11 +17,8 @@ const MAX_PROMPT_LENGTH = 16000;
 // because it's not a code-gen option for users — it's only reachable from inside
 // generated apps via window.kanthinkAI.generateImage().
 //
-// gemini-3.1-flash-image-preview = "Nano Banana 2", frontier image model.
-// On not-found / unavailable we fall back to gemini-2.5-flash-image (GA "Nano Banana"),
-// so users on accounts without preview access still get image gen.
-const IMAGE_MODEL_PRIMARY = 'gemini-3.1-flash-image-preview';
-const IMAGE_MODEL_FALLBACK = 'gemini-2.5-flash-image';
+// The IDs and the preview→GA fallback rationale live in lib/ai/nanoBanana.ts,
+// shared with /design so the two can't drift onto different models.
 
 interface AIRequest {
   cardToken: string;

@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'design-studio-postcard',
+    date: '2026-08-17',
+    kind: 'capability',
+    title: 'Design print pieces at /design',
+    body: 'Describe a 9" × 6" postcard, drop in your logo or a design you like, and get print-ready artwork back. Front and back are designed against the same brief, so the back matches the front instead of looking like a different piece, and the address side keeps the postal regions clear. Keep typing to change what you got.',
+  },
+  {
     id: 'shroom-map',
     date: '2026-08-16',
     kind: 'capability',
