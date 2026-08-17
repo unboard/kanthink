@@ -20,6 +20,22 @@ const MODE_PANEL: Record<string, PanelId> = {
  * learned and what the campaign still needs. A wrong panel is one click to close;
  * a missing one is a dead end.
  */
+/**
+ * The tool the reply tells the customer it just opened, if it names one.
+ *
+ * The model will sometimes set panel:"targeting" and then write "I've opened the
+ * map" — two defensible choices that contradict each other on screen. The
+ * customer only reads the sentence, so the sentence wins.
+ */
+function toolNamedInReply(reply: string): PanelId | null {
+  const t = reply.toLowerCase();
+  if (/\bthe map\b|\bon the map\b|\bcarrier routes?\b/.test(t)) return 'map';
+  if (/\btargeted list\b|\bbuild (you )?a list\b/.test(t)) return 'targeting';
+  if (/\bdrop (your|the) (file|list|csv)\b|\bupload (your|the)\b/.test(t)) return 'upload';
+  if (/\btemplates?\b/.test(t)) return 'templates';
+  return null;
+}
+
 export function derivePanel(
   modelPanel: unknown,
   reply: string,
@@ -28,7 +44,8 @@ export function derivePanel(
   userMessage = ''
 ): PanelId | null {
   if (typeof modelPanel === 'string' && PANELS.includes(modelPanel as PanelId)) {
-    return modelPanel as PanelId;
+    const named = toolNamedInReply(reply);
+    return named && named !== modelPanel ? named : (modelPanel as PanelId);
   }
 
   const mode = updates?.audience?.mode ?? state.audience.mode;

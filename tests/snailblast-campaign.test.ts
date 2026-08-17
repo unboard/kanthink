@@ -239,6 +239,17 @@ describe('panel routing', () => {
     expect(derivePanel(null, 'Now pick a postcard size and a template.', s)).toBe('templates');
   });
 
+  it('keeps the reply and the opened tool in agreement', () => {
+    // Seen in production: model set "targeting" but wrote "I've opened the map".
+    // The customer only reads the sentence, so the sentence decides.
+    expect(derivePanel('targeting', "I've opened the map; pick the routes near your office.", base()))
+      .toBe('map');
+  });
+
+  it('leaves the model panel alone when the reply names no tool', () => {
+    expect(derivePanel('targeting', 'Sounds good, let us narrow it down.', base())).toBe('targeting');
+  });
+
   it('returns null when the reply needs no tool at all', () => {
     expect(derivePanel(null, 'What kind of work do you do?', base())).toBeNull();
   });
