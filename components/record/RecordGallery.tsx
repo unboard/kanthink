@@ -176,7 +176,7 @@ function GalleryCard({
   };
 
   return (
-    <li className={`group ${busy ? 'pointer-events-none opacity-50' : ''}`}>
+    <li className={`group relative ${busy ? 'pointer-events-none opacity-50' : ''}`}>
       {/* Thumbnail */}
       <div
         className="relative cursor-pointer overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900"
@@ -213,45 +213,46 @@ function GalleryCard({
         >
           <ImageIcon className="h-3.5 w-3.5" /> Thumbnail
         </button>
+      </div>
 
-        {/* ⋯ menu */}
-        <div className="absolute right-2 top-2">
-          <button
-            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white opacity-0 backdrop-blur-sm transition hover:bg-black/80 group-hover:opacity-100"
-            aria-label="More options"
-          >
-            <MoreVertical className="h-4 w-4" />
-          </button>
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); }} />
-              <div
-                className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/95 text-sm shadow-xl backdrop-blur"
-                onClick={(e) => e.stopPropagation()}
+      {/* ⋯ menu — a sibling of the thumbnail, not a child of it. The thumbnail
+          clips its overflow to keep the image inside its rounded corners, which
+          also cropped this menu at the card's bottom edge: Rename through Copy
+          link were visible and Delete was cut off entirely, so recordings could
+          not be deleted from the gallery at all. */}
+      <div className="absolute right-2 top-2 z-30">
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          className={`flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition hover:bg-black/80 group-hover:opacity-100 ${menuOpen ? 'opacity-100' : 'opacity-0'}`}
+          aria-label="More options"
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+            <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-900/95 text-sm shadow-xl backdrop-blur">
+              <button
+                onClick={() => { setNameDraft(rec.title); setRenaming(true); setMenuOpen(false); }}
+                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800"
               >
-                <button
-                  onClick={() => { setNameDraft(rec.title); setRenaming(true); setMenuOpen(false); }}
-                  className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800"
-                >
-                  <Pencil className="h-4 w-4 text-neutral-400" /> Rename
-                </button>
-                <button onClick={() => { onEditThumb(); setMenuOpen(false); }} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800">
-                  <ImageIcon className="h-4 w-4 text-neutral-400" /> Edit thumbnail
-                </button>
-                <button onClick={copy} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800">
-                  <Link2 className="h-4 w-4 text-neutral-400" /> Copy link
-                </button>
-                <Link href={`/watch/${rec.id}`} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800">
-                  <Maximize className="h-4 w-4 text-neutral-400" /> Open watch page
-                </Link>
-                <button onClick={del} className="flex w-full items-center gap-2.5 border-t border-neutral-800 px-3.5 py-2.5 text-left text-red-400 hover:bg-neutral-800">
-                  <Trash2 className="h-4 w-4" /> Delete
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+                <Pencil className="h-4 w-4 text-neutral-400" /> Rename
+              </button>
+              <button onClick={() => { onEditThumb(); setMenuOpen(false); }} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800">
+                <ImageIcon className="h-4 w-4 text-neutral-400" /> Edit thumbnail
+              </button>
+              <button onClick={copy} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800">
+                <Link2 className="h-4 w-4 text-neutral-400" /> Copy link
+              </button>
+              <Link href={`/watch/${rec.id}`} className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-neutral-800">
+                <Maximize className="h-4 w-4 text-neutral-400" /> Open watch page
+              </Link>
+              <button onClick={del} className="flex w-full items-center gap-2.5 border-t border-neutral-800 px-3.5 py-2.5 text-left text-red-400 hover:bg-neutral-800">
+                <Trash2 className="h-4 w-4" /> Delete
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Title + meta */}
