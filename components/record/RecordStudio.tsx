@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation';
 import {
   Camera, CameraOff, Mic, MicOff, Monitor, Volume2, VolumeX, Circle,
   Square, SquareDashed, RectangleHorizontal, Sparkles, Layout, Loader2, Film, ArrowRight,
-  Captions, AudioLines, Pause, Play, Bookmark, Trash2, Crop, Minimize2, ChevronRight,
+  Captions, AudioLines, Pause, Play, Bookmark, Trash2, Crop, Minimize2, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
   Compositor, buildRecordingAudio, focusForAnchoredZoom, startRecording, surfacePlacement,
   type ActiveRecording, type CompositorState,
 } from '@/lib/record/compositor';
+import { ScreenFrameSource } from '@/lib/record/screenSource';
 import { publishRecording } from '@/lib/record/upload';
 import { useSpeechCaptions } from '@/lib/record/useSpeechCaptions';
 import {
@@ -59,6 +60,10 @@ interface RecordingRow {
   createdAt: number | null;
 }
 
+// Frames per second the canvas is drawn and captured at. One constant so the
+// compositor's clock, the recorder and the stall guard can never disagree.
+const CAPTURE_FPS = 30;
+
 export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boolean }) {
   const router = useRouter();
 
@@ -104,11 +109,17 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   // can't fire with defaults and overwrite them before restore happens.
   const [settingsRestored, setSettingsRestored] = useState(false);
 
-  // Refs that the rAF compositor reads each frame.
+  // Refs the compositor reads each frame.
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const webcamVideoRef = useRef<HTMLVideoElement>(null);
   const screenVideoRef = useRef<HTMLVideoElement>(null);
   const compositorRef = useRef<Compositor | null>(null);
+  // Live frames off the screen-capture track. Preferred over screenVideoRef,
+  // which the browser may stop updating while the studio tab is hidden.
+  const screenFrameRef = useRef<ScreenFrameSource | null>(null);
+  // True when the canvas is being drawn far below the capture rate, i.e. the
+  // take in progress is recording a frozen picture.
+  const [captureStalled, setCaptureStalled] = useState(false);
 
   const webcamStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
@@ -143,11 +154,13 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
 
   // Live state object the compositor reads (kept in a ref so the loop sees latest).
   const stateRef = useRef<CompositorState>({
-    config, dims: liveDims, bubble, screenVideo: null, webcamVideo: null, caption: '',
+    config, dims: liveDims, bubble,
+    screenFrames: null, screenVideo: null, webcamVideo: null, caption: '',
   });
   useEffect(() => {
     stateRef.current = {
       config, dims, bubble,
+      screenFrames: screenFrameRef.current,
       screenVideo: screenVideoRef.current,
       webcamVideo: webcamVideoRef.current,
       caption: captionRef.current,
@@ -220,12 +233,38 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     if (!canvasRef.current) return;
     const comp = new Compositor(canvasRef.current, () => stateRef.current);
     compositorRef.current = comp;
-    comp.start();
+    comp.start(CAPTURE_FPS);
     return () => {
       comp.dispose();
       compositorRef.current = null;
     };
   }, []);
+
+  // ----- Capture health -----
+  // A frozen take is invisible while you are making it: the tab looks normal and
+  // the timer counts up, so you only discover the problem when you sit down to
+  // watch a minute of a still image. Sample the compositor's frame counter and
+  // say so immediately instead.
+  useEffect(() => {
+    if (phase !== 'recording') return;
+    const comp = compositorRef.current;
+    if (!comp) return;
+    let lastFrames = comp.framesDrawn;
+    let lastAt = Date.now();
+    const id = setInterval(() => {
+      const frames = comp.framesDrawn;
+      const now = Date.now();
+      // A pause stops the encoder but not the draw loop; skip those windows
+      // rather than reporting a stall the recording won't actually contain.
+      if (!pausedRef.current) {
+        const fps = (frames - lastFrames) / Math.max(0.001, (now - lastAt) / 1000);
+        setCaptureStalled(fps < CAPTURE_FPS * 0.5);
+      }
+      lastFrames = frames;
+      lastAt = now;
+    }, 2000);
+    return () => clearInterval(id);
+  }, [phase]);
 
   // ----- Cleanup on unmount -----
   useEffect(() => {
@@ -233,6 +272,8 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       webcamStreamRef.current?.getTracks().forEach((t) => t.stop());
       screenStreamRef.current?.getTracks().forEach((t) => t.stop());
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      screenFrameRef.current?.dispose();
+      screenFrameRef.current = null;
       audioCtxRef.current?.close().catch(() => {});
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -392,6 +433,12 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       setHasScreen(true);
 
       const track = stream.getVideoTracks()[0];
+
+      // Read frames from the track itself. The <video> above stays for preview
+      // and as a fallback, but it is not what the recording is composed from.
+      screenFrameRef.current?.dispose();
+      screenFrameRef.current = new ScreenFrameSource(track);
+      stateRef.current.screenFrames = screenFrameRef.current;
       const readSize = () => {
         const s = track.getSettings();
         if (s.width && s.height) setSourceSize({ width: s.width, height: s.height });
@@ -412,6 +459,9 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
         setHasScreen(false);
         setSourceSize(null);
         screenStreamRef.current = null;
+        screenFrameRef.current?.dispose();
+        screenFrameRef.current = null;
+        stateRef.current.screenFrames = null;
       });
     } catch {
       setError('Screen share was cancelled.');
@@ -456,7 +506,8 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     setRecordingDims(liveDims);
     stateRef.current.dims = liveDims;
 
-    recordingRef.current = startRecording(canvasRef.current, audio, 30);
+    recordingRef.current = startRecording(canvasRef.current, audio, CAPTURE_FPS);
+    setCaptureStalled(false);
     setElapsed(0);
     setIsPaused(false);
     pausedRef.current = false;
@@ -735,6 +786,16 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
                   <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
                 )}
                 {formatTime(elapsed)}
+              </div>
+            )}
+
+            {phase === 'recording' && captureStalled && (
+              <div className="absolute inset-x-3 top-12 flex items-start gap-2 rounded-lg border border-amber-500/50 bg-amber-950/90 px-3 py-2 text-xs text-amber-200">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                <span>
+                  Frames aren&apos;t being captured. This take is recording a frozen
+                  picture — stop, reload the studio, and start again.
+                </span>
               </div>
             )}
           </div>

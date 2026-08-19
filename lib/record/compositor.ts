@@ -1,13 +1,18 @@
-// Canvas compositor for the /record studio. Each animation frame it draws the
-// captured screen plus the webcam (as a draggable shaped bubble, a free-form
-// cutout sticker, or a split-screen panel) into a canvas, which is then
-// captured into a MediaRecorder together with the mixed audio.
+// Canvas compositor for the /record studio. On every tick of the frame clock it
+// draws the captured screen plus the webcam (as a draggable shaped bubble, a
+// free-form cutout sticker, or a split-screen panel) into a canvas, which is
+// then captured into a MediaRecorder together with the mixed audio.
+//
+// The clock is a worker timer, not requestAnimationFrame — see frameClock.ts for
+// why that distinction is what makes a recording survive you switching to the
+// window you are recording.
 
 import {
   BUBBLE_ASPECT,
   type AspectDims, type BubblePlacement, type ScreenView, type StudioConfig, type SubtitleStyle,
 } from './types';
 import { WebcamEffectProcessor } from './segmentation';
+import { startFrameClock, type FrameClock } from './frameClock';
 
 export interface CompositorState {
   config: StudioConfig;
@@ -18,6 +23,13 @@ export interface CompositorState {
    */
   dims: AspectDims;
   bubble: BubblePlacement;
+  /**
+   * Preferred screen source: frames straight off the capture track. Queried per
+   * draw, since the newest frame is what matters. Null when the browser lacks
+   * MediaStreamTrackProcessor, in which case screenVideo is used instead — see
+   * screenSource.ts for why the <video> element is only the fallback.
+   */
+  screenFrames: { current(): VideoFrame | null } | null;
   screenVideo: HTMLVideoElement | null;
   webcamVideo: HTMLVideoElement | null;
   caption: string;
@@ -30,11 +42,16 @@ interface Rect {
   h: number;
 }
 
-type Media = HTMLVideoElement | HTMLCanvasElement;
+type Media = HTMLVideoElement | HTMLCanvasElement | VideoFrame;
 
 function mediaSize(m: Media): { w: number; h: number } {
   if (m instanceof HTMLVideoElement) return { w: m.videoWidth, h: m.videoHeight };
-  return { w: m.width, h: m.height };
+  // displayWidth/Height, not codedWidth/Height: coded dimensions include the
+  // encoder's padding, which would letterbox the frame by a few pixels.
+  if (typeof VideoFrame !== 'undefined' && m instanceof VideoFrame) {
+    return { w: m.displayWidth, h: m.displayHeight };
+  }
+  return { w: (m as HTMLCanvasElement).width, h: (m as HTMLCanvasElement).height };
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -267,10 +284,18 @@ const VIEW_EASE_TAU = 0.16;
 
 export class Compositor {
   private ctx: CanvasRenderingContext2D;
-  private rafId = 0;
+  private clock: FrameClock | null = null;
   private running = false;
   private processor = new WebcamEffectProcessor();
   private effectInitStarted = false;
+
+  /**
+   * Frames drawn since construction. The studio samples this while recording to
+   * notice if the draw loop ever stalls again — a silent stall is what made two
+   * takes come out frozen, and the only thing worse than losing a recording is
+   * not being told you lost it until you sit down to watch it.
+   */
+  framesDrawn = 0;
 
   // The view actually being drawn, eased toward config.screenView each frame.
   // Kept here rather than in React state because it changes every frame and
@@ -297,20 +322,19 @@ export class Compositor {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
   }
 
-  start() {
+  start(fps = 30) {
     if (this.running) return;
     this.running = true;
-    const loop = () => {
+    this.clock = startFrameClock(fps, () => {
       if (!this.running) return;
       this.draw();
-      this.rafId = requestAnimationFrame(loop);
-    };
-    this.rafId = requestAnimationFrame(loop);
+    });
   }
 
   stop() {
     this.running = false;
-    cancelAnimationFrame(this.rafId);
+    this.clock?.stop();
+    this.clock = null;
   }
 
   dispose() {
@@ -319,7 +343,8 @@ export class Compositor {
   }
 
   private draw() {
-    const { config, dims, bubble, screenVideo, webcamVideo, caption } = this.getState();
+    const { config, dims, bubble, screenFrames, screenVideo, webcamVideo, caption } = this.getState();
+    this.framesDrawn++;
     if (this.canvas.width !== dims.width) this.canvas.width = dims.width;
     if (this.canvas.height !== dims.height) this.canvas.height = dims.height;
     const W = this.canvas.width;
@@ -338,10 +363,14 @@ export class Compositor {
     }
 
     const haveCam = config.showWebcam && webcamVideo && webcamVideo.readyState >= 2;
+    // Track frame first: it is current even when the page is hidden, which the
+    // <video> element is not guaranteed to be.
+    const screen: Media | null =
+      screenFrames?.current() ?? (screenVideo && screenVideo.readyState >= 2 ? screenVideo : null);
 
     if (config.template === 'overlay') {
-      if (screenVideo && screenVideo.readyState >= 2) {
-        drawSurface(ctx, screenVideo, { x: 0, y: 0, w: W, h: H }, this.view);
+      if (screen) {
+        drawSurface(ctx, screen, { x: 0, y: 0, w: W, h: H }, this.view);
       }
       if (haveCam) this.drawBubble(ctx, webcamVideo!, config, bubble, W, H);
       if (config.subtitles.enabled && caption) drawCaption(ctx, W, H, caption, config.subtitles);
@@ -363,8 +392,8 @@ export class Compositor {
       camRect = { x: W - camW, y: 0, w: camW, h: H };
     }
 
-    if (screenVideo && screenVideo.readyState >= 2) {
-      drawSurface(ctx, screenVideo, screenRect, this.view);
+    if (screen) {
+      drawSurface(ctx, screen, screenRect, this.view);
     }
     if (haveCam) this.drawCamPanel(ctx, webcamVideo!, config, camRect);
     if (config.subtitles.enabled && caption) drawCaption(ctx, W, H, caption, config.subtitles);

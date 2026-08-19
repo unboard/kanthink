@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'record-survives-tab-switch',
+    date: '2026-08-18',
+    kind: 'fix',
+    title: 'Recordings no longer freeze when you switch to the window you shared',
+    body: 'Kan Record captured a still image for any take where you left the studio tab to work in the window you were sharing — which is most of them. It now keeps capturing while the tab is in the background, and warns you during the take if frames ever stop arriving instead of letting you find out on playback.',
+  },
+  {
     id: 'design-studio-postcard',
     date: '2026-08-17',
     kind: 'capability',
