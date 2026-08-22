@@ -42,13 +42,6 @@ export const PRODUCT_UPDATES: ProductUpdate[] = [
     body: 'Kan Record captured a still image for any take where you left the studio tab to work in the window you were sharing — which is most of them. It now keeps capturing while the tab is in the background, and warns you during the take if frames ever stop arriving instead of letting you find out on playback.',
   },
   {
-    id: 'design-studio-postcard',
-    date: '2026-08-17',
-    kind: 'capability',
-    title: 'Design print pieces at /design',
-    body: 'Describe a 9" × 6" postcard, drop in your logo or a design you like, and get print-ready artwork back. Front and back are designed against the same brief, so the back matches the front instead of looking like a different piece, and the address side keeps the postal regions clear. Keep typing to change what you got.',
-  },
-  {
     id: 'shroom-map',
     date: '2026-08-16',
     kind: 'capability',
