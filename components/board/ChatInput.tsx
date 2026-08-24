@@ -179,7 +179,8 @@ interface ImageSettings {
  */
 interface SlashState {
   isActive: boolean;
-  stage: 'commands' | 'shrooms';
+  /** 'commands' picks the verb; the others pick that verb's argument. */
+  stage: 'commands' | 'shrooms' | 'presets';
   query: string;
 }
 
@@ -188,6 +189,14 @@ const SLASH_COMMANDS = [
     name: 'shrooms',
     label: '/shrooms',
     description: 'Drop a shroom into this thread to run on the card',
+    /** Second stage this command opens once its name is complete. */
+    stage: 'shrooms' as const,
+  },
+  {
+    name: 'build',
+    label: '/build',
+    description: 'Build an app from this thread',
+    stage: 'presets' as const,
   },
 ] as const;
 
@@ -221,9 +230,16 @@ interface ChatInputProps {
    * to drop it into, which is what hides the command there.
    */
   onInsertShroom?: (shroom: InstructionCard) => void;
+  /**
+   * Build an app from this thread's context, from /build. Optionally with a preset.
+   * Absent where there's nothing to build against, which is what hides the command.
+   */
+  onRunBuild?: (presetId?: string) => void;
+  /** Presets offered by /build. Empty is fine — plain "just build it" still works. */
+  buildPresets?: Array<{ id: string; name: string; description?: string | null; icon?: string | null }>;
 }
 
-export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardId, channelId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext, onInsertShroom }: ChatInputProps) {
+export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardId, channelId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext, onInsertShroom, onRunBuild, buildPresets = [] }: ChatInputProps) {
   const [content, setContent] = useState('');
   const [needsScroll, setNeedsScroll] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
@@ -311,13 +327,15 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   // Slash commands. Only offered where there's a thread to act on, so the menu never
   // advertises something the surface can't do.
   const { shrooms } = useShroomRun();
-  const slashEnabled = !!onInsertShroom;
+  const slashEnabled = !!onInsertShroom || !!onRunBuild;
 
   const filteredCommands = useMemo(() => {
     if (!slash.isActive || slash.stage !== 'commands') return [];
     const q = slash.query.toLowerCase();
-    return SLASH_COMMANDS.filter((c) => c.name.startsWith(q));
-  }, [slash.isActive, slash.stage, slash.query]);
+    return SLASH_COMMANDS
+      .filter((c) => (c.stage === 'shrooms' ? !!onInsertShroom : !!onRunBuild))
+      .filter((c) => c.name.startsWith(q));
+  }, [slash.isActive, slash.stage, slash.query, onInsertShroom, onRunBuild]);
 
   /**
    * Every shroom in the channel, not only the ones that take a card.
@@ -334,6 +352,12 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
       .sort((a, b) => Number(canRunOnCard(b)) - Number(canRunOnCard(a)))
       .slice(0, 8);
   }, [slash.isActive, slash.stage, slash.query, shrooms]);
+
+  const filteredPresets = useMemo(() => {
+    if (!slash.isActive || slash.stage !== 'presets') return [];
+    const q = slash.query.toLowerCase();
+    return buildPresets.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [slash.isActive, slash.stage, slash.query, buildPresets]);
 
   const closeSlash = useCallback(() => {
     setSlash({ isActive: false, stage: 'commands', query: '' });
@@ -780,11 +804,19 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
 
   /** Complete a command name, moving the picker on to its argument. */
   const handleCommandSelect = useCallback((name: string) => {
+    const command = SLASH_COMMANDS.find((c) => c.name === name);
     setContent(`/${name} `);
-    setSlash({ isActive: true, stage: 'shrooms', query: '' });
+    setSlash({ isActive: true, stage: command?.stage ?? 'shrooms', query: '' });
     setSlashSelectedIndex(0);
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
+
+  const handlePresetSelect = useCallback((presetId?: string) => {
+    onRunBuild?.(presetId);
+    setContent('');
+    closeSlash();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [onRunBuild, closeSlash]);
 
   const handleShroomSelect = useCallback((shroom: InstructionCard) => {
     onInsertShroom?.(shroom);
@@ -795,7 +827,10 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Intercept keys when a slash command picker is open
-    const slashOptionCount = slash.stage === 'commands' ? filteredCommands.length : filteredShrooms.length;
+    const slashOptionCount =
+      slash.stage === 'commands' ? filteredCommands.length
+      : slash.stage === 'presets' ? filteredPresets.length + 1
+      : filteredShrooms.length;
     if (slash.isActive) {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -821,6 +856,11 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
         if (slashOptionCount === 0) return;
         if (slash.stage === 'commands') {
           handleCommandSelect(filteredCommands[slashSelectedIndex].name);
+        } else if (slash.stage === 'presets') {
+          // Index 0 is "Just build it"; the rest map onto the preset list.
+          handlePresetSelect(
+            slashSelectedIndex === 0 ? undefined : filteredPresets[slashSelectedIndex - 1]?.id
+          );
         } else {
           handleShroomSelect(filteredShrooms[slashSelectedIndex]);
         }
@@ -926,6 +966,48 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
                 <div className="min-w-0 flex-1">
                   <div className="text-neutral-900 dark:text-white truncate">{command.label}</div>
                   <div className="text-[10px] text-neutral-400 truncate">{command.description}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+        {slash.isActive && slash.stage === 'presets' && (
+          <div className="absolute bottom-full left-0 right-0 mb-1 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 max-h-48 overflow-y-auto z-50">
+            <div className="px-3 py-1.5 text-[10px] font-medium text-neutral-400 uppercase tracking-wider border-b border-neutral-100 dark:border-neutral-700">
+              Build from this thread
+            </div>
+            {/* Index 0 — building with no preset at all is the common case, so it
+                leads and Enter on an empty query picks it. */}
+            <button
+              onMouseDown={(e) => { e.preventDefault(); handlePresetSelect(undefined); }}
+              className={`w-full flex items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                slashSelectedIndex === 0
+                  ? 'bg-violet-50 dark:bg-violet-900/20'
+                  : 'hover:bg-neutral-50 dark:hover:bg-neutral-700/50'
+              }`}
+            >
+              <span className="mt-0.5 text-sm leading-none flex-shrink-0">✨</span>
+              <div className="min-w-0 flex-1">
+                <div className="text-neutral-900 dark:text-white truncate">Just build it</div>
+                <div className="text-[10px] text-neutral-400 truncate">
+                  Use this thread as the brief
+                </div>
+              </div>
+            </button>
+            {filteredPresets.map((preset, i) => (
+              <button
+                key={preset.id}
+                onMouseDown={(e) => { e.preventDefault(); handlePresetSelect(preset.id); }}
+                className={`w-full flex items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                  i + 1 === slashSelectedIndex
+                    ? 'bg-violet-50 dark:bg-violet-900/20'
+                    : 'hover:bg-neutral-50 dark:hover:bg-neutral-700/50'
+                }`}
+              >
+                <span className="mt-0.5 text-sm leading-none flex-shrink-0">{preset.icon || '🧩'}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-neutral-900 dark:text-white truncate">{preset.name}</div>
+                  <div className="text-[10px] text-neutral-400 truncate">{preset.description}</div>
                 </div>
               </button>
             ))}

@@ -737,9 +737,6 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
         )}
       </div>
 
-      {/* Drawer tab tiles sit directly above the composer, matching CardChat. */}
-      {embedded && tabBar && <div className="flex-shrink-0">{tabBar}</div>}
-
       {/* Composer */}
       <div className="flex-shrink-0 border-t border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 sm:px-5 py-3">
         <div className="max-w-2xl mx-auto">
@@ -993,49 +990,93 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
 
   // ---------- Layouts ---------- //
 
-  // Embedded — the card drawer is one narrow column. There is no in-drawer preview
-  // pane any more: previewing opens a real page in a new tab, so the drawer is just
-  // the build conversation. The drawer's own tab tiles render at the BOTTOM, above
-  // the composer, matching CardChat and every other tab.
+  // Embedded — the App tab.
+  //
+  // This used to render the card's thread with its own composer, which meant the
+  // same `card.messages` array was displayed in two tabs with two send buttons. The
+  // conversation belongs to the thread; this tab is the ARTIFACT that conversation
+  // produced. Building happens via /build in the thread composer.
   if (embedded) {
     return (
       <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-900">
-        {hasCode && (
-          <div className="flex-shrink-0 flex items-center justify-end gap-1 px-3 py-1.5 border-b border-neutral-200 dark:border-neutral-800">
-            <a
-              href={previewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Preview
-            </a>
-            <button
-              onClick={togglePublic}
-              title={cardFromStore.isPublic ? 'Published — click to unpublish' : 'Publish to a public link'}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
-                cardFromStore.isPublic
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/50'
-                  : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-              }`}
-            >
-              {cardFromStore.isPublic ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-              {cardFromStore.isPublic ? 'Published' : 'Publish'}
-            </button>
-            {shareLink && (
-              <button
-                onClick={copyShareLink}
-                title="Copy share link"
-                className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            )}
+        {!hasCode ? (
+          <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-8">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-rose-400 flex items-center justify-center shadow-lg shadow-violet-500/30 mb-4">
+              <Wand2 className="w-7 h-7 text-white" />
+            </div>
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-white mb-1.5">
+              No app yet
+            </h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed max-w-xs">
+              Type <span className="font-mono text-violet-600 dark:text-violet-400">/build</span> in
+              the thread and Kan will build one from the conversation.
+            </p>
           </div>
+        ) : (
+          <>
+            <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3 py-1.5 border-b border-neutral-200 dark:border-neutral-800">
+              <div className="min-w-0 flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 truncate">
+                  {typeData.codeTitle || cardFromStore.title}
+                </span>
+                {generationCount > 0 && (
+                  <span className="flex-shrink-0 text-[10px] text-neutral-400">v{generationCount}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <a
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Preview
+                </a>
+                <button
+                  onClick={togglePublic}
+                  title={cardFromStore.isPublic ? 'Published — click to unpublish' : 'Publish to a public link'}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                    cardFromStore.isPublic
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/50'
+                      : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                  }`}
+                >
+                  {cardFromStore.isPublic ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                  {cardFromStore.isPublic ? 'Published' : 'Publish'}
+                </button>
+                {shareLink && (
+                  <button
+                    onClick={copyShareLink}
+                    title="Copy share link"
+                    className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0">{PreviewPane}</div>
+
+            {/* Libraries this app pulls in — the only place they're visible. */}
+            {(typeData.dependencies || []).length > 0 && (
+              <div className="flex-shrink-0 flex flex-wrap items-center gap-1 px-3 py-1.5 border-t border-neutral-200 dark:border-neutral-800">
+                <span className="text-[10px] text-neutral-400 mr-0.5">Libraries</span>
+                {(typeData.dependencies || []).map((d) => (
+                  <span
+                    key={d}
+                    className="px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-900/30 text-[9.5px] font-mono text-violet-700 dark:text-violet-300"
+                  >
+                    {d}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
-        <div className="flex-1 min-h-0 flex flex-col">{ChatPane}</div>
+        {tabBar && <div className="flex-shrink-0">{tabBar}</div>}
       </div>
     );
   }

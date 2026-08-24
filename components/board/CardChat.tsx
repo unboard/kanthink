@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
@@ -52,6 +52,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const { keyboardOffset, onFocus: handleKeyboardFocus, onBlur: handleKeyboardBlur } = useKeyboardOffset();
 
   const addMessage = useStore((s) => s.addMessage);
+  const updateCard = useStore((s) => s.updateCard);
   const addShroomRunMessage = useStore((s) => s.addShroomRunMessage);
   const addAIResponse = useStore((s) => s.addAIResponse);
   const editMessage = useStore((s) => s.editMessage);
@@ -166,6 +167,62 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreen]);
+
+  const playgroundTypeData = (card.typeData as { code?: string; codeTitle?: string; generationCount?: number } | null) || {};
+  const playgroundCode = playgroundTypeData.code;
+  const playgroundTitle = playgroundTypeData.codeTitle || card.title;
+  const playgroundVersion = playgroundTypeData.generationCount || 0;
+
+  // ---- Build (playground) ------------------------------------------------
+  // A card's app is generated from this thread's context. It used to live behind a
+  // second tab with its own composer, which meant the same conversation was rendered
+  // twice — /build replaces that with an action on the one thread.
+  const [buildPresets, setBuildPresets] = useState<Array<{ id: string; name: string; description?: string | null; icon?: string | null }>>([]);
+  const [isBuilding, setIsBuilding] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/playground/presets')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (!cancelled && data?.presets) setBuildPresets(data.presets); })
+      .catch(() => {/* /build still works with no presets */});
+    return () => { cancelled = true; };
+  }, []);
+
+  const runBuild = useCallback(async (presetId?: string) => {
+    if (isBuilding) return;
+    setIsBuilding(true);
+    setAIError(null);
+    try {
+      const res = await fetch('/api/playground/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardId: card.id,
+          // No typed prompt: the thread is the brief. A preset adds a standing
+          // instruction on top of it.
+          prompt: presetId ? '' : 'Build an app from this thread.',
+          presetId,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) {
+        setAIError(data?.error || `Build failed (${res.status}).`);
+        return;
+      }
+      updateCard(card.id, {
+        cardType: 'playground',
+        typeData: data.typeData,
+        ...(data.messages ? { messages: data.messages } : {}),
+        ...(data.snapshot?.title ? { title: data.snapshot.title } : {}),
+        ...(data.snapshot?.summary ? { summary: data.snapshot.summary } : {}),
+      });
+    } catch (err) {
+      setAIError(err instanceof Error ? err.message : 'Build failed.');
+    } finally {
+      setIsBuilding(false);
+    }
+  }, [card.id, isBuilding, updateCard]);
 
   const handleSubmit = async (content: string, type: CardMessageType, imageUrls?: string[], imageSettings?: { aspectRatio: string; quality: string }) => {
     // If it's a question, check auth before proceeding
@@ -573,6 +630,37 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             </button>
           </div>
         )}
+        {/* The app this thread produced. One per card, so it sits here rather than
+            against a particular message — the thread is the brief, this is the result. */}
+        {isBuilding && (
+          <div className="mx-3 mb-2 flex items-center gap-2 px-3 py-2.5 rounded-xl border border-violet-200 dark:border-violet-900/60 bg-violet-50/60 dark:bg-violet-900/20">
+            <div className="h-4 w-4 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin flex-shrink-0" />
+            <span className="text-xs font-medium text-violet-700 dark:text-violet-300">
+              Building an app from this thread…
+            </span>
+          </div>
+        )}
+        {!isBuilding && playgroundCode && (
+          <div className="mx-3 mb-2 flex items-center gap-2 px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800/60">
+            <span className="text-sm leading-none flex-shrink-0">✨</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold text-neutral-900 dark:text-white truncate">
+                {playgroundTitle}
+              </div>
+              <div className="text-[10px] text-neutral-400">
+                Built from this thread{playgroundVersion > 0 ? ` · v${playgroundVersion}` : ''}
+              </div>
+            </div>
+            <a
+              href={`/play/preview/${card.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
+            >
+              Preview →
+            </a>
+          </div>
+        )}
         {tabBar}
         {composerSlot ?? (
           <ChatInput
@@ -589,6 +677,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             // /shrooms drops the shroom in without running it — you decide from the
             // card in the thread whether it should act on this card.
             onInsertShroom={(shroom) => addShroomRunMessage(card.id, shroom.id, shroom.title, false)}
+            // /build turns this thread into an app. The thread IS the brief — there
+            // is no second conversation to have it in.
+            onRunBuild={runBuild}
+            buildPresets={buildPresets}
           />
         )}
       </div>

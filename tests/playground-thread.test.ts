@@ -30,7 +30,10 @@ describe('stripOptimistic', () => {
       real('m1', 'Kan: created the prototype'),
       optimistic('Build it'),
     ];
-    const rebuilt = [...stripOptimistic(stored), real('m2', 'Build it')];
+    const rebuilt = [
+      ...stripOptimistic<{ id: string; content: string }>(stored),
+      real('m2', 'Build it'),
+    ];
     const buildIts = rebuilt.filter(m => m.content === 'Build it');
     expect(buildIts).toHaveLength(1);
   });
