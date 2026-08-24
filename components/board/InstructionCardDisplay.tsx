@@ -91,6 +91,10 @@ export function InstructionCardDisplay({ card, columns, onClick, onRun, isRunnin
       label: 'Report',
       dotClass: 'bg-teal-500',
     },
+    build: {
+      label: 'Build',
+      dotClass: 'bg-violet-500',
+    },
   };
 
   const action = actionConfig[card.action];

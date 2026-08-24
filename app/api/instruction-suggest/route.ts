@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       modify: 'update existing cards',
       move: 'move cards between columns',
       report: 'observe the channel and write a summary, without changing any cards',
+      build: "build a working app from the card's own thread, using everything written on it as the brief",
     };
 
     const messages: LLMMessage[] = [

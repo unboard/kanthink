@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shrooms-can-build-apps',
+    date: '2026-08-24',
+    kind: 'capability',
+    title: 'Shrooms can build apps, and so can your voice',
+    body: 'A shroom can now build a working app from a card, using everything written on that card as the brief — so a chain of shrooms can take an idea through product, engineering and design and assemble the result at the end. You can also just say "build it" in voice mode.',
+  },
+  {
     id: 'playground-presets-and-libraries',
     date: '2026-08-24',
     kind: 'capability',

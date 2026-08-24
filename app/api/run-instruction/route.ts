@@ -17,6 +17,7 @@ import { createNotification } from '@/lib/notifications/createNotification';
 import { auth } from '@/lib/auth';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { createShroomCards, createShroomReport, applyShroomModifications, applyShroomMoves } from '@/lib/shrooms/apply';
+import { generatePlaygroundApp } from '@/lib/playground/generateApp';
 import { stripEchoedContent, cardContentStrings } from '@/lib/shrooms/stripEchoedContent';
 import { loadChannelRejections } from '@/lib/shrooms/rejections';
 import { sendShroomRunEmail, type ShroomRunOutcome } from '@/lib/shrooms/sendRunEmail';
@@ -1924,6 +1925,70 @@ export async function POST(request: Request) {
           debug,
         });
       }
+    } else if (instructionCard.action === 'build') {
+      // BUILD action — turn a card into a working app.
+      //
+      // The card's own thread is the brief, which is what makes this composable with
+      // the rest of a pipeline: every earlier shroom that wrote onto the card (a PM
+      // adding requirements, a CTO adding a spec, a designer adding taste) has already
+      // enriched the context this reads. Nothing needs to be passed between shrooms
+      // explicitly — the card accumulates it.
+      //
+      // Runs the same generator as the interactive playground, so a shroom-built app
+      // and a hand-built one are identical artifacts.
+      const buildTargets: string[] = triggeringCardId && cards[triggeringCardId]
+        ? [triggeringCardId]
+        : cardIds?.length
+          ? cardIds
+          : targetColumnIds.flatMap(
+              (columnId) => channel.columns.find((c) => c.id === columnId)?.cardIds ?? []
+            );
+
+      if (!userId) {
+        return NextResponse.json({ error: 'A build needs a user to bill the generation to' }, { status: 400 });
+      }
+
+      // Building is minutes of model time per card, so a shroom pointed at a full
+      // column can't be allowed to fan out unbounded.
+      const MAX_BUILDS_PER_RUN = 3;
+      const selected = buildTargets.slice(0, MAX_BUILDS_PER_RUN);
+
+      const built: Array<{ cardId: string; title?: string; error?: string }> = [];
+      for (const cardId of selected) {
+        try {
+          const result = await generatePlaygroundApp(
+            {
+              cardId,
+              // The instruction is the standing brief; the thread supplies the rest.
+              prompt: instructionCard.instructions || 'Build an app from this card.',
+              presetId: instructionCard.playgroundPresetId || undefined,
+            },
+            { user: { id: userId } },
+            // Nobody is watching an automated run, so it must never stop to ask.
+            { skipPreflight: true }
+          );
+          const payload = await result.json();
+          if (payload?.error) {
+            built.push({ cardId, error: payload.error });
+          } else {
+            built.push({ cardId, title: payload?.snapshot?.title });
+          }
+        } catch (err) {
+          built.push({ cardId, error: err instanceof Error ? err.message : 'Build failed' });
+        }
+      }
+
+      const succeeded = built.filter((b) => !b.error);
+      return NextResponse.json({
+        action: 'build',
+        builtCards: built,
+        // runShroomServerSide reads this to decide whether anything happened.
+        applied: { cardIds: succeeded.map((b) => b.cardId) },
+        skippedCardIds: buildTargets.length > selected.length
+          ? buildTargets.slice(MAX_BUILDS_PER_RUN)
+          : undefined,
+        debug,
+      });
     } else if (instructionCard.action === 'report') {
       // REPORT action — observes and writes a single digest card, mutates nothing else
       const reportCards: Card[] = [];

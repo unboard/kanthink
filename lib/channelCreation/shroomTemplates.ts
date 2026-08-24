@@ -8,7 +8,7 @@ export interface ShroomTemplate {
   id: string;
   title: string;
   description: string;
-  action: 'generate' | 'modify' | 'move';
+  action: 'generate' | 'modify' | 'move' | 'build';
   instructions: string;
   cardCount?: number;
   // Which intents/use cases this template is good for
@@ -48,6 +48,56 @@ export const SHROOM_TEMPLATES: ShroomTemplate[] = [
     cardCount: 5,
     tags: ['tracking', 'trends', 'research', 'market'],
     icon: '📈',
+  },
+
+  // === APP ASSEMBLY LINE ===
+  // A pipeline where each column is a role and each shroom adds its layer to the card.
+  // Nothing is passed between shrooms explicitly — the card's thread accumulates every
+  // contribution, and the build step at the end reads all of it as one brief.
+  {
+    id: 'triage-ideas',
+    title: 'Idea Triage',
+    description: 'Keep the good ones, archive the rest',
+    action: 'move',
+    instructions: 'Evaluate every idea in the inbox honestly. Judge each on whether a real person would use it, whether it can be built as a self-contained browser app, and whether it is distinct from the others. Move only genuinely promising ideas forward. Archive the vague, the derivative, and the ones that need a backend to mean anything. Being selective is the job — passing everything through makes this step worthless.',
+    tags: ['ideas', 'triage', 'pipeline', 'app-builder'],
+    icon: '⚖️',
+  },
+  {
+    id: 'pm-flesh-out',
+    title: 'Product Manager',
+    description: 'Turn an idea into requirements',
+    action: 'modify',
+    instructions: 'Act as the product manager for this card. Write: the specific user and the moment they reach for this; the single job it must do well; 3-5 concrete requirements stated as observable behaviour, not features; what is deliberately out of scope for v1; and how you would know it worked. Be decisive — pick one interpretation of the idea and commit to it. Do not restate the idea back; add what was missing.',
+    tags: ['product', 'pipeline', 'requirements', 'app-builder'],
+    icon: '📋',
+  },
+  {
+    id: 'cto-spec',
+    title: 'CTO Spec',
+    description: 'Decide how it actually gets built',
+    action: 'modify',
+    instructions: 'Act as the CTO for this card. Given the requirements already on it, specify: the core data model (what a record looks like); the main screens or views and what each is for; the one hard technical problem and how to solve it; and any library worth pulling in, named exactly. Constraint: this runs as a single-file React app in the browser, with localStorage only and no backend. If a requirement cannot survive that, say so and propose the version that can.',
+    tags: ['engineering', 'pipeline', 'spec', 'app-builder'],
+    icon: '🏗️',
+  },
+  {
+    id: 'designer-taste',
+    title: 'Designer',
+    description: 'Give it a point of view',
+    action: 'modify',
+    instructions: 'Act as the designer for this card. Give the app a specific point of view rather than a neutral one. Write: the feeling someone should have using it, in one line; a concrete palette with actual colour values; type treatment (weights, scale, what is emphasised); the one interaction or moment worth making delightful; and one convention you are deliberately breaking and why. Reject anything that reads as a generic dashboard or a default template — name what would make this recognisably itself.',
+    tags: ['design', 'pipeline', 'taste', 'app-builder'],
+    icon: '🎨',
+  },
+  {
+    id: 'build-the-app',
+    title: 'Build It',
+    description: 'Assemble everything on the card into a working app',
+    action: 'build',
+    instructions: 'Build the app this card describes. Everything written on it — requirements, spec, design direction — is the brief, and all of it is binding. Where contributions conflict, the design direction wins on look and the CTO spec wins on structure. Make it genuinely usable on first load: preload a worked example rather than opening on an empty state.',
+    tags: ['build', 'pipeline', 'app-builder', 'playground'],
+    icon: '✨',
   },
 
   // === IDEATION & PRODUCT ===

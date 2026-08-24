@@ -31,7 +31,10 @@ A Kanban app where each channel is an AI-assisted, goal-driven space that genera
 - Column: standard Kanban column; optional column instructions
 - Card: created manually or by AI; movable across columns
 - Instruction card: a reusable prompt that lives on a channel and can be run on demand
-- Shroom: an automation — trigger + steps, with safeguards and loop prevention
+- Shroom: an automation — trigger + steps, with safeguards and loop prevention.
+  Actions: `generate` | `modify` | `move` | `report` | `build`. A `build` shroom runs
+  the playground generator against a card, using the card's own thread as the brief —
+  which is what lets a chain of shrooms enrich a card and assemble an app at the end.
 - Task: a checklist item on a card
 
 Default column names live in `lib/constants.ts` (Inbox, Like, Dislike, This Week).

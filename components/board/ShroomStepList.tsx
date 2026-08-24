@@ -62,6 +62,15 @@ export const SHROOM_ACTION_INFO: Record<
     ),
     color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
   },
+  build: {
+    label: 'Build',
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+      </svg>
+    ),
+    color: 'violet',
+  },
 };
 
 /** Compact one-line-per-step list. `stacked` gives each step its own row for narrow drawers. */

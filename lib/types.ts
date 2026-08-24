@@ -23,7 +23,7 @@ export interface ShroomChatMessage {
  * a channel and tells you what changed, rather than adding to the pile you're already
  * struggling to read.
  */
-export type InstructionAction = 'generate' | 'modify' | 'move' | 'report';
+export type InstructionAction = 'generate' | 'modify' | 'move' | 'report' | 'build';
 export type InstructionRunMode = 'manual' | 'automatic';
 
 export interface ShroomStep {
@@ -285,6 +285,11 @@ export interface InstructionCard {
    */
   target: InstructionTarget;
   contextColumns?: ContextColumnSelection | null; // Context: what AI sees (null/undefined = all)
+  /**
+   * For `action: 'build'` — the playground preset to generate with, if any.
+   * Null/undefined builds with the shroom's own instructions as the only brief.
+   */
+  playgroundPresetId?: string | null;
   runMode: InstructionRunMode;
   scope?: InstructionScope;               // 'channel' (default), 'global', or 'public'
   cardCount?: number;
@@ -569,7 +574,7 @@ export interface BoardState {
 
 // Global AI operation state for status bar
 export interface AIOperationContext {
-  action: 'generate' | 'modify' | 'move' | 'process' | 'report';
+  action: 'generate' | 'modify' | 'move' | 'process' | 'report' | 'build';
   instructionTitle?: string;
   targetColumnName?: string;
   cardCount?: number;

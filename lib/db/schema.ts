@@ -275,9 +275,14 @@ export const instructionCards = sqliteTable('instruction_cards', {
 
   title: text('title').notNull(),
   instructions: text('instructions').notNull(),
-  action: text('action').$type<'generate' | 'modify' | 'move' | 'report'>().notNull(),
+  // 'build' generates a playground app from the card's own thread — see
+  // lib/playground/generateApp. Stored as text, so no migration for the new value.
+  action: text('action').$type<'generate' | 'modify' | 'move' | 'report' | 'build'>().notNull(),
   target: text('target', { mode: 'json' }).$type<InstructionTargetJson>().notNull(),
   contextColumns: text('context_columns', { mode: 'json' }).$type<ContextColumnSelectionJson>(),
+
+  /** For action:'build' — the playground preset to generate with. Null = plain build. */
+  playgroundPresetId: text('playground_preset_id'),
 
   runMode: text('run_mode').$type<'manual' | 'automatic'>().default('manual'),
   cardCount: integer('card_count'),

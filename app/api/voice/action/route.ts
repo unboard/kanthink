@@ -8,6 +8,7 @@ import { cards, channels, columns, tasks } from '@/lib/db/schema';
 import { eq, and, desc, asc, gt, like, sql } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
+import { generatePlaygroundApp } from '@/lib/playground/generateApp';
 
 /** Find a task by ID, or fallback to title search if ID doesn't match */
 async function findTask(taskId: string) {
@@ -537,6 +538,37 @@ export async function POST(request: Request) {
           result: `Moved "${card.title}" to "${targetCol.name}"`,
           cardId: card.id,
           channelId: card.channelId,
+        });
+      }
+
+      case 'build_app': {
+        // Turn a card into a working app from its own thread. Same generator the
+        // playground and build shrooms use, so a voice-built app is the same artifact.
+        if (!args.cardId) {
+          return NextResponse.json({ result: 'Which card should I build from?' });
+        }
+        const card = await db.query.cards.findFirst({ where: eq(cards.id, args.cardId) });
+        if (!card) {
+          return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        }
+        const result = await generatePlaygroundApp(
+          {
+            cardId: args.cardId,
+            prompt: args.prompt || 'Build an app from this card and its thread.',
+            presetId: args.presetId,
+          },
+          { user: { id: session.user.id } },
+          // Hands-free: never stop to ask a clarifying question.
+          { skipPreflight: true }
+        );
+        const payload = await result.json();
+        if (payload?.error) {
+          return NextResponse.json({ result: `Failed to build: ${payload.error}` });
+        }
+        // `result` is the convention every handler here uses — it's what gets spoken.
+        return NextResponse.json({
+          result: `Built "${payload?.snapshot?.title || card.title}" on "${card.title}". It's on the card's App tab.`,
+          cardId: card.id,
         });
       }
 

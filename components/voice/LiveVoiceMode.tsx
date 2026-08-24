@@ -163,6 +163,18 @@ const TOOLS = [
         },
       },
       {
+        name: 'build_app',
+        description: "Build a working app from a card, using everything written on the card's thread as the brief. Use when the user says \"build it\", \"make an app out of this\", \"turn this into a prototype\", or \"prototype this\". Takes a minute or two — tell the user you're starting, then confirm when it lands. The result appears on the card's App tab with a preview link.",
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            cardId: { type: 'STRING', description: 'Card ID or card title to build from' },
+            prompt: { type: 'STRING', description: 'Optional extra direction beyond what the thread already says' },
+          },
+          required: ['cardId'],
+        },
+      },
+      {
         name: 'draft_email',
         description: 'Draft an email for the user to review before sending. This does NOT send it — it creates a draft on screen. Do NOT read the email content aloud. Infer the best style from context (tone, recipient, purpose) — do NOT ask the user to pick a style. Available styles: professional (formal business), casual (friendly), newsletter (bold header banner), update (channel/project update with label).',
         parameters: {

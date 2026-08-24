@@ -21,7 +21,7 @@ export interface ModifiedCardTask {
 }
 
 export interface RunInstructionResult {
-  action: 'generate' | 'modify' | 'move' | 'multi-step' | 'report';
+  action: 'generate' | 'modify' | 'move' | 'multi-step' | 'report' | 'build';
   targetColumnIds: string[];
   /** Present for `report` runs — an observation, not a mutation. */
   report?: {

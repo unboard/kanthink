@@ -285,6 +285,9 @@ Available actions:
   - Requires: channelId. Optional: query (search term), limit (default 5)
 - **show_card**: Show full details of a card.
   - Requires: cardId
+- **build_app**: Build a working app from a card, using everything on its thread as the brief. Use this for "build it", "make an app out of this", "turn this into a prototype". The result lands on the card's App tab with a preview link.
+  - Requires: cardId. Optional: prompt (extra direction), presetId
+  - Takes a minute or two. Say you're starting it, don't wait silently.
 
 **Tasks:**
 - **create_task**: Create a new task, optionally linked to a card.
@@ -382,7 +385,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
 
       // New actions routed through voice action API
-      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel'].includes(action.type)) {
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app'].includes(action.type)) {
         // Build args from action fields
         const args: Record<string, string> = {};
         for (const [key, val] of Object.entries(action)) {
