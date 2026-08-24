@@ -25,6 +25,7 @@ import {
   type ResolvedDep,
 } from '@/lib/playground/runtime';
 import { getBuiltinPreset, isBuiltinPresetId } from '@/lib/playground/builtinPresets';
+import { stripOptimistic } from '@/lib/playground/thread';
 
 export const runtime = 'nodejs';
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
@@ -449,7 +450,7 @@ export async function POST(request: Request) {
       ? `Quick question before I make this change: ${preflight.questions[0]}`
       : `Quick questions before I make this change:\n\n${preflight.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
 
-    const existingMessagesForAsk = (card.messages || []) as unknown as Array<Record<string, unknown>>;
+    const existingMessagesForAsk = stripOptimistic(card.messages);
     const userMessageObj = {
       id: nanoid(),
       type: 'question' as const,
@@ -649,8 +650,14 @@ export async function POST(request: Request) {
     presetId: preset?.id ?? typeData.presetId,
   };
 
-  // Build the new thread: append user prompt + Kan's notes
-  const existingMessages = (card.messages || []) as unknown as Array<Record<string, unknown>>;
+  // Build the new thread: append user prompt + Kan's notes.
+  //
+  // Drop any optimistic client messages first. The client shows the user's message
+  // immediately and that store write syncs to the server, so by the time we get here
+  // the thread can already contain a copy of the prompt we're about to append —
+  // which is how user messages ended up rendering twice. The server owns the
+  // canonical thread; client placeholders never belong in it.
+  const existingMessages = stripOptimistic(card.messages);
   const userMessageObj = {
     id: nanoid(),
     type: 'question' as const,

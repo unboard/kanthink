@@ -103,6 +103,22 @@ const STARTER_PROMPTS = [
   { label: 'Memory match game', prompt: 'A 4x4 memory match game with animal emoji tiles, flip animation, move counter, and a celebratory confetti burst on win.' },
 ];
 
+/**
+ * Write a card's messages into the store WITHOUT syncing to the server.
+ *
+ * The store's updateCard persists every change, which is wrong for optimistic
+ * placeholders: the server is mid-generation and about to write the canonical thread
+ * itself, so persisting here both duplicates the user's message and races the
+ * server's write. This touches local state only.
+ */
+function setLocalMessages(cardId: string, messages: Card['messages']) {
+  useStore.setState((state) => {
+    const existing = state.cards[cardId];
+    if (!existing) return state;
+    return { cards: { ...state.cards, [cardId]: { ...existing, messages } } };
+  });
+}
+
 export function PlaygroundView({ card, onClose, embedded = false, tabBar }: PlaygroundViewProps) {
   const updateCard = useStore((s) => s.updateCard);
   const cardFromStore = useStore((s) => s.cards[card.id]) || card;
@@ -441,9 +457,11 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
       createdAt: new Date().toISOString(),
     };
     const messagesBeforeSend = cardFromStore.messages || [];
-    updateCard(card.id, {
-      messages: [...messagesBeforeSend, optimisticMessage],
-    });
+    // LOCAL ONLY — deliberately not updateCard(). updateCard syncs to the server, which
+    // would persist this placeholder and race with the generate route's own write of
+    // the same message. The server returns the canonical thread when it's done; until
+    // then this is purely what the user sees.
+    setLocalMessages(card.id, [...messagesBeforeSend, optimisticMessage]);
 
     try {
       const res = await fetch('/api/playground/generate', {
@@ -488,7 +506,7 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
           friendly = `Generation failed (${res.status}).`;
         }
         setGenError(friendly);
-        updateCard(card.id, { messages: messagesBeforeSend });
+        setLocalMessages(card.id, messagesBeforeSend);
         setIsGenerating(false);
         return;
       }
@@ -520,7 +538,7 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
       }
       // Real failure (e.g. immediate auth/quota error) — roll back, surface error.
       setGenError(msg);
-      updateCard(card.id, { messages: messagesBeforeSend });
+      setLocalMessages(card.id, messagesBeforeSend);
       setIsGenerating(false);
     }
   }, [card.id, cardFromStore.messages, isGenerating, iframeError, updateCard, generationCount, modelId, stagedImages, presetName]);
@@ -614,7 +632,7 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
   );
 
   const ChatPane = (
-    <div className="flex flex-col min-h-0 h-full bg-white dark:bg-neutral-950">
+    <div className="flex flex-col min-h-0 h-full bg-white dark:bg-neutral-900">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4">
         {recentMessages.length === 0 && !hasCode ? (
@@ -719,8 +737,11 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
         )}
       </div>
 
+      {/* Drawer tab tiles sit directly above the composer, matching CardChat. */}
+      {embedded && tabBar && <div className="flex-shrink-0">{tabBar}</div>}
+
       {/* Composer */}
-      <div className="flex-shrink-0 border-t border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 sm:px-5 py-3">
+      <div className="flex-shrink-0 border-t border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 sm:px-5 py-3">
         <div className="max-w-2xl mx-auto">
           {stagedImages.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
@@ -972,91 +993,59 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
 
   // ---------- Layouts ---------- //
 
-  // Embedded — the card drawer is a single narrow column, so there's no split to
-  // resize (the old draggable divider is what made this feel cramped and broken at
-  // drawer width). Build and Preview take turns at full width instead, with the
-  // publish controls sitting on the same bar as the switch.
+  // Embedded — the card drawer is one narrow column. There is no in-drawer preview
+  // pane any more: previewing opens a real page in a new tab, so the drawer is just
+  // the build conversation. The drawer's own tab tiles render at the BOTTOM, above
+  // the composer, matching CardChat and every other tab.
   if (embedded) {
     return (
-      <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-950">
-        {tabBar && <div className="flex-shrink-0 pt-2">{tabBar}</div>}
-
-        <div className="flex-shrink-0 flex items-center gap-1 border-b border-neutral-200 dark:border-neutral-800 px-3 pt-1">
-          <button
-            onClick={() => setPane('chat')}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
-              pane === 'chat'
-                ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
-                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
-            }`}
-          >
-            <MessageSquareText className="w-3.5 h-3.5" />
-            Build
-          </button>
-          <button
-            onClick={() => setPane('preview')}
-            disabled={!hasCode}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
-              pane === 'preview'
-                ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-600 -mb-px'
-                : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 disabled:opacity-40'
-            }`}
-          >
-            <Eye className="w-3.5 h-3.5" />
-            Preview
-          </button>
-
-          <div className="ml-auto flex items-center gap-1 pb-1">
-            {hasCode && (
-              <>
-                <a
-                  href={previewUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open preview in a new tab"
-                  className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-                <button
-                  onClick={togglePublic}
-                  title={cardFromStore.isPublic ? 'Published — click to unpublish' : 'Publish to a public link'}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
-                    cardFromStore.isPublic
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/50'
-                      : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
-                  }`}
-                >
-                  {cardFromStore.isPublic ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                  {cardFromStore.isPublic ? 'Published' : 'Publish'}
-                </button>
-                {shareLink && (
-                  <button
-                    onClick={copyShareLink}
-                    title="Copy share link"
-                    className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                )}
-              </>
+      <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-900">
+        {hasCode && (
+          <div className="flex-shrink-0 flex items-center justify-end gap-1 px-3 py-1.5 border-b border-neutral-200 dark:border-neutral-800">
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Preview
+            </a>
+            <button
+              onClick={togglePublic}
+              title={cardFromStore.isPublic ? 'Published — click to unpublish' : 'Publish to a public link'}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                cardFromStore.isPublic
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/50'
+                  : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+              }`}
+            >
+              {cardFromStore.isPublic ? <Globe className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+              {cardFromStore.isPublic ? 'Published' : 'Publish'}
+            </button>
+            {shareLink && (
+              <button
+                onClick={copyShareLink}
+                title="Copy share link"
+                className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
             )}
           </div>
-        </div>
+        )}
 
-        <div className="flex-1 min-h-0 flex flex-col">
-          {pane === 'chat' ? ChatPane : PreviewPane}
-        </div>
+        <div className="flex-1 min-h-0 flex flex-col">{ChatPane}</div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-950">
+    <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-900">
       {Header}
 
       {/* Mobile tab switcher (hidden on md+) */}
-      <div className="md:hidden flex-shrink-0 flex border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 px-3 pt-2">
+      <div className="md:hidden flex-shrink-0 flex border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 pt-2">
         <button
           onClick={() => setPane('chat')}
           className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-t-lg transition-colors ${
