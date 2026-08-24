@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { cards, tasks } from '@/lib/db/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { cards, tasks, playgroundPresets } from '@/lib/db/schema';
+import { eq, and, asc, or } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { getUserByokConfigWithError } from '@/lib/usage';
 import { nanoid } from 'nanoid';
@@ -18,6 +18,13 @@ import {
 } from '@/lib/playground/models';
 import { signCardToken } from '@/lib/playground/cardToken';
 import { runPreflight } from '@/lib/playground/preflight';
+import {
+  resolveDeps,
+  describeDepsForPrompt,
+  MAX_RUNTIME_DEPS,
+  type ResolvedDep,
+} from '@/lib/playground/runtime';
+import { getBuiltinPreset, isBuiltinPresetId } from '@/lib/playground/builtinPresets';
 
 export const runtime = 'nodejs';
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
@@ -49,19 +56,28 @@ interface PlaygroundTypeData {
   cardToken?: string;
   /** Running list of established design decisions, kept terse, re-injected on each iteration. */
   designNotes?: string;
+  /**
+   * Runtime dependency declarations for this playground, in lib/playground/runtime
+   * grammar. Seeded from a preset and/or declared by the model. Re-resolved on every
+   * render — we store the declarations, not the URLs, so resolution rules can change
+   * without rewriting stored data.
+   */
+  dependencies?: string[];
+  /** Preset this playground was last generated with, for UI display. */
+  presetId?: string;
 }
 
 const SYSTEM_PROMPT = `You generate complete single-file React applications that run in a sandboxed iframe with this exact runtime:
 - React 19 via esm.sh import map (already configured in the host page)
 - Tailwind CSS via Play CDN (already loaded in the host page)
 - lucide-react icons via esm.sh (use sparingly)
-- NO other npm packages. NO process.env. NO Node APIs.
+- NO process.env. NO Node APIs. Additional libraries ONLY as listed under "AVAILABLE LIBRARIES" at the end of this prompt — if that section says none are loaded, use no third-party libraries beyond the ones above.
 - localStorage and sessionStorage ARE available (host installs a same-shape shim because the iframe runs in an opaque-origin sandbox). Treat them as per-session — values may not persist across iframe reloads. Use them freely; access never throws. Do NOT add try/catch around .getItem/.setItem to "guard" against the sandbox — that crash is already prevented by the host.
 - fetch() works for public CORS-enabled APIs only.
 
 CODE RULES (strict — your output runs unmodified):
 1. ONE file. Output JSX (NOT TypeScript types — plain modern React).
-2. Imports allowed: react (named imports only — useState/useEffect/etc.), lucide-react. NEVER write \`import React from 'react'\` or \`import * as React from 'react'\` — React is already in scope as a global from the host runtime; redeclaring it will fail with "Identifier 'React' has already been declared". Use \`import { useState, useEffect } from 'react';\` only when you need named hooks. Don't import react-dom — the runtime mounts your App component automatically.
+2. Imports allowed: react (named imports only — useState/useEffect/etc.), lucide-react, plus anything listed under "AVAILABLE LIBRARIES". NEVER write \`import React from 'react'\` or \`import * as React from 'react'\` — React is already in scope as a global from the host runtime; redeclaring it will fail with "Identifier 'React' has already been declared". Use \`import { useState, useEffect } from 'react';\` only when you need named hooks. Don't import react-dom — the runtime mounts your App component automatically.
 3. Default-export a single component named App. The host runtime mounts <App/> to #root.
 4. Use functional components and hooks only. No class components.
 5. Style with Tailwind utility classes only. No <style> tags. No CSS-in-JS.
@@ -214,6 +230,39 @@ The "notes" field is shown in chat. Write it like a teammate, not a changelog.
 
 Always return valid JSON matching the response schema. Never wrap output in markdown code fences.`;
 
+/**
+ * The runtime section, appended to the system prompt at call time.
+ *
+ * This is what makes "build a three.js visual" or "use this GitHub library" possible.
+ * The import map is built from the same resolved list, so what the model is told is
+ * available is exactly what the iframe can resolve — the two cannot drift.
+ */
+function buildRuntimeSection(deps: ResolvedDep[]): string {
+  const available = deps.length > 0
+    ? `AVAILABLE LIBRARIES (already in the iframe import map — import them directly):
+${describeDepsForPrompt(deps)}
+
+These are loaded and ready. Use them. Do NOT add <script> tags, do NOT fetch them from a CDN at runtime, and do NOT reimplement what they already do.`
+    : `AVAILABLE LIBRARIES: none beyond react and lucide-react.`;
+
+  return `
+
+${available}
+
+DECLARING NEW DEPENDENCIES:
+If the app genuinely needs a library that is not listed above, add it to the "dependencies" array in your JSON response AND import it normally in your code. It will be in the import map when your code runs — you do not need a second turn, and you must not write fallback code for its absence.
+
+Declaration format (strict — anything else is dropped):
+- npm package: "three", "d3-scale", "@scope/pkg", or pinned "three@0.185.0"
+- GitHub repo: "gh:owner/repo" or "gh:owner/repo@ref"
+- custom import name: "alias=gh:owner/repo@ref" (use this when the repo name is not a good identifier)
+Full URLs are NOT accepted. Maximum ${MAX_RUNTIME_DEPS} dependencies.
+
+Only declare what you actually import. Every extra dependency is another network fetch before the app renders, and a library you use once is worse than the 20 lines it replaced. If the task is genuinely served by react alone, return an empty array.
+
+When dependencies are already listed under AVAILABLE LIBRARIES, echo them back in "dependencies" if you still use them — the list you return replaces the previous one.`;
+}
+
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -222,8 +271,13 @@ const RESPONSE_SCHEMA = {
     code: { type: Type.STRING, description: 'Complete single-file JSX. Default-export App component. No types, no markdown fences.' },
     notes: { type: Type.STRING, description: 'One conversational sentence about what changed in this iteration. Empty for first generation.' },
     designNotes: { type: Type.STRING, description: 'Updated terse bullet list of established design decisions to carry forward to future iterations. Carry forward what is still true, update what changed this turn.' },
+    dependencies: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: 'Libraries this code imports beyond react/lucide-react. Format: "three", "three@0.185.0", "@scope/pkg", "gh:owner/repo@ref", or "alias=gh:owner/repo". Empty array if none.',
+    },
   },
-  required: ['title', 'summary', 'code', 'notes', 'designNotes'],
+  required: ['title', 'summary', 'code', 'notes', 'designNotes', 'dependencies'],
 };
 
 interface GenerateRequest {
@@ -235,6 +289,8 @@ interface GenerateRequest {
   modelId?: string;
   // Optional: image URLs (Cloudinary) attached to this prompt for visual context.
   imageUrls?: string[];
+  // Optional: a saved preset supplying a recipe instruction and/or runtime libraries.
+  presetId?: string;
 }
 
 /** Fetch an image URL and return it as Gemini-compatible inline base64 data. */
@@ -261,8 +317,10 @@ export async function POST(request: Request) {
 
   await ensureSchema();
   const body: GenerateRequest = await request.json();
-  if (!body.cardId || !body.prompt) {
-    return NextResponse.json({ error: 'cardId and prompt are required' }, { status: 400 });
+  // A preset recipe IS an instruction, so running one against a card needs no typed
+  // prompt — that's the whole point of intent "run this same thing on any thread".
+  if (!body.cardId || (!body.prompt && !body.presetId)) {
+    return NextResponse.json({ error: 'cardId and either prompt or presetId are required' }, { status: 400 });
   }
 
   // Resolve the user's Google API key (BYOK first, owner fallback).
@@ -293,6 +351,51 @@ export async function POST(request: Request) {
   const typeData = (card.typeData as PlaygroundTypeData | null) || {};
   const currentCode = typeData.code;
   const generationCount = typeData.generationCount ?? 0;
+
+  // -- Preset: supplies a reusable recipe instruction and/or runtime libraries.
+  //    Built-ins live in code; saved presets are scoped to the caller or global, so
+  //    one user's preset id can never be read by another.
+  let preset: {
+    id: string;
+    name: string;
+    recipe?: string | null;
+    designProfile?: string | null;
+    runtime?: { deps: string[] } | null;
+  } | null = null;
+
+  if (body.presetId) {
+    if (isBuiltinPresetId(body.presetId)) {
+      const builtin = getBuiltinPreset(body.presetId);
+      if (builtin) {
+        preset = {
+          id: builtin.id,
+          name: builtin.name,
+          recipe: builtin.recipe ?? null,
+          designProfile: builtin.designProfile ?? null,
+          runtime: builtin.runtime ?? null,
+        };
+      }
+    } else {
+      preset = (await db.query.playgroundPresets.findFirst({
+        where: and(
+          eq(playgroundPresets.id, body.presetId),
+          or(eq(playgroundPresets.userId, session.user.id), eq(playgroundPresets.scope, 'global'))
+        ),
+      })) ?? null;
+    }
+    if (!preset) {
+      return NextResponse.json({ error: 'Preset not found' }, { status: 404 });
+    }
+  }
+
+  // Dependencies available for THIS generation: whatever the playground already had,
+  // plus anything the preset seeds. The model can add more via its response, which is
+  // applied to the same turn's code — see the dependencies handling after generation.
+  const seededDeclarations = [
+    ...(typeData.dependencies || []),
+    ...(preset?.runtime?.deps || []),
+  ];
+  const seeded = resolveDeps(seededDeclarations);
 
   // Build the user message: original goal (card title) + current code + last few thread turns + new prompt.
   const recentMessages = (card.messages || []).slice(-6);
@@ -385,8 +488,27 @@ export async function POST(request: Request) {
     ? `\n\n⚠️ THIS IS AN EDIT, NOT A REDESIGN. Edit type (preflight): ${preflight.editType}. Change only what the request asks. Everything else in the current code must come through unchanged — same classes, copy, structure, colors, behavior. If your diff is bigger than the request implies, you are drifting — shrink it.`
     : '';
 
+  // A recipe is a standing instruction ("build a three.js explainer of this thread").
+  // It leads the message so it frames everything below it, and any typed prompt becomes
+  // an additional constraint rather than a competing instruction.
+  const recipeBlock = preset?.recipe
+    ? `STANDING INSTRUCTION (from preset "${preset.name}") — this is the primary thing to build:\n${preset.recipe}`
+    : '';
+
+  // Locked, user-authored style rules. Distinct from designNotes: the model may not
+  // rewrite these, and they are re-injected verbatim every turn.
+  const designProfileBlock = preset?.designProfile
+    ? `DESIGN PROFILE (from preset "${preset.name}") — LOCKED. Follow these style rules exactly. Never override them, and never record them as your own design decisions:\n${preset.designProfile}`
+    : '';
+
+  const requestBlock = body.prompt
+    ? `USER REQUEST:\n${body.prompt}${imageNote}${iterationReminder}`
+    : `USER REQUEST:\nRun the standing instruction above against this card's context.${imageNote}${iterationReminder}`;
+
   const userMessage = [
     `ORIGINAL GOAL (card title): ${card.title}`,
+    recipeBlock,
+    designProfileBlock,
     currentCode
       ? `CURRENT CODE (this is your starting point — preserve it except for what the user asks to change):\n\`\`\`jsx\n${currentCode}\n\`\`\``
       : 'CURRENT CODE: (none yet — this is the first generation, design freely)',
@@ -394,7 +516,7 @@ export async function POST(request: Request) {
     taskContext ? `TASKS ON THIS CARD (treat these as requirements, not a to-do list to render):\n${taskContext}` : '',
     `RECENT THREAD CONTEXT:\n${threadContext}`,
     body.lastError ? `PREVIOUS ERROR:\n${body.lastError}` : '',
-    `USER REQUEST:\n${body.prompt}${imageNote}${iterationReminder}`,
+    requestBlock,
   ].filter(Boolean).join('\n\n');
 
   // Resolve which Gemini model to call. Validate against the allow-list so a bad
@@ -417,7 +539,14 @@ export async function POST(request: Request) {
     if (part) imageParts.push(part);
   }
 
-  let parsed: { title: string; summary: string; code: string; notes: string; designNotes?: string } | null = null;
+  let parsed: {
+    title: string;
+    summary: string;
+    code: string;
+    notes: string;
+    designNotes?: string;
+    dependencies?: string[];
+  } | null = null;
   let usage: { promptTokenCount?: number; candidatesTokenCount?: number } | null = null;
   const deadline = AbortSignal.timeout(GENERATION_DEADLINE_MS);
   try {
@@ -425,7 +554,7 @@ export async function POST(request: Request) {
       model: model.id,
       contents: [{ role: 'user', parts: [{ text: userMessage }, ...imageParts] }],
       config: {
-        systemInstruction: SYSTEM_PROMPT,
+        systemInstruction: SYSTEM_PROMPT + buildRuntimeSection(seeded.deps),
         responseMimeType: 'application/json',
         responseSchema: RESPONSE_SCHEMA,
         // A whole single-file app plus design notes. Every model in the picker
@@ -487,6 +616,18 @@ export async function POST(request: Request) {
     costUsd: computeGenerationCost(model.id, inputTokens, outputTokens),
   };
 
+  // -- Dependencies for the code we just received.
+  //    The model declares what it imported, so the import map is built in the same
+  //    turn as the code that needs it — no second round trip, no "install then use".
+  //    Preset deps are always kept: the preset is the contract, the model is a guest.
+  const declaredByModel = Array.isArray(parsed.dependencies) ? parsed.dependencies : [];
+  const presetDeclarations = preset?.runtime?.deps || [];
+  const merged = resolveDeps([...presetDeclarations, ...declaredByModel]);
+
+  // Invalid declarations cost that library, not the generation. Surface them so the
+  // UI can say why an import is missing instead of leaving a silent runtime error.
+  const rejectedDeps = merged.rejected;
+
   const newTypeData: PlaygroundTypeData = {
     code: parsed.code,
     codeTitle: parsed.title,
@@ -503,6 +644,9 @@ export async function POST(request: Request) {
     designNotes: typeof parsed.designNotes === 'string' && parsed.designNotes.trim().length > 0
       ? parsed.designNotes.trim()
       : typeData.designNotes,
+    // Store declarations rather than resolved URLs so resolution rules stay changeable.
+    dependencies: merged.deps.map(d => d.raw),
+    presetId: preset?.id ?? typeData.presetId,
   };
 
   // Build the new thread: append user prompt + Kan's notes
@@ -553,5 +697,9 @@ export async function POST(request: Request) {
     messages: newMessages,
     usage,
     lastUsage,
+    runtime: {
+      deps: merged.deps.map(d => ({ specifier: d.specifier, source: d.source, raw: d.raw })),
+      rejected: rejectedDeps,
+    },
   });
 }

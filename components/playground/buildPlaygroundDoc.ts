@@ -1,9 +1,12 @@
+import { buildImportMap, type ResolvedDep } from '@/lib/playground/runtime';
+
 /**
  * Build the full HTML document we inject into the playground iframe via `srcdoc`.
  *
  * Runtime contract (must match the Gemini system prompt):
  * - User code is JSX (no TypeScript types) with default-exported `App`.
- * - Imports allowed: react, react-dom/client, lucide-react.
+ * - Imports allowed: react, react-dom/client, lucide-react, plus any dependencies
+ *   declared for this playground (see `options.deps` and lib/playground/runtime).
  * - Tailwind utility classes work (Play CDN).
  * - Code is compiled in-browser by Babel standalone (data-type="module").
  *
@@ -32,6 +35,12 @@ export function buildPlaygroundDoc(
      * editor view receive `null`.
      */
     initialRecord?: { slug: string; data: unknown; label?: string } | null;
+    /**
+     * Extra modules to expose in the import map, already resolved and validated by
+     * lib/playground/runtime. Anything not resolved through there must not be passed
+     * in — these values are interpolated straight into the document.
+     */
+    deps?: ResolvedDep[];
   }
 ): string {
   const title = (options?.title || 'Kanthink Playground').replace(/[<>]/g, '');
@@ -65,15 +74,7 @@ export function buildPlaygroundDoc(
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react/": "https://esm.sh/react@19.0.0/",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "lucide-react": "https://esm.sh/lucide-react@0.468.0?deps=react@19.0.0"
-  }
-}
+${buildImportMap(options?.deps || [])}
 </script>
 <style>
   html, body, #root { height: 100%; margin: 0; padding: 0; }

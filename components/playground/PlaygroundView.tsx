@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useStore } from '@/lib/store';
 import type { Card } from '@/lib/types';
 import { buildPlaygroundDoc } from './buildPlaygroundDoc';
+import { resolveDeps } from '@/lib/playground/runtime';
 import {
   Sparkles,
   Maximize2,
@@ -69,6 +70,20 @@ interface PlaygroundTypeData {
   lastUsage?: PlaygroundUsage;
   lastModelId?: string;
   cardToken?: string;
+  /** Runtime library declarations — see lib/playground/runtime. */
+  dependencies?: string[];
+  presetId?: string;
+}
+
+interface PlaygroundPreset {
+  id: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  recipe?: string | null;
+  designProfile?: string | null;
+  runtime?: { deps: string[] } | null;
+  scope?: string | null;
 }
 
 interface IframeError {
@@ -121,15 +136,47 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
   });
   const [showModelMenu, setShowModelMenu] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
+  const [presets, setPresets] = useState<PlaygroundPreset[]>([]);
+  const [showPresetMenu, setShowPresetMenu] = useState(false);
   const splitRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const presetMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile } = useImageUpload({ cardId: card.id });
 
   const selectedModel = getPlaygroundModel(modelId);
   const lastUsage = typeData.lastUsage;
+
+  // Presets are the saved recipes / runtimes this user can run against any card.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/playground/presets')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (!cancelled && data?.presets) setPresets(data.presets);
+      })
+      .catch(() => {/* the picker just stays empty — not worth an error state */});
+    return () => { cancelled = true; };
+  }, []);
+
+  const presetName = useCallback(
+    (id: string) => presets.find(p => p.id === id)?.name || 'preset',
+    [presets]
+  );
+
+  // Close the preset menu on outside click, matching the model picker's behaviour.
+  useEffect(() => {
+    if (!showPresetMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (presetMenuRef.current && !presetMenuRef.current.contains(e.target as Node)) {
+        setShowPresetMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showPresetMenu]);
 
   // Keep the latest chatWidth in a ref so the mouseup persistence reads the
   // current value without forcing the drag effect to re-attach listeners on
@@ -261,6 +308,10 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
     };
   }, [isGenerating, generationCount, card.id, updateCard]);
 
+  // Declarations are an array, so compare by value — a new array with identical
+  // contents must not rebuild the document, and a changed library must.
+  const depsKey = (typeData.dependencies || []).join(',');
+
   const srcDoc = useMemo(() => {
     if (!code) return null;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -270,8 +321,9 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
       aiUrl: `${origin}/api/playground/ai`,
       saveUrl: `${origin}/api/playground/save`,
       cardToken: typeData.cardToken,
+      deps: resolveDeps(depsKey ? depsKey.split(',') : []).deps,
     });
-  }, [code, typeData.codeTitle, typeData.cardToken, cardFromStore.title]);
+  }, [code, typeData.codeTitle, typeData.cardToken, cardFromStore.title, depsKey]);
 
   // Listen for runtime errors from inside the iframe.
   useEffect(() => {
@@ -351,8 +403,13 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
     setStagedImages((prev) => prev.filter((img) => img.id !== id));
   };
 
-  const generate = useCallback(async (userPrompt: string, includeError: boolean) => {
-    if ((!userPrompt.trim() && stagedImages.length === 0) || isGenerating) return;
+  const generate = useCallback(async (
+    userPrompt: string,
+    includeError: boolean,
+    presetId?: string,
+  ) => {
+    // A preset carries its own instruction, so running one needs no typed prompt.
+    if ((!userPrompt.trim() && stagedImages.length === 0 && !presetId) || isGenerating) return;
     // Don't fire while images are still uploading.
     if (stagedImages.some((img) => img.uploading)) return;
 
@@ -374,7 +431,9 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
     const optimisticMessage = {
       id: optimisticId,
       type: 'question' as const,
-      content: trimmedPrompt,
+      // Running a preset with no typed prompt still needs something in the thread,
+      // otherwise the user sees an empty bubble while it generates.
+      content: trimmedPrompt || (presetId ? `Running “${presetName(presetId)}”…` : ''),
       imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
       createdAt: new Date().toISOString(),
     };
@@ -393,6 +452,7 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
           lastError: includeError ? iframeError?.message : undefined,
           modelId,
           imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+          presetId,
         }),
       });
 
@@ -460,7 +520,7 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
       updateCard(card.id, { messages: messagesBeforeSend });
       setIsGenerating(false);
     }
-  }, [card.id, cardFromStore.messages, isGenerating, iframeError, updateCard, generationCount, modelId, stagedImages]);
+  }, [card.id, cardFromStore.messages, isGenerating, iframeError, updateCard, generationCount, modelId, stagedImages, presetName]);
 
   const handleSubmit = () => generate(prompt, false);
   const handleAutoFix = () => {
@@ -730,6 +790,62 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
           </div>
           {/* Footer: model picker chip on the left, last-cost on the right. */}
           <div className="mt-2 flex items-center justify-between gap-2">
+            {/* Preset chip — runs a saved recipe/runtime against this card. Hidden
+                entirely when the user has none, so the default UI stays unchanged. */}
+            {presets.length > 0 && (
+              <div className="relative" ref={presetMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowPresetMenu((v) => !v)}
+                  disabled={isGenerating}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium text-neutral-600 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors disabled:opacity-40"
+                  title="Run a saved preset against this card"
+                >
+                  <Wand2 className="w-3 h-3" />
+                  Presets
+                </button>
+                {showPresetMenu && (
+                  <div className="absolute bottom-full mb-1.5 left-0 z-30 w-64 max-h-72 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl p-1">
+                    {presets.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setShowPresetMenu(false);
+                          generate(prompt.trim(), false, p.id);
+                          setPrompt('');
+                        }}
+                        className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          {p.icon && <span className="text-xs">{p.icon}</span>}
+                          <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 truncate">
+                            {p.name}
+                          </span>
+                        </div>
+                        {p.description && (
+                          <div className="mt-0.5 text-[10.5px] text-neutral-500 dark:text-neutral-400 line-clamp-2">
+                            {p.description}
+                          </div>
+                        )}
+                        {p.runtime?.deps?.length ? (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {p.runtime.deps.slice(0, 4).map((d) => (
+                              <span
+                                key={d}
+                                className="px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-900/30 text-[9.5px] font-mono text-violet-700 dark:text-violet-300"
+                              >
+                                {d}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="relative" ref={modelMenuRef}>
               <button
                 type="button"

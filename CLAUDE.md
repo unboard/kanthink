@@ -43,7 +43,8 @@ Kanthink is well past MVP. A rough map of the surfaces, so you don't rebuild som
 - **Board** — channels, folders, columns, cards, tasks, tags, search, bulk actions, list/focus views, card detail drawer with threads
 - **Shrooms** (`app/shrooms`, `lib/shrooms/*`) — the automation engine: triggers, scheduled + event runs, run history, graph view, summaries, learning from rejections. Arguably the centre of the product; nothing else here is as load-bearing.
 - **Instruction cards** — per-channel reusable prompts, with guide/suggest/chat flows and learnings
-- **AI surfaces** — channel chat, card chat, operator chat, task chat, voice (live + transcribe + TTS), image generation, playground
+- **AI surfaces** — channel chat, card chat, operator chat, task chat, voice (live + transcribe + TTS), image generation
+- **Playground** (`components/playground`, `app/api/playground/*`) — generates a single-file React app onto a card, iterates on it in chat, publishes it at `/play/{token}`. Presets parameterize generation along three axes: a locked user-authored `designProfile`, a reusable `recipe` instruction, and `runtime` libraries. Libraries resolve through `lib/playground/runtime.ts` — **every declaration must go through `resolveDeps`**, because resolved URLs are interpolated into the iframe's import map.
 - **Sharing & multi-user** — orgs, folder/channel shares with owner/editor/viewer roles, invite links, presence, notifications (all realtime via Pusher)
 - **Publishing** — public card pages (`/p`), digests + newsletters, Customer.IO email
 - **Billing** — Stripe checkout + webhooks, usage records, BYOK

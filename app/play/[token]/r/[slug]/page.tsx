@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
 import { signCardToken } from '@/lib/playground/cardToken';
+import { resolveDeps } from '@/lib/playground/runtime';
 import { PublicPlaygroundFrame } from '../../PublicPlaygroundFrame';
 import type { Metadata } from 'next';
 import type { SavedRecord } from '@/lib/playground/savedRecord';
@@ -19,6 +20,7 @@ interface PlaygroundTypeData {
   codeSummary?: string;
   cardToken?: string;
   savedRecords?: SavedRecord[];
+  dependencies?: string[];
 }
 
 export const dynamic = 'force-dynamic';
@@ -73,6 +75,7 @@ export default async function PlayRecordPage({ params }: PageProps) {
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,
     cardToken: typeData.cardToken || signCardToken(card.id),
+    deps: resolveDeps(typeData.dependencies || []).deps,
     initialRecord: {
       slug: record.slug,
       data: record.data,

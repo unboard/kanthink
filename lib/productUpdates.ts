@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'playground-presets-and-libraries',
+    date: '2026-08-24',
+    kind: 'capability',
+    title: 'Playgrounds can use real libraries, and run saved presets',
+    body: 'A playground is no longer limited to React and icons — it can pull in npm packages or a GitHub repo and use them straight in the browser. Presets save a standing instruction and its libraries so you can run the same build against any card: three built-in ones ship today, including a three.js explainer and an interactive quiz.',
+  },
+  {
     id: 'record-survives-tab-switch',
     date: '2026-08-18',
     kind: 'fix',
