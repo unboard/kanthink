@@ -443,12 +443,12 @@ async function main() {
     await listCards()
   } else {
     console.log('Usage:')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts                                    # List cards in "Do these"')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts --move ID                           # Move card to "Completed"')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts --note ID <text>                    # Add a note to a card thread')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts --create <title> --content <text>   # Create a card in Raw Ideas')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts --tag ID <tag>                      # Add a tag to a card')
-    console.log('  npx tsx scripts/read-kanthink-bugs.ts --untag ID <tag>                    # Remove a tag from a card')
+    console.log('  npx tsx scripts/kan.ts                                    # List cards in "Do these"')
+    console.log('  npx tsx scripts/kan.ts --move ID                           # Move card to "Completed"')
+    console.log('  npx tsx scripts/kan.ts --note ID <text>                    # Add a note to a card thread')
+    console.log('  npx tsx scripts/kan.ts --create <title> --content <text>   # Create a card in Raw Ideas')
+    console.log('  npx tsx scripts/kan.ts --tag ID <tag>                      # Add a tag to a card')
+    console.log('  npx tsx scripts/kan.ts --untag ID <tag>                    # Remove a tag from a card')
   }
 }
 

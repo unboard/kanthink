@@ -25,42 +25,38 @@ A Kanban app where each channel is an AI-assisted, goal-driven space that genera
 - In the UI, refer to the AI as "Kan" (e.g. "Ask Kan", responses labeled "Kan").
 - The `KanthinkIcon` component renders the Kan mascot logo.
 
-## Phase 1 goal (MVP)
-A single-user Kanban board with channels, columns, cards, and a basic "AI generate cards into Inbox" flow.
-
 ## Core objects
 - Board: contains channels; left nav selects active channel
 - Channel: a goal/domain with agent instructions + fetch settings
 - Column: standard Kanban column; optional column instructions
-- Card: created manually or by AI; movable across columns; expandable view later
+- Card: created manually or by AI; movable across columns
+- Instruction card: a reusable prompt that lives on a channel and can be run on demand
+- Shroom: an automation — trigger + steps, with safeguards and loop prevention
+- Task: a checklist item on a card
 
-## Phase 1 features (build now)
-1. Left navigation
-   - list channels
-   - create, rename, archive/delete
-   - active channel indicator
+Default column names live in `lib/constants.ts` (Inbox, Like, Dislike, This Week).
 
-2. Board + columns
-   - default columns: Inbox, Like, Dislike, This Week
-   - drag and drop cards between columns
-   - create/rename/reorder/delete columns (keep reorder simple if time)
+## What exists now
 
-3. Cards
-   - create card manually
-   - move card between columns (this is feedback)
-   - delete card
-   - edit title + short content
+Kanthink is well past MVP. A rough map of the surfaces, so you don't rebuild something that ships:
 
-4. Channel settings (minimal UI)
-   - channel name, description
-   - status: active/paused
-   - AI instructions (freeform)
-   - fetch mode: manual only for MVP
-   - "Generate cards" button that adds N cards to Inbox
+- **Board** — channels, folders, columns, cards, tasks, tags, search, bulk actions, list/focus views, card detail drawer with threads
+- **Shrooms** (`app/shrooms`, `lib/shrooms/*`) — the automation engine: triggers, scheduled + event runs, run history, graph view, summaries, learning from rejections. Arguably the centre of the product; nothing else here is as load-bearing.
+- **Instruction cards** — per-channel reusable prompts, with guide/suggest/chat flows and learnings
+- **AI surfaces** — channel chat, card chat, operator chat, task chat, voice (live + transcribe + TTS), image generation, playground
+- **Sharing & multi-user** — orgs, folder/channel shares with owner/editor/viewer roles, invite links, presence, notifications (all realtime via Pusher)
+- **Publishing** — public card pages (`/p`), digests + newsletters, Customer.IO email
+- **Billing** — Stripe checkout + webhooks, usage records, BYOK
+- **Record studio** (`app/record`) — screen/audio recording, gallery, sharing
+- **Games** — `/catlife`, `/wildwood`, `/rescue`. Personal side projects for the user's family, not Kanthink features. Leave them alone unless asked directly.
 
-5. AI behavior (MVP)
-   - Generate cards using channel instructions + column instructions (optional)
-   - No long-term learning yet; just store feedback signals for future
+`app/prototypes` holds live UI experiments. Nothing in there ships.
+
+## Testing
+
+`npm test` runs vitest (`tests/`). The suite is small but load-bearing — it guards schema
+migrations, product-update prompt rules, and a good chunk of shroom behaviour. Run it before
+you deploy.
 
 ## Instruction Intelligence
 
@@ -95,28 +91,24 @@ The AI is primarily a clarity engine, not just a generator. Its job is to observ
 - Settings page shows Questions section below instructions
 - History section (collapsible) shows instruction revisions
 
-## Phase 2 (later)
-- Scheduled/adaptive fetching
-- Card full-page view with rich text + comments
-- Promote card to channel: Any card can become its own dedicated channel for recursive deep dives
-- Email/Newsletter per channel: Prompt-driven digest publishing (not notifications)
-- Multi-user real-time collaboration
+## CRITICAL: Deployment (git push does NOT deploy)
 
-## Out of scope for initial release
-- Complex permissions/roles
-- Analytics dashboards
-- Marketplace/shared channels
-- Native mobile apps
+**`git push` only updates GitHub history.** Vercel's "Ignored Build Step" is set to
+"Don't build anything", so pushing does not put anything on the live site. If you push and
+walk away, you have not shipped.
 
-## Deployment
-
-**Deploy by pushing to git.** Vercel auto-deploys from the `main` branch.
+Deploys happen **only** via the CLI, and only when the user asks for one:
 
 ```bash
-git push
+vercel deploy --prod --yes
 ```
 
-Do NOT use the Vercel CLI (`vercel --prod`). The repo is connected to Vercel via GitHub integration - every push to `main` triggers an automatic deployment.
+The user signals this with a reusable **Deploy card** (id: `deploy-toggle`) dragged into
+"Do these". See `.claude/commands/kan.md` for the full deploy-card protocol. If no Deploy
+card is present, do not deploy — commit and push, and say plainly that the work is on
+GitHub but not live.
+
+After a deploy completes, say **"Deployed"**.
 
 ## Working rules for Claude Code
 - Ask one clarifying question only when truly blocked; otherwise pick sensible defaults.
@@ -166,15 +158,14 @@ PointerSensor + touch-manipulation = broken (drag activates on swipe, can't scro
 PointerSensor + touch-none = broken (can't scroll at all)
 MouseSensor + TouchSensor + touch-manipulation = works (proper long-press to drag)
 
-## First build slice (do first)
-- Channel list (left nav) + create channel
-- Active channel board view with default columns
-- Add/move/delete cards
-- Channel settings with AI instructions + "Generate cards" button (stubbed data OK)
-
 ## Bug/Feature Workflow
 
-The user logs bugs and features as cards in a Kanthink channel from their phone. Use the `/bugs` slash command to read and implement them. See `.claude/commands/bugs.md` for the full workflow.
+The user logs bugs and features as cards from their phone, into the **Work** channel. Use the
+`/kan` slash command to read and implement them — see `.claude/commands/kan.md` for the full
+workflow, including the deploy-card protocol.
+
+The driver script is `scripts/kan.ts` (list / `--move` / `--note` / `--tag` / `--untag` /
+`--create`, plus `--channel` to point it at another channel).
 
 ## System Log (product updates)
 
