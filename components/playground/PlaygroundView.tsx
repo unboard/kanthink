@@ -8,8 +8,7 @@ import { buildPlaygroundDoc } from './buildPlaygroundDoc';
 import { resolveDeps } from '@/lib/playground/runtime';
 import {
   Sparkles,
-  Maximize2,
-  Minimize2,
+  ExternalLink,
   Globe,
   Lock,
   Copy,
@@ -117,7 +116,11 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [iframeError, setIframeError] = useState<IframeError | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // The preview opens as its own page in a new tab rather than an in-page fullscreen
+  // layer. `position: fixed` resolves against the nearest transformed ancestor, and
+  // the card drawer has one — so the old fullscreen mode was clipped to the drawer
+  // and unusable. A real page has no container to escape.
+  const previewUrl = `/play/preview/${card.id}`;
   const [copied, setCopied] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [pane, setPane] = useState<'chat' | 'preview'>('chat');
@@ -588,13 +591,15 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
             <span className="hidden sm:inline">{copied ? 'Copied' : 'Link'}</span>
           </button>
         )}
-        <button
-          onClick={() => setIsFullscreen((v) => !v)}
-          title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen play'}
+        <a
+          href={previewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open preview in a new tab"
           className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
         >
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </button>
+          <ExternalLink className="w-4 h-4" />
+        </a>
         {onClose && (
           <button
             onClick={onClose}
@@ -967,28 +972,6 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
 
   // ---------- Layouts ---------- //
 
-  // Fullscreen — preview takes the whole screen, only a tiny exit affordance.
-  if (isFullscreen) {
-    return (
-      <div className="fixed inset-0 z-50 bg-neutral-950 flex flex-col">
-        <div className="flex-shrink-0 flex items-center justify-between px-3 py-2 bg-neutral-950/90 backdrop-blur border-b border-neutral-800">
-          <div className="flex items-center gap-2 min-w-0 text-white">
-            <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0" />
-            <span className="text-sm font-medium truncate">{titleDisplay}</span>
-          </div>
-          <button
-            onClick={() => setIsFullscreen(false)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-300 hover:bg-neutral-800 transition-colors"
-          >
-            <Minimize2 className="w-4 h-4" />
-            Exit
-          </button>
-        </div>
-        <div className="flex-1 min-h-0">{PreviewPane}</div>
-      </div>
-    );
-  }
-
   // Embedded — the card drawer is a single narrow column, so there's no split to
   // resize (the old draggable divider is what made this feel cramped and broken at
   // drawer width). Build and Preview take turns at full width instead, with the
@@ -1026,13 +1009,15 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
           <div className="ml-auto flex items-center gap-1 pb-1">
             {hasCode && (
               <>
-                <button
-                  onClick={() => setIsFullscreen(true)}
-                  title="Fullscreen preview"
+                <a
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open preview in a new tab"
                   className="p-1.5 rounded-lg text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                 >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                </button>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
                 <button
                   onClick={togglePublic}
                   title={cardFromStore.isPublic ? 'Published — click to unpublish' : 'Publish to a public link'}
@@ -1098,13 +1083,15 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
         </button>
         <div className="ml-auto self-center pb-1.5">
           {pane === 'preview' && hasCode && (
-            <button
-              onClick={() => setIsFullscreen(true)}
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
             >
-              <Maximize2 className="w-3 h-3" />
-              Full
-            </button>
+              <ExternalLink className="w-3 h-3" />
+              Open
+            </a>
           )}
         </div>
       </div>
