@@ -164,16 +164,17 @@ const TOOLS = [
       },
       {
         name: 'create_channel',
-        description: "Create a new channel (board). Use when the user says \"make me a channel for X\", \"create a board for Y\", or \"start a new channel\". Infer sensible column names from what the channel is for and pass them; only fall back to defaults when the purpose gives no hint. Confirm the name back to the user.",
+        description: "Create a new channel (board). Use when the user says \"make me a channel for X\", \"create a board for Y\", or \"start a new channel\". ALWAYS pass purpose — a sentence on what the channel is for, in the user's own words — and let the server pick columns and starter shrooms from it. Only pass columnNames when the user explicitly named columns. Read back the columns and shrooms that were created.",
         parameters: {
           type: 'OBJECT',
           properties: {
             name: { type: 'STRING', description: 'Channel name, short and specific' },
             description: { type: 'STRING', description: 'One line on what the channel is for' },
+            purpose: { type: 'STRING', description: "What the channel is for, in the user's own words. The server derives columns and starter shrooms from this." },
             columnNames: {
               type: 'ARRAY',
               items: { type: 'STRING' },
-              description: 'Columns in order, e.g. ["Inbox","Doing","Done"]. Omit for the standard set.',
+              description: 'ONLY when the user explicitly named columns. Otherwise omit and let the server choose.',
             },
             aiInstructions: { type: 'STRING', description: 'Optional standing instructions for Kan on this channel' },
           },

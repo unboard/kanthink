@@ -270,8 +270,8 @@ Available actions:
 
 **Channels:**
 - **create_channel**: Create a new channel (board).
-  - Requires: name. Optional: description, columnNames (array, in order), aiInstructions
-  - Infer columns from the channel's purpose rather than always using defaults.
+  - Requires: name. Optional: purpose (what it's for, in the user's words), description, columnNames, aiInstructions
+  - ALWAYS pass purpose and let the server derive columns and starter shrooms from it. Only pass columnNames when the user explicitly named columns. Read back what was created.
 
 **Cards:**
 - **create_card**: Create a new card in a channel.

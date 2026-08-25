@@ -10,6 +10,14 @@ import { ensureSchema } from '@/lib/db/ensure-schema';
 import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
 import { generatePlaygroundApp } from '@/lib/playground/generateApp';
 import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
+import { instructionCards } from '@/lib/db/schema';
+import { inferIntent } from '@/lib/channelCreation/inferIntent';
+import {
+  getWorkflowSuggestions,
+  getShroomsForIntent,
+  suggestChannelDescription,
+  getChannelInstructions,
+} from '@/lib/channelCreation/generateShrooms';
 
 /** Find a task by ID, or fallback to title search if ID doesn't match */
 async function findTask(taskId: string) {
@@ -543,48 +551,89 @@ export async function POST(request: Request) {
       }
 
       case 'create_channel': {
-        // Voice could reach every other object on a board but not the board itself,
-        // so "make me a channel for X" was the one thing Kan had to refuse.
+        // Runs the same channel-creation intelligence the app's own flow uses —
+        // intent inference, workflow columns, and the starter shrooms for that
+        // intent — rather than making the voice model guess at structure. A voice
+        // channel and a hand-made one should come out the same.
         const name = (args.name || '').trim();
         if (!name) {
           return NextResponse.json({ result: 'What should the channel be called?' });
         }
 
-        // Columns come from the request when Kan inferred a workflow, otherwise the
-        // standard set — the same fallback /api/channels uses.
+        // Infer what this channel is FOR from everything the caller said about it.
+        const intentInput = [name, args.description, args.purpose].filter(Boolean).join('. ');
+        const { intent } = inferIntent(intentInput);
+
+        // Columns: explicit request wins, then the intent's primary workflow,
+        // then the standard set.
         const requested: string[] = Array.isArray(args.columnNames)
           ? args.columnNames.map((c: unknown) => String(c).trim()).filter(Boolean).slice(0, 8)
           : [];
-        const colNames = requested.length > 0 ? requested : [...DEFAULT_COLUMN_NAMES];
+        const workflow = getWorkflowSuggestions(intent)[0];
+        const colNames: string[] =
+          requested.length > 0 ? requested
+          : workflow ? [...workflow.columns]
+          : [...DEFAULT_COLUMN_NAMES];
 
         const channelId = nanoid();
         const createdAt = new Date();
+        const topic = args.purpose?.trim() || args.description?.trim() || undefined;
 
         await db.insert(channels).values({
           id: channelId,
           ownerId: session.user.id,
           name,
-          description: args.description?.trim() || '',
-          aiInstructions: args.aiInstructions?.trim() || '',
+          description: args.description?.trim() || suggestChannelDescription(intent, topic),
+          aiInstructions: args.aiInstructions?.trim() || getChannelInstructions(intent, topic),
           status: 'active',
           createdAt,
           updatedAt: createdAt,
         });
 
-        await db.insert(columns).values(
-          colNames.map((colName, index) => ({
+        const columnRows = colNames.map((colName, index) => ({
+          id: nanoid(),
+          channelId,
+          name: colName,
+          position: index,
+          isAiTarget: index === 0,
+          createdAt,
+          updatedAt: createdAt,
+        }));
+        await db.insert(columns).values(columnRows);
+
+        // Starter shrooms for this intent, wired to the real column ids. An
+        // assembly-line layout gets the full pipeline; a plain channel gets its
+        // one starter. Everything lands manual/disabled — voice should never
+        // leave automations running that nobody has looked at.
+        const generated = getShroomsForIntent(intent, colNames, topic);
+        const columnIdByName = new Map(columnRows.map((c) => [c.name, c.id]));
+        const shroomTitles: string[] = [];
+        let position = 0;
+        for (const g of generated) {
+          const targetColumnId = columnIdByName.get(g.targetColumnName);
+          if (!targetColumnId && g.targetColumnName !== 'board') continue;
+          await db.insert(instructionCards).values({
             id: nanoid(),
             channelId,
-            name: colName,
-            position: index,
-            // First column is where AI-made cards land, matching /api/channels.
-            isAiTarget: index === 0,
+            title: g.title,
+            instructions: g.instructions,
+            action: g.action,
+            target: targetColumnId
+              ? { type: 'column', columnId: targetColumnId }
+              : { type: 'board' },
+            runMode: 'manual',
+            isEnabled: false,
+            cardCount: g.cardCount ?? null,
+            triggers: g.triggerOnArrival && targetColumnId
+              ? [{ type: 'event', eventType: 'card_moved_to_column', columnId: targetColumnId }]
+              : null,
+            position: position++,
             createdAt,
             updatedAt: createdAt,
-          }))
-        );
+          });
+          shroomTitles.push(g.title);
+        }
 
-        // Without this the channel exists but never appears in the sidebar.
         const existingOrg = await db.query.userChannelOrg.findMany({
           where: eq(userChannelOrg.userId, session.user.id),
           orderBy: [desc(userChannelOrg.position)],
@@ -595,8 +644,11 @@ export async function POST(request: Request) {
           position: (existingOrg[0]?.position ?? -1) + 1,
         });
 
+        const shroomNote = shroomTitles.length > 0
+          ? ` I also set up ${shroomTitles.length === 1 ? 'a starter shroom' : `${shroomTitles.length} starter shrooms`} — ${shroomTitles.join(', ')} — switched off until you enable them.`
+          : '';
         return NextResponse.json({
-          result: `Created the "${name}" channel with ${colNames.length} columns: ${colNames.join(', ')}.`,
+          result: `Created "${name}" with columns ${colNames.join(', ')}.${shroomNote}`,
           channelId,
         });
       }
