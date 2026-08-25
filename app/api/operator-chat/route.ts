@@ -268,6 +268,11 @@ When the user asks you to DO something, include actions in your response. Action
 
 Available actions:
 
+**Channels:**
+- **create_channel**: Create a new channel (board).
+  - Requires: name. Optional: description, columnNames (array, in order), aiInstructions
+  - Infer columns from the channel's purpose rather than always using defaults.
+
 **Cards:**
 - **create_card**: Create a new card in a channel.
   - Requires: channelId, title. Optional: columnName (default: first column), content (markdown, becomes first message)
@@ -385,7 +390,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
 
       // New actions routed through voice action API
-      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app'].includes(action.type)) {
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel'].includes(action.type)) {
         // Build args from action fields
         const args: Record<string, string> = {};
         for (const [key, val] of Object.entries(action)) {

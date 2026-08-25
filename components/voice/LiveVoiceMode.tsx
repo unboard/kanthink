@@ -163,6 +163,24 @@ const TOOLS = [
         },
       },
       {
+        name: 'create_channel',
+        description: "Create a new channel (board). Use when the user says \"make me a channel for X\", \"create a board for Y\", or \"start a new channel\". Infer sensible column names from what the channel is for and pass them; only fall back to defaults when the purpose gives no hint. Confirm the name back to the user.",
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            name: { type: 'STRING', description: 'Channel name, short and specific' },
+            description: { type: 'STRING', description: 'One line on what the channel is for' },
+            columnNames: {
+              type: 'ARRAY',
+              items: { type: 'STRING' },
+              description: 'Columns in order, e.g. ["Inbox","Doing","Done"]. Omit for the standard set.',
+            },
+            aiInstructions: { type: 'STRING', description: 'Optional standing instructions for Kan on this channel' },
+          },
+          required: ['name'],
+        },
+      },
+      {
         name: 'build_app',
         description: "Build a working app from a card, using everything written on the card's thread as the brief. Use when the user says \"build it\", \"make an app out of this\", \"turn this into a prototype\", or \"prototype this\". Takes a minute or two — tell the user you're starting, then confirm when it lands. The result appears on the card's App tab with a preview link.",
         parameters: {

@@ -4,11 +4,12 @@ import { runEventTriggers } from '@/lib/shrooms/runEventTriggers';
 import { afterResponse } from '@/lib/afterResponse';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { cards, channels, columns, tasks } from '@/lib/db/schema';
+import { cards, channels, columns, tasks, userChannelOrg } from '@/lib/db/schema';
 import { eq, and, desc, asc, gt, like, sql } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
 import { generatePlaygroundApp } from '@/lib/playground/generateApp';
+import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
 
 /** Find a task by ID, or fallback to title search if ID doesn't match */
 async function findTask(taskId: string) {
@@ -538,6 +539,65 @@ export async function POST(request: Request) {
           result: `Moved "${card.title}" to "${targetCol.name}"`,
           cardId: card.id,
           channelId: card.channelId,
+        });
+      }
+
+      case 'create_channel': {
+        // Voice could reach every other object on a board but not the board itself,
+        // so "make me a channel for X" was the one thing Kan had to refuse.
+        const name = (args.name || '').trim();
+        if (!name) {
+          return NextResponse.json({ result: 'What should the channel be called?' });
+        }
+
+        // Columns come from the request when Kan inferred a workflow, otherwise the
+        // standard set — the same fallback /api/channels uses.
+        const requested: string[] = Array.isArray(args.columnNames)
+          ? args.columnNames.map((c: unknown) => String(c).trim()).filter(Boolean).slice(0, 8)
+          : [];
+        const colNames = requested.length > 0 ? requested : [...DEFAULT_COLUMN_NAMES];
+
+        const channelId = nanoid();
+        const createdAt = new Date();
+
+        await db.insert(channels).values({
+          id: channelId,
+          ownerId: session.user.id,
+          name,
+          description: args.description?.trim() || '',
+          aiInstructions: args.aiInstructions?.trim() || '',
+          status: 'active',
+          createdAt,
+          updatedAt: createdAt,
+        });
+
+        await db.insert(columns).values(
+          colNames.map((colName, index) => ({
+            id: nanoid(),
+            channelId,
+            name: colName,
+            position: index,
+            // First column is where AI-made cards land, matching /api/channels.
+            isAiTarget: index === 0,
+            createdAt,
+            updatedAt: createdAt,
+          }))
+        );
+
+        // Without this the channel exists but never appears in the sidebar.
+        const existingOrg = await db.query.userChannelOrg.findMany({
+          where: eq(userChannelOrg.userId, session.user.id),
+          orderBy: [desc(userChannelOrg.position)],
+        });
+        await db.insert(userChannelOrg).values({
+          userId: session.user.id,
+          channelId,
+          position: (existingOrg[0]?.position ?? -1) + 1,
+        });
+
+        return NextResponse.json({
+          result: `Created the "${name}" channel with ${colNames.length} columns: ${colNames.join(', ')}.`,
+          channelId,
         });
       }
 
