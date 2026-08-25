@@ -281,9 +281,6 @@ export const instructionCards = sqliteTable('instruction_cards', {
   target: text('target', { mode: 'json' }).$type<InstructionTargetJson>().notNull(),
   contextColumns: text('context_columns', { mode: 'json' }).$type<ContextColumnSelectionJson>(),
 
-  /** For action:'build' — the playground preset to generate with. Null = plain build. */
-  playgroundPresetId: text('playground_preset_id'),
-
   runMode: text('run_mode').$type<'manual' | 'automatic'>().default('manual'),
   cardCount: integer('card_count'),
   interviewQuestions: text('interview_questions', { mode: 'json' }).$type<string[]>(),
@@ -911,53 +908,3 @@ export const catlifePlayers = sqliteTable('catlife_players', {
 ])
 
 export type DbCatlifePlayer = typeof catlifePlayers.$inferSelect
-
-// ===== Playground presets =====
-// A preset parameterizes playground generation along three independent axes that
-// used to be frozen in the generate route:
-//
-//   designProfile — user-authored, LOCKED style rules ("make it look like MCS")
-//   recipe        — a reusable instruction run against a card's context
-//                   ("build a three.js visual explaining this from first principles")
-//   runtime       — extra libraries to expose in the iframe import map
-//
-// All three are optional and compose. A preset may set only a recipe, only a
-// runtime, or any combination.
-//
-// designProfile is deliberately SEPARATE from cards.typeData.designNotes. designNotes
-// is written by the model each turn and evolves; designProfile is written by the user
-// and must not drift. Sharing one field would let iteration quietly rewrite brand rules.
-
-export interface PlaygroundRuntimeJson {
-  /** Declarations in lib/playground/runtime grammar: `three`, `gh:owner/repo@ref`, `alias=…`. */
-  deps: string[];
-}
-
-export const playgroundPresets = sqliteTable('playground_presets', {
-  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-
-  name: text('name').notNull(),
-  description: text('description'),
-  /** Emoji or short glyph for the picker. */
-  icon: text('icon'),
-
-  /** Locked, user-authored style rules. Injected verbatim, never model-rewritten. */
-  designProfile: text('design_profile'),
-  /** Reusable instruction template run against card context. */
-  recipe: text('recipe'),
-  /** Extra import-map entries. Validated by lib/playground/runtime before use. */
-  runtime: text('runtime', { mode: 'json' }).$type<PlaygroundRuntimeJson>(),
-
-  /** 'global' presets are offered to every user; only admins create those. */
-  scope: text('scope').$type<'user' | 'global'>().default('user'),
-  sortOrder: integer('sort_order').default(0),
-
-  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
-}, (table) => [
-  index('playground_presets_user_idx').on(table.userId),
-  index('playground_presets_scope_idx').on(table.scope),
-])
-
-export type DbPlaygroundPreset = typeof playgroundPresets.$inferSelect

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { db } from '@/lib/db';
-import { cards, tasks, playgroundPresets } from '@/lib/db/schema';
-import { eq, and, asc, or } from 'drizzle-orm';
+import { cards, tasks } from '@/lib/db/schema';
+import { eq, and, asc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { getUserByokConfigWithError } from '@/lib/usage';
 import { nanoid } from 'nanoid';
@@ -23,7 +23,6 @@ import {
   MAX_RUNTIME_DEPS,
   type ResolvedDep,
 } from '@/lib/playground/runtime';
-import { getBuiltinPreset, isBuiltinPresetId } from '@/lib/playground/builtinPresets';
 import { stripOptimistic } from '@/lib/playground/thread';
 
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
@@ -56,13 +55,11 @@ interface PlaygroundTypeData {
   designNotes?: string;
   /**
    * Runtime dependency declarations for this playground, in lib/playground/runtime
-   * grammar. Seeded from a preset and/or declared by the model. Re-resolved on every
+   * grammar. Declared by the model as it writes the code. Re-resolved on every
    * render — we store the declarations, not the URLs, so resolution rules can change
    * without rewriting stored data.
    */
   dependencies?: string[];
-  /** Preset this playground was last generated with, for UI display. */
-  presetId?: string;
 }
 
 const SYSTEM_PROMPT = `You generate complete single-file React applications that run in a sandboxed iframe with this exact runtime:
@@ -287,8 +284,6 @@ export interface GenerateRequest {
   modelId?: string;
   // Optional: image URLs (Cloudinary) attached to this prompt for visual context.
   imageUrls?: string[];
-  // Optional: a saved preset supplying a recipe instruction and/or runtime libraries.
-  presetId?: string;
 }
 
 /** Fetch an image URL and return it as Gemini-compatible inline base64 data. */
@@ -313,10 +308,8 @@ export async function generatePlaygroundApp(
   options: { skipPreflight?: boolean } = {}
 ): Promise<NextResponse> {
   await ensureSchema();
-  // A preset recipe IS an instruction, so running one against a card needs no typed
-  // prompt — that's the whole point of intent "run this same thing on any thread".
-  if (!body.cardId || (!body.prompt && !body.presetId)) {
-    return NextResponse.json({ error: 'cardId and either prompt or presetId are required' }, { status: 400 });
+  if (!body.cardId || !body.prompt) {
+    return NextResponse.json({ error: 'cardId and prompt are required' }, { status: 400 });
   }
 
   // Resolve the user's Google API key (BYOK first, owner fallback).
@@ -348,49 +341,10 @@ export async function generatePlaygroundApp(
   const currentCode = typeData.code;
   const generationCount = typeData.generationCount ?? 0;
 
-  // -- Preset: supplies a reusable recipe instruction and/or runtime libraries.
-  //    Built-ins live in code; saved presets are scoped to the caller or global, so
-  //    one user's preset id can never be read by another.
-  let preset: {
-    id: string;
-    name: string;
-    recipe?: string | null;
-    designProfile?: string | null;
-    runtime?: { deps: string[] } | null;
-  } | null = null;
-
-  if (body.presetId) {
-    if (isBuiltinPresetId(body.presetId)) {
-      const builtin = getBuiltinPreset(body.presetId);
-      if (builtin) {
-        preset = {
-          id: builtin.id,
-          name: builtin.name,
-          recipe: builtin.recipe ?? null,
-          designProfile: builtin.designProfile ?? null,
-          runtime: builtin.runtime ?? null,
-        };
-      }
-    } else {
-      preset = (await db.query.playgroundPresets.findFirst({
-        where: and(
-          eq(playgroundPresets.id, body.presetId),
-          or(eq(playgroundPresets.userId, session.user.id), eq(playgroundPresets.scope, 'global'))
-        ),
-      })) ?? null;
-    }
-    if (!preset) {
-      return NextResponse.json({ error: 'Preset not found' }, { status: 404 });
-    }
-  }
-
   // Dependencies available for THIS generation: whatever the playground already had,
-  // plus anything the preset seeds. The model can add more via its response, which is
+  // The model can add more via its response, which is
   // applied to the same turn's code — see the dependencies handling after generation.
-  const seededDeclarations = [
-    ...(typeData.dependencies || []),
-    ...(preset?.runtime?.deps || []),
-  ];
+  const seededDeclarations = [...(typeData.dependencies || [])];
   const seeded = resolveDeps(seededDeclarations);
 
   // Build the user message: original goal (card title) + current code + last few thread turns + new prompt.
@@ -484,27 +438,11 @@ export async function generatePlaygroundApp(
     ? `\n\n⚠️ THIS IS AN EDIT, NOT A REDESIGN. Edit type (preflight): ${preflight.editType}. Change only what the request asks. Everything else in the current code must come through unchanged — same classes, copy, structure, colors, behavior. If your diff is bigger than the request implies, you are drifting — shrink it.`
     : '';
 
-  // A recipe is a standing instruction ("build a three.js explainer of this thread").
-  // It leads the message so it frames everything below it, and any typed prompt becomes
-  // an additional constraint rather than a competing instruction.
-  const recipeBlock = preset?.recipe
-    ? `STANDING INSTRUCTION (from preset "${preset.name}") — this is the primary thing to build:\n${preset.recipe}`
-    : '';
-
-  // Locked, user-authored style rules. Distinct from designNotes: the model may not
-  // rewrite these, and they are re-injected verbatim every turn.
-  const designProfileBlock = preset?.designProfile
-    ? `DESIGN PROFILE (from preset "${preset.name}") — LOCKED. Follow these style rules exactly. Never override them, and never record them as your own design decisions:\n${preset.designProfile}`
-    : '';
-
-  const requestBlock = body.prompt
-    ? `USER REQUEST:\n${body.prompt}${imageNote}${iterationReminder}`
-    : `USER REQUEST:\nRun the standing instruction above against this card's context.${imageNote}${iterationReminder}`;
+  const requestBlock = `USER REQUEST:
+${body.prompt}${imageNote}${iterationReminder}`;
 
   const userMessage = [
     `ORIGINAL GOAL (card title): ${card.title}`,
-    recipeBlock,
-    designProfileBlock,
     currentCode
       ? `CURRENT CODE (this is your starting point — preserve it except for what the user asks to change):\n\`\`\`jsx\n${currentCode}\n\`\`\``
       : 'CURRENT CODE: (none yet — this is the first generation, design freely)',
@@ -615,10 +553,9 @@ export async function generatePlaygroundApp(
   // -- Dependencies for the code we just received.
   //    The model declares what it imported, so the import map is built in the same
   //    turn as the code that needs it — no second round trip, no "install then use".
-  //    Preset deps are always kept: the preset is the contract, the model is a guest.
+
   const declaredByModel = Array.isArray(parsed.dependencies) ? parsed.dependencies : [];
-  const presetDeclarations = preset?.runtime?.deps || [];
-  const merged = resolveDeps([...presetDeclarations, ...declaredByModel]);
+  const merged = resolveDeps(declaredByModel);
 
   // Invalid declarations cost that library, not the generation. Surface them so the
   // UI can say why an import is missing instead of leaving a silent runtime error.
@@ -642,7 +579,6 @@ export async function generatePlaygroundApp(
       : typeData.designNotes,
     // Store declarations rather than resolved URLs so resolution rules stay changeable.
     dependencies: merged.deps.map(d => d.raw),
-    presetId: preset?.id ?? typeData.presetId,
   };
 
   // Build the new thread: append user prompt + Kan's notes.

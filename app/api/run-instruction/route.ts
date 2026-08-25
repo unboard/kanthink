@@ -1959,9 +1959,9 @@ export async function POST(request: Request) {
           const result = await generatePlaygroundApp(
             {
               cardId,
-              // The instruction is the standing brief; the thread supplies the rest.
+              // The shroom's instructions are the standing brief; the card's thread
+              // supplies everything else.
               prompt: instructionCard.instructions || 'Build an app from this card.',
-              presetId: instructionCard.playgroundPresetId || undefined,
             },
             { user: { id: userId } },
             // Nobody is watching an automated run, so it must never stop to ask.

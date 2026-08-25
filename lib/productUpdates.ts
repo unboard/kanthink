@@ -35,18 +35,11 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
-    id: 'shrooms-can-build-apps',
+    id: 'playground-apps-from-cards',
     date: '2026-08-24',
     kind: 'capability',
-    title: 'Shrooms can build apps, and so can your voice',
-    body: 'A shroom can now build a working app from a card, using everything written on that card as the brief — so a chain of shrooms can take an idea through product, engineering and design and assemble the result at the end. You can also just say "build it" in voice mode.',
-  },
-  {
-    id: 'playground-presets-and-libraries',
-    date: '2026-08-24',
-    kind: 'capability',
-    title: 'Playgrounds can use real libraries, and run saved presets',
-    body: 'A playground is no longer limited to React and icons — it can pull in npm packages or a GitHub repo and use them straight in the browser. Presets save a standing instruction and its libraries so you can run the same build against any card: three built-in ones ship today, including a three.js explainer and an interactive quiz.',
+    title: 'Build an app from any card',
+    body: 'Open a card’s Playground tab and Kan builds a working app from what the card’s thread says, then lets you refine it there. Apps can pull in real libraries now — three.js, d3, anything on npm or a GitHub repo — and a shroom can run the same build automatically.',
   },
   {
     id: 'record-survives-tab-switch',

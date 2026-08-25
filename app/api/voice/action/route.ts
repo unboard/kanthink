@@ -555,7 +555,6 @@ export async function POST(request: Request) {
           {
             cardId: args.cardId,
             prompt: args.prompt || 'Build an app from this card and its thread.',
-            presetId: args.presetId,
           },
           { user: { id: session.user.id } },
           // Hands-free: never stop to ask a clarifying question.

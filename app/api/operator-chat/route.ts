@@ -286,7 +286,7 @@ Available actions:
 - **show_card**: Show full details of a card.
   - Requires: cardId
 - **build_app**: Build a working app from a card, using everything on its thread as the brief. Use this for "build it", "make an app out of this", "turn this into a prototype". The result lands on the card's App tab with a preview link.
-  - Requires: cardId. Optional: prompt (extra direction), presetId
+  - Requires: cardId. Optional: prompt (extra direction)
   - Takes a minute or two. Say you're starting it, don't wait silently.
 
 **Tasks:**

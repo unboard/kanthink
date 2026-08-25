@@ -285,11 +285,6 @@ export interface InstructionCard {
    */
   target: InstructionTarget;
   contextColumns?: ContextColumnSelection | null; // Context: what AI sees (null/undefined = all)
-  /**
-   * For `action: 'build'` — the playground preset to generate with, if any.
-   * Null/undefined builds with the shroom's own instructions as the only brief.
-   */
-  playgroundPresetId?: string | null;
   runMode: InstructionRunMode;
   scope?: InstructionScope;               // 'channel' (default), 'global', or 'public'
   cardCount?: number;
