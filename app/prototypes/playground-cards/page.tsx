@@ -2,267 +2,213 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import {
-  Sparkles, Lock, Globe, ExternalLink, Loader2, ArrowLeft,
-} from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 /**
  * How a playground card reads in a column.
  *
- * A playground card is a card whose subject is a built thing, so it needs to carry
- * the same title and description as any card, plus enough state that you can tell at
- * a glance whether it exists yet, whether it's live, and what it's made of — without
- * opening it. Five ways to say that, from "a card with a footer" to "not a card at
- * all", shown at real column width against the real card styling.
+ * Constraints this round, from use:
+ *  - Title and description render EXACTLY as any other card. No badge above the
+ *    title, no icon beside it, no change to spacing. A playground card is a card.
+ *  - The building state is the one that already exists — `.card-processing` plus
+ *    `isProcessing` (glowing top edge, ambient wash, Kan watermark, status line).
+ *    There is no second building animation to design.
+ *  - The only licence is a subtle mark that it is a playground, and a bottom area
+ *    carrying status and whatever else is worth knowing without opening it.
+ *  - No previews. A preview belongs in its own tab.
  *
- * No live previews here. A preview belongs in its own tab, never inside a card.
+ * So the five below differ in one thing only: how quietly the card says what it is.
  */
 
 type BuildState = 'draft' | 'building' | 'built' | 'published';
 
-interface Demo {
-  state: BuildState;
-  version?: number;
-  libs?: string[];
-  cost?: string;
-  when?: string;
-}
-
 const TITLE = 'Pricing prototype';
 const SUMMARY = 'Explores four checkout flows for the $19.95 plan, including a decoy-price variant.';
 
-const STATES: Demo[] = [
-  { state: 'draft', when: 'workshopping' },
-  { state: 'building', when: 'just now' },
-  { state: 'built', version: 4, libs: ['three'], cost: '$0.41', when: '2h ago' },
-  { state: 'published', version: 4, libs: ['three', 'd3'], cost: '$0.41', when: '2h ago' },
-];
+const STATES: BuildState[] = ['draft', 'building', 'built', 'published'];
 
-const STATE_LABEL: Record<BuildState, string> = {
-  draft: 'Not built yet',
-  building: 'Building…',
-  built: 'Built',
-  published: 'Live',
-};
+/** The shared bottom line. Same content everywhere, so the variants stay comparable. */
+function Meta({ state, withLabel = false }: { state: BuildState; withLabel?: boolean }) {
+  if (state === 'building') return null;
 
-const STATE_DOT: Record<BuildState, string> = {
-  draft: 'bg-neutral-400',
-  building: 'bg-amber-500',
-  built: 'bg-violet-500',
-  published: 'bg-emerald-500',
-};
+  const bits: React.ReactNode[] = [];
+  if (withLabel) bits.push(<span key="l" className="text-violet-500 dark:text-violet-400 font-medium">Playground</span>);
 
-/* ── 1. Footer strip ──────────────────────────────────────────────────────
-   The smallest possible departure: an ordinary card with one quiet line at the
-   bottom. Wins on consistency — a column of these still reads as a column of
-   cards. Risk is that it under-signals: at a glance it's just a card.          */
-function FooterStrip({ d }: { d: Demo }) {
+  if (state === 'draft') {
+    bits.push(<span key="s">Not built yet</span>);
+  } else {
+    bits.push(<span key="v">v4</span>);
+    bits.push(
+      state === 'published' ? (
+        <span key="p" className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          Live
+        </span>
+      ) : (
+        <span key="p">Private</span>
+      )
+    );
+    bits.push(<span key="d" className="font-mono">three.js</span>);
+  }
+
   return (
-    <div className="rounded-md bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md transition-shadow p-3">
+    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-neutral-400 dark:text-neutral-500">
+      {bits.map((b, i) => (
+        <span key={i} className="inline-flex items-center gap-1.5">
+          {i > 0 && <span className="text-neutral-300 dark:text-neutral-700">·</span>}
+          {b}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Body shared by every variant — deliberately identical to an ordinary card. */
+function Body({ state, withLabel }: { state: BuildState; withLabel?: boolean }) {
+  return (
+    <div className="p-3">
       <h3 className="text-sm font-semibold text-neutral-900 dark:text-white leading-snug">{TITLE}</h3>
       <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed line-clamp-2">{SUMMARY}</p>
-      <div className="mt-2.5 pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center gap-1.5">
-        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${STATE_DOT[d.state]} ${d.state === 'building' ? 'animate-pulse' : ''}`} />
-        <span className="text-[11px] font-medium text-neutral-600 dark:text-neutral-300">
-          {STATE_LABEL[d.state]}
-        </span>
-        {d.version && <span className="text-[11px] text-neutral-400">v{d.version}</span>}
-        <span className="ml-auto flex items-center gap-1">
-          {d.state === 'published' ? (
-            <Globe className="w-3 h-3 text-emerald-500" />
-          ) : d.version ? (
-            <Lock className="w-3 h-3 text-neutral-300 dark:text-neutral-600" />
-          ) : null}
-        </span>
-      </div>
+      <Meta state={state} withLabel={withLabel} />
     </div>
   );
 }
 
-/* ── 2. Window chrome ─────────────────────────────────────────────────────
-   A title bar with traffic lights. You know it's software before you read a
-   word, which is the whole job. Costs vertical space, and leans on a Mac
-   metaphor that may feel borrowed.                                            */
-function WindowChrome({ d }: { d: Demo }) {
+/** The existing agent-processing treatment, reproduced exactly. */
+function Processing() {
   return (
-    <div className="rounded-md bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-neutral-100 dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
-        <span className="w-2 h-2 rounded-full bg-red-400/70" />
-        <span className="w-2 h-2 rounded-full bg-amber-400/70" />
-        <span className="w-2 h-2 rounded-full bg-emerald-400/70" />
-        <span className="ml-1 text-[10px] font-mono text-neutral-400 truncate">
-          {d.version ? `v${d.version}` : 'unbuilt'}
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="https://res.cloudinary.com/dcht3dytz/image/upload/f_png,w_128,h_128/v1769532115/kanthink-icon_pbne7q.svg"
+        alt=""
+        className="absolute bottom-1 right-1 w-16 h-16 opacity-[0.07] pointer-events-none select-none"
+      />
+      <div className="px-3 pt-2 pb-0">
+        <span className="text-[10px] font-medium text-violet-500 dark:text-violet-400">
+          Building the app…
         </span>
-        {d.state === 'published' && (
-          <span className="ml-auto flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            Live
-          </span>
-        )}
-        {d.state === 'building' && (
-          <Loader2 className="ml-auto w-3 h-3 animate-spin text-amber-500" />
-        )}
       </div>
+    </>
+  );
+}
+
+const SHELL = 'relative rounded-md bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md transition-shadow';
+
+/* ── 1. Nothing but the line ──────────────────────────────────────────────
+   No mark at all. The bottom line says "Playground" and that is the entire
+   signal. Maximally quiet; you have to read to know.                          */
+function JustTheLine({ state }: { state: BuildState }) {
+  return (
+    <div className={`${SHELL} ${state === 'building' ? 'card-processing' : ''}`}>
+      {state === 'building' && <Processing />}
+      <Body state={state} withLabel />
+    </div>
+  );
+}
+
+/* ── 2. Corner mark ───────────────────────────────────────────────────────
+   A small sparkle in the top-right, absolutely positioned so it costs no
+   layout and cannot push the title. Reads as a stamp on the card.             */
+function CornerMark({ state }: { state: BuildState }) {
+  return (
+    <div className={`${SHELL} ${state === 'building' ? 'card-processing' : ''}`}>
+      {state === 'building' && <Processing />}
+      {state !== 'building' && (
+        <svg
+          className="absolute top-2.5 right-2.5 w-3 h-3 text-violet-400/70 dark:text-violet-500/60 pointer-events-none"
+          fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09z" />
+        </svg>
+      )}
+      <Body state={state} />
+    </div>
+  );
+}
+
+/* ── 3. Left hairline ─────────────────────────────────────────────────────
+   A 2px violet edge. The card already uses a left border for card.color, so
+   this borrows a language the board speaks — and scans down a stack.          */
+function Hairline({ state }: { state: BuildState }) {
+  return (
+    <div
+      className={`${SHELL} border-l-2 border-violet-400/70 dark:border-violet-500/50 ${
+        state === 'building' ? 'card-processing' : ''
+      }`}
+    >
+      {state === 'building' && <Processing />}
+      <Body state={state} />
+    </div>
+  );
+}
+
+/* ── 4. Tinted surface ────────────────────────────────────────────────────
+   The card sits on a barely-there violet wash instead of plain white. Marks
+   the whole object rather than an edge of it. Subtlest in light mode; check
+   it in dark, where tint reads more strongly.                                 */
+function Tinted({ state }: { state: BuildState }) {
+  return (
+    <div
+      className={`relative rounded-md bg-violet-50/60 dark:bg-violet-950/20 shadow-sm hover:shadow-md transition-shadow ${
+        state === 'building' ? 'card-processing' : ''
+      }`}
+    >
+      {state === 'building' && <Processing />}
+      <Body state={state} />
+    </div>
+  );
+}
+
+/* ── 5. Recessed base ─────────────────────────────────────────────────────
+   The metadata sits in a slightly inset footer, so the card has a base the
+   way a built thing sits on a plinth. Body untouched; the difference is that
+   the status has somewhere to live rather than floating under the text.       */
+function RecessedBase({ state }: { state: BuildState }) {
+  return (
+    <div className={`${SHELL} overflow-hidden ${state === 'building' ? 'card-processing' : ''}`}>
+      {state === 'building' && <Processing />}
       <div className="p-3">
         <h3 className="text-sm font-semibold text-neutral-900 dark:text-white leading-snug">{TITLE}</h3>
         <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed line-clamp-2">{SUMMARY}</p>
       </div>
-    </div>
-  );
-}
-
-/* ── 3. Spec sheet ────────────────────────────────────────────────────────
-   Monospace metadata below the description: version, libraries, spend. Treats
-   the card as a build record. Densest in information, and the only one that
-   shows cost — but the technical register may not suit every board.           */
-function SpecSheet({ d }: { d: Demo }) {
-  return (
-    <div className="rounded-md bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md transition-shadow p-3">
-      <div className="flex items-start gap-2">
-        <Sparkles className="w-3.5 h-3.5 text-violet-500 flex-shrink-0 mt-0.5" />
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-neutral-900 dark:text-white leading-snug">{TITLE}</h3>
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed line-clamp-2">{SUMMARY}</p>
+      {state !== 'building' && (
+        <div className="px-3 py-1.5 bg-neutral-50 dark:bg-neutral-800/50 border-t border-neutral-100 dark:border-neutral-800">
+          <div className="-mt-2">
+            <Meta state={state} withLabel />
+          </div>
         </div>
-      </div>
-      <div className="mt-2.5 rounded bg-neutral-50 dark:bg-neutral-800/60 px-2 py-1.5 font-mono text-[10px] text-neutral-500 dark:text-neutral-400 space-y-0.5">
-        {d.state === 'draft' ? (
-          <div className="text-neutral-400 dark:text-neutral-500">no build yet</div>
-        ) : d.state === 'building' ? (
-          <div className="text-amber-600 dark:text-amber-400">building…</div>
-        ) : (
-          <>
-            <div>
-              v{d.version} · {d.state === 'published' ? 'live' : 'private'} · {d.when}
-            </div>
-            <div className="truncate">
-              {(d.libs || []).join(' ')} {d.cost && `· ${d.cost}`}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── 4. Status-forward ────────────────────────────────────────────────────
-   The state is the loudest element — a coloured band across the top and a word
-   you read first. Borrowed from deploy dashboards, where "is it live" is the
-   only question. Strongest at a glance; risks making every card shout.         */
-function StatusForward({ d }: { d: Demo }) {
-  const band: Record<BuildState, string> = {
-    draft: 'bg-neutral-200 dark:bg-neutral-700',
-    building: 'bg-amber-400',
-    built: 'bg-violet-500',
-    published: 'bg-emerald-500',
-  };
-  const text: Record<BuildState, string> = {
-    draft: 'text-neutral-500 dark:text-neutral-400',
-    building: 'text-amber-600 dark:text-amber-400',
-    built: 'text-violet-600 dark:text-violet-400',
-    published: 'text-emerald-600 dark:text-emerald-400',
-  };
-  return (
-    <div className="rounded-md bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-      <div className={`h-1 ${band[d.state]} ${d.state === 'building' ? 'animate-pulse' : ''}`} />
-      <div className="p-3">
-        <div className="flex items-center gap-1.5 mb-1.5">
-          <span className={`text-[10px] font-bold uppercase tracking-wider ${text[d.state]}`}>
-            {STATE_LABEL[d.state]}
-          </span>
-          {d.version && (
-            <span className="text-[10px] font-medium text-neutral-400">v{d.version}</span>
-          )}
-          {d.state === 'published' && (
-            <ExternalLink className="ml-auto w-3 h-3 text-neutral-300 dark:text-neutral-600" />
-          )}
-        </div>
-        <h3 className="text-sm font-semibold text-neutral-900 dark:text-white leading-snug">{TITLE}</h3>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed line-clamp-2">{SUMMARY}</p>
-      </div>
-    </div>
-  );
-}
-
-/* ── 5. Spine ─────────────────────────────────────────────────────────────
-   A coloured left edge does the identifying, so the card body stays exactly as
-   it is. Scales best in a dense column — you can scan a stack and see which are
-   playgrounds without reading. Subtlest, and colour alone is a weak signal for
-   anyone who can't see it, so it carries a chip too.                           */
-function Spine({ d }: { d: Demo }) {
-  const spine: Record<BuildState, string> = {
-    draft: 'bg-neutral-300 dark:bg-neutral-700',
-    building: 'bg-amber-400',
-    built: 'bg-violet-500',
-    published: 'bg-emerald-500',
-  };
-  return (
-    <div className="flex rounded-md bg-white dark:bg-neutral-900 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-      <div className={`w-1 flex-shrink-0 ${spine[d.state]} ${d.state === 'building' ? 'animate-pulse' : ''}`} />
-      <div className="p-3 min-w-0 flex-1">
-        <h3 className="text-sm font-semibold text-neutral-900 dark:text-white leading-snug">{TITLE}</h3>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed line-clamp-2">{SUMMARY}</p>
-        <div className="mt-2 flex items-center gap-1 flex-wrap">
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-900/30 text-[9.5px] font-medium text-violet-700 dark:text-violet-300">
-            <Sparkles className="w-2.5 h-2.5" />
-            Playground
-          </span>
-          {d.version && (
-            <span className="px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-[9.5px] font-medium text-neutral-500 dark:text-neutral-400">
-              v{d.version}
-            </span>
-          )}
-          {d.state === 'published' && (
-            <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-900/30 text-[9.5px] font-medium text-emerald-700 dark:text-emerald-300">
-              Live
-            </span>
-          )}
-          {d.state === 'building' && (
-            <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-900/30 text-[9.5px] font-medium text-amber-700 dark:text-amber-300">
-              Building…
-            </span>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
 const CONCEPTS = [
   {
-    n: 1,
-    name: 'Footer strip',
-    blurb: 'An ordinary card with one quiet line at the bottom. Most consistent with the rest of the board — and the least distinguishable at a glance.',
-    Component: FooterStrip,
+    n: 1, name: 'Nothing but the line', Component: JustTheLine,
+    blurb: 'No mark at all — the bottom line carries the word "Playground" and that is the whole signal. Quietest possible; you have to read to know.',
   },
   {
-    n: 2,
-    name: 'Window chrome',
-    blurb: 'A title bar with traffic lights. You know it is software before reading a word. Costs a row of height and borrows a Mac metaphor.',
-    Component: WindowChrome,
+    n: 2, name: 'Corner mark', Component: CornerMark,
+    blurb: 'A small sparkle top-right, absolutely positioned so it costs no layout and can never push the title. Reads as a stamp.',
   },
   {
-    n: 3,
-    name: 'Spec sheet',
-    blurb: 'Monospace build record under the description — version, libraries, spend. The only one that surfaces cost. Technical register.',
-    Component: SpecSheet,
+    n: 3, name: 'Left hairline', Component: Hairline,
+    blurb: 'A 2px violet edge. The card already uses a left border for card.color, so this borrows a language the board speaks — and scans down a stack.',
   },
   {
-    n: 4,
-    name: 'Status-forward',
-    blurb: 'State is the loudest element, deploy-dashboard style. Strongest at a glance; risks every card shouting for attention.',
-    Component: StatusForward,
+    n: 4, name: 'Tinted surface', Component: Tinted,
+    blurb: 'A barely-there violet wash on the whole card rather than one edge of it. Check it in dark, where tint reads more strongly than in light.',
   },
   {
-    n: 5,
-    name: 'Spine',
-    blurb: 'A coloured left edge identifies it, body unchanged. Scans best in a dense column. Colour alone is weak, so it carries a chip too.',
-    Component: Spine,
+    n: 5, name: 'Recessed base', Component: RecessedBase,
+    blurb: 'Status sits in a slightly inset footer, so it has somewhere to live instead of floating under the description. Body untouched.',
   },
 ];
 
 export default function PlaygroundCardsPrototype() {
   const [dark, setDark] = useState(true);
+  const [mixed, setMixed] = useState(true);
 
   return (
     <div className={dark ? 'dark' : ''}>
@@ -278,18 +224,28 @@ export default function PlaygroundCardsPrototype() {
 
           <div className="flex items-start justify-between gap-6 mb-1">
             <h1 className="text-2xl font-semibold tracking-tight">Playground cards in a column</h1>
-            <button
-              onClick={() => setDark((v) => !v)}
-              className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 hover:border-violet-400 transition-colors"
-            >
-              {dark ? 'Light' : 'Dark'}
-            </button>
+            <div className="flex-shrink-0 flex gap-2">
+              <button
+                onClick={() => setMixed((v) => !v)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 hover:border-violet-400 transition-colors"
+              >
+                {mixed ? 'Hide plain card' : 'Show plain card'}
+              </button>
+              <button
+                onClick={() => setDark((v) => !v)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 hover:border-violet-400 transition-colors"
+              >
+                {dark ? 'Light' : 'Dark'}
+              </button>
+            </div>
           </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-2xl leading-relaxed mb-10">
-            A playground card carries the same title and description as any card, plus enough
-            state to tell — without opening it — whether the app exists, whether it is live, and
-            what it is made of. Shown at real column width against real card styling. No live
-            previews: a preview belongs in its own tab, never inside a card.
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 max-w-2xl leading-relaxed mb-2">
+            Title and description are byte-identical to an ordinary card in all five. The building
+            state is the existing <code className="font-mono text-[11px] text-violet-500">card-processing</code>{' '}
+            treatment, not a new one. The only variable is how quietly the card says what it is.
+          </p>
+          <p className="text-xs text-neutral-400 dark:text-neutral-500 mb-10">
+            Leave the plain card on — the real question is whether you can tell them apart in a mixed column.
           </p>
 
           <div className="space-y-12">
@@ -303,12 +259,25 @@ export default function PlaygroundCardsPrototype() {
                   {blurb}
                 </p>
                 <div className="flex gap-4 overflow-x-auto pb-2">
-                  {STATES.map((d) => (
-                    <div key={d.state} className="w-[272px] flex-shrink-0">
-                      <div className="text-[10px] uppercase tracking-wider text-neutral-400 mb-1.5">
-                        {d.state}
+                  {mixed && (
+                    <div className="w-[272px] flex-shrink-0">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-400 mb-1.5">plain card</div>
+                      <div className={SHELL}>
+                        <div className="p-3">
+                          <h3 className="text-sm font-semibold text-neutral-900 dark:text-white leading-snug">
+                            Trial cancellation analysis
+                          </h3>
+                          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed line-clamp-2">
+                            Why 40% of trials never reach the second session, from last quarter&apos;s exit surveys.
+                          </p>
+                        </div>
                       </div>
-                      <Component d={d} />
+                    </div>
+                  )}
+                  {STATES.map((s) => (
+                    <div key={s} className="w-[272px] flex-shrink-0">
+                      <div className="text-[10px] uppercase tracking-wider text-neutral-400 mb-1.5">{s}</div>
+                      <Component state={s} />
                     </div>
                   ))}
                 </div>
@@ -317,25 +286,28 @@ export default function PlaygroundCardsPrototype() {
           </div>
 
           <div className="mt-16 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5">
-            <h2 className="text-sm font-semibold mb-2">What to weigh</h2>
+            <h2 className="text-sm font-semibold mb-2">Notes</h2>
             <ul className="text-xs text-neutral-500 dark:text-neutral-400 space-y-1.5 leading-relaxed">
               <li>
-                <strong className="text-neutral-700 dark:text-neutral-300">Scanning a mixed column.</strong>{' '}
-                Most columns hold ordinary cards too. 5 and 1 sit quietly among them; 2 and 4 announce
-                themselves. Which is right depends on whether a playground is the exception or the point.
+                <strong className="text-neutral-700 dark:text-neutral-300">Building is not a variant.</strong>{' '}
+                Every concept shows the same existing treatment, so there is only ever one building
+                animation on the board no matter which mark you pick.
               </li>
               <li>
-                <strong className="text-neutral-700 dark:text-neutral-300">Height.</strong>{' '}
-                2 costs a full extra row on every card. In a column of ten, that is a screenful.
+                <strong className="text-neutral-700 dark:text-neutral-300">Today&apos;s badge is gone.</strong>{' '}
+                The current gradient &ldquo;Playground&rdquo; pill sits above the title and pushes the
+                body down, so a playground card is a different height from its neighbours. None of
+                these touch the body.
               </li>
               <li>
-                <strong className="text-neutral-700 dark:text-neutral-300">Cost visibility.</strong>{' '}
-                Only 3 shows spend. Builds cost real money, so a board where that is never visible
-                is a board where it accumulates unnoticed.
+                <strong className="text-neutral-700 dark:text-neutral-300">1 and 2 are the quietest.</strong>{' '}
+                If a playground should feel like an ordinary card that happens to have an app, they
+                win. 3 and 4 are for boards where playgrounds are the point.
               </li>
               <li>
-                <strong className="text-neutral-700 dark:text-neutral-300">Colour alone.</strong>{' '}
-                4 and 5 lean on colour for state. Both carry a word as well, which they must.
+                <strong className="text-neutral-700 dark:text-neutral-300">Cost is not shown.</strong>{' '}
+                It lives in Info. Worth checking that it feels far enough away — builds cost real
+                money and nothing on the board hints at it.
               </li>
             </ul>
           </div>
