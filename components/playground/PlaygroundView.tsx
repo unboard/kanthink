@@ -894,7 +894,8 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
     return (
       <div className="flex flex-col h-full min-h-0 min-w-0 bg-white dark:bg-neutral-900">
         {!hasCode ? (
-          <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-8">
+          <>
+            <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-rose-400 flex items-center justify-center shadow-lg shadow-violet-500/30 mb-4">
               <Wand2 className="w-7 h-7 text-white" />
             </div>
@@ -916,7 +917,9 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
             {genError && (
               <p className="mt-3 text-xs text-red-600 dark:text-red-400 max-w-xs">{genError}</p>
             )}
-          </div>
+            </div>
+            {tabBar && <div className="flex-shrink-0">{tabBar}</div>}
+          </>
         ) : (
           <>
             <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3 py-1.5 border-b border-neutral-200 dark:border-neutral-800">
@@ -971,9 +974,11 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
 
             <div className="flex-1 min-h-0 flex flex-col">{PreviewPane}</div>
 
-            {/* Refining happens here, against the app. The card's thread is a
-                conversation about the card; this is a conversation about the app. */}
-            <div className="flex-shrink-0 border-t border-neutral-200 dark:border-neutral-800 px-3 py-2">
+            {/* Bottom matches the thread drawer exactly: tab tiles, then the
+                prompt box. Refining happens against the app, not the card. */}
+            {tabBar && <div className="flex-shrink-0">{tabBar}</div>}
+
+            <div className="flex-shrink-0 px-3 pb-3">
               <div className="relative">
                 <input
                   value={prompt}
@@ -987,30 +992,23 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
                   }}
                   placeholder="Describe a change…"
                   disabled={isGenerating}
-                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 pl-3 pr-10 py-2 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500/40 disabled:opacity-50"
+                  className="w-full rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 pl-4 pr-11 py-3 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500/40 disabled:opacity-50"
                 />
                 <button
                   onClick={() => { if (prompt.trim()) { generate(prompt, false); setPrompt(''); } }}
                   disabled={!prompt.trim() || isGenerating}
                   aria-label="Send"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-lg bg-violet-600 text-white flex items-center justify-center disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:cursor-not-allowed transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white flex items-center justify-center shadow-md shadow-violet-600/30 disabled:bg-neutral-300 dark:disabled:bg-neutral-700 disabled:bg-none disabled:shadow-none disabled:cursor-not-allowed transition-all"
                 >
-                  {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUp className="w-3.5 h-3.5" />}
+                  {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-4 h-4" />}
                 </button>
               </div>
-              {typeData.lastNotes && !isGenerating && (
-                <p className="mt-1.5 text-[10.5px] text-neutral-400 dark:text-neutral-500 truncate">
-                  {typeData.lastNotes}
-                </p>
-              )}
               {genError && (
-                <p className="mt-1.5 text-[10.5px] text-red-600 dark:text-red-400">{genError}</p>
+                <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{genError}</p>
               )}
             </div>
           </>
         )}
-
-        {tabBar && <div className="flex-shrink-0">{tabBar}</div>}
       </div>
     );
   }
