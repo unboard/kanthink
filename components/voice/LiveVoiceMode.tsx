@@ -311,6 +311,12 @@ function resample(input: Float32Array, from: number, to: number): Float32Array {
   return out;
 }
 
+interface TranscriptTurn {
+  role: 'user' | 'kan';
+  text: string;
+  at: string;
+}
+
 const VOICE_KEY = 'kanthink-voice-name';
 
 function VoiceTable({ config }: { config: TableConfig }) {
@@ -417,6 +423,13 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   // session's cards/transcripts as browsable history. Stopping used to unmount the
   // whole overlay, which threw away everything the conversation just produced.
   const [hasEnded, setHasEnded] = useState(false);
+  /** Finished conversation turns, oldest first. Saved to history on session end. */
+  const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
+  // Gemini streams transcription as fragments; these buffers hold the current
+  // half-finished sentence for each side until its turn completes.
+  const userBufRef = useRef('');
+  const kanBufRef = useRef('');
+  const transcriptRef = useRef<TranscriptTurn[]>([]);
   const [voiceName, setVoiceName] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
   );
@@ -443,6 +456,31 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   // the same session twice and leaving a duplicate thread behind.
   const sessionSavedRef = useRef(false);
 
+  const flushTranscript = useCallback((role: 'user' | 'kan') => {
+    const buf = role === 'user' ? userBufRef : kanBufRef;
+    const text = buf.current.trim();
+    buf.current = '';
+    if (!text) return;
+    const turn: TranscriptTurn = { role, text, at: new Date().toISOString() };
+    transcriptRef.current = [...transcriptRef.current, turn];
+    setTranscript(transcriptRef.current);
+  }, []);
+
+  /** Persist the session's transcript as an operator chat thread. Fire-and-forget. */
+  const saveTranscript = useCallback(() => {
+    if (userBufRef.current.trim()) flushTranscript('user');
+    if (kanBufRef.current.trim()) flushTranscript('kan');
+    const turns = transcriptRef.current;
+    if (turns.length === 0) return;
+    transcriptRef.current = [];
+    fetch('/api/voice/transcript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ turns }),
+      keepalive: true,
+    }).catch(() => {/* history is best-effort; the session itself already happened */});
+  }, [flushTranscript]);
+
   const stop = useCallback(() => {
     activeRef.current = false;
     cancelAnimationFrame(animRef.current);
@@ -462,7 +500,8 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     wakeLockRef.current?.release().catch(() => {});
     wakeLockRef.current = null;
     setConnected(false); setIsAiSpeaking(false); setIsProcessing(false); setMicLevel(0);
-  }, []);
+    saveTranscript();
+  }, [saveTranscript]);
 
   // Subtle processing tone — plays during tool execution
   // The working sound — "Surge". Definition lives in lib/audio/workingSound.ts
@@ -821,6 +860,10 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
                 responseModalities: ['AUDIO'],
                 speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
               },
+              // Transcribe both sides. Without these the session produces no text at
+              // all, which is why voice conversations left no history.
+              inputAudioTranscription: {},
+              outputAudioTranscription: {},
               // Keep long back-and-forth conversations alive past Gemini's default audio-session cap
               // by compressing older context into a sliding window.
               contextWindowCompression: { slidingWindow: {} },
@@ -907,6 +950,22 @@ NEVER claim you completed an action unless you actually called the corresponding
                 resolve();
               } catch { reject(new Error('Microphone access denied')); }
               return;
+            }
+
+            // Transcription fragments — user speech and Kan's audio, respectively.
+            // A user fragment arriving while Kan's buffer has text means Kan's turn
+            // ended (barge-in or natural close), so flush his buffer first.
+            if (msg.serverContent?.inputTranscription?.text) {
+              if (kanBufRef.current.trim()) flushTranscript('kan');
+              userBufRef.current += msg.serverContent.inputTranscription.text;
+            }
+            if (msg.serverContent?.outputTranscription?.text) {
+              if (userBufRef.current.trim()) flushTranscript('user');
+              kanBufRef.current += msg.serverContent.outputTranscription.text;
+            }
+            if (msg.serverContent?.turnComplete) {
+              if (userBufRef.current.trim()) flushTranscript('user');
+              if (kanBufRef.current.trim()) flushTranscript('kan');
             }
 
             // Audio response
@@ -1055,10 +1114,10 @@ NEVER claim you completed an action unless you actually called the corresponding
   // meant the tap target kept moving for ~400ms after the card appeared, causing
   // taps to miss right after creation.
   useEffect(() => {
-    if (actions.length > 0 && actionFeedRef.current) {
+    if ((actions.length > 0 || transcript.length > 0) && actionFeedRef.current) {
       actionFeedRef.current.scrollTo({ top: actionFeedRef.current.scrollHeight });
     }
-  }, [actions.length]);
+  }, [actions.length, transcript.length]);
 
   // Fetch rendered email HTML when preview opens
   useEffect(() => {
@@ -1224,6 +1283,25 @@ NEVER claim you completed an action unless you actually called the corresponding
             <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
               <p className="text-sm text-neutral-400">Conversation ended</p>
               <p className="text-xs text-neutral-500">Nothing was created this session.</p>
+            </div>
+          )}
+
+          {/* Live transcript — what was said, both directions. */}
+          {transcript.length > 0 && (
+            <div className="space-y-1.5 mb-4">
+              {transcript.map((t, i) => (
+                <div key={i} className={`flex ${t.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-xs leading-relaxed ${
+                      t.role === 'user'
+                        ? 'bg-violet-600/25 text-violet-100'
+                        : 'bg-neutral-800/80 text-neutral-300'
+                    }`}
+                  >
+                    {t.text}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
