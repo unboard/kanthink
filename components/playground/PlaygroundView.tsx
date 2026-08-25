@@ -892,7 +892,7 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
   // The card's thread stays a separate conversation. This tab does not render it.
   if (embedded) {
     return (
-      <div className="flex flex-col h-full min-h-0 bg-white dark:bg-neutral-900">
+      <div className="flex flex-col h-full min-h-0 min-w-0 bg-white dark:bg-neutral-900">
         {!hasCode ? (
           <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center px-8">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-rose-400 flex items-center justify-center shadow-lg shadow-violet-500/30 mb-4">
@@ -921,12 +921,19 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
           <>
             <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3 py-1.5 border-b border-neutral-200 dark:border-neutral-800">
               <div className="min-w-0 flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 truncate">
-                  {typeData.codeTitle || cardFromStore.title}
-                </span>
                 {generationCount > 0 && (
-                  <span className="flex-shrink-0 text-[10px] text-neutral-400">v{generationCount}</span>
+                  <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+                    v{generationCount}
+                  </span>
                 )}
+                {(typeData.dependencies || []).slice(0, 3).map((d) => (
+                  <span
+                    key={d}
+                    className="flex-shrink-0 px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-900/30 text-[9.5px] font-mono text-violet-700 dark:text-violet-300"
+                  >
+                    {d}
+                  </span>
+                ))}
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <a
@@ -962,24 +969,11 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
               </div>
             </div>
 
-            <div className="flex-1 min-h-0">{PreviewPane}</div>
+            <div className="flex-1 min-h-0 flex flex-col">{PreviewPane}</div>
 
             {/* Refining happens here, against the app. The card's thread is a
                 conversation about the card; this is a conversation about the app. */}
             <div className="flex-shrink-0 border-t border-neutral-200 dark:border-neutral-800 px-3 py-2">
-              {(typeData.dependencies || []).length > 0 && (
-                <div className="flex flex-wrap items-center gap-1 mb-2">
-                  <span className="text-[10px] text-neutral-400 mr-0.5">Libraries</span>
-                  {(typeData.dependencies || []).map((d) => (
-                    <span
-                      key={d}
-                      className="px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-900/30 text-[9.5px] font-mono text-violet-700 dark:text-violet-300"
-                    >
-                      {d}
-                    </span>
-                  ))}
-                </div>
-              )}
               <div className="relative">
                 <input
                   value={prompt}
@@ -1005,7 +999,7 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
                 </button>
               </div>
               {typeData.lastNotes && !isGenerating && (
-                <p className="mt-1.5 text-[10.5px] text-neutral-500 dark:text-neutral-400 line-clamp-2">
+                <p className="mt-1.5 text-[10.5px] text-neutral-400 dark:text-neutral-500 truncate">
                   {typeData.lastNotes}
                 </p>
               )}
