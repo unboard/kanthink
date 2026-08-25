@@ -932,7 +932,7 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Task progress bar */}
-        {cardTasks.length > 0 && (
+        {card.cardType !== 'playground' && cardTasks.length > 0 && (
           <div className="mt-2" onClick={() => setIsCardDrawerOpen(true)}>
             <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
               <span>{cardTasks.filter(t => t.status === 'done').length}/{cardTasks.length} tasks</span>
@@ -996,6 +996,9 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
+        {/* Tasks are work to be done. A playground card's subject is a built thing,
+            so it carries no task list and no Add task affordance. */}
+        {card.cardType !== 'playground' && (
         <div>
           <TaskListOnCard
             cardId={card.id}
@@ -1015,6 +1018,7 @@ export function Card({ card }: CardProps) {
             }}
           />
         </div>
+        )}
         </div>{/* End card content padding wrapper */}
       </div>
       <ShroomPicker
