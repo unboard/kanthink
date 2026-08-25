@@ -419,7 +419,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                     </svg>
                     <div>
                       <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Playground</div>
-                      <div className="text-xs text-neutral-400 dark:text-neutral-500">A card Kan builds into an app</div>
+                      <div className="text-xs text-neutral-400 dark:text-neutral-500">Build games, tools, apps and more</div>
                     </div>
                   </button>
                 </div>
@@ -460,7 +460,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                   </svg>
                   <div>
                     <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Playground</div>
-                    <div className="text-xs text-neutral-400 dark:text-neutral-500">A card Kan builds into an app</div>
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500">Build games, tools, apps and more</div>
                   </div>
                 </button>
               </MobileMenuDrawer>
