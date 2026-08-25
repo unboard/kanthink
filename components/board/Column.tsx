@@ -195,6 +195,16 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
     setIsCardDrawerOpen(true);
   };
 
+  const handleAddPlayground = () => {
+    // Created as a playground straight away, so it lands in the column already
+    // reading "Not built yet" rather than looking like an ordinary card until
+    // someone builds it.
+    const card = createCard(channelId, column.id, { title: 'Untitled' });
+    updateCard(card.id, { cardType: 'playground' });
+    setNewCardId(card.id);
+    setIsCardDrawerOpen(true);
+  };
+
   const handleAddTask = () => {
     const task = createColumnTask(channelId, column.id, { title: 'Untitled' });
     setNewTaskId(task.id);
@@ -400,6 +410,18 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                       <div className="text-xs text-neutral-400 dark:text-neutral-500">A single to-do item</div>
                     </div>
                   </button>
+                  <button
+                    onClick={() => { setIsAddMenuOpen(false); handleAddPlayground(); }}
+                    className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-violet-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                    </svg>
+                    <div>
+                      <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Playground</div>
+                      <div className="text-xs text-neutral-400 dark:text-neutral-500">A card Kan builds into an app</div>
+                    </div>
+                  </button>
                 </div>
               )}
               <MobileMenuDrawer isOpen={isAddMenuOpen && isMobile} onClose={() => setIsAddMenuOpen(false)} title="Add to column">
@@ -427,6 +449,18 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                   <div>
                     <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Task</div>
                     <div className="text-xs text-neutral-400 dark:text-neutral-500">A single to-do item</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { setIsAddMenuOpen(false); handleAddPlayground(); }}
+                  className="w-full flex items-start gap-3 px-3 py-3.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg"
+                >
+                  <svg className="w-5 h-5 mt-0.5 flex-shrink-0 text-violet-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                  </svg>
+                  <div>
+                    <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Playground</div>
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500">A card Kan builds into an app</div>
                   </div>
                 </button>
               </MobileMenuDrawer>

@@ -143,7 +143,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [showShroomPicker, setShowShroomPicker] = useState(false);
   const { shrooms } = useShroomRun();
   const cardShrooms = shroomsForCard(shrooms);
-  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab ?? 'thread');
+  const [rawActiveTab, setActiveTab] = useState<ActiveTab>(initialTab ?? 'thread');
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -493,15 +493,27 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   // Tab navigation tiles (reused across every tab). Playground is a peer of the others
   // rather than a mode that takes over the drawer — same card, same thread, one more
   // place to work on it. Horizontally scrollable so four tiles never wrap on a phone.
+  const isPlaygroundCard = card.cardType === 'playground';
+
+  // Converting a card changes which tabs exist. Resolve rather than store, so a tab
+  // that has just disappeared falls back to Thread instead of rendering nothing.
+  const activeTab =
+    (rawActiveTab === 'tasks' && isPlaygroundCard) ||
+    (rawActiveTab === 'playground' && !isPlaygroundCard)
+      ? ('thread' as const)
+      : rawActiveTab;
+
   const tabTiles = (
     <div className="flex gap-2 px-3 pb-2 overflow-x-auto scrollbar-none">
       {([
         { key: 'thread' as const, label: 'Thread', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /> },
-        { key: 'tasks' as const, label: `Tasks${cardTasks.length > 0 ? ` ${completedCount}/${cardTasks.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /> },
+        // Tasks are work to be done. A playground card's subject is a built thing, so
+        // the tab is dropped there rather than sitting empty.
+        ...(isPlaygroundCard ? [] : [{ key: 'tasks' as const, label: `Tasks${cardTasks.length > 0 ? ` ${completedCount}/${cardTasks.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /> }]),
         { key: 'info' as const, label: 'Info', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
         // The Playground tab owns the card's app — it's where you build one and where
-        // the built one lives. Building deliberately happens nowhere else.
-        { key: 'playground' as const, label: `Playground${playgroundVersion > 0 ? ` v${playgroundVersion}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /> },
+        // the built one lives. Only offered on a playground card.
+        ...(isPlaygroundCard ? [{ key: 'playground' as const, label: `Playground${playgroundVersion > 0 ? ` v${playgroundVersion}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /> }] : []),
       ]).map((tab) => (
         <button
           key={tab.key}
