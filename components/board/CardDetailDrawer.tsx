@@ -31,7 +31,7 @@ import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
 import { CardChat } from './CardChat';
 import { CardApprovalBar } from './CardApprovalBar';
-import { PlaygroundView } from '@/components/playground/PlaygroundView';
+import { PlaygroundInfoPanel } from '@/components/playground/PlaygroundInfoPanel';
 import { TagPicker, getTagStyles } from './TagPicker';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
@@ -498,9 +498,10 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   // Converting a card changes which tabs exist. Resolve rather than store, so a tab
   // that has just disappeared falls back to Thread instead of rendering nothing.
   const activeTab =
-    (rawActiveTab === 'tasks' && isPlaygroundCard) ||
-    (rawActiveTab === 'playground' && !isPlaygroundCard)
-      ? ('thread' as const)
+    (rawActiveTab === 'tasks' && isPlaygroundCard) || rawActiveTab === 'playground'
+      ? // The app's controls live in Info now, so anything aimed at the old
+        // Playground tab lands there instead of on a tab that no longer exists.
+        (rawActiveTab === 'playground' ? ('info' as const) : ('thread' as const))
       : rawActiveTab;
 
   const tabTiles = (
@@ -511,9 +512,6 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
         // the tab is dropped there rather than sitting empty.
         ...(isPlaygroundCard ? [] : [{ key: 'tasks' as const, label: `Tasks${cardTasks.length > 0 ? ` ${completedCount}/${cardTasks.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /> }]),
         { key: 'info' as const, label: 'Info', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
-        // The Playground tab owns the card's app — it's where you build one and where
-        // the built one lives. Only offered on a playground card.
-        ...(isPlaygroundCard ? [{ key: 'playground' as const, label: `Playground${playgroundVersion > 0 ? ` v${playgroundVersion}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /> }] : []),
       ]).map((tab) => (
         <button
           key={tab.key}
@@ -1099,7 +1097,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           {/* Thread Tab. Gated on contentReady so the drawer slide-in starts
               immediately and the heavy chat mounts a frame later. */}
-          {(activeTab === 'thread' || activeTab === 'playground') && !contentReady && (
+          {activeTab === 'thread' && !contentReady && (
             <div className="flex-1 min-h-0 flex items-center justify-center">
               <div className="h-5 w-5 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin" />
             </div>
@@ -1120,13 +1118,6 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                   ) : undefined
                 }
               />
-            </div>
-          )}
-
-          {/* Playground Tab — build-and-preview against this card's own thread + tasks. */}
-          {activeTab === 'playground' && contentReady && (
-            <div className="flex-1 min-h-0 flex flex-col">
-              <PlaygroundView card={card} embedded tabBar={tabTiles} />
             </div>
           )}
 
@@ -1296,6 +1287,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
 
               {/* Card header section */}
               <div className="p-4 space-y-4">
+                {/* Everything about the app: state, preview, publish, libraries, cost. */}
+                {isPlaygroundCard && <PlaygroundInfoPanel card={card} />}
                 {/* Add cover options (when no cover) */}
                 {!card.coverImageUrl && (
                   <div className="space-y-2">
