@@ -364,7 +364,7 @@ export interface Task {
 }
 
 // Smart snippet types for actionable AI responses
-export type ProposedActionType = 'create_task' | 'add_tag' | 'remove_tag';
+export type ProposedActionType = 'create_task' | 'add_tag' | 'remove_tag' | 'build_app';
 export type ActionStatus = 'pending' | 'approved' | 'rejected';
 
 export interface CreateTaskActionData {
@@ -382,7 +382,18 @@ export interface RemoveTagActionData {
   tagName: string;
 }
 
-export type ActionData = CreateTaskActionData | AddTagActionData | RemoveTagActionData;
+/**
+ * Kan proposing a build on a playground card. He is the gatekeeper: a build costs
+ * minutes and real money, so it never happens without the user accepting this.
+ */
+export interface BuildAppActionData {
+  /** What Kan will build or change, in one line, shown on the snippet. */
+  summary: string;
+  /** The brief handed to the generator. Fuller than the summary. */
+  instruction: string;
+}
+
+export type ActionData = CreateTaskActionData | AddTagActionData | RemoveTagActionData | BuildAppActionData;
 
 export interface StoredAction {
   id: string;

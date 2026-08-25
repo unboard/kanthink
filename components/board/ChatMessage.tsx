@@ -704,6 +704,7 @@ export function ChatMessage({
                       action={action}
                       tagDefinitions={tagDefinitions}
                       cardTags={cardTags}
+                      previewCardId={cardId}
                       onApprove={(actionId, editedData) => onActionApprove(message.id, actionId, editedData)}
                       onReject={(actionId) => onActionReject(message.id, actionId)}
                     />

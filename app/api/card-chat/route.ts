@@ -47,6 +47,11 @@ async function getWebTools() {
   return { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent, webSearch, formatSearchContext };
 }
 
+/** The build_app entry added to the response schema on playground cards only. */
+const BUILD_ACTION_SHAPE =
+  ',\n    { "type": "build_app", "data": { "summary": "One line the user will see on the button",' +
+  ' "instruction": "The full brief for the builder" } }';
+
 interface CardChatRequest {
   cardId: string;
   channelId?: string;
@@ -61,6 +66,8 @@ interface CardChatRequest {
     previousMessages: CardMessage[];
     cardTags?: string[];           // Current tags on the card
     availableTags?: TagDefinition[];  // Tags defined in the channel
+    cardType?: string;             // 'playground' changes what Kan may propose
+    hasBuild?: boolean;            // Whether the playground already has an app
   };
 }
 
@@ -73,6 +80,8 @@ interface ProposedAction {
     tagName?: string;
     createDefinition?: boolean;
     suggestedColor?: string;
+    summary?: string;
+    instruction?: string;
   };
 }
 
@@ -124,6 +133,22 @@ function buildPrompt(
     if (done.length > 0) taskSection += `\n  → ${done.length} done`;
   }
 
+  const isPlayground = context.cardType === 'playground';
+  const buildActionShape = isPlayground
+    ? BUILD_ACTION_SHAPE
+    : '';
+  const playgroundSection = isPlayground
+    ? `THIS IS A PLAYGROUND CARD. Its subject is an app that ${context.hasBuild ? 'has been built' : 'has not been built yet'}.
+
+Your job here is to understand what the user actually wants and help them get there — ask a clarifying question when the objective is genuinely unclear, think with them, and push back when an idea will not work. You are also the gatekeeper to building: a build takes minutes and costs real money, so it only happens when the user accepts your proposal.
+
+Propose a build_app action when the conversation has reached something concrete and buildable. Do NOT propose one while the idea is still forming, and do NOT propose more than one at a time.
+
+NEVER claim you have built, updated, or changed the app. You cannot. The only thing that changes it is the user accepting a build_app action. Write as someone proposing, not reporting.
+
+On a playground card do NOT propose create_task, add_tag or remove_tag. Tasks and tags belong to work; this card's subject is a built thing.`
+    : '';
+
   const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app. You are an expert on all Kanthink features including cards, columns, channels, shrooms (AI automations), tags, tasks, properties, sharing, the whiteboard, and Playground mode (chat-driven mini-app builder; any card can be flipped into a Playground via the card menu's "Turn into Playground" — splits the card into a chat panel + live preview iframe where Gemini writes a single-file React app the user iterates on conversationally; can be flipped public to get a kanthink.com/play/<token> share URL).
 
 Your capabilities:
@@ -142,7 +167,7 @@ Card: "${cardTitle}"
 Channel: "${channelName}"${channelDescription ? ` - ${channelDescription}` : ''}
 ${taskSection}${tagContext}${currentTagsContext}${webContextSection}
 
-You can propose actions when relevant: create tasks, add/remove tags.
+${playgroundSection || 'You can propose actions when relevant: create tasks, add/remove tags.'}
 
 Your response MUST be valid JSON:
 {
@@ -150,7 +175,7 @@ Your response MUST be valid JSON:
   "actions": [
     { "type": "create_task", "data": { "title": "Task title", "description": "Optional" } },
     { "type": "add_tag", "data": { "tagName": "tag-name", "createDefinition": true, "suggestedColor": "blue" } },
-    { "type": "remove_tag", "data": { "tagName": "tag-name" } }
+    { "type": "remove_tag", "data": { "tagName": "tag-name" } }${buildActionShape}
   ]
 }
 
@@ -273,6 +298,19 @@ function convertToStoredActions(actions: ProposedAction[]): StoredAction[] {
           tagName: action.data.tagName,
           createDefinition: action.data.createDefinition,
           suggestedColor: action.data.suggestedColor,
+        },
+        status: 'pending',
+      });
+    } else if (action.type === 'build_app') {
+      // One build proposal per reply — two pending builds is a choice nobody wants.
+      if (!action.data.summary || !action.data.instruction) continue;
+      if (result.some(r => r.type === 'build_app')) continue;
+      result.push({
+        id: nanoid(),
+        type: 'build_app',
+        data: {
+          summary: action.data.summary,
+          instruction: action.data.instruction,
         },
         status: 'pending',
       });

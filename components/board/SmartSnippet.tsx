@@ -7,6 +7,8 @@ import { TagSnippet } from './TagSnippet';
 
 interface SmartSnippetProps {
   action: StoredAction;
+  /** Playground card id — lets an accepted build link straight to its preview. */
+  previewCardId?: string;
   tagDefinitions: TagDefinition[];
   cardTags: string[];
   onApprove: (actionId: string, editedData?: StoredAction['data']) => void;
@@ -15,6 +17,7 @@ interface SmartSnippetProps {
 
 export function SmartSnippet({
   action,
+  previewCardId,
   tagDefinitions,
   cardTags,
   onApprove,
@@ -89,6 +92,11 @@ export function SmartSnippet({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
             </svg>
           )}
+          {action.type === 'build_app' && (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+            </svg>
+          )}
         </div>
 
         {/* Content area */}
@@ -101,6 +109,29 @@ export function SmartSnippet({
               isRejected={isRejected}
               onDataChange={(newData) => setEditedData(newData)}
             />
+          )}
+          {action.type === 'build_app' && (
+            <div>
+              <div className={`text-sm font-medium ${isRejected ? 'line-through text-neutral-400' : 'text-neutral-800 dark:text-neutral-100'}`}>
+                {isApproved ? 'Built' : 'Build it'}
+              </div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                {(editedData as { summary?: string }).summary}
+              </div>
+              {isApproved && previewCardId && (
+                <a
+                  href={`/play/preview/${previewCardId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline"
+                >
+                  Open preview
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              )}
+            </div>
           )}
           {(action.type === 'add_tag' || action.type === 'remove_tag') && (
             <TagSnippet

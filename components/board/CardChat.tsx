@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
-import type { Card, CardMessageType, StoredAction, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition, ChannelMember } from '@/lib/types';
+import type { Card, CardMessageType, StoredAction, BuildAppActionData, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition, ChannelMember } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { fetchShares } from '@/lib/api/client';
@@ -38,6 +38,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   // The composer floats over the thread, so the scroll area pads by its measured height.
   const { composerRef, composerHeight } = useComposerHeight();
   const [isAILoading, setIsAILoading] = useState(false);
+  const [isBuilding, setIsBuilding] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
@@ -52,6 +53,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const { keyboardOffset, onFocus: handleKeyboardFocus, onBlur: handleKeyboardBlur } = useKeyboardOffset();
 
   const addMessage = useStore((s) => s.addMessage);
+  const updateCard = useStore((s) => s.updateCard);
   const addShroomRunMessage = useStore((s) => s.addShroomRunMessage);
   const addAIResponse = useStore((s) => s.addAIResponse);
   const editMessage = useStore((s) => s.editMessage);
@@ -201,6 +203,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             imageSettings,
             context: {
               cardTitle: card.title,
+              // On a playground card Kan collaborates on an app and proposes builds
+              // instead of tasks and tags.
+              cardType: card.cardType ?? undefined,
+              hasBuild: !!(card.typeData as { code?: string } | undefined)?.code,
               channelName,
               channelDescription,
               tasks: cardTasks.map((t) => ({ title: t.title, status: t.status })),
@@ -280,7 +286,33 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
     const timestamp = new Date().toISOString();
 
     try {
-      if (action.type === 'create_task') {
+      if (action.type === 'build_app') {
+        // Kan proposes, the user decides, and only then does a build happen. Fired
+        // and not awaited so the snippet flips to approved immediately; the thread
+        // and the app both update when the generator returns.
+        const buildData = dataToUse as BuildAppActionData;
+        setIsBuilding(true);
+        fetch('/api/playground/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardId: card.id, prompt: buildData.instruction }),
+        })
+          .then((r) => r.json().catch(() => null))
+          .then((data) => {
+            if (!data || data.error) {
+              setAIError(data?.error || 'Build failed.');
+              return;
+            }
+            updateCard(card.id, {
+              cardType: 'playground',
+              typeData: data.typeData,
+              ...(data.messages ? { messages: data.messages } : {}),
+              ...(data.snapshot?.summary ? { summary: data.snapshot.summary } : {}),
+            });
+          })
+          .catch((err) => setAIError(err instanceof Error ? err.message : 'Build failed.'))
+          .finally(() => setIsBuilding(false));
+      } else if (action.type === 'create_task') {
         const taskData = dataToUse as CreateTaskActionData;
         const task = createTask(card.channelId, card.id, {
           title: taskData.title,
@@ -571,6 +603,15 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
                 <p className="text-xs text-neutral-400 dark:text-neutral-500">Attach photos or screenshots</p>
               </div>
             </button>
+          </div>
+        )}
+        {/* A build takes minutes, so the thread says so for the whole of it. */}
+        {isBuilding && (
+          <div className="mx-3 mb-2 flex items-center gap-2 px-3 py-2.5 rounded-xl border border-violet-200 dark:border-violet-900/60 bg-violet-50/60 dark:bg-violet-900/20">
+            <div className="h-4 w-4 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin flex-shrink-0" />
+            <span className="text-xs font-medium text-violet-700 dark:text-violet-300">
+              Kan is building the app…
+            </span>
           </div>
         )}
         {tabBar}
