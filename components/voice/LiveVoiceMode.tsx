@@ -433,6 +433,8 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const userBufRef = useRef('');
   const kanBufRef = useRef('');
   const transcriptRef = useRef<TranscriptTurn[]>([]);
+  /** Mirror of `actions` readable from unmount cleanup and saveTranscript. */
+  const actionsRef = useRef<ActionLog[]>([]);
   const [voiceName, setVoiceName] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
   );
@@ -469,13 +471,31 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
     setTranscript(transcriptRef.current);
   }, []);
 
-  /** Persist the session's transcript as an operator chat thread. Fire-and-forget. */
+  /**
+   * Persist the session as an operator chat thread: everything said, with the
+   * session's actions — cards made, channels created, builds — woven in
+   * chronologically as markdown with links, so history shows what happened as
+   * well as what was spoken. Fire-and-forget.
+   */
   const saveTranscript = useCallback(() => {
     if (userBufRef.current.trim()) flushTranscript('user');
     if (kanBufRef.current.trim()) flushTranscript('kan');
-    const turns = transcriptRef.current;
+    const actionTurns: TranscriptTurn[] = actionsRef.current.map((a) => {
+      let text = `⚡ ${a.result}`;
+      if (a.cardPreview) {
+        text += `\n\n> **${a.cardPreview.title}** · ${a.cardPreview.channelName}${a.cardPreview.columnName ? ` › ${a.cardPreview.columnName}` : ''}\n> [Open card](/channel/${a.cardPreview.channelId}/card/${a.cardPreview.id})`;
+      }
+      if (a.channelPreview) {
+        const cfg = a.channelPreview.config;
+        text += `\n\n> **${cfg.name}** · ${cfg.columns.map((c) => c.name).join(' → ')}${cfg.shrooms.length ? `\n> Shrooms: ${cfg.shrooms.map((sh) => sh.title).join(', ')}` : ''}\n> [Open channel](/channel/${a.channelPreview.channelId})`;
+      }
+      const at = a.timestamp instanceof Date ? a.timestamp.toISOString() : new Date(a.timestamp).toISOString();
+      return { role: 'kan' as const, text, at };
+    });
+    const turns = [...transcriptRef.current, ...actionTurns].sort((x, y) => x.at.localeCompare(y.at));
     if (turns.length === 0) return;
     transcriptRef.current = [];
+    actionsRef.current = [];
     fetch('/api/voice/transcript', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -829,6 +849,13 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
       return msg;
     }
   }, []);
+
+  useEffect(() => { actionsRef.current = actions; }, [actions]);
+
+  // Closing the overlay without pressing stop must not lose the conversation.
+  const saveRef = useRef(saveTranscript);
+  useEffect(() => { saveRef.current = saveTranscript; }, [saveTranscript]);
+  useEffect(() => () => { saveRef.current(); }, []);
 
   const start = useCallback(async () => {
     setError(null); setStatus('Fetching session...'); setActions([]);

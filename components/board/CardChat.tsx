@@ -292,6 +292,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         // and the app both update when the generator returns.
         const buildData = dataToUse as BuildAppActionData;
         setIsBuilding(true);
+        updateCard(card.id, { isProcessing: true, processingStatus: 'Building the app…' });
         fetch('/api/playground/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -311,7 +312,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             });
           })
           .catch((err) => setAIError(err instanceof Error ? err.message : 'Build failed.'))
-          .finally(() => setIsBuilding(false));
+          .finally(() => {
+            updateCard(card.id, { isProcessing: false, processingStatus: undefined });
+            setIsBuilding(false);
+          });
       } else if (action.type === 'create_task') {
         const taskData = dataToUse as CreateTaskActionData;
         const task = createTask(card.channelId, card.id, {

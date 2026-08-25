@@ -76,6 +76,9 @@ export function PlaygroundInfoPanel({ card }: { card: Card }) {
     if (isBuilding) return;
     setIsBuilding(true);
     setError(null);
+    // isProcessing is a synced card field, so the board card shimmers with the
+    // same card-processing treatment shroom runs use — one animation everywhere.
+    updateCard(card.id, { isProcessing: true, processingStatus: 'Building the app…' });
     try {
       const res = await fetch('/api/playground/generate', {
         method: 'POST',
@@ -101,6 +104,7 @@ export function PlaygroundInfoPanel({ card }: { card: Card }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Build failed.');
     } finally {
+      updateCard(card.id, { isProcessing: false, processingStatus: undefined });
       setIsBuilding(false);
     }
   }, [card.id, code, isBuilding, updateCard]);

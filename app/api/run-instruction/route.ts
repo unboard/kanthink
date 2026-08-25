@@ -18,6 +18,7 @@ import { auth } from '@/lib/auth';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { createShroomCards, createShroomReport, applyShroomModifications, applyShroomMoves } from '@/lib/shrooms/apply';
 import { generatePlaygroundApp } from '@/lib/playground/generateApp';
+import { setCardProcessingServerSide } from '@/lib/shrooms/cardProcessing';
 import { stripEchoedContent, cardContentStrings } from '@/lib/shrooms/stripEchoedContent';
 import { loadChannelRejections } from '@/lib/shrooms/rejections';
 import { sendShroomRunEmail, type ShroomRunOutcome } from '@/lib/shrooms/sendRunEmail';
@@ -1955,6 +1956,9 @@ export async function POST(request: Request) {
 
       const built: Array<{ cardId: string; title?: string; error?: string }> = [];
       for (const cardId of selected) {
+        // The card shimmers on every open board while its build runs. Builds take
+        // minutes; a silent board reads as a broken shroom.
+        await setCardProcessingServerSide({ cardId, channelId: channel.id, status: 'Building the app…' }).catch(() => {});
         try {
           const result = await generatePlaygroundApp(
             {
@@ -1975,6 +1979,8 @@ export async function POST(request: Request) {
           }
         } catch (err) {
           built.push({ cardId, error: err instanceof Error ? err.message : 'Build failed' });
+        } finally {
+          await setCardProcessingServerSide({ cardId, channelId: channel.id, status: null }).catch(() => {});
         }
       }
 
