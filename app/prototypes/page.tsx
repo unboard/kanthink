@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'playground-cards',
+    name: 'Playground cards in a column',
+    blurb:
+      'A playground card carries a title and description like any card, plus enough state to tell whether the app exists, whether it is live, and what it is made of. Five ways to say that — footer strip, window chrome, spec sheet, status-forward, spine — at real column width, across draft, building, built and published.',
+    status: 'newest',
+  },
+  {
     slug: 'shrooms-in-channel',
     name: 'Shrooms in a channel',
     blurb:
       'Shrooms live in a global nav panel, so a channel gives no sign they exist. Ten places to put them inside the board — edge rail, header facepile, column watchers, a shroom column, threads in the gutters — each shown against the same board so the space it takes is visible.',
-    status: 'newest',
   },
   {
     slug: 'kan-intent',
