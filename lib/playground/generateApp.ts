@@ -347,11 +347,17 @@ export async function generatePlaygroundApp(
   const seededDeclarations = [...(typeData.dependencies || [])];
   const seeded = resolveDeps(seededDeclarations);
 
-  // Build the user message: original goal (card title) + current code + last few thread turns + new prompt.
-  const recentMessages = (card.messages || []).slice(-6);
+  // Build the user message: original goal (card title) + current code + thread + new prompt.
+  //
+  // The thread IS the brief — on a pipeline card it carries the PM's requirements,
+  // the CTO's data model and the designer's direction as full documents. The old
+  // 6-message / 400-char cap silently threw most of that away at build time, which
+  // defeated the point of accumulating it. Generous caps; Gemini's context dwarfs
+  // any real thread, the cap only guards against a runaway one.
+  const recentMessages = (card.messages || []).slice(-16);
   const threadContext = recentMessages.length > 0
     ? recentMessages
-        .map(m => `[${m.type}] ${(m.content || '').slice(0, 400)}`)
+        .map(m => `[${m.type}] ${(m.content || '').slice(0, 6000)}`)
         .join('\n')
     : '(no prior messages)';
 
