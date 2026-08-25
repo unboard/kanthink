@@ -48,6 +48,13 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export function PlaygroundInfoPanel({ card }: { card: Card }) {
   const updateCard = useStore((s) => s.updateCard);
   const cardFromStore = useStore((s) => s.cards[card.id]) || card;
+  const allTasks = useStore((s) => s.tasks);
+  // Tasks on a playground card are requirements: every build feeds them to the
+  // generator as the spec. The Tasks tab is gone from these cards, so this is
+  // where they stay visible — otherwise they'd shape builds invisibly.
+  const requirements = (cardFromStore.taskIds ?? [])
+    .map((id) => allTasks[id])
+    .filter((t) => t && !t.isArchived);
   const typeData = (cardFromStore.typeData as PlaygroundTypeData | undefined) || {};
 
   const [isBuilding, setIsBuilding] = useState(false);
@@ -142,9 +149,20 @@ export function PlaygroundInfoPanel({ card }: { card: Card }) {
         {!code ? (
           <>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed mb-3">
-              Kan reads this card&apos;s thread and builds something you can use. Talk it through in
-              the thread first — everything written there becomes the brief.
+              Kan reads this card&apos;s thread{requirements.length > 0 ? ` and its ${requirements.length === 1 ? 'requirement' : `${requirements.length} requirements`} below` : ''} and
+              builds something you can use. Talk it through in the thread first — everything
+              written there becomes the brief.
             </p>
+            {requirements.length > 0 && (
+              <ul className="mb-3 space-y-0.5 text-xs text-neutral-600 dark:text-neutral-300">
+                {requirements.map((t) => (
+                  <li key={t.id} className="flex items-start gap-1.5">
+                    <span className={`mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0 ${t.status === 'done' ? 'bg-emerald-500' : 'bg-neutral-300 dark:bg-neutral-600'}`} />
+                    <span>{t.title}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <button
               onClick={build}
               disabled={isBuilding}
@@ -199,6 +217,20 @@ export function PlaygroundInfoPanel({ card }: { card: Card }) {
                     {copied ? <Check className="w-3 h-3 flex-shrink-0 text-emerald-500" /> : <Copy className="w-3 h-3 flex-shrink-0" />}
                     {copied ? 'Copied' : shareLink.replace(/^https?:\/\//, '')}
                   </button>
+                </Row>
+              )}
+
+              {requirements.length > 0 && (
+                <Row label="Requirements">
+                  <ul className="space-y-0.5">
+                    {requirements.map((t) => (
+                      <li key={t.id} className="flex items-start gap-1.5">
+                        <span className={`mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0 ${t.status === 'done' ? 'bg-emerald-500' : 'bg-neutral-300 dark:bg-neutral-600'}`} />
+                        <span className={t.status === 'done' ? 'text-neutral-400 line-through' : ''}>{t.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-[10px] text-neutral-400">Fed to every build as the spec.</p>
                 </Row>
               )}
 
