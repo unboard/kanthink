@@ -650,6 +650,25 @@ export async function POST(request: Request) {
         return NextResponse.json({
           result: `Created "${name}" with columns ${colNames.join(', ')}.${shroomNote}`,
           channelId,
+          // Rendered by the voice overlay as the same channel card the normal
+          // creation flow shows.
+          channelPreview: {
+            channelId,
+            config: {
+              name,
+              description: args.description?.trim() || suggestChannelDescription(intent, topic),
+              instructions: args.aiInstructions?.trim() || getChannelInstructions(intent, topic),
+              columns: columnRows.map((c) => ({ name: c.name, isAiTarget: c.isAiTarget })),
+              shrooms: generated
+                .filter((g) => shroomTitles.includes(g.title))
+                .map((g) => ({
+                  title: g.title,
+                  action: g.action,
+                  targetColumnName: g.targetColumnName,
+                  instructions: g.instructions,
+                })),
+            },
+          },
         });
       }
 

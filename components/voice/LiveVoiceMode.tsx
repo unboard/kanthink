@@ -8,6 +8,8 @@ import { TaskDrawer } from '@/components/board/TaskDrawer';
 import { VoiceRibbon } from './VoiceRibbon';
 import { SporeBackground } from '@/components/ambient/SporeBackground';
 import { SwipeToDismiss } from './SwipeToDismiss';
+import { ChannelPreview } from '@/components/board/ChannelPreview';
+import type { ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
 import { KanWorkingBar } from '@/components/kan/KanThinking';
 import { startWorkingSound } from '@/lib/audio/workingSound';
@@ -281,6 +283,7 @@ interface ActionLog {
   success: boolean;
   timestamp: Date;
   cardPreview?: CardPreview;
+  channelPreview?: { channelId: string; config: ChannelConfig };
   taskPreview?: TaskPreview;
   emailDraft?: EmailDraft;
   imageGen?: ImageGenCard;
@@ -816,6 +819,7 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
         id: crypto.randomUUID(), action: name, result: data.result,
         success: !data.result.startsWith('Failed'), timestamp: new Date(),
         cardPreview: data.cardPreview,
+        channelPreview: data.channelPreview,
         taskPreview: data.taskPreview,
       }]);
       return voiceReturn;
@@ -1286,8 +1290,11 @@ NEVER claim you completed an action unless you actually called the corresponding
             </div>
           )}
 
-          {/* Live transcript — what was said, both directions. */}
-          {transcript.length > 0 && (
+          {/* Transcript — appears once the session ends, as the record of what was
+              said. Hidden while live: the overlay already shows cards, channels and
+              actions, and a scrolling transcript on top of that was one feed too
+              many. Still captured in full from the first word. */}
+          {hasEnded && transcript.length > 0 && (
             <div className="space-y-1.5 mb-4">
               {transcript.map((t, i) => (
                 <div key={i} className={`flex ${t.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -1465,6 +1472,16 @@ NEVER claim you completed an action unless you actually called the corresponding
                         <p className="text-[10px] text-neutral-500 mt-1 capitalize">{a.taskPreview.status.replace('_', ' ')}</p>
                       </div>
                     </div>
+                  </div>
+                ) : a.channelPreview ? (
+                  <div className="animate-slide-in">
+                    <ChannelPreview
+                      config={a.channelPreview.config}
+                      createdChannelId={a.channelPreview.channelId}
+                      onApprove={() => {}}
+                      onKeepChatting={() => {}}
+                      dark
+                    />
                   </div>
                 ) : a.cardPreview ? (
                   <div className="relative bg-neutral-900/90 border border-neutral-700 rounded-xl overflow-hidden animate-slide-in hover:border-violet-500/50 transition-colors">

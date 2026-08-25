@@ -1,7 +1,7 @@
 export interface ChannelConfigShroom {
   title: string;
   instructions: string;
-  action: 'generate' | 'modify' | 'move';
+  action: 'generate' | 'modify' | 'move' | 'build';
   targetColumnName: string;
   cardCount?: number;
 }

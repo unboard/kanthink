@@ -9,12 +9,19 @@ interface ChannelPreviewProps {
   onKeepChatting: () => void;
   /** Dark theme for overlay context (ConversationalWelcome) */
   dark?: boolean;
+  /**
+   * The channel already exists (voice created it before this card renders).
+   * Fields stop being editable — edits would silently change nothing — and the
+   * footer becomes a single "Open channel" button.
+   */
+  createdChannelId?: string;
 }
 
 const actionLabels: Record<string, { label: string; color: string }> = {
   generate: { label: 'Generate', color: 'bg-violet-500/20 text-violet-300' },
   modify: { label: 'Modify', color: 'bg-amber-500/20 text-amber-300' },
   move: { label: 'Move', color: 'bg-blue-500/20 text-blue-300' },
+  build: { label: 'Build', color: 'bg-fuchsia-500/20 text-fuchsia-300' },
 };
 
 export function ChannelPreview({
@@ -22,8 +29,15 @@ export function ChannelPreview({
   onApprove,
   onKeepChatting,
   dark = false,
+  createdChannelId,
 }: ChannelPreviewProps) {
-  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editingField, setEditingFieldRaw] = useState<string | null>(null);
+  // In created mode nothing is editable, so edit requests are ignored at the
+  // source rather than sprinkled through every field.
+  const setEditingField = (field: string | null) => {
+    if (createdChannelId && field !== null) return;
+    setEditingFieldRaw(field);
+  };
   const [localConfig, setLocalConfig] = useState<ChannelConfig>(config);
 
   const updateField = <K extends keyof ChannelConfig>(field: K, value: ChannelConfig[K]) => {
@@ -209,6 +223,14 @@ export function ChannelPreview({
       </div>
 
       {/* Action buttons */}
+      {createdChannelId ? (
+        <button
+          onClick={() => window.location.assign(`/channel/${createdChannelId}`)}
+          className="w-full px-4 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 transition-colors"
+        >
+          Open channel
+        </button>
+      ) : (
       <div className="flex gap-2">
         <button
           onClick={() => onApprove(localConfig)}
@@ -227,6 +249,7 @@ export function ChannelPreview({
           Keep chatting
         </button>
       </div>
+      )}
     </div>
   );
 }
