@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'voice-transcripts-and-real-channels',
+    date: '2026-08-25',
+    kind: 'capability',
+    title: 'Voice conversations are kept, and voice-made channels are real ones',
+    body: 'What you and Kan say in voice mode is now transcribed live and saved to your conversation history when the session ends. Asking Kan for a channel by voice now builds the same thing the app would — columns that fit the purpose and starter shrooms, switched off until you enable them.',
+  },
+  {
     id: 'playground-apps-from-cards',
     date: '2026-08-24',
     kind: 'capability',
