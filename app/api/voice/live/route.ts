@@ -41,5 +41,11 @@ export async function GET() {
   const model = 'gemini-3.1-flash-live-preview';
   const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
 
-  return NextResponse.json({ wsUrl, model });
+  return NextResponse.json({
+    wsUrl,
+    model,
+    // Precision mode's speech-to-text model. Same bidi endpoint, different model:
+    // it only transcribes, so the reasoning and the speaking are separate stages.
+    transcribeModel: 'gemini-3.5-transcribe-live',
+  });
 }
