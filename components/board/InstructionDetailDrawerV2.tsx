@@ -781,7 +781,14 @@ export function InstructionDetailDrawerV2({
                   ? 'Describe what cards to create...'
                   : action === 'modify'
                     ? 'Describe how to modify the cards...'
-                    : 'Describe when cards should be moved...'
+                    : action === 'report'
+                      ? 'Describe what to observe and summarise...'
+                      : action === 'build'
+                        // A build turns the card into a playground app. The card's own
+                        // thread and tasks are already the brief — this is the standing
+                        // direction added on top of them.
+                        ? 'Describe what to build. Added to the card’s own thread and tasks as the brief...'
+                        : 'Describe when cards should be moved...'
               }
               rows={5}
               className="text-base"
@@ -831,7 +838,11 @@ export function InstructionDetailDrawerV2({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-neutral-500 uppercase tracking-wide">
-                  {action === 'generate' ? 'Add to' : action === 'modify' ? 'Modify in' : 'Move from'}
+                  {action === 'generate' ? 'Add to'
+                    : action === 'modify' ? 'Modify in'
+                    : action === 'report' ? 'Report on'
+                    : action === 'build' ? 'Build cards in'
+                    : 'Move from'}
                 </span>
                 {action === 'generate' && (
                   <div className="flex items-center gap-2">

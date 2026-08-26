@@ -129,6 +129,17 @@ interface ActionResult {
     style: string;
     recipientName?: string;
   };
+  /** create_channel — the full config, rendered as the standard channel card. */
+  channelPreview?: {
+    channelId: string;
+    config: {
+      name: string;
+      description: string;
+      instructions: string;
+      columns: { name: string; isAiTarget?: boolean }[];
+      shrooms: { title: string; action: string; targetColumnName: string; instructions: string }[];
+    };
+  };
   imageUrl?: string;
 }
 
@@ -349,17 +360,34 @@ function parseResponse(raw: string): ParsedResponse {
       };
     }
   } catch {
-    // Fall through to plain text
+    // Fall through to the salvage path below
   }
-  return { response: raw };
+
+  // The parse failed — usually a truncated response, sometimes prose with a JSON
+  // block embedded. Never show the user raw protocol JSON: salvage the "response"
+  // string if one is recoverable, and strip any fenced action JSON from prose.
+  const responseMatch = raw.match(/"response"\s*:\s*"((?:[^"\\]|\\.)*)"?/);
+  if (raw.trim().startsWith('{') && responseMatch) {
+    let text = responseMatch[1]
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+    // A truncated response may end mid-escape; tidy the tail.
+    text = text.replace(/\\$/, '').trim();
+    return { response: text || 'Something went wrong composing that reply — try again.' };
+  }
+  const stripped = raw
+    .replace(/```(?:json)?\s*\{[\s\S]*?(?:```|$)/g, '')
+    .trim();
+  return { response: stripped || raw };
 }
 
 /** Execute action via the voice action API (shared backend) */
 async function executeVoiceAction(
   actionType: string,
-  args: Record<string, string>,
+  args: Record<string, unknown>,
   cookie: string,
-): Promise<{ result: string; modelResult?: string; cardId?: string; channelId?: string; taskId?: string; cardPreview?: ActionResult['cardPreview']; taskPreview?: ActionResult['taskPreview'] }> {
+): Promise<{ result: string; modelResult?: string; cardId?: string; channelId?: string; taskId?: string; cardPreview?: ActionResult['cardPreview']; taskPreview?: ActionResult['taskPreview']; channelPreview?: ActionResult['channelPreview'] }> {
   const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
   const res = await fetch(`${baseUrl}/api/voice/action`, {
     method: 'POST',
@@ -391,10 +419,15 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
 
       // New actions routed through voice action API
       } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel'].includes(action.type)) {
-        // Build args from action fields
-        const args: Record<string, string> = {};
+        // Build args from action fields. Structured values pass through intact —
+        // String() flattened columnNames arrays into "Inbox,Validation,...", which
+        // failed the handler's Array.isArray check and silently fell back to
+        // default columns.
+        const args: Record<string, unknown> = {};
         for (const [key, val] of Object.entries(action)) {
-          if (key !== 'type' && val != null) args[key] = String(val);
+          if (key !== 'type' && val != null) {
+            args[key] = typeof val === 'object' ? val : String(val);
+          }
         }
         const data = await executeVoiceAction(action.type, args, cookie);
         const success = !data.result.startsWith('Failed') && !data.result.includes('not found') && !data.result.includes('not configured');
@@ -409,6 +442,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
           taskId: data.taskId,
           cardPreview: data.cardPreview,
           taskPreview: data.taskPreview,
+          channelPreview: data.channelPreview,
         };
 
         // For send_email, attach draft info for display

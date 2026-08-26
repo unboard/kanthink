@@ -6,6 +6,8 @@ import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
+import { ChannelPreview } from '@/components/board/ChannelPreview';
+import type { ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
 import remarkGfm from 'remark-gfm';
 import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
 import { MyceliumWeb } from '@/components/kan/KanThinking';
@@ -57,6 +59,11 @@ interface ActionResult {
     body: string;
     style: string;
     recipientName?: string;
+  };
+  /** create_channel — rendered as the standard channel card, same as voice. */
+  channelPreview?: {
+    channelId: string;
+    config: ChannelConfig;
   };
   imageUrl?: string;
 }
@@ -273,6 +280,7 @@ export function OperatorHome() {
             if (r.type === 'unarchive_card' && r.cardPreview) return `[action: unarchive_card — "${r.cardPreview.title}"]`;
             if (r.type === 'move_card' && r.cardPreview) return `[action: move_card — "${r.cardPreview.title}" to ${r.cardPreview.columnName || 'column'}]`;
             if (r.type === 'complete_task' && r.taskPreview) return `[action: complete_task — "${r.taskPreview.title}"]`;
+            if (r.type === 'create_channel' && r.channelPreview) return `[action: create_channel — "${r.channelPreview.config.name}" · columns: ${r.channelPreview.config.columns.map(c => c.name).join(', ')} · shrooms: ${r.channelPreview.config.shrooms.map(sh => sh.title).join(', ') || 'none'}]`;
             return `[action: ${r.type} — ${r.modelDescription || r.description || 'succeeded'}]`;
           });
         return lines.length > 0 ? `\n\n${lines.join('\n')}` : '';
@@ -557,8 +565,17 @@ export function OperatorHome() {
                       <div className="mt-3 space-y-2 border-t border-neutral-700/50 pt-3">
                         {msg.actionResults.map((ar, i) => (
                           <div key={i}>
-                            {/* Card preview */}
-                            {ar.cardPreview ? (
+                            {/* Channel created — the same card the creation flow and
+                                voice show: columns, shrooms, and an Open button. */}
+                            {ar.channelPreview ? (
+                              <ChannelPreview
+                                config={ar.channelPreview.config}
+                                createdChannelId={ar.channelPreview.channelId}
+                                onApprove={() => {}}
+                                onKeepChatting={() => {}}
+                                dark
+                              />
+                            ) : ar.cardPreview ? (
                               <button
                                 onClick={() => router.push(`/channel/${ar.cardPreview!.channelId}/card/${ar.cardPreview!.id}`)}
                                 className="w-full text-left rounded-lg border border-neutral-700 bg-neutral-800/50 p-3 hover:border-violet-500/50 transition-colors"
