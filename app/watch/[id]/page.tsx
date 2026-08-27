@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { recordings, type RecordingEditSpecJson } from '@/lib/db/schema';
 import { ensureSchema } from '@/lib/db/ensure-schema';
-import { recordingDeliveryUrl } from '@/lib/cloudinary';
+import { recordingDeliveryUrl, recordingFrameUrl } from '@/lib/cloudinary';
 import { getViewStats } from '@/lib/record/views';
 import WatchPlayer from '@/components/record/WatchPlayer';
 
@@ -46,6 +46,9 @@ export default async function WatchPage({ params }: { params: Promise<{ id: stri
         height: rec.height,
         aspectRatio: rec.aspectRatio || '16:9',
         editSpec: spec,
+        // Same derivation the gallery uses: a custom image wins, otherwise the
+        // frame at the chosen time.
+        thumbnailUrl: rec.thumbUrl || recordingFrameUrl(rec.cloudinaryPublicId, { timeSec: rec.thumbTime ?? 0 }),
       }}
       isOwner={isOwner}
       views={views}

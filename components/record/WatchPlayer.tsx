@@ -18,6 +18,12 @@ interface RecordingData {
   height: number;
   aspectRatio: string;
   editSpec: RecordingEditSpecJson;
+  /**
+   * The thumbnail chosen in the gallery. Shown before playback so the frame you
+   * picked is the frame people see at 0:00 — without it the browser shows
+   * whatever the first frame happens to be, which is usually a blank screen.
+   */
+  thumbnailUrl?: string;
 }
 
 interface ViewStats {
@@ -231,6 +237,7 @@ export default function WatchPlayer({
             <video
               ref={videoRef}
               src={recording.cloudinaryUrl}
+              poster={recording.thumbnailUrl}
               playsInline
               onClick={togglePlay}
               onTimeUpdate={onTimeUpdate}
@@ -302,6 +309,7 @@ export default function WatchPlayer({
         <video
           ref={videoRef}
           src={recording.cloudinaryUrl}
+          poster={recording.thumbnailUrl}
           playsInline
           onClick={() => { togglePlay(); pokeControls(); }}
           onTimeUpdate={onTimeUpdate}
