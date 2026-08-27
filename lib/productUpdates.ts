@@ -35,13 +35,6 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
-    id: 'precision-voice-mode',
-    date: '2026-08-26',
-    kind: 'capability',
-    title: 'Voice mode hears you better and acts more like Kan',
-    body: 'Voice now runs on a dedicated speech model that handles self-corrections, drops filler words and holds up in noise, and the thinking goes through the same brain the home screen uses — so voice can do everything typing can. The original native-audio version is still there as Classic, under the settings gear.',
-  },
-  {
     id: 'voice-transcripts-and-real-channels',
     date: '2026-08-25',
     kind: 'capability',

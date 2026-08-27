@@ -8,7 +8,6 @@ import { TaskDrawer } from '@/components/board/TaskDrawer';
 import { VoiceRibbon } from './VoiceRibbon';
 import { SporeBackground } from '@/components/ambient/SporeBackground';
 import { SwipeToDismiss } from './SwipeToDismiss';
-import { usePrecisionVoice } from './usePrecisionVoice';
 import { ChannelPreview } from '@/components/board/ChannelPreview';
 import type { ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
@@ -323,10 +322,6 @@ interface TranscriptTurn {
 
 const VOICE_KEY = 'kanthink-voice-name';
 
-/** Which voice engine runs. Precision is the default; Classic is the native-audio original. */
-export const VOICE_ENGINE_KEY = 'kanthink-voice-engine';
-export type VoiceEngine = 'precision' | 'classic';
-
 function VoiceTable({ config }: { config: TableConfig }) {
   return (
     <div className="px-3 pb-3">
@@ -442,11 +437,6 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const actionsRef = useRef<ActionLog[]>([]);
   const [voiceName, setVoiceName] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
-  );
-  const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>(() =>
-    typeof window !== 'undefined' && localStorage.getItem(VOICE_ENGINE_KEY) === 'classic'
-      ? 'classic'
-      : 'precision'
   );
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -867,100 +857,6 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   useEffect(() => { saveRef.current = saveTranscript; }, [saveTranscript]);
   useEffect(() => () => { saveRef.current(); }, []);
 
-  /**
-   * Precision mode's brain. The transcript goes to /api/operator-chat — the same
-   * endpoint the home screen types into — so voice and typing get the same
-   * reasoning and the same full action set. Its results land in the same feed
-   * Classic populates, so cards and channel previews render identically.
-   */
-  const handlePrecisionUtterance = useCallback(async (text: string): Promise<string | null> => {
-    setTranscript((prev) => {
-      const next = [...prev, { role: 'user' as const, text, at: new Date().toISOString() }];
-      transcriptRef.current = next;
-      return next;
-    });
-
-    const channelSummaries = Object.values(storeChannels)
-      .filter((ch) => !ch.isGlobalHelp)
-      .map((ch) => ({
-        id: ch.id,
-        name: ch.name,
-        description: ch.description || undefined,
-        columns: ch.columns.map((col) => ({
-          name: col.name,
-          cards: col.cardIds
-            .map((cid) => storeCards[cid])
-            .filter(Boolean)
-            .slice(0, 12)
-            .map((c) => ({ id: c.id, title: c.title, summary: c.summary || undefined })),
-        })),
-      }));
-
-    try {
-      const res = await fetch('/api/operator-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          threadId: threadIdRef.current || undefined,
-          message: text,
-          history: transcriptRef.current.slice(-10).map((t) => ({
-            role: t.role === 'user' ? 'user' : 'assistant',
-            content: t.text,
-          })),
-          channels: channelSummaries,
-        }),
-      });
-      if (!res.ok) return "Sorry — I couldn't reach the server just then.";
-      const data = await res.json();
-
-      if (Array.isArray(data.actionResults) && data.actionResults.length > 0) {
-        setActions((prev) => [
-          ...prev,
-          ...data.actionResults.map((ar: {
-            type: string; description: string; success: boolean;
-            cardPreview?: CardPreview; taskPreview?: ActionLog['taskPreview'];
-            channelPreview?: { channelId: string; config: ChannelConfig };
-          }) => ({
-            id: crypto.randomUUID(),
-            action: ar.type,
-            result: ar.description,
-            success: ar.success,
-            timestamp: new Date(),
-            cardPreview: ar.cardPreview,
-            taskPreview: ar.taskPreview,
-            channelPreview: ar.channelPreview,
-          })),
-        ]);
-      }
-
-      const reply: string = data.response || '';
-      if (reply) {
-        setTranscript((prev) => {
-          const next = [...prev, { role: 'kan' as const, text: reply, at: new Date().toISOString() }];
-          transcriptRef.current = next;
-          return next;
-        });
-      }
-      return reply || null;
-    } catch {
-      return "Sorry — something went wrong on my end.";
-    }
-  }, [storeChannels, storeCards]);
-
-  const precision = usePrecisionVoice({
-    onUtterance: handlePrecisionUtterance,
-    voice: voiceName,
-  });
-
-  // The UI reads one set of flags whichever engine is running.
-  const isPrecision = voiceEngine === 'precision';
-  const uiConnected = isPrecision ? precision.connected : connected;
-  const uiStatus = isPrecision ? precision.status : status;
-  const uiError = isPrecision ? precision.error : error;
-  const uiThinking = isPrecision ? precision.isThinking : isProcessing;
-  const uiSpeaking = isPrecision ? precision.isSpeaking : isAiSpeaking;
-  const uiMicLevel = isPrecision ? precision.micLevel : micLevel;
-
   const start = useCallback(async () => {
     setError(null); setStatus('Fetching session...'); setActions([]);
     // Acquire screen wake lock to prevent screen from going black
@@ -1275,19 +1171,15 @@ NEVER claim you completed an action unless you actually called the corresponding
 
   useEffect(() => {
     if (isOpen) {
-      // Which engine runs is decided once, at session start — switching mid-session
-      // would mean tearing down a live socket under the user.
-      if (voiceEngine === 'precision') precision.start();
-      else start();
-      threadIdRef.current = null; setHasEnded(false); sessionSavedRef.current = false;
+      start(); threadIdRef.current = null; setHasEnded(false); sessionSavedRef.current = false;
     } else {
       // Save session before clearing — unless ending the audio already saved it.
       const currentActions = actions;
       if (currentActions.length > 0 && !sessionSavedRef.current) saveSession(currentActions);
-      stop(); precision.stop(); setStatus(''); setError(null); setActions([]); setHasEnded(false);
+      stop(); setStatus(''); setError(null); setActions([]); setHasEnded(false);
       sessionSavedRef.current = false;
     }
-    return () => { stop(); precision.stop(); };
+    return () => stop();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
@@ -1359,7 +1251,7 @@ NEVER claim you completed an action unless you actually called the corresponding
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             )}
-            {!hasEnded && uiConnected && !isMuted && (
+            {!hasEnded && connected && !isMuted && (
               <div className="flex items-center gap-0.5 h-4">
                 {bars.map((s, i) => (
                   <div key={i} className={`w-1 rounded-full ${isAiSpeaking ? 'bg-violet-400 animate-voice-bar' : 'bg-cyan-400 transition-all duration-75'}`}
@@ -1377,7 +1269,7 @@ NEVER claim you completed an action unless you actually called the corresponding
               </svg>
             )}
             <span className={`text-xs ml-1 ${hasEnded ? 'text-neutral-400' : isMuted ? 'text-red-400' : isAiSpeaking ? 'text-violet-300' : 'text-neutral-300'}`}>
-              {hasEnded ? 'Conversation ended' : !uiConnected ? 'Connecting...' : isMuted ? 'Muted' : uiThinking ? 'Thinking...' : uiSpeaking ? 'Kan is speaking' : precision.interim && isPrecision ? precision.interim : 'Listening'}
+              {hasEnded ? 'Conversation ended' : !connected ? 'Connecting...' : isMuted ? 'Muted' : isProcessing ? 'Processing...' : isAiSpeaking ? 'Kan is speaking' : 'Listening'}
             </span>
           </div>
           <button onClick={() => setShowSettings(!showSettings)}
@@ -1391,25 +1283,7 @@ NEVER claim you completed an action unless you actually called the corresponding
 
         {/* Settings dropdown */}
         {showSettings && (
-          <div className="absolute top-16 left-6 bg-neutral-800 border border-neutral-700 rounded-xl p-4 w-64 z-20">
-            <p className="text-xs text-neutral-400 font-medium mb-2">Mode</p>
-            <div className="space-y-1.5 mb-4">
-              {([
-                { id: 'precision' as const, label: 'Precision', blurb: 'Dedicated speech model, full action set' },
-                { id: 'classic' as const, label: 'Classic', blurb: 'Native audio, fastest to respond' },
-              ]).map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => { setVoiceEngine(m.id); localStorage.setItem(VOICE_ENGINE_KEY, m.id); }}
-                  className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors ${
-                    voiceEngine === m.id ? 'bg-violet-600 text-white' : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'
-                  }`}
-                >
-                  <div className="text-xs font-medium">{m.label}</div>
-                  <div className={`text-[10px] ${voiceEngine === m.id ? 'text-violet-200' : 'text-neutral-400'}`}>{m.blurb}</div>
-                </button>
-              ))}
-            </div>
+          <div className="absolute top-16 left-6 bg-neutral-800 border border-neutral-700 rounded-xl p-4 w-56 z-20">
             <p className="text-xs text-neutral-400 font-medium mb-2">Voice</p>
             <div className="grid grid-cols-2 gap-1.5">
               {VOICE_OPTIONS.map(v => (
@@ -1748,7 +1622,7 @@ NEVER claim you completed an action unless you actually called the corresponding
               Close
             </button>
           </div>
-        ) : uiConnected && (
+        ) : connected && (
           <div className="flex gap-3 px-4 pb-2">
             <button onClick={toggleMute}
               className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-medium transition-colors ${
