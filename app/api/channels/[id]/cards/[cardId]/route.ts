@@ -140,6 +140,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (body.reactions !== undefined) updates.reactions = body.reactions
     if (body.cardType !== undefined) updates.cardType = body.cardType || null
     if (body.typeData !== undefined) updates.typeData = body.typeData
+    // The working shimmer. Client-started builds set this through updateCard, and it
+    // was being dropped here — so the animation lived only in local state, showed on
+    // no one else's board, and vanished the moment a sync overwrote the card.
+    if (body.isProcessing !== undefined) updates.isProcessing = body.isProcessing
+    if (body.processingStatus !== undefined) updates.processingStatus = body.processingStatus || null
 
     await db.update(cards).set(updates).where(eq(cards.id, cardId))
 
