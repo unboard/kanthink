@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'library',
+    name: 'The Library — spines all the way down',
+    blurb:
+      'Folders fold to spines, a folder opens into channel spines, a channel opens into column spines, and only the cards are ever a list. Shelf, book, chapter, page. Every level is a drop target, so moving a card to another channel is the same gesture as moving it down a column. Runs on your real board — the moves are real.',
+    status: 'newest',
+  },
+  {
     slug: 'kanban-rethink',
     name: 'A board you can finish',
     blurb:
       'Kanban rethought from the failure up. Five whole boards, one per reason boards rot — Spine folds every column but one, The Sort hands you a single card and ends, Decay lets neglected cards compost themselves, Pressure makes a column a fixed volume with a wall, Horizon replaces status with literal depth of field. Each one gives something up, and says what.',
-    status: 'newest',
   },
   {
     slug: 'playground-cards',
