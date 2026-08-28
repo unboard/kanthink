@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'kanban-rethink',
+    name: 'A board you can finish',
+    blurb:
+      'Kanban rethought from the failure up. Five whole boards, one per reason boards rot — Spine folds every column but one, The Sort hands you a single card and ends, Decay lets neglected cards compost themselves, Pressure makes a column a fixed volume with a wall, Horizon replaces status with literal depth of field. Each one gives something up, and says what.',
+    status: 'newest',
+  },
+  {
     slug: 'playground-cards',
     name: 'Playground cards in a column',
     blurb:
       'A playground card carries a title and description like any card, plus enough state to tell whether the app exists, whether it is live, and what it is made of. Five ways to say that — footer strip, window chrome, spec sheet, status-forward, spine — at real column width, across draft, building, built and published.',
-    status: 'newest',
   },
   {
     slug: 'shrooms-in-channel',
