@@ -10,9 +10,9 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
     slug: 'library',
-    name: 'The Library — spines all the way down',
+    name: 'One list',
     blurb:
-      'Folders fold to spines, a folder opens into channel spines, a channel opens into column spines, and only the cards are ever a list. Shelf, book, chapter, page. Every level is a drop target, so moving a card to another channel is the same gesture as moving it down a column. Runs on your real board — the moves are real.',
+      'Spine, corrected. The first pass made rotated spines the thing you read, three levels at once — unreadable and disorienting. Here nothing is rotated and only two levels are ever on screen: the channel you are in, and its columns. The full-bleed numbered list appears once, as the channel picker you open and dismiss. Every column and every channel is a destination, so sending a card to another board is the same gesture as moving it one row. Runs on your real board — the moves are real.',
     status: 'newest',
   },
   {
