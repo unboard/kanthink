@@ -9,17 +9,11 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
-    slug: 'library',
-    name: 'One list',
-    blurb:
-      'Spine, corrected. The first pass made rotated spines the thing you read, three levels at once — unreadable and disorienting. Here nothing is rotated and only two levels are ever on screen: the channel you are in, and its columns. The full-bleed numbered list appears once, as the channel picker you open and dismiss. Every column and every channel is a destination, so sending a card to another board is the same gesture as moving it one row. Runs on your real board — the moves are real.',
-    status: 'newest',
-  },
-  {
     slug: 'kanban-rethink',
     name: 'A board you can finish',
     blurb:
       'Kanban rethought from the failure up. Five whole boards, one per reason boards rot — Spine folds every column but one, The Sort hands you a single card and ends, Decay lets neglected cards compost themselves, Pressure makes a column a fixed volume with a wall, Horizon replaces status with literal depth of field. Each one gives something up, and says what.',
+    status: 'newest',
   },
   {
     slug: 'playground-cards',
