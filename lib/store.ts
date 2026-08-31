@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, TaskNote, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction, RejectionReason } from './types';
 import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
 import { newCardGoesLast } from './columnSort';
+import { buildCardDuplicate } from './cards/duplicate';
 import { KANTHINK_DEV_CHANNEL, type SeedChannelTemplate } from './seedData';
 import { emitCardMoved, emitCardCreated, emitCardDeleted } from './automationEvents';
 import * as sync from './api/sync';
@@ -89,6 +90,7 @@ interface KanthinkState {
   // Card actions
   createCard: (channelId: ID, columnId: ID, input: CardInput, source?: 'manual' | 'ai', createdByInstructionId?: ID) => Card;
   updateCard: (id: ID, updates: Partial<Omit<Card, 'id' | 'channelId' | 'createdAt' | 'source'>>) => void;
+  duplicateCard: (cardId: ID) => Card | null;
   mergeCards: (primaryCardId: ID, cardIdsToMerge: ID[], newTitle?: string) => void;
   deleteCard: (id: ID) => void;
   deleteAllCardsInColumn: (channelId: ID, columnId: ID) => void;
@@ -1177,6 +1179,109 @@ export const useStore = create<KanthinkState>()(
 
         // Broadcast to other tabs
         broadcastAndPublish({ type: 'card:update', id, updates });
+      },
+
+      /**
+       * Copy a card as it stands right now.
+       *
+       * What the copy contains is decided by `buildCardDuplicate`; this handles
+       * placing it on the board and getting it to the server.
+       */
+      duplicateCard: (cardId) => {
+        const state = get();
+        const sourceCard = state.cards[cardId];
+        if (!sourceCard) return null;
+
+        const channel = state.channels[sourceCard.channelId];
+        const column = channel?.columns.find((col) => col.cardIds.includes(cardId));
+        if (!channel || !column) return null;
+
+        const timestamp = now();
+        const sourceTasks = Object.values(state.tasks).filter((t) => t.cardId === cardId);
+        const { card: copy, tasks: clonedTasks } = buildCardDuplicate(sourceCard, sourceTasks, timestamp);
+        const newId = copy.id;
+
+        // Directly below the original, where a duplicate is expected to appear.
+        const index = column.cardIds.indexOf(cardId) + 1;
+
+        set((s) => {
+          const ch = s.channels[sourceCard.channelId];
+          if (!ch) return s;
+
+          const columns = ch.columns.map((col) => {
+            if (col.id !== column.id) return col;
+            const cardIds = [...col.cardIds];
+            cardIds.splice(index, 0, newId);
+            const order = [...(col.itemOrder ?? col.cardIds)];
+            const at = order.indexOf(cardId);
+            order.splice(at >= 0 ? at + 1 : order.length, 0, newId);
+            return { ...col, cardIds, itemOrder: order };
+          });
+
+          const tasks = { ...s.tasks };
+          for (const t of clonedTasks) tasks[t.id] = t;
+
+          return {
+            cards: { ...s.cards, [newId]: copy },
+            tasks,
+            channels: {
+              ...s.channels,
+              [sourceCard.channelId]: { ...ch, columns, updatedAt: timestamp },
+            },
+          };
+        });
+
+        emitCardCreated(newId, sourceCard.channelId, column.id, copy.createdByInstructionId);
+
+        sync.syncCardDuplicate(
+          sourceCard.channelId,
+          newId,
+          {
+            columnId: column.id,
+            title: copy.title,
+            source: copy.source,
+            position: index,
+            createdByInstructionId: copy.createdByInstructionId,
+          },
+          {
+            messages: copy.messages,
+            tags: copy.tags,
+            properties: copy.properties,
+            summary: copy.summary,
+            assignedTo: copy.assignedTo,
+            coverImageUrl: copy.coverImageUrl,
+            color: copy.color,
+            cardType: copy.cardType,
+            typeData: copy.typeData,
+            hideCompletedTasks: copy.hideCompletedTasks,
+            // Carried over so the shrooms that already ran on the original do
+            // not immediately re-run on the copy.
+            processedByInstructions: copy.processedByInstructions,
+          },
+          clonedTasks.map((t) => ({
+            id: t.id,
+            // No status here — the create endpoint only knows three of them, and
+            // the update immediately after carries the real one either way.
+            create: {
+              cardId: newId,
+              title: t.title,
+              description: t.description,
+              createdAt: t.createdAt,
+            },
+            updates: {
+              status: t.status,
+              notes: t.notes,
+              assignedTo: t.assignedTo,
+              dueDate: t.dueDate,
+              completedAt: t.completedAt,
+              isArchived: t.isArchived,
+            },
+          }))
+        );
+
+        broadcastAndPublish({ type: 'card:create', card: copy, columnId: column.id, position: index });
+
+        return copy;
       },
 
       mergeCards: (primaryCardId, cardIdsToMerge, newTitle) => {

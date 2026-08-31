@@ -135,6 +135,35 @@ export function syncCardUpdate(channelId: string, cardId: string, updates: Recor
   }, 'update card')
 }
 
+/**
+ * A duplicated card: create it, then push the parts the create endpoint has no
+ * argument for, then rebuild its tasks — all inside one background job.
+ *
+ * The ordering is the point. Every other sync helper fires independently, so
+ * "create then update" is really two racing requests that only survive because
+ * the loser retries. A duplicate is create + update + two calls per task, so
+ * that race gets much worse. Awaiting them in a single job makes the sequence
+ * actual sequence, under one retry policy and one error toast.
+ */
+export function syncCardDuplicate(
+  channelId: string,
+  cardId: string,
+  create: { columnId: string; title: string; source?: 'manual' | 'ai'; position?: number; createdByInstructionId?: string },
+  updates: Record<string, unknown>,
+  tasks: { id: string; create: { cardId: string; title: string; description?: string; status?: 'not_started' | 'in_progress' | 'done'; createdAt?: string }; updates: Record<string, unknown> }[]
+) {
+  pendingCardIds.add(cardId)
+  syncInBackground(async () => {
+    await api.createCard(channelId, { ...create, id: cardId })
+    pendingCardIds.delete(cardId)
+    await api.updateCard(channelId, cardId, updates)
+    for (const task of tasks) {
+      await api.createTask(channelId, { ...task.create, id: task.id })
+      await api.updateTask(channelId, task.id, task.updates)
+    }
+  }, 'duplicate card', () => { pendingCardIds.delete(cardId) })
+}
+
 export function syncCardReview(
   channelId: string,
   cardId: string,

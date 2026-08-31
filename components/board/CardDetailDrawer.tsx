@@ -182,7 +182,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const undoInstructionRun = useStore((s) => s.undoInstructionRun);
   const setCoverImage = useStore((s) => s.setCoverImage);
   const createTask = useStore((s) => s.createTask);
-  const createCard = useStore((s) => s.createCard);
+  const duplicateCard = useStore((s) => s.duplicateCard);
   const moveCard = useStore((s) => s.moveCard);
   const moveCardToChannel = useStore((s) => s.moveCardToChannel);
   const { members } = useChannelMembers(card?.channelId);
@@ -887,10 +887,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                       {/* Duplicate */}
                       <button
                         onClick={() => {
-                          const col = channels[card.channelId]?.columns?.find((c) => c.cardIds?.includes(card.id));
-                          if (col) {
-                            createCard(card.channelId, col.id, { title: `${card.title} (copy)`, initialMessage: card.messages?.[0]?.content || undefined });
-                          }
+                          duplicateCard(card.id);
                           setShowCardMenu(false);
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-700/50 transition-colors"

@@ -90,7 +90,7 @@ export function Card({ card }: CardProps) {
   const updateCard = useStore((s) => s.updateCard);
   const updateTask = useStore((s) => s.updateTask);
   const createTask = useStore((s) => s.createTask);
-  const createCardStore = useStore((s) => s.createCard);
+  const duplicateCard = useStore((s) => s.duplicateCard);
   const moveCardToChannel = useStore((s) => s.moveCardToChannel);
   const moveCard = useStore((s) => s.moveCard);
   const tasks = useStore((s) => s.tasks);
@@ -191,10 +191,7 @@ export function Card({ card }: CardProps) {
   };
 
   const handleDuplicate = () => {
-    const col = channels[card.channelId]?.columns?.find((c) => c.cardIds?.includes(card.id));
-    if (col) {
-      createCardStore(card.channelId, col.id, { title: `${card.title} (copy)`, initialMessage: card.messages?.[0]?.content || undefined });
-    }
+    duplicateCard(card.id);
     setShowCardMenu(false);
   };
 

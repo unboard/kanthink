@@ -138,6 +138,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (snoozedUntil !== undefined) updates.snoozedUntil = snoozedUntil ? new Date(snoozedUntil) : null
     if (body.pinnedAt !== undefined) updates.pinnedAt = body.pinnedAt ? new Date(body.pinnedAt) : null
     if (body.reactions !== undefined) updates.reactions = body.reactions
+    // The colour strip. The picker has always called updateCard with it, but this
+    // route never read it, so a colour lived in local state only — gone on any
+    // other device, and gone here the moment a sync overwrote the card.
+    if (body.color !== undefined) updates.color = body.color || null
     if (body.cardType !== undefined) updates.cardType = body.cardType || null
     if (body.typeData !== undefined) updates.typeData = body.typeData
     // The working shimmer. Client-started builds set this through updateCard, and it
