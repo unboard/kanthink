@@ -6,6 +6,7 @@ import type { Channel, InstructionCard, InstructionAction, InstructionTarget, Sh
 import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
 import { ShroomPreview } from './ShroomPreview';
+import { useAutoResizeTextarea } from '@/lib/hooks/useAutoResizeTextarea';
 
 interface ShroomConfigStep {
   action: InstructionAction;
@@ -63,6 +64,10 @@ export function ShroomChatDrawer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasGreeted = useRef(false);
   const isInitialLoad = useRef(true);
+
+  // Without this the composer stays one line tall, so describing a shroom in a
+  // few sentences means typing into a slot that shows only the line you're on.
+  useAutoResizeTextarea(inputRef, inputValue, 140);
 
   const isEditMode = !!existingShroom;
   const columnNames = channel.columns.map((c) => c.name);

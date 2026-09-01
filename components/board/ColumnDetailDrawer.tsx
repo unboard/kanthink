@@ -5,6 +5,7 @@ import type { Column } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/settingsStore';
 import { Drawer } from '@/components/ui';
+import { useAutoResizeTextarea } from '@/lib/hooks/useAutoResizeTextarea';
 
 interface ColumnDetailDrawerProps {
   column: Column | null;
@@ -45,14 +46,9 @@ export function ColumnDetailDrawer({
     }
   }, [column]);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      textarea.style.height = `${Math.max(80, textarea.scrollHeight)}px`;
-    }
-  }, [description]);
+  // Capped so a long column instruction can't grow past the drawer and take the
+  // Save button with it.
+  useAutoResizeTextarea(textareaRef, description, 320, { minHeight: 80 });
 
   const handleNameChange = (newName: string) => {
     setName(newName);

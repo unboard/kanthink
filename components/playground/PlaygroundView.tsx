@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store';
 import type { Card } from '@/lib/types';
 import { buildPlaygroundDoc } from './buildPlaygroundDoc';
 import { resolveDeps } from '@/lib/playground/runtime';
+import { useAutoResizeTextarea } from '@/lib/hooks/useAutoResizeTextarea';
 import {
   Sparkles,
   ExternalLink,
@@ -149,6 +150,9 @@ export function PlaygroundView({ card, onClose, embedded = false, tabBar }: Play
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile } = useImageUpload({ cardId: card.id });
+  // A brief for an app runs long, and two fixed rows hid most of it. 64px is
+  // the resting two-row height, so the composer still looks the same empty.
+  useAutoResizeTextarea(textareaRef, prompt, 200, { minHeight: 64 });
 
   const selectedModel = getPlaygroundModel(modelId);
   const lastUsage = typeData.lastUsage;

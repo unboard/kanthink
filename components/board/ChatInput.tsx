@@ -9,6 +9,7 @@ import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { AudioLines } from 'lucide-react';
 import { MentionDropdown } from './MentionDropdown';
 import { detectImageGenerationIntent } from '@/lib/ai/imageDetection';
+import { useAutoResizeTextarea, useIsomorphicLayoutEffect } from '@/lib/hooks/useAutoResizeTextarea';
 
 // Keyword highlighting for question mode
 const KEYWORD_CONFIG = {
@@ -225,7 +226,6 @@ interface ChatInputProps {
 
 export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardId, channelId, members = [], onKeyboardFocus, onKeyboardBlur, forceQuestionMode = false, onOpenWhiteboard, voiceContext, onInsertShroom }: ChatInputProps) {
   const [content, setContent] = useState('');
-  const [needsScroll, setNeedsScroll] = useState(false);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const [inputActivated, setInputActivated] = useState(false);
@@ -582,7 +582,15 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
       );
     }
 
-    segments.push(<span key="trailing">&nbsp;</span>);
+    // A trailing newline gets no line box of its own in a div, but a textarea
+    // shows one — so the backdrop needs a <br> to keep the same height. This
+    // used to be an &nbsp; appended unconditionally, which is real content and
+    // could push the last line to wrap in the backdrop when it didn't wrap in
+    // the textarea. One line of drift there and the caret sits a whole line
+    // away from the text you're looking at.
+    if (text === '' || text.endsWith('\n')) {
+      segments.push(<br key="trailing" />);
+    }
     return segments;
   }, [content, mode, mentionRegex, cardMentionRegex]);
 
@@ -605,16 +613,14 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   }, []);
 
   // Auto-resize textarea and track if scrolling is needed
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      const scrollHeight = textarea.scrollHeight;
-      const shouldScroll = scrollHeight > MAX_HEIGHT;
-      setNeedsScroll(shouldScroll);
-      textarea.style.height = `${Math.min(scrollHeight, MAX_HEIGHT)}px`;
-    }
-  }, [content]);
+  const needsScroll = useAutoResizeTextarea(textareaRef, content, MAX_HEIGHT);
+
+  // The backdrop only listens for scroll events, which don't fire when a resize
+  // shifts the view. Re-sync after every resize so the highlighted text can't
+  // sit a line off from the caret drawing on top of it.
+  useIsomorphicLayoutEffect(() => {
+    handleScroll();
+  }, [content, needsScroll, handleScroll]);
 
   // Detect image generation intent in question mode
   useEffect(() => {
@@ -724,13 +730,8 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
     setCardMentionsMap({});
     setStagedImages([]);
     setShowImageSettings(false);
-    setNeedsScroll(false);
     clearError();
-
-    // Reset height
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
+    // Height resets itself: clearing content re-runs the auto-resize.
   };
 
   const handleMentionSelect = useCallback((member: ChannelMember) => {
@@ -1106,6 +1107,14 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
             </div>
           )}
 
+          {/*
+            scrollbar-none below is load-bearing, not cosmetic. The global
+            scrollbar rule gives this textarea a 6px gutter once it overflows,
+            which narrows its content box while the backdrop underneath keeps
+            its full width — so the two wrap at different points and the caret
+            ends up drawing a line away from the text you're reading. Same
+            width, same wrapping.
+          */}
           <textarea
             ref={textareaRef}
             value={content}
@@ -1184,7 +1193,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
             placeholder={placeholder ?? defaultPlaceholder}
             disabled={isLoading}
             rows={1}
-            className={`chat-textarea w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none whitespace-pre-wrap break-words font-[inherit] ${
+            className={`chat-textarea scrollbar-none w-full resize-none px-1 text-sm leading-[26px] placeholder-neutral-400 focus:outline-none whitespace-pre-wrap break-words font-[inherit] ${
               needsScroll ? 'overflow-y-auto' : 'overflow-y-hidden'
             } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''} ${
               showBackdrop

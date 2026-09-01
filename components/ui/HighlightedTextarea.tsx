@@ -113,8 +113,13 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
         );
       }
 
-      // Add a trailing space to ensure proper sizing
-      segments.push(<span key="trailing">&nbsp;</span>);
+      // A trailing newline gets no line box of its own in a div, but a textarea
+      // shows one. A <br> matches that exactly; the &nbsp; this replaced was
+      // real content, and could wrap the last line in the backdrop when the
+      // textarea hadn't wrapped it — putting the caret a line off from the text.
+      if (text === '' || text.endsWith('\n')) {
+        segments.push(<br key="trailing" />);
+      }
 
       return segments;
     };
@@ -180,13 +185,18 @@ export const HighlightedTextarea = forwardRef<HTMLTextAreaElement, HighlightedTe
         </div>
 
         {/* Actual textarea - transparent so backdrop shows through */}
-        {/* Must match backdrop text rendering exactly for cursor positioning */}
+        {/* Must match backdrop text rendering exactly for cursor positioning.
+            That includes the scrollbar: the backdrop hides its own, so this
+            hides its own too. Otherwise this one loses a gutter's worth of
+            width, wraps earlier than the backdrop, and the caret drifts off
+            the text it's supposed to sit in. */}
         <textarea
           ref={setRefs}
           value={localValue}
           onChange={handleChange}
           onScroll={handleScroll}
           className={`
+            scrollbar-none
             relative z-10 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm leading-5
             placeholder:text-neutral-400 resize-none
             focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400

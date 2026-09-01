@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
+import { useAutoResizeTextarea } from '@/lib/hooks/useAutoResizeTextarea';
 
 interface TaskNoteInputProps {
   onSubmit: (content: string) => void;
@@ -13,22 +14,12 @@ export function TaskNoteInput({ onSubmit, disabled }: TaskNoteInputProps) {
 
   const canSubmit = content.trim().length > 0 && !disabled;
 
-  // Auto-resize textarea
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
-    }
-  }, [content]);
+  useAutoResizeTextarea(textareaRef, content, 120);
 
   const handleSubmit = () => {
     if (!canSubmit) return;
     onSubmit(content.trim());
     setContent('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

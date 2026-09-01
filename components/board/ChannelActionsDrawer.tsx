@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { useKeyboardOffset } from './ChatInput';
+import { useAutoResizeTextarea } from '@/lib/hooks/useAutoResizeTextarea';
 
 interface ChannelActionsDrawerProps {
   channel: Channel;
@@ -54,6 +55,8 @@ export function ChannelActionsDrawer({ channel, isOpen, onClose }: ChannelAction
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const { keyboardOffset, onFocus: kbFocus, onBlur: kbBlur } = useKeyboardOffset();
+  // A one-line composer hides everything but the line you're on. Grow it.
+  useAutoResizeTextarea(chatInputRef, chatInput, 140);
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('light');
   // Email editor mode
   const [editorChatInput, setEditorChatInput] = useState('');

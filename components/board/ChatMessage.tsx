@@ -9,6 +9,7 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import type { Session } from 'next-auth';
 import type { CardMessage, StoredAction, TagDefinition, TaskStatus } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { useAutoResizeTextarea, keepCaretInView } from '@/lib/hooks/useAutoResizeTextarea';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { SmartSnippet } from './SmartSnippet';
 import { TaskCheckbox } from './TaskCheckbox';
@@ -353,13 +354,18 @@ export function ChatMessage({
   // Check if there are any smart snippets to render
   const hasSmartSnippets = isAI && message.proposedActions && message.proposedActions.length > 0;
 
+  // Capped: editing a long message used to grow a box taller than the thread,
+  // which pushed the save buttons off-screen and left no way back to the caret.
+  useAutoResizeTextarea(editRef, isEditing ? editContent : '', 240);
+
   useEffect(() => {
     if (isEditing && editRef.current) {
       const ta = editRef.current;
       ta.focus();
-      ta.selectionStart = ta.value.length;
-      ta.style.height = 'auto';
-      ta.style.height = `${ta.scrollHeight}px`;
+      // Setting the selection in code doesn't scroll, so editing a long message
+      // opened at the top with the caret parked out of sight at the bottom.
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+      keepCaretInView(ta);
     }
   }, [isEditing]);
 
@@ -489,11 +495,7 @@ export function ChatMessage({
             <textarea
               ref={editRef}
               value={editContent}
-              onChange={(e) => {
-                setEditContent(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = `${e.target.scrollHeight}px`;
-              }}
+              onChange={(e) => setEditContent(e.target.value)}
               onKeyDown={handleEditKeyDown}
               className="w-full resize-none rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
               rows={1}

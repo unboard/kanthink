@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
+import { useAutoResizeTextarea } from '@/lib/hooks/useAutoResizeTextarea';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import ReactMarkdown from 'react-markdown';
 import { ChannelPreview } from '@/components/board/ChannelPreview';
@@ -131,6 +132,9 @@ export function OperatorHome() {
   const [peek, setPeek] = useState<PeekTarget | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Was an onInput handler, which never fired when the value changed in code —
+  // so a restored or cleared prompt left the box at the wrong height.
+  useAutoResizeTextarea(inputRef, input, 200, { minHeight: 64 });
 
   const channelList = useMemo(() =>
     Object.values(channels).filter((c) => !c.isGlobalHelp),
@@ -739,12 +743,6 @@ export function OperatorHome() {
               placeholder="Ask Kan anything..."
               rows={2}
               className="w-full resize-none bg-transparent px-5 pb-1 pt-4 text-[15px] text-white placeholder:text-neutral-500 focus:outline-none"
-              style={{ maxHeight: 200 }}
-              onInput={(e) => {
-                const t = e.target as HTMLTextAreaElement;
-                t.style.height = 'auto';
-                t.style.height = Math.min(t.scrollHeight, 200) + 'px';
-              }}
             />
             <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
               <span className="hidden truncate pl-2 text-[11px] text-neutral-600 sm:block">
