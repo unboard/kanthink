@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Play, Pause, Maximize, Check, Download, Scissors, Plus,
-  Trash2, Save, X, Loader2, MoreVertical, ChevronLeft, Link2, Eye,
+  Trash2, Save, X, Loader2, MoreVertical, Link2, Eye, VolumeX,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import type { RecordingEditSpecJson, RecordingMaskJson } from '@/lib/db/schema';
@@ -56,7 +56,9 @@ export default function WatchPlayer({
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [controlsShown, setControlsShown] = useState(true);
+  const [muted, setMuted] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoPlayed = useRef(false);
 
   // Orientation drives how the video fills the viewport. Stored width/height can be
   // 0 on older recordings, so seed from the aspectRatio label and refine once the
@@ -92,8 +94,34 @@ export default function WatchPlayer({
     if (!v) return;
     if (isFinite(v.duration) && v.duration > 0) setDuration(v.duration);
     if (v.videoWidth > 0 && v.videoHeight > 0) setIsPortrait(v.videoHeight > v.videoWidth);
-    v.currentTime = start;
-  }, [start]);
+    // Seeking decodes that frame and paints it over the poster, which threw away
+    // the thumbnail the owner picked. Only seek when the clip is actually
+    // trimmed — then frame 0 isn't the real start anyway.
+    if (start > 0) v.currentTime = start;
+
+    // Start playing on arrival: a shared link should just play. Try with sound,
+    // and fall back to muted (which every browser permits) with a one-tap
+    // unmute, rather than landing on a still frame.
+    if (editing || autoPlayed.current) return;
+    autoPlayed.current = true;
+    v.play()
+      .then(() => setPlaying(true))
+      .catch(() => {
+        v.muted = true;
+        setMuted(true);
+        v.play()
+          .then(() => setPlaying(true))
+          .catch(() => { v.muted = false; setMuted(false); });
+      });
+  }, [start, editing]);
+
+  const unmute = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = false;
+    setMuted(false);
+    if (v.paused) v.play().then(() => setPlaying(true)).catch(() => {});
+  }, []);
 
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
@@ -333,20 +361,26 @@ export default function WatchPlayer({
         </button>
       )}
 
-      {/* Top overlay: back + owner 3-dot menu */}
+      {/* Top overlay: unmute + owner 3-dot menu. No back link — a shared watch
+          link is the video, not a way into the app. With nothing to put in it,
+          the bar isn't drawn at all, so a viewer sees no chrome up there. */}
+      {(muted || isOwner) && (
       <div
         style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
         className={`absolute inset-x-0 top-0 z-10 flex items-start justify-between bg-gradient-to-b from-black/50 to-transparent px-3 pb-6 transition-opacity duration-300 ${
           controlsShown ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       >
-        <button
-          onClick={() => router.push('/record')}
-          className="rounded-full bg-black/45 p-2 transition hover:bg-black/60"
-          aria-label="Back"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
+        {muted ? (
+          <button
+            onClick={unmute}
+            className="flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-2 text-xs font-medium transition hover:bg-black/60"
+          >
+            <VolumeX className="h-4 w-4" /> Unmute
+          </button>
+        ) : (
+          <span />
+        )}
 
         {isOwner && (
           <div className="relative">
@@ -391,6 +425,7 @@ export default function WatchPlayer({
           </div>
         )}
       </div>
+      )}
 
       {/* Bottom overlay: title + engagement controls */}
       <div
