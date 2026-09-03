@@ -1,36 +1,25 @@
 'use client';
 
-import type { PlaygroundApp } from '@/lib/types';
+import type { PlaygroundAppSummary } from '@/lib/types';
 import { Globe, Hammer, Loader2, Plus } from 'lucide-react';
 
 interface AppsPanelProps {
-  apps: PlaygroundApp[];
+  apps: PlaygroundAppSummary[];
   loading?: boolean;
   onOpen: (appId: string) => void;
   onCreate: () => void;
-  /** Compact rows with no heading, for sitting under the task list. */
-  compact?: boolean;
   creating?: boolean;
 }
 
 /**
- * The apps on a card, listed like tasks.
+ * The apps on a card — the Apps tab of the card drawer.
  *
- * Rendered twice: as the Apps tab, and under the task list on the Tasks tab. An app
- * is an artifact of the card in the same way a task is a piece of its work, so it
- * belongs in the same visual language — a row you can scan, not a separate mode.
+ * Only here. Tasks are tasks and apps are apps; the tab you are on is the thing
+ * you are looking at. The board card face has its own compact list (AppListOnCard).
  */
-export function AppsPanel({ apps, loading, onOpen, onCreate, compact = false, creating = false }: AppsPanelProps) {
-  if (compact && apps.length === 0 && !loading) return null;
-
+export function AppsPanel({ apps, loading, onOpen, onCreate, creating = false }: AppsPanelProps) {
   return (
-    <div className={compact ? 'px-4 pb-4 pt-2' : 'px-4 py-4'}>
-      {compact && (
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-          Apps
-        </p>
-      )}
-
+    <div className="px-4 py-4">
       {loading && apps.length === 0 ? (
         <div className="flex items-center gap-2 py-6 justify-center text-sm text-neutral-400">
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -42,7 +31,7 @@ export function AppsPanel({ apps, loading, onOpen, onCreate, compact = false, cr
             <AppRow key={app.id} app={app} onOpen={onOpen} />
           ))}
 
-          {apps.length === 0 && !compact && (
+          {apps.length === 0 && (
             <div className="py-8 text-center">
               <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center">
                 <Hammer className="w-5 h-5 text-neutral-400" />
@@ -68,7 +57,7 @@ export function AppsPanel({ apps, loading, onOpen, onCreate, compact = false, cr
   );
 }
 
-function AppRow({ app, onOpen }: { app: PlaygroundApp; onOpen: (appId: string) => void }) {
+function AppRow({ app, onOpen }: { app: PlaygroundAppSummary; onOpen: (appId: string) => void }) {
   const built = app.generationCount > 0;
   return (
     <button

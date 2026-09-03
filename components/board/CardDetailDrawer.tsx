@@ -33,7 +33,7 @@ import { CardChat } from './CardChat';
 import { CardApprovalBar } from './CardApprovalBar';
 import { AppsPanel } from '@/components/playground/AppsPanel';
 import { AppDrawer } from '@/components/playground/AppDrawer';
-import { usePlaygroundApps } from '@/components/playground/usePlaygroundApps';
+import { useCardApps } from '@/components/playground/usePlaygroundApps';
 import { TagPicker, getTagStyles } from './TagPicker';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
@@ -146,19 +146,10 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const { shrooms } = useShroomRun();
   const cardShrooms = shroomsForCard(shrooms);
   const [rawActiveTab, setActiveTab] = useState<ActiveTab>(initialTab ?? 'thread');
-  // Apps built from this card. Loaded only while the drawer is open — an app row
-  // carries a whole generated source file, so this stays out of the board store.
-  const {
-    apps,
-    loading: appsLoading,
-    refresh: refreshApps,
-    createApp,
-    updateApp,
-    deleteApp,
-    mergeApp,
-  } = usePlaygroundApps(card?.id, isOpen);
+  // Apps built from this card. Summaries come from the store — the same list the
+  // board card face reads — and the app drawer loads the full row for the one you open.
+  const { apps, createApp, creating: creatingApp } = useCardApps(card?.id);
   const [openAppId, setOpenAppId] = useState<ID | null>(null);
-  const [creatingApp, setCreatingApp] = useState(false);
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -505,13 +496,9 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   // Creating an app opens it straight away: an empty row in a list is not the
   // point, the thread you write the brief into is.
   const handleCreateApp = async () => {
-    setCreatingApp(true);
     const created = await createApp();
-    setCreatingApp(false);
     if (created) setOpenAppId(created.id);
   };
-
-  const openApp = apps.find((a) => a.id === openAppId) || null;
 
   // Every card can carry apps, so no tab is conditional any more — which is the
   // point of apps being artifacts rather than a card type. `rawActiveTab` is still
@@ -1127,7 +1114,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 tagDefinitions={channels[card.channelId]?.tagDefinitions ?? []}
                 tabBar={tabTiles}
                 hasApps={apps.some((a) => a.generationCount > 0)}
-                onShowApps={() => { setActiveTab('apps'); void refreshApps(); }}
+                onShowApps={() => setActiveTab('apps')}
                 composerSlot={
                   isPendingReview ? (
                     // Deciding the card removes it from review, so the drawer would
@@ -1146,7 +1133,6 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
               <div className="flex-1 overflow-y-auto">
                 <AppsPanel
                   apps={apps}
-                  loading={appsLoading}
                   creating={creatingApp}
                   onOpen={setOpenAppId}
                   onCreate={handleCreateApp}
@@ -1254,16 +1240,6 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 )}
 
               </div>
-
-              {/* Apps sit under the tasks — both are things this card produced. */}
-              <AppsPanel
-                apps={apps}
-                loading={appsLoading}
-                creating={creatingApp}
-                onOpen={setOpenAppId}
-                onCreate={handleCreateApp}
-                compact
-              />
             </div>
             {/* Bottom bar: tabs + task input */}
             <div className="flex-shrink-0 bg-white dark:bg-neutral-900 pt-2">
@@ -1775,18 +1751,13 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
       )}
 
       {/* An app's own drawer, stacked over the card's. */}
-      {openApp && card && (
+      {openAppId && card && (
         <AppDrawer
-          key={openApp.id}
-          app={openApp}
+          key={openAppId}
+          appId={openAppId}
           card={card}
           isOpen
           onClose={() => setOpenAppId(null)}
-          onAppChanged={mergeApp}
-          onRename={(appId, nextTitle) => { void updateApp(appId, { title: nextTitle }); }}
-          onTogglePublic={(appId, isPublic) => { void updateApp(appId, { isPublic }); }}
-          onSetModel={(appId, modelId) => { void updateApp(appId, { modelId }); }}
-          onDelete={(appId) => { setOpenAppId(null); void deleteApp(appId); }}
           onOpenSourceCard={() => setOpenAppId(null)}
         />
       )}

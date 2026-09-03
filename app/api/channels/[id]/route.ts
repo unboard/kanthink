@@ -7,6 +7,7 @@ import {
   cards,
   tasks,
   instructionCards,
+  playgroundApps,
   userChannelOrg,
   channelShares,
   users,
@@ -78,6 +79,38 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       console.error('Tasks query failed for channel', channelId, e)
     }
 
+    // Apps, as summaries only. The board lists them on the card face, which needs
+    // a name and a build count — not the generated source, the thread or the saved
+    // records, which together dwarf everything else in this response. The drawer
+    // fetches the full row when you open one.
+    let channelApps: Array<{
+      id: string; cardId: string; channelId: string; title: string
+      summary: string | null; generationCount: number; isPublic: boolean | null
+      position: number; isArchived: boolean | null
+      createdAt: Date | null; updatedAt: Date | null
+    }> = []
+    try {
+      channelApps = await db
+        .select({
+          id: playgroundApps.id,
+          cardId: playgroundApps.cardId,
+          channelId: playgroundApps.channelId,
+          title: playgroundApps.title,
+          summary: playgroundApps.summary,
+          generationCount: playgroundApps.generationCount,
+          isPublic: playgroundApps.isPublic,
+          position: playgroundApps.position,
+          isArchived: playgroundApps.isArchived,
+          createdAt: playgroundApps.createdAt,
+          updatedAt: playgroundApps.updatedAt,
+        })
+        .from(playgroundApps)
+        .where(eq(playgroundApps.channelId, channelId))
+        .orderBy(asc(playgroundApps.position))
+    } catch (e) {
+      console.error('Playground apps query failed for channel', channelId, e)
+    }
+
     // Fetch instruction cards ordered by position
     const channelInstructions = await db.query.instructionCards.findMany({
       where: eq(instructionCards.channelId, channelId),
@@ -126,6 +159,11 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         completedAt: task.completedAt?.toISOString(),
         createdAt: task.createdAt?.toISOString(),
         updatedAt: task.updatedAt?.toISOString(),
+      })),
+      playgroundApps: channelApps.map(app => ({
+        ...app,
+        createdAt: app.createdAt?.toISOString(),
+        updatedAt: app.updatedAt?.toISOString(),
       })),
       instructionCards: channelInstructions.map(ic => ({
         ...ic,

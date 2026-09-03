@@ -25,7 +25,7 @@ import { registerServiceWorker, requestNotificationPermission, showBrowserNotifi
 import type { NotificationData } from '@/lib/notifications/types'
 import { MigrationModal } from '@/components/MigrationModal'
 import { STORAGE_KEY } from '@/lib/constants'
-import type { Channel, Card, Task, InstructionCard, Folder, Column } from '@/lib/types'
+import type { Channel, Card, Task, InstructionCard, Folder, Column, PlaygroundAppSummary } from '@/lib/types'
 
 // Server response types (include position/columnId fields)
 interface ServerCard extends Card {
@@ -152,6 +152,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
       const channels: Record<string, Channel> = {}
       const cards: Record<string, Card> = {}
       const tasks: Record<string, Task> = {}
+      const playgroundApps: Record<string, PlaygroundAppSummary> = {}
       const instructionCards: Record<string, InstructionCard> = {}
       const folders: Record<string, Folder> = {}
 
@@ -192,6 +193,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
         const serverColumns = detail.columns as unknown as ServerColumn[]
         const channelCards = detail.cards as unknown as ServerCard[]
         const channelTasks = detail.tasks as unknown as ServerTask[]
+        const channelApps = (detail.playgroundApps ?? []) as unknown as PlaygroundAppSummary[]
         const channelInstructions = detail.instructionCards
 
         // Build column structure with card IDs and task IDs
@@ -305,6 +307,24 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
             typeData: card.typeData,
             createdAt: card.createdAt,
             updatedAt: card.updatedAt,
+          }
+        }
+
+        // Process apps. Summaries only — the server sends no code or thread here.
+        for (const app of channelApps) {
+          if (app.isArchived) continue
+          playgroundApps[app.id] = {
+            id: app.id,
+            cardId: app.cardId,
+            channelId: app.channelId,
+            title: app.title,
+            summary: app.summary,
+            generationCount: app.generationCount ?? 0,
+            isPublic: !!app.isPublic,
+            position: app.position ?? 0,
+            isArchived: !!app.isArchived,
+            createdAt: app.createdAt,
+            updatedAt: app.updatedAt,
           }
         }
 
@@ -486,6 +506,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
         channels,
         cards,
         tasks,
+        playgroundApps,
         instructionCards,
         folders,
         folderOrder,

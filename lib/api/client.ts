@@ -9,6 +9,7 @@ import type {
   Column,
   Task,
   InstructionCard,
+  PlaygroundAppSummary,
   Folder,
   CardInput,
   ChannelInput,
@@ -25,6 +26,8 @@ interface ChannelDetailResponse {
   columns: Column[]
   cards: Card[]
   tasks: Task[]
+  /** Apps on this channel's cards, as summaries — no code, thread or records. */
+  playgroundApps?: PlaygroundAppSummary[]
   instructionCards: InstructionCard[]
 }
 

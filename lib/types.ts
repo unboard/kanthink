@@ -524,6 +524,27 @@ export interface Card {
  * it came from supplies the brief for the first build and stays linked at the top
  * of the app's thread; after that the app owns its own conversation and its own code.
  */
+/**
+ * An app as the board knows it: identity and build state, no payload.
+ *
+ * The board lists apps on the card face, which needs a name and whether it has
+ * been built — not the generated source, thread or saved records. Those are an
+ * order of magnitude larger and are fetched only when a drawer opens one.
+ */
+export interface PlaygroundAppSummary {
+  id: ID;
+  cardId: ID;
+  channelId: ID;
+  title: string;
+  summary?: string | null;
+  generationCount: number;
+  isPublic?: boolean;
+  position: number;
+  isArchived?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PlaygroundApp {
   id: ID;
   channelId: ID;

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { nanoid } from 'nanoid';
-import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, TaskNote, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction, RejectionReason } from './types';
+import type { ID, Channel, Card, ChannelInput, CardInput, Column, ChannelQuestion, InstructionRevision, SuggestionMode, PropertyDefinition, CardProperty, PropertyDisplayType, InstructionCard, InstructionCardInput, InstructionAction, InstructionRunMode, Task, TaskInput, TaskStatus, TaskNote, CardMessage, CardMessageType, AIOperation, AIOperationContext, Folder, TagDefinition, InstructionRun, CardChange, StoredAction, RejectionReason, PlaygroundAppSummary } from './types';
 import { DEFAULT_COLUMN_NAMES, STORAGE_KEY } from './constants';
 import { newCardGoesLast } from './columnSort';
 import { buildCardDuplicate } from './cards/duplicate';
@@ -38,6 +38,8 @@ interface KanthinkState {
   channels: Record<ID, Channel>;
   cards: Record<ID, Card>;
   tasks: Record<ID, Task>;
+  /** Apps built from cards, as summaries — see PlaygroundAppSummary. */
+  playgroundApps: Record<ID, PlaygroundAppSummary>;
   instructionCards: Record<ID, InstructionCard>;
   folders: Record<ID, Folder>;
   folderOrder: ID[];
@@ -48,6 +50,10 @@ interface KanthinkState {
   generatingSkeletons: Record<ID, number>;  // columnId -> skeleton count
   instructionRuns: Record<ID, InstructionRun>;  // runId -> run info for undo
   _hasHydrated: boolean;
+
+  // Playground app actions. Summaries only — a drawer owns the full row.
+  upsertPlaygroundApp: (app: PlaygroundAppSummary) => void;
+  removePlaygroundApp: (id: ID) => void;
 
   // Folder actions
   createFolder: (name: string) => Folder;
@@ -214,6 +220,8 @@ export interface ServerData {
   channels: Record<ID, Channel>;
   cards: Record<ID, Card>;
   tasks: Record<ID, Task>;
+  /** Apps built from cards, as summaries — see PlaygroundAppSummary. */
+  playgroundApps: Record<ID, PlaygroundAppSummary>;
   instructionCards: Record<ID, InstructionCard>;
   folders: Record<ID, Folder>;
   folderOrder: ID[];
@@ -224,6 +232,7 @@ export interface LocalStorageExport {
   channels: Record<ID, Channel>;
   cards: Record<ID, Card>;
   tasks: Record<ID, Task>;
+  // No apps: they only ever exist server-side, so there is nothing local to migrate.
   instructionCards: Record<ID, InstructionCard>;
   folders: Record<ID, Folder>;
   folderOrder: ID[];
@@ -251,6 +260,7 @@ export const useStore = create<KanthinkState>()(
       channels: {},
       cards: {},
       tasks: {},
+      playgroundApps: {},
       instructionCards: {},
       folders: {},
       folderOrder: [],
@@ -317,6 +327,7 @@ export const useStore = create<KanthinkState>()(
           channels: mergedChannels,
           cards: mergedCards,
           tasks: data.tasks,
+          playgroundApps: data.playgroundApps,
           instructionCards: data.instructionCards,
           folders: data.folders,
           folderOrder: data.folderOrder,
@@ -333,6 +344,7 @@ export const useStore = create<KanthinkState>()(
           channels: {},
           cards: {},
           tasks: {},
+          playgroundApps: {},
           instructionCards: {},
           folders: {},
           folderOrder: [],
@@ -361,6 +373,16 @@ export const useStore = create<KanthinkState>()(
           channelOrder: state.channelOrder,
         };
       },
+
+      upsertPlaygroundApp: (app) =>
+        set((state) => ({ playgroundApps: { ...state.playgroundApps, [app.id]: app } })),
+
+      removePlaygroundApp: (id) =>
+        set((state) => {
+          const next = { ...state.playgroundApps };
+          delete next[id];
+          return { playgroundApps: next };
+        }),
 
       // Folder actions
       createFolder: (name) => {
@@ -4753,6 +4775,10 @@ export const useStore = create<KanthinkState>()(
         channels: state.channels,
         cards: state.cards,
         tasks: state.tasks,
+        // playgroundApps is deliberately absent: apps are server-owned and never
+        // created offline, so a persisted copy could only ever be stale. It comes
+        // back with every channel fetch, and the initial {} keeps reads safe until
+        // then. Adding it here would resurrect deleted apps on the board.
         instructionCards: state.instructionCards,
         channelOrder: state.channelOrder,
         folders: state.folders,

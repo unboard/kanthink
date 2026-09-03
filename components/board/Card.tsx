@@ -5,13 +5,16 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { Card as CardType, Task } from '@/lib/types';
+import type { Card as CardType, Task, ID } from '@/lib/types';
 import { useStore } from '@/lib/store';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { ShroomPicker } from './ShroomPicker';
 import { useShroomRun, shroomsForCard } from './ShroomRunContext';
 import { TaskListOnCard } from './TaskListOnCard';
+import { AppListOnCard } from './AppListOnCard';
+import { AppDrawer } from '@/components/playground/AppDrawer';
+import { useCardApps } from '@/components/playground/usePlaygroundApps';
 import { TaskDrawer } from './TaskDrawer';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { Modal } from '@/components/ui';
@@ -69,6 +72,10 @@ export function Card({ card }: CardProps) {
   // Which tab the card drawer should land on. The Apps entry goes to Apps; every
   // other entry point wants the thread.
   const [drawerInitialTab, setDrawerInitialTab] = useState<'thread' | 'apps'>('thread');
+  // Apps this card produced. Listed on the face and openable straight from the
+  // column, the same way a task is — no need to go through the card first.
+  const { apps: cardApps } = useCardApps(card.id);
+  const [openAppId, setOpenAppId] = useState<ID | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [promotedCard, setPromotedCard] = useState<CardType | null>(null);
@@ -951,6 +958,8 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
+        <AppListOnCard apps={cardApps} onAppClick={setOpenAppId} />
+
         <div>
           <TaskListOnCard
             cardId={card.id}
@@ -979,6 +988,16 @@ export function Card({ card }: CardProps) {
         subtitle={card.title}
         onClose={() => { setShowShroomPicker(false); setShowCardMenu(false); }}
       />
+      {openAppId && (
+        <AppDrawer
+          key={openAppId}
+          appId={openAppId}
+          card={card}
+          isOpen
+          onClose={() => setOpenAppId(null)}
+          onOpenSourceCard={() => { setOpenAppId(null); setIsCardDrawerOpen(true); }}
+        />
+      )}
       <CardDrawerErrorBoundary>
         <CardDetailDrawer
           card={card}
