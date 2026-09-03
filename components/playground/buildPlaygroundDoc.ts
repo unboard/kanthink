@@ -28,7 +28,7 @@ export function buildPlaygroundDoc(
     uploadUrl?: string;
     aiUrl?: string;
     saveUrl?: string;
-    cardToken?: string;
+    appToken?: string;
     /**
      * If set, baked into `window.kanthinkInitial.record` so the app can hydrate
      * from a specific saved record (used by /play/{token}/r/{slug}). Apps in the
@@ -49,7 +49,7 @@ export function buildPlaygroundDoc(
   const uploadUrl = (options?.uploadUrl || '/api/playground/upload').replace(/[<>"]/g, '');
   const aiUrl = (options?.aiUrl || '/api/playground/ai').replace(/[<>"]/g, '');
   const saveUrl = (options?.saveUrl || '/api/playground/save').replace(/[<>"]/g, '');
-  const cardToken = (options?.cardToken || '').replace(/[<>"]/g, '');
+  const appToken = (options?.appToken || '').replace(/[<>"]/g, '');
   const initialRecord = options?.initialRecord ?? null;
   // Strip an accidental opening markdown fence if Gemini ever leaks one.
   // Also strip any `import React ...` lines: the iframe's wrapper already does
@@ -156,7 +156,7 @@ ${buildImportMap(options?.deps || [])}
   // HMAC card token baked at build time — proves to /api/playground/{ai,save}
   // which card this iframe is authorized to read/write. The iframe runs in an
   // opaque-origin sandbox so it has no cookies; this token is the auth.
-  var __KPG_CARD_TOKEN = ${JSON.stringify(cardToken)};
+  var __KPG_APP_TOKEN = ${JSON.stringify(appToken)};
 
   // Initial record hydration — when this iframe is rendered from
   // /play/{token}/r/{slug}, the host bakes the saved record here so the
@@ -188,10 +188,10 @@ ${buildImportMap(options?.deps || [])}
   // server-side and get back a shareable per-record URL.
   var __KPG_SAVE_URL = ${JSON.stringify(saveUrl)};
   window.kanthinkSave = function(data, label) {
-    if (!__KPG_CARD_TOKEN) return Promise.reject(new Error('Save is not available in this playground (no card token).'));
+    if (!__KPG_APP_TOKEN) return Promise.reject(new Error('Save is not available in this playground (no app token).'));
     if (data === undefined || data === null) return Promise.reject(new Error('kanthinkSave requires data.'));
     var payload = {
-      cardToken: __KPG_CARD_TOKEN,
+      appToken: __KPG_APP_TOKEN,
       data: data,
       label: typeof label === 'string' ? label : undefined
     };
@@ -236,9 +236,9 @@ ${buildImportMap(options?.deps || [])}
     generate: function(opts) {
       if (!opts || typeof opts !== 'object') return Promise.reject(new Error('kanthinkAI.generate requires an options object.'));
       if (!opts.prompt) return Promise.reject(new Error('kanthinkAI.generate requires opts.prompt.'));
-      if (!__KPG_CARD_TOKEN) return Promise.reject(new Error('AI is not available in this playground (no card token).'));
+      if (!__KPG_APP_TOKEN) return Promise.reject(new Error('AI is not available in this playground (no app token).'));
       var payload = {
-        cardToken: __KPG_CARD_TOKEN,
+        appToken: __KPG_APP_TOKEN,
         prompt: opts.prompt,
         system: opts.system,
         model: opts.model,
@@ -275,9 +275,9 @@ ${buildImportMap(options?.deps || [])}
     generateImage: function(opts) {
       if (!opts || typeof opts !== 'object') return Promise.reject(new Error('kanthinkAI.generateImage requires an options object.'));
       if (!opts.prompt) return Promise.reject(new Error('kanthinkAI.generateImage requires opts.prompt.'));
-      if (!__KPG_CARD_TOKEN) return Promise.reject(new Error('AI is not available in this playground (no card token).'));
+      if (!__KPG_APP_TOKEN) return Promise.reject(new Error('AI is not available in this playground (no app token).'));
       var payload = {
-        cardToken: __KPG_CARD_TOKEN,
+        appToken: __KPG_APP_TOKEN,
         mode: 'image',
         prompt: opts.prompt,
         imageUrl: opts.imageUrl,

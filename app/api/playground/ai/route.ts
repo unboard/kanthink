@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { db } from '@/lib/db';
-import { cards, users } from '@/lib/db/schema';
+import { playgroundApps, users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { decryptIfNeeded } from '@/lib/crypto';
-import { verifyCardToken } from '@/lib/playground/cardToken';
+import { verifyAppToken } from '@/lib/playground/appToken';
 import { PLAYGROUND_MODELS, FALLBACK_GENERATION_MODEL_ID, getPlaygroundModel } from '@/lib/playground/models';
 
 export const runtime = 'nodejs';
@@ -23,7 +23,7 @@ const IMAGE_MODEL_PRIMARY = 'gemini-3.1-flash-image-preview';
 const IMAGE_MODEL_FALLBACK = 'gemini-2.5-flash-image';
 
 interface AIRequest {
-  cardToken: string;
+  appToken: string;
   prompt: string;
   system?: string;
   model?: string;
@@ -36,8 +36,8 @@ interface AIRequest {
 
 /** AI proxy used by playground apps via window.kanthinkAI.generate(...).
  *
- *  Authenticates with a per-card HMAC token (no cookies — the iframe runs
- *  with an opaque origin). Resolves the card owner's BYOK Gemini key (or
+ *  Authenticates with a per-app HMAC token (no cookies — the iframe runs
+ *  with an opaque origin). Resolves the owning channel's BYOK Gemini key (or
  *  falls back to the owner-set env key) and proxies the call.
  */
 export async function POST(request: Request) {
@@ -48,9 +48,9 @@ export async function POST(request: Request) {
     return cors(NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }));
   }
 
-  const cardId = verifyCardToken(body.cardToken);
-  if (!cardId) {
-    return cors(NextResponse.json({ error: 'Invalid or missing cardToken' }, { status: 401 }));
+  const appId = verifyAppToken(body.appToken);
+  if (!appId) {
+    return cors(NextResponse.json({ error: 'Invalid or missing appToken' }, { status: 401 }));
   }
   if (!body.prompt || typeof body.prompt !== 'string') {
     return cors(NextResponse.json({ error: 'prompt is required' }, { status: 400 }));
@@ -62,21 +62,21 @@ export async function POST(request: Request) {
     ));
   }
 
-  // Find the card and resolve the owner.
-  const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId) });
-  if (!card || card.cardType !== 'playground') {
-    return cors(NextResponse.json({ error: 'Card not found' }, { status: 404 }));
+  // Find the app and resolve the owner.
+  const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
+  if (!app) {
+    return cors(NextResponse.json({ error: 'App not found' }, { status: 404 }));
   }
 
   // Look up the channel owner's BYOK config. We can't import getUserByokConfig
   // (it relies on auth) — query directly.
   const { channels } = await import('@/lib/db/schema');
   const channel = await db.query.channels.findFirst({
-    where: eq(channels.id, card.channelId),
+    where: eq(channels.id, app.channelId),
     columns: { ownerId: true },
   });
   if (!channel?.ownerId) {
-    return cors(NextResponse.json({ error: 'Card has no owner' }, { status: 500 }));
+    return cors(NextResponse.json({ error: 'App has no owner' }, { status: 500 }));
   }
   const owner = await db.query.users.findFirst({
     where: eq(users.id, channel.ownerId),

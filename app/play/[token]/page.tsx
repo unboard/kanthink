@@ -1,10 +1,10 @@
 import { db } from '@/lib/db';
-import { cards } from '@/lib/db/schema';
+import { playgroundApps } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
-import { signCardToken } from '@/lib/playground/cardToken';
+import { signAppToken } from '@/lib/playground/appToken';
 import { resolveDeps } from '@/lib/playground/runtime';
 import { PublicPlaygroundFrame } from './PublicPlaygroundFrame';
 import type { Metadata } from 'next';
@@ -13,24 +13,15 @@ interface PageProps {
   params: Promise<{ token: string }>;
 }
 
-interface PlaygroundTypeData {
-  code?: string;
-  codeTitle?: string;
-  codeSummary?: string;
-  cardToken?: string;
-  dependencies?: string[];
-}
-
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { token } = await params;
-  const card = await db.query.cards.findFirst({
-    where: and(eq(cards.shareToken, token), eq(cards.isPublic, true)),
+  const app = await db.query.playgroundApps.findFirst({
+    where: and(eq(playgroundApps.shareToken, token), eq(playgroundApps.isPublic, true)),
   });
-  const typeData = (card?.typeData as PlaygroundTypeData | null) || {};
-  const title = typeData.codeTitle || card?.title || 'Kanthink Playground';
-  const summary = typeData.codeSummary || card?.summary || 'A mini app built on Kanthink.';
+  const title = app?.title || 'Kanthink Playground';
+  const summary = app?.summary || 'A mini app built on Kanthink.';
   return {
     title: `${title} · Kanthink`,
     description: summary,
@@ -41,34 +32,28 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function PlayPage({ params }: PageProps) {
   const { token } = await params;
 
-  const card = await db.query.cards.findFirst({
-    where: and(eq(cards.shareToken, token), eq(cards.isPublic, true)),
+  const app = await db.query.playgroundApps.findFirst({
+    where: and(eq(playgroundApps.shareToken, token), eq(playgroundApps.isPublic, true)),
   });
 
-  if (!card || card.cardType !== 'playground') {
-    notFound();
-  }
-  const typeData = (card.typeData as PlaygroundTypeData | null) || {};
-  if (!typeData.code) {
+  if (!app?.code) {
     notFound();
   }
 
-  const title = typeData.codeTitle || card.title || 'Kanthink Playground';
+  const title = app.title || 'Kanthink Playground';
   // Resolve the deployment origin from request headers so the iframe's upload
   // helper has an absolute URL it can call across the opaque-origin boundary.
   const h = await headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const origin = host ? `${proto}://${host}` : '';
-  const srcDoc = buildPlaygroundDoc(typeData.code, {
+  const srcDoc = buildPlaygroundDoc(app.code, {
     title,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,
-    // Mint a fresh token if the card doesn't have one persisted yet (older
-    // playgrounds created before AI proxy existed).
-    cardToken: typeData.cardToken || signCardToken(card.id),
-    deps: resolveDeps(typeData.dependencies || []).deps,
+    appToken: app.appToken || signAppToken(app.id),
+    deps: resolveDeps(app.dependencies || []).deps,
   });
 
   return <PublicPlaygroundFrame srcDoc={srcDoc} title={title} />;

@@ -66,9 +66,9 @@ export function Card({ card }: CardProps) {
   const { shrooms } = useShroomRun();
   const cardShrooms = shroomsForCard(shrooms);
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
-  // Which tab the card drawer should land on. "App details" goes to Info, where a
-  // playground card's build controls live; every other entry point wants the thread.
-  const [drawerInitialTab, setDrawerInitialTab] = useState<'thread' | 'playground'>('thread');
+  // Which tab the card drawer should land on. The Apps entry goes to Apps; every
+  // other entry point wants the thread.
+  const [drawerInitialTab, setDrawerInitialTab] = useState<'thread' | 'apps'>('thread');
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [promotedCard, setPromotedCard] = useState<CardType | null>(null);
@@ -227,12 +227,6 @@ export function Card({ card }: CardProps) {
   const rawPreview = card.summary
     || (messages.length > 0 ? messages[0].content.slice(0, 150) : '');
   const contentPreview = stripMentionMarkup(rawPreview);
-
-  // Build count drives the status line. 0 means the card is a playground but nothing
-  // has been generated yet — a real, reachable state now that a card can be converted
-  // before it is built.
-  const playgroundVersion =
-    (card.typeData as { generationCount?: number } | undefined)?.generationCount ?? 0;
 
   // Get tag definitions for color lookup
   const tagDefinitions = channels[card.channelId]?.tagDefinitions ?? [];
@@ -458,25 +452,10 @@ export function Card({ card }: CardProps) {
                     <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     Info
                   </button>
-                  {card.cardType === 'playground' ? (
-                    <>
-                      <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); setDrawerInitialTab('playground'); setIsCardDrawerOpen(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors rounded-lg">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" /></svg>
-                        App details
-                      </button>
-                      {/* Reverting keeps typeData, so a built app is hidden rather than
-                          discarded and turning it back on restores what was there. */}
-                      <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); updateCard(card.id, { cardType: null }); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
-                        <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6M3 10l6-6" /></svg>
-                        Turn back into a card
-                      </button>
-                    </>
-                  ) : (
-                    <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); updateCard(card.id, { cardType: 'playground' }); setDrawerInitialTab('thread'); setIsCardDrawerOpen(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors rounded-lg">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" /></svg>
-                      Turn into a playground
-                    </button>
-                  )}
+                  <button onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); setDrawerInitialTab('apps'); setIsCardDrawerOpen(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors rounded-lg">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" /></svg>
+                    Apps
+                  </button>
                   <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1 mx-2" />
                   <button onClick={(e) => { e.stopPropagation(); setShowMoveColumnPicker(true); }} className="w-full flex items-center gap-3 px-3 py-3 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg">
                     <svg className="w-5 h-5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
@@ -691,18 +670,14 @@ export function Card({ card }: CardProps) {
                     </svg>
                     Info
                   </button>
-                  {/* Playground: convert an ordinary card, or open the app's controls
-                      on one that already is a playground. This variant is the desktop
-                      menu — it previously showed "App details" on every card, so on a
-                      normal card it opened Info and appeared to do nothing. */}
+                  {/* Apps built from this card. Every card can carry them, so this
+                      is unconditional — it opens the Apps tab rather than
+                      converting the card into anything. */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowCardMenu(false);
-                      if (card.cardType !== 'playground') {
-                        updateCard(card.id, { cardType: 'playground' });
-                      }
-                      setDrawerInitialTab('playground');
+                      setDrawerInitialTab('apps');
                       setIsCardDrawerOpen(true);
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
@@ -710,20 +685,9 @@ export function Card({ card }: CardProps) {
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
                     </svg>
-                    {card.cardType === 'playground' ? 'Open Playground' : 'Turn into a playground'}
+                    Apps
                   </button>
-                  {card.cardType === 'playground' && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setShowCardMenu(false); updateCard(card.id, { cardType: null }); }}
-                      className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
-                    >
-                      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6M3 10l6-6" />
-                      </svg>
-                      Turn back into a card
-                    </button>
-                  )}
-                  <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
+                                    <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
                   {/* Run a shroom on just this card */}
                   {cardShrooms.length > 0 && (
                     <button
@@ -910,34 +874,6 @@ export function Card({ card }: CardProps) {
             </p>
           )}
 
-          {/* Playground status line.
-              This is the ONLY thing that marks a playground card — no badge above the
-              title, no change to the body — so it sits level with ordinary cards in the
-              same column. Present from the moment a card becomes a playground, which is
-              why a card with no app yet still reads "Not built yet" rather than showing
-              nothing. Building has no special line: card-processing already says so. */}
-          {card.cardType === 'playground' && (
-            <div className="mt-2 flex items-center gap-1.5 text-[10px] text-neutral-400 dark:text-neutral-500">
-              <span className="font-medium text-violet-500 dark:text-violet-400">Playground</span>
-              <span className="text-neutral-300 dark:text-neutral-700">·</span>
-              {playgroundVersion > 0 ? (
-                <>
-                  <span>v{playgroundVersion}</span>
-                  <span className="text-neutral-300 dark:text-neutral-700">·</span>
-                  {card.isPublic ? (
-                    <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      Live
-                    </span>
-                  ) : (
-                    <span>Private</span>
-                  )}
-                </>
-              ) : (
-                <span>Not built yet</span>
-              )}
-            </div>
-          )}
         </div>
 
         {(card.assignedTo ?? []).length > 0 && (
@@ -951,7 +887,7 @@ export function Card({ card }: CardProps) {
         )}
 
         {/* Task progress bar */}
-        {card.cardType !== 'playground' && cardTasks.length > 0 && (
+        {cardTasks.length > 0 && (
           <div className="mt-2" onClick={() => setIsCardDrawerOpen(true)}>
             <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
               <span>{cardTasks.filter(t => t.status === 'done').length}/{cardTasks.length} tasks</span>
@@ -1015,9 +951,6 @@ export function Card({ card }: CardProps) {
           </div>
         )}
 
-        {/* Tasks are work to be done. A playground card's subject is a built thing,
-            so it carries no task list and no Add task affordance. */}
-        {card.cardType !== 'playground' && (
         <div>
           <TaskListOnCard
             cardId={card.id}
@@ -1037,7 +970,6 @@ export function Card({ card }: CardProps) {
             }}
           />
         </div>
-        )}
         </div>{/* End card content padding wrapper */}
       </div>
       <ShroomPicker

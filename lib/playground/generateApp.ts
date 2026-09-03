@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
 import { db } from '@/lib/db';
-import { cards, tasks } from '@/lib/db/schema';
+import { cards, tasks, playgroundApps } from '@/lib/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
+import { requirePermission, PermissionError } from '@/lib/api/permissions';
 import { getUserByokConfigWithError } from '@/lib/usage';
 import { nanoid } from 'nanoid';
 import {
@@ -15,7 +16,7 @@ import {
   resolveActiveModelId,
   computeGenerationCost,
 } from '@/lib/playground/models';
-import { signCardToken } from '@/lib/playground/cardToken';
+import { signAppToken } from '@/lib/playground/appToken';
 import { runPreflight } from '@/lib/playground/preflight';
 import {
   resolveDeps,
@@ -40,26 +41,6 @@ interface PlaygroundUsage {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
-}
-
-interface PlaygroundTypeData {
-  code?: string;
-  codeTitle?: string;
-  codeSummary?: string;
-  generationCount?: number;
-  lastNotes?: string;
-  lastUsage?: PlaygroundUsage;
-  lastModelId?: string;
-  cardToken?: string;
-  /** Running list of established design decisions, kept terse, re-injected on each iteration. */
-  designNotes?: string;
-  /**
-   * Runtime dependency declarations for this playground, in lib/playground/runtime
-   * grammar. Declared by the model as it writes the code. Re-resolved on every
-   * render — we store the declarations, not the URLs, so resolution rules can change
-   * without rewriting stored data.
-   */
-  dependencies?: string[];
 }
 
 const SYSTEM_PROMPT = `You generate complete single-file React applications that run in a sandboxed iframe with this exact runtime:
@@ -276,7 +257,8 @@ const RESPONSE_SCHEMA = {
 };
 
 export interface GenerateRequest {
-  cardId: string;
+  /** The playground app being built. Its source card supplies first-build context. */
+  appId: string;
   prompt: string;
   // Optional: if the iframe captured a runtime error, include it so Gemini can fix.
   lastError?: string;
@@ -308,8 +290,8 @@ export async function generatePlaygroundApp(
   options: { skipPreflight?: boolean } = {}
 ): Promise<NextResponse> {
   await ensureSchema();
-  if (!body.cardId || !body.prompt) {
-    return NextResponse.json({ error: 'cardId and prompt are required' }, { status: 400 });
+  if (!body.appId || !body.prompt) {
+    return NextResponse.json({ error: 'appId and prompt are required' }, { status: 400 });
   }
 
   // Resolve the user's Google API key (BYOK first, owner fallback).
@@ -332,56 +314,83 @@ export async function generatePlaygroundApp(
     );
   }
 
-  // Load the card so we can include current code + recent thread context for iteration quality.
-  const card = await db.query.cards.findFirst({ where: eq(cards.id, body.cardId) });
-  if (!card) {
-    return NextResponse.json({ error: 'Card not found' }, { status: 404 });
+  // Load the app being built, plus the card it is an artifact of.
+  const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, body.appId) });
+  if (!app) {
+    return NextResponse.json({ error: 'App not found' }, { status: 404 });
   }
-  const typeData = (card.typeData as PlaygroundTypeData | null) || {};
-  const currentCode = typeData.code;
-  const generationCount = typeData.generationCount ?? 0;
+  const card = await db.query.cards.findFirst({ where: eq(cards.id, app.cardId) });
+  if (!card) {
+    return NextResponse.json({ error: 'Source card not found' }, { status: 404 });
+  }
 
-  // Dependencies available for THIS generation: whatever the playground already had,
-  // The model can add more via its response, which is
-  // applied to the same turn's code — see the dependencies handling after generation.
-  const seededDeclarations = [...(typeData.dependencies || [])];
+  // A build overwrites the app's code and appends to its thread, so it needs edit
+  // access to the channel — not merely a signed-in caller holding an app id.
+  try {
+    await requirePermission(app.channelId, session.user.id, 'edit');
+  } catch (error) {
+    if (error instanceof PermissionError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    throw error;
+  }
+
+  const currentCode = app.code || undefined;
+  const generationCount = app.generationCount ?? 0;
+  const isIteration = !!currentCode;
+
+  // Dependencies available for THIS generation: whatever the app already had. The
+  // model can add more via its response, applied to the same turn's code — see the
+  // dependencies handling after generation.
+  const seededDeclarations = [...(app.dependencies || [])];
   const seeded = resolveDeps(seededDeclarations);
 
-  // Build the user message: original goal (card title) + current code + thread + new prompt.
-  //
-  // The thread IS the brief — on a pipeline card it carries the PM's requirements,
-  // the CTO's data model and the designer's direction as full documents. The old
-  // 6-message / 400-char cap silently threw most of that away at build time, which
-  // defeated the point of accumulating it. Generous caps; Gemini's context dwarfs
-  // any real thread, the cap only guards against a runaway one.
-  const recentMessages = (card.messages || []).slice(-16);
-  const threadContext = recentMessages.length > 0
-    ? recentMessages
+  // The app's own thread is the brief. It carries every build request and every bit
+  // of discussion since the app was created, so it is passed whole — Gemini's context
+  // dwarfs any real thread, and the cap only guards against a runaway one.
+  const appMessages = stripOptimistic<{ id?: unknown; type?: string; content?: string }>(app.messages).slice(-40);
+  const threadContext = appMessages.length > 0
+    ? appMessages
         .map(m => `[${m.type}] ${(m.content || '').slice(0, 6000)}`)
         .join('\n')
     : '(no prior messages)';
 
-  // The card's task list, as build context. Now that the playground lives as a tab on
-  // the card rather than a separate mode, the tasks sitting one tab over are usually a
-  // literal spec for what the thing should do — not passing them meant the user had to
-  // retype requirements they'd already written down.
-  const cardTasks = await db.query.tasks.findMany({
-    where: and(eq(tasks.cardId, body.cardId), eq(tasks.isArchived, false)),
-    orderBy: [asc(tasks.position)],
-    limit: 30,
-  });
-  const taskContext = cardTasks.length > 0
-    ? cardTasks
-        .map(t => `- [${t.status === 'done' ? 'x' : ' '}] ${t.title}${t.description ? `: ${t.description.slice(0, 200)}` : ''}`)
-        .join('\n')
-    : '';
+  // Source-card context, on the first build only.
+  //
+  // The card is what the app grew out of: its thread and tasks are the raw brief.
+  // After that first build the app owns its own conversation, and re-reading the
+  // card every turn would let card edits silently rewrite an app the user had
+  // already shaped in its own thread.
+  let sourceContext = '';
+  if (!isIteration) {
+    const cardMessages = stripOptimistic<{ id?: unknown; type?: string; content?: string }>(card.messages).slice(-16);
+    const cardThread = cardMessages.length > 0
+      ? cardMessages.map(m => `[${m.type}] ${(m.content || '').slice(0, 6000)}`).join('\n')
+      : '(no messages on the card)';
+
+    const cardTasks = await db.query.tasks.findMany({
+      where: and(eq(tasks.cardId, card.id), eq(tasks.isArchived, false)),
+      orderBy: [asc(tasks.position)],
+      limit: 30,
+    });
+    const taskContext = cardTasks.length > 0
+      ? cardTasks
+          .map(t => `- [${t.status === 'done' ? 'x' : ' '}] ${t.title}${t.description ? `: ${t.description.slice(0, 200)}` : ''}`)
+          .join('\n')
+      : '';
+
+    sourceContext = [
+      `SOURCE CARD: ${card.title}`,
+      card.summary ? `CARD SUMMARY: ${card.summary}` : '',
+      taskContext ? `TASKS ON THE SOURCE CARD (requirements, not a to-do list to render):\n${taskContext}` : '',
+      `SOURCE CARD THREAD:\n${cardThread}`,
+    ].filter(Boolean).join('\n\n');
+  }
 
   const attachedImages = (body.imageUrls || []).slice(0, 6); // hard cap on images per call
   const imageNote = attachedImages.length > 0
     ? `\n\nThe user attached ${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} below — use them for visual reference (style, layout, colors, content).`
     : '';
-
-  const isIteration = !!currentCode;
 
   // -- Preflight: on iterations, decide whether to ASK or ACT, and classify the edit type
   //    so we can route to the right model when the user picked 'Auto'. First generations
@@ -394,7 +403,7 @@ export async function generatePlaygroundApp(
         cardSummary: card.summary || undefined,
         hasCurrentCode: true,
         recentThread: threadContext,
-        designNotes: typeData.designNotes,
+        designNotes: app.designNotes || undefined,
       })
     : { decision: 'ACT' as const, editType: 'first' as const, rationale: 'first generation' };
 
@@ -405,7 +414,7 @@ export async function generatePlaygroundApp(
       ? `Quick question before I make this change: ${preflight.questions[0]}`
       : `Quick questions before I make this change:\n\n${preflight.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
 
-    const existingMessagesForAsk = stripOptimistic(card.messages);
+    const existingMessagesForAsk = stripOptimistic(app.messages);
     const userMessageObj = {
       id: nanoid(),
       type: 'question' as const,
@@ -421,23 +430,22 @@ export async function generatePlaygroundApp(
       createdAt: new Date().toISOString(),
     };
     const updatedMessages = [...existingMessagesForAsk, userMessageObj, aiMessageObj];
-    await db.update(cards).set({
-      messages: updatedMessages as unknown as typeof cards.$inferInsert.messages,
+    await db.update(playgroundApps).set({
+      messages: updatedMessages as unknown as typeof playgroundApps.$inferInsert.messages,
       updatedAt: new Date(),
-    }).where(eq(cards.id, body.cardId));
+    }).where(eq(playgroundApps.id, app.id));
 
     return NextResponse.json({
       success: true,
       clarification: { questions: preflight.questions, rationale: preflight.rationale },
       messages: updatedMessages,
-      typeData,  // unchanged
     });
   }
 
   // Build the prompt for full generation. Inject designNotes verbatim so the
   // model treats prior decisions as locked unless this turn's request changes them.
-  const designNotesBlock = typeData.designNotes
-    ? `ESTABLISHED DESIGN DECISIONS (locked unless this request changes one):\n${typeData.designNotes}`
+  const designNotesBlock = app.designNotes
+    ? `ESTABLISHED DESIGN DECISIONS (locked unless this request changes one):\n${app.designNotes}`
     : '';
 
   const iterationReminder = isIteration
@@ -448,13 +456,13 @@ export async function generatePlaygroundApp(
 ${body.prompt}${imageNote}${iterationReminder}`;
 
   const userMessage = [
-    `ORIGINAL GOAL (card title): ${card.title}`,
+    `APP: ${app.title}`,
     currentCode
       ? `CURRENT CODE (this is your starting point — preserve it except for what the user asks to change):\n\`\`\`jsx\n${currentCode}\n\`\`\``
       : 'CURRENT CODE: (none yet — this is the first generation, design freely)',
     designNotesBlock,
-    taskContext ? `TASKS ON THIS CARD (treat these as requirements, not a to-do list to render):\n${taskContext}` : '',
-    `RECENT THREAD CONTEXT:\n${threadContext}`,
+    sourceContext,
+    `THIS APP'S THREAD:\n${threadContext}`,
     body.lastError ? `PREVIOUS ERROR:\n${body.lastError}` : '',
     requestBlock,
   ].filter(Boolean).join('\n\n');
@@ -544,9 +552,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     return NextResponse.json({ error: 'Gemini returned no code' }, { status: 502 });
   }
 
-  // Persist:
-  // 1. Latest snapshot in typeData (fast read for preview + public render)
-  // 2. A short ai_response message in the thread so the conversation looks natural
+  // Persist the build onto the app row, and append the turn to the app's thread.
   const inputTokens = usage?.promptTokenCount ?? 0;
   const outputTokens = usage?.candidatesTokenCount ?? 0;
   const lastUsage: PlaygroundUsage = {
@@ -559,33 +565,12 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   // -- Dependencies for the code we just received.
   //    The model declares what it imported, so the import map is built in the same
   //    turn as the code that needs it — no second round trip, no "install then use".
-
   const declaredByModel = Array.isArray(parsed.dependencies) ? parsed.dependencies : [];
   const merged = resolveDeps(declaredByModel);
 
   // Invalid declarations cost that library, not the generation. Surface them so the
   // UI can say why an import is missing instead of leaving a silent runtime error.
   const rejectedDeps = merged.rejected;
-
-  const newTypeData: PlaygroundTypeData = {
-    code: parsed.code,
-    codeTitle: parsed.title,
-    codeSummary: parsed.summary,
-    generationCount: generationCount + 1,
-    lastNotes: parsed.notes,
-    lastUsage,
-    lastModelId: model.id,
-    // Stable HMAC of the card id, used by the iframe runtime to authenticate
-    // window.kanthinkAI calls back to /api/playground/ai. Same value every time.
-    cardToken: typeData.cardToken || signCardToken(body.cardId),
-    // Persistent design memory — model returns updated bullet list each turn,
-    // we re-inject it on the next iteration so old decisions don't fade.
-    designNotes: typeof parsed.designNotes === 'string' && parsed.designNotes.trim().length > 0
-      ? parsed.designNotes.trim()
-      : typeData.designNotes,
-    // Store declarations rather than resolved URLs so resolution rules stay changeable.
-    dependencies: merged.deps.map(d => d.raw),
-  };
 
   // Build the new thread: append user prompt + Kan's notes.
   //
@@ -594,7 +579,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   // the thread can already contain a copy of the prompt we're about to append —
   // which is how user messages ended up rendering twice. The server owns the
   // canonical thread; client placeholders never belong in it.
-  const existingMessages = stripOptimistic(card.messages);
+  const existingMessages = stripOptimistic(app.messages);
   const userMessageObj = {
     id: nanoid(),
     type: 'question' as const,
@@ -611,23 +596,33 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   };
   const newMessages = [...existingMessages, userMessageObj, aiMessageObj];
 
-  // First generation also sets cardType + a friendly title if the card was untitled.
-  const updates: Record<string, unknown> = {
-    typeData: newTypeData,
+  const updated = {
+    code: parsed.code,
+    summary: parsed.summary,
+    generationCount: generationCount + 1,
+    lastNotes: parsed.notes,
+    lastUsage,
+    lastModelId: model.id,
+    // Persistent design memory — the model returns an updated bullet list each turn
+    // and we re-inject it on the next iteration so old decisions don't fade.
+    designNotes: typeof parsed.designNotes === 'string' && parsed.designNotes.trim().length > 0
+      ? parsed.designNotes.trim()
+      : app.designNotes,
+    // Store declarations rather than resolved URLs so resolution rules stay changeable.
+    dependencies: merged.deps.map(d => d.raw),
+    // Stable HMAC of the app id, used by the iframe runtime to authenticate
+    // window.kanthinkAI calls back to /api/playground/ai. Same value every time.
+    appToken: app.appToken || signAppToken(app.id),
     messages: newMessages,
+    // The model names the app on its first build; after that the user's own title wins.
+    title: generationCount === 0 ? parsed.title : app.title,
     updatedAt: new Date(),
   };
-  if (card.cardType !== 'playground') {
-    updates.cardType = 'playground';
-  }
-  if (generationCount === 0 && (!card.title || card.title.toLowerCase().startsWith('new card'))) {
-    updates.title = parsed.title;
-  }
-  if (!card.summary || generationCount === 0) {
-    updates.summary = parsed.summary;
-  }
 
-  await db.update(cards).set(updates).where(eq(cards.id, body.cardId));
+  await db
+    .update(playgroundApps)
+    .set(updated as unknown as typeof playgroundApps.$inferInsert)
+    .where(eq(playgroundApps.id, app.id));
 
   return NextResponse.json({
     success: true,
@@ -637,7 +632,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
       summary: parsed.summary,
       notes: parsed.notes,
     },
-    typeData: newTypeData,
+    app: { ...app, ...updated },
     messages: newMessages,
     usage,
     lastUsage,

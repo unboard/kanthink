@@ -30,9 +30,13 @@ interface CardChatProps {
    * approval — so the thread stays readable while the input is swapped out.
    */
   composerSlot?: React.ReactNode;
+  /** Whether this card already carries a built app — shapes what Kan may propose. */
+  hasApps?: boolean;
+  /** Open the card's Apps tab. Used after Kan's build proposal is accepted. */
+  onShowApps?: () => void;
 }
 
-export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar, composerSlot }: CardChatProps) {
+export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar, composerSlot, hasApps = false, onShowApps }: CardChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<ChatInputHandle>(null);
   // The composer floats over the thread, so the scroll area pads by its measured height.
@@ -203,10 +207,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             imageSettings,
             context: {
               cardTitle: card.title,
-              // On a playground card Kan collaborates on an app and proposes builds
-              // instead of tasks and tags.
               cardType: card.cardType ?? undefined,
-              hasBuild: !!(card.typeData as { code?: string } | undefined)?.code,
+              // Whether this card already carries a built app. Passed down by the
+              // drawer, which is what actually loads them.
+              hasBuild: hasApps,
               channelName,
               channelDescription,
               tasks: cardTasks.map((t) => ({ title: t.title, status: t.status })),
@@ -293,23 +297,30 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         const buildData = dataToUse as BuildAppActionData;
         setIsBuilding(true);
         updateCard(card.id, { isProcessing: true, processingStatus: 'Building the app…' });
-        fetch('/api/playground/generate', {
+        // A build needs an app to land on, so make one first. The result lives on
+        // the card's Apps tab with its own thread — this thread is the card's, not
+        // the app's, so nothing is written back here.
+        fetch('/api/playground/apps', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cardId: card.id, prompt: buildData.instruction }),
+          body: JSON.stringify({ cardId: card.id, title: buildData.summary?.slice(0, 60) }),
         })
+          .then((r) => r.json().catch(() => null))
+          .then((created) => {
+            if (!created?.app?.id) throw new Error(created?.error || 'Could not create the app');
+            return fetch('/api/playground/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ appId: created.app.id, prompt: buildData.instruction }),
+            });
+          })
           .then((r) => r.json().catch(() => null))
           .then((data) => {
             if (!data || data.error) {
               setAIError(data?.error || 'Build failed.');
               return;
             }
-            updateCard(card.id, {
-              cardType: 'playground',
-              typeData: data.typeData,
-              ...(data.messages ? { messages: data.messages } : {}),
-              ...(data.snapshot?.summary ? { summary: data.snapshot.summary } : {}),
-            });
+            onShowApps?.();
           })
           .catch((err) => setAIError(err instanceof Error ? err.message : 'Build failed.'))
           .finally(() => {

@@ -23,6 +23,31 @@ function getMonthStart(): Date {
   return new Date(now.getFullYear(), now.getMonth(), 1)
 }
 
+/**
+ * Agent seats (`users.kind === 'agent'`) own no commercial relationship — tier,
+ * BYOK key and quota all belong to the human who runs them. Every read of
+ * entitlement and every write of usage resolves through here first, which keeps
+ * the agent's own row purely an identity: name, avatar, session, channel shares.
+ *
+ * Note this resolves the *reader*, never the writer: setUserByokConfig and
+ * updateUserByokModel deliberately still target the row they were given, so an
+ * agent can't overwrite its parent's key. The key lives on exactly one row, so
+ * rotating or revoking it stays a single edit.
+ *
+ * One hop only — agents don't parent other agents, so no cycle is possible. A
+ * dangling parentUserId falls back to the agent's own row, which has tier 'free'
+ * and no key: it degrades to a locked-down seat, never to someone else's billing.
+ */
+export async function resolveBillingUserId(userId: string): Promise<string> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: { kind: true, parentUserId: true },
+  })
+
+  if (user?.kind !== 'agent' || !user.parentUserId) return userId
+  return user.parentUserId
+}
+
 function getNextMonthStart(): Date {
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -31,9 +56,12 @@ function getNextMonthStart(): Date {
 export async function getUsageStatus(userId: string): Promise<UsageStatus> {
   const monthStart = getMonthStart()
 
+  // Agent seats report their parent's entitlement, not their own empty row.
+  const billingUserId = await resolveBillingUserId(userId)
+
   // Get user's tier and BYOK status
   const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
+    where: eq(users.id, billingUserId),
   })
 
   const tier = user?.tier || 'free'
@@ -55,7 +83,7 @@ export async function getUsageStatus(userId: string): Promise<UsageStatus> {
   // Count usage this month
   const records = await db.query.usageRecords.findMany({
     where: and(
-      eq(usageRecords.userId, userId),
+      eq(usageRecords.userId, billingUserId),
       gte(usageRecords.createdAt, monthStart)
     ),
   })
@@ -99,9 +127,14 @@ export async function checkUsageLimit(userId: string): Promise<{
 }
 
 export async function recordUsage(userId: string, requestType: string): Promise<void> {
+  // An agent's requests are its parent's requests: they draw down the parent's
+  // quota and land in the parent's usage history, not a second counter that
+  // could drift from the limit checkUsageLimit enforces.
+  const billingUserId = await resolveBillingUserId(userId)
+
   // Check if user has BYOK - don't record usage if they do
   const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
+    where: eq(users.id, billingUserId),
   })
 
   if (user?.byokApiKey) {
@@ -110,12 +143,13 @@ export async function recordUsage(userId: string, requestType: string): Promise<
   }
 
   await db.insert(usageRecords).values({
-    userId,
+    userId: billingUserId,
     requestType,
   })
 
-  // Check usage thresholds for email alerts (fire-and-forget)
-  checkUsageThresholdsForEmail(userId, user).catch(() => {})
+  // Check usage thresholds for email alerts (fire-and-forget). Addressed to the
+  // billing user — an agent seat has no real inbox to warn.
+  checkUsageThresholdsForEmail(billingUserId, user).catch(() => {})
 }
 
 async function checkUsageThresholdsForEmail(
@@ -173,8 +207,11 @@ export async function getUserByokConfig(userId: string): Promise<ByokConfig | nu
 }
 
 export async function getUserByokConfigWithError(userId: string): Promise<ByokConfigResult> {
+  // Agent seats borrow the parent's key at read time rather than holding a copy.
+  const billingUserId = await resolveBillingUserId(userId)
+
   const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
+    where: eq(users.id, billingUserId),
   })
 
   if (!user?.byokApiKey) {
@@ -194,7 +231,7 @@ export async function getUserByokConfigWithError(userId: string): Promise<ByokCo
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown decryption error'
-    console.error('Failed to decrypt BYOK API key for user', userId, ':', errorMessage)
+    console.error('Failed to decrypt BYOK API key for user', billingUserId, ':', errorMessage)
     return {
       config: null,
       error: `Failed to decrypt your API key. Please re-enter it in Settings. (${errorMessage})`
@@ -206,8 +243,10 @@ export async function getUserByokConfigWithError(userId: string): Promise<ByokCo
  * Check if user has BYOK configured (without decrypting the key)
  */
 export async function hasUserByokConfig(userId: string): Promise<boolean> {
+  const billingUserId = await resolveBillingUserId(userId)
+
   const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
+    where: eq(users.id, billingUserId),
     columns: { byokApiKey: true },
   })
 

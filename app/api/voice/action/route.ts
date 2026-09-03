@@ -9,6 +9,7 @@ import { eq, and, desc, asc, gt, like, sql } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
 import { generatePlaygroundApp } from '@/lib/playground/generateApp';
+import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
 import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
 import { instructionCards } from '@/lib/db/schema';
 import { inferIntent } from '@/lib/channelCreation/inferIntent';
@@ -682,9 +683,13 @@ export async function POST(request: Request) {
         if (!card) {
           return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
         }
+        const app = await resolveAppForAutomatedBuild({ cardId: args.cardId, userId: session.user.id });
+        if (!app) {
+          return NextResponse.json({ result: `Couldn't create an app on "${card.title}".` });
+        }
         const result = await generatePlaygroundApp(
           {
-            cardId: args.cardId,
+            appId: app.id,
             prompt: args.prompt || 'Build an app from this card and its thread.',
           },
           { user: { id: session.user.id } },
@@ -697,7 +702,7 @@ export async function POST(request: Request) {
         }
         // `result` is the convention every handler here uses — it's what gets spoken.
         return NextResponse.json({
-          result: `Built "${payload?.snapshot?.title || card.title}" on "${card.title}". It's on the card's App tab.`,
+          result: `Built "${payload?.snapshot?.title || card.title}" on "${card.title}". It's on the card's Apps tab.`,
           cardId: card.id,
         });
       }

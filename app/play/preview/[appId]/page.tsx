@@ -1,83 +1,72 @@
 import { db } from '@/lib/db';
-import { cards } from '@/lib/db/schema';
+import { playgroundApps } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { getChannelPermission } from '@/lib/api/permissions';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
-import { signCardToken } from '@/lib/playground/cardToken';
+import { signAppToken } from '@/lib/playground/appToken';
 import { resolveDeps } from '@/lib/playground/runtime';
 import { PreviewPlaygroundFrame } from './PreviewPlaygroundFrame';
 import type { Metadata } from 'next';
 
 /**
- * Owner-only full-viewport preview of a playground, published or not.
+ * Owner-only full-viewport preview of an app, published or not.
  *
  * This exists because the old in-page fullscreen toggle rendered `position: fixed`
  * inside the card drawer. Any transformed ancestor makes a fixed element resolve
  * against that ancestor instead of the viewport, so "fullscreen" was clipped to the
  * drawer and unusable. A real page in a new tab has no container to escape.
  *
- * Unlike /play/{token} this does NOT require the card to be public — it's gated on
- * channel permission instead, so you can try a playground before deciding to publish.
+ * Unlike /play/{token} this does NOT require the app to be public — it's gated on
+ * channel permission instead, so you can try an app before deciding to publish.
  */
 
 interface PageProps {
-  params: Promise<{ cardId: string }>;
-}
-
-interface PlaygroundTypeData {
-  code?: string;
-  codeTitle?: string;
-  codeSummary?: string;
-  cardToken?: string;
-  dependencies?: string[];
+  params: Promise<{ appId: string }>;
 }
 
 export const dynamic = 'force-dynamic';
 
 // A private preview should never be indexed or previewed by a link unfurler.
 export const metadata: Metadata = {
-  title: 'Playground preview',
+  title: 'App preview',
   robots: { index: false, follow: false },
 };
 
 export default async function PlaygroundPreviewPage({ params }: PageProps) {
-  const { cardId } = await params;
+  const { appId } = await params;
 
   const session = await auth();
   if (!session?.user?.id) notFound();
 
-  const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId) });
-  if (!card || card.cardType !== 'playground') notFound();
+  const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
+  if (!app?.code) notFound();
 
-  // Viewing the preview requires the same access as viewing the card it lives on.
+  // Viewing the preview requires the same access as viewing the card it hangs off.
   const permission = await getChannelPermission(
-    card.channelId,
+    app.channelId,
     session.user.id,
     session.user.email
   );
   if (!permission) notFound();
 
-  const typeData = (card.typeData as PlaygroundTypeData | null) || {};
-  if (!typeData.code) notFound();
-
-  const title = typeData.codeTitle || card.title || 'Kanthink Playground';
+  const title = app.title || 'Kanthink Playground';
 
   const h = await headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const origin = host ? `${proto}://${host}` : '';
 
-  const srcDoc = buildPlaygroundDoc(typeData.code, {
+  const srcDoc = buildPlaygroundDoc(app.code, {
     title,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,
-    cardToken: typeData.cardToken || signCardToken(card.id),
-    deps: resolveDeps(typeData.dependencies || []).deps,
+    appToken: app.appToken || signAppToken(app.id),
+    deps: resolveDeps(app.dependencies || []).deps,
   });
 
-  return <PreviewPlaygroundFrame srcDoc={srcDoc} title={title} isPublished={!!card.isPublic} />;
+  return <PreviewPlaygroundFrame srcDoc={srcDoc} title={title} isPublished={!!app.isPublic} />;
 }

@@ -36,6 +36,14 @@ export const users = sqliteTable('users', {
   byokApiKey: text('byok_api_key'),
   byokModel: text('byok_model'),
 
+  // Agent seats. An 'agent' row is a real identity — its own name, avatar, session
+  // and channel shares — but it owns no commercial relationship. Tier, BYOK and
+  // quota all resolve through parentUserId; see resolveBillingUserId() in lib/usage.ts.
+  // This is deliberately not "copy the parent's key onto the agent row": the key
+  // stays on exactly one row, so rotating or revoking it is still a single edit.
+  kind: text('kind').$type<'human' | 'agent'>().default('human'),
+  parentUserId: text('parent_user_id'),
+
   // Where the share sheet / bookmarklet drops things by default. Stored per user
   // rather than in localStorage so the default is the same from the phone and the
   // desktop browser. Null falls back to the Kan Bookmarks inbox.
@@ -268,6 +276,72 @@ export const tasks = sqliteTable('tasks', {
   index('tasks_column_idx').on(table.columnId),
 ])
 
+/**
+ * Playground apps — generated single-file React apps that hang off a card.
+ *
+ * An app is an artifact of its source card, the way a task is: many per card,
+ * listed under the tasks, each opening its own drawer. The card supplies the
+ * brief for the first build and stays linked from the top of the app's thread;
+ * after that the app owns its own conversation and its own code.
+ *
+ * This replaced the older model where a playground WAS a card
+ * (`cards.cardType = 'playground'`, code in `cards.typeData`), which capped a
+ * card at one app and made the card's thread do double duty as build log and
+ * discussion. Those cards' data is still on disk but nothing reads it.
+ */
+export const playgroundApps = sqliteTable('playground_apps', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  // The card this app is an artifact of. Deleting the card takes its apps with it.
+  cardId: text('card_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
+
+  title: text('title').notNull().default('New app'),
+  summary: text('summary'),
+
+  // --- The build ---
+  code: text('code'),
+  generationCount: integer('generation_count').notNull().default(0),
+  /** Running list of established design decisions, re-injected on every iteration. */
+  designNotes: text('design_notes'),
+  /** Kan's notes from the most recent build, shown under the preview. */
+  lastNotes: text('last_notes'),
+  /**
+   * Runtime dependency declarations in lib/playground/runtime grammar, as declared
+   * by the model. Stored as declarations rather than resolved URLs so resolution
+   * rules can change without rewriting rows — always re-resolved via resolveDeps.
+   */
+  dependencies: safeJsonText<string[]>([])('dependencies').default([]),
+
+  // --- Model + cost ---
+  lastModelId: text('last_model_id'),
+  lastUsage: text('last_usage', { mode: 'json' }).$type<PlaygroundUsageJson | null>(),
+  /** Sticky per-app model choice; falls back to the 'auto' router when null. */
+  modelId: text('model_id'),
+
+  // --- Thread ---
+  // Same message shape as a card thread, so the chat components are shared.
+  messages: safeJsonText<CardMessageJson[]>([])('messages').default([]),
+
+  // --- Sharing ---
+  isPublic: integer('is_public', { mode: 'boolean' }).default(false),
+  shareToken: text('share_token'),
+  /** Signed HMAC the sandboxed iframe uses to call back into /api/playground/ai. */
+  appToken: text('app_token'),
+  /** Records the running app persisted via window.kanthinkSave. */
+  savedRecords: safeJsonText<SavedRecordJson[]>([])('saved_records').default([]),
+
+  position: integer('position').notNull().default(0),
+  createdBy: text('created_by'),
+  isArchived: integer('is_archived', { mode: 'boolean' }).default(false),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('playground_apps_card_idx').on(table.cardId),
+  index('playground_apps_channel_idx').on(table.channelId),
+  index('playground_apps_share_idx').on(table.shareToken),
+])
+
 // Instruction cards for AI automation
 export const instructionCards = sqliteTable('instruction_cards', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -275,8 +349,9 @@ export const instructionCards = sqliteTable('instruction_cards', {
 
   title: text('title').notNull(),
   instructions: text('instructions').notNull(),
-  // 'build' generates a playground app from the card's own thread — see
-  // lib/playground/generateApp. Stored as text, so no migration for the new value.
+  // 'build' generates an app onto the target card from the card's own thread — see
+  // lib/playground/generateApp. Repeat runs iterate the card's existing app rather
+  // than spawning a new one. Stored as text, so no migration for the new value.
   action: text('action').$type<'generate' | 'modify' | 'move' | 'report' | 'build'>().notNull(),
   target: text('target', { mode: 'json' }).$type<InstructionTargetJson>().notNull(),
   contextColumns: text('context_columns', { mode: 'json' }).$type<ContextColumnSelectionJson>(),
@@ -647,11 +722,28 @@ interface CardMessageJson {
   type: 'note' | 'question' | 'ai_response'
   content: string
   imageUrls?: string[]
+  authorId?: string
   createdAt: string
   replyToMessageId?: string
   reactions?: { emoji: string; userId: string; userName?: string }[]
   shroomRunId?: string
   shroomRan?: boolean
+}
+
+/** Token spend on a single playground generation. */
+interface PlaygroundUsageJson {
+  modelId: string
+  inputTokens: number
+  outputTokens: number
+  costUsd: number
+}
+
+/** A record a running playground app persisted via window.kanthinkSave. */
+interface SavedRecordJson {
+  slug: string
+  data: unknown
+  label?: string
+  createdAt: number
 }
 
 interface CardPropertyJson {

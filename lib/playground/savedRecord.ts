@@ -6,9 +6,8 @@
  * open the URL and the app loads pre-populated with that record via
  * `window.kanthinkInitial.record`.
  *
- * Records live inside `cards.typeData.savedRecords` — no schema migration
- * needed because typeData is already a JSON column. We bound the array so a
- * single card can't grow unbounded.
+ * Records live in `playground_apps.saved_records`, bounded so one app can't
+ * grow unbounded.
  */
 import { customAlphabet } from 'nanoid';
 
@@ -30,8 +29,8 @@ export function newRecordSlug(): string {
   return slugGen();
 }
 
-/** Hard cap on saved records per card. Oldest gets dropped on overflow. */
-export const MAX_RECORDS_PER_CARD = 200;
+/** Hard cap on saved records per app. Oldest gets dropped on overflow. */
+export const MAX_RECORDS_PER_APP = 200;
 
 /** Hard cap on a single record's JSON-serialized size, in bytes. */
 export const MAX_RECORD_BYTES = 32 * 1024;

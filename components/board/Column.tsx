@@ -111,6 +111,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const [renameValue, setRenameValue] = useState(column.name);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [newCardId, setNewCardId] = useState<ID | null>(null);
+  const [cardDrawerTab, setCardDrawerTab] = useState<'thread' | 'apps'>('thread');
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [newTaskId, setNewTaskId] = useState<ID | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
@@ -195,13 +196,12 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
     setIsCardDrawerOpen(true);
   };
 
-  const handleAddPlayground = () => {
-    // Created as a playground straight away, so it lands in the column already
-    // reading "Not built yet" rather than looking like an ordinary card until
-    // someone builds it.
+  // An app hangs off an ordinary card, so this makes a card and opens it on Apps
+  // — the card is real work in its own right, and the app is one thing it produced.
+  const handleAddApp = () => {
     const card = createCard(channelId, column.id, { title: 'Untitled' });
-    updateCard(card.id, { cardType: 'playground' });
     setNewCardId(card.id);
+    setCardDrawerTab('apps');
     setIsCardDrawerOpen(true);
   };
 
@@ -213,6 +213,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
 
   const handleCardDrawerClose = () => {
     setIsCardDrawerOpen(false);
+    setCardDrawerTab('thread');
     setNewCardId(null);
   };
 
@@ -411,14 +412,14 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                     </div>
                   </button>
                   <button
-                    onClick={() => { setIsAddMenuOpen(false); handleAddPlayground(); }}
+                    onClick={() => { setIsAddMenuOpen(false); handleAddApp(); }}
                     className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
                   >
                     <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-violet-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                     </svg>
                     <div>
-                      <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Playground</div>
+                      <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">App</div>
                       <div className="text-xs text-neutral-400 dark:text-neutral-500">Build games, tools, apps and more</div>
                     </div>
                   </button>
@@ -452,14 +453,14 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
                   </div>
                 </button>
                 <button
-                  onClick={() => { setIsAddMenuOpen(false); handleAddPlayground(); }}
+                  onClick={() => { setIsAddMenuOpen(false); handleAddApp(); }}
                   className="w-full flex items-start gap-3 px-3 py-3.5 text-left hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors rounded-lg"
                 >
                   <svg className="w-5 h-5 mt-0.5 flex-shrink-0 text-violet-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                   </svg>
                   <div>
-                    <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Playground</div>
+                    <div className="text-sm font-medium text-neutral-700 dark:text-neutral-200">App</div>
                     <div className="text-xs text-neutral-400 dark:text-neutral-500">Build games, tools, apps and more</div>
                   </div>
                 </button>
@@ -585,6 +586,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
       <CardDetailDrawer
         card={newCard}
         isOpen={isCardDrawerOpen}
+        initialTab={cardDrawerTab}
         onClose={handleCardDrawerClose}
         autoFocusTitle
       />

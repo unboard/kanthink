@@ -35,6 +35,7 @@ A Kanban app where each channel is an AI-assisted, goal-driven space that genera
   Actions: `generate` | `modify` | `move` | `report` | `build`. A `build` shroom runs
   the playground generator against a card, using the card's own thread as the brief —
   which is what lets a chain of shrooms enrich a card and assemble an app at the end.
+  It builds into the card's existing app when there is one, rather than adding another.
 - Task: a checklist item on a card
 
 Default column names live in `lib/constants.ts` (Inbox, Like, Dislike, This Week).
@@ -47,7 +48,7 @@ Kanthink is well past MVP. A rough map of the surfaces, so you don't rebuild som
 - **Shrooms** (`app/shrooms`, `lib/shrooms/*`) — the automation engine: triggers, scheduled + event runs, run history, graph view, summaries, learning from rejections. Arguably the centre of the product; nothing else here is as load-bearing.
 - **Instruction cards** — per-channel reusable prompts, with guide/suggest/chat flows and learnings
 - **AI surfaces** — channel chat, card chat, operator chat, task chat, voice (live + transcribe + TTS), image generation
-- **Playground** (`components/playground`, `app/api/playground/*`) — generates a single-file React app onto a card, iterates on it in chat, publishes it at `/play/{token}`. Presets parameterize generation along three axes: a locked user-authored `designProfile`, a reusable `recipe` instruction, and `runtime` libraries. Libraries resolve through `lib/playground/runtime.ts` — **every declaration must go through `resolveDeps`**, because resolved URLs are interpolated into the iframe's import map.
+- **Apps / playground** (`components/playground`, `app/api/playground/*`) — generates single-file React apps that hang off a card as artifacts, listed under its tasks on the Apps tab. Many per card; each row in `playground_apps` owns its own code, thread, model choice, design notes and share token, and publishes at `/play/{token}`. The source card seeds the **first** build only (its thread and tasks go in as the brief); every build after that reads the app's own thread plus the current code. Talking in that thread is ordinary chat with Kan and never touches the code — building is the explicit Update app action. Libraries resolve through `lib/playground/runtime.ts` — **every declaration must go through `resolveDeps`**, because resolved URLs are interpolated into the iframe's import map.
 - **Sharing & multi-user** — orgs, folder/channel shares with owner/editor/viewer roles, invite links, presence, notifications (all realtime via Pusher)
 - **Publishing** — public card pages (`/p`), digests + newsletters, Customer.IO email
 - **Billing** — Stripe checkout + webhooks, usage records, BYOK

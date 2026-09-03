@@ -31,7 +31,9 @@ import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
 import { CardChat } from './CardChat';
 import { CardApprovalBar } from './CardApprovalBar';
-import { PlaygroundView } from '@/components/playground/PlaygroundView';
+import { AppsPanel } from '@/components/playground/AppsPanel';
+import { AppDrawer } from '@/components/playground/AppDrawer';
+import { usePlaygroundApps } from '@/components/playground/usePlaygroundApps';
 import { TagPicker, getTagStyles } from './TagPicker';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
@@ -125,7 +127,7 @@ function formatDate(dateString: string): string {
   });
 }
 
-type ActiveTab = 'thread' | 'tasks' | 'info' | 'playground';
+type ActiveTab = 'thread' | 'tasks' | 'info' | 'apps';
 
 export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack, initialTaskId, initialTab }: CardDetailDrawerProps) {
   const router = useRouter();
@@ -144,6 +146,19 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const { shrooms } = useShroomRun();
   const cardShrooms = shroomsForCard(shrooms);
   const [rawActiveTab, setActiveTab] = useState<ActiveTab>(initialTab ?? 'thread');
+  // Apps built from this card. Loaded only while the drawer is open — an app row
+  // carries a whole generated source file, so this stays out of the board store.
+  const {
+    apps,
+    loading: appsLoading,
+    refresh: refreshApps,
+    createApp,
+    updateApp,
+    deleteApp,
+    mergeApp,
+  } = usePlaygroundApps(card?.id, isOpen);
+  const [openAppId, setOpenAppId] = useState<ID | null>(null);
+  const [creatingApp, setCreatingApp] = useState(false);
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -198,7 +213,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [showImagePrompt, setShowImagePrompt] = useState(false);
   const [imagePromptText, setImagePromptText] = useState('');
-  // Defer the heavy CardChat / PlaygroundView render until after the drawer's
+  // Defer the heavy CardChat render until after the drawer's
   // slide-in animation has had a frame to start. This makes taps on cards feel
   // instant even when the thread component is large.
   const [contentReady, setContentReady] = useState(false);
@@ -487,33 +502,34 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const completedCount = nonArchivedTasks.filter((t) => t.status === 'done').length;
 
   // How many builds this card's playground has produced, for the tab badge.
-  const playgroundVersion =
-    (card.typeData as { generationCount?: number } | undefined)?.generationCount ?? 0;
+  // Creating an app opens it straight away: an empty row in a list is not the
+  // point, the thread you write the brief into is.
+  const handleCreateApp = async () => {
+    setCreatingApp(true);
+    const created = await createApp();
+    setCreatingApp(false);
+    if (created) setOpenAppId(created.id);
+  };
 
-  // Tab navigation tiles (reused across every tab). Playground is a peer of the others
-  // rather than a mode that takes over the drawer — same card, same thread, one more
-  // place to work on it. Horizontally scrollable so four tiles never wrap on a phone.
-  const isPlaygroundCard = card.cardType === 'playground';
+  const openApp = apps.find((a) => a.id === openAppId) || null;
 
-  // Converting a card changes which tabs exist. Resolve rather than store, so a tab
-  // that has just disappeared falls back to Thread instead of rendering nothing.
-  const activeTab =
-    (rawActiveTab === 'tasks' && isPlaygroundCard) ||
-    (rawActiveTab === 'playground' && !isPlaygroundCard)
-      ? ('thread' as const)
-      : rawActiveTab;
+  // Every card can carry apps, so no tab is conditional any more — which is the
+  // point of apps being artifacts rather than a card type. `rawActiveTab` is still
+  // resolved rather than trusted so a tab remembered from the old playground card
+  // mode falls back to Thread instead of rendering nothing.
+  const activeTab: ActiveTab =
+    rawActiveTab === 'thread' || rawActiveTab === 'tasks' || rawActiveTab === 'info' || rawActiveTab === 'apps'
+      ? rawActiveTab
+      : 'thread';
 
   const tabTiles = (
     <div className="flex gap-2 px-3 pb-2 overflow-x-auto scrollbar-none">
       {([
         { key: 'thread' as const, label: 'Thread', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /> },
-        // Tasks are work to be done. A playground card's subject is a built thing, so
-        // the tab is dropped there rather than sitting empty.
-        ...(isPlaygroundCard ? [] : [{ key: 'tasks' as const, label: `Tasks${cardTasks.length > 0 ? ` ${completedCount}/${cardTasks.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /> }]),
+        { key: 'tasks' as const, label: `Tasks${cardTasks.length > 0 ? ` ${completedCount}/${cardTasks.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /> },
+        // Apps built from this card. Always offered — any card can carry one.
+        { key: 'apps' as const, label: `Apps${apps.length > 0 ? ` ${apps.length}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /> },
         { key: 'info' as const, label: 'Info', icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
-        // The Playground tab owns the card's app — it's where you build one and where
-        // the built one lives. Only offered on a playground card.
-        ...(isPlaygroundCard ? [{ key: 'playground' as const, label: `Playground${playgroundVersion > 0 ? ` v${playgroundVersion}` : ''}`, icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /> }] : []),
       ]).map((tab) => (
         <button
           key={tab.key}
@@ -968,38 +984,21 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                         </button>
                       )}
 
-                      {/* Playground. Converts an ordinary card first, so the entry
-                          does something visible rather than opening an empty tab. */}
+                      {/* Apps are artifacts of the card, so this adds one rather
+                          than converting the card into something else. */}
                       <button
                         onClick={() => {
-                          if (card.cardType !== 'playground') {
-                            updateCard(card.id, { cardType: 'playground' });
-                          }
-                          setActiveTab('playground');
                           setShowCardMenu(false);
+                          setActiveTab('apps');
+                          void handleCreateApp();
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-sm text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.847-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.847.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
                         </svg>
-                        {card.cardType === 'playground' ? 'Open Playground' : 'Turn into a playground'}
+                        Build an app from this card
                       </button>
-                      {card.cardType === 'playground' && (
-                        <button
-                          onClick={() => {
-                            updateCard(card.id, { cardType: null });
-                            setActiveTab('thread');
-                            setShowCardMenu(false);
-                          }}
-                          className="w-full flex items-center gap-3 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors"
-                        >
-                          <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6M3 10l6-6" />
-                          </svg>
-                          Turn back into a card
-                        </button>
-                      )}
                       <div className="h-px bg-neutral-200 dark:bg-neutral-700 my-1" />
 
                       {/* Archive */}
@@ -1099,7 +1098,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
         />
 
         {/* Cover image - full page only (skip in playground mode — preview owns the canvas) */}
-        {fullPage && card.coverImageUrl && card.cardType !== 'playground' && (
+        {fullPage && card.coverImageUrl && (
           <div className="flex-shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -1114,7 +1113,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           {/* Thread Tab. Gated on contentReady so the drawer slide-in starts
               immediately and the heavy chat mounts a frame later. */}
-          {(activeTab === 'thread' || activeTab === 'playground') && !contentReady && (
+          {activeTab === 'thread' && !contentReady && (
             <div className="flex-1 min-h-0 flex items-center justify-center">
               <div className="h-5 w-5 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin" />
             </div>
@@ -1127,6 +1126,8 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 channelDescription={channels[card.channelId]?.description ?? ''}
                 tagDefinitions={channels[card.channelId]?.tagDefinitions ?? []}
                 tabBar={tabTiles}
+                hasApps={apps.some((a) => a.generationCount > 0)}
+                onShowApps={() => { setActiveTab('apps'); void refreshApps(); }}
                 composerSlot={
                   isPendingReview ? (
                     // Deciding the card removes it from review, so the drawer would
@@ -1138,10 +1139,19 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
             </div>
           )}
 
-          {/* Playground Tab — build-and-preview against this card's own thread + tasks. */}
-          {activeTab === 'playground' && contentReady && (
+          {/* Apps Tab — the apps built from this card. */}
+          {activeTab === 'apps' && (
             <div className="flex-1 min-h-0 flex flex-col">
-              <PlaygroundView card={card} embedded tabBar={tabTiles} />
+              {tabTiles}
+              <div className="flex-1 overflow-y-auto">
+                <AppsPanel
+                  apps={apps}
+                  loading={appsLoading}
+                  creating={creatingApp}
+                  onOpen={setOpenAppId}
+                  onCreate={handleCreateApp}
+                />
+              </div>
             </div>
           )}
 
@@ -1244,6 +1254,16 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 )}
 
               </div>
+
+              {/* Apps sit under the tasks — both are things this card produced. */}
+              <AppsPanel
+                apps={apps}
+                loading={appsLoading}
+                creating={creatingApp}
+                onOpen={setOpenAppId}
+                onCreate={handleCreateApp}
+                compact
+              />
             </div>
             {/* Bottom bar: tabs + task input */}
             <div className="flex-shrink-0 bg-white dark:bg-neutral-900 pt-2">
@@ -1752,6 +1772,23 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
             </div>
           </div>
         </div>
+      )}
+
+      {/* An app's own drawer, stacked over the card's. */}
+      {openApp && card && (
+        <AppDrawer
+          key={openApp.id}
+          app={openApp}
+          card={card}
+          isOpen
+          onClose={() => setOpenAppId(null)}
+          onAppChanged={mergeApp}
+          onRename={(appId, nextTitle) => { void updateApp(appId, { title: nextTitle }); }}
+          onTogglePublic={(appId, isPublic) => { void updateApp(appId, { isPublic }); }}
+          onSetModel={(appId, modelId) => { void updateApp(appId, { modelId }); }}
+          onDelete={(appId) => { setOpenAppId(null); void deleteApp(appId); }}
+          onOpenSourceCard={() => setOpenAppId(null)}
+        />
       )}
     </>
   );

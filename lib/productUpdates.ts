@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'apps-are-card-artifacts',
+    date: '2026-09-03',
+    kind: 'capability',
+    title: 'Apps now hang off a card, and you can have more than one',
+    body: 'An app is an artifact of a card, listed under its tasks, instead of the card itself becoming a playground. Each app has its own drawer and its own thread — the card it was built from stays pinned at the top — so you can talk through an idea without touching the code, then press Update app when you want the whole conversation built. The model picker is back in that composer.',
+  },
+  {
     id: 'voice-transcripts-and-real-channels',
     date: '2026-08-25',
     kind: 'capability',

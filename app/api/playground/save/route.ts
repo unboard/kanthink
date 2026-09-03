@@ -1,38 +1,33 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { cards } from '@/lib/db/schema';
+import { playgroundApps } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { verifyCardToken } from '@/lib/playground/cardToken';
+import { verifyAppToken } from '@/lib/playground/appToken';
 import {
   newRecordSlug,
   MAX_RECORD_BYTES,
-  MAX_RECORDS_PER_CARD,
+  MAX_RECORDS_PER_APP,
   type SavedRecord,
 } from '@/lib/playground/savedRecord';
 
 export const runtime = 'nodejs';
 
 interface SaveRequest {
-  cardToken: string;
+  appToken: string;
   data: unknown;
   label?: string;
-}
-
-interface PlaygroundTypeData {
-  savedRecords?: SavedRecord[];
-  [key: string]: unknown;
 }
 
 /**
  * POST /api/playground/save
  *
- * Iframe-callable endpoint. Authenticated by the cardToken HMAC baked into
+ * Iframe-callable endpoint. Authenticated by the appToken HMAC baked into
  * the playground srcdoc (same pattern as /ai and /upload). Persists an
- * arbitrary JSON record under the card and returns a shareable per-record URL.
+ * arbitrary JSON record under the app and returns a shareable per-record URL.
  *
- * Auto-publishes the card on first save so the returned URL works immediately.
- * If the card already has a shareToken we reuse it; otherwise we mint one.
+ * Auto-publishes the app on first save so the returned URL works immediately.
+ * If the app already has a shareToken we reuse it; otherwise we mint one.
  */
 export async function POST(request: Request) {
   let body: SaveRequest;
@@ -42,9 +37,9 @@ export async function POST(request: Request) {
     return cors(NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }));
   }
 
-  const cardId = verifyCardToken(body.cardToken);
-  if (!cardId) {
-    return cors(NextResponse.json({ error: 'Invalid or missing cardToken' }, { status: 401 }));
+  const appId = verifyAppToken(body.appToken);
+  if (!appId) {
+    return cors(NextResponse.json({ error: 'Invalid or missing appToken' }, { status: 401 }));
   }
   if (body.data === undefined || body.data === null) {
     return cors(NextResponse.json({ error: 'data is required' }, { status: 400 }));
@@ -66,13 +61,12 @@ export async function POST(request: Request) {
     ));
   }
 
-  const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId) });
-  if (!card || card.cardType !== 'playground') {
-    return cors(NextResponse.json({ error: 'Card not found' }, { status: 404 }));
+  const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
+  if (!app) {
+    return cors(NextResponse.json({ error: 'App not found' }, { status: 404 }));
   }
 
-  const typeData = (card.typeData as PlaygroundTypeData | null) || {};
-  const existing = Array.isArray(typeData.savedRecords) ? typeData.savedRecords : [];
+  const existing = Array.isArray(app.savedRecords) ? app.savedRecords : [];
 
   const record: SavedRecord = {
     slug: newRecordSlug(),
@@ -85,24 +79,24 @@ export async function POST(request: Request) {
   };
 
   const updated = [...existing, record];
-  while (updated.length > MAX_RECORDS_PER_CARD) updated.shift();
+  while (updated.length > MAX_RECORDS_PER_APP) updated.shift();
 
-  // Auto-publish: a saved record without a public URL is useless. If the card
+  // Auto-publish: a saved record without a public URL is useless. If the app
   // wasn't shared yet, share it now and mint a token. This is the moment of
   // intent — the user (via the generated app) is explicitly creating a thing
   // to share.
   const updates: Record<string, unknown> = {
-    typeData: { ...typeData, savedRecords: updated },
+    savedRecords: updated,
     updatedAt: new Date(),
   };
-  let shareToken = card.shareToken;
-  if (!card.isPublic) updates.isPublic = true;
+  let shareToken = app.shareToken;
+  if (!app.isPublic) updates.isPublic = true;
   if (!shareToken) {
     shareToken = nanoid(16);
     updates.shareToken = shareToken;
   }
 
-  await db.update(cards).set(updates).where(eq(cards.id, cardId));
+  await db.update(playgroundApps).set(updates).where(eq(playgroundApps.id, appId));
 
   return cors(NextResponse.json({
     slug: record.slug,

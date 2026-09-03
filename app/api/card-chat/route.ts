@@ -47,7 +47,7 @@ async function getWebTools() {
   return { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent, webSearch, formatSearchContext };
 }
 
-/** The build_app entry added to the response schema on playground cards only. */
+/** The build_app entry in the response schema. Any card can carry apps. */
 const BUILD_ACTION_SHAPE =
   ',\n    { "type": "build_app", "data": { "summary": "One line the user will see on the button",' +
   ' "instruction": "The full brief for the builder" } }';
@@ -66,8 +66,8 @@ interface CardChatRequest {
     previousMessages: CardMessage[];
     cardTags?: string[];           // Current tags on the card
     availableTags?: TagDefinition[];  // Tags defined in the channel
-    cardType?: string;             // 'playground' changes what Kan may propose
-    hasBuild?: boolean;            // Whether the playground already has an app
+    cardType?: string;             // null = standard card, 'report', etc.
+    hasBuild?: boolean;            // Whether the card already carries a built app
   };
 }
 
@@ -133,23 +133,18 @@ function buildPrompt(
     if (done.length > 0) taskSection += `\n  → ${done.length} done`;
   }
 
-  const isPlayground = context.cardType === 'playground';
-  const buildActionShape = isPlayground
-    ? BUILD_ACTION_SHAPE
-    : '';
-  const playgroundSection = isPlayground
-    ? `THIS IS A PLAYGROUND CARD. Its subject is an app that ${context.hasBuild ? 'has been built' : 'has not been built yet'}.
+  const buildActionShape = BUILD_ACTION_SHAPE;
+  const playgroundSection = `BUILDING AN APP FROM THIS CARD
 
-Your job here is to understand what the user actually wants and help them get there — ask a clarifying question when the objective is genuinely unclear, think with them, and push back when an idea will not work. You are also the gatekeeper to building: a build takes minutes and costs real money, so it only happens when the user accepts your proposal.
+Any card can carry apps — small single-file React apps generated from the card. ${context.hasBuild ? 'This card already has one.' : 'This card has none yet.'} They live on the card's Apps tab, each with its own thread.
 
-Propose a build_app action when the conversation has reached something concrete and buildable. Do NOT propose one while the idea is still forming, and do NOT propose more than one at a time.
+You are the gatekeeper to building: a build takes minutes and costs real money, so it only happens when the user accepts your proposal.
 
-NEVER claim you have built, updated, or changed the app. You cannot. The only thing that changes it is the user accepting a build_app action. Write as someone proposing, not reporting.
+Propose a build_app action ONLY when the user has actually asked for something to be built and the idea is concrete enough to build. Do not propose one because a card could theoretically become an app — most cards are work, not software. Never propose more than one at a time.
 
-On a playground card do NOT propose create_task, add_tag or remove_tag. Tasks and tags belong to work; this card's subject is a built thing.`
-    : '';
+NEVER claim you have built, updated, or changed an app. You cannot. The only thing that builds is the user accepting a build_app action. Write as someone proposing, not reporting.`;
 
-  const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app. You are an expert on all Kanthink features including cards, columns, channels, shrooms (AI automations), tags, tasks, properties, sharing, the whiteboard, and Playground mode (chat-driven mini-app builder; any card can be flipped into a Playground via the card menu's "Turn into Playground" — splits the card into a chat panel + live preview iframe where Gemini writes a single-file React app the user iterates on conversationally; can be flipped public to get a kanthink.com/play/<token> share URL).
+  const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app. You are an expert on all Kanthink features including cards, columns, channels, shrooms (AI automations), tags, tasks, properties, sharing, the whiteboard, and apps (chat-driven mini-app builder; any card can carry apps on its Apps tab — each is a single-file React app Gemini writes from the card, with its own thread and live preview, iterated on by talking then pressing Update app; each can be published for a kanthink.com/play/<token> share URL).
 
 Your capabilities:
 - Answer questions about cards, tasks, and the board
@@ -167,7 +162,9 @@ Card: "${cardTitle}"
 Channel: "${channelName}"${channelDescription ? ` - ${channelDescription}` : ''}
 ${taskSection}${tagContext}${currentTagsContext}${webContextSection}
 
-${playgroundSection || 'You can propose actions when relevant: create tasks, add/remove tags.'}
+You can propose actions when relevant: create tasks, add/remove tags.
+
+${playgroundSection}
 
 Your response MUST be valid JSON:
 {

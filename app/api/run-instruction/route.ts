@@ -18,6 +18,7 @@ import { auth } from '@/lib/auth';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { createShroomCards, createShroomReport, applyShroomModifications, applyShroomMoves } from '@/lib/shrooms/apply';
 import { generatePlaygroundApp } from '@/lib/playground/generateApp';
+import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
 import { setCardProcessingServerSide } from '@/lib/shrooms/cardProcessing';
 import { stripEchoedContent, cardContentStrings } from '@/lib/shrooms/stripEchoedContent';
 import { loadChannelRejections } from '@/lib/shrooms/rejections';
@@ -1960,9 +1961,16 @@ export async function POST(request: Request) {
         // minutes; a silent board reads as a broken shroom.
         await setCardProcessingServerSide({ cardId, channelId: channel.id, status: 'Building the app…' }).catch(() => {});
         try {
+          // Builds land on an app artifact hanging off the card. A repeat run
+          // iterates the card's existing app rather than spawning a new one.
+          const app = await resolveAppForAutomatedBuild({ cardId, userId });
+          if (!app) {
+            built.push({ cardId, error: 'Could not create an app on this card' });
+            continue;
+          }
           const result = await generatePlaygroundApp(
             {
-              cardId,
+              appId: app.id,
               // The shroom's instructions are the standing brief; the card's thread
               // supplies everything else.
               prompt: instructionCard.instructions || 'Build an app from this card.',
