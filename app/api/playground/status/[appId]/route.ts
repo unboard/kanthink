@@ -21,22 +21,31 @@ interface RouteParams {
  * still connected — Vercel functions complete on their own — so by the time
  * the user comes back to their phone the work is usually done.
  */
-export async function GET(_req: NextRequest, { params }: RouteParams) {
+export async function GET(req: NextRequest, { params }: RouteParams) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { appId } = await params;
-  const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
-  if (!app) {
+
+  // Two-step on purpose. This is polled every few seconds for the length of a
+  // build, and the app row carries the whole generated source — shipping that on
+  // every tick moved tens of kilobytes per poll to tell the client "not yet".
+  // Read the counter first; fetch the payload only on the tick that changed.
+  const since = Number(req.nextUrl.searchParams.get('since') ?? '-1');
+  const head = await db.query.playgroundApps.findFirst({
+    where: eq(playgroundApps.id, appId),
+    columns: { id: true, channelId: true, generationCount: true, updatedAt: true },
+  });
+  if (!head) {
     return NextResponse.json({ error: 'App not found' }, { status: 404 });
   }
 
   // An app row carries its whole generated source, so reading one needs the same
   // access as viewing the channel it lives in — being signed in is not enough.
   try {
-    await requirePermission(app.channelId, session.user.id, 'view');
+    await requirePermission(head.channelId, session.user.id, 'view');
   } catch (error) {
     if (error instanceof PermissionError) {
       return NextResponse.json({ error: error.message }, { status: 403 });
@@ -44,5 +53,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     throw error;
   }
 
-  return NextResponse.json({ app });
+  if (Number.isFinite(since) && head.generationCount <= since) {
+    return NextResponse.json({ generationCount: head.generationCount, pending: true });
+  }
+
+  const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
+  return NextResponse.json({ app, generationCount: head.generationCount });
 }

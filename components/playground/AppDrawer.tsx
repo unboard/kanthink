@@ -199,7 +199,8 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       if (stopped) return;
       if (Date.now() - startTime > MAX_WATCH_MS) { stopped = true; return; }
       try {
-        const res = await fetch(`/api/playground/status/${appId}`, { cache: 'no-store' });
+        // `since` lets the server answer "not yet" without shipping the whole app.
+        const res = await fetch(`/api/playground/status/${appId}?since=${buildStartCount.current ?? 0}`, { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
         const fresh = data.app as PlaygroundApp | undefined;

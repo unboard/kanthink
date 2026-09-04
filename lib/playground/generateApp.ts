@@ -18,6 +18,7 @@ import {
 } from '@/lib/playground/models';
 import { signAppToken } from '@/lib/playground/appToken';
 import { runPreflight } from '@/lib/playground/preflight';
+import { applyCodeEdits, shouldPatch, type CodeEdit } from '@/lib/playground/applyEdits';
 import {
   resolveDeps,
   describeDepsForPrompt,
@@ -248,6 +249,46 @@ Only declare what you actually import. Every extra dependency is another network
 When dependencies are already listed under AVAILABLE LIBRARIES, echo them back in "dependencies" if you still use them — the list you return replaces the previous one.`;
 }
 
+/**
+ * Patch mode: the model returns the lines it is changing, not the file.
+ *
+ * Output tokens are two thirds of what a build costs and nearly all of what it
+ * waits on, so for a small edit this is the difference between a few dozen tokens
+ * and several thousand. Everything else the full schema carries — title, summary,
+ * dependencies — is unchanged by a cosmetic edit and is simply kept.
+ */
+const PATCH_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    edits: {
+      type: Type.ARRAY,
+      description: 'The exact changes to make. Each "find" must appear EXACTLY ONCE in the current code — include surrounding lines until it is unique.',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          find: { type: Type.STRING, description: 'Exact text from the current code, copied character for character.' },
+          replace: { type: Type.STRING, description: 'What it becomes.' },
+        },
+        required: ['find', 'replace'],
+      },
+    },
+    notes: { type: Type.STRING, description: 'One conversational sentence about what changed.' },
+    designNotes: { type: Type.STRING, description: 'Updated terse bullet list of established design decisions. Carry forward what is still true.' },
+  },
+  required: ['edits', 'notes', 'designNotes'],
+};
+
+const PATCH_INSTRUCTIONS = `You are making a SMALL, TARGETED edit to an app that already works.
+
+Return "edits": a list of find/replace pairs against the CURRENT CODE. Do NOT return the whole file.
+
+Rules — these are strict, a bad edit corrupts a working app:
+1. "find" must be copied EXACTLY from the current code, character for character, including indentation.
+2. "find" must appear EXACTLY ONCE in the file. If the snippet you want appears more than once, widen it with surrounding lines until it is unique.
+3. Keep each "find" as small as it can be while staying unique — usually one line, sometimes a few.
+4. Make the smallest set of edits that fully satisfies the request. Do not tidy, reformat, or improve anything you were not asked to touch.
+5. If the change genuinely cannot be expressed as a handful of find/replace pairs, return an empty "edits" array and nothing else — the system will rebuild the file instead. That is a valid answer, not a failure.`;
+
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -277,12 +318,33 @@ export interface GenerateRequest {
   imageUrls?: string[];
 }
 
+/**
+ * Ask Cloudinary for a build-sized copy rather than the original.
+ *
+ * Images are re-sent on every build now that they persist across a thread, so their
+ * size compounds: a phone photo is several megabytes, and six of them are inlined as
+ * base64 on every single turn. Gemini tiles images for tokenisation, so a 1024px
+ * copy is both a fraction of the bytes and a fraction of the input tokens, while
+ * staying comfortably legible for reading a screenshot or a sketch.
+ *
+ * Non-Cloudinary URLs pass through untouched.
+ */
+export function buildSizedImageUrl(url: string): string {
+  // Cloudinary delivery URLs put transformations after /upload/.
+  const marker = '/upload/';
+  if (!url.includes('res.cloudinary.com') || !url.includes(marker)) return url;
+  // Don't stack transformations onto a URL that already carries some.
+  const [prefix, rest] = url.split(marker, 2);
+  if (!rest || /^[a-z]_[^/]*\//.test(rest)) return url;
+  return `${prefix}${marker}c_limit,w_1024,q_auto,f_jpg/${rest}`;
+}
+
 /** Fetch an image URL and return it as Gemini-compatible inline base64 data. */
 async function fetchImageAsInlineData(
   url: string
 ): Promise<{ inlineData: { mimeType: string; data: string } } | null> {
   try {
-    const res = await fetch(url);
+    const res = await fetch(buildSizedImageUrl(url));
     if (!res.ok) return null;
     const contentType = res.headers.get('content-type') || 'image/png';
     const buffer = await res.arrayBuffer();
@@ -296,7 +358,11 @@ async function fetchImageAsInlineData(
 export async function generatePlaygroundApp(
   body: GenerateRequest,
   session: { user: { id: string } },
-  options: { skipPreflight?: boolean } = {}
+  options: {
+    skipPreflight?: boolean;
+    /** Force a full rewrite. Used when a caller needs the whole file regenerated. */
+    skipPatch?: boolean;
+  } = {}
 ): Promise<NextResponse> {
   await ensureSchema();
   if (!body.appId || !body.prompt) {
@@ -442,7 +508,14 @@ export async function generatePlaygroundApp(
         cardTitle: card.title,
         cardSummary: card.summary || undefined,
         hasCurrentCode: true,
-        recentThread: threadContext,
+        // Deliberately not the full thread. Preflight decides ACT-vs-ASK and an edit
+        // type from a 600-token budget; handing it forty messages at six thousand
+        // characters each cost real latency on every single edit and cannot have
+        // changed the answer. The last few turns are what the decision turns on.
+        recentThread: appMessages
+          .slice(-4)
+          .map(m => `[${m.type}] ${(m.content || '').slice(0, 500)}`)
+          .join('\n'),
         designNotes: app.designNotes || undefined,
         imageCount: attachedImages.length,
       })
@@ -522,60 +595,129 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   const client = new GoogleGenAI({ apiKey });
 
   // Resolve attached images into inlineData parts so Gemini can see them.
-  const imageParts: Array<{ inlineData: { mimeType: string; data: string } }> = [];
-  for (const url of attachedImages) {
-    const part = await fetchImageAsInlineData(url);
-    if (part) imageParts.push(part);
-  }
+  // Fetched together rather than one at a time — six sequential round trips to
+  // Cloudinary added seconds to every build for no reason.
+  const imageParts = (await Promise.all(attachedImages.map(fetchImageAsInlineData)))
+    .filter((p): p is { inlineData: { mimeType: string; data: string } } => p !== null);
 
-  let parsed: {
+  interface ParsedBuild {
     title: string;
     summary: string;
     code: string;
     notes: string;
     designNotes?: string;
     dependencies?: string[];
-  } | null = null;
-  let usage: { promptTokenCount?: number; candidatesTokenCount?: number } | null = null;
-  const deadline = AbortSignal.timeout(GENERATION_DEADLINE_MS);
-  try {
-    const response = await client.models.generateContent({
-      model: model.id,
-      contents: [{ role: 'user', parts: [{ text: userMessage }, ...imageParts] }],
-      config: {
-        systemInstruction: SYSTEM_PROMPT + buildRuntimeSection(seeded.deps),
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
-        // A whole single-file app plus design notes. Every model in the picker
-        // tops out at 65,536 output tokens, so this is a ceiling for runaway
-        // generations, not a budget an ordinary app should ever reach.
-        maxOutputTokens: 32000,
-        thinkingConfig: model.thinkingBudget > 0 ? { thinkingBudget: model.thinkingBudget } : undefined,
-        abortSignal: deadline,
-      },
-    });
+  }
 
-    // Gemini counts thinking against maxOutputTokens, so a run that thinks too
-    // hard returns truncated JSON. Say that plainly — JSON.parse would otherwise
-    // fail with "Unexpected end of JSON input", which explains nothing.
-    if (response.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-      return NextResponse.json(
-        {
-          error:
-            'The app got too long for one response and was cut off. Try asking for it in smaller pieces — build the core first, then add features in follow-up messages.',
+  let parsed: ParsedBuild | null = null;
+  type TokenUsage = { promptTokenCount?: number; candidatesTokenCount?: number };
+  // Accumulated rather than reassigned: a turn can make two calls (a patch attempt
+  // that missed, then the rewrite), and the user should be billed for both.
+  const usage = { promptTokenCount: 0, candidatesTokenCount: 0 };
+  let sawUsage = false;
+  const deadline = AbortSignal.timeout(GENERATION_DEADLINE_MS);
+
+  /** Sum usage across however many calls a turn ended up taking. */
+  const addUsage = (u: TokenUsage | null | undefined) => {
+    if (!u) return;
+    sawUsage = true;
+    usage.promptTokenCount += u.promptTokenCount ?? 0;
+    usage.candidatesTokenCount += u.candidatesTokenCount ?? 0;
+  };
+
+  const runtimeSection = buildRuntimeSection(seeded.deps);
+
+  // Small edits ask for the changed lines instead of the whole file. When that
+  // doesn't work out — the model declines, or an edit doesn't apply cleanly — we
+  // fall through to a normal rewrite, so a patch attempt can never leave the user
+  // worse off than before, only slower on the turns where it misses.
+  const patchMode = !options.skipPatch && shouldPatch(preflight.editType, !!currentCode);
+  let patchOutcome: 'applied' | 'declined' | 'rejected' | null = null;
+
+  try {
+    if (patchMode && currentCode) {
+      const patchResponse = await client.models.generateContent({
+        model: model.id,
+        contents: [{ role: 'user', parts: [{ text: userMessage }, ...imageParts] }],
+        config: {
+          systemInstruction: SYSTEM_PROMPT + runtimeSection + '\n\n' + PATCH_INSTRUCTIONS,
+          responseMimeType: 'application/json',
+          responseSchema: PATCH_SCHEMA,
+          // A handful of find/replace pairs. Generous enough for a real edit,
+          // small enough that a model trying to smuggle the whole file through
+          // here gets cut off and falls back to the rewrite path.
+          maxOutputTokens: 8000,
+          thinkingConfig: model.thinkingBudget > 0 ? { thinkingBudget: model.thinkingBudget } : undefined,
+          abortSignal: deadline,
         },
-        { status: 502 }
-      );
+      });
+      addUsage(patchResponse.usageMetadata ?? null);
+
+      if (patchResponse.candidates?.[0]?.finishReason !== 'MAX_TOKENS') {
+        try {
+          const patch = JSON.parse(patchResponse.text || '') as {
+            edits?: CodeEdit[];
+            notes?: string;
+            designNotes?: string;
+          };
+          const result = applyCodeEdits(currentCode, patch.edits ?? []);
+          if (result.ok) {
+            patchOutcome = 'applied';
+            // Title, summary and dependencies belong to the app, not to this edit —
+            // a cosmetic change doesn't rename the app or add a library.
+            parsed = {
+              title: app.title,
+              summary: app.summary ?? '',
+              code: result.code,
+              notes: patch.notes || 'Updated.',
+              designNotes: patch.designNotes,
+              dependencies: app.dependencies ?? [],
+            };
+          } else {
+            patchOutcome = (patch.edits ?? []).length === 0 ? 'declined' : 'rejected';
+            console.warn('[playground] patch not applied, rewriting instead:', result.reason);
+          }
+        } catch {
+          patchOutcome = 'rejected';
+        }
+      } else {
+        patchOutcome = 'rejected';
+      }
     }
 
-    const text = response.text || '';
-    parsed = JSON.parse(text);
-    usage = response.usageMetadata
-      ? {
-          promptTokenCount: response.usageMetadata.promptTokenCount,
-          candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
-        }
-      : null;
+    if (!parsed) {
+      const response = await client.models.generateContent({
+        model: model.id,
+        contents: [{ role: 'user', parts: [{ text: userMessage }, ...imageParts] }],
+        config: {
+          systemInstruction: SYSTEM_PROMPT + runtimeSection,
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA,
+          // A whole single-file app plus design notes. Every model in the picker
+          // tops out at 65,536 output tokens, so this is a ceiling for runaway
+          // generations, not a budget an ordinary app should ever reach.
+          maxOutputTokens: 32000,
+          thinkingConfig: model.thinkingBudget > 0 ? { thinkingBudget: model.thinkingBudget } : undefined,
+          abortSignal: deadline,
+        },
+      });
+      addUsage(response.usageMetadata ?? null);
+
+      // Gemini counts thinking against maxOutputTokens, so a run that thinks too
+      // hard returns truncated JSON. Say that plainly — JSON.parse would otherwise
+      // fail with "Unexpected end of JSON input", which explains nothing.
+      if (response.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        return NextResponse.json(
+          {
+            error:
+              'The app got too long for one response and was cut off. Try asking for it in smaller pieces — build the core first, then add features in follow-up messages.',
+          },
+          { status: 502 }
+        );
+      }
+
+      parsed = JSON.parse(response.text || '') as ParsedBuild;
+    }
   } catch (err) {
     if (deadline.aborted) {
       return NextResponse.json(
@@ -594,8 +736,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   }
 
   // Persist the build onto the app row, and append the turn to the app's thread.
-  const inputTokens = usage?.promptTokenCount ?? 0;
-  const outputTokens = usage?.candidatesTokenCount ?? 0;
+  const inputTokens = usage.promptTokenCount;
+  const outputTokens = usage.candidatesTokenCount;
   const lastUsage: PlaygroundUsage = {
     modelId: model.id,
     inputTokens,
@@ -675,7 +817,11 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     },
     app: { ...app, ...updated },
     messages: newMessages,
-    usage,
+    usage: sawUsage ? usage : null,
+    // How this turn was produced, so the effect of patch mode is observable rather
+    // than a thing we merely hope is helping.
+    strategy: patchOutcome === 'applied' ? 'patch' : 'rewrite',
+    patchOutcome,
     lastUsage,
     runtime: {
       deps: merged.deps.map(d => ({ specifier: d.specifier, source: d.source, raw: d.raw })),
