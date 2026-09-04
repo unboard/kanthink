@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { getLLMClientForUser, type LLMContentPart } from '@/lib/ai/llm'
+import { getLLMClientForUser, type LLMContentPart, type LLMMessage } from '@/lib/ai/llm'
 import { recordUsage } from '@/lib/usage'
 import { stripOptimistic } from '@/lib/playground/thread'
 
@@ -15,6 +15,27 @@ export const maxDuration = 120
 
 /** Enough of the app's code for Kan to answer questions about it without paying to ship the whole file every turn. */
 const CODE_EXCERPT_CHARS = 12000
+
+/** How many images from earlier in the thread to re-send on a given turn. */
+const MAX_HISTORY_IMAGES = 6
+
+interface ThreadMessage {
+  id?: unknown
+  type?: string
+  content?: string
+  imageUrls?: string[]
+  whiteboards?: { snapshotImageUrl?: string }[]
+}
+
+/** Every picture attached to a message — uploads and whiteboard sketches alike. */
+function messageImageUrls(m: ThreadMessage): string[] {
+  return [
+    ...(Array.isArray(m.imageUrls) ? m.imageUrls : []),
+    ...(Array.isArray(m.whiteboards)
+      ? m.whiteboards.map((w) => w?.snapshotImageUrl).filter((u): u is string => !!u)
+      : []),
+  ]
+}
 
 /**
  * Talking in an app's thread, without building.
@@ -63,7 +84,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
     }
     await requirePermission(app.channelId, session.user.id, 'edit')
 
-    const history = stripOptimistic<{ id?: unknown; type?: string; content?: string }>(app.messages)
+    const history = stripOptimistic<ThreadMessage>(app.messages)
 
     const userMessage = {
       id: nanoid(),
@@ -112,13 +133,60 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
       '- The user builds by pressing "Update app", which sends this whole thread to the generator. So when they describe a change, help them sharpen it — do not implement it, and do not say you have implemented it.',
       '- If a request is ambiguous in a way that would produce the wrong app, ask the one question that resolves it.',
       '- Not every message needs an action. If they are thinking out loud, think with them.',
+      '- You CAN see images. Attachments in this thread, whiteboard sketches, and (before the first build) images on the source card are all sent to you as pictures. Never tell the user you only see text, and never ask them for image URLs — look at what is there.',
       '- Never announce product updates or steer toward what is new.',
     ].filter(Boolean).join('\n')
 
-    const conversation = history.slice(-30).map((m) => ({
-      role: (m.type === 'ai_response' ? 'assistant' : 'user') as 'assistant' | 'user',
-      content: m.content || '',
-    }))
+    // History carries its pictures, not just its words.
+    //
+    // Building this as text-only meant an image pinned two messages ago was invisible
+    // — Kan would answer "I only see the text in this thread" about a screenshot
+    // sitting right there on screen, which reads as the attachment having failed.
+    // Images are attached newest-first up to a budget, because a long illustrated
+    // thread would otherwise cost more per turn than the answer is worth.
+    let imageBudget = MAX_HISTORY_IMAGES
+
+    // Before the first build the source card is the brief, so its pictures are part
+    // of the conversation — the same rule the builder follows. After that the app
+    // owns its own thread and the card stops being re-read.
+    const cardImages = !app.code && card
+      ? stripOptimistic<ThreadMessage>(card.messages).flatMap(messageImageUrls)
+      : []
+    const cardImageMessages: LLMMessage[] = []
+    if (cardImages.length > 0) {
+      const taken = cardImages.slice(0, Math.min(3, imageBudget))
+      imageBudget -= taken.length
+      if (taken.length > 0) {
+        cardImageMessages.push({
+          role: 'user',
+          content: [
+            { type: 'text' as const, text: `Images from the source card "${card!.title}":` },
+            ...taken.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+          ],
+        })
+      }
+    }
+
+    const conversation: LLMMessage[] = history
+      .slice(-30)
+      .reverse()
+      .map((m) => {
+        const role = (m.type === 'ai_response' ? 'assistant' : 'user') as 'assistant' | 'user'
+        const text = m.content || ''
+        // Only a user can carry attachments, and only images we still have room for.
+        const urls = role === 'user' && imageBudget > 0 ? messageImageUrls(m) : []
+        const taken = urls.slice(0, imageBudget)
+        imageBudget -= taken.length
+        if (taken.length === 0) return { role, content: text }
+        return {
+          role,
+          content: [
+            { type: 'text' as const, text: text || '(image)' },
+            ...taken.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+          ],
+        }
+      })
+      .reverse()
 
     // Images ride along as content parts so Kan can actually look at what was
     // pinned, rather than being told an image exists.
@@ -139,6 +207,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
     const response = await client.complete(
       [
         { role: 'system', content: systemPrompt },
+        ...cardImageMessages,
         ...conversation,
         { role: 'user', content: userContent },
       ],

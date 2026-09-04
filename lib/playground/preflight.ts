@@ -17,6 +17,7 @@ const PREFLIGHT_SYSTEM = `You are a code-generation gatekeeper for a vibe-coding
    - ASK only when there are multiple genuinely-different interpretations that would lead to incompatible code, AND picking the wrong one would waste a generation.
    - Never ask more than 2 questions. Each question must be one short sentence with a concrete option list when possible.
    - Never ask about minor preferences (font shade, exact pixel value).
+   - NEVER ask the user for image URLs, image files, or descriptions of images. If the request mentions images and the input says images are attached, the builder can already see them — asking for them is always wrong, and tells the user their attachments were ignored when they were not. Return ACT.
 
 2. EDIT TYPE — classify what kind of change this request is:
    - "cosmetic"    — color, font, spacing, copy, simple visual tweaks. No logic or layout changes.
@@ -47,6 +48,18 @@ const PREFLIGHT_SCHEMA = {
   required: ['decision', 'editType', 'rationale', 'questions'],
 };
 
+/**
+ * Would this clarifying question ask for images the builder already holds?
+ *
+ * Exported so it can be tested without a model call. The cost of getting this wrong
+ * is asymmetric: an ASK cancels the build outright, so a question about images both
+ * wastes the user's turn and tells them their attachments never arrived — while the
+ * builder was holding those very images.
+ */
+export function asksForAttachedImages(question: string): boolean {
+  return /image|photo|picture|screenshot|artwork|graphic/i.test(question);
+}
+
 export async function runPreflight(opts: {
   apiKey: string;
   prompt: string;
@@ -55,14 +68,28 @@ export async function runPreflight(opts: {
   hasCurrentCode: boolean;
   recentThread?: string;
   designNotes?: string;
+  /**
+   * How many images the builder will be given for this turn.
+   *
+   * Preflight is text-only and cheap, deliberately — but it used to have no idea
+   * images existed, so a request like "use these images" read as underspecified and
+   * it asked the user to supply image URLs. The build then short-circuited on that
+   * question, so attachments the builder would have received were never used and the
+   * user was told their images had not come through.
+   */
+  imageCount?: number;
 }): Promise<PreflightResult> {
   if (!opts.hasCurrentCode) {
     // First generation never asks — get out of the way.
     return { decision: 'ACT', editType: 'first', rationale: 'first generation' };
   }
 
+  const images = opts.imageCount ?? 0;
   const userMsg = [
     `APP TITLE: ${opts.cardTitle}`,
+    images > 0
+      ? `ATTACHED IMAGES: ${images} image${images === 1 ? '' : 's'} from this thread and its source card are attached to this request and WILL be given to the builder, which can see them. Do not ask for image URLs or descriptions.`
+      : '',
     opts.cardSummary ? `APP SUMMARY: ${opts.cardSummary}` : '',
     opts.designNotes ? `ESTABLISHED DESIGN DECISIONS:\n${opts.designNotes}` : '',
     opts.recentThread ? `RECENT THREAD (last few turns):\n${opts.recentThread}` : '',
@@ -87,14 +114,24 @@ export async function runPreflight(opts: {
     const editType: EditType = (
       ['cosmetic', 'behavior', 'structural', 'redesign', 'first'] as const
     ).find((t) => t === parsed.editType) || 'structural';
-    const questions = Array.isArray(parsed.questions)
+    const rawQuestions = Array.isArray(parsed.questions)
       ? parsed.questions.filter((q): q is string => typeof q === 'string').slice(0, 2)
       : [];
+
+    // Backstop the instruction above, because the cost of it being ignored is high:
+    // an ASK cancels the build, so a question about images both wastes the user's
+    // turn and tells them their attachments never arrived — while the builder was
+    // holding those very images. A prompt rule is a request; this is not.
+    const asksAboutImages = images > 0 && rawQuestions.some(asksForAttachedImages);
+    const questions = asksAboutImages ? [] : rawQuestions;
+
     return {
       decision: decision === 'ASK' && questions.length > 0 ? 'ASK' : 'ACT',
       questions: questions.length > 0 ? questions : undefined,
       editType,
-      rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
+      rationale: asksAboutImages
+        ? 'preflight asked for images that were already attached; proceeding'
+        : typeof parsed.rationale === 'string' ? parsed.rationale : '',
     };
   } catch (err) {
     // If preflight fails, just act — we don't want a broken classifier to block work.

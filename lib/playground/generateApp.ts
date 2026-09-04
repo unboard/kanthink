@@ -444,6 +444,7 @@ export async function generatePlaygroundApp(
         hasCurrentCode: true,
         recentThread: threadContext,
         designNotes: app.designNotes || undefined,
+        imageCount: attachedImages.length,
       })
     : { decision: 'ACT' as const, editType: 'first' as const, rationale: 'first generation' };
 
