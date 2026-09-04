@@ -566,6 +566,9 @@ export interface PlaygroundApp {
     inputTokens: number;
     outputTokens: number;
     costUsd: number;
+    /** 'patch' when only the changed lines were regenerated. */
+    strategy?: 'patch' | 'rewrite';
+    patchOutcome?: 'applied' | 'declined' | 'rejected';
   } | null;
   /** Sticky per-app model choice. Null falls back to the 'auto' router. */
   modelId?: string | null;

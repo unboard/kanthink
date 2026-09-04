@@ -739,6 +739,9 @@ interface PlaygroundUsageJson {
   inputTokens: number
   outputTokens: number
   costUsd: number
+  /** 'patch' when only the changed lines were regenerated. */
+  strategy?: 'patch' | 'rewrite'
+  patchOutcome?: 'applied' | 'declined' | 'rejected'
 }
 
 /** A record a running playground app persisted via window.kanthinkSave. */

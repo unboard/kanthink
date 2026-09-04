@@ -752,7 +752,19 @@ function SettingsPane({
         <dl className="rounded-xl border border-neutral-200 dark:border-neutral-800 divide-y divide-neutral-100 dark:divide-neutral-800 text-xs">
           <Row label="Version" value={app.generationCount > 0 ? `v${app.generationCount}` : 'Not built yet'} />
           {app.lastModelId && <Row label="Last built with" value={getPlaygroundModel(app.lastModelId).label} />}
-          {app.lastUsage && <Row label="Last build cost" value={formatCost(app.lastUsage.costUsd)} />}
+          {app.lastUsage && (
+            <Row
+              label="Last build cost"
+              value={
+                // Say which path produced it: a targeted edit regenerates only the
+                // changed lines, which is most of why one build costs a fraction of
+                // another. Without this the difference looks arbitrary.
+                app.lastUsage.strategy === 'patch'
+                  ? `${formatCost(app.lastUsage.costUsd)} · targeted edit`
+                  : formatCost(app.lastUsage.costUsd)
+              }
+            />
+          )}
           <Row
             label="Libraries"
             value={app.dependencies?.length ? app.dependencies.join(', ') : 'react, lucide-react'}

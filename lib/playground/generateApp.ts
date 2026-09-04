@@ -51,6 +51,14 @@ interface PlaygroundUsage {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  /**
+   * How this build was produced. Persisted so patch mode's hit rate is a fact we
+   * can query rather than a hope — a patch that quietly never lands would
+   * otherwise look exactly like one that always does.
+   */
+  strategy?: 'patch' | 'rewrite';
+  /** Why a patch attempt didn't land, when it didn't. */
+  patchOutcome?: 'applied' | 'declined' | 'rejected';
 }
 
 const SYSTEM_PROMPT = `You generate complete single-file React applications that run in a sandboxed iframe with this exact runtime:
@@ -743,6 +751,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     inputTokens,
     outputTokens,
     costUsd: computeGenerationCost(model.id, inputTokens, outputTokens),
+    strategy: patchOutcome === 'applied' ? 'patch' : 'rewrite',
+    ...(patchOutcome ? { patchOutcome } : {}),
   };
 
   // -- Dependencies for the code we just received.
