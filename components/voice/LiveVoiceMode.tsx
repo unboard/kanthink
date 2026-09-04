@@ -46,12 +46,12 @@ const TOOLS = [
       },
       {
         name: 'create_card',
-        description: 'Create a new card in a channel with a rich first message',
+        description: 'Create a new card in a channel with a rich first message. ONE CARD PER IDEA — if you already created a card for this idea in this conversation, call add_note on it instead; more detail arriving is not a new idea. Choose the channel by what the card is FOR, not what it is about (an app idea about birds belongs where the user builds things, not in their birding channel), and never put a personal idea in a work channel. If you are unsure which channel, ask the user BEFORE calling this — not after.',
         parameters: {
           type: 'OBJECT',
           properties: {
             channelId: { type: 'STRING', description: 'Channel ID' },
-            columnName: { type: 'STRING', description: 'Column name (e.g. Inbox, Working On)' },
+            columnName: { type: 'STRING', description: 'Column name. Pass this ONLY if you can see that column listed for this specific channel — most channels have no "Inbox". Omit it when unsure and the card lands in the channel default.' },
             title: { type: 'STRING', description: 'Card title' },
             content: { type: 'STRING', description: 'Card first message in markdown. Use ## headers, **bold**, - bullet lists, 1. numbered lists, [links](url), > blockquotes to make it well-structured and readable.' },
           },
@@ -974,7 +974,15 @@ Never write plain unformatted paragraphs — structure the content so it's scann
 
 After any tool executes, always confirm what you did.
 
-NEVER claim you completed an action unless you actually called the corresponding tool and saw it succeed. Do not say "I created that card", "I added the task", "I archived it", or any similar past-tense confirmation unless the tool was invoked and returned a result. If the user asks for an action and you haven't called the tool yet, say what you're about to do ("I'll create that card now") — then call the tool. Fabricating a success message is worse than asking for clarification.` }] },
+NEVER claim you completed an action unless you actually called the corresponding tool and saw it succeed. Do not say "I created that card", "I added the task", "I archived it", or any similar past-tense confirmation unless the tool was invoked and returned a result. If the user asks for an action and you haven't called the tool yet, say what you're about to do ("I'll create that card now") — then call the tool. Fabricating a success message is worse than asking for clarification.
+
+And the reverse, which is just as bad: NEVER deny an action you did take. If a tool returned a result, that thing happened — say so plainly. Telling the user "I haven't created anything yet" moments after creating a card sends them looking for a problem that does not exist, and teaches them not to trust anything you say about your own actions. Read the tool results in this conversation as the record of what you have done, and trust them over your own recollection.
+
+CREATING CARDS BY VOICE:
+- One idea gets one card. When the user keeps adding detail to something you already carded in this conversation, use add_note on that card. Do NOT create a second card for the same idea, and do not create a fresh card because you thought of a better title.
+- Choose the channel by what the card is FOR, not what it is about. An app idea about birds goes where the user builds things, not in their birding channel. Never put a personal idea in a work or client channel.
+- If you are unsure which channel, ASK FIRST and wait for the answer. Never create a card and ask which channel in the same turn.
+- Only pass columnName if you can see that column listed for that channel. Most channels have no "Inbox" — when unsure, omit it and let the card land in the default column.` }] },
               tools: TOOLS,
             },
           }));

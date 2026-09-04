@@ -8,6 +8,7 @@ import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage, getUserByo
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
 import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, detectsDataFollowUp, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
 import { buildProductUpdateContext } from '@/lib/productUpdates';
+import { BUILD_ACTION_SHAPE, buildAppGuidance } from '@/lib/ai/buildAppGuidance';
 
 function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
   if (!whiteboards || whiteboards.length === 0) return ''
@@ -46,11 +47,6 @@ async function getWebTools() {
   const { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent, webSearch, formatSearchContext } = await import('@/lib/web/tools');
   return { extractUrls, fetchUrls, formatWebContext, detectsSearchIntent, webSearch, formatSearchContext };
 }
-
-/** The build_app entry in the response schema. Any card can carry apps. */
-const BUILD_ACTION_SHAPE =
-  ',\n    { "type": "build_app", "data": { "summary": "One line the user will see on the button",' +
-  ' "instruction": "The full brief for the builder" } }';
 
 interface CardChatRequest {
   cardId: string;
@@ -134,15 +130,7 @@ function buildPrompt(
   }
 
   const buildActionShape = BUILD_ACTION_SHAPE;
-  const playgroundSection = `BUILDING AN APP FROM THIS CARD
-
-Any card can carry apps — small single-file React apps generated from the card. ${context.hasBuild ? 'This card already has one.' : 'This card has none yet.'} They live on the card's Apps tab, each with its own thread.
-
-You are the gatekeeper to building: a build takes minutes and costs real money, so it only happens when the user accepts your proposal.
-
-Propose a build_app action ONLY when the user has actually asked for something to be built and the idea is concrete enough to build. Do not propose one because a card could theoretically become an app — most cards are work, not software. Never propose more than one at a time.
-
-NEVER claim you have built, updated, or changed an app. You cannot. The only thing that builds is the user accepting a build_app action. Write as someone proposing, not reporting.`;
+  const playgroundSection = buildAppGuidance(!!context.hasBuild);
 
   const systemPrompt = `You are Kan, the AI assistant inside Kanthink — a Kanban board app. You are an expert on all Kanthink features including cards, columns, channels, shrooms (AI automations), tags, tasks, properties, sharing, the whiteboard, and apps (chat-driven mini-app builder; any card can carry apps on its Apps tab — each is a single-file React app Gemini writes from the card, with its own thread and live preview, iterated on by talking then pressing Update app; each can be published for a kanthink.com/play/<token> share URL).
 
@@ -178,7 +166,8 @@ Your response MUST be valid JSON:
 
 Rules:
 - Always valid JSON. "actions" is optional — omit when not needed.
-- create_task: ONLY when user explicitly asks to create a task or the context is clearly work/productivity related. Do NOT suggest tasks for casual conversations, playful interactions, creative play, or when users are just chatting, drawing, or having fun. Read the tone — if the user is being silly, playful, or creative, match that energy without proposing work items.
+- create_task: ONLY when the user explicitly asks for a task, or the context is clearly work needing a person. Never for something buildable — see BUILD_APP VS CREATE_TASK above. Do NOT suggest tasks for casual conversations, playful interactions, creative play, or when users are just chatting, drawing, or having fun. Read the tone — if the user is being silly, playful, or creative, match that energy without proposing work items.
+- build_app: the summary is one line the user reads on the button ("A tip calculator that splits by party size"). The instruction is the full brief handed to the builder — everything it needs, since the builder does not see this conversation.
 - add_tag: set createDefinition true if tag doesn't exist. Colors: red, orange, yellow, green, blue, purple, pink, neutral
 - remove_tag: when user asks to remove a tag
 - When users ask you to generate, create, or draw an image, acknowledge that you can do this. Say something like "Here's the image I generated" rather than claiming you can't create images.

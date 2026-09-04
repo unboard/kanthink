@@ -42,7 +42,7 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
   if (!session?.user?.id) notFound();
 
   const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
-  if (!app?.code) notFound();
+  if (!app) notFound();
 
   // Viewing the preview requires the same access as viewing the card it hangs off.
   const permission = await getChannelPermission(
@@ -51,6 +51,23 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
     session.user.email
   );
   if (!permission) notFound();
+
+  // An app with no code yet is a real app mid-build, not a missing one. A build
+  // runs for minutes and this link is handed out the moment the app is created,
+  // so 404ing here would report a working flow as broken.
+  if (!app.code) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-neutral-950 px-6">
+        <div className="text-center">
+          <div className="w-10 h-10 mx-auto mb-4 rounded-full border-2 border-violet-900 border-t-violet-500 animate-spin" />
+          <p className="text-sm text-neutral-300">Kan is building {app.title}</p>
+          <p className="text-xs text-neutral-500 mt-1">
+            This takes a few minutes. Refresh when you&apos;re ready.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const title = app.title || 'Kanthink Playground';
 

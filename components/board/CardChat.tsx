@@ -308,6 +308,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           .then((r) => r.json().catch(() => null))
           .then((created) => {
             if (!created?.app?.id) throw new Error(created?.error || 'Could not create the app');
+            // Record which app this action produced, so the snippet can link to it.
+            // Set here rather than below because the build is not awaited — by the
+            // time it returns, the snippet has long since flipped to approved.
+            updateMessageAction(card.id, messageId, actionId, { resultId: created.app.id });
             return fetch('/api/playground/generate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

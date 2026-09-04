@@ -5,12 +5,14 @@ import { afterResponse } from '@/lib/afterResponse';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { cards, channels, columns, tasks, userChannelOrg } from '@/lib/db/schema';
-import { eq, and, desc, asc, gt, like, sql } from 'drizzle-orm';
+import { eq, and, desc, asc, gt, like, sql, inArray } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
 import { generatePlaygroundApp } from '@/lib/playground/generateApp';
 import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
 import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
+import { findDuplicateCard, DUPLICATE_WINDOW_MS } from '@/lib/voice/duplicateCard';
+import { getUserChannels } from '@/lib/api/permissions';
 import { instructionCards } from '@/lib/db/schema';
 import { inferIntent } from '@/lib/channelCreation/inferIntent';
 import {
@@ -167,10 +169,53 @@ export async function POST(request: Request) {
           where: eq(columns.channelId, cardChannelId),
           orderBy: [asc(columns.position)],
         });
-        const col = args.columnName
+        // Fall back rather than fail. The assistant reaches for "Inbox" by habit and
+        // most channels do not have one, which used to abort the whole request and
+        // leave the user watching an error where their card should have been. A card
+        // in the wrong column is a drag away from the right one; a card that was
+        // never made is lost.
+        const named = args.columnName
           ? channelCols.find(c => c.name.toLowerCase() === args.columnName.toLowerCase())
-          : channelCols[0];
-        if (!col) return NextResponse.json({ result: `Column "${args.columnName}" not found` });
+          : undefined;
+        const col = named
+          ?? channelCols.find(c => c.isAiTarget)
+          ?? channelCols[0];
+        if (!col) {
+          return NextResponse.json({ result: `That channel has no columns to put a card in yet.` });
+        }
+        const columnWasSubstituted = !!args.columnName && !named;
+
+        // One idea, one card. A voice session adds detail in pieces, and each piece
+        // used to read as a fresh request — one maths app idea became three cards in
+        // two minutes. Later detail belongs in the card's thread.
+        const userChannels = await getUserChannels(session.user.id);
+        const reachableIds = userChannels.map(c => c.channelId);
+        if (reachableIds.length > 0) {
+          const recent = await db.query.cards.findMany({
+            where: and(
+              inArray(cards.channelId, reachableIds),
+              eq(cards.source, 'ai'),
+              gt(cards.createdAt, new Date(Date.now() - DUPLICATE_WINDOW_MS)),
+            ),
+            columns: { id: true, title: true, channelId: true, createdAt: true },
+            orderBy: [desc(cards.createdAt)],
+            limit: 30,
+          });
+          const duplicate = findDuplicateCard(args.title, recent);
+          if (duplicate) {
+            const dupChannel = await db.query.channels.findFirst({
+              where: eq(channels.id, duplicate.channelId),
+              columns: { name: true },
+            });
+            return NextResponse.json({
+              result:
+                `Didn't create a second card — "${duplicate.title}" in ${dupChannel?.name ?? 'another channel'} ` +
+                `is the same idea from a moment ago. Use add_note with cardId ${duplicate.id} to add this detail ` +
+                `to it, and tell the user you added to the existing card rather than making a new one.`,
+              cardId: duplicate.id,
+            });
+          }
+        }
 
         const existing = await db.query.cards.findMany({
           where: inColumnBucket(col.id, 'active'),
@@ -201,7 +246,9 @@ export async function POST(request: Request) {
         );
 
         return NextResponse.json({
-          result: `Created card "${args.title}" in ${col.name}`,
+          result: columnWasSubstituted
+            ? `Created card "${args.title}" in ${col.name} (there is no "${args.columnName}" column in this channel). Tell the user which column it went to.`
+            : `Created card "${args.title}" in ${col.name}`,
           cardId: id,
           cardPreview: {
             id,

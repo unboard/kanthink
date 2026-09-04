@@ -8,7 +8,7 @@ import { TagSnippet } from './TagSnippet';
 interface SmartSnippetProps {
   action: StoredAction;
   /** Playground card id — lets an accepted build link straight to its preview. */
-  previewCardId?: string;
+
   tagDefinitions: TagDefinition[];
   cardTags: string[];
   onApprove: (actionId: string, editedData?: StoredAction['data']) => void;
@@ -17,7 +17,6 @@ interface SmartSnippetProps {
 
 export function SmartSnippet({
   action,
-  previewCardId,
   tagDefinitions,
   cardTags,
   onApprove,
@@ -113,19 +112,22 @@ export function SmartSnippet({
           {action.type === 'build_app' && (
             <div>
               <div className={`text-sm font-medium ${isRejected ? 'line-through text-neutral-400' : 'text-neutral-800 dark:text-neutral-100'}`}>
-                {isApproved ? 'Built' : 'Build it'}
+                {isApproved ? 'App created' : 'Build it'}
               </div>
               <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                 {(editedData as { summary?: string }).summary}
               </div>
-              {isApproved && previewCardId && (
+              {/* The build records the app it created on the action, so this can
+                  point at the app itself. It appears once the app exists, which is
+                  before the build finishes — the app is real either way. */}
+              {isApproved && action.resultId && (
                 <a
-                  href={`/play/preview/${previewCardId}`}
+                  href={`/play/preview/${action.resultId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 mt-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline"
                 >
-                  Open preview
+                  Open app
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
