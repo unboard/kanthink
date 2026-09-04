@@ -36,6 +36,15 @@ import { stripOptimistic } from '@/lib/playground/thread';
 // explanation. Aborting ourselves means we always own the error message.
 const GENERATION_DEADLINE_MS = 760_000;
 
+/** What the generator reads off a thread message. */
+interface ThreadMessage {
+  id?: unknown;
+  type?: string;
+  content?: string;
+  imageUrls?: string[];
+  whiteboards?: { snapshotImageUrl?: string }[];
+}
+
 interface PlaygroundUsage {
   modelId: string;
   inputTokens: number;
@@ -348,7 +357,7 @@ export async function generatePlaygroundApp(
   // The app's own thread is the brief. It carries every build request and every bit
   // of discussion since the app was created, so it is passed whole — Gemini's context
   // dwarfs any real thread, and the cap only guards against a runaway one.
-  const appMessages = stripOptimistic<{ id?: unknown; type?: string; content?: string }>(app.messages).slice(-40);
+  const appMessages = stripOptimistic<ThreadMessage>(app.messages).slice(-40);
   const threadContext = appMessages.length > 0
     ? appMessages
         .map(m => `[${m.type}] ${(m.content || '').slice(0, 6000)}`)
@@ -361,9 +370,12 @@ export async function generatePlaygroundApp(
   // After that first build the app owns its own conversation, and re-reading the
   // card every turn would let card edits silently rewrite an app the user had
   // already shaped in its own thread.
+  const cardMessages = isIteration
+    ? []
+    : stripOptimistic<ThreadMessage>(card.messages).slice(-16);
+
   let sourceContext = '';
   if (!isIteration) {
-    const cardMessages = stripOptimistic<{ id?: unknown; type?: string; content?: string }>(card.messages).slice(-16);
     const cardThread = cardMessages.length > 0
       ? cardMessages.map(m => `[${m.type}] ${(m.content || '').slice(0, 6000)}`).join('\n')
       : '(no messages on the card)';
@@ -387,9 +399,37 @@ export async function generatePlaygroundApp(
     ].filter(Boolean).join('\n\n');
   }
 
-  const attachedImages = (body.imageUrls || []).slice(0, 6); // hard cap on images per call
+  // Images the model should see, newest last.
+  //
+  // A picture pinned to the thread is a spec — a screenshot of a layout, a photo of
+  // a colour scheme, a sketch of a screen. Passing only the images attached to THIS
+  // turn meant a reference dropped two messages ago was silently ignored, and on the
+  // first build the ones on the source card never arrived at all, even though the
+  // card is the brief. Collected here rather than passed by the client so every
+  // caller — the drawer, a shroom, voice — gets the same behaviour.
+  const collectImages = (messages: ThreadMessage[]): string[] =>
+    messages.flatMap((m) => [
+      ...(Array.isArray(m.imageUrls) ? m.imageUrls : []),
+      // A sketch of a screen is the most direct brief there is, so it counts as an
+      // attached image rather than as an aside the model is merely told about.
+      ...(Array.isArray(m.whiteboards)
+        ? m.whiteboards.map((w) => w?.snapshotImageUrl).filter((u): u is string => !!u)
+        : []),
+    ]);
+
+  const threadImages = collectImages(appMessages);
+  const sourceCardImages = isIteration ? [] : collectImages(cardMessages);
+  const cardCover = !isIteration && card.coverImageUrl ? [card.coverImageUrl] : [];
+
+  // Deduped, with this turn's attachments last so they are the freshest thing in
+  // view. Capped hard: each image is inlined as base64, so a long illustrated thread
+  // would otherwise blow past the request limit before the prompt is even read.
+  const attachedImages = Array.from(
+    new Set([...cardCover, ...sourceCardImages, ...threadImages, ...(body.imageUrls || [])])
+  ).slice(-6);
+
   const imageNote = attachedImages.length > 0
-    ? `\n\nThe user attached ${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} below — use them for visual reference (style, layout, colors, content).`
+    ? `\n\n${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} ${attachedImages.length === 1 ? 'is' : 'are'} attached below — from this thread${isIteration ? '' : ' and the source card'}. Use them as visual reference for style, layout, colour and content.`
     : '';
 
   // -- Preflight: on iterations, decide whether to ASK or ACT, and classify the edit type

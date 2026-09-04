@@ -1,13 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Drawer } from '@/components/ui/Drawer';
 import { ChatMessage } from '@/components/board/ChatMessage';
+import { ChatInput } from '@/components/board/ChatInput';
+import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { useStore } from '@/lib/store';
 import { buildPlaygroundDoc } from './buildPlaygroundDoc';
 import { resolveDeps } from '@/lib/playground/runtime';
-import { useAutoResizeTextarea } from '@/lib/hooks/useAutoResizeTextarea';
-import type { Card, CardMessage, ID, PlaygroundApp } from '@/lib/types';
+import type { Card, CardMessage, CardMessageType, ID, PlaygroundApp, WhiteboardAttachment } from '@/lib/types';
 import {
   PLAYGROUND_MODELS,
   DEFAULT_PLAYGROUND_MODEL_ID,
@@ -16,7 +18,6 @@ import {
 } from '@/lib/playground/models';
 import {
   AlertCircle,
-  ArrowUp,
   Check,
   Copy,
   ExternalLink,
@@ -29,6 +30,13 @@ import {
   Wand2,
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
+
+// Loaded on demand: the editor pulls in a canvas stack that nothing else in this
+// drawer needs, and most sessions never open it.
+const WhiteboardEditor = dynamic(
+  () => import('@/components/board/WhiteboardEditor').then((mod) => ({ default: mod.WhiteboardEditor })),
+  { ssr: false }
+);
 
 interface AppDrawerProps {
   /** The app to open. The full row — code, thread, settings — is fetched here. */
@@ -60,7 +68,6 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   const [app, setApp] = useState<PlaygroundApp | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [input, setInput] = useState('');
   const [isBuilding, setIsBuilding] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,12 +75,12 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   const [pane, setPane] = useState<Pane>('thread');
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   // Shown before the server confirms. Never persisted — the server owns the thread.
   const [optimistic, setOptimistic] = useState<CardMessage[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  useAutoResizeTextarea(textareaRef, input, 200, { minHeight: 44 });
+  const { members } = useChannelMembers(card.channelId);
 
   const modelId = app?.modelId || DEFAULT_PLAYGROUND_MODEL_ID;
   const selectedModel = getPlaygroundModel(modelId);
@@ -254,28 +261,44 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
 
   // --- Actions -------------------------------------------------------------
 
-  const pushOptimistic = (content: string) => {
+  const pushOptimistic = (
+    content: string,
+    type: CardMessageType = 'question',
+    imageUrls?: string[],
+    whiteboards?: WhiteboardAttachment[],
+  ) => {
     setOptimistic([{
       id: `${OPTIMISTIC_PREFIX}${nanoid()}`,
-      type: 'question',
+      type,
       content,
+      imageUrls,
+      whiteboards,
       createdAt: new Date().toISOString(),
     } as CardMessage]);
   };
 
-  /** Send a message. Talks to Kan; does not touch the code. */
-  const sendChat = useCallback(async (text: string) => {
+  /**
+   * Post to the thread. A note is just recorded; a question is answered by Kan.
+   * Neither touches the code — building is the Update button and nothing else.
+   */
+  const sendMessage = useCallback(async (
+    text: string,
+    type: CardMessageType,
+    imageUrls?: string[],
+    whiteboards?: WhiteboardAttachment[],
+  ) => {
     const trimmed = text.trim();
-    if (!trimmed || busy || !app) return;
-    setInput('');
+    if ((!trimmed && !imageUrls?.length && !whiteboards?.length) || busy || !app) return;
     setError(null);
-    setIsChatting(true);
-    pushOptimistic(trimmed);
+    // A note comes back immediately, so only a question shows the thinking state.
+    const asks = type !== 'note';
+    if (asks) setIsChatting(true);
+    pushOptimistic(trimmed, type, imageUrls, whiteboards);
     try {
       const res = await fetch(`/api/playground/apps/${app.id}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, type, imageUrls, whiteboards }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -289,7 +312,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       setError('Message failed — check your connection.');
       setOptimistic([]);
     } finally {
-      setIsChatting(false);
+      if (asks) setIsChatting(false);
     }
   }, [app, busy, applyApp]);
 
@@ -303,7 +326,6 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
     const trimmed = promptText.trim() || (hasCode
       ? 'Update the app based on everything discussed in this thread.'
       : 'Build the app described in this thread and on the source card.');
-    setInput('');
     setError(null);
     setIsBuilding(true);
     setPane('thread');
@@ -386,7 +408,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
     <Drawer isOpen={isOpen} onClose={onClose} width="lg" floating hideCloseButton>
       <div className="flex flex-col h-[100dvh] sm:h-full sm:max-h-[calc(100vh-2rem)]">
         {/* Header */}
-        <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3">
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2">
           <button
             onClick={onClose}
             className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -459,23 +481,18 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
               onDelete={destroy}
             />
           ) : (
-            <div className="px-4 py-3">
+            <div className="px-3 py-2">
               {/* The source card, pinned. This is where the app came from. */}
               <button
                 onClick={() => onOpenSourceCard?.(card.id)}
-                className="w-full text-left mb-4 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/50 hover:border-violet-400/50 transition-colors group"
+                className="w-full flex items-center gap-2 text-left mb-3 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 hover:border-violet-400/50 transition-colors group"
               >
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-1">
-                  Built from
-                </p>
-                <p className="text-sm font-medium text-neutral-900 dark:text-white truncate group-hover:text-violet-600 dark:group-hover:text-violet-400">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 flex-shrink-0">
+                  From
+                </span>
+                <span className="text-xs text-neutral-700 dark:text-neutral-300 truncate group-hover:text-violet-600 dark:group-hover:text-violet-400">
                   {card.title}
-                </p>
-                {card.summary && (
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 line-clamp-2">
-                    {card.summary}
-                  </p>
-                )}
+                </span>
               </button>
 
               {messages.length === 0 && (
@@ -542,7 +559,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
             {/* The build action. The thread is the brief; this is the only thing
                 that turns it into code. */}
             <button
-              onClick={() => void build(input, false)}
+              onClick={() => void build('', false)}
               disabled={busy || !app}
               className="ml-auto flex flex-shrink-0 items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white shadow-sm shadow-violet-600/30 hover:from-violet-700 hover:to-fuchsia-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               title="Build the app from this thread"
@@ -553,36 +570,49 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
           </div>
 
           {pane === 'thread' && (
-            <div className="px-3 pb-3">
-              <div className="relative">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendChat(input);
-                    }
-                  }}
-                  placeholder={hasCode ? 'Talk it through, or describe a change…' : 'What should this app do?'}
-                  rows={1}
-                  disabled={busy || !app}
-                  className="w-full resize-none rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3.5 py-2.5 pr-11 text-sm text-neutral-900 dark:text-white placeholder-neutral-400 outline-none focus:border-violet-400 disabled:opacity-60"
-                />
-                <button
-                  onClick={() => void sendChat(input)}
-                  disabled={!input.trim() || busy}
-                  className="absolute bottom-2 right-2 h-7 w-7 rounded-full bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Send message — does not change the app"
-                >
-                  {isChatting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUp className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-            </div>
+            <ChatInput
+              onSubmit={(content, type, imageUrls) => void sendMessage(content, type, imageUrls)}
+              isLoading={isChatting}
+              placeholder={hasCode ? 'Talk it through, or describe a change…' : 'What should this app do?'}
+              // Uploads are filed against the source card, which is where this app's
+              // images belong — the card is the thing that outlives any one build.
+              cardId={card.id}
+              channelId={card.channelId}
+              members={members}
+              onOpenWhiteboard={() => setIsWhiteboardOpen(true)}
+            />
           )}
         </div>
       </div>
+      {/* Whiteboard: sketch a screen and build from the sketch. Saved as a note, so
+          it costs nothing and still lands in the thread the next build reads. */}
+      {isWhiteboardOpen && (
+        <WhiteboardEditor
+          isOpen
+          onSave={async (snapshotJson, snapshotDataUrl) => {
+            setIsWhiteboardOpen(false);
+            // The PNG is what the model actually looks at — the serialized JSON is
+            // for re-editing. Upload is best-effort: a sketch that fails to upload
+            // is still worth keeping in the thread, it just isn't visible to Kan.
+            let snapshotImageUrl: string | undefined;
+            if (snapshotDataUrl) {
+              try {
+                const blob = await (await fetch(snapshotDataUrl)).blob();
+                const file = new File([blob], 'whiteboard.png', { type: 'image/png' });
+                const form = new FormData();
+                form.append('file', file);
+                form.append('cardId', card.id);
+                const res = await fetch('/api/upload-image', { method: 'POST', body: form });
+                if (res.ok) snapshotImageUrl = (await res.json()).url;
+              } catch { /* best-effort */ }
+            }
+            void sendMessage('', 'note', undefined, [
+              { id: nanoid(), snapshot: snapshotJson, snapshotImageUrl },
+            ]);
+          }}
+          onClose={() => setIsWhiteboardOpen(false)}
+        />
+      )}
     </Drawer>
   );
 }

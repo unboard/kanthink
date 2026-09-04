@@ -722,6 +722,9 @@ interface CardMessageJson {
   type: 'note' | 'question' | 'ai_response'
   content: string
   imageUrls?: string[]
+  /** Whiteboard sketches attached to this message. Rendered inline; the uploaded
+   *  PNG is what the model actually looks at. */
+  whiteboards?: { id: string; snapshot: string; snapshotImageUrl?: string }[]
   authorId?: string
   createdAt: string
   replyToMessageId?: string
