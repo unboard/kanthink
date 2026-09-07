@@ -128,6 +128,29 @@ export async function updateCard(channelId: string, cardId: string, updates: Par
   return res.json()
 }
 
+/**
+ * Decide every pending card in a column at once.
+ *
+ * One request rather than a loop over reviewCard: a shroom run of ten cards would
+ * otherwise be ten round trips, each recomputing positions against a bucket the
+ * previous call had just changed.
+ */
+export async function reviewColumn(
+  channelId: string,
+  columnId: string,
+  decision: 'approve' | 'reject',
+  detail?: { reason?: string; feedback?: string }
+): Promise<void> {
+  const res = await fetch(`/api/channels/${channelId}/columns/${columnId}/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decision, ...detail }),
+  })
+  if (!res.ok) {
+    throw new Error('Failed to resolve column review')
+  }
+}
+
 export async function reviewCard(
   channelId: string,
   cardId: string,

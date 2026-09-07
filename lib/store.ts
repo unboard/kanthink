@@ -105,6 +105,9 @@ interface KanthinkState {
   moveCardToChannel: (cardId: ID, targetChannelId: ID, targetColumnId: ID) => Card | null;
   approveReviewCard: (cardId: ID) => void;
   rejectReviewCard: (cardId: ID, reason?: RejectionReason, feedback?: string) => void;
+  /** Decide every pending card in a column at once. Reason is optional on reject. */
+  approveAllReviewCards: (channelId: ID, columnId: ID) => void;
+  rejectAllReviewCards: (channelId: ID, columnId: ID, reason?: RejectionReason, feedback?: string) => void;
   archiveCard: (cardId: ID) => void;
   unarchiveCard: (cardId: ID) => void;
   setCardTasksHidden: (cardId: ID, hidden: boolean) => void;
@@ -1796,6 +1799,66 @@ export const useStore = create<KanthinkState>()(
 
         sync.syncCardReview(preCard.channelId, cardId, 'reject', { reason, feedback });
         broadcastAndPublish({ type: 'card:reviewReject', cardId, channelId: preCard.channelId, columnId: column.id });
+      },
+
+      approveAllReviewCards: (channelId, columnId) => {
+        const channel = get().channels[channelId];
+        const column = channel?.columns.find((col) => col.id === columnId);
+        const pendingIds = column?.reviewCardIds ?? [];
+        if (pendingIds.length === 0) return;
+
+        set((state) => {
+          const chan = state.channels[channelId];
+          if (!chan) return state;
+          // Appended in review order, which is what the server does — approving ten
+          // cards should not reshuffle them.
+          const updatedColumns = chan.columns.map((col) =>
+            col.id === columnId
+              ? {
+                  ...col,
+                  reviewCardIds: [],
+                  cardIds: [...col.cardIds, ...pendingIds],
+                  itemOrder: [...(col.itemOrder ?? col.cardIds), ...pendingIds],
+                }
+              : col
+          );
+          return {
+            channels: {
+              ...state.channels,
+              [channelId]: { ...chan, columns: updatedColumns, updatedAt: now() },
+            },
+          };
+        });
+
+        sync.syncColumnReview(channelId, columnId, 'approve');
+        broadcastAndPublish({ type: 'card:reviewApprove', cardId: pendingIds[0], channelId, columnId });
+      },
+
+      rejectAllReviewCards: (channelId, columnId, reason, feedback) => {
+        const channel = get().channels[channelId];
+        const column = channel?.columns.find((col) => col.id === columnId);
+        const pendingIds = column?.reviewCardIds ?? [];
+        if (pendingIds.length === 0) return;
+
+        set((state) => {
+          const chan = state.channels[channelId];
+          if (!chan) return state;
+          const updatedColumns = chan.columns.map((col) =>
+            col.id === columnId ? { ...col, reviewCardIds: [] } : col
+          );
+          const remainingCards = { ...state.cards };
+          for (const id of pendingIds) delete remainingCards[id];
+          return {
+            cards: remainingCards,
+            channels: {
+              ...state.channels,
+              [channelId]: { ...chan, columns: updatedColumns, updatedAt: now() },
+            },
+          };
+        });
+
+        sync.syncColumnReview(channelId, columnId, 'reject', { reason, feedback });
+        broadcastAndPublish({ type: 'card:reviewReject', cardId: pendingIds[0], channelId, columnId });
       },
 
       archiveCard: (cardId) => {

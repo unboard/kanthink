@@ -8,6 +8,7 @@ import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { AudioLines } from 'lucide-react';
 import { MentionDropdown } from './MentionDropdown';
+import { detectMentionAtCaret, mentionInsertText } from '@/lib/chat/mentionAtCaret';
 import { detectImageGenerationIntent } from '@/lib/ai/imageDetection';
 import { useAutoResizeTextarea, useIsomorphicLayoutEffect } from '@/lib/hooks/useAutoResizeTextarea';
 
@@ -425,17 +426,26 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
       return;
     }
 
-    const needsSpace = content.length > 0 && !/\s$/.test(content);
-    const next = content + (needsSpace ? ' @' : '@');
+    // At the caret, not at the end. Appending meant that reaching for @ halfway
+    // through a sentence dropped the name somewhere you weren't looking.
+    const el = textareaRef.current;
+    const caret = el ? el.selectionStart : content.length;
+    const before = content.slice(0, caret);
+    const after = content.slice(caret);
+    const needsSpace = before.length > 0 && !/\s$/.test(before);
+    const insert = needsSpace ? ' @' : '@';
+    const next = before + insert + after;
+    const caretAfter = before.length + insert.length;
+
     setContent(next);
-    setMention({ isActive: true, query: '', startIndex: next.length - 1 });
+    setMention({ isActive: true, query: '', startIndex: caretAfter - 1 });
     setMentionSelectedIndex(0);
     activateInput();
     requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.selectionStart = el.selectionEnd = next.length;
+      const node = textareaRef.current;
+      if (!node) return;
+      node.focus();
+      node.selectionStart = node.selectionEnd = caretAfter;
     });
   }, [content, mention.isActive, activateInput]);
 
@@ -734,10 +744,43 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
     // Height resets itself: clearing content re-runs the auto-resize.
   };
 
+  /**
+   * Recompute the @ and # pickers from where the caret actually is.
+   *
+   * This used to run only while typing, so moving the caret — clicking earlier in
+   * the message, arrowing away — left the picker open over a stale startIndex.
+   * Pressing Enter then rewrote whatever span that index still pointed at, which is
+   * how a mention ended up landing in the middle of a word somewhere else.
+   */
+  const syncPickersFromCaret = useCallback((el: HTMLTextAreaElement) => {
+    const value = el.value;
+    const cursorPos = el.selectionStart ?? value.length;
+    // A selection is not a caret — there is no single insertion point to anchor to.
+    const collapsed = el.selectionStart === el.selectionEnd;
+
+    const at = collapsed ? detectMentionAtCaret(value, cursorPos, '@') : null;
+    if (at) {
+      setMention({ isActive: true, ...at });
+      setMentionSelectedIndex(0);
+    } else {
+      setMention((prev) => (prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev));
+    }
+
+    const hash = collapsed ? detectMentionAtCaret(value, cursorPos, '#') : null;
+    if (hash) {
+      setCardMention({ isActive: true, ...hash });
+      setCardMentionSelectedIndex(0);
+    } else {
+      setCardMention((prev) => (prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev));
+    }
+  }, []);
+
   const handleMentionSelect = useCallback((member: ChannelMember) => {
     const before = content.slice(0, mention.startIndex);
     const after = content.slice(mention.startIndex + 1 + mention.query.length); // +1 for @
-    const insert = `@${member.name} `;
+    // The trailing space is for continuing to type. Completing a mention in the
+    // middle of a sentence already has one waiting, and two looked like a typo.
+    const insert = mentionInsertText(member.name, '@', after);
     const newContent = before + insert + after;
     setContent(newContent);
     // Kan stays plain text rather than becoming an @[name](id) link, so that
@@ -763,7 +806,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
     const before = content.slice(0, cardMention.startIndex);
     const after = content.slice(cardMention.startIndex + 1 + cardMention.query.length); // +1 for #
     const shortTitle = card.title.length > 40 ? card.title.slice(0, 37) + '...' : card.title;
-    const insert = `#${shortTitle} `;
+    const insert = mentionInsertText(shortTitle, '#', after);
     const newContent = before + insert + after;
     setContent(newContent);
     setCardMentionsMap((prev) => ({ ...prev, [shortTitle]: card.id }));
@@ -901,8 +944,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
         {/* @mention dropdown (members) */}
         {mention.isActive && filteredMembers.length > 0 && (
           <MentionDropdown
-            members={mentionableMembers}
-            query={mention.query}
+            members={filteredMembers}
             selectedIndex={mentionSelectedIndex}
             onSelect={handleMentionSelect}
             onClose={() => setMention({ isActive: false, query: '', startIndex: 0 })}
@@ -1122,21 +1164,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
               const val = e.target.value;
               setContent(val);
 
-              // Detect @mention (members)
-              const cursorPos = e.target.selectionStart;
-              const textBeforeCursor = val.slice(0, cursorPos);
-
-              // Always on, not just when the channel has other people in it —
-              // Kan is always in the list.
-              const atMatch = textBeforeCursor.match(/(?:^|[\s])@([^\s@]*)$/);
-              if (atMatch) {
-                const query = atMatch[1];
-                const startIndex = cursorPos - query.length - 1;
-                setMention({ isActive: true, query, startIndex });
-                setMentionSelectedIndex(0);
-              } else {
-                setMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
-              }
+              syncPickersFromCaret(e.target);
 
               // Detect a slash command. Anchored to the start of the message: a slash
               // anywhere else is a date, a URL, or an and/or.
@@ -1157,18 +1185,12 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
                 closeSlash();
               }
 
-              // Detect #mention (cards)
-              const hashMatch = textBeforeCursor.match(/(?:^|[\s])#([^\s#]*)$/);
-              if (hashMatch) {
-                const query = hashMatch[1];
-                const startIndex = cursorPos - query.length - 1;
-                setCardMention({ isActive: true, query, startIndex });
-                setCardMentionSelectedIndex(0);
-              } else {
-                setCardMention((prev) => prev.isActive ? { isActive: false, query: '', startIndex: 0 } : prev);
-              }
             }}
             onKeyDown={handleKeyDown}
+            // onSelect covers every caret move the browser reports — clicking into
+            // the text, arrowing, dragging a selection — which is what onChange
+            // alone was missing.
+            onSelect={(e) => syncPickersFromCaret(e.currentTarget)}
             onPaste={handlePaste}
             onFocus={(e) => {
               if (!inputActivated) {

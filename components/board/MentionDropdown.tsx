@@ -5,31 +5,40 @@ import type { ChannelMember } from '@/lib/types';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 
 interface MentionDropdownProps {
+  /**
+   * Already filtered, and in the order the list shows them.
+   *
+   * This used to take the full roster plus a query and filter again in here, while
+   * the composer filtered separately to decide what Enter would insert. Two filters
+   * behind one highlight index: the moment they disagreed, the row you were looking
+   * at and the person you got were different people.
+   */
   members: ChannelMember[];
-  query: string;
   selectedIndex: number;
   onSelect: (member: ChannelMember) => void;
   onClose: () => void;
 }
 
-export function MentionDropdown({ members, query, selectedIndex, onSelect, onClose }: MentionDropdownProps) {
+export function MentionDropdown({ members, selectedIndex, onSelect, onClose }: MentionDropdownProps) {
   const ref = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const filtered = members.filter((m) => {
-    const q = query.toLowerCase();
-    return m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q);
-  });
+  const filtered = members;
 
-  // Click outside to close
+  // Tap or click outside to close. Touch is listed too — on a phone the picker
+  // used to sit there until you typed something.
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
+    const handleClick = (e: Event) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         onClose();
       }
     };
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('touchstart', handleClick);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('touchstart', handleClick);
+    };
   }, [onClose]);
 
   // Keep selected item in view
@@ -48,8 +57,10 @@ export function MentionDropdown({ members, query, selectedIndex, onSelect, onClo
         <button
           key={member.id}
           ref={(el) => { itemRefs.current[index] = el; }}
+          // mousedown, not click: the textarea must not blur first, or the
+          // composer closes out from under the tap.
           onMouseDown={(e) => {
-            e.preventDefault(); // Prevent blur on textarea
+            e.preventDefault();
             onSelect(member);
           }}
           className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${

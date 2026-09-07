@@ -17,6 +17,7 @@ import { CardDetailDrawer } from './CardDetailDrawer';
 import { ColumnTaskItem } from './ColumnTaskItem';
 import { TaskDrawer } from './TaskDrawer';
 import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
+import { ReviewBulkBar } from './ReviewBulkBar';
 
 
 // Animated counter that briefly flashes when the value changes
@@ -354,8 +355,11 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
         }`}
       >
         {view === 'review' ? (
-          // Review side - shroom output awaiting per-card approval
+          // Review side - shroom output awaiting approval, one at a time or all at once
           <>
+            {reviewCount > 1 && (
+              <ReviewBulkBar channelId={channelId} columnId={column.id} count={reviewCount} />
+            )}
             {reviewCards.map((card) => (
               <ReviewCard key={card.id} card={card} />
             ))}

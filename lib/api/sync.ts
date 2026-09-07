@@ -175,6 +175,17 @@ export function syncCardReview(
   }, decision === 'approve' ? 'approve card' : 'reject card')
 }
 
+export function syncColumnReview(
+  channelId: string,
+  columnId: string,
+  decision: 'approve' | 'reject',
+  detail?: { reason?: string; feedback?: string }
+) {
+  syncInBackground(async () => {
+    await api.reviewColumn(channelId, columnId, decision, detail)
+  }, decision === 'approve' ? 'approve all cards' : 'reject all cards')
+}
+
 export function syncCardDelete(channelId: string, cardId: string) {
   syncInBackground(async () => {
     await api.deleteCard(channelId, cardId)
