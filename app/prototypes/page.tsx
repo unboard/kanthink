@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'shrooms-alive',
+    name: 'Shrooms alive',
+    blurb:
+      'Where a shroom sits was the last round; this one is about running, making and reading one. Drag a card onto a shroom, name one in the composer, edit the sentence a channel obeys, watch output fill in where it will land — and the replacement for the graph view: the map drawn on the real board instead of a second picture of it.',
+    status: 'newest',
+  },
+  {
     slug: 'playground-cards',
     name: 'Playground cards in a column',
     blurb:
       'A playground card carries a title and description like any card, plus enough state to tell whether the app exists, whether it is live, and what it is made of. Five ways to say that — footer strip, window chrome, spec sheet, status-forward, spine — at real column width, across draft, building, built and published.',
-    status: 'newest',
   },
   {
     slug: 'shrooms-in-channel',
