@@ -432,6 +432,268 @@ function ShroomChip({
   );
 }
 
+// ── The row, as it would actually sit on a board ─────────────────────────────
+
+/**
+ * One line, horizontally scrolled, with the way out pinned.
+ *
+ * The previous bar was removed for adding too much height, so height is the brief:
+ * 34px of control inside a 44px strip, one row that never wraps however many
+ * shrooms a channel has. Wrapping is what turns a bar into a panel, and a panel is
+ * what got deleted.
+ *
+ * "All" is pinned rather than sitting at the end of the scroll, because the way to
+ * see everything must not itself be a thing you have to go and find.
+ */
+function PinnedRow({
+  states,
+  onRun,
+  onHover,
+  hovered,
+  many,
+}: {
+  states: Record<string, RunState>;
+  onRun: (id: string) => void;
+  onHover?: (id: string | null) => void;
+  hovered?: string | null;
+  many?: boolean;
+}) {
+  const list = many
+    ? [...SHROOMS, ...SHROOMS.map((x) => ({ ...x, id: x.id + '-b', name: x.name + ' II' }))]
+    : SHROOMS;
+  return (
+    <div className="flex items-stretch gap-1.5 rounded-xl border border-white/[0.06] bg-white/[0.015] p-1.5">
+      <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto scrollbar-none">
+        {list.map((x) => (
+          <button
+            key={x.id}
+            onMouseEnter={() => onHover?.(x.id)}
+            onMouseLeave={() => onHover?.(null)}
+            onClick={() => onRun(x.id)}
+            className={`flex h-[34px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-2 text-[12px] transition-all ${
+              hovered === x.id
+                ? 'border-violet-500/60 bg-violet-500/[0.14] text-neutral-50'
+                : states[x.id] === 'running'
+                  ? 'border-violet-500/60 bg-violet-500/[0.12] text-neutral-100'
+                  : 'border-white/[0.07] bg-white/[0.02] text-neutral-300'
+            }`}
+          >
+            <span className={states[x.id] === 'running' ? 'animate-pulse' : ''}>
+              <ShroomAvatar avatar={x.avatar} size={16} />
+            </span>
+            <span className="whitespace-nowrap">{x.name}</span>
+            {states[x.id] === 'running' && (
+              <span className="h-1.5 w-1.5 flex-shrink-0 animate-ping rounded-full bg-violet-400" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Pinned. Never scrolls out, never wraps. */}
+      <div className="flex-shrink-0 border-l border-white/[0.07] pl-1.5">
+        <button className="flex h-[34px] items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.03] px-2 text-[12px] text-neutral-300 hover:border-violet-500/40 hover:text-neutral-50">
+          <ShroomAvatar avatar={{ shape: 'button', pattern: 'plain', color: 'slate' }} size={15} />
+          <span className="whitespace-nowrap">All</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TheRow() {
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [states, setStates] = useState<Record<string, RunState>>({});
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  const run = (id: string) => {
+    setStates((v) => ({ ...v, [id]: 'running' }));
+    timers.current.push(setTimeout(() => setStates((v) => ({ ...v, [id]: 'idle' })), 2600));
+  };
+
+  const s = SHROOMS.find((x) => x.id === hovered);
+
+  return (
+    <div>
+      <PinnedRow states={states} onRun={run} onHover={setHovered} hovered={hovered} />
+
+      <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+        {COLUMNS.map((col) => {
+          const idx = s ? s.stops.findIndex((st) => st.column === col) : -1;
+          const isRead = s ? s.reads.includes(col) && idx === -1 : false;
+          return (
+            <div
+              key={col}
+              className={`w-[150px] flex-shrink-0 rounded-lg border p-2 transition-all ${
+                idx !== -1
+                  ? 'border-violet-500/55 bg-violet-500/[0.08]'
+                  : isRead
+                    ? 'border-sky-500/40 bg-sky-500/[0.04]'
+                    : 'border-white/[0.05] bg-white/[0.01]'
+              }`}
+            >
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                  {col}
+                </span>
+                {idx !== -1 && (
+                  <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-violet-500 font-mono text-[8px] font-bold text-white">
+                    {idx + 1}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1 opacity-50">
+                <div className="h-7 rounded border border-white/[0.06] bg-[#141417]" />
+                <div className="h-7 rounded border border-white/[0.06] bg-[#141417]" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-2.5 h-4 text-[11.5px] text-neutral-500">
+        {s ? `${s.name} · ${s.stops.map((st) => st.verb).join(', then ')}` : ''}
+      </p>
+
+      <div className="mt-4 rounded-lg border border-white/[0.06] bg-white/[0.015] p-3">
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-600">
+          What it costs
+        </p>
+        <p className="max-w-[68ch] text-[12px] leading-relaxed text-neutral-400">
+          <span className="font-mono text-neutral-300">44px</span> — one row, never wrapping,
+          however many shrooms the channel has. The bar that got removed grew with the number of
+          shrooms; this one scrolls instead, and that is the whole difference. Same height with two
+          shrooms or twenty.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── On a phone ───────────────────────────────────────────────────────────────
+
+/**
+ * There is no hover on a phone, so the trail has to arrive some other way.
+ *
+ * Tapping a cap opens a short sheet carrying the same ordered stops, with Run
+ * inside it. That buys two things at once: the preview desktop gets for free, and a
+ * guard against firing an expensive shroom with a thumb.
+ */
+function OnAPhone() {
+  const [sheet, setSheet] = useState<string | null>(null);
+  const [states, setStates] = useState<Record<string, RunState>>({});
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const s = SHROOMS.find((x) => x.id === sheet?.replace('-b', ''));
+
+  return (
+    <div className="flex flex-wrap items-start gap-6">
+      <div className="w-[360px] flex-shrink-0 overflow-hidden rounded-[26px] border border-white/[0.1] bg-[#0e0e11] p-2 shadow-2xl">
+        <div className="mb-2 flex items-center justify-between px-1.5 pt-1">
+          <span className="text-[13px] font-semibold text-neutral-100">Work</span>
+          <span className="font-mono text-[10px] text-neutral-600">9:41</span>
+        </div>
+
+        <PinnedRow states={states} onRun={(id) => setSheet(id)} many />
+
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+          {COLUMNS.slice(0, 2).map((col) => (
+            <div
+              key={col}
+              className="w-[150px] flex-shrink-0 rounded-lg border border-white/[0.05] bg-white/[0.01] p-2"
+            >
+              <span className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                {col}
+              </span>
+              <div className="mt-1.5 space-y-1 opacity-50">
+                <div className="h-9 rounded border border-white/[0.06] bg-[#141417]" />
+                <div className="h-9 rounded border border-white/[0.06] bg-[#141417]" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* The sheet: the trail spelled out, with the run inside it. */}
+        <div
+          className={`mt-2 overflow-hidden rounded-xl border transition-all ${
+            s
+              ? 'max-h-[280px] border-violet-500/40 bg-violet-500/[0.07] opacity-100'
+              : 'max-h-0 border-transparent opacity-0'
+          }`}
+        >
+          {s && (
+            <div className="p-2.5">
+              <div className="mb-2 flex items-center gap-2">
+                <ShroomAvatar avatar={s.avatar} size={22} />
+                <span className="flex-1 text-[12.5px] font-medium text-neutral-100">{s.name}</span>
+                <button
+                  onClick={() => setSheet(null)}
+                  className="px-1 text-[16px] leading-none text-neutral-500"
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <ol className="mb-2 space-y-1">
+                {s.stops.map((st, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="mt-[1px] flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-violet-500 font-mono text-[9px] font-bold text-white">
+                      {i + 1}
+                    </span>
+                    <span className="text-[11.5px] leading-snug text-neutral-300">
+                      {st.verb}
+                      {st.column && <span className="text-neutral-500"> · {st.column}</span>}
+                      {st.offBoard === 'review' && (
+                        <span className="block text-amber-300/80">waits for your approval</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <p className="mb-2 text-[10.5px] text-neutral-500">runs when {s.trigger}</p>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => {
+                    const id = s.id;
+                    setStates((v) => ({ ...v, [id]: 'running' }));
+                    setSheet(null);
+                    timers.current.push(
+                      setTimeout(() => setStates((v) => ({ ...v, [id]: 'idle' })), 2600)
+                    );
+                  }}
+                  className="flex-1 rounded-lg bg-violet-600 py-2 text-[12px] font-medium text-white"
+                >
+                  Run now
+                </button>
+                <button className="rounded-lg border border-white/[0.1] px-3 text-[12px] text-neutral-300">
+                  Edit
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="max-w-[38ch] space-y-3 pt-2 text-[12.5px] leading-relaxed text-neutral-500">
+        <p>
+          <strong className="text-neutral-300">Tap is the only gesture</strong>, and it has to serve
+          both &ldquo;what does this do&rdquo; and &ldquo;do it&rdquo;. So tapping a cap opens the
+          sheet rather than running: the ordered stops arrive as text instead of as a hover, and
+          Run sits inside them.
+        </p>
+        <p>
+          That also removes the worst failure available on a phone — firing a build shroom with a
+          thumb and paying for it. Desktop can be looser precisely because hover already told you.
+        </p>
+        <p>
+          Twelve shrooms in the row here. It scrolls, the height does not move, and{' '}
+          <strong className="text-neutral-300">All</strong> stays put.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── 03 · The drawer ──────────────────────────────────────────────────────────
 
 function ShroomDrawer() {
@@ -680,13 +942,19 @@ function AvatarLibrary() {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 const SECTIONS = [
-  { key: 'trail', n: 1, name: 'Trail accuracy', component: TrailAccuracy },
-  { key: 'states', n: 2, name: 'The row & its states', component: RowStates },
-  { key: 'drawer', n: 3, name: 'The drawer', component: ShroomDrawer },
-  { key: 'avatars', n: 4, name: 'Avatar library', component: AvatarLibrary },
+  { key: 'row', n: 1, name: 'The row', component: TheRow },
+  { key: 'phone', n: 2, name: 'On a phone', component: OnAPhone },
+  { key: 'trail', n: 3, name: 'Trail accuracy', component: TrailAccuracy },
+  { key: 'states', n: 4, name: 'Run states', component: RowStates },
+  { key: 'drawer', n: 5, name: 'The drawer', component: ShroomDrawer },
+  { key: 'avatars', n: 6, name: 'Avatar library', component: AvatarLibrary },
 ];
 
 const PITCH: Record<string, string> = {
+  row:
+    'The bar was removed last time for adding height, so height is the brief: one 44px strip that scrolls sideways and never wraps, whatever the channel holds. "All" is pinned outside the scroll, because the way to see everything must not be a thing you have to find. Hover a cap and the columns it touches light up underneath.',
+  phone:
+    'No hover on a phone, so the trail arrives as a sheet instead. Tapping a cap opens the same ordered stops as text with Run inside — which also stops a thumb firing a build shroom by accident. Twelve shrooms in the row; it scrolls, the height does not.',
   trail:
     'Two colours could not tell the truth about every shroom, so the trail is ordered stops instead: numbered badges in step order, blue for columns read only for context, and off-board destinations — an email, the review queue — given their own stop rather than vanishing. Hover each of the five; Triage is two stops, Monday Digest never touches the board, Idea Farm lands in review rather than on the column.',
   states:
@@ -698,7 +966,7 @@ const PITCH: Record<string, string> = {
 };
 
 export default function ShroomRowPage() {
-  const [active, setActive] = useState('trail');
+  const [active, setActive] = useState('row');
   const section = SECTIONS.find((s) => s.key === active)!;
   const View = section.component;
 
@@ -717,7 +985,7 @@ export default function ShroomRowPage() {
           </p>
         </header>
 
-        <div className="mb-6 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-6 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-6">
           {SECTIONS.map((s) => (
             <button
               key={s.key}

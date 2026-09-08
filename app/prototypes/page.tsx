@@ -12,7 +12,7 @@ const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }
     slug: 'shroom-row',
     name: 'The shroom row',
     blurb:
-      'Trails, worked up. What a hover can honestly say about a shroom — ordered stops rather than two colours, because a shroom can be multi-step, board-wide, or write to an email instead of a column. Plus the cap holding its own job state, the drawer you edit and create from, and a library of twelve caps and twelve colours so four shrooms are four silhouettes at 16px.',
+      'The bar that got removed for adding height, rebuilt as one 44px strip that scrolls sideways and never wraps, with All pinned outside the scroll. Hover lights the columns a shroom touches; on a phone, where there is no hover, tapping opens the same trail as a sheet with Run inside. Plus what a hover can honestly say (ordered stops, not two colours), the cap holding its own job state, the drawer you edit and create from, and twelve caps in twelve colours.',
     status: 'newest',
   },
   {
