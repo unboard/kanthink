@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'shroom-row',
+    name: 'The shroom row',
+    blurb:
+      'Trails, worked up. What a hover can honestly say about a shroom — ordered stops rather than two colours, because a shroom can be multi-step, board-wide, or write to an email instead of a column. Plus the cap holding its own job state, the drawer you edit and create from, and a library of twelve caps and twelve colours so four shrooms are four silhouettes at 16px.',
+    status: 'newest',
+  },
+  {
     slug: 'shrooms-alive',
     name: 'Shrooms alive',
     blurb:
       'Where a shroom sits was the last round; this one is about running, making and reading one. Drag a card onto a shroom, name one in the composer, edit the sentence a channel obeys, watch output fill in where it will land — and the replacement for the graph view: the map drawn on the real board instead of a second picture of it.',
-    status: 'newest',
   },
   {
     slug: 'playground-cards',
