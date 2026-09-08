@@ -5,7 +5,7 @@ import type { Channel, ID, InstructionCard } from '@/lib/types';
 import { ShroomAvatar } from '@/components/shrooms/ShroomAvatar';
 import { buildShroomTrail, describeTrail } from '@/lib/shrooms/trail';
 import { describeShroom } from '@/lib/shrooms/describe';
-import { PALETTE, resolveAvatar } from '@/lib/shrooms/avatar';
+import { ShroomTile } from '@/components/shrooms/ShroomTile';
 
 interface ShroomRowProps {
   channel: Channel;
@@ -22,12 +22,15 @@ interface ShroomRowProps {
 }
 
 /**
- * The shrooms of a channel, on one line above the board.
+ * The shrooms of a channel, above the board, as cards in their own colours.
  *
- * A bar like this existed once and was removed for taking too much height. The
- * reason it grew was that it wrapped — more shrooms meant more rows, and a bar that
- * becomes a panel deserves deleting. This one scrolls sideways and is a fixed 44px
- * with two shrooms or twenty.
+ * A bar like this existed once and was removed for taking too much height — but the
+ * reason it grew was that it *wrapped*, so more shrooms meant more rows. This one
+ * scrolls sideways: one row of tiles, the same height with two shrooms or twenty.
+ *
+ * The tiles carry only a face and a name. Everything else about a shroom is answered
+ * by hovering one — the columns it touches light up on the board below — or by the
+ * sheet on a phone, which is what tapping opens instead of running.
  *
  * "All" sits outside the scroll. The way to see everything must not itself be
  * something you have to scroll to find.
@@ -71,50 +74,25 @@ export function ShroomRow({
         className="flex items-stretch gap-1.5 rounded-xl border border-neutral-200 bg-white/60 p-1.5 dark:border-white/[0.06] dark:bg-white/[0.015]"
         onMouseLeave={() => onHover(null)}
       >
-        <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto scrollbar-none">
-          {shrooms.map((shroom) => {
-            const running = runningIds.includes(shroom.id);
-            const hovered = hoveredId === shroom.id;
-            // A tint of the shroom's own colour rather than a fill of it. The tile
-            // on /shrooms is the loud version; here eight saturated chips would
-            // compete with the cards, which are what the board is for.
-            const palette =
-              PALETTE.find((p) => p.key === resolveAvatar(shroom.id, shroom.avatar).color) ??
-              PALETTE[0];
-            return (
-              <button
-                key={shroom.id}
-                onMouseEnter={() => !coarse && onHover(shroom.id)}
-                onFocus={() => !coarse && onHover(shroom.id)}
-                onClick={() => {
-                  if (coarse) {
-                    setSheetId((cur) => (cur === shroom.id ? null : shroom.id));
-                    return;
-                  }
-                  if (!running) onRun(shroom);
-                }}
-                disabled={running}
-                title={describeTrail(buildShroomTrail(shroom, channel))}
-                style={
-                  hovered || sheetId === shroom.id || running
-                    ? { borderColor: palette.cap, backgroundColor: `${palette.cap}26` }
-                    : { borderColor: `${palette.cap}59`, backgroundColor: `${palette.cap}12` }
+        <div className="flex min-w-0 flex-1 items-stretch gap-1.5 overflow-x-auto scrollbar-none">
+          {shrooms.map((shroom) => (
+            <ShroomTile
+              key={shroom.id}
+              shroom={shroom}
+              isRunning={runningIds.includes(shroom.id)}
+              isActive={hoveredId === shroom.id || sheetId === shroom.id}
+              title={describeTrail(buildShroomTrail(shroom, channel))}
+              onHoverStart={() => !coarse && onHover(shroom.id)}
+              onHoverEnd={() => !coarse && onHover(null)}
+              onClick={() => {
+                if (coarse) {
+                  setSheetId((cur) => (cur === shroom.id ? null : shroom.id));
+                  return;
                 }
-                className="flex h-[34px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-2 text-[12px] text-neutral-700 transition-colors dark:text-neutral-200"
-              >
-                <span className={running ? 'animate-pulse' : ''}>
-                  <ShroomAvatar id={shroom.id} avatar={shroom.avatar} size={16} />
-                </span>
-                <span className="whitespace-nowrap">{shroom.title}</span>
-                {running && (
-                  <span
-                    className="h-1.5 w-1.5 flex-shrink-0 animate-ping rounded-full"
-                    style={{ backgroundColor: palette.cap }}
-                  />
-                )}
-              </button>
-            );
-          })}
+                if (!runningIds.includes(shroom.id)) onRun(shroom);
+              }}
+            />
+          ))}
         </div>
 
         {/* Pinned: never scrolls out, never wraps. */}
@@ -122,10 +100,10 @@ export function ShroomRow({
           <button
             onClick={onOpenAll}
             title="All shrooms"
-            className="flex h-[34px] items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2 text-[12px] text-neutral-600 transition-colors hover:border-violet-300 hover:text-neutral-900 dark:border-white/[0.09] dark:bg-white/[0.03] dark:text-neutral-300 dark:hover:border-violet-500/40 dark:hover:text-neutral-50"
+            className="flex h-full w-[52px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-neutral-300 text-[10px] text-neutral-500 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-white/[0.12] dark:text-neutral-400 dark:hover:border-violet-500/50 dark:hover:text-violet-300"
           >
-            <span className="text-[13px] leading-none">🍄</span>
-            <span className="whitespace-nowrap">All</span>
+            <span className="text-[16px] leading-none">🍄</span>
+            <span>All</span>
           </button>
         </div>
       </div>
