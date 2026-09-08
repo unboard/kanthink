@@ -5,6 +5,7 @@ import { cards, tasks, playgroundApps } from '@/lib/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { requirePermission, PermissionError } from '@/lib/api/permissions';
+import { createNotification } from '@/lib/notifications/createNotification';
 import { getUserByokConfigWithError } from '@/lib/usage';
 import { nanoid } from 'nanoid';
 import {
@@ -318,6 +319,17 @@ export interface GenerateRequest {
   /** The playground app being built. Its source card supplies first-build context. */
   appId: string;
   prompt: string;
+  /**
+   * Notify the user when this build lands.
+   *
+   * Set by callers that kick a build off and let the user walk away — accepting
+   * Kan's suggestion in a card thread, say. A build runs for minutes, and without
+   * this the only way to learn it had finished was to go back and look.
+   *
+   * Left off where the user is already watching the thing build, which is the app
+   * drawer: a notification about the screen you are looking at is just noise.
+   */
+  notifyWhenDone?: boolean;
   // Optional: if the iframe captured a runtime error, include it so Gemini can fix.
   lastError?: string;
   // Optional: caller can choose a model. Falls back to the default.
@@ -816,6 +828,19 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     .update(playgroundApps)
     .set(updated as unknown as typeof playgroundApps.$inferInsert)
     .where(eq(playgroundApps.id, app.id));
+
+  // Tell the user it landed, when they aren't the one watching it land.
+  // Not awaited: the build is already saved, and a notification that fails to send
+  // must not turn a successful build into an error response.
+  if (body.notifyWhenDone) {
+    createNotification({
+      userId: session.user.id,
+      type: 'ai_generation_completed',
+      title: generationCount === 0 ? `"${updated.title}" is ready` : `"${updated.title}" was updated`,
+      body: parsed.summary || 'Your app finished building.',
+      data: { cardId: card.id, appId: app.id, channelId: app.channelId },
+    }).catch(() => {});
+  }
 
   return NextResponse.json({
     success: true,

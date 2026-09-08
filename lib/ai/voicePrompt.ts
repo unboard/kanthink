@@ -103,16 +103,52 @@ export function buildVoiceSystemPrompt({
     taskSection = `\n\nTASKS (${notDone.length} not done${myTasks.length > 0 ? `, ${myTasks.length} assigned to you` : ''}):\n${taskLines}`;
   }
 
+  // The card the user is standing on, in full.
+  //
+  // This used to be a pointer — a title and an instruction to "weight your
+  // interpretation" toward it — appended after the entire workspace dump. Kan knew
+  // the card's name and nothing about what it said, so opening voice on a card and
+  // saying "what do you think?" got a question back rather than an answer.
+  //
+  // The card's own content goes in, and it goes in FIRST, ahead of the workspace
+  // listing. The user opened voice from here; this is the subject until they say
+  // otherwise.
   let focusSection = '';
   if (focus?.channelId) {
     const focusedChannel = channelById.get(focus.channelId);
     const channelName = focus.channelName || focusedChannel?.name || 'this channel';
+
     if (focus.cardId) {
       const focusedCard = cards[focus.cardId];
       const cardTitle = focus.cardTitle || focusedCard?.title || 'this card';
-      focusSection = `\n\nCURRENT FOCUS: The user opened voice mode from the card "${cardTitle}" (cardId: ${focus.cardId}) inside the "${channelName}" channel (channelId: ${focus.channelId}). Weight your interpretation toward this card and channel — when the user says "this card", "this channel", or asks open-ended questions, assume they mean these unless they say otherwise. The starred 📋 ⭐ above marks the focused channel.`;
+
+      const cardTasks = taskList.filter((t) => t.cardId === focus.cardId);
+      const taskLines = cardTasks.length > 0
+        ? cardTasks
+            .map((t) => `  ${t.status === 'done' ? '[x]' : '[ ]'} ${t.title}`)
+            .join('\n')
+        : '';
+
+      const thread = (focusedCard?.messages ?? []).slice(-12);
+      const threadLines = thread.length > 0
+        ? thread
+            .map((m) => `  [${m.type === 'ai_response' ? 'you' : 'them'}] ${(m.content || '').slice(0, 1200)}`)
+            .join('\n')
+        : '  (nothing written on it yet)';
+
+      focusSection = [
+        `THE USER IS ON THIS CARD RIGHT NOW — it is the subject of this conversation:`,
+        ``,
+        `CARD: "${cardTitle}" (cardId: ${focus.cardId})`,
+        `CHANNEL: "${channelName}" (channelId: ${focus.channelId})`,
+        focusedCard?.summary ? `SUMMARY: ${focusedCard.summary}` : '',
+        taskLines ? `TASKS ON IT:\n${taskLines}` : '',
+        `WHAT IS WRITTEN ON IT:\n${threadLines}`,
+        ``,
+        `You have read the above. Open on it — reference something specific from it rather than asking what they want to talk about, and treat "this", "it", and any open-ended question as being about this card unless they say otherwise. If they take the conversation elsewhere, follow them; this is where to start, not a fence.`,
+      ].filter(Boolean).join('\n');
     } else {
-      focusSection = `\n\nCURRENT FOCUS: The user opened voice mode from the "${channelName}" channel (channelId: ${focus.channelId}). Weight your interpretation toward this channel — when the user says "this channel", "this column", or asks open-ended questions, assume they mean this channel unless they say otherwise. The starred 📋 ⭐ above marks the focused channel.`;
+      focusSection = `THE USER IS IN THE "${channelName}" CHANNEL RIGHT NOW (channelId: ${focus.channelId}). Treat "this channel", "this column" and open-ended questions as being about it unless they say otherwise. The starred 📋 ⭐ below marks it.`;
     }
   }
 
@@ -120,9 +156,11 @@ export function buildVoiceSystemPrompt({
 
 Keep voice responses concise — 2-3 sentences max. Be conversational and warm.
 
+${focusSection}
+
 WORKSPACE (${channelList.length} channels, organized into folders):
 
-${workspaceSection}${taskSection}${focusSection}
+${workspaceSection}${taskSection}
 
 Channels are organized into folders (📁) in the sidebar. When the user asks about a folder or where a channel is, refer to this structure.
 

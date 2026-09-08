@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useStore } from '@/lib/store';
 import type { StoredAction, TagDefinition } from '@/lib/types';
 import { TaskSnippet } from './TaskSnippet';
 import { TagSnippet } from './TagSnippet';
@@ -13,6 +14,22 @@ interface SmartSnippetProps {
   cardTags: string[];
   onApprove: (actionId: string, editedData?: StoredAction['data']) => void;
   onReject: (actionId: string) => void;
+}
+
+/**
+ * True while a build_app action's app exists but has nothing built yet.
+ *
+ * Read from the store rather than tracked locally so the snippet keeps telling the
+ * truth after the drawer is closed and reopened, and updates the moment the build
+ * lands wherever the news arrives from.
+ */
+function useIsAppBuilding(action: StoredAction): boolean {
+  const apps = useStore((s) => s.playgroundApps);
+  if (action.type !== 'build_app' || action.status !== 'approved') return false;
+  // No resultId yet means the app row itself is still being created.
+  if (!action.resultId) return true;
+  const app = apps[action.resultId];
+  return !app || app.generationCount === 0;
 }
 
 export function SmartSnippet({
@@ -28,6 +45,7 @@ export function SmartSnippet({
   const isPending = action.status === 'pending';
   const isApproved = action.status === 'approved';
   const isRejected = action.status === 'rejected';
+  const isBuilding = useIsAppBuilding(action);
 
   const handleApprove = () => {
     onApprove(action.id, isEditing ? editedData : undefined);
@@ -111,16 +129,19 @@ export function SmartSnippet({
           )}
           {action.type === 'build_app' && (
             <div>
-              <div className={`text-sm font-medium ${isRejected ? 'line-through text-neutral-400' : 'text-neutral-800 dark:text-neutral-100'}`}>
-                {isApproved ? 'App created' : 'Build it'}
+              <div className={`text-sm font-medium flex items-center gap-1.5 ${isRejected ? 'line-through text-neutral-400' : 'text-neutral-800 dark:text-neutral-100'}`}>
+                {isApproved && isBuilding && (
+                  <span className="h-3 w-3 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin flex-shrink-0" />
+                )}
+                {!isApproved ? 'Build it' : isBuilding ? 'Building the app…' : 'App built'}
               </div>
               <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                 {(editedData as { summary?: string }).summary}
               </div>
-              {/* The build records the app it created on the action, so this can
-                  point at the app itself. It appears once the app exists, which is
-                  before the build finishes — the app is real either way. */}
-              {isApproved && action.resultId && (
+              {/* The link waits for code to exist. It used to appear the moment the
+                  app row was created — minutes before the build finished — so it
+                  read as "done" and led to a page that was still building. */}
+              {isApproved && action.resultId && !isBuilding && (
                 <a
                   href={`/play/preview/${action.resultId}`}
                   target="_blank"

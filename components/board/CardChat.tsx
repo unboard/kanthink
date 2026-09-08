@@ -4,7 +4,8 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import dynamic from 'next/dynamic';
-import type { Card, CardMessageType, StoredAction, BuildAppActionData, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition, ChannelMember } from '@/lib/types';
+import type { Card, CardMessageType, StoredAction, BuildAppActionData, CreateTaskActionData, AddTagActionData, RemoveTagActionData, TagDefinition, ChannelMember, PlaygroundApp } from '@/lib/types';
+import { watchAppBuild, toAppSummary } from '@/lib/playground/watchBuild';
 import { useStore } from '@/lib/store';
 import { requireSignInForAI } from '@/lib/settingsStore';
 import { fetchShares } from '@/lib/api/client';
@@ -43,6 +44,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const { composerRef, composerHeight } = useComposerHeight();
   const [isAILoading, setIsAILoading] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
+  const upsertPlaygroundApp = useStore((s) => s.upsertPlaygroundApp);
+  // Held so a second build, an error, or unmounting can call off the previous watch.
+  const stopBuildWatchRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => stopBuildWatchRef.current?.(), []);
   const [aiError, setAIError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
@@ -297,9 +302,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
         const buildData = dataToUse as BuildAppActionData;
         setIsBuilding(true);
         updateCard(card.id, { isProcessing: true, processingStatus: 'Building the app…' });
-        // A build needs an app to land on, so make one first. The result lives on
-        // the card's Apps tab with its own thread — this thread is the card's, not
-        // the app's, so nothing is written back here.
+
+        // Create the app row first, then build into it. The row existing is what
+        // lets the thread show an honest "building…" state with a real target,
+        // instead of claiming the app is ready before any code exists.
         fetch('/api/playground/apps', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -308,26 +314,58 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           .then((r) => r.json().catch(() => null))
           .then((created) => {
             if (!created?.app?.id) throw new Error(created?.error || 'Could not create the app');
-            // Record which app this action produced, so the snippet can link to it.
-            // Set here rather than below because the build is not awaited — by the
-            // time it returns, the snippet has long since flipped to approved.
-            updateMessageAction(card.id, messageId, actionId, { resultId: created.app.id });
+            const app = created.app as PlaygroundApp;
+
+            // Record which app this action produced, and put it in the store, so the
+            // snippet can track the build rather than guess at it.
+            updateMessageAction(card.id, messageId, actionId, { resultId: app.id });
+            upsertPlaygroundApp(toAppSummary(app));
+
+            // The watcher, not this request, decides when the build is done — the
+            // request below stays open for minutes and a backgrounded tab loses it
+            // while the server carries on and finishes.
+            stopBuildWatchRef.current?.();
+            stopBuildWatchRef.current = watchAppBuild(app.id, 0, (built) => {
+              upsertPlaygroundApp(toAppSummary(built));
+              updateCard(card.id, { isProcessing: false, processingStatus: undefined });
+              setIsBuilding(false);
+              onShowApps?.();
+            });
+
             return fetch('/api/playground/generate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ appId: created.app.id, prompt: buildData.instruction }),
+              body: JSON.stringify({
+                appId: app.id,
+                prompt: buildData.instruction,
+                // The user accepted a suggestion and is free to walk away, so tell
+                // them when it lands rather than making them come back and look.
+                notifyWhenDone: true,
+              }),
             });
           })
-          .then((r) => r.json().catch(() => null))
+          .then((r) => r?.json().catch(() => null))
           .then((data) => {
-            if (!data || data.error) {
-              setAIError(data?.error || 'Build failed.');
-              return;
+            if (data?.error) {
+              setAIError(data.error);
+              stopBuildWatchRef.current?.();
+              stopBuildWatchRef.current = null;
+              updateCard(card.id, { isProcessing: false, processingStatus: undefined });
+              setIsBuilding(false);
             }
-            onShowApps?.();
+            // Success is handled by the watcher, which has already seen it or is
+            // about to — so nothing here, deliberately.
           })
-          .catch((err) => setAIError(err instanceof Error ? err.message : 'Build failed.'))
-          .finally(() => {
+          .catch((err) => {
+            const msg = err instanceof Error ? err.message : 'Build failed.';
+            // A dropped socket usually means the tab was suspended, not that the
+            // build failed. Leave the watcher running; it will notice either way.
+            const transient = ['Failed to fetch', 'NetworkError', 'aborted', 'network', 'connection']
+              .some((needle) => msg.includes(needle));
+            if (transient) return;
+            setAIError(msg);
+            stopBuildWatchRef.current?.();
+            stopBuildWatchRef.current = null;
             updateCard(card.id, { isProcessing: false, processingStatus: undefined });
             setIsBuilding(false);
           });
@@ -624,12 +662,14 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             </button>
           </div>
         )}
-        {/* A build takes minutes, so the thread says so for the whole of it. */}
+        {/* A build takes minutes. It runs on the server and this thread is not
+            waiting on it — say so, because a spinner with no explanation reads as
+            "don't touch anything". */}
         {isBuilding && (
           <div className="mx-3 mb-2 flex items-center gap-2 px-3 py-2.5 rounded-xl border border-violet-200 dark:border-violet-900/60 bg-violet-50/60 dark:bg-violet-900/20">
             <div className="h-4 w-4 rounded-full border-2 border-violet-300 border-t-violet-600 animate-spin flex-shrink-0" />
             <span className="text-xs font-medium text-violet-700 dark:text-violet-300">
-              Kan is building the app…
+              Building in the background — keep working, you&apos;ll get a notification when it&apos;s ready.
             </span>
           </div>
         )}
