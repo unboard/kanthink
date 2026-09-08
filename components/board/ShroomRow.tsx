@@ -5,6 +5,7 @@ import type { Channel, ID, InstructionCard } from '@/lib/types';
 import { ShroomAvatar } from '@/components/shrooms/ShroomAvatar';
 import { buildShroomTrail, describeTrail } from '@/lib/shrooms/trail';
 import { describeShroom } from '@/lib/shrooms/describe';
+import { PALETTE, resolveAvatar } from '@/lib/shrooms/avatar';
 
 interface ShroomRowProps {
   channel: Channel;
@@ -74,6 +75,12 @@ export function ShroomRow({
           {shrooms.map((shroom) => {
             const running = runningIds.includes(shroom.id);
             const hovered = hoveredId === shroom.id;
+            // A tint of the shroom's own colour rather than a fill of it. The tile
+            // on /shrooms is the loud version; here eight saturated chips would
+            // compete with the cards, which are what the board is for.
+            const palette =
+              PALETTE.find((p) => p.key === resolveAvatar(shroom.id, shroom.avatar).color) ??
+              PALETTE[0];
             return (
               <button
                 key={shroom.id}
@@ -88,20 +95,22 @@ export function ShroomRow({
                 }}
                 disabled={running}
                 title={describeTrail(buildShroomTrail(shroom, channel))}
-                className={`flex h-[34px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-2 text-[12px] transition-colors ${
-                  hovered || sheetId === shroom.id
-                    ? 'border-violet-500/60 bg-violet-500/[0.14] text-neutral-900 dark:text-neutral-50'
-                    : running
-                      ? 'border-violet-500/50 bg-violet-500/[0.1] text-neutral-800 dark:text-neutral-100'
-                      : 'border-neutral-200 bg-white text-neutral-700 hover:border-violet-300 dark:border-white/[0.07] dark:bg-white/[0.02] dark:text-neutral-300 dark:hover:border-violet-500/40'
-                }`}
+                style={
+                  hovered || sheetId === shroom.id || running
+                    ? { borderColor: palette.cap, backgroundColor: `${palette.cap}26` }
+                    : { borderColor: `${palette.cap}59`, backgroundColor: `${palette.cap}12` }
+                }
+                className="flex h-[34px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-2 text-[12px] text-neutral-700 transition-colors dark:text-neutral-200"
               >
                 <span className={running ? 'animate-pulse' : ''}>
                   <ShroomAvatar id={shroom.id} avatar={shroom.avatar} size={16} />
                 </span>
                 <span className="whitespace-nowrap">{shroom.title}</span>
                 {running && (
-                  <span className="h-1.5 w-1.5 flex-shrink-0 animate-ping rounded-full bg-violet-500" />
+                  <span
+                    className="h-1.5 w-1.5 flex-shrink-0 animate-ping rounded-full"
+                    style={{ backgroundColor: palette.cap }}
+                  />
                 )}
               </button>
             );

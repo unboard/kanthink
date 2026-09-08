@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { ShroomGraph } from '@/components/shrooms/ShroomGraph';
+import { ShroomTile } from '@/components/shrooms/ShroomTile';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import type { InstructionCard } from '@/lib/types';
 
@@ -22,6 +23,10 @@ export default function ShroomsGraphPage() {
   const updateInstructionCard = useStore((s) => s.updateInstructionCard);
 
   const [channelFilter, setChannelFilter] = useState<string>('all');
+  // Gallery by default. The map answers "how do these connect", which the board's own
+  // trails now answer in place and better; the gallery answers "what have I got",
+  // which nothing did.
+  const [view, setView] = useState<'gallery' | 'map'>('gallery');
 
   const shrooms = useMemo(() => {
     const all = Object.values(instructionCards);
@@ -66,6 +71,21 @@ export default function ShroomsGraphPage() {
         </span>
 
         <div className="ml-auto flex items-center gap-2">
+          <div className="flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-700">
+            {(['gallery', 'map'] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`rounded-md px-2.5 py-1 text-xs capitalize transition-colors ${
+                  view === v
+                    ? 'bg-violet-500/15 font-medium text-violet-700 dark:text-violet-300'
+                    : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300'
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
           <select
             value={channelFilter}
             onChange={(e) => setChannelFilter(e.target.value)}
@@ -79,17 +99,39 @@ export default function ShroomsGraphPage() {
         </div>
       </header>
 
-      <Legend />
+      {view === 'map' && <Legend />}
 
-      <div className="min-h-0 flex-1">
-        <ShroomGraph
-          shrooms={shrooms}
-          channels={channels}
-          onOpen={openShroom}
-          onRun={runShroom}
-          onChain={(id, nextId) => updateInstructionCard(id, { nextInstructionId: nextId })}
-          showChannelNames={channelFilter === 'all'}
-        />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {view === 'gallery' ? (
+          shrooms.length === 0 ? (
+            <p className="p-8 text-center text-sm text-neutral-500">No shrooms yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
+              {shrooms.map((shroom) => (
+                <ShroomTile
+                  key={shroom.id}
+                  shroom={shroom}
+                  channel={channels[shroom.channelId]}
+                  allShrooms={instructionCards}
+                  channelName={
+                    channelFilter === 'all' ? channels[shroom.channelId]?.name : undefined
+                  }
+                  onOpen={() => openShroom(shroom)}
+                  onRun={() => runShroom(shroom)}
+                />
+              ))}
+            </div>
+          )
+        ) : (
+          <ShroomGraph
+            shrooms={shrooms}
+            channels={channels}
+            onOpen={openShroom}
+            onRun={runShroom}
+            onChain={(id, nextId) => updateInstructionCard(id, { nextInstructionId: nextId })}
+            showChannelNames={channelFilter === 'all'}
+          />
+        )}
       </div>
     </div>
   );
