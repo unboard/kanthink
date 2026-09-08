@@ -108,6 +108,37 @@ export function hasStem(shape: CapShape): boolean {
   return shape !== 'puffball' && shape !== 'coral';
 }
 
+/**
+ * Half-width of the stem, per cap.
+ *
+ * A fixed stem under every cap was the bug: six units under a twenty-nine unit
+ * parasol reads as a pole holding something up, not as a mushroom. A stem needs to
+ * be roughly a third of its cap to look like it grew there.
+ */
+const STEM_HALF_WIDTH: Record<CapShape, number> = {
+  wide: 4.6,
+  parasol: 4.4,
+  flat: 4.2,
+  ruffled: 3.9,
+  round: 3.6,
+  button: 3.2,
+  bell: 3.0,
+  conical: 3.0,
+  morel: 2.9,
+  tall: 2.6,
+  puffball: 0,
+  coral: 0,
+};
+
+/** The stem below a cap, widened to suit it. Drawn before the cap, so overlap hides. */
+export function stemPath(shape: CapShape): string {
+  const w = STEM_HALF_WIDTH[shape];
+  const left = (16 - w).toFixed(1);
+  const span = (w * 2).toFixed(1);
+  const foot = (w * 2 + 0.6).toFixed(1);
+  return `M${left} 19h${span}c0 4.5.6 6.5 1.2 8.2.2.6-.2 1.1-.9 1.1h-${foot}c-.7 0-1.1-.5-.9-1.1.6-1.7 1.2-3.7 1.2-8.2z`;
+}
+
 /** The cap outline for each shape, drawn in a 32×32 box. */
 export function capPath(shape: CapShape): string {
   switch (shape) {

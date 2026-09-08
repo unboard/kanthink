@@ -1,7 +1,7 @@
 'use client';
 
 import { useId } from 'react';
-import { capPath, hasStem, PALETTE, resolveAvatar, type ShroomAvatarSpec } from '@/lib/shrooms/avatar';
+import { capPath, hasStem, stemPath, PALETTE, resolveAvatar, type ShroomAvatarSpec } from '@/lib/shrooms/avatar';
 
 interface ShroomAvatarProps {
   /** The shroom's id — used to derive a face when none was chosen. */
@@ -45,12 +45,7 @@ export function ShroomAvatar({ id, avatar, spec, size = 16, className = '' }: Sh
         </linearGradient>
       </defs>
 
-      {hasStem(a.shape) && (
-        <path
-          d="M13 19h6c0 4.5.6 6.5 1.2 8.2.2.6-.2 1.1-.9 1.1h-6.6c-.7 0-1.1-.5-.9-1.1.6-1.7 1.2-3.7 1.2-8.2z"
-          fill={c.stem}
-        />
-      )}
+      {hasStem(a.shape) && <path d={stemPath(a.shape)} fill={c.stem} />}
 
       <path d={capPath(a.shape)} fill={`url(#kg-${uid})`} />
 
@@ -71,9 +66,12 @@ export function ShroomAvatar({ id, avatar, spec, size = 16, className = '' }: Sh
           </g>
         )}
         {a.pattern === 'rings' && (
-          <g fill="none" stroke="#fff" strokeOpacity="0.35" strokeWidth="1.6">
-            <ellipse cx="16" cy="19" rx="5" ry="4" />
-            <ellipse cx="16" cy="19" rx="9.5" ry="7.5" />
+          // Centred on the cap, not on its bottom edge. Anchored at the edge these
+          // showed only as arcs radiating upward from a point, which — over a thin
+          // stem — read unmistakably as a wifi symbol rather than a mushroom.
+          <g fill="none" stroke="#fff" strokeOpacity="0.32" strokeWidth="1.5">
+            <ellipse cx="16" cy="13.5" rx="3.8" ry="3.2" />
+            <ellipse cx="16" cy="13.5" rx="8" ry="6.6" />
           </g>
         )}
       </g>

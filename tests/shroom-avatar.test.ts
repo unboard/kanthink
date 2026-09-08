@@ -13,6 +13,7 @@ import {
   serializeAvatar,
   capPath,
   hasStem,
+  stemPath,
   CAP_SHAPES,
   PATTERNS,
   PALETTE,
@@ -99,6 +100,28 @@ describe('drawing', () => {
       expect(typeof d).toBe('string')
       expect(d.length).toBeGreaterThan(10)
       expect(d.startsWith('M')).toBe(true)
+    }
+  })
+
+  it('widens the stem to suit the cap', () => {
+    // A fixed stem under every cap was the bug that made a wide parasol read as a
+    // pole holding something up. Wider caps must get wider stems.
+    const width = (shape: 'wide' | 'tall' | 'round') => {
+      const m = stemPath(shape).match(/^M([\d.]+) 19h([\d.]+)/)
+      return Number(m![2])
+    }
+    expect(width('wide')).toBeGreaterThan(width('round'))
+    expect(width('round')).toBeGreaterThan(width('tall'))
+  })
+
+  it('centres its stem on the cap', () => {
+    for (const shape of CAP_SHAPES) {
+      if (!hasStem(shape)) continue
+      const m = stemPath(shape).match(/^M([\d.]+) 19h([\d.]+)/)
+      expect(m).not.toBeNull()
+      const left = Number(m![1])
+      const span = Number(m![2])
+      expect(left + span / 2).toBeCloseTo(16, 1)
     }
   })
 
