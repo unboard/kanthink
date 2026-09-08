@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ContextColumnSelection, ID, AutomaticTrigger, AutomaticSafeguards, InstructionScope, ScheduleInterval, EventTrigger, ScheduledTrigger, ShroomWebMode, ShroomCapabilities } from '@/lib/types';
 import { useStore } from '@/lib/store';
+import { ShroomAvatarPicker } from '@/components/shrooms/ShroomAvatarPicker';
 import { calculateNextScheduledRun } from '@/lib/automationSafeguards';
 import { REJECTION_REASONS } from '@/lib/constants';
 import { Drawer } from '@/components/ui/Drawer';
@@ -545,14 +546,25 @@ export function InstructionDetailDrawerV2({
 
         {/* Main Content - Scrollable */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Shroom name input */}
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleSave}
-            placeholder="Action name..."
-            className="text-lg font-semibold bg-transparent border-none outline-none text-neutral-900 dark:text-white placeholder:text-neutral-400 w-full"
-          />
+          {/* Shroom name and face */}
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={handleSave}
+                placeholder="Action name..."
+                className="text-lg font-semibold bg-transparent border-none outline-none text-neutral-900 dark:text-white placeholder:text-neutral-400 w-full"
+              />
+              <div className="mt-2">
+                <ShroomAvatarPicker
+                  shroomId={instructionCard.id}
+                  value={instructionCard.avatar}
+                  onChange={(avatar) => updateInstructionCard(instructionCard.id, { avatar })}
+                />
+              </div>
+            </div>
+          </div>
           {/* Cover image */}
           <div className="relative group">
             {coverImageUrl ? (

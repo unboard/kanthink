@@ -276,6 +276,8 @@ export interface InstructionCard {
   title: string;
   instructions: string;
   action: InstructionAction;
+  /** Face, as "shape:pattern:colour". Unset means one is derived from the id. */
+  avatar?: string | null;
   /**
    * The shroom's **default scope**: the cards a run acts on when the invoker doesn't
    * supply any. A thread run, a multi-select, or a chained run all override it.

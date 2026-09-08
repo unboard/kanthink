@@ -49,7 +49,10 @@ import { ChannelActionsDrawer } from './ChannelActionsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
 import { ChannelChatDrawer } from './ChannelChatDrawer';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { ShroomRunProvider } from './ShroomRunContext';
+import { ShroomRunProvider, type ShroomTrailHighlight } from './ShroomRunContext';
+import { useNav } from '@/components/providers/NavProvider';
+import { ShroomRow } from './ShroomRow';
+import { buildShroomTrail } from '@/lib/shrooms/trail';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
 import { AgentStatusBar } from './AgentStatusBar';
@@ -913,6 +916,29 @@ export function Board({ channel }: BoardProps) {
     [channel.instructionCardIds, instructionCards]
   );
 
+  // Which shroom the row is pointing at, and therefore which columns light up.
+  const [hoveredShroomId, setHoveredShroomId] = useState<string | null>(null);
+  const { openPanel } = useNav();
+
+  const shroomTrail = useMemo<ShroomTrailHighlight | null>(() => {
+    const shroom = hoveredShroomId ? instructionCards[hoveredShroomId] : null;
+    if (!shroom) return null;
+    const trail = buildShroomTrail(shroom, channel);
+    const stopIndexByColumn: Record<string, number> = {};
+    trail.stops.forEach((stop, i) => {
+      // First stop wins when a shroom visits a column twice — the badge is a
+      // position in a sequence, and the earlier one is the one that explains it.
+      if (stop.columnId && stopIndexByColumn[stop.columnId] === undefined) {
+        stopIndexByColumn[stop.columnId] = i + 1;
+      }
+    });
+    return {
+      stopIndexByColumn,
+      readColumnIds: trail.readsColumnIds,
+      readsEverything: trail.readsEverything,
+    };
+  }, [hoveredShroomId, instructionCards, channel]);
+
   const shroomRunValue = useMemo(
     () => ({
       runShroom: (instructionCard: InstructionCard, options?: { cardIds?: string[] }) => {
@@ -926,11 +952,12 @@ export function Board({ channel }: BoardProps) {
       },
       shrooms: channelShrooms,
       runningIds: aiOperation.runningInstructionIds ?? [],
+      trail: shroomTrail,
     }),
     // executeInstruction is redefined every render; depending on it would thrash the
     // context. The shroom list and running set are what consumers actually re-render on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [channelShrooms, aiOperation.runningInstructionIds, addShroomRunMessage]
+    [channelShrooms, aiOperation.runningInstructionIds, addShroomRunMessage, shroomTrail]
   );
 
   // Handle pending shroom actions (run or create)
@@ -1158,6 +1185,18 @@ export function Board({ channel }: BoardProps) {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
+        <ShroomRow
+          channel={channel}
+          shrooms={channelShrooms}
+          allShrooms={instructionCards}
+          runningIds={aiOperation.runningInstructionIds ?? []}
+          onRun={(shroom) => void executeInstruction(shroom)}
+          onEdit={(id) => setEditingShroomId(id)}
+          onOpenAll={() => openPanel('shrooms')}
+          onHover={setHoveredShroomId}
+          hoveredId={hoveredShroomId}
+        />
+
         <div className="flex flex-1 gap-3 sm:gap-4 overflow-x-auto px-4 sm:px-6 py-3 sm:py-4">
           <SortableContext
             items={channel.columns.map((c) => `sortable-column-${c.id}`)}

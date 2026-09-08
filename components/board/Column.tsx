@@ -18,6 +18,7 @@ import { ColumnTaskItem } from './ColumnTaskItem';
 import { TaskDrawer } from './TaskDrawer';
 import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
 import { ReviewBulkBar } from './ReviewBulkBar';
+import { useShroomRun } from './ShroomRunContext';
 
 
 // Animated counter that briefly flashes when the value changes
@@ -113,6 +114,11 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [newCardId, setNewCardId] = useState<ID | null>(null);
   const [cardDrawerTab, setCardDrawerTab] = useState<'thread' | 'apps'>('thread');
+  // Set while a shroom in the row above is hovered. This is the map: the board
+  // draws its own routes rather than a second picture of itself drifting out of date.
+  const { trail } = useShroomRun();
+  const trailStop = trail?.stopIndexByColumn[column.id];
+  const trailReads = !!trail?.readColumnIds.includes(column.id);
   const [isCardDrawerOpen, setIsCardDrawerOpen] = useState(false);
   const [newTaskId, setNewTaskId] = useState<ID | null>(null);
   const [isTaskDrawerOpen, setIsTaskDrawerOpen] = useState(false);
@@ -342,8 +348,24 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
           ? 'bg-neutral-100 dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-700'
           : 'bg-neutral-100 dark:bg-neutral-800/50'
         }
+        ${trailStop
+          ? 'ring-2 ring-violet-500/60'
+          : trailReads
+            ? 'ring-1 ring-sky-500/50'
+            : trail?.readsEverything
+              ? 'ring-1 ring-sky-500/20'
+              : ''
+        }
       `}
     >
+      {/* Which stop this column is on the hovered shroom's route. A number rather
+          than a colour, because a shroom can visit several columns in order and a
+          colour cannot say which came first. */}
+      {trailStop !== undefined && (
+        <span className="pointer-events-none absolute -top-2 left-2 z-10 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-violet-500 px-1.5 font-mono text-[10px] font-bold text-white shadow">
+          {trailStop}
+        </span>
+      )}
       {/* Header - always show normal header for drag/menu access */}
       {frontHeader}
 

@@ -353,6 +353,12 @@ export const instructionCards = sqliteTable('instruction_cards', {
   // lib/playground/generateApp. Repeat runs iterate the card's existing app rather
   // than spawning a new one. Stored as text, so no migration for the new value.
   action: text('action').$type<'generate' | 'modify' | 'move' | 'report' | 'build'>().notNull(),
+  /**
+   * The shroom's face, as "shape:pattern:colour" — see lib/shrooms/avatar.
+   * Null means nobody picked one, and a stable avatar is derived from the id
+   * instead, so a channel's shrooms look different without anyone doing anything.
+   */
+  avatar: text('avatar'),
   target: text('target', { mode: 'json' }).$type<InstructionTargetJson>().notNull(),
   contextColumns: text('context_columns', { mode: 'json' }).$type<ContextColumnSelectionJson>(),
 

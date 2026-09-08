@@ -9,12 +9,31 @@ export interface ShroomRunOptions {
   cardIds?: string[];
 }
 
+/**
+ * The columns a hovered shroom reaches, so they can light up in place.
+ *
+ * This is the replacement for the graph view: rather than a second drawing of the
+ * channel that has to be kept in step with the real one, the board draws itself.
+ * Passed through this context because columns render via SortableColumn and
+ * threading a highlight down as props would touch every layer in between.
+ */
+export interface ShroomTrailHighlight {
+  /** Column id → which stop it is, 1-based, for the badge. */
+  stopIndexByColumn: Record<string, number>;
+  /** Columns read for context only. */
+  readColumnIds: string[];
+  /** It reads the whole board, drawn as one quiet wash rather than every column lit. */
+  readsEverything: boolean;
+}
+
 interface ShroomRunContextValue {
   runShroom: (instructionCard: InstructionCard, options?: ShroomRunOptions) => void;
   /** Shrooms belonging to the channel currently on screen. */
   shrooms: InstructionCard[];
   /** Ids of shrooms mid-run, for spinner state. */
   runningIds: string[];
+  /** Set while a shroom in the row is hovered; null the rest of the time. */
+  trail: ShroomTrailHighlight | null;
 }
 
 /**
@@ -29,6 +48,7 @@ const ShroomRunContext = createContext<ShroomRunContextValue>({
   runShroom: () => {},
   shrooms: [],
   runningIds: [],
+  trail: null,
 });
 
 export const ShroomRunProvider = ShroomRunContext.Provider;

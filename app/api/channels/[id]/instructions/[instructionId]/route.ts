@@ -69,6 +69,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       scope,
       emailConfig,
       summary,
+      avatar,
     } = body
 
     const updates: Record<string, unknown> = {
@@ -76,6 +77,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     if (title !== undefined) updates.title = title
+    if (avatar !== undefined) updates.avatar = avatar
     if (instructions !== undefined) updates.instructions = instructions
     if (action !== undefined) updates.action = action
     if (target !== undefined) updates.target = target
