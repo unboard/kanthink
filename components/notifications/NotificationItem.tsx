@@ -65,7 +65,7 @@ function getRelativeTime(dateStr: string): string {
 }
 
 /** Build the best navigation URL from the notification data */
-function getNavigationUrl(notification: NotificationData, tasks: Record<string, { cardId: string | null }>): string | null {
+export function getNavigationUrl(notification: NotificationData, tasks: Record<string, { cardId: string | null }>): string | null {
   const data = notification.data as Record<string, unknown> | null
   if (!data) return null
 
@@ -90,6 +90,13 @@ function getNavigationUrl(notification: NotificationData, tasks: Record<string, 
       return `/channel/${channelId}/card/${cardId}?task=${data.taskId}`
     }
     return `/channel/${channelId}`
+  }
+
+  // A finished build → straight into that app's drawer, which is the thing the
+  // notification is about. Landing on the card and making someone hunt for it
+  // would waste the one click the notification exists to save.
+  if (notification.type === 'ai_generation_completed' && data.cardId && data.appId) {
+    return `/channel/${channelId}/card/${data.cardId}?app=${data.appId}`
   }
 
   // Shroom notifications → open review drawer

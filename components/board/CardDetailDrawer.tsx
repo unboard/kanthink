@@ -112,6 +112,8 @@ interface CardDetailDrawerProps {
   fullPage?: boolean;
   onNavigateBack?: () => void;
   initialTaskId?: string;
+  /** Open straight into one app's drawer. Used by the build-finished notification. */
+  initialAppId?: string;
   /** Which tab to land on when the drawer opens. Defaults to the thread. */
   initialTab?: ActiveTab;
 }
@@ -129,7 +131,7 @@ function formatDate(dateString: string): string {
 
 type ActiveTab = 'thread' | 'tasks' | 'info' | 'apps';
 
-export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack, initialTaskId, initialTab }: CardDetailDrawerProps) {
+export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack, initialTaskId, initialAppId, initialTab }: CardDetailDrawerProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const [title, setTitle] = useState('');
@@ -149,7 +151,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   // Apps built from this card. Summaries come from the store — the same list the
   // board card face reads — and the app drawer loads the full row for the one you open.
   const { apps, createApp, creating: creatingApp } = useCardApps(card?.id);
-  const [openAppId, setOpenAppId] = useState<ID | null>(null);
+  const [openAppId, setOpenAppId] = useState<ID | null>(initialAppId ?? null);
   const [showTitleDrawer, setShowTitleDrawer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -234,8 +236,14 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   // on each open — otherwise "Open Playground" would only work the first time, and
   // reopening a card would drop you on whatever tab you happened to leave it on.
   useEffect(() => {
-    if (isOpen) setActiveTab(initialTab ?? 'thread');
-  }, [isOpen, card?.id, initialTab]);
+    if (isOpen) setActiveTab(initialTab ?? (initialAppId ? 'apps' : 'thread'));
+  }, [isOpen, card?.id, initialTab, initialAppId]);
+
+  // Arriving on a link that names an app opens it. Kept in sync rather than set
+  // once, because the notification can land while the drawer is already open.
+  useEffect(() => {
+    if (isOpen && initialAppId) setOpenAppId(initialAppId);
+  }, [isOpen, initialAppId]);
 
   const generateCoverImage = async (customPrompt?: string) => {
     if (!card) return;
