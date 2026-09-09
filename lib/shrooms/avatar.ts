@@ -1,77 +1,105 @@
 /**
  * A shroom's face.
  *
- * Four shrooms in a row at 16px have to be four different things at a glance, and a
- * name is not enough — you read the shapes long before you read the labels. So each
- * shroom carries a cap shape, a colour and a marking.
+ * Four axes — cap, stem, colour, pattern — so a channel's shrooms can each be a
+ * different creature without anyone drawing one. Flat colour throughout: no
+ * gradients, no shadows, no shading. The shapes carry it.
  *
- * Nothing has one yet, and asking people to go and pick twelve avatars before the
- * row is useful would be a poor trade. So an avatar is *derived* from the shroom's
- * id unless one was chosen: stable, well spread, and different for every shroom in a
- * channel without anyone doing anything. Picking one later just overrides it.
+ * Nothing has one chosen, and asking people to pick before the row is useful would
+ * be a poor trade, so an avatar is *derived* from the shroom's id unless one was
+ * set: stable, well spread, and different for every shroom in a channel with nobody
+ * doing anything. Picking one later just overrides it.
+ *
+ * Everything is drawn in a 48×48 box with the shroom centred on x=24, the cap
+ * bottoming out around y=27 and the stem running to y=42.
  */
 
 export const CAP_SHAPES = [
-  'round', 'flat', 'conical', 'bell', 'ruffled', 'wide',
-  'tall', 'button', 'parasol', 'puffball', 'coral', 'morel',
+  'dome', 'flat', 'cone', 'wavy', 'funnel', 'button', 'bell', 'tilted',
 ] as const;
 export type CapShape = (typeof CAP_SHAPES)[number];
 
-export const PATTERNS = ['plain', 'spots', 'gills', 'rings'] as const;
+export const STEM_SHAPES = [
+  'taper', 'wide', 'bulb', 'straight', 'flared', 'double', 'ringed', 'squat', 'bent',
+] as const;
+export type StemShape = (typeof STEM_SHAPES)[number];
+
+export const PATTERNS = [
+  'plain', 'dots', 'speckle', 'wave', 'stripes', 'sprinkles', 'stars', 'hearts', 'cow', 'leopard',
+] as const;
 export type Pattern = (typeof PATTERNS)[number];
 
 export interface ShroomPalette {
   key: string;
   name: string;
-  /** Top of the cap gradient. */
   cap: string;
-  /** Bottom of the cap gradient. */
-  deep: string;
-  stem: string;
+  /**
+   * The card behind the shroom: the same colour, deeper.
+   *
+   * A flat cap on a card of its own colour is an invisible cap — with no gradient
+   * and no shadow there is nothing left to separate them. Two flat tones of one
+   * colour keeps the card reading as the shroom's own without drawing anything the
+   * reference doesn't have.
+   */
+  bg: string;
+  /** Marking colour. Cream on everything, except where cream would vanish. */
+  mark: string;
 }
 
+/** The cream every stem is drawn in, so a row of shrooms reads as one family. */
+export const STEM_COLOR = '#F0E6D3';
+
 export const PALETTE: ShroomPalette[] = [
-  { key: 'violet', name: 'Violet', cap: '#8b5cf6', deep: '#6d28d9', stem: '#e9e4f5' },
-  { key: 'crimson', name: 'Crimson', cap: '#e11d48', deep: '#9f1239', stem: '#f7e4e8' },
-  { key: 'amber', name: 'Amber', cap: '#f59e0b', deep: '#b45309', stem: '#f8efdd' },
-  { key: 'emerald', name: 'Emerald', cap: '#10b981', deep: '#047857', stem: '#dff2ea' },
-  { key: 'sky', name: 'Sky', cap: '#0ea5e9', deep: '#0369a1', stem: '#dcedf8' },
-  { key: 'fuchsia', name: 'Fuchsia', cap: '#d946ef', deep: '#a21caf', stem: '#f6e2fa' },
-  { key: 'slate', name: 'Slate', cap: '#64748b', deep: '#334155', stem: '#e6e9ee' },
-  { key: 'lime', name: 'Lime', cap: '#84cc16', deep: '#4d7c0f', stem: '#eaf4d9' },
-  { key: 'coral', name: 'Coral', cap: '#fb7185', deep: '#be123c', stem: '#fae6e9' },
-  { key: 'indigo', name: 'Indigo', cap: '#6366f1', deep: '#3730a3', stem: '#e3e4fa' },
-  { key: 'teal', name: 'Teal', cap: '#14b8a6', deep: '#0f766e', stem: '#dcf1ee' },
-  { key: 'sand', name: 'Sand', cap: '#a8a29e', deep: '#57534e', stem: '#eeebe8' },
+  { key: 'red', name: 'Red', cap: '#E0392B', bg: '#A82418', mark: '#F6EFE2' },
+  { key: 'orange', name: 'Orange', cap: '#F4812A', bg: '#B85C13', mark: '#F9F1E4' },
+  { key: 'yellow', name: 'Yellow', cap: '#F2C13C', bg: '#B98D18', mark: '#FBF5E8' },
+  { key: 'green', name: 'Green', cap: '#5C9B3D', bg: '#3B6B25', mark: '#F4F0E1' },
+  { key: 'teal', name: 'Teal', cap: '#2A8A93', bg: '#175E65', mark: '#EFEDE0' },
+  { key: 'blue', name: 'Blue', cap: '#3A6DBE', bg: '#22487F', mark: '#F1EFE4' },
+  { key: 'purple', name: 'Purple', cap: '#8A5AC6', bg: '#5E3690', mark: '#F4EFE6' },
+  { key: 'pink', name: 'Pink', cap: '#F28BAF', bg: '#C25E82', mark: '#FBF3E9' },
+  { key: 'brown', name: 'Brown', cap: '#7B4A2C', bg: '#502E19', mark: '#EFE3CE' },
+  { key: 'charcoal', name: 'Charcoal', cap: '#4A4641', bg: '#282623', mark: '#EDE6D8' },
+  // Cream needs a darker marking, or the pattern disappears into the cap.
+  { key: 'cream', name: 'Cream', cap: '#EFE6D6', bg: '#C9BB9F', mark: '#A6957A' },
 ];
 
 export interface ShroomAvatarSpec {
-  shape: CapShape;
+  cap: CapShape;
+  stem: StemShape;
   pattern: Pattern;
   color: string;
 }
 
-/** Stored as "shape:pattern:colour" — a single short string, so no JSON to parse. */
+/** Stored as "cap:stem:pattern:colour" — one short string, no JSON to parse. */
 export function serializeAvatar(a: ShroomAvatarSpec): string {
-  return `${a.shape}:${a.pattern}:${a.color}`;
-}
-
-/** Parse a stored avatar, returning null for anything unrecognised. */
-export function parseAvatar(raw: string | null | undefined): ShroomAvatarSpec | null {
-  if (!raw || typeof raw !== 'string') return null;
-  const [shape, pattern, color] = raw.split(':');
-  if (!CAP_SHAPES.includes(shape as CapShape)) return null;
-  if (!PATTERNS.includes(pattern as Pattern)) return null;
-  if (!PALETTE.some((p) => p.key === color)) return null;
-  return { shape: shape as CapShape, pattern: pattern as Pattern, color };
+  return `${a.cap}:${a.stem}:${a.pattern}:${a.color}`;
 }
 
 /**
- * A stable 32-bit hash of a string (FNV-1a).
+ * Parse a stored avatar, returning null for anything unrecognised.
  *
- * Any stable hash would do; this one is short, has no dependencies, and spreads
- * sequential ids — which matters because nanoid ids created seconds apart should not
- * come out looking related.
+ * Also returns null for the older three-part format, which described a different
+ * set of shapes — those shrooms fall back to a derived avatar rather than to a
+ * best guess at what the old value meant.
+ */
+export function parseAvatar(raw: string | null | undefined): ShroomAvatarSpec | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const parts = raw.split(':');
+  if (parts.length !== 4) return null;
+  const [cap, stem, pattern, color] = parts;
+  if (!CAP_SHAPES.includes(cap as CapShape)) return null;
+  if (!STEM_SHAPES.includes(stem as StemShape)) return null;
+  if (!PATTERNS.includes(pattern as Pattern)) return null;
+  if (!PALETTE.some((p) => p.key === color)) return null;
+  return { cap: cap as CapShape, stem: stem as StemShape, pattern: pattern as Pattern, color };
+}
+
+/**
+ * A stable 32-bit hash (FNV-1a).
+ *
+ * Short, no dependencies, and it spreads sequential ids — which matters because
+ * nanoid ids created seconds apart should not come out looking related.
  */
 function hash(input: string): number {
   let h = 0x811c9dc5;
@@ -85,16 +113,16 @@ function hash(input: string): number {
 /**
  * The avatar a shroom gets when nobody has chosen one.
  *
- * Three independent draws off one hash rather than three slices of it, so shape and
- * colour don't move together — two shrooms sharing a cap should still differ in
- * colour rather than being near-identical twice over.
+ * Four independent draws off one hash rather than four slices of it, so the axes
+ * don't move together — two shrooms sharing a cap should still differ elsewhere.
  */
 export function deriveAvatar(id: string): ShroomAvatarSpec {
   const h = hash(id);
   return {
-    shape: CAP_SHAPES[h % CAP_SHAPES.length],
+    cap: CAP_SHAPES[h % CAP_SHAPES.length],
     color: PALETTE[Math.floor(h / 7) % PALETTE.length].key,
-    pattern: PATTERNS[Math.floor(h / 131) % PATTERNS.length],
+    stem: STEM_SHAPES[Math.floor(h / 53) % STEM_SHAPES.length],
+    pattern: PATTERNS[Math.floor(h / 397) % PATTERNS.length],
   };
 }
 
@@ -103,68 +131,75 @@ export function resolveAvatar(id: string, stored?: string | null): ShroomAvatarS
   return parseAvatar(stored) ?? deriveAvatar(id);
 }
 
-/** Shapes that are drawn without a stem. */
-export function hasStem(shape: CapShape): boolean {
-  return shape !== 'puffball' && shape !== 'coral';
+/** The cap outline, in a 48×48 box. */
+export function capPath(shape: CapShape): string {
+  switch (shape) {
+    case 'dome':
+      return 'M5 25.5C5 13.6 13.4 6.5 24 6.5S43 13.6 43 25.5c0 1.4-1.1 2.2-3 2.2H8c-1.9 0-3-.8-3-2.2z';
+    case 'flat':
+      return 'M3 21.6C3 14.9 12.4 10.6 24 10.6s21 4.3 21 11c0 3.1-3 5.2-8.6 5.9H11.6C6 26.8 3 24.7 3 21.6z';
+    case 'cone':
+      return 'M24 3.6c0 0 6.4 8.6 11 19.4 1.3 3-.2 4.9-3.6 4.9H16.6c-3.4 0-4.9-1.9-3.6-4.9C17.6 12.2 24 3.6 24 3.6z';
+    case 'wavy':
+      return 'M9 21.8C9 11.9 15.2 5.8 24 5.8s15 6.1 15 16c0 3.3-2.3 3.8-4.4 5-2.1 1.2-3.7-1.6-5.9-.6-2.2 1-3 1.6-4.7 1.6s-2.5-.6-4.7-1.6c-2.2-1-3.8 1.8-5.9.6C11.3 25.6 9 25.1 9 21.8z';
+    case 'funnel':
+      return 'M4 12.4c0-2 4-3 20-3s20 1 20 3c0 0-5 8.6-12.5 14.1-2.5 1.8-5 2.3-7.5 2.3s-5-.5-7.5-2.3C9 21 4 12.4 4 12.4z';
+    case 'button':
+      return 'M10 24.8C10 15.9 16.3 9.8 24 9.8s14 6.1 14 15c0 1.8-1.6 2.5-3.5 2.5h-21c-1.9 0-3.5-.7-3.5-2.5z';
+    case 'bell':
+      return 'M12 25.8C12 11.9 16.6 5 24 5s12 6.9 12 20.8c0 1.4-1 1.9-2.8 1.9H14.8c-1.8 0-2.8-.5-2.8-1.9z';
+    case 'tilted':
+      // Deliberately lopsided — a cap that has slumped to one side.
+      return 'M4.6 23.4C4.6 15 14 8.6 26.4 8.6c11 0 18.6 5.6 18.6 11.6 0 3.3-3.2 5.4-7.6 6L11.4 27.2c-4.6 0-6.8-1.4-6.8-3.8z';
+  }
+}
+
+/** The stem outline, in the same 48×48 box. */
+export function stemPath(shape: StemShape): string {
+  switch (shape) {
+    case 'taper':
+      return 'M20.4 24h7.2l1.2 15.8c.1 1.6-.9 2.4-2.6 2.4h-4.4c-1.7 0-2.7-.8-2.6-2.4z';
+    case 'wide':
+      return 'M17.8 24h12.4l1.6 15.6c.2 1.7-1 2.6-3 2.6H19.2c-2 0-3.2-.9-3-2.6z';
+    case 'bulb':
+      return 'M21 24h6v8.6c4 1.2 5.4 4 5.4 6.3 0 2-2.2 3.3-8.4 3.3s-8.4-1.3-8.4-3.3c0-2.3 1.4-5.1 5.4-6.3z';
+    case 'straight':
+      return 'M20.6 24h6.8v16.2c0 1.3-.8 2-2.4 2h-2c-1.6 0-2.4-.7-2.4-2z';
+    case 'flared':
+      return 'M18 24h12l-3.2 8.4 3.4 7.4c.6 1.4-.4 2.4-2.2 2.4h-8c-1.8 0-2.8-1-2.2-2.4l3.4-7.4z';
+    case 'double':
+      return 'M24 24c3.4 0 5 2 5 4.5 0 2-1.4 3.3-1.4 4.2 0 1 2.6 1.9 2.6 5 0 2.7-2.6 4.5-6.2 4.5s-6.2-1.8-6.2-4.5c0-3.1 2.6-4 2.6-5 0-.9-1.4-2.2-1.4-4.2 0-2.5 1.6-4.5 5-4.5z';
+    case 'ringed':
+      return 'M20 24h8c0 3-2.2 3.9-2.2 5.9s3.2 2.8 3.2 5.8-2.2 3.9-2.2 6.5h-5.6c0-2.6-2.2-3.5-2.2-6.5s3.2-3.8 3.2-5.8-2.2-2.9-2.2-5.9z';
+    case 'squat':
+      return 'M19 29.4h10c1.4 0 2 1 2 2.8v7.6c0 1.6-1 2.4-2.6 2.4h-8.8c-1.6 0-2.6-.8-2.6-2.4v-7.6c0-1.8.6-2.8 2-2.8z';
+    case 'bent':
+      return 'M19.8 24l7.4-.6c0 0-1.4 5.6.6 9.8 1.8 3.8 5 5.2 5 5.2 .8 1.8-.2 3.2-2 3.4l-4 .5c-1.8.2-2.8-.8-3.2-2.4 0 0-1.6-4-1.6-8.4 0-4.6-2.2-7.5-2.2-7.5z';
+  }
 }
 
 /**
- * Half-width of the stem, per cap.
+ * Whether the stem is visible below the cap.
  *
- * A fixed stem under every cap was the bug: six units under a twenty-nine unit
- * parasol reads as a pole holding something up, not as a mushroom. A stem needs to
- * be roughly a third of its cap to look like it grew there.
+ * A funnel is a bowl on a stalk and a cone reaches nearly to the ground, but every
+ * shape here has one — the reference draws the stem as its own choice rather than
+ * as something some caps do without.
  */
-const STEM_HALF_WIDTH: Record<CapShape, number> = {
-  wide: 4.6,
-  parasol: 4.4,
-  flat: 4.2,
-  ruffled: 3.9,
-  round: 3.6,
-  button: 3.2,
-  bell: 3.0,
-  conical: 3.0,
-  morel: 2.9,
-  tall: 2.6,
-  puffball: 0,
-  coral: 0,
-};
-
-/** The stem below a cap, widened to suit it. Drawn before the cap, so overlap hides. */
-export function stemPath(shape: CapShape): string {
-  const w = STEM_HALF_WIDTH[shape];
-  const left = (16 - w).toFixed(1);
-  const span = (w * 2).toFixed(1);
-  const foot = (w * 2 + 0.6).toFixed(1);
-  return `M${left} 19h${span}c0 4.5.6 6.5 1.2 8.2.2.6-.2 1.1-.9 1.1h-${foot}c-.7 0-1.1-.5-.9-1.1.6-1.7 1.2-3.7 1.2-8.2z`;
+export function hasStem(): boolean {
+  return true;
 }
 
-/** The cap outline for each shape, drawn in a 32×32 box. */
-export function capPath(shape: CapShape): string {
-  switch (shape) {
-    case 'round':
-      return 'M4 17c0-7.2 5.4-12 12-12s12 4.8 12 12c0 1.6-1.2 2.4-3 2.4H7c-1.8 0-3-.8-3-2.4z';
-    case 'flat':
-      return 'M3 18c0-5.6 5.8-9.6 13-9.6s13 4 13 9.6c0 1.3-1 1.9-2.6 1.9H5.6C4 19.9 3 19.3 3 18z';
-    case 'conical':
-      return 'M16 4l11 14.5c.7 1 0 2-1.4 2H6.4c-1.4 0-2.1-1-1.4-2z';
-    case 'bell':
-      return 'M6 19c0-9 3.6-14 10-14s10 5 10 14c0 1-.9 1.5-2.2 1.5H8.2C6.9 20.5 6 20 6 19z';
-    case 'ruffled':
-      return 'M4 17c0-7 5.4-12 12-12s12 5 12 12c0 1.7-2 .6-3.4 1.6-1.4 1-2.6-1-4-.2-1.4.8-2.6 1.2-4.6 1.2s-3.2-.4-4.6-1.2c-1.4-.8-2.6 1.2-4-.2C6 17.6 4 18.7 4 17z';
-    case 'wide':
-      return 'M1.5 17.5C1.5 11.7 8 7.5 16 7.5s14.5 4.2 14.5 10c0 1.6-1.3 2.4-3.2 2.4H4.7c-1.9 0-3.2-.8-3.2-2.4z';
-    case 'tall':
-      return 'M10 18c0-8.5 2.4-13 6-13s6 4.5 6 13c0 1.2-.7 1.8-1.8 1.8h-8.4C10.7 19.8 10 19.2 10 18z';
-    case 'button':
-      return 'M7 18.5c0-5.5 4-9.5 9-9.5s9 4 9 9.5c0 1.1-.8 1.6-2.1 1.6H9.1C7.8 20.1 7 19.6 7 18.5z';
-    case 'parasol':
-      return 'M2.5 18c0-7.5 6-13 13.5-13S29.5 10.5 29.5 18c0 1.2-.8 1.6-2 1.6h-23c-1.2 0-2-.4-2-1.6z';
-    case 'puffball':
-      return 'M16 4a11 11 0 100 22 11 11 0 000-22z';
-    case 'coral':
-      return 'M16 20c-1 0-1.4-.7-1.4-1.6 0-2-2-2.4-3-3.6-1-1.2-1-3.4.6-4.2 1.2-.6 1-2 .4-3-.7-1.2.2-2.8 1.7-2.8 1.4 0 2 1.2 3.4 1.2s2-1.2 3.4-1.2c1.5 0 2.4 1.6 1.7 2.8-.6 1-.8 2.4.4 3 1.6.8 1.6 3 .6 4.2-1 1.2-3 1.6-3 3.6 0 .9-.4 1.6-1.4 1.6z';
-    case 'morel':
-      return 'M16 4c4.6 0 7.5 3.6 7.5 8.5S20.6 21 16 21s-7.5-3.6-7.5-8.5S11.4 4 16 4z';
-  }
+/**
+ * Text colour for a card in a given cap colour.
+ *
+ * Cream and yellow caps need dark type. Computed from relative luminance rather
+ * than listed, so adding a colour to the palette cannot silently produce a card
+ * with white text on a pale background.
+ */
+export function textOn(capHex: string): string {
+  const hex = capHex.replace('#', '');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return luminance > 0.45 ? '#3A3733' : '#FFFFFF';
 }

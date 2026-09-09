@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ShroomAvatar } from './ShroomAvatar';
 import {
   CAP_SHAPES,
+  STEM_SHAPES,
   PALETTE,
   PATTERNS,
   resolveAvatar,
@@ -20,10 +21,10 @@ interface ShroomAvatarPickerProps {
 /**
  * Choosing a shroom's face.
  *
- * Opens closed: every shroom already has a derived face that is different from its
- * neighbours, so this is a refinement rather than a step anyone has to take. Shape
- * comes first because shape is what carries at 16px — colour is the tiebreak, not
- * the identity.
+ * Opens closed: every shroom already has a derived face different from its
+ * neighbours, so this is a refinement rather than a step anyone has to take. Cap
+ * first because the silhouette is what carries at small sizes — colour is the
+ * tiebreak, not the identity.
  */
 export function ShroomAvatarPicker({ shroomId, value, onChange }: ShroomAvatarPickerProps) {
   const current = resolveAvatar(shroomId, value);
@@ -46,14 +47,14 @@ export function ShroomAvatarPicker({ shroomId, value, onChange }: ShroomAvatarPi
       {open && (
         <div className="mt-2 space-y-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50">
           <Section label="Cap">
-            {CAP_SHAPES.map((shape) => (
+            {CAP_SHAPES.map((cap) => (
               <Swatch
-                key={shape}
-                active={current.shape === shape}
-                onClick={() => set({ shape })}
-                title={shape}
+                key={cap}
+                active={current.cap === cap}
+                onClick={() => set({ cap })}
+                title={cap}
               >
-                <ShroomAvatar id={shroomId} spec={{ ...current, shape }} size={26} />
+                <ShroomAvatar id={shroomId} spec={{ ...current, cap }} size={28} />
               </Swatch>
             ))}
           </Section>
@@ -66,12 +67,12 @@ export function ShroomAvatarPicker({ shroomId, value, onChange }: ShroomAvatarPi
                 onClick={() => set({ color: c.key })}
                 title={c.name}
               >
-                <ShroomAvatar id={shroomId} spec={{ ...current, color: c.key }} size={26} />
+                <ShroomAvatar id={shroomId} spec={{ ...current, color: c.key }} size={28} />
               </Swatch>
             ))}
           </Section>
 
-          <Section label="Markings">
+          <Section label="Pattern">
             {PATTERNS.map((pattern) => (
               <Swatch
                 key={pattern}
@@ -79,7 +80,20 @@ export function ShroomAvatarPicker({ shroomId, value, onChange }: ShroomAvatarPi
                 onClick={() => set({ pattern })}
                 title={pattern}
               >
-                <ShroomAvatar id={shroomId} spec={{ ...current, pattern }} size={26} />
+                <ShroomAvatar id={shroomId} spec={{ ...current, pattern }} size={28} />
+              </Swatch>
+            ))}
+          </Section>
+
+          <Section label="Stem">
+            {STEM_SHAPES.map((stem) => (
+              <Swatch
+                key={stem}
+                active={current.stem === stem}
+                onClick={() => set({ stem })}
+                title={stem}
+              >
+                <ShroomAvatar id={shroomId} spec={{ ...current, stem }} size={28} />
               </Swatch>
             ))}
           </Section>
