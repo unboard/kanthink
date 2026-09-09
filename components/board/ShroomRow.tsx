@@ -96,7 +96,6 @@ export function ShroomRow({
           channel={channel}
           allShrooms={allShrooms}
           isRunning={runningIds.includes(openShroom.id)}
-          isOpen
           onClose={() => setOpenId(null)}
           onRun={() => {
             onRun(openShroom);

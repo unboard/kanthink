@@ -39,6 +39,31 @@ describe('buildShroomTrail', () => {
     expect(t.stops[0].columnName).toBe('Inbox')
   })
 
+  it('puts the destination inside the verb rather than beside it', () => {
+    // "moves cards here · Inbox" was two half-sentences; the phrase has to carry
+    // its own preposition or every surface has to invent one.
+    expect(buildShroomTrail(make({ action: 'move' }), channel).stops[0].verb)
+      .toBe('moves cards to Inbox')
+    expect(buildShroomTrail(make({ action: 'modify' }), channel).stops[0].verb)
+      .toBe('rewrites cards in Inbox')
+    expect(
+      buildShroomTrail(make({ action: 'generate', autoApprove: true }), channel).stops[0].verb
+    ).toBe('adds new cards to Inbox')
+  })
+
+  it("lets an author's own wording stand instead of the stock verb", () => {
+    const t = buildShroomTrail(
+      make({ steps: [{ action: 'move', targetColumnId: 'col-draft', description: 'tucks it away' }] }),
+      channel
+    )
+    expect(t.stops[0].verb).toBe('tucks it away')
+  })
+
+  it('falls back to a bare verb when the column has been deleted', () => {
+    const t = buildShroomTrail(make({ action: 'move', target: { type: 'column', columnId: 'gone' } }), channel)
+    expect(t.stops[0].verb).toBe('moves cards')
+  })
+
   it('draws every column of a multi-column target', () => {
     const t = buildShroomTrail(
       make({ target: { type: 'columns', columnIds: ['col-inbox', 'col-ready'] } }),
@@ -146,7 +171,7 @@ describe('describeTrail', () => {
       }),
       channel
     )
-    expect(describeTrail(t)).toBe('tags it · Inbox, then moves it here · Drafting')
+    expect(describeTrail(t)).toBe('tags it, then moves it here')
   })
 
   it('hedges when the shroom decides per card', () => {

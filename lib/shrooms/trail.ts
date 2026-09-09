@@ -18,7 +18,12 @@ export interface TrailStop {
   /** Column the stop lands on, or null for somewhere off the board. */
   columnId: string | null;
   columnName: string | null;
-  /** What happens here, in the words a person uses. */
+  /**
+   * The whole phrase, destination included — "moves cards to Inbox".
+   *
+   * Composed here rather than in the components so every surface says it the same
+   * way, and so none of them has to decide where to put the column name.
+   */
   verb: string;
   /** A destination that isn't a column. */
   offBoard?: 'report' | 'review';
@@ -38,12 +43,19 @@ export interface ShroomTrail {
   conditional: boolean;
 }
 
-const ACTION_VERB: Record<InstructionAction, string> = {
-  generate: 'adds new cards',
-  modify: 'rewrites cards',
-  move: 'moves cards here',
-  report: 'writes a report',
-  build: 'builds an app',
+/**
+ * Each action in two forms: one that takes a destination, one that stands alone.
+ *
+ * The verb has to carry the preposition, because "moves cards here" printed beside
+ * a column name reads as two half-sentences — "moves cards here · Inbox" says less
+ * than "moves cards to Inbox" and takes more room doing it.
+ */
+const ACTION_VERB: Record<InstructionAction, { to: string; bare: string }> = {
+  generate: { to: 'adds new cards to', bare: 'adds new cards' },
+  modify: { to: 'rewrites cards in', bare: 'rewrites cards' },
+  move: { to: 'moves cards to', bare: 'moves cards' },
+  report: { to: 'writes a report', bare: 'writes a report' },
+  build: { to: 'builds an app on', bare: 'builds an app' },
 };
 
 /**
@@ -73,13 +85,17 @@ export function buildShroomTrail(
   const stops: TrailStop[] = [];
 
   const pushColumnStop = (columnId: string, action: InstructionAction, description?: string) => {
-    // A generate that goes to review has a different destination than one that doesn't,
-    // and saying "adds new cards here" of a card you still have to approve is wrong.
+    // A generate that goes to review has a different destination than one that
+    // doesn't, and calling a card you still have to approve "added" is wrong.
     const toReview = action === 'generate' && !shroom.autoApprove;
+    const name = columnName(channel, columnId);
+    const written = description?.trim();
     stops.push({
       columnId,
-      columnName: columnName(channel, columnId),
-      verb: description?.trim() || ACTION_VERB[action],
+      columnName: name,
+      // An author's own words win. Otherwise the verb takes the column, or stands
+      // alone when the column has since been deleted.
+      verb: written || (name ? `${ACTION_VERB[action].to} ${name}` : ACTION_VERB[action].bare),
       ...(toReview ? { offBoard: 'review' as const } : {}),
     });
   };
@@ -90,7 +106,7 @@ export function buildShroomTrail(
         stops.push({
           columnId: null,
           columnName: null,
-          verb: ACTION_VERB.report,
+          verb: step.description?.trim() || ACTION_VERB.report.bare,
           offBoard: 'report',
         });
         continue;
@@ -98,7 +114,7 @@ export function buildShroomTrail(
       pushColumnStop(step.targetColumnId, step.action, step.description);
     }
   } else if (shroom.action === 'report') {
-    stops.push({ columnId: null, columnName: null, verb: ACTION_VERB.report, offBoard: 'report' });
+    stops.push({ columnId: null, columnName: null, verb: ACTION_VERB.report.bare, offBoard: 'report' });
   } else {
     const target = shroom.target;
     if (target.type === 'column') {
@@ -107,7 +123,11 @@ export function buildShroomTrail(
       for (const columnId of target.columnIds) pushColumnStop(columnId, shroom.action);
     } else {
       // Board-wide. One stop with no column, so it isn't drawn as every column at once.
-      stops.push({ columnId: null, columnName: null, verb: `${ACTION_VERB[shroom.action]} anywhere on the board` });
+      stops.push({
+        columnId: null,
+        columnName: null,
+        verb: `${ACTION_VERB[shroom.action].bare} anywhere on the board`,
+      });
     }
   }
 
@@ -129,13 +149,9 @@ export function buildShroomTrail(
   };
 }
 
-/** One line describing the whole trail, for the row's status line and the mobile sheet. */
+/** One line describing the whole trail, for tooltips and summaries. */
 export function describeTrail(trail: ShroomTrail): string {
   if (trail.stops.length === 0) return 'does nothing on this board';
-  const parts = trail.stops.map((s) => {
-    const where = s.columnName ? ` · ${s.columnName}` : '';
-    return `${s.verb}${where}`;
-  });
-  const sentence = parts.join(', then ');
+  const sentence = trail.stops.map((s) => s.verb).join(', then ');
   return trail.conditional ? `may ${sentence}` : sentence;
 }
