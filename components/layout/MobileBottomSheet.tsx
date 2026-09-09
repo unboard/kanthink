@@ -33,7 +33,7 @@ import { Button } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { signInWithGoogle } from '@/lib/actions/auth';
-import { ShroomTile } from '@/components/shrooms/ShroomTile';
+import { ShroomButton } from '@/components/shrooms/ShroomButton';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import type { Channel, ChannelStatus, Folder, ID, Card, Task } from '@/lib/types';
 
@@ -884,9 +884,9 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
                  that made them hard to tell apart. Tapping opens one; running
                  happens from the row, where the trail has already told you what it
                  will do. */
-              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
+              <div className="space-y-2">
                 {allChannelShrooms.map((shroom) => (
-                  <ShroomTile
+                  <ShroomButton
                     key={shroom.id}
                     shroom={shroom}
                     fill

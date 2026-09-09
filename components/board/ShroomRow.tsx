@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { Channel, ID, InstructionCard } from '@/lib/types';
 import { buildShroomTrail, describeTrail } from '@/lib/shrooms/trail';
-import { ShroomTile } from '@/components/shrooms/ShroomTile';
+import { ShroomButton } from '@/components/shrooms/ShroomButton';
 import { ShroomDetail } from '@/components/shrooms/ShroomDetail';
 
 interface ShroomRowProps {
@@ -27,9 +27,12 @@ interface ShroomRowProps {
  * reason it grew was that it *wrapped*, so more shrooms meant more rows. This one
  * scrolls sideways: one row of tiles, the same height with two shrooms or twenty.
  *
- * The tiles carry only a face and a name. Hovering one lights the columns it touches
- * on the board below; clicking one opens it, where the rest is spelled out and
- * running is a thing you choose. The last slot is a plus, which opens all of them.
+ * Each is a button — face on the left, name on the right — sitting straight on the
+ * board with no container of its own, because the columns below are boxes already.
+ *
+ * Hovering one lights the columns it touches; clicking one opens it, where the rest
+ * is spelled out and running is a thing you choose. The last slot is a plus, which
+ * opens all of them.
  */
 export function ShroomRow({
   channel,
@@ -55,39 +58,38 @@ export function ShroomRow({
   const openShroom = openId ? shrooms.find((s) => s.id === openId) ?? null : null;
 
   return (
-    <div className="flex-shrink-0 px-3 pb-1.5">
+    <div className="flex-shrink-0 px-3 pb-2">
+      {/* No container: the buttons sit straight on the board. A panel around them
+          drew a second box above the columns, which are boxes already. */}
       <div
-        className="flex items-stretch gap-1.5 rounded-xl border border-neutral-200 bg-white/60 p-1.5 dark:border-white/[0.06] dark:bg-white/[0.015]"
+        className="flex items-center gap-1.5 overflow-x-auto scrollbar-none"
         onMouseLeave={() => onHover(null)}
       >
-        <div className="flex min-w-0 flex-1 items-stretch gap-1.5 overflow-x-auto scrollbar-none">
-          {shrooms.map((shroom) => (
-            <ShroomTile
-              key={shroom.id}
-              shroom={shroom}
-              isRunning={runningIds.includes(shroom.id)}
-              isActive={hoveredId === shroom.id || openId === shroom.id}
-              title={describeTrail(buildShroomTrail(shroom, channel))}
-              onHoverStart={() => onHover(shroom.id)}
-              onHoverEnd={() => onHover(null)}
-              onClick={() => setOpenId(shroom.id)}
-            />
-          ))}
+        {shrooms.map((shroom) => (
+          <ShroomButton
+            key={shroom.id}
+            shroom={shroom}
+            isRunning={runningIds.includes(shroom.id)}
+            isActive={hoveredId === shroom.id || openId === shroom.id}
+            title={describeTrail(buildShroomTrail(shroom, channel))}
+            onHoverStart={() => onHover(shroom.id)}
+            onHoverEnd={() => onHover(null)}
+            onClick={() => setOpenId(shroom.id)}
+          />
+        ))}
 
-          {/* Last in the scroll rather than pinned beside it. Pinning made it a piece
-              of furniture the row had to work around; at the end it reads as the next
-              slot — which is what it is. */}
-          <button
-            onClick={onOpenAll}
-            title="All shrooms"
-            aria-label="All shrooms"
-            className="flex aspect-[9/16] w-[76px] flex-shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-violet-400 hover:text-violet-500 dark:border-white/[0.14] dark:text-neutral-500 dark:hover:border-violet-500/50 dark:hover:text-violet-300"
-          >
-            <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
-        </div>
+        {/* Last in the scroll rather than pinned beside it. At the end it reads as
+            the next slot, which is what it is. */}
+        <button
+          onClick={onOpenAll}
+          title="All shrooms"
+          aria-label="All shrooms"
+          className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-xl border border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-violet-400 hover:text-violet-500 dark:border-white/[0.14] dark:text-neutral-500 dark:hover:border-violet-500/50 dark:hover:text-violet-300"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
       </div>
 
       {openShroom && (
