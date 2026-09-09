@@ -33,7 +33,7 @@ import { Button } from '@/components/ui';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { signInWithGoogle } from '@/lib/actions/auth';
-import { ShroomCard } from '@/components/shrooms/ShroomCard';
+import { ShroomTile } from '@/components/shrooms/ShroomTile';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import type { Channel, ChannelStatus, Folder, ID, Card, Task } from '@/lib/types';
 
@@ -833,25 +833,15 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const instructionCards = useStore((s) => s.instructionCards);
-  const channels = useStore((s) => s.channels);
   const currentChannelId = pathname.startsWith('/channel/') ? pathname.split('/')[2] : null;
-  const currentChannel = currentChannelId ? channels[currentChannelId] : null;
   const allShrooms = Object.values(instructionCards);
   const channelShrooms = currentChannelId
     ? allShrooms.filter((ic) => ic.channelId === currentChannelId && ic.scope !== 'global')
     : [];
   const globalShrooms = allShrooms.filter((ic) => ic.scope === 'global');
 
-  const handleRun = (shroom: typeof allShrooms[0]) => {
-    const targetChannelId = shroom.channelId || currentChannelId;
-    if (targetChannelId) {
-      onClose();
-      requestAnimationFrame(() => {
-        router.push(`/channel/${targetChannelId}?shrooms=open&run=${shroom.id}`);
-      });
-    }
-  };
-
+  // Tapping a tile opens the shroom rather than running it: from here you cannot
+  // see its trail first, and the row on the board is where running belongs.
   const handleEdit = (shroom: typeof allShrooms[0]) => {
     const targetChannelId = shroom.channelId || currentChannelId;
     if (targetChannelId) {
@@ -889,17 +879,21 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
                 </p>
               </div>
             ) : (
-              allChannelShrooms.map((shroom, i) => (
-                <ShroomCard
-                  key={shroom.id}
-                  shroom={shroom}
-                  channel={channels[shroom.channelId] ?? currentChannel ?? undefined}
-                  allShrooms={instructionCards}
-                  index={i}
-                  onRun={() => handleRun(shroom)}
-                  onEdit={() => handleEdit(shroom)}
-                />
-              ))
+              /* The same tiles the board row shows, so a shroom looks like itself
+                 wherever you meet it — a list of near-identical rows was the thing
+                 that made them hard to tell apart. Tapping opens one; running
+                 happens from the row, where the trail has already told you what it
+                 will do. */
+              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
+                {allChannelShrooms.map((shroom) => (
+                  <ShroomTile
+                    key={shroom.id}
+                    shroom={shroom}
+                    fill
+                    onClick={() => handleEdit(shroom)}
+                  />
+                ))}
+              </div>
             )}
           </div>
 

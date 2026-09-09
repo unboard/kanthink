@@ -32,8 +32,7 @@ interface ShroomRowProps {
  * by hovering one — the columns it touches light up on the board below — or by the
  * sheet on a phone, which is what tapping opens instead of running.
  *
- * "All" sits outside the scroll. The way to see everything must not itself be
- * something you have to scroll to find.
+ * The last slot is a plus, which opens all of them.
  */
 export function ShroomRow({
   channel,
@@ -93,17 +92,19 @@ export function ShroomRow({
               }}
             />
           ))}
-        </div>
 
-        {/* Pinned: never scrolls out, never wraps. */}
-        <div className="flex-shrink-0 border-l border-neutral-200 pl-1.5 dark:border-white/[0.07]">
+          {/* Last in the scroll rather than pinned beside it. Pinning made it a piece
+              of furniture the row had to work around; at the end it reads as the next
+              slot — which is what it is. */}
           <button
             onClick={onOpenAll}
             title="All shrooms"
-            className="flex h-full w-[52px] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-neutral-300 text-[10px] text-neutral-500 transition-colors hover:border-violet-400 hover:text-violet-600 dark:border-white/[0.12] dark:text-neutral-400 dark:hover:border-violet-500/50 dark:hover:text-violet-300"
+            aria-label="All shrooms"
+            className="flex aspect-[9/16] w-[76px] flex-shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-violet-400 hover:text-violet-500 dark:border-white/[0.14] dark:text-neutral-500 dark:hover:border-violet-500/50 dark:hover:text-violet-300"
           >
-            <span className="text-[16px] leading-none">🍄</span>
-            <span>All</span>
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+            </svg>
           </button>
         </div>
       </div>

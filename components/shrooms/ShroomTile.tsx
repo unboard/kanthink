@@ -12,6 +12,8 @@ interface ShroomTileProps {
   onHoverStart?: () => void;
   onHoverEnd?: () => void;
   title?: string;
+  /** Fill its container instead of the fixed row width. Used by the grid in the panel. */
+  fill?: boolean;
 }
 
 /**
@@ -33,6 +35,7 @@ export function ShroomTile({
   onHoverStart,
   onHoverEnd,
   title,
+  fill = false,
 }: ShroomTileProps) {
   const avatar = resolveAvatar(shroom.id, shroom.avatar);
   const palette = PALETTE.find((p) => p.key === avatar.color) ?? PALETTE[0];
@@ -48,9 +51,9 @@ export function ShroomTile({
       onFocus={onHoverStart}
       onBlur={onHoverEnd}
       title={title}
-      className={`group relative flex aspect-[9/16] w-[76px] flex-shrink-0 flex-col items-center justify-between overflow-hidden rounded-2xl px-1.5 pb-2 pt-2 transition-transform focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 ${
-        isActive ? 'scale-[1.03]' : 'hover:-translate-y-0.5'
-      }`}
+      className={`group relative flex aspect-[9/16] flex-col items-center justify-between overflow-hidden rounded-2xl px-1.5 pb-2 pt-2 transition-transform focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 ${
+        fill ? 'w-full' : 'w-[76px] flex-shrink-0'
+      } ${isActive ? 'scale-[1.03]' : 'hover:-translate-y-0.5'}`}
       style={{ backgroundColor: palette.bg }}
     >
       {/* The only chrome: a ring while the pointer is on it, so the lit columns on
@@ -63,7 +66,7 @@ export function ShroomTile({
       )}
 
       <span className={`flex flex-1 items-center ${isRunning ? 'animate-pulse' : ''}`}>
-        <ShroomAvatar id={shroom.id} avatar={shroom.avatar} size={52} />
+        <ShroomAvatar id={shroom.id} avatar={shroom.avatar} size={fill ? 64 : 52} />
       </span>
 
       <span
