@@ -9,6 +9,7 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 import { getLLMClientForUser, type LLMContentPart, type LLMMessage } from '@/lib/ai/llm'
 import { recordUsage } from '@/lib/usage'
 import { stripOptimistic } from '@/lib/playground/thread'
+import { detectImageGenerationIntent, extractImagePrompt } from '@/lib/ai/imageDetection'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -134,6 +135,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
       '- If a request is ambiguous in a way that would produce the wrong app, ask the one question that resolves it.',
       '- Not every message needs an action. If they are thinking out loud, think with them.',
       '- You CAN see images. Attachments in this thread, whiteboard sketches, and (before the first build) images on the source card are all sent to you as pictures. Never tell the user you only see text, and never ask them for image URLs — look at what is there.',
+      "- You CAN generate images. Asking for a mockup, a sketch, a concept or an illustration produces one and attaches it to your reply. Never say you have no image generator or that you can only chat and edit code — say in a sentence what you are drawing and why, then let the picture arrive. Describing what you would draw is not a substitute for drawing it.",
       '- Never announce product updates or steer toward what is new.',
     ].filter(Boolean).join('\n')
 
@@ -216,10 +218,40 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
 
     await recordUsage(session.user.id, 'playground-app-chat')
 
+    // Asking for a mockup in an app thread is asking for a picture of the thing
+    // being built, which is the most natural request there is here — and until now
+    // the route had no way to answer it, so Kan denied he could.
+    let generatedImageUrls: string[] | undefined
+    let imageNote = ''
+    if (detectImageGenerationIntent(message)) {
+      try {
+        const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com'
+        const imgRes = await fetch(`${baseUrl}/api/generate-image`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // The generator authenticates as the user, so it bills the right
+            // account and uses their key.
+            Cookie: req.headers.get('cookie') || '',
+          },
+          body: JSON.stringify({ prompt: extractImagePrompt(message), aspectRatio: '1:1' }),
+        })
+        const imgData = await imgRes.json().catch(() => null)
+        if (imgRes.ok && imgData?.url) {
+          generatedImageUrls = [imgData.url]
+        } else {
+          imageNote = `\n\n(Couldn't generate the image: ${imgData?.error ?? 'unknown error'})`
+        }
+      } catch (err) {
+        imageNote = `\n\n(Couldn't generate the image: ${err instanceof Error ? err.message : 'unknown error'})`
+      }
+    }
+
     const aiMessage = {
       id: nanoid(),
       type: 'ai_response' as const,
-      content: response.content,
+      content: response.content + imageNote,
+      imageUrls: generatedImageUrls,
       createdAt: new Date().toISOString(),
     }
     const messages = [...history, userMessage, aiMessage]

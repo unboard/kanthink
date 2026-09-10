@@ -508,9 +508,13 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
                 </div>
               )}
 
-              {messages.map((message) => (
-                <ChatMessage key={message.id} message={message} cardId={card.id} />
-              ))}
+              {/* Spaced the way the card thread spaces them. Flush, two messages of
+                  the same tone ran into one shape with a hairline seam. */}
+              <div className="space-y-3">
+                {messages.map((message) => (
+                  <ChatMessage key={message.id} message={message} cardId={card.id} />
+                ))}
+              </div>
 
               {busy && (
                 <div className="flex items-center gap-2 px-1 py-3 text-sm text-neutral-500 dark:text-neutral-400">

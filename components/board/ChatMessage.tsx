@@ -17,7 +17,6 @@ import { ImageTheater } from '@/components/ui/ImageTheater';
 import { LinkPreview, extractUrls } from './LinkPreview';
 import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
 import { WhiteboardPreview } from './WhiteboardPreview';
-import { SpeakerButton } from '@/components/ui/SpeakerButton';
 import { ThreadShroomCard } from './ThreadShroomCard';
 
 interface ChatMessageProps {
@@ -460,8 +459,6 @@ export function ChatMessage({
 
           {/* Action buttons - always visible on mobile, hover-reveal on desktop */}
           <div className="ml-auto flex items-center gap-0.5">
-            {/* Speaker button for AI messages */}
-            {isAI && !isEditing && <SpeakerButton text={message.content} messageId={message.id} />}
             {/* Edit button */}
             {canEdit && !isEditing && (
               <button
