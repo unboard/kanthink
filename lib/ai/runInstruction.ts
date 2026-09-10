@@ -1,4 +1,4 @@
-import type { Channel, Card, CardInput, InstructionCard, Task, ChannelMember, CardRejection } from '../types';
+import type { Channel, Card, CardInput, InstructionCard, Task, ChannelMember } from '../types';
 import { useSettingsStore } from '../settingsStore';
 
 export interface AIDebugInfo {
@@ -66,7 +66,6 @@ export async function runInstruction(
   triggeringCardId?: string,
   skipAlreadyProcessed?: boolean,
   members?: ChannelMember[],
-  rejections?: CardRejection[],
   cardIds?: string[],
   apply?: boolean
 ): Promise<RunInstructionResult> {
@@ -93,7 +92,6 @@ export async function runInstruction(
           role: m.role,
           roleDescription: m.roleDescription,
         })),
-        rejections: rejections?.filter(r => r.channelId === channel.id).slice(-20),
       }),
       signal,
     });

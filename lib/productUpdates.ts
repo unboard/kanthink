@@ -35,6 +35,20 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'kan-reads-more-of-a-card',
+    date: '2026-09-10',
+    kind: 'fix',
+    title: 'Kan reads the whole card, not just the last few messages',
+    body: 'Card and channel chat were being given only the last ten messages, so an instruction from earlier in a thread could be sitting on screen while Kan answered without it. The window is now four times longer and the card summary rides along, so a long-running card keeps its brief. The first app built from a card reads more of that card too.',
+  },
+  {
+    id: 'shrooms-learn-from-their-own-rejections',
+    date: '2026-09-10',
+    kind: 'automation',
+    title: 'A shroom now learns only from its own rejections',
+    body: 'Rejecting a generated card with a reason teaches the shroom that made it. That history was being read channel-wide, so on a busy board one shroom could be taught another shroom\'s lessons while its own dropped off the list. Each shroom now reads its own record first, which is the same list its "What we\'ve learned" panel shows.',
+  },
+  {
     id: 'apps-are-card-artifacts',
     date: '2026-09-03',
     kind: 'capability',

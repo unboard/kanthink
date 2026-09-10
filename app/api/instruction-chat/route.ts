@@ -92,9 +92,9 @@ A shroom has these fields:
 - **inputRequirements**: {"minCards": number, "reason": "..."} — the fewest cards a run needs to mean anything. Always include it.
 - **email**: Optional. If set, the shroom emails the board owner after every run.
 
-**Instructions must be scope-free.** Instructions say WHAT to do to a card. They must never say WHICH cards, because targetColumnName already records that — and a shroom gets run at scopes it was never written for: on one card from that card's thread, on a hand-picked selection, on a whole column overnight. Instructions saying "every card in Inbox" become a lie in three of those four cases.
+**Instructions must be scope-free.** Instructions say WHAT to do to a card. They must never say WHICH cards, because targetColumnName already records that — and a shroom gets run at scopes it was never written for: on one card from that card's thread, on a hand-picked selection, on a whole column overnight. Instructions saying "every card in Ideas" become a lie in three of those four cases.
 - Write: "Expand the card into a PRD covering problem, audience, key features and success metrics."
-- Not: "Write a PRD for all the cards in Inbox."
+- Not: "Write a PRD for all the cards in Ideas."
 The one exception is a **move** destination ("...then move it to This Week"), which has nowhere else to live — the destination is chosen per card, so it is criteria, not configuration.
 
 **Capabilities are permissions, not requests.** Set one true when the user's intent could reasonably call for it, false when it plainly could not. A shroom that summarises a card doesn't need properties. A shroom told to "break this down into steps I can work through" needs tasks — even though the word "task" never appears. Judge the intent, not the vocabulary. When unsure leave it true: an unused capability costs nothing, a missing one silently prevents the thing the user asked for.
@@ -136,7 +136,7 @@ For a simple single-action shroom:
 
 For a shroom that emails the owner after it runs:
 [SHROOM_CONFIG]
-{"title": "Morning inbox digest", "instructions": "Summarise what has come in and flag anything that looks urgent or blocked.", "action": "report", "targetColumnName": "Inbox", "capabilities": {"tasks": false, "tags": false, "properties": false, "assignment": false}, "inputRequirements": {"minCards": 2, "reason": "Writes one digest across a set of cards, so a single card gives it nothing to summarise."}, "email": {"enabled": true, "brief": "Short morning summary of what landed overnight. Open with a one-line headline, then up to five bullets. Lead with anything urgent. Casual tone, under 150 words.", "skipWhenNothingHappened": true}}
+{"title": "Morning digest", "instructions": "Summarise what has come in and flag anything that looks urgent or blocked.", "action": "report", "targetColumnName": "Ideas", "capabilities": {"tasks": false, "tags": false, "properties": false, "assignment": false}, "inputRequirements": {"minCards": 2, "reason": "Writes one digest across a set of cards, so a single card gives it nothing to summarise."}, "email": {"enabled": true, "brief": "Short morning summary of what landed overnight. Open with a one-line headline, then up to five bullets. Lead with anything urgent. Casual tone, under 150 words.", "skipWhenNothingHappened": true}}
 [/SHROOM_CONFIG]
 
 For a multi-step shroom (e.g., review cards in Ideas, add a note, then move the best to This Week):
@@ -243,20 +243,53 @@ function parseInputRequirements(raw: unknown): ShroomInputRequirements | undefin
   return { minCards: Math.floor(r.minCards), reason: reason || undefined };
 }
 
-function extractShroomConfig(response: string): ShroomConfig | null {
+/**
+ * Snap a proposed column name onto a column that actually exists.
+ *
+ * Nothing downstream checked this, so a model that reached for a familiar-sounding
+ * Kanban column produced a shroom aimed at a column the board has never had. The prompt
+ * tells it to copy from the list; this is what makes that true. Case and surrounding
+ * whitespace are forgiven, invention is not.
+ */
+function resolveColumnName(proposed: unknown, columnNames: string[]): string {
+  const asked = typeof proposed === 'string' ? proposed.trim() : '';
+  if (columnNames.length === 0) return asked;
+  if (!asked) return columnNames[0];
+
+  const wanted = asked.toLowerCase();
+  const exact = columnNames.find((name) => name.toLowerCase() === wanted);
+  if (exact) return exact;
+
+  // A near miss ("Ideas" for "Raw Ideas") is worth honouring; a miss is not worth
+  // guessing at, so it falls back to the first column rather than inventing one.
+  const partial = columnNames.find(
+    (name) => name.toLowerCase().includes(wanted) || wanted.includes(name.toLowerCase())
+  );
+  return partial ?? columnNames[0];
+}
+
+function extractShroomConfig(response: string, columnNames: string[]): ShroomConfig | null {
   const match = response.match(/\[SHROOM_CONFIG\]([\s\S]*?)\[\/SHROOM_CONFIG\]/);
   if (match) {
     try {
       const parsed = JSON.parse(match[1].trim());
       // Validate required fields
       if (parsed.title && parsed.instructions && parsed.action && parsed.targetColumnName) {
+        const targetColumnName = resolveColumnName(parsed.targetColumnName, columnNames);
+        if (!targetColumnName) return null;
+
         return {
           title: parsed.title,
           instructions: parsed.instructions,
           action: parsed.action,
-          targetColumnName: parsed.targetColumnName,
+          targetColumnName,
           cardCount: parsed.action === 'generate' ? (parsed.cardCount ?? 5) : undefined,
-          steps: Array.isArray(parsed.steps) ? parsed.steps : undefined,
+          steps: Array.isArray(parsed.steps)
+            ? parsed.steps.map((step: Record<string, unknown>) => ({
+                ...step,
+                targetColumnName: resolveColumnName(step?.targetColumnName, columnNames),
+              }))
+            : undefined,
           email: parseEmail(parsed.email),
           capabilities: parseCapabilities(parsed.capabilities),
           inputRequirements: parseInputRequirements(parsed.inputRequirements),
@@ -323,7 +356,7 @@ export async function POST(request: Request) {
       }
 
       // Check for structured shroom config first (new format)
-      const shroomConfig = extractShroomConfig(responseText);
+      const shroomConfig = extractShroomConfig(responseText, context.columnNames ?? []);
 
       // Fall back to legacy instructions format
       const draftInstructions = !shroomConfig ? extractInstructions(responseText) : null;

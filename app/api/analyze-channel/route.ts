@@ -3,7 +3,7 @@ import type { Channel, Card } from '@/lib/types';
 import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
-import { detectDrift, buildFeedbackContext, type DriftInsight } from '@/lib/ai/feedbackAnalyzer';
+import { detectDrift, buildBoardContext, type DriftInsight } from '@/lib/ai/feedbackAnalyzer';
 import { createNotification } from '@/lib/notifications/createNotification';
 
 interface InsightResult {
@@ -126,10 +126,11 @@ Generate 1-2 observations. If there's not enough behavior data, return an empty 
     }
   }
 
-  // Add feedback context - what types of content are being accepted/rejected
-  const feedbackContext = buildFeedbackContext(channel, allCards);
-  if (feedbackContext) {
-    userPrompt += `\n\n## User Behavior Analysis (BASE YOUR QUESTIONS ON THIS)\n${feedbackContext}`;
+  // How the board is laid out, and how generated cards have been sorted. Not a claim
+  // about taste — cards nobody has triaged yet are reported as exactly that.
+  const boardContext = buildBoardContext(channel, allCards);
+  if (boardContext) {
+    userPrompt += `\n\n## Board Shape (BASE YOUR QUESTIONS ON THIS)\n${boardContext}`;
   }
 
   userPrompt += `\n\n## Your Task

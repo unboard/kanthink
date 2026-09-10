@@ -13,6 +13,7 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput, useKeyboardOffset, useComposerHeight, type ChatInputHandle } from './ChatInput';
 import { nanoid } from 'nanoid';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
+import { THREAD_TRANSPORT_CAP } from '@/lib/ai/threadWindow';
 
 const WhiteboardEditor = dynamic(
   () => import('./WhiteboardEditor').then(mod => ({ default: mod.WhiteboardEditor })),
@@ -212,6 +213,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
             imageSettings,
             context: {
               cardTitle: card.title,
+              // The card's own summary, regenerated every few messages below. On a long
+              // thread it is the only thing carrying the earliest part of the
+              // conversation past the window, so it goes up on every turn.
+              cardSummary: card.summary ?? undefined,
               cardType: card.cardType ?? undefined,
               // Whether this card already carries a built app. Passed down by the
               // drawer, which is what actually loads them.
@@ -219,7 +224,11 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
               channelName,
               channelDescription,
               tasks: cardTasks.map((t) => ({ title: t.title, status: t.status })),
-              previousMessages: messages.slice(-10),
+              // The route decides how much of the thread it can actually use. This cap
+              // is only about the size of the POST, and is deliberately well above the
+              // route's window — when both ends trimmed, the limits multiplied silently
+              // and a card could display an instruction Kan was never given.
+              previousMessages: messages.slice(-THREAD_TRANSPORT_CAP),
               cardTags: cardTags,
               availableTags: tagDefinitions,
             },

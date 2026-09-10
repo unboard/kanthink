@@ -1,8 +1,14 @@
 /**
  * Feedback Analyzer
  *
- * Analyzes current board state to infer user preferences and patterns.
- * Uses column names and current card positions as signals.
+ * Reads the shape of a board: what each column is for, and how AI-generated cards
+ * have actually been reviewed.
+ *
+ * What this deliberately does NOT do is guess what the user likes from card content.
+ * There is one honest preference signal in the product — the reason someone gives when
+ * they reject a generated card — and it lives in `buildRejectionContext` below. Column
+ * names tell you a column's ROLE. They do not tell you why any particular card is
+ * sitting in it.
  *
  * Design principle: Where cards ARE is the signal, not where they've been.
  * No movement history or deletion tracking - just current state analysis.
@@ -10,12 +16,34 @@
 
 import type { Channel, Card, ID, CardRejection } from '../types';
 
-// Column sentiment keywords (lowercase for matching)
-const POSITIVE_KEYWORDS = ['like', 'liked', 'love', 'favorite', 'favorites', 'keep', 'good', 'yes', 'approved', 'accept', 'accepted', 'interesting', 'useful', 'important', 'priority', 'high', 'best', 'top', 'starred', 'saved'];
-const NEGATIVE_KEYWORDS = ['dislike', 'disliked', 'hate', 'trash', 'delete', 'bad', 'no', 'reject', 'rejected', 'skip', 'skipped', 'not relevant', 'irrelevant', 'low', 'worst', 'spam', 'archive', 'archived', 'ignore', 'ignored'];
-const INBOX_KEYWORDS = ['inbox', 'new', 'incoming', 'triage', 'unsorted', 'raw', 'ideas', 'backlog'];
+// Column sentiment keywords.
+//
+// Matched on whole words, never substrings — `includes()` classified "Follow Up" as
+// negative (it contains "low"), "Notes" as negative ("no"), "Abandoned" as done
+// ("done") and "Renewal" as an inbox ("new"). A column's own name is the only thing
+// the user gave us here, so reading it wrong is worse than reading nothing.
+//
+// Two words are deliberately absent. "Archive" is ambiguous: filing something you
+// finished with looks identical to throwing it away, and treating it as rejection
+// taught shrooms to avoid the very things that worked. "High"/"low" describe priority,
+// not preference — a low-priority column is not a bin.
+const POSITIVE_KEYWORDS = ['like', 'liked', 'love', 'loved', 'favorite', 'favorites', 'favourite', 'favourites', 'keep', 'good', 'yes', 'approved', 'accept', 'accepted', 'interesting', 'useful', 'important', 'best', 'starred', 'saved'];
+const NEGATIVE_KEYWORDS = ['dislike', 'disliked', 'hate', 'hated', 'trash', 'bin', 'delete', 'deleted', 'bad', 'no', 'nope', 'reject', 'rejected', 'skip', 'skipped', 'irrelevant', 'worst', 'spam', 'ignore', 'ignored', 'discard', 'discarded'];
+const INBOX_KEYWORDS = ['inbox', 'new', 'incoming', 'triage', 'unsorted', 'raw', 'ideas', 'backlog', 'capture'];
 const DONE_KEYWORDS = ['done', 'complete', 'completed', 'finished', 'shipped', 'published', 'resolved', 'closed'];
-const PROGRESS_KEYWORDS = ['progress', 'in progress', 'doing', 'working', 'active', 'current', 'this week', 'today', 'now', 'next', 'next up'];
+const PROGRESS_KEYWORDS = ['progress', 'doing', 'working', 'active', 'current', 'today', 'now', 'next'];
+
+// Multi-word keywords are matched as phrases, on the same word-boundary rule.
+const NEGATIVE_PHRASES = ['not relevant', 'not for me', 'no thanks'];
+const PROGRESS_PHRASES = ['in progress', 'this week', 'next up'];
+
+/**
+ * Whole-word / whole-phrase containment. "follow up" does not contain "low".
+ */
+function containsWord(name: string, keyword: string): boolean {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(name);
+}
 
 export type ColumnSentiment = 'positive' | 'negative' | 'neutral' | 'inbox' | 'done' | 'progress';
 export type BoardType = 'workflow' | 'triage' | 'hybrid' | 'unknown';
@@ -37,10 +65,11 @@ export interface BoardTopology {
 export interface InstructionEffectiveness {
   instructionCardId: ID;
   generatedCount: number;
-  acceptedCount: number;      // In positive columns
+  acceptedCount: number;      // In positive/done columns
   rejectedCount: number;      // In negative columns
-  neutralCount: number;       // Still in inbox or neutral
-  acceptanceRate: number;     // 0-1
+  neutralCount: number;       // Still in inbox or neutral — NOT yet judged
+  reviewedCount: number;      // accepted + rejected
+  acceptanceRate: number;     // 0-1, over reviewed cards only
   patterns: string[];         // Human-readable insights
 }
 
@@ -52,11 +81,13 @@ export function inferColumnSentiment(columnName: string): ColumnSentiment {
 
   // Check each category (order matters - more specific/negative first)
   // IMPORTANT: Check negative BEFORE positive because "dislike" contains "like"
-  if (INBOX_KEYWORDS.some(kw => name.includes(kw))) return 'inbox';
-  if (DONE_KEYWORDS.some(kw => name.includes(kw))) return 'done';
-  if (PROGRESS_KEYWORDS.some(kw => name.includes(kw))) return 'progress';
-  if (NEGATIVE_KEYWORDS.some(kw => name.includes(kw))) return 'negative';
-  if (POSITIVE_KEYWORDS.some(kw => name.includes(kw))) return 'positive';
+  if (NEGATIVE_PHRASES.some(kw => containsWord(name, kw))) return 'negative';
+  if (PROGRESS_PHRASES.some(kw => containsWord(name, kw))) return 'progress';
+  if (INBOX_KEYWORDS.some(kw => containsWord(name, kw))) return 'inbox';
+  if (DONE_KEYWORDS.some(kw => containsWord(name, kw))) return 'done';
+  if (PROGRESS_KEYWORDS.some(kw => containsWord(name, kw))) return 'progress';
+  if (NEGATIVE_KEYWORDS.some(kw => containsWord(name, kw))) return 'negative';
+  if (POSITIVE_KEYWORDS.some(kw => containsWord(name, kw))) return 'positive';
 
   return 'neutral';
 }
@@ -152,15 +183,23 @@ export function analyzeInstructionEffectiveness(
   }
 
   const total = acceptedCount + rejectedCount + neutralCount;
-  const acceptanceRate = total > 0 ? acceptedCount / total : 0;
+
+  // Only cards the user actually moved somewhere conclusive count towards the rate.
+  //
+  // Untouched cards used to sit in the denominator, so a full inbox read as failure:
+  // a shroom that generated ten good cards you had not got to yet scored zero, and the
+  // board then nagged you about "low acceptance". "You haven't looked at this" and
+  // "you didn't want this" are different facts and must stay that way.
+  const reviewedCount = acceptedCount + rejectedCount;
+  const acceptanceRate = reviewedCount > 0 ? acceptedCount / reviewedCount : 0;
 
   // Generate insights based on current distribution
   const patterns: string[] = [];
-  if (total >= 5) {
+  if (reviewedCount >= 5) {
     if (acceptanceRate >= 0.7) {
-      patterns.push('AI suggestions are working well (70%+ acceptance)');
+      patterns.push('Most reviewed AI cards were kept');
     } else if (acceptanceRate <= 0.3) {
-      patterns.push('AI suggestions need improvement (70%+ in negative/inbox columns)');
+      patterns.push('Most reviewed AI cards ended up in negative columns');
     }
   }
 
@@ -170,91 +209,28 @@ export function analyzeInstructionEffectiveness(
     acceptedCount,
     rejectedCount,
     neutralCount,
+    reviewedCount,
     acceptanceRate,
     patterns,
   });
 
   return results;
 }
-
 /**
- * Extract meaningful content patterns from a set of cards
- * Returns common themes found in card titles and content
+ * Build a human-readable board context string for AI prompts.
+ *
+ * Describes what the board IS — the role each column plays, and how generated cards
+ * have been reviewed. It deliberately says nothing about what the user likes: the
+ * only trustworthy statement of that is the reason attached to a rejection, which
+ * `buildRejectionContext` supplies separately.
+ *
+ * This used to also scan card text for themes and tell the model to prefer or avoid
+ * them. It did that with a hardcoded list of cuisines and ingredients left over from
+ * an early recipe board, so on every other kind of channel it either said nothing or
+ * said something made up. Deleted rather than generalised — the rejection loop already
+ * carries this weight, and carries it in the user's own words.
  */
-function extractContentPatterns(cardsToAnalyze: Card[]): string[] {
-  if (cardsToAnalyze.length === 0) return [];
-
-  // Collect all text from card titles and first message
-  const allText = cardsToAnalyze.map(card => {
-    const titleText = card.title || '';
-    const contentText = card.messages?.[0]?.content?.slice(0, 500) || '';
-    return `${titleText} ${contentText}`.toLowerCase();
-  });
-
-  // Common food/cuisine keywords to look for
-  const cuisinePatterns = [
-    { keywords: ['tofu', 'tempeh', 'seitan'], label: 'tofu/plant proteins' },
-    { keywords: ['vegan', 'plant-based', 'dairy-free'], label: 'vegan dishes' },
-    { keywords: ['vegetarian', 'meatless', 'veggie'], label: 'vegetarian dishes' },
-    { keywords: ['gluten-free', 'gluten free'], label: 'gluten-free options' },
-    { keywords: ['thai', 'thailand'], label: 'Thai cuisine' },
-    { keywords: ['indian', 'curry', 'masala', 'tikka'], label: 'Indian cuisine' },
-    { keywords: ['mexican', 'taco', 'burrito', 'enchilada'], label: 'Mexican cuisine' },
-    { keywords: ['italian', 'pasta', 'risotto', 'pizza'], label: 'Italian cuisine' },
-    { keywords: ['japanese', 'sushi', 'ramen', 'miso'], label: 'Japanese cuisine' },
-    { keywords: ['chinese', 'stir-fry', 'wok', 'szechuan'], label: 'Chinese cuisine' },
-    { keywords: ['korean', 'kimchi', 'bibimbap', 'gochujang'], label: 'Korean cuisine' },
-    { keywords: ['mediterranean', 'greek', 'feta', 'hummus'], label: 'Mediterranean cuisine' },
-    { keywords: ['middle eastern', 'falafel', 'shawarma', 'tahini'], label: 'Middle Eastern cuisine' },
-    { keywords: ['french', 'bourguignon', 'croissant', 'beurre'], label: 'French cuisine' },
-    { keywords: ['vietnamese', 'pho', 'banh mi'], label: 'Vietnamese cuisine' },
-    { keywords: ['moroccan', 'tagine', 'harissa'], label: 'Moroccan cuisine' },
-    { keywords: ['caribbean', 'jerk', 'plantain'], label: 'Caribbean cuisine' },
-    { keywords: ['turkish', 'kebab', 'menemen'], label: 'Turkish cuisine' },
-    { keywords: ['cuban', 'mojo'], label: 'Cuban cuisine' },
-    { keywords: ['chicken', 'poultry'], label: 'chicken dishes' },
-    { keywords: ['beef', 'steak', 'brisket'], label: 'beef dishes' },
-    { keywords: ['pork', 'bacon', 'ham'], label: 'pork dishes' },
-    { keywords: ['fish', 'salmon', 'cod', 'seafood', 'shrimp'], label: 'seafood dishes' },
-    { keywords: ['soup', 'stew', 'broth'], label: 'soups and stews' },
-    { keywords: ['salad', 'fresh', 'raw'], label: 'salads' },
-    { keywords: ['breakfast', 'morning', 'brunch', 'pancake', 'oat'], label: 'breakfast items' },
-    { keywords: ['spicy', 'hot', 'chili', 'pepper'], label: 'spicy dishes' },
-    { keywords: ['comfort', 'hearty', 'rich', 'creamy'], label: 'comfort food' },
-    { keywords: ['healthy', 'light', 'low-cal', 'nutritious'], label: 'health-focused meals' },
-    { keywords: ['quick', 'easy', 'simple', '15-minute', '30-minute'], label: 'quick/easy meals' },
-    { keywords: ['complex', 'elaborate', 'gourmet', 'advanced'], label: 'complex recipes' },
-  ];
-
-  // Count matches for each pattern
-  const patternCounts: { label: string; count: number }[] = [];
-
-  for (const pattern of cuisinePatterns) {
-    let matchCount = 0;
-    for (const text of allText) {
-      if (pattern.keywords.some(kw => text.includes(kw))) {
-        matchCount++;
-      }
-    }
-    if (matchCount > 0) {
-      patternCounts.push({ label: pattern.label, count: matchCount });
-    }
-  }
-
-  // Sort by count and return top patterns (those appearing in 30%+ of cards or at least 2 cards)
-  const threshold = Math.max(2, Math.floor(cardsToAnalyze.length * 0.3));
-  return patternCounts
-    .filter(p => p.count >= Math.min(threshold, 2))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
-    .map(p => `${p.label} (${p.count} cards)`);
-}
-
-/**
- * Build a human-readable feedback context string for AI prompts
- * Based on current card positions, not movement history
- */
-export function buildFeedbackContext(
+export function buildBoardContext(
   channel: Channel,
   cards: Record<string, Card>
 ): string | null {
@@ -280,79 +256,31 @@ export function buildFeedbackContext(
     lines.push(typeDescriptions[topology.type]);
   }
 
-  // Column insights
+  // Column roles, described as what the NAMES say — not as a claim about the cards
+  // sitting in them. A card in "Dislike" was probably put there on purpose; a card in
+  // "Archive" might have been a success. Only the column's own name is evidence here.
   const positiveColumns = topology.columns.filter(c => c.sentiment === 'positive');
   const negativeColumns = topology.columns.filter(c => c.sentiment === 'negative');
 
   if (positiveColumns.length > 0) {
     const names = positiveColumns.map(c => `"${c.columnName}"`).join(', ');
-    lines.push(`Positive columns (user likes content here): ${names}`);
+    lines.push(`Columns named as keepers: ${names}`);
   }
 
   if (negativeColumns.length > 0) {
     const names = negativeColumns.map(c => `"${c.columnName}"`).join(', ');
-    lines.push(`Negative columns (user rejects content here): ${names}`);
+    lines.push(`Columns named as rejections: ${names}`);
   }
 
-  // Content pattern analysis - what types of content are liked/disliked
-  const positiveColumnIds = new Set(positiveColumns.map(c => c.columnId));
-  const negativeColumnIds = new Set(negativeColumns.map(c => c.columnId));
-
-  const likedCards: Card[] = [];
-  const dislikedCards: Card[] = [];
-
-  for (const col of channel.columns) {
-    const columnCards = col.cardIds.map(id => cards[id]).filter(Boolean);
-    if (positiveColumnIds.has(col.id)) {
-      likedCards.push(...columnCards);
-    } else if (negativeColumnIds.has(col.id)) {
-      dislikedCards.push(...columnCards);
-    }
-  }
-
-  if (likedCards.length >= 2 || dislikedCards.length >= 2) {
-    lines.push('');
-    lines.push('## Content Preferences (IMPORTANT - use these to guide generation)');
-
-    if (dislikedCards.length >= 2) {
-      const dislikedPatterns = extractContentPatterns(dislikedCards);
-      if (dislikedPatterns.length > 0) {
-        lines.push('');
-        lines.push(`**AVOID generating these types** (user has ${dislikedCards.length} cards in negative columns):`);
-        for (const pattern of dislikedPatterns) {
-          lines.push(`  - ${pattern}`);
-        }
-      }
-    }
-
-    if (likedCards.length >= 2) {
-      const likedPatterns = extractContentPatterns(likedCards);
-      if (likedPatterns.length > 0) {
-        lines.push('');
-        lines.push(`**PREFER generating these types** (user has ${likedCards.length} cards in positive columns):`);
-        for (const pattern of likedPatterns) {
-          lines.push(`  - ${pattern}`);
-        }
-      }
-    }
-
-    if (likedCards.length > 0 && dislikedCards.length > 0) {
-      const ratio = dislikedCards.length / likedCards.length;
-      if (ratio >= 3) {
-        lines.push('');
-        lines.push(`⚠️ High rejection rate: ${dislikedCards.length} in negative columns vs ${likedCards.length} in positive. Strongly consider changing approach.`);
-      }
-    }
-  }
-
-  // Effectiveness insights
+  // Review outcomes for generated cards. Reported as counts, with untouched cards
+  // named as untouched, so the model cannot read "not yet triaged" as "rejected".
   const allAiEffectiveness = effectiveness.get('all-ai');
   if (allAiEffectiveness && allAiEffectiveness.generatedCount >= 3) {
     lines.push('');
     lines.push(`AI has generated ${allAiEffectiveness.generatedCount} cards currently on the board:`);
-    lines.push(`- ${allAiEffectiveness.acceptedCount} in positive/done columns (${Math.round(allAiEffectiveness.acceptanceRate * 100)}%)`);
-    lines.push(`- ${allAiEffectiveness.rejectedCount} in negative columns`);
-    lines.push(`- ${allAiEffectiveness.neutralCount} in inbox/neutral columns`);
+    lines.push(`- ${allAiEffectiveness.acceptedCount} kept (in a keeper or done column)`);
+    lines.push(`- ${allAiEffectiveness.rejectedCount} in a rejection column`);
+    lines.push(`- ${allAiEffectiveness.neutralCount} not yet triaged (no signal either way — do not treat these as rejected)`);
 
     if (allAiEffectiveness.patterns.length > 0) {
       lines.push('');
@@ -369,27 +297,6 @@ export function buildFeedbackContext(
   return lines.join('\n');
 }
 
-/**
- * Get a summary of column semantics for the AI to understand board structure
- */
-export function getColumnSemanticsSummary(channel: Channel): string {
-  const lines: string[] = ['Board columns and their inferred purpose:'];
-
-  for (const col of channel.columns) {
-    const sentiment = inferColumnSentiment(col.name);
-    const sentimentLabel: Record<ColumnSentiment, string> = {
-      inbox: 'inbox/entry point',
-      positive: 'positive/accepted',
-      negative: 'negative/rejected',
-      neutral: 'neutral',
-      done: 'completed',
-      progress: 'in progress',
-    };
-    lines.push(`- "${col.name}": ${sentimentLabel[sentiment]}`);
-  }
-
-  return lines.join('\n');
-}
 
 // ============================================================================
 // Drift Detection
@@ -593,15 +500,18 @@ export function detectDrift(
 
   // Check overall acceptance rate
   const allAiEffectiveness = effectiveness.get('all-ai');
-  if (allAiEffectiveness && allAiEffectiveness.generatedCount >= 5) {
+  // Gated on REVIEWED cards, not generated ones. A shroom that filled an inbox you
+  // have not opened yet has told us nothing, and nagging about it was the app blaming
+  // the user for its own backlog.
+  if (allAiEffectiveness && allAiEffectiveness.reviewedCount >= 5) {
     if (allAiEffectiveness.acceptanceRate <= 0.3) {
       insights.push({
         id: 'drift-low-acceptance',
         type: 'low_acceptance',
         severity: allAiEffectiveness.acceptanceRate <= 0.15 ? 'high' : 'medium',
-        description: `Only ${Math.round(allAiEffectiveness.acceptanceRate * 100)}% of AI-generated cards are in positive columns.`,
+        description: `Of the AI-generated cards you have sorted, ${Math.round(allAiEffectiveness.acceptanceRate * 100)}% ended up somewhere positive.`,
         suggestedAction: 'Try answering more questions to help the AI understand what you want.',
-        evidence: `${allAiEffectiveness.acceptedCount} in positive, ${allAiEffectiveness.rejectedCount} in negative out of ${allAiEffectiveness.generatedCount} total`,
+        evidence: `${allAiEffectiveness.acceptedCount} in positive, ${allAiEffectiveness.rejectedCount} in negative, out of ${allAiEffectiveness.reviewedCount} sorted (${allAiEffectiveness.neutralCount} not yet sorted)`,
       });
     }
   }
@@ -623,29 +533,73 @@ const REJECTION_REASON_LABELS: Record<string, string> = {
 
 /**
  * Build a concise rejection context block for AI generation prompts.
- * Takes the most recent rejections for a channel and groups by reason.
+ *
+ * Scoped to the shroom being run, when we know which one that is. Rejections are stored
+ * against the shroom that produced the card, and the "What we've learned" panel reads
+ * them that way — but this used to take the channel's most recent rejections regardless
+ * of origin, so a busy channel let one shroom's rejections push another's out entirely,
+ * and every shroom was taught lessons meant for its neighbours. What a shroom reads here
+ * is now what its own panel shows.
+ *
+ * Rejections from other shrooms in the channel are still worth something — they are the
+ * same person saying no in the same space — so a few come along, clearly marked as the
+ * weaker signal they are.
  */
 export function buildRejectionContext(
   rejections: CardRejection[],
-  channelId: ID
+  channelId: ID,
+  instructionCardId?: ID
 ): string | null {
-  // Filter to this channel, most recent 20
+  const OWN_LIMIT = 20;
+  const OTHERS_LIMIT = 5;
+
   const channelRejections = rejections
     .filter(r => r.channelId === channelId)
-    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-    .slice(0, 20);
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
   if (channelRejections.length === 0) return null;
 
-  const lines: string[] = ['## Card Rejection History (avoid these patterns)'];
-  lines.push('Recent rejections from this channel:');
+  // Without a shroom id (an ad-hoc run, or an older caller) everything is "own".
+  const own = instructionCardId
+    ? channelRejections.filter(r => r.instructionCardId === instructionCardId).slice(0, OWN_LIMIT)
+    : channelRejections.slice(0, OWN_LIMIT);
+  const others = instructionCardId
+    ? channelRejections.filter(r => r.instructionCardId !== instructionCardId).slice(0, OTHERS_LIMIT)
+    : [];
 
-  // Group by reason
+  if (own.length === 0 && others.length === 0) return null;
+
+  const lines: string[] = ['## Card Rejection History (avoid these patterns)'];
+
+  if (own.length > 0) {
+    lines.push(
+      instructionCardId
+        ? 'Cards THIS shroom generated that were rejected:'
+        : 'Recent rejections from this channel:'
+    );
+    lines.push(...describeRejections(own));
+  }
+
+  if (others.length > 0) {
+    lines.push('');
+    lines.push('Rejected elsewhere in this channel (weaker signal — same user, different job):');
+    lines.push(...describeRejections(others));
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Group a set of rejections by reason, then surface the user's own words.
+ * The free-text feedback is the most valuable line in the block, so it goes last.
+ */
+function describeRejections(entries: CardRejection[]): string[] {
+  const lines: string[] = [];
   const byReason = new Map<string, string[]>();
   const noReason: string[] = [];
   const userNotes: string[] = [];
 
-  for (const r of channelRejections) {
+  for (const r of entries) {
     if (r.reason) {
       const list = byReason.get(r.reason) || [];
       list.push(r.rejectedCardTitle);
@@ -670,13 +624,9 @@ export function buildRejectionContext(
     lines.push(`- Rejected without reason (${noReason.length}): ${titleList}`);
   }
 
-  if (userNotes.length > 0) {
-    // Include up to 3 unique user notes
-    const uniqueNotes = [...new Set(userNotes)].slice(0, 3);
-    for (const note of uniqueNotes) {
-      lines.push(`User note: "${note}"`);
-    }
+  for (const note of [...new Set(userNotes)].slice(0, 5)) {
+    lines.push(`User note: "${note}"`);
   }
 
-  return lines.join('\n');
+  return lines;
 }

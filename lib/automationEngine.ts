@@ -257,7 +257,6 @@ async function executeAutomaticInstruction(
       triggeringCardId,
       true,      // skipAlreadyProcessed for automatic runs
       undefined, // members
-      undefined, // rejections — loaded server-side
       undefined, // cardIds
       true       // apply: create generated cards server-side so autoApprove is honored
     );

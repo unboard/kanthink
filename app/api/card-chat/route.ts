@@ -9,6 +9,7 @@ import { uploadImageToCloudinary } from '@/lib/cloudinary';
 import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, detectsDataFollowUp, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
 import { buildProductUpdateContext } from '@/lib/productUpdates';
 import { BUILD_ACTION_SHAPE, buildAppGuidance } from '@/lib/ai/buildAppGuidance';
+import { THREAD_WINDOW, imageWindowStart } from '@/lib/ai/threadWindow';
 
 function describeWhiteboards(whiteboards?: WhiteboardAttachment[]): string {
   if (!whiteboards || whiteboards.length === 0) return ''
@@ -56,6 +57,7 @@ interface CardChatRequest {
   imageSettings?: { aspectRatio?: string; quality?: string };
   context: {
     cardTitle: string;
+    cardSummary?: string;          // Standing summary of the whole card, older than the window
     channelName: string;
     channelDescription: string;
     tasks: { title: string; status: string }[];
@@ -93,7 +95,7 @@ function buildPrompt(
   imageUrls?: string[],
   webContext?: string
 ): LLMMessage[] {
-  const { cardTitle, channelName, channelDescription, tasks, previousMessages, cardTags, availableTags } = context;
+  const { cardTitle, cardSummary, channelName, channelDescription, tasks, previousMessages, cardTags, availableTags } = context;
 
   // Build tags context
   const tagContext = availableTags && availableTags.length > 0
@@ -146,7 +148,7 @@ Task statuses: not_started (hasn't begun), in_progress (being worked on), on_hol
 "Complete"/"done" = status is done. "Incomplete"/"remaining"/"left" = status is not_started or in_progress.
 When answering about tasks, always cite specific task names and their statuses.
 
-Card: "${cardTitle}"
+Card: "${cardTitle}"${cardSummary ? `\nCard summary (covers the whole card, including anything older than the conversation below): ${cardSummary}` : ''}
 Channel: "${channelName}"${channelDescription ? ` - ${channelDescription}` : ''}
 ${taskSection}${tagContext}${currentTagsContext}${webContextSection}
 
@@ -178,9 +180,13 @@ Rules:
     { role: 'system', content: systemPrompt },
   ];
 
-  // Add previous messages as conversation history (last 10)
-  const recentMessages = previousMessages.slice(-10);
-  for (const msg of recentMessages) {
+  // Add previous messages as conversation history. See lib/ai/threadWindow.ts for why
+  // the window is what it is; the card summary above covers whatever falls off the front.
+  const recentMessages = previousMessages.slice(-THREAD_WINDOW);
+  const firstImageIndex = imageWindowStart(recentMessages.length);
+
+  for (const [index, msg] of recentMessages.entries()) {
+    const includeImages = index >= firstImageIndex;
     if (msg.type === 'note' || msg.type === 'question') {
       const prefix = msg.type === 'note' ? '[Note] ' : '';
       const imageRef = msg.imageUrls?.length
@@ -188,7 +194,7 @@ Rules:
         : '';
       const wbRef = describeWhiteboards(msg.whiteboards);
       const wbImages = getWhiteboardImageUrls(msg.whiteboards);
-      const allImages = [...(msg.imageUrls || []), ...wbImages];
+      const allImages = includeImages ? [...(msg.imageUrls || []), ...wbImages] : [];
 
       if (allImages.length > 0) {
         // Multimodal message with images

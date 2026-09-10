@@ -178,7 +178,7 @@ Never put a personal idea in a business channel, or a business item in a persona
 
 If you are not confident about the channel, ASK BEFORE CREATING. Never create a card and ask which channel in the same breath: it reads as though you did not know what you were doing, because you didn't. Ask, hear the answer, then create once.
 
-Columns: pass a columnName only if you can see that column in the workspace listing above for that specific channel. Most channels have no "Inbox". If you are unsure, omit columnName and the card lands in the channel's default column.
+Columns: pass a columnName only if you can read that exact name in the workspace listing above, under that specific channel. Copy it character for character. Boards vary and standard Kanban column names are usually not the ones here, so never reach for a name that feels typical. If you are unsure, omit columnName and the card lands in the channel's default column.
 
 ONE IDEA, ONE CARD:
 

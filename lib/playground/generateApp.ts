@@ -456,9 +456,13 @@ export async function generatePlaygroundApp(
   // After that first build the app owns its own conversation, and re-reading the
   // card every turn would let card edits silently rewrite an app the user had
   // already shaped in its own thread.
+  // Same cap as the app's own thread. It was smaller, which meant the one build that
+  // depends entirely on the card — the first — read less of it than every later build
+  // reads of its own thread. A card that had been developed over a long conversation
+  // handed the builder only the tail of its own brief.
   const cardMessages = isIteration
     ? []
-    : stripOptimistic<ThreadMessage>(card.messages).slice(-16);
+    : stripOptimistic<ThreadMessage>(card.messages).slice(-40);
 
   let sourceContext = '';
   if (!isIteration) {

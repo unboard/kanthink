@@ -18,6 +18,10 @@ interface RouteParams {
  * Deliberately the same rows that buildRejectionContext feeds into the shroom's prompts
  * — so what you read here is what it reads. Without this the feedback loop is invisible
  * and there's no way to tell whether rejecting things is actually teaching it anything.
+ *
+ * That claim was untrue for a while: this filtered by shroom, while the prompt took the
+ * channel's newest rejections whoever made them. `loadRejectionsForShroom` is what keeps
+ * the two in step now, so don't narrow one without the other.
  */
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   const session = await auth()

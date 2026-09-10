@@ -667,7 +667,7 @@ export function Board({ channel }: BoardProps) {
     }
 
     try {
-      const result = await runInstruction(instructionCard, channel, cards, tasks, getAIAbortSignal(), undefined, undefined, channelMembers, undefined, cardIdsToProcess, true);
+      const result = await runInstruction(instructionCard, channel, cards, tasks, getAIAbortSignal(), undefined, undefined, channelMembers, cardIdsToProcess, true);
 
       // Store debug info for the modal
       if (result.debug) {

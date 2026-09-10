@@ -3,7 +3,7 @@ import { marked } from 'marked';
 import type { Channel, Card, CardInput, InstructionCard, InstructionTarget, ContextColumnSelection, Task, CardRejection } from '@/lib/types';
 import { type LLMMessage, type LLMProvider, type LLMResponse, getLLMClientForUser } from '@/lib/ai/llm';
 import { recordUsage } from '@/lib/usage';
-import { buildFeedbackContext, buildRejectionContext } from '@/lib/ai/feedbackAnalyzer';
+import { buildBoardContext, buildRejectionContext } from '@/lib/ai/feedbackAnalyzer';
 import { getAuthenticatedLLM } from '@/lib/ai/withAuth';
 import { parseModelChoice } from '@/lib/ai/modelCatalog';
 import { shouldResearchWeb, baseSearchQuery, researchWeb, formatResearchBlock } from '@/lib/shrooms/webResearch';
@@ -21,7 +21,7 @@ import { generatePlaygroundApp } from '@/lib/playground/generateApp';
 import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
 import { setCardProcessingServerSide } from '@/lib/shrooms/cardProcessing';
 import { stripEchoedContent, cardContentStrings } from '@/lib/shrooms/stripEchoedContent';
-import { loadChannelRejections } from '@/lib/shrooms/rejections';
+import { loadRejectionsForShroom } from '@/lib/shrooms/rejections';
 import { sendShroomRunEmail, type ShroomRunOutcome } from '@/lib/shrooms/sendRunEmail';
 
 // Configure marked for safe HTML output
@@ -251,10 +251,12 @@ Respond with ONLY the JSON array:
   }
   userParts.push(boardState);
 
-  // Feedback context - what the AI has learned from user behavior
-  const feedbackContext = buildFeedbackContext(channel, allCards);
-  if (feedbackContext) {
-    userParts.push(`## Learning from User Behavior\n${feedbackContext}\n\nUse this feedback to generate more relevant cards.`);
+  // How this board is laid out and how generated cards have been sorted so far.
+  // Preferences are NOT inferred here — the rejection history block appended later is
+  // the only place this prompt is told what the user did not want.
+  const boardContext = buildBoardContext(channel, allCards);
+  if (boardContext) {
+    userParts.push(`## Board Shape\n${boardContext}`);
   }
 
   // Members context for assignment
@@ -1124,7 +1126,6 @@ interface RunInstructionRequest {
   skipAlreadyProcessed?: boolean;  // For automatic runs, skip cards already processed by this instruction
   systemInstructions?: string;
   members?: MemberInfo[];
-  rejections?: CardRejection[];
 }
 
 export async function POST(request: Request) {
@@ -1142,7 +1143,7 @@ export async function POST(request: Request) {
 
     const session = isInternal ? null : await auth();
     const userId = isInternal ? body.asUserId ?? null : session?.user?.id;
-    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, cardIds, apply = false, skipAlreadyProcessed, systemInstructions, members, rejections } = body;
+    const { instructionCard, channel, cards, tasks = {}, triggeringCardId, cardIds, apply = false, skipAlreadyProcessed, systemInstructions, members } = body;
 
     // Validate required fields
     if (!instructionCard || !channel) {
@@ -1189,23 +1190,23 @@ export async function POST(request: Request) {
     }
 
     // Rejection history lives on the server so a shroom learns from every device, not
-    // just the one it happened to run on. `rejections` in the body is the legacy
-    // client-passed array, kept only as a fallback while old clients are in flight.
+    // just the one it happened to run on. Loaded once per request and shared by every
+    // prompt this run builds.
     let cachedRejections: CardRejection[] | null = null;
     const resolveRejections = async (): Promise<CardRejection[]> => {
       if (cachedRejections) return cachedRejections;
       try {
-        const stored = await loadChannelRejections(channel.id);
-        cachedRejections = stored.length > 0 ? stored : (rejections ?? []);
+        cachedRejections = await loadRejectionsForShroom(channel.id, instructionCard.id);
       } catch {
-        cachedRejections = rejections ?? [];
+        // A shroom that can't read its history should still run. It just runs naive.
+        cachedRejections = [];
       }
       return cachedRejections;
     };
 
     const appendRejectionContext = (messages: LLMMessage[], entries: CardRejection[]) => {
       if (entries.length === 0) return;
-      const rejectionContext = buildRejectionContext(entries, channel.id);
+      const rejectionContext = buildRejectionContext(entries, channel.id, instructionCard.id);
       if (!rejectionContext) return;
       const userMsg = messages[messages.length - 1];
       userMsg.content = `${userMsg.content as string}\n\n${rejectionContext}\n\nUse this rejection history to avoid generating similar cards.`;

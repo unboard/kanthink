@@ -9,6 +9,7 @@ import { channelChatThreads } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { buildProductUpdateContext } from '@/lib/productUpdates';
+import { THREAD_WINDOW } from '@/lib/ai/threadWindow';
 import {
   getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, queryMixpanelForChat,
   detectsDataFollowUp, extractRawResultBlock, buildRetainedDataContext, trimRetainedData,
@@ -165,7 +166,7 @@ async function buildPrompt(
 Kanthink is a Kanban board app. Here is how data is structured and what it means:
 
 CHANNEL — A workspace or project. Contains columns. You are currently in one channel.
-COLUMN — A workflow stage (e.g. "Inbox", "In Progress", "Done"). Contains cards. A card's column represents where it is in the workflow.
+COLUMN — A workflow stage. Contains cards. A card's column represents where it is in the workflow. This channel's columns are listed under CURRENT CHANNEL below. Those are the only columns that exist. Every column you name, to the user or in an action, must be copied exactly from that list. Boards vary: assume nothing about what a column is called.
 CARD — A unit of work. Lives in one column. Can have tasks, tags, a summary, and messages.
 TASK — A checklist item, either on a card or standalone (not on any card). Every task has a status:
   - not_started = has not been started yet (incomplete)
@@ -235,8 +236,12 @@ If the user asks how to "build", "actually make", "prototype", or "do something 
     { role: 'system', content: systemPrompt + dataSourceContext },
   ];
 
-  // Add recent thread messages as conversation history
-  const recentMessages = threadMessages.slice(-10);
+  // Add recent thread messages as conversation history.
+  //
+  // Same window as card chat. A channel thread is a named, saved conversation you come
+  // back to, so ten messages was short enough to lose the point of the thread inside
+  // the thread itself.
+  const recentMessages = threadMessages.slice(-THREAD_WINDOW);
   for (const msg of recentMessages) {
     if (msg.type === 'question') {
       const imageRef = msg.imageUrls?.length
@@ -287,7 +292,26 @@ function parseAIResponse(rawContent: string): AIStructuredResponse {
   return { response: rawContent };
 }
 
-function convertToStoredActions(actions: ProposedAction[]): ChannelStoredAction[] {
+/**
+ * Snap a proposed column name onto a column this channel actually has.
+ *
+ * The board resolves an unknown name to the first column, quietly, so a card still
+ * landed somewhere sensible — but the approval snippet showed whatever the model said,
+ * and the reply above it read "I've added that to Inbox" on a board with no Inbox.
+ * Correcting the name here means the button, the message and the destination agree.
+ */
+function resolveColumnName(proposed: string, columnNames: string[]): string {
+  if (columnNames.length === 0) return proposed;
+  const wanted = proposed.trim().toLowerCase();
+  const exact = columnNames.find((name) => name.toLowerCase() === wanted);
+  if (exact) return exact;
+  const partial = columnNames.find(
+    (name) => name.toLowerCase().includes(wanted) || wanted.includes(name.toLowerCase())
+  );
+  return partial ?? columnNames[0];
+}
+
+function convertToStoredActions(actions: ProposedAction[], columnNames: string[]): ChannelStoredAction[] {
   const result: ChannelStoredAction[] = [];
 
   for (const action of actions) {
@@ -300,7 +324,7 @@ function convertToStoredActions(actions: ProposedAction[]): ChannelStoredAction[
         type: 'create_card',
         data: {
           title: action.data.title,
-          columnName: action.data.columnName,
+          columnName: resolveColumnName(action.data.columnName, columnNames),
         },
         status: 'pending',
       });
@@ -454,7 +478,9 @@ export async function POST(request: Request) {
       }
 
       const parsed = parseAIResponse(llmResponse.content);
-      const actions = parsed.actions ? convertToStoredActions(parsed.actions) : undefined;
+      const actions = parsed.actions
+        ? convertToStoredActions(parsed.actions, context.columns.map((c) => c.name))
+        : undefined;
 
       // Build the user message and AI response
       const now = new Date().toISOString();
