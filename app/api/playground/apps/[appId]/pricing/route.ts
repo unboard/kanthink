@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import {
+  PricingAuthError,
   PricingUnavailableError,
   syncAppPrice,
   validatePriceInput,
@@ -81,8 +82,10 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     if (error instanceof PermissionError) {
       return NextResponse.json({ error: error.message }, { status: 403 })
     }
-    if (error instanceof PricingUnavailableError) {
-      return NextResponse.json({ error: error.message }, { status: 503 })
+    if (error instanceof PricingUnavailableError || error instanceof PricingAuthError) {
+      // 502, not 500: the failure is upstream at Stripe, and the message says so
+      // rather than leaving someone re-typing a price that was never wrong.
+      return NextResponse.json({ error: error.message }, { status: 502 })
     }
     // validatePriceInput throws messages written for the person typing the price.
     if (error instanceof Error && /price|currency|billing/i.test(error.message)) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, MessageSquareText, Send, X } from 'lucide-react';
 import type { AppThreadMessage } from '@/lib/types';
 
@@ -14,11 +14,14 @@ interface Props {
  *
  * A published app is a page on the internet with no support address, and the usual
  * outcome is that the one person who noticed a bug simply closes the tab. This is a
- * button and a text box, and it puts what they say on the app's own thread, which is
- * where the next build reads its brief from.
+ * button and a text box, and what it collects lands on the app's own thread, which
+ * is where the next build reads its brief from.
  *
- * The reply comes back to the same panel, so it is a conversation rather than a
- * suggestion box.
+ * It opens as a real drawer rather than a corner popover. The first version was a
+ * 320px box sitting on the app it was about, which is fine for "nice one" and
+ * hopeless for the reports that are actually worth having — a paragraph, a repro, a
+ * reply, and the conversation that follows. Full height on the right, a near-full
+ * sheet on a phone, and the thread gets the room.
  */
 export function AppFeedbackPanel({ token, appTitle }: Props) {
   const [open, setOpen] = useState(false);
@@ -31,14 +34,14 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
+  const endRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/play/${token}/feedback`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) return;
-      const list: AppThreadMessage[] = data.messages || [];
-      setMessages(list);
+      setMessages(data.messages || []);
       setIdentified(!!data.identified);
       if (data.email) setEmail(data.email);
     } catch { /* the panel still works, it just starts empty */ }
@@ -60,6 +63,18 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
     })();
     return () => { cancelled = true; };
   }, [token]);
+
+  useEffect(() => {
+    if (open) endRef.current?.scrollIntoView({ block: 'end' });
+  }, [open, messages.length]);
+
+  // Escape closes it, like every other drawer on the web.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   const openPanel = () => {
     setOpen(true);
@@ -95,8 +110,8 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
     }
   };
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button
         onClick={openPanel}
         className="relative flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-neutral-600 hover:text-violet-600 hover:bg-violet-50 transition-colors"
@@ -109,82 +124,112 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
           </span>
         )}
       </button>
-    );
-  }
 
-  return (
-    <div className="fixed inset-x-0 bottom-0 sm:inset-x-auto sm:right-4 sm:bottom-4 sm:w-80 z-50 rounded-t-2xl sm:rounded-2xl border border-neutral-200 bg-white shadow-2xl overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-neutral-200">
-        <MessageSquareText className="w-4 h-4 text-violet-500" />
-        <p className="flex-1 min-w-0 text-sm font-medium text-neutral-900 truncate">{appTitle}</p>
-        <button
-          onClick={() => setOpen(false)}
-          aria-label="Close"
-          className="p-1 rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="max-h-64 overflow-y-auto px-3 py-3 space-y-2.5 bg-neutral-50">
-        {!loaded ? (
-          <div className="py-4 flex justify-center text-neutral-400">
-            <Loader2 className="w-4 h-4 animate-spin" />
-          </div>
-        ) : messages.length === 0 ? (
-          <p className="py-2 text-xs text-neutral-500 leading-relaxed">
-            Found a bug, or want something changed? Tell the person who made this. They
-            can reply here.
-          </p>
-        ) : (
-          messages.map((m) => (
-            <div key={m.id} className={m.sender === 'user' ? 'pl-6' : 'pr-6'}>
-              <div className={`px-2.5 py-1.5 rounded-xl text-xs whitespace-pre-wrap break-words ${
-                m.sender === 'user' ? 'bg-violet-600 text-white' : 'bg-white border border-neutral-200 text-neutral-800'
-              }`}>
-                {m.body}
-              </div>
-              <p className="mt-0.5 text-[10px] text-neutral-400">
-                {m.sender === 'user' ? 'You' : 'Reply'} ·{' '}
-                {new Date(m.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-              </p>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="px-3 py-2.5 border-t border-neutral-200 space-y-2">
-        {(!identified || needsEmail) && (
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Your email, so they can reply"
-            className="w-full px-2.5 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-900 outline-none focus:border-violet-400"
+      {open && (
+        <>
+          {/* The app keeps running underneath; the scrim just says where focus is. */}
+          <div
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
+            aria-hidden
           />
-        )}
-        <div className="flex items-end gap-1.5">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
-            }}
-            rows={2}
-            placeholder="What is wrong, or what would make it better?"
-            className="flex-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 text-xs text-neutral-900 outline-none focus:border-violet-400 resize-none"
-          />
-          <button
-            onClick={send}
-            disabled={sending || !text.trim()}
-            aria-label="Send"
-            className="flex-shrink-0 p-2 rounded-lg bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40 transition-colors"
+
+          <div
+            role="dialog"
+            aria-label={`Feedback on ${appTitle}`}
+            className="fixed z-50 flex flex-col bg-white shadow-2xl
+                       inset-x-0 bottom-0 h-[85dvh] rounded-t-2xl
+                       sm:inset-y-0 sm:right-0 sm:left-auto sm:h-full sm:w-[420px] sm:rounded-none sm:border-l sm:border-neutral-200"
           >
-            {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-          </button>
-        </div>
-        {error && <p className="text-[11px] text-red-500">{error}</p>}
-      </div>
-    </div>
+            <div className="flex-shrink-0 flex items-start gap-3 px-4 py-3.5 border-b border-neutral-200">
+              <MessageSquareText className="w-4 h-4 mt-0.5 text-violet-500 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-neutral-900 truncate">{appTitle}</p>
+                <p className="text-xs text-neutral-500">
+                  Talk to whoever made this. They can reply here.
+                </p>
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                className="p-1 -mr-1 rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 bg-neutral-50">
+              {!loaded ? (
+                <div className="py-8 flex justify-center text-neutral-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="py-6">
+                  <p className="text-sm text-neutral-600 leading-relaxed">
+                    Found a bug, or want something changed?
+                  </p>
+                  <p className="mt-2 text-xs text-neutral-500 leading-relaxed">
+                    Say what happened and what you expected. It goes straight to the person
+                    who built this, and their answer comes back to this same panel.
+                  </p>
+                </div>
+              ) : (
+                messages.map((m) => (
+                  <div key={m.id} className={m.sender === 'user' ? 'pl-8' : 'pr-8'}>
+                    <div className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words leading-relaxed ${
+                      m.sender === 'user'
+                        ? 'bg-violet-600 text-white rounded-br-sm'
+                        : 'bg-white border border-neutral-200 text-neutral-800 rounded-bl-sm'
+                    }`}>
+                      {m.body}
+                    </div>
+                    <p className={`mt-1 text-[10px] text-neutral-400 ${m.sender === 'user' ? 'text-right' : ''}`}>
+                      {m.sender === 'user' ? 'You' : 'Reply'} ·{' '}
+                      {new Date(m.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </p>
+                  </div>
+                ))
+              )}
+              <div ref={endRef} />
+            </div>
+
+            <div className="flex-shrink-0 px-4 py-3 border-t border-neutral-200 space-y-2 bg-white">
+              {(!identified || needsEmail) && (
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Your email, so they can reply"
+                  className="w-full px-3 py-2 rounded-lg border border-neutral-200 text-sm text-neutral-900 outline-none focus:border-violet-400"
+                />
+              )}
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter is a newline here — these are paragraphs, not chat lines.
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
+                }}
+                rows={4}
+                placeholder="What is wrong, or what would make it better?"
+                className="w-full px-3 py-2 rounded-lg border border-neutral-200 text-sm text-neutral-900 outline-none focus:border-violet-400 resize-none leading-relaxed"
+              />
+              {error && <p className="text-xs text-red-500">{error}</p>}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={send}
+                  disabled={sending || !text.trim()}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 disabled:opacity-40 transition-colors"
+                >
+                  {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  {sending ? 'Sending…' : 'Send'}
+                </button>
+                <span className="hidden sm:block text-[10px] text-neutral-400">⌘↵</span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }

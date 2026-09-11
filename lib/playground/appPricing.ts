@@ -44,6 +44,52 @@ export class PricingUnavailableError extends Error {
   }
 }
 
+/**
+ * Stripe refused us, rather than refusing the price.
+ *
+ * Worth its own type because the fix is in the deployment's environment, not in
+ * anything the person setting a price can do. A revoked or rotated key fails every
+ * call here identically, and reporting that as "could not save the price" sends
+ * someone hunting through a form that was never the problem.
+ */
+export class PricingAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PricingAuthError';
+  }
+}
+
+/**
+ * Is this Stripe refusing *us*, rather than refusing the price?
+ *
+ * Returns the sentence to show, or null when the error is about the request and
+ * should be reported as-is. Pure and exported so the classification can be tested
+ * without a Stripe account — it is the part that decides whether someone spends an
+ * afternoon re-typing a valid price into a form that was never the problem.
+ */
+export function stripeFailureMessage(error: unknown): string | null {
+  const type = (error as { type?: string } | null | undefined)?.type;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+
+  if (type === 'StripeAuthenticationError' || /invalid api key|no api key provided/i.test(message)) {
+    return 'Stripe rejected this deployment\u2019s API key. It has most likely been rotated or revoked \u2014 update STRIPE_SECRET_KEY.';
+  }
+  if (type === 'StripePermissionError' || /does not have (the required )?permission/i.test(message)) {
+    return 'This deployment\u2019s Stripe key does not have permission to create products.';
+  }
+  if (type === 'StripeConnectionError' || type === 'StripeAPIError') {
+    return 'Stripe could not be reached. Try again in a moment.';
+  }
+  return null;
+}
+
+/** Re-throw a Stripe error as something a caller can report usefully. */
+function rethrowStripe(error: unknown): never {
+  const message = stripeFailureMessage(error);
+  if (message) throw new PricingAuthError(message);
+  throw error;
+}
+
 /** Reject nonsense before it reaches Stripe, where the error is less legible. */
 export function validatePriceInput(input: Partial<AppPriceInput>): AppPriceInput {
   const amount = Math.round(Number(input.amount));
@@ -73,6 +119,15 @@ export function validatePriceInput(input: Partial<AppPriceInput>): AppPriceInput
  * pane twice does not litter the Stripe dashboard with identical prices.
  */
 export async function syncAppPrice(app: PricedApp, input: AppPriceInput): Promise<AppPriceResult> {
+  if (!stripe) throw new PricingUnavailableError();
+  try {
+    return await syncAppPriceInner(app, input);
+  } catch (error) {
+    return rethrowStripe(error);
+  }
+}
+
+async function syncAppPriceInner(app: PricedApp, input: AppPriceInput): Promise<AppPriceResult> {
   if (!stripe) throw new PricingUnavailableError();
 
   const description = app.tagline?.trim() || app.summary?.trim() || undefined;
@@ -162,7 +217,15 @@ export interface AppCheckoutInput {
 export async function createAppCheckoutSession(input: AppCheckoutInput): Promise<string | null> {
   if (!stripe) throw new PricingUnavailableError();
 
-  const session = await stripe.checkout.sessions.create({
+  try {
+    return await createAppCheckoutSessionInner(input);
+  } catch (error) {
+    return rethrowStripe(error);
+  }
+}
+
+async function createAppCheckoutSessionInner(input: AppCheckoutInput): Promise<string | null> {
+  const session = await stripe!.checkout.sessions.create({
     mode: input.interval === 'one_time' ? 'payment' : 'subscription',
     customer_email: input.email,
     line_items: [{ price: input.priceId, quantity: 1 }],

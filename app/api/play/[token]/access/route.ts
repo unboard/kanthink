@@ -10,7 +10,7 @@ import {
   signAccessToken,
   verifyAccessToken,
 } from '@/lib/playground/appAccess'
-import { createAppCheckoutSession, PricingUnavailableError } from '@/lib/playground/appPricing'
+import { createAppCheckoutSession, PricingAuthError, PricingUnavailableError } from '@/lib/playground/appPricing'
 import { ensureAppUser, findAppOwnerId, findPublishedApp, requestOrigin } from '@/lib/playground/publicApp'
 
 export const runtime = 'nodejs'
@@ -79,8 +79,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     }
     return NextResponse.json({ checkoutUrl: url })
   } catch (error) {
-    if (error instanceof PricingUnavailableError) {
-      return NextResponse.json({ error: error.message }, { status: 503 })
+    if (error instanceof PricingUnavailableError || error instanceof PricingAuthError) {
+      // The buyer is not told whose key is broken — only that they cannot pay yet.
+      console.error('[play/access] checkout unavailable:', error.message)
+      return NextResponse.json(
+        { error: 'Payments are temporarily unavailable for this app. Try again later.' },
+        { status: 503 },
+      )
     }
     console.error('[play/access] POST failed:', error)
     return NextResponse.json({ error: 'Something went wrong. Try again.' }, { status: 500 })
