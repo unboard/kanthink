@@ -4,7 +4,8 @@ import { nanoid } from 'nanoid';
 import type { CardMessage, TagDefinition, ProposedActionType, StoredAction, WhiteboardAttachment } from '@/lib/types';
 import { getLLMClientForUser, getLLMClient, type LLMMessage, type LLMContentPart } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
-import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage, getUserByokConfigWithError } from '@/lib/usage';
+import { recordUsage, checkAnonymousUsageLimit, recordAnonymousUsage } from '@/lib/usage';
+import { resolveProviderKeys } from '@/lib/ai/keys';
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
 import { getChannelDataSources, buildDataSourcePromptContext, detectsMixpanelIntent, detectsDataFollowUp, queryMixpanelForChat, type MixpanelChatMessage } from '@/lib/ai/dataSourceContext';
 import { buildProductUpdateContext } from '@/lib/productUpdates';
@@ -360,16 +361,17 @@ async function generateImage(apiKey: string, prompt: string): Promise<{ url: str
 }
 
 /**
- * Get an OpenAI API key for image generation (BYOK or env)
+ * An OpenAI key for image generation.
+ *
+ * Reads the per-provider keys, so an account whose default model is Gemini can
+ * still have an OpenAI key here and have it used — which the single-key version
+ * could not express.
  */
 async function getOpenAIKeyForUser(userId: string | undefined): Promise<string | null> {
   if (userId) {
-    const byok = await getUserByokConfigWithError(userId)
-    if (byok.config?.provider === 'openai' && byok.config?.apiKey) {
-      return byok.config.apiKey
-    }
+    const { keys } = await resolveProviderKeys(userId)
+    if (keys.openai) return keys.openai.apiKey
   }
-  // Fall back to owner/env keys
   return process.env.OWNER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || null
 }
 
@@ -396,7 +398,7 @@ export async function POST(request: Request) {
 
     if (userId) {
       // Authenticated user
-      const result = await getLLMClientForUser(userId);
+      const result = await getLLMClientForUser(userId, undefined, 'chat');
       if (!result.client) {
         return NextResponse.json(
           { error: result.error || 'No AI access available. Configure your API key in Settings.' },

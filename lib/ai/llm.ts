@@ -1,9 +1,11 @@
 import type { LLMProvider, LLMConfig } from './providers/types';
 import { createOpenAIProvider } from './providers/openai';
 import { createGoogleProvider } from './providers/google';
-import { getUserByokConfigWithError, checkUsageLimit } from '../usage';
+import { resolveProviderKeys } from './keys';
+import { getModelPreferences, resolveSurfaceModel, type AiSurface } from './modelPreferences';
 
 export type { LLMProvider, LLMMessage, LLMResponse, LLMConfig, LLMContentPart, LLMCompleteOptions } from './providers/types';
+export type { AiSurface } from './modelPreferences';
 
 /**
  * Create an LLM client with explicit configuration
@@ -51,102 +53,70 @@ export interface PreferredModel {
 }
 
 /**
- * Get an LLM client for an authenticated user
- * Priority: User's BYOK > Owner's key (if user has quota) > Environment variables
+ * Get an LLM client for an authenticated user.
+ *
+ * Three inputs decide the model, in descending authority:
+ *
+ *   1. `preferred` — an explicit per-call override (a shroom pinned to a model).
+ *   2. the account's override for this `surface`, if it set one.
+ *   3. the account default.
+ *
+ * ...and then whichever provider we actually hold a key for, which is the step that
+ * used to be silent. A key used to belong to the account rather than to a provider,
+ * so asking for an OpenAI model on a Google key quietly ran Gemini instead. Keys are
+ * now held per provider, and when a preference still cannot be honoured the caller
+ * is told via `requestedModelUnavailable` rather than left to assume it was.
  */
 export async function getLLMClientForUser(
   userId: string,
-  preferred?: PreferredModel
+  preferred?: PreferredModel,
+  surface?: AiSurface
 ): Promise<LLMClientResult> {
-  // 1. Check if user has BYOK configured
-  const byokResult = await getUserByokConfigWithError(userId);
+  const { keys, error, quotaExhausted, quotaMessage } = await resolveProviderKeys(userId);
 
-  // If there was an error decrypting BYOK, return that error immediately
-  // Don't fall back to usage check - the user intended to use their own key
-  if (byokResult.error) {
-    console.error('BYOK decryption error for user', userId, ':', byokResult.error);
+  if (error) {
+    // A key that exists but cannot be decrypted is not the same as no key. The user
+    // intended to use their own, so say so rather than silently spending quota.
+    return { client: null, source: 'none', error };
+  }
+
+  const held = Object.keys(keys) as PreferredModel['provider'][];
+  if (held.length === 0) {
+    if (quotaExhausted) {
+      return { client: null, source: 'none', error: quotaMessage };
+    }
     return {
       client: null,
       source: 'none',
-      error: byokResult.error,
+      error: 'No API key configured. Please sign in and configure your settings.',
     };
   }
 
-  if (byokResult.config?.apiKey && byokResult.config?.provider) {
-    console.log(`Using BYOK for user ${userId}, provider: ${byokResult.config.provider}`);
-    const matches = preferred?.provider === byokResult.config.provider;
-    const client = createLLMClient({
-      provider: byokResult.config.provider,
-      apiKey: byokResult.config.apiKey,
-      model: (matches ? preferred!.model : byokResult.config.model) || undefined,
-    });
-    return { client, source: 'byok', requestedModelUnavailable: !!preferred && !matches };
+  // An explicit per-call preference outranks anything stored, but only if we can
+  // actually call it.
+  if (preferred) {
+    const key = keys[preferred.provider];
+    if (key) {
+      return {
+        client: createLLMClient({ provider: preferred.provider, apiKey: key.apiKey, model: preferred.model }),
+        source: key.source,
+      };
+    }
   }
 
-  // 2. Check if user has quota remaining
-  const usageCheck = await checkUsageLimit(userId);
-  if (!usageCheck.allowed) {
-    return {
-      client: null,
-      source: 'none',
-      error: usageCheck.message,
-    };
+  const preferences = await getModelPreferences(userId);
+  const resolved = resolveSurfaceModel(preferences, surface, keys);
+  if (!resolved) {
+    return { client: null, source: 'none', error: 'No API key configured.' };
   }
 
-  // 3. Use owner's key. A preference is taken only if the owner holds that provider's key.
-  const preferredOwnerKey = preferred
-    ? preferred.provider === 'openai'
-      ? process.env.OWNER_OPENAI_API_KEY
-      : process.env.OWNER_GOOGLE_API_KEY
-    : undefined;
-  if (preferredOwnerKey) {
-    const client = createLLMClient({
-      provider: preferred!.provider,
-      apiKey: preferredOwnerKey,
-      model: preferred!.model,
-    });
-    return { client, source: 'owner' };
-  }
-
-  const ownerApiKey = process.env.OWNER_OPENAI_API_KEY || process.env.OWNER_GOOGLE_API_KEY;
-  if (ownerApiKey) {
-    const provider = process.env.OWNER_OPENAI_API_KEY ? 'openai' : 'google';
-    const client = createLLMClient({
-      provider,
-      apiKey: ownerApiKey,
-    });
-    return { client, source: 'owner', requestedModelUnavailable: !!preferred };
-  }
-
-  // 4. Fall back to legacy environment variables (for development)
-  const preferredLegacyKey = preferred
-    ? preferred.provider === 'openai'
-      ? process.env.OPENAI_API_KEY
-      : process.env.GOOGLE_API_KEY
-    : undefined;
-  if (preferredLegacyKey) {
-    const client = createLLMClient({
-      provider: preferred!.provider,
-      apiKey: preferredLegacyKey,
-      model: preferred!.model,
-    });
-    return { client, source: 'env' };
-  }
-
-  const legacyApiKey = process.env.OPENAI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (legacyApiKey) {
-    const provider = process.env.OPENAI_API_KEY ? 'openai' : 'google';
-    const client = createLLMClient({
-      provider,
-      apiKey: legacyApiKey,
-    });
-    return { client, source: 'env', requestedModelUnavailable: !!preferred };
-  }
-
+  const key = keys[resolved.provider]!;
   return {
-    client: null,
-    source: 'none',
-    error: 'No API key configured. Please sign in and configure your settings.',
+    client: createLLMClient({ provider: resolved.provider, apiKey: key.apiKey, model: resolved.model }),
+    source: key.source,
+    // Either the caller asked for a provider we hold no key for, or the account's
+    // own preference names one. Both mean "you are not running what you chose".
+    requestedModelUnavailable: (!!preferred && !keys[preferred.provider]) || resolved.fellBack,
   };
 }
 

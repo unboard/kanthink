@@ -30,7 +30,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ suggestions: [] });
     }
 
-    const result = await getLLMClientForUser(userId);
+    const result = await getLLMClientForUser(userId, undefined, 'automations');
     if (!result.client) {
       return NextResponse.json({ suggestions: [] });
     }

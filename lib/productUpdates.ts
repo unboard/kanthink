@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'keys-per-provider-and-model-picker',
+    date: '2026-09-11',
+    kind: 'capability',
+    title: 'Hold both API keys, and choose what runs where',
+    body: 'Settings \u2192 AI now takes an OpenAI key and a Gemini key at the same time, so a model choice is no longer limited to whichever single key you saved. One default model governs everything; underneath it, chat, automations and the app builder can each be given something different if you want. The app builder can now build on GPT as well as Gemini, and the newest models from both providers are in the picker.',
+  },
+  {
     id: 'app-directory',
     date: '2026-09-11',
     kind: 'capability',

@@ -31,10 +31,32 @@ export const users = sqliteTable('users', {
   tier: text('tier').$type<'free' | 'premium'>().default('free'),
   currentPeriodEnd: integer('current_period_end', { mode: 'timestamp' }),
 
-  // BYOK fields
+  // BYOK fields.
+  //
+  // These three are the single-key era: one provider, one key, one model. They are
+  // still read, because accounts configured before this still hold their key here,
+  // and resolveProviderKeys folds whichever provider they chose into the matching
+  // column below. Nothing writes them any more.
   byokProvider: text('byok_provider').$type<'openai' | 'google' | null>(),
   byokApiKey: text('byok_api_key'),
   byokModel: text('byok_model'),
+
+  // One key per provider, encrypted, held at the same time. Having both is the
+  // point: a model choice stops being constrained by which single key you saved.
+  openaiApiKey: text('openai_api_key'),
+  googleApiKey: text('google_api_key'),
+
+  /**
+   * The model almost everything runs on, provider-qualified ("google:gemini-3.8-flash").
+   * NULL means the provider default for whichever key is configured.
+   */
+  modelDefault: text('model_default'),
+  /**
+   * Per-area exceptions to that, as { surface: choice }. Empty for most accounts,
+   * and deliberately so — see lib/ai/modelPreferences: the default is the setting,
+   * and these exist for the one area where somebody wants something different.
+   */
+  modelOverrides: text('model_overrides', { mode: 'json' }).$type<Record<string, string>>(),
 
   // Agent seats. An 'agent' row is a real identity — its own name, avatar, session
   // and channel shares — but it owns no commercial relationship. Tier, BYOK and

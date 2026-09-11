@@ -114,7 +114,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
 
     const card = await db.query.cards.findFirst({ where: eq(cards.id, app.cardId) })
 
-    const { client, error } = await getLLMClientForUser(session.user.id)
+    const { client, error } = await getLLMClientForUser(session.user.id, undefined, 'chat')
     if (!client) {
       return NextResponse.json({ error: error || 'No AI provider configured' }, { status: 400 })
     }

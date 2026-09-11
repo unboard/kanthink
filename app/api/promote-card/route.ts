@@ -167,7 +167,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ result: null });
     }
 
-    const llmResult = await getLLMClientForUser(userId);
+    const llmResult = await getLLMClientForUser(userId, undefined, 'automations');
     if (!llmResult.client) {
       return NextResponse.json({ result: null });
     }

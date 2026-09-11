@@ -251,7 +251,7 @@ async function generateAICommentary(
   userNote?: string
 ) {
   try {
-    const { client } = await getLLMClientForUser(userId)
+    const { client } = await getLLMClientForUser(userId, undefined, 'chat')
     if (!client) return
 
     // Now that a share can be filed into any channel, take that channel's own

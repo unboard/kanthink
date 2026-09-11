@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI, Type } from '@google/genai';
+import { runStructured } from './generateClient';
 import { db } from '@/lib/db';
 import { cards, tasks, playgroundApps } from '@/lib/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { requirePermission, PermissionError } from '@/lib/api/permissions';
 import { createNotification } from '@/lib/notifications/createNotification';
-import { getUserByokConfigWithError } from '@/lib/usage';
+import { resolveProviderKeys } from '@/lib/ai/keys';
 import { nanoid } from 'nanoid';
 import {
   PLAYGROUND_MODELS,
@@ -16,6 +16,7 @@ import {
   getPlaygroundModel,
   resolveActiveModelId,
   computeGenerationCost,
+  type PlaygroundProvider,
 } from '@/lib/playground/models';
 import { signAppToken } from '@/lib/playground/appToken';
 import { runPreflight } from '@/lib/playground/preflight';
@@ -266,23 +267,25 @@ When dependencies are already listed under AVAILABLE LIBRARIES, echo them back i
  * and several thousand. Everything else the full schema carries — title, summary,
  * dependencies — is unchanged by a cosmetic edit and is simply kept.
  */
+// Plain JSON Schema rather than the Gemini SDK's enums, because both providers
+// take this shape and a build must mean the same thing on either one.
 const PATCH_SCHEMA = {
-  type: Type.OBJECT,
+  type: 'object',
   properties: {
     edits: {
-      type: Type.ARRAY,
+      type: 'array',
       description: 'The exact changes to make. Each "find" must appear EXACTLY ONCE in the current code — include surrounding lines until it is unique.',
       items: {
-        type: Type.OBJECT,
+        type: 'object',
         properties: {
-          find: { type: Type.STRING, description: 'Exact text from the current code, copied character for character.' },
-          replace: { type: Type.STRING, description: 'What it becomes.' },
+          find: { type: 'string', description: 'Exact text from the current code, copied character for character.' },
+          replace: { type: 'string', description: 'What it becomes.' },
         },
         required: ['find', 'replace'],
       },
     },
-    notes: { type: Type.STRING, description: 'One conversational sentence about what changed.' },
-    designNotes: { type: Type.STRING, description: 'Updated terse bullet list of established design decisions. Carry forward what is still true.' },
+    notes: { type: 'string', description: 'One conversational sentence about what changed.' },
+    designNotes: { type: 'string', description: 'Updated terse bullet list of established design decisions. Carry forward what is still true.' },
   },
   required: ['edits', 'notes', 'designNotes'],
 };
@@ -299,16 +302,16 @@ Rules — these are strict, a bad edit corrupts a working app:
 5. If the change genuinely cannot be expressed as a handful of find/replace pairs, return an empty "edits" array and nothing else — the system will rebuild the file instead. That is a valid answer, not a failure.`;
 
 const RESPONSE_SCHEMA = {
-  type: Type.OBJECT,
+  type: 'object',
   properties: {
-    title: { type: Type.STRING, description: 'A short 3-6 word app name (e.g. "Pomodoro Timer")' },
-    summary: { type: Type.STRING, description: 'One sentence describing what the app does' },
-    code: { type: Type.STRING, description: 'Complete single-file JSX. Default-export App component. No types, no markdown fences.' },
-    notes: { type: Type.STRING, description: 'One conversational sentence about what changed in this iteration. Empty for first generation.' },
-    designNotes: { type: Type.STRING, description: 'Updated terse bullet list of established design decisions to carry forward to future iterations. Carry forward what is still true, update what changed this turn.' },
+    title: { type: 'string', description: 'A short 3-6 word app name (e.g. "Pomodoro Timer")' },
+    summary: { type: 'string', description: 'One sentence describing what the app does' },
+    code: { type: 'string', description: 'Complete single-file JSX. Default-export App component. No types, no markdown fences.' },
+    notes: { type: 'string', description: 'One conversational sentence about what changed in this iteration. Empty for first generation.' },
+    designNotes: { type: 'string', description: 'Updated terse bullet list of established design decisions to carry forward to future iterations. Carry forward what is still true, update what changed this turn.' },
     dependencies: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
+      type: 'array',
+      items: { type: 'string' },
       description: 'Libraries this code imports beyond react/lucide-react. Format: "three", "three@0.185.0", "@scope/pkg", "gh:owner/repo@ref", or "alias=gh:owner/repo". Empty array if none.',
     },
   },
@@ -389,22 +392,17 @@ export async function generatePlaygroundApp(
     return NextResponse.json({ error: 'appId and prompt are required' }, { status: 400 });
   }
 
-  // Resolve the user's Google API key (BYOK first, owner fallback).
-  const byok = await getUserByokConfigWithError(session.user.id);
-  if (byok.error) {
-    return NextResponse.json({ error: byok.error }, { status: 400 });
+  // Every provider this account can call. A build is no longer Gemini-only, so the
+  // question is not "is there a Google key" but "which models are actually
+  // reachable" — the model the user picked decides which key gets used.
+  const { keys, error: keyError } = await resolveProviderKeys(session.user.id);
+  if (keyError) {
+    return NextResponse.json({ error: keyError }, { status: 400 });
   }
-  let apiKey: string | null = null;
-  if (byok.config?.provider === 'google' && byok.config.apiKey) {
-    apiKey = byok.config.apiKey;
-  } else if (process.env.OWNER_GOOGLE_API_KEY) {
-    apiKey = process.env.OWNER_GOOGLE_API_KEY;
-  } else if (process.env.GOOGLE_API_KEY) {
-    apiKey = process.env.GOOGLE_API_KEY;
-  }
-  if (!apiKey) {
+  const providers = (Object.keys(keys) as PlaygroundProvider[]).filter((p) => !!keys[p]);
+  if (providers.length === 0) {
     return NextResponse.json(
-      { error: 'No Google API key. Add a Gemini API key in Settings → BYOK.' },
+      { error: 'No API key. Add a Gemini or OpenAI key in Settings → AI.' },
       { status: 400 }
     );
   }
@@ -525,9 +523,13 @@ export async function generatePlaygroundApp(
   // -- Preflight: on iterations, decide whether to ASK or ACT, and classify the edit type
   //    so we can route to the right model when the user picked 'Auto'. First generations
   //    skip preflight to keep the initial momentum.
-  const preflight = isIteration && !options.skipPreflight
+  // Preflight is its own small Gemini call, made before the build model is chosen.
+  // An OpenAI-only account simply skips it: the cost of not classifying an edit is
+  // that 'auto' routes to the better model, which is the safe direction to be wrong.
+  const preflightKey = keys.google?.apiKey;
+  const preflight = isIteration && !options.skipPreflight && preflightKey
     ? await runPreflight({
-        apiKey,
+        apiKey: preflightKey,
         prompt: body.prompt,
         cardTitle: card.title,
         cardSummary: card.summary || undefined,
@@ -543,7 +545,13 @@ export async function generatePlaygroundApp(
         designNotes: app.designNotes || undefined,
         imageCount: attachedImages.length,
       })
-    : { decision: 'ACT' as const, editType: 'first' as const, rationale: 'first generation' };
+    : {
+        decision: 'ACT' as const,
+        // An iteration that skipped preflight is not a first generation, and calling
+        // it one would route 'auto' as though the app did not exist yet.
+        editType: isIteration ? ('structural' as const) : ('first' as const),
+        rationale: isIteration ? 'preflight unavailable' : 'first generation',
+      };
 
   // Short-circuit: when preflight asks for clarification, append the questions as a Kan
   // message and don't burn a full generation. The user can answer in chat next turn.
@@ -612,11 +620,20 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     ? body.modelId
     : DEFAULT_PLAYGROUND_MODEL_ID;
   const activeModelId = requestedModelId === AUTO_MODEL_ID
-    ? resolveActiveModelId(AUTO_MODEL_ID, preflight.editType)
+    ? resolveActiveModelId(AUTO_MODEL_ID, preflight.editType, providers)
     : requestedModelId;
-  const model = getPlaygroundModel(activeModelId === AUTO_MODEL_ID ? FALLBACK_GENERATION_MODEL_ID : activeModelId);
+  let model = getPlaygroundModel(activeModelId === AUTO_MODEL_ID ? FALLBACK_GENERATION_MODEL_ID : activeModelId);
 
-  const client = new GoogleGenAI({ apiKey });
+  // A model pinned to a provider with no key would fail at call time with a
+  // provider error nobody can act on. Route it like 'auto' instead and say so.
+  let switchedProvider: string | null = null;
+  if (!keys[model.provider]) {
+    const original = model.label;
+    model = getPlaygroundModel(resolveActiveModelId(AUTO_MODEL_ID, preflight.editType, providers));
+    switchedProvider = original;
+  }
+
+  const apiKey = keys[model.provider]!.apiKey;
 
   // Resolve attached images into inlineData parts so Gemini can see them.
   // Fetched together rather than one at a time — six sequential round trips to
@@ -634,7 +651,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   }
 
   let parsed: ParsedBuild | null = null;
-  type TokenUsage = { promptTokenCount?: number; candidatesTokenCount?: number };
+  type TokenUsage = { inputTokens?: number; outputTokens?: number };
   // Accumulated rather than reassigned: a turn can make two calls (a patch attempt
   // that missed, then the rewrite), and the user should be billed for both.
   const usage = { promptTokenCount: 0, candidatesTokenCount: 0 };
@@ -645,8 +662,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   const addUsage = (u: TokenUsage | null | undefined) => {
     if (!u) return;
     sawUsage = true;
-    usage.promptTokenCount += u.promptTokenCount ?? 0;
-    usage.candidatesTokenCount += u.candidatesTokenCount ?? 0;
+    usage.promptTokenCount += u.inputTokens ?? 0;
+    usage.candidatesTokenCount += u.outputTokens ?? 0;
   };
 
   const runtimeSection = buildRuntimeSection(seeded.deps);
@@ -660,24 +677,23 @@ ${body.prompt}${imageNote}${iterationReminder}`;
 
   try {
     if (patchMode && currentCode) {
-      const patchResponse = await client.models.generateContent({
-        model: model.id,
-        contents: [{ role: 'user', parts: [{ text: userMessage }, ...imageParts] }],
-        config: {
-          systemInstruction: SYSTEM_PROMPT + runtimeSection + '\n\n' + PATCH_INSTRUCTIONS,
-          responseMimeType: 'application/json',
-          responseSchema: PATCH_SCHEMA,
-          // A handful of find/replace pairs. Generous enough for a real edit,
-          // small enough that a model trying to smuggle the whole file through
-          // here gets cut off and falls back to the rewrite path.
-          maxOutputTokens: 8000,
-          thinkingConfig: model.thinkingBudget > 0 ? { thinkingBudget: model.thinkingBudget } : undefined,
-          abortSignal: deadline,
-        },
+      const patchResponse = await runStructured({
+        model,
+        apiKey,
+        systemInstruction: SYSTEM_PROMPT + runtimeSection + '\n\n' + PATCH_INSTRUCTIONS,
+        userText: userMessage,
+        images: imageParts.map((p) => p.inlineData),
+        schema: PATCH_SCHEMA,
+        schemaName: 'code_patch',
+        // A handful of find/replace pairs. Generous enough for a real edit, small
+        // enough that a model trying to smuggle the whole file through here gets
+        // cut off and falls back to the rewrite path.
+        maxOutputTokens: 8000,
+        signal: deadline,
       });
-      addUsage(patchResponse.usageMetadata ?? null);
+      addUsage(patchResponse);
 
-      if (patchResponse.candidates?.[0]?.finishReason !== 'MAX_TOKENS') {
+      if (!patchResponse.truncated) {
         try {
           const patch = JSON.parse(patchResponse.text || '') as {
             edits?: CodeEdit[];
@@ -710,27 +726,27 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     }
 
     if (!parsed) {
-      const response = await client.models.generateContent({
-        model: model.id,
-        contents: [{ role: 'user', parts: [{ text: userMessage }, ...imageParts] }],
-        config: {
-          systemInstruction: SYSTEM_PROMPT + runtimeSection,
-          responseMimeType: 'application/json',
-          responseSchema: RESPONSE_SCHEMA,
-          // A whole single-file app plus design notes. Every model in the picker
-          // tops out at 65,536 output tokens, so this is a ceiling for runaway
-          // generations, not a budget an ordinary app should ever reach.
-          maxOutputTokens: 32000,
-          thinkingConfig: model.thinkingBudget > 0 ? { thinkingBudget: model.thinkingBudget } : undefined,
-          abortSignal: deadline,
-        },
+      const response = await runStructured({
+        model,
+        apiKey,
+        systemInstruction: SYSTEM_PROMPT + runtimeSection,
+        userText: userMessage,
+        images: imageParts.map((p) => p.inlineData),
+        schema: RESPONSE_SCHEMA,
+        schemaName: 'generated_app',
+        // A whole single-file app plus design notes. Every model in the picker
+        // tops out well above this, so it is a ceiling for runaway generations,
+        // not a budget an ordinary app should ever reach.
+        maxOutputTokens: 32000,
+        signal: deadline,
       });
-      addUsage(response.usageMetadata ?? null);
+      addUsage(response);
 
-      // Gemini counts thinking against maxOutputTokens, so a run that thinks too
-      // hard returns truncated JSON. Say that plainly — JSON.parse would otherwise
-      // fail with "Unexpected end of JSON input", which explains nothing.
-      if (response.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      // Reasoning counts against the output ceiling on both providers, so a run
+      // that thinks too hard returns truncated JSON. Say that plainly — JSON.parse
+      // would otherwise fail with "Unexpected end of JSON input", which explains
+      // nothing to the person whose app was simply too long.
+      if (response.truncated) {
         return NextResponse.json(
           {
             error:
@@ -746,17 +762,17 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     if (deadline.aborted) {
       return NextResponse.json(
         {
-          error: `${model.label} ran past ${Math.round(GENERATION_DEADLINE_MS / 60_000)} minutes without finishing. Try a smaller change, or switch to Gemini 3.7 Flash — it is the fastest model in the picker.`,
+          error: `${model.label} ran past ${Math.round(GENERATION_DEADLINE_MS / 60_000)} minutes without finishing. Try a smaller change, or switch to a flash model — they are the fastest in the picker.`,
         },
         { status: 504 }
       );
     }
-    const msg = err instanceof Error ? err.message : 'Unknown error from Gemini';
-    return NextResponse.json({ error: `Gemini error: ${msg}` }, { status: 502 });
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: `${model.label} error: ${msg}` }, { status: 502 });
   }
 
   if (!parsed?.code) {
-    return NextResponse.json({ error: 'Gemini returned no code' }, { status: 502 });
+    return NextResponse.json({ error: `${model.label} returned no code` }, { status: 502 });
   }
 
   // Persist the build onto the app row, and append the turn to the app's thread.
@@ -797,10 +813,18 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     authorId: session.user.id,
     createdAt: new Date().toISOString(),
   };
+  // A pinned model we could not call is worth one line in the thread. Silently
+  // building on something else is how someone concludes the model picker does
+  // nothing, having never been told their key for that provider is missing.
+  const providerNote = switchedProvider
+    ? `
+
+_Built with ${model.label} — there is no API key for ${switchedProvider}. Add one in Settings → AI._`
+    : '';
   const aiMessageObj = {
     id: nanoid(),
     type: 'ai_response' as const,
-    content: parsed.notes || (generationCount === 0 ? `Built **${parsed.title}** — ${parsed.summary}` : 'Updated.'),
+    content: (parsed.notes || (generationCount === 0 ? `Built **${parsed.title}** — ${parsed.summary}` : 'Updated.')) + providerNote,
     createdAt: new Date().toISOString(),
   };
   const newMessages = [...existingMessages, userMessageObj, aiMessageObj];

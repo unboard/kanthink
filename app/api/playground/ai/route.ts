@@ -68,8 +68,8 @@ export async function POST(request: Request) {
     return cors(NextResponse.json({ error: 'App not found' }, { status: 404 }));
   }
 
-  // Look up the channel owner's BYOK config. We can't import getUserByokConfig
-  // (it relies on auth) — query directly.
+  // Calls arrive from a sandboxed iframe with no session, so the key is the app
+  // owner's rather than the caller's — resolved from the channel that owns the app.
   const { channels } = await import('@/lib/db/schema');
   const channel = await db.query.channels.findFirst({
     where: eq(channels.id, app.channelId),
@@ -82,10 +82,15 @@ export async function POST(request: Request) {
     where: eq(users.id, channel.ownerId),
   });
 
+  // Gemini specifically: this route does image generation as well as text, and the
+  // image models are Google's. The per-provider column first, then the single-key
+  // column for an owner who has not re-saved since, then the deployment's own key.
   let apiKey: string | null = null;
-  if (owner?.byokApiKey && owner.byokProvider === 'google') {
+  const storedGoogleKey = owner?.googleApiKey
+    ?? (owner?.byokProvider === 'google' ? owner.byokApiKey : null);
+  if (storedGoogleKey) {
     try {
-      apiKey = decryptIfNeeded(owner.byokApiKey);
+      apiKey = decryptIfNeeded(storedGoogleKey);
     } catch {
       apiKey = null;
     }

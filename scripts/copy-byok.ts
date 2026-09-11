@@ -20,10 +20,10 @@ async function main() {
   const { db } = await import('../lib/db')
   const { users } = await import('../lib/db/schema')
   const { eq, like } = await import('drizzle-orm')
-  const { getUserByokConfigWithError, setUserByokConfig } = await import('../lib/usage')
+  const { resolveProviderKeys, setProviderKey, userOwnedProviders } = await import('../lib/ai/keys')
 
   const source = await db.query.users.findFirst({ where: eq(users.email, SOURCE_EMAIL) })
-  let target = await db.query.users.findFirst({ where: eq(users.email, TARGET_EMAIL) })
+  const target = await db.query.users.findFirst({ where: eq(users.email, TARGET_EMAIL) })
 
   if (!source) throw new Error(`Source user not found: ${SOURCE_EMAIL}`)
 
@@ -51,39 +51,27 @@ async function main() {
   console.log(`Source: ${source.name} <${source.email}> id=${source.id}`)
   console.log(`Target: ${target.name} <${target.email}> id=${target.id}`)
 
-  const sourceCfg = await getUserByokConfigWithError(source.id)
-  if (sourceCfg.error) throw new Error(`Source decrypt failed: ${sourceCfg.error}`)
-  if (!sourceCfg.config?.apiKey || !sourceCfg.config?.provider) {
-    throw new Error(`Source has no BYOK config to copy`)
+  // Keys are held per provider now, so a copy means every provider the source
+  // has — copying only one of two would look like it worked and silently leave
+  // the target unable to run half its models.
+  const sourceKeys = await resolveProviderKeys(source.id)
+  if (sourceKeys.error) throw new Error(`Source decrypt failed: ${sourceKeys.error}`)
+
+  const owned = await userOwnedProviders(source.id)
+  if (owned.length === 0) throw new Error('Source has no API keys of its own to copy')
+
+  console.log(`\nSource keys: ${owned.join(', ')}`)
+  for (const provider of owned) {
+    const key = sourceKeys.keys[provider]
+    if (!key) continue
+    console.log(`  ${provider}: ${key.apiKey.slice(0, 8)}…(${key.apiKey.length} chars)`)
+    await setProviderKey(target.id, provider, key.apiKey)
   }
 
-  console.log(`\nSource BYOK:`)
-  console.log(`  provider: ${sourceCfg.config.provider}`)
-  console.log(`  model:    ${sourceCfg.config.model}`)
-  console.log(`  key:      ${sourceCfg.config.apiKey.slice(0, 8)}…(${sourceCfg.config.apiKey.length} chars)`)
+  const targetAfter = await userOwnedProviders(target.id)
+  console.log(`\nTarget keys after: ${targetAfter.join(', ') || 'none'}`)
 
-  const targetBefore = await getUserByokConfigWithError(target.id)
-  console.log(`\nTarget BYOK before:`)
-  console.log(`  provider: ${targetBefore.config?.provider ?? 'none'}`)
-  console.log(`  model:    ${targetBefore.config?.model ?? 'none'}`)
-  console.log(`  has key:  ${!!targetBefore.config?.apiKey}`)
-
-  await setUserByokConfig(target.id, {
-    provider: sourceCfg.config.provider,
-    apiKey: sourceCfg.config.apiKey,
-    model: sourceCfg.config.model ?? undefined,
-  })
-
-  const targetAfter = await getUserByokConfigWithError(target.id)
-  console.log(`\nTarget BYOK after:`)
-  console.log(`  provider: ${targetAfter.config?.provider ?? 'none'}`)
-  console.log(`  model:    ${targetAfter.config?.model ?? 'none'}`)
-  console.log(`  key:      ${targetAfter.config?.apiKey?.slice(0, 8)}…(${targetAfter.config?.apiKey?.length} chars)`)
-
-  const ok =
-    targetAfter.config?.provider === sourceCfg.config.provider &&
-    targetAfter.config?.model === sourceCfg.config.model &&
-    targetAfter.config?.apiKey === sourceCfg.config.apiKey
+  const ok = owned.every((provider) => targetAfter.includes(provider))
 
   console.log(`\n${ok ? 'OK — settings match.' : 'MISMATCH — please review.'}`)
 }

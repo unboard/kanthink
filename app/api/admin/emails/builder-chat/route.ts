@@ -205,7 +205,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const result = await getLLMClientForUser(userId)
+    const result = await getLLMClientForUser(userId, undefined, 'chat')
     if (!result.client) {
       return NextResponse.json(
         { error: result.error || 'No AI access available.' },

@@ -521,7 +521,7 @@ export async function POST(request: Request) {
       console.error('Failed to load membership:', e);
     }
 
-    const result = await getLLMClientForUser(session.user.id);
+    const result = await getLLMClientForUser(session.user.id, undefined, 'chat');
     if (!result.client) {
       return NextResponse.json(
         { error: result.error || 'No AI access available.' },

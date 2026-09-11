@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { getUserByokConfigWithError, checkUsageLimit } from '@/lib/usage';
+import { resolveProviderKeys } from '@/lib/ai/keys';
 
 export const runtime = 'nodejs';
 
@@ -16,26 +16,23 @@ export async function GET() {
   }
 
   const userId = session.user.id;
-  let apiKey: string | null = null;
 
-  // 1. Check BYOK
-  const byokResult = await getUserByokConfigWithError(userId);
-  if (byokResult.config?.apiKey && byokResult.config?.provider === 'google') {
-    apiKey = byokResult.config.apiKey;
+  // Live voice is Gemini-only, but having an OpenAI key no longer implies not
+  // having a Google one — resolveProviderKeys already applies the quota check to
+  // shared keys and leaves the user's own key unmetered.
+  const { keys, error, quotaExhausted, quotaMessage } = await resolveProviderKeys(userId);
+  if (error) {
+    return NextResponse.json({ error }, { status: 400 });
   }
-
-  // 2. Check usage quota before using owner key
+  const apiKey = keys.google?.apiKey;
   if (!apiKey) {
-    const usageCheck = await checkUsageLimit(userId);
-    if (!usageCheck.allowed) {
-      return NextResponse.json({ error: usageCheck.message }, { status: 403 });
+    if (quotaExhausted) {
+      return NextResponse.json({ error: quotaMessage }, { status: 403 });
     }
-    if (process.env.OWNER_GOOGLE_API_KEY) apiKey = process.env.OWNER_GOOGLE_API_KEY;
-    else if (process.env.GOOGLE_API_KEY) apiKey = process.env.GOOGLE_API_KEY;
-  }
-
-  if (!apiKey) {
-    return NextResponse.json({ error: 'No Google API key configured for voice.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Live voice needs a Google API key. Add one in Settings → AI.' },
+      { status: 400 },
+    );
   }
 
   const model = 'gemini-3.1-flash-live-preview';

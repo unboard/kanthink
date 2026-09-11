@@ -27,7 +27,7 @@ export async function generateShroomSummary(instructionId: string): Promise<stri
     })
     if (!channel) return null
 
-    const { client } = await getLLMClientForUser(channel.ownerId)
+    const { client } = await getLLMClientForUser(channel.ownerId, undefined, 'automations')
     if (!client) return null
 
     const response = await client.complete(

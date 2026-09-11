@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await getLLMClientForUser(userId);
+    const result = await getLLMClientForUser(userId, undefined, 'automations');
     if (!result.client) {
       return NextResponse.json(
         { error: result.error || 'No AI access available. Configure your API key in Settings.' },

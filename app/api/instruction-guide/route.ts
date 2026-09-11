@@ -609,7 +609,7 @@ export async function POST(request: Request) {
 
       if (userId) {
         // Authenticated user
-        const result = await getLLMClientForUser(userId);
+        const result = await getLLMClientForUser(userId, undefined, 'automations');
         if (!result.client) {
           throw new Error(result.error || 'No AI access available. Configure your API key in Settings.');
         }

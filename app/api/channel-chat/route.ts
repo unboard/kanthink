@@ -387,7 +387,7 @@ export async function POST(request: Request) {
     }
 
     // Get LLM client
-    const result = await getLLMClientForUser(session.user.id);
+    const result = await getLLMClientForUser(session.user.id, undefined, 'chat');
     if (!result.client) {
       return NextResponse.json(
         { error: result.error || 'No AI access available.' },

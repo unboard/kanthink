@@ -99,7 +99,7 @@ export async function sendShroomRunEmail(
 
     // Composed with the owner's own LLM access — they're the recipient and the one
     // whose key or quota this spends.
-    const { client } = await getLLMClientForUser(channel.ownerId)
+    const { client } = await getLLMClientForUser(channel.ownerId, undefined, 'automations')
 
     let config: EmailConfig | null = null
 

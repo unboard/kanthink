@@ -1265,7 +1265,7 @@ export async function POST(request: Request) {
       if (!userId) {
         return NextResponse.json({ error: 'asUserId is required for internal runs' }, { status: 400 });
       }
-      const internalLlm = await getLLMClientForUser(userId, preferredModel);
+      const internalLlm = await getLLMClientForUser(userId, preferredModel, 'automations');
       if (!internalLlm.client) {
         return NextResponse.json(
           { error: internalLlm.error ?? 'No LLM configured for this user' },

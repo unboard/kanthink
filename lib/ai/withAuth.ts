@@ -58,7 +58,10 @@ export async function getAuthenticatedLLM(
 
   if (userId) {
     // Authenticated user - check BYOK first, then owner key
-    const result = await getLLMClientForUser(userId, preferred);
+    // 'automations' because this wrapper serves instruction runs — the things
+    // that execute without anyone watching. `preferred` is a per-shroom pin and
+    // still wins over the account's setting for the area.
+    const result = await getLLMClientForUser(userId, preferred, 'automations');
     if (!result.client) {
       return {
         error: NextResponse.json(

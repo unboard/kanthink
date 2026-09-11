@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { getUserByokConfigWithError, checkUsageLimit } from '../usage';
+import { resolveProviderKeys } from './keys';
 
 export interface OpenAIClientResult {
   client: OpenAI | null;
@@ -8,57 +8,32 @@ export interface OpenAIClientResult {
 }
 
 /**
- * Get a raw OpenAI SDK client for a user (for Whisper/TTS APIs).
- * Returns null if the resolved provider is Google.
+ * A raw OpenAI SDK client, for the endpoints the shared LLM interface does not
+ * cover — Whisper, TTS, and image generation as a last resort.
+ *
+ * Like its Google counterpart, this used to refuse if the account's single saved
+ * key belonged to the other provider. Keys are per provider now, so holding a
+ * Google key no longer means OpenAI is unavailable.
  */
 export async function getOpenAIClientForUser(userId: string): Promise<OpenAIClientResult> {
-  // 1. Check BYOK
-  const byokResult = await getUserByokConfigWithError(userId);
+  const { keys, error, quotaExhausted, quotaMessage } = await resolveProviderKeys(userId);
 
-  if (byokResult.error) {
-    return { client: null, source: 'none', error: byokResult.error };
+  if (error) {
+    return { client: null, source: 'none', error };
   }
 
-  if (byokResult.config?.apiKey && byokResult.config?.provider) {
-    if (byokResult.config.provider !== 'openai') {
-      return { client: null, source: 'none', error: 'Voice features require an OpenAI API key.' };
-    }
-    return {
-      client: new OpenAI({ apiKey: byokResult.config.apiKey }),
-      source: 'byok',
-    };
+  const openai = keys.openai;
+  if (openai) {
+    return { client: new OpenAI({ apiKey: openai.apiKey }), source: openai.source };
   }
 
-  // 2. Check usage quota
-  const usageCheck = await checkUsageLimit(userId);
-  if (!usageCheck.allowed) {
-    return { client: null, source: 'none', error: usageCheck.message };
-  }
-
-  // 3. Owner key
-  if (process.env.OWNER_OPENAI_API_KEY) {
-    return {
-      client: new OpenAI({ apiKey: process.env.OWNER_OPENAI_API_KEY }),
-      source: 'owner',
-    };
-  }
-
-  // Owner key is Google — voice not available
-  if (process.env.OWNER_GOOGLE_API_KEY) {
-    return { client: null, source: 'none', error: 'Voice features require an OpenAI API key.' };
-  }
-
-  // 4. Legacy env
-  if (process.env.OPENAI_API_KEY) {
-    return {
-      client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
-      source: 'env',
-    };
+  if (quotaExhausted) {
+    return { client: null, source: 'none', error: quotaMessage };
   }
 
   return {
     client: null,
     source: 'none',
-    error: 'No OpenAI API key configured. Voice requires OpenAI.',
+    error: 'This needs an OpenAI API key. Add one in Settings → AI.',
   };
 }
