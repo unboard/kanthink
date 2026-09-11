@@ -454,10 +454,14 @@ function AppTile({
           </button>
         </div>
 
+        {/* Sits above the hover overlay rather than yielding to it. Fading this out
+            on hover put it out of reach of the cursor that was on its way to it —
+            the one state where a button must not move is while you are clicking it.
+            It is nudged off centre so the Play/Edit bar has the bottom to itself. */}
         {!app.thumbnailUrl && (
           <button
             onClick={onThumbnail}
-            className="absolute inset-x-2 top-1/2 -translate-y-1/2 mx-auto w-fit flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-500 transition-colors group-hover:opacity-0"
+            className="absolute inset-x-2 top-[42%] -translate-y-1/2 mx-auto w-fit z-10 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-500 transition-colors shadow-lg shadow-black/20"
           >
             <ImageIcon className="w-3 h-3" />
             Generate
