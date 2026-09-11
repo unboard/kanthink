@@ -11,7 +11,7 @@ import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
 import { generatePlaygroundApp } from '@/lib/playground/generateApp';
 import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
 import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
-import { findDuplicateCard, DUPLICATE_WINDOW_MS } from '@/lib/voice/duplicateCard';
+import { findDuplicateCard, DUPLICATE_WINDOW_MS, type RecentCard } from '@/lib/voice/duplicateCard';
 import { getUserChannels } from '@/lib/api/permissions';
 import { instructionCards } from '@/lib/db/schema';
 import { inferIntent } from '@/lib/channelCreation/inferIntent';
@@ -48,6 +48,15 @@ export const maxDuration = 60;
 interface ActionRequest {
   action: string;
   args: Record<string, string>;
+  /**
+   * Cards this conversation has already created, oldest first.
+   *
+   * The client knows this and the server cannot: nothing in the database
+   * distinguishes "a card I made two minutes ago in this conversation" from "a
+   * card a shroom made two minutes ago on another board", and that distinction is
+   * the whole basis for folding a second card into the first one's thread.
+   */
+  sessionCardIds?: string[];
 }
 
 export async function POST(request: Request) {
@@ -57,7 +66,7 @@ export async function POST(request: Request) {
   }
 
   await ensureSchema();
-  const { action, args: rawArgs }: ActionRequest = await request.json();
+  const { action, args: rawArgs, sessionCardIds }: ActionRequest = await request.json();
 
   // Live-model tool arguments are not schema-enforced — a non-string here reaches
   // string methods downstream and throws, which used to surface as "no data found".
@@ -188,30 +197,43 @@ export async function POST(request: Request) {
         // One idea, one card. A voice session adds detail in pieces, and each piece
         // used to read as a fresh request — one maths app idea became three cards in
         // two minutes. Later detail belongs in the card's thread.
-        const userChannels = await getUserChannels(session.user.id);
-        const reachableIds = userChannels.map(c => c.channelId);
-        if (reachableIds.length > 0) {
-          const recent = await db.query.cards.findMany({
-            where: and(
-              inArray(cards.channelId, reachableIds),
-              eq(cards.source, 'ai'),
-              gt(cards.createdAt, new Date(Date.now() - DUPLICATE_WINDOW_MS)),
-            ),
-            columns: { id: true, title: true, channelId: true, createdAt: true },
-            orderBy: [desc(cards.createdAt)],
-            limit: 30,
-          });
-          const duplicate = findDuplicateCard(args.title, recent);
+        //
+        // `distinct` is the way out: the model passes it after the user has actually
+        // said "no, a separate card", which is the one case where a second card is
+        // exactly what was asked for.
+        if (args.distinct !== 'true') {
+          const candidates = await gatherDuplicateCandidates(session.user.id, sessionCardIds);
+          const duplicate = findDuplicateCard(
+            { title: args.title, content: args.content },
+            candidates,
+          );
+
           if (duplicate) {
             const dupChannel = await db.query.channels.findFirst({
               where: eq(channels.id, duplicate.channelId),
               columns: { name: true },
             });
+            const where = dupChannel?.name ?? 'another channel';
+
+            // Certain enough to act on: fold the detail into the card that exists.
+            if (duplicate.confidence === 'certain') {
+              return NextResponse.json({
+                result:
+                  `Didn't create a second card — "${duplicate.title}" in ${where} ` +
+                  `is the same idea from a moment ago. Use add_note with cardId ${duplicate.id} to add this detail ` +
+                  `to it, and tell the user you added to the existing card rather than making a new one.`,
+                cardId: duplicate.id,
+              });
+            }
+
+            // Not certain. Asking costs one short question; guessing wrong costs
+            // either a duplicate card or a card the user asked for and never got.
             return NextResponse.json({
               result:
-                `Didn't create a second card — "${duplicate.title}" in ${dupChannel?.name ?? 'another channel'} ` +
-                `is the same idea from a moment ago. Use add_note with cardId ${duplicate.id} to add this detail ` +
-                `to it, and tell the user you added to the existing card rather than making a new one.`,
+                `Didn't create it yet — this might be the same idea as "${duplicate.title}" in ${where}, ` +
+                `which you made a few minutes ago. Ask the user, in one short question, whether to add this to ` +
+                `that card or start a separate one. Wait for the answer. If they say add to it, use add_note with ` +
+                `cardId ${duplicate.id}. If they say it is separate, call create_card again with distinct set to true.`,
               cardId: duplicate.id,
             });
           }
@@ -796,4 +818,65 @@ export async function POST(request: Request) {
     console.error('[Voice action]', err);
     return NextResponse.json({ result: `Failed: ${err instanceof Error ? err.message : 'Unknown error'}` });
   }
+}
+
+/**
+ * The cards a new one might be duplicating.
+ *
+ * Two sources, and the difference between them matters:
+ *
+ *   - **This conversation's own cards**, by id, with their thread loaded. Small,
+ *     exact, and the only set where body text is worth reading — it is also the set
+ *     where a second card is most likely to be a mistake.
+ *   - **Recently created AI cards** across every channel the user can reach, titles
+ *     only. The safety net for a caller that sends no ids at all (the operator chat
+ *     does exactly that), and loading thirty threads to compare bodies would be a
+ *     lot of reading for a weak signal.
+ */
+async function gatherDuplicateCandidates(
+  userId: string,
+  sessionCardIds: string[] | undefined,
+): Promise<RecentCard[]> {
+  const candidates: RecentCard[] = [];
+  const seen = new Set<string>();
+
+  // Capped: a long session's earliest cards are no longer the same train of thought.
+  const ids = (sessionCardIds || []).filter(Boolean).slice(-10);
+  if (ids.length > 0) {
+    const sessionCards = await db.query.cards.findMany({
+      where: inArray(cards.id, ids),
+      columns: { id: true, title: true, channelId: true, createdAt: true, messages: true },
+    });
+    for (const card of sessionCards) {
+      seen.add(card.id);
+      candidates.push({
+        id: card.id,
+        title: card.title,
+        channelId: card.channelId,
+        createdAt: card.createdAt,
+        content: (card.messages || []).map((m) => m.content).join(' '),
+        fromThisSession: true,
+      });
+    }
+  }
+
+  const userChannels = await getUserChannels(userId);
+  const reachableIds = userChannels.map((c) => c.channelId);
+  if (reachableIds.length > 0) {
+    const recent = await db.query.cards.findMany({
+      where: and(
+        inArray(cards.channelId, reachableIds),
+        eq(cards.source, 'ai'),
+        gt(cards.createdAt, new Date(Date.now() - DUPLICATE_WINDOW_MS)),
+      ),
+      columns: { id: true, title: true, channelId: true, createdAt: true },
+      orderBy: [desc(cards.createdAt)],
+      limit: 30,
+    });
+    for (const card of recent) {
+      if (!seen.has(card.id)) candidates.push(card);
+    }
+  }
+
+  return candidates;
 }

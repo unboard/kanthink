@@ -35,6 +35,20 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'app-directory',
+    date: '2026-09-11',
+    kind: 'capability',
+    title: 'Every app you have built, in one place',
+    body: 'Apps has its own page in the left rail. Everything you have built across every board, as a grid you can search, filter by channel and sort — with Play and Edit as separate buttons, and apps from the same card ringed together so you can see them as a set. Give one a thumbnail from its tile or its Settings tab; the house style lives in Settings → Apps, so a whole shelf comes out looking related.',
+  },
+  {
+    id: 'publish-and-sell-apps',
+    date: '2026-09-11',
+    kind: 'capability',
+    title: 'Publish your apps on one page, and charge for them if you want',
+    body: 'Pick an address in Settings → Apps and your published apps get a public page anyone can visit. Any app can carry a price — one-time, monthly or yearly — and buyers get in with just an email, no Kanthink account. The People tab on an app shows who has opened it and who paid, and a Feedback button inside every published app puts what they say straight into the thread the next build reads.',
+  },
+  {
     id: 'kan-reads-more-of-a-card',
     date: '2026-09-10',
     kind: 'fix',

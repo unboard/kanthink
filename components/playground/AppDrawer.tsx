@@ -8,6 +8,9 @@ import { ChatInput } from '@/components/board/ChatInput';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { useStore } from '@/lib/store';
 import { buildPlaygroundDoc } from './buildPlaygroundDoc';
+import { AppAudiencePane } from './AppAudiencePane';
+import { AppThumbnailDialog } from './AppThumbnailDialog';
+import { AppPricingSection } from './AppPricingSection';
 import { resolveDeps } from '@/lib/playground/runtime';
 import type { Card, CardMessage, CardMessageType, ID, PlaygroundApp, WhiteboardAttachment } from '@/lib/types';
 import {
@@ -24,9 +27,11 @@ import {
   Eye,
   Hammer,
   Loader2,
+  Image as ImageIcon,
   MessageSquareText,
   Settings2,
   Trash2,
+  Users,
   Wand2,
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
@@ -38,11 +43,20 @@ const WhiteboardEditor = dynamic(
   { ssr: false }
 );
 
+/**
+ * What the drawer actually needs from the source card.
+ *
+ * A full Card satisfies this, so every existing caller is unchanged — but the app
+ * directory opens apps without ever loading the cards they came from, and it should
+ * not have to fetch one just to name it in a header.
+ */
+export type AppSourceCard = Pick<Card, 'id' | 'title' | 'channelId'>;
+
 interface AppDrawerProps {
   /** The app to open. The full row — code, thread, settings — is fetched here. */
   appId: ID;
   /** The card this app is an artifact of, pinned at the top of the thread. */
-  card: Card;
+  card: AppSourceCard;
   isOpen: boolean;
   onClose: () => void;
   /** Jump to the source card. */
@@ -54,7 +68,7 @@ interface IframeError {
   stack?: string;
 }
 
-type Pane = 'thread' | 'preview' | 'settings';
+type Pane = 'thread' | 'preview' | 'settings' | 'audience';
 
 const OPTIMISTIC_PREFIX = '__optimistic_';
 
@@ -76,6 +90,10 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
+  const [isThumbnailOpen, setIsThumbnailOpen] = useState(false);
+  // Unread feedback from app users, for the Audience tab's badge. Seeded from the
+  // pane once it loads rather than fetched here — the drawer opens on the thread.
+  const [unread, setUnread] = useState(0);
   // Shown before the server confirms. Never persisted — the server owns the thread.
   const [optimistic, setOptimistic] = useState<CardMessage[]>([]);
 
@@ -99,6 +117,8 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       isPublic: !!next.isPublic,
       position: next.position,
       isArchived: !!next.isArchived,
+      thumbnailUrl: next.thumbnailUrl,
+      thumbnailStatus: next.thumbnailStatus,
       createdAt: next.createdAt,
       updatedAt: next.updatedAt,
     });
@@ -230,7 +250,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   // --- Persistence ---------------------------------------------------------
 
   const patch = useCallback(async (
-    updates: Partial<Pick<PlaygroundApp, 'title' | 'isPublic' | 'modelId'>>
+    updates: Partial<Pick<PlaygroundApp, 'title' | 'isPublic' | 'modelId' | 'tagline' | 'listedInDirectory'>>
   ) => {
     if (!app) return;
     // Optimistic: renaming, publishing and switching model should feel instant.
@@ -468,6 +488,8 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
                 <EmptyPreview />
               )}
             </div>
+          ) : pane === 'audience' && app ? (
+            <AppAudiencePane appId={app.id} onUnreadChange={setUnread} />
           ) : pane === 'settings' && app ? (
             <SettingsPane
               app={app}
@@ -477,6 +499,10 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
               confirmDelete={confirmDelete}
               onCopyLink={copyShareLink}
               onTogglePublic={() => void patch({ isPublic: !app.isPublic })}
+              onEditThumbnail={() => setIsThumbnailOpen(true)}
+              onSetTagline={(value) => void patch({ tagline: value })}
+              onToggleListed={() => void patch({ listedInDirectory: app.listedInDirectory === false })}
+              onApplyApp={applyApp}
               onSetModel={(id) => void patch({ modelId: id })}
               onConfirmDelete={setConfirmDelete}
               onDelete={destroy}
@@ -543,6 +569,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
               {([
                 { key: 'thread' as const, label: 'Thread', icon: <MessageSquareText className="w-3.5 h-3.5" />, disabled: false },
                 { key: 'preview' as const, label: hasCode ? `Preview v${generationCount}` : 'Preview', icon: <Eye className="w-3.5 h-3.5" />, disabled: !hasCode },
+                { key: 'audience' as const, label: unread > 0 ? `People · ${unread}` : 'People', icon: <Users className="w-3.5 h-3.5" />, disabled: !app },
                 { key: 'settings' as const, label: 'Settings', icon: <Settings2 className="w-3.5 h-3.5" />, disabled: !app },
               ]).map((tab) => (
                 <button
@@ -589,6 +616,14 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
           )}
         </div>
       </div>
+      {isThumbnailOpen && app && (
+        <AppThumbnailDialog
+          app={{ id: app.id, title: app.title, thumbnailUrl: app.thumbnailUrl ?? null }}
+          isOpen
+          onClose={() => setIsThumbnailOpen(false)}
+          onUpdated={applyApp}
+        />
+      )}
       {/* Whiteboard: sketch a screen and build from the sketch. Saved as a note, so
           it costs nothing and still lands in the thread the next build reads. */}
       {isWhiteboardOpen && (
@@ -647,6 +682,10 @@ function SettingsPane({
   confirmDelete,
   onCopyLink,
   onTogglePublic,
+  onEditThumbnail,
+  onSetTagline,
+  onToggleListed,
+  onApplyApp,
   onSetModel,
   onConfirmDelete,
   onDelete,
@@ -658,6 +697,10 @@ function SettingsPane({
   confirmDelete: boolean;
   onCopyLink: () => void;
   onTogglePublic: () => void;
+  onEditThumbnail: () => void;
+  onSetTagline: (value: string) => void;
+  onToggleListed: () => void;
+  onApplyApp: (app: PlaygroundApp) => void;
   onSetModel: (id: string) => void;
   onConfirmDelete: (v: boolean) => void;
   onDelete: () => void;
@@ -665,6 +708,70 @@ function SettingsPane({
   const hasCode = Boolean(app.code);
   return (
     <div className="px-4 py-4 space-y-6">
+      {/* How this app shows up in the directory and on the public page. */}
+      <section>
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+          In the directory
+        </h3>
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+          <button
+            onClick={onEditThumbnail}
+            className="w-full flex items-center gap-3 px-3 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 text-left transition-colors"
+          >
+            {app.thumbnailUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={app.thumbnailUrl}
+                alt=""
+                className="w-12 h-12 rounded-lg object-cover flex-shrink-0 border border-neutral-200 dark:border-neutral-800"
+              />
+            ) : (
+              <span className="w-12 h-12 rounded-lg flex-shrink-0 flex items-center justify-center bg-neutral-100 dark:bg-neutral-800 text-neutral-400">
+                <ImageIcon className="w-4 h-4" />
+              </span>
+            )}
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm text-neutral-900 dark:text-white">
+                {app.thumbnailUrl ? 'Change thumbnail' : 'Generate a thumbnail'}
+              </span>
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                Rendered in your account&apos;s app style.
+              </span>
+            </span>
+          </button>
+
+          <div className="border-t border-neutral-200 dark:border-neutral-800 px-3 py-2.5">
+            <input
+              defaultValue={app.tagline || ''}
+              onBlur={(e) => {
+                if ((app.tagline || '') !== e.target.value.trim()) onSetTagline(e.target.value.trim());
+              }}
+              placeholder="One line about what it does"
+              className="w-full bg-transparent text-sm text-neutral-900 dark:text-white outline-none placeholder:text-neutral-400"
+            />
+            <p className="mt-0.5 text-[10px] text-neutral-400">
+              Shown on the tile and the public page. Kan&apos;s build summary fills in otherwise.
+            </p>
+          </div>
+
+          {app.isPublic && (
+            <label className="flex items-center gap-3 px-3 py-2.5 border-t border-neutral-200 dark:border-neutral-800 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={app.listedInDirectory !== false}
+                onChange={onToggleListed}
+                className="w-4 h-4 rounded accent-violet-600"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-neutral-900 dark:text-white">List on my public page</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Off keeps the link working but hides it from the list.
+                </p>
+              </div>
+            </label>
+          )}
+        </div>
+      </section>
       {/* Sharing */}
       <section>
         <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
@@ -710,6 +817,8 @@ function SettingsPane({
           )}
         </div>
       </section>
+
+      <AppPricingSection app={app} onUpdated={onApplyApp} />
 
       {/* Model */}
       <section>

@@ -64,15 +64,24 @@ function AppRow({ app, onOpen }: { app: PlaygroundAppSummary; onOpen: (appId: st
       onClick={() => onOpen(app.id)}
       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800/40 hover:border-violet-400/60 dark:hover:border-violet-500/40 transition-colors text-left group"
     >
-      <div
-        className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-          built
-            ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white'
-            : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400'
-        }`}
-      >
-        <Hammer className="w-4 h-4" />
-      </div>
+      {app.thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={app.thumbnailUrl}
+          alt=""
+          className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+        />
+      ) : (
+        <div
+          className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            built
+              ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white'
+              : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-400'
+          }`}
+        >
+          <Hammer className="w-4 h-4" />
+        </div>
+      )}
 
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-neutral-900 dark:text-white truncate group-hover:text-violet-600 dark:group-hover:text-violet-400">

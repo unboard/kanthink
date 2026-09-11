@@ -50,6 +50,15 @@ export const users = sqliteTable('users', {
   saveDefaultChannelId: text('save_default_channel_id'),
   saveDefaultColumnId: text('save_default_column_id'),
 
+  // The publisher's side of the app directory.
+  /** Account-level house style for app thumbnails — what makes a set of them look related. */
+  appImagePrompt: text('app_image_prompt'),
+  /** Vanity segment for the public app page at /apps/u/<slug>. */
+  appPageSlug: text('app_page_slug'),
+  appPageTitle: text('app_page_title'),
+  appPageBio: text('app_page_bio'),
+  appPagePublic: integer('app_page_public', { mode: 'boolean' }).default(false),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
@@ -322,6 +331,36 @@ export const playgroundApps = sqliteTable('playground_apps', {
   // Same message shape as a card thread, so the chat components are shared.
   messages: safeJsonText<CardMessageJson[]>([])('messages').default([]),
 
+  // --- Directory ---
+  /**
+   * The app's face in the directory. Generated on demand rather than on build:
+   * an image costs money and most apps are iterated on a dozen times before
+   * anyone would want a picture of them.
+   */
+  thumbnailUrl: text('thumbnail_url'),
+  /** The brief that produced the current thumbnail, so "regenerate" can reuse it. */
+  thumbnailPrompt: text('thumbnail_prompt'),
+  /** 'none' | 'pending' | 'ready' | 'failed'. Drives the directory's placeholder state. */
+  thumbnailStatus: text('thumbnail_status').$type<'none' | 'pending' | 'ready' | 'failed'>().default('none'),
+  /** One line the owner writes for the directory and the public page. */
+  tagline: text('tagline'),
+  /** Public apps are listed on the owner's public app page unless this is off. */
+  listedInDirectory: integer('listed_in_directory', { mode: 'boolean' }).default(true),
+  /** Opens of the public /play link. Cheap counter, not analytics. */
+  viewCount: integer('view_count').notNull().default(0),
+
+  // --- Paywall ---
+  // A published app can charge. The price lives on Stripe; these columns are the
+  // local handle on it, so flipping the paywall off never destroys the product.
+  paywallEnabled: integer('paywall_enabled', { mode: 'boolean' }).default(false),
+  /** Minor units (cents). Null until a price is set. */
+  priceAmount: integer('price_amount'),
+  priceCurrency: text('price_currency').default('usd'),
+  /** 'one_time' | 'month' | 'year' — what the buyer is agreeing to. */
+  priceInterval: text('price_interval').$type<'one_time' | 'month' | 'year'>(),
+  stripeProductId: text('stripe_product_id'),
+  stripePriceId: text('stripe_price_id'),
+
   // --- Sharing ---
   isPublic: integer('is_public', { mode: 'boolean' }).default(false),
   shareToken: text('share_token'),
@@ -340,6 +379,77 @@ export const playgroundApps = sqliteTable('playground_apps', {
   index('playground_apps_card_idx').on(table.cardId),
   index('playground_apps_channel_idx').on(table.channelId),
   index('playground_apps_share_idx').on(table.shareToken),
+])
+
+/**
+ * Someone who uses a published app.
+ *
+ * Deliberately not a Kanthink account. A buyer of a $4 app should not have to make
+ * a board to open the thing they bought, so identity here is an email plus a signed
+ * access token in a cookie — see lib/playground/appAccess. If that email already
+ * belongs to a Kanthink user, userId links the two and the publisher's replies reach
+ * them through the normal notification path as well as through the app.
+ */
+export const appUsers = sqliteTable('app_users', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
+  /** The publisher. Denormalised so "everyone across all my apps" is one query. */
+  ownerId: text('owner_id').notNull(),
+
+  email: text('email').notNull(),
+  name: text('name'),
+  /** Set when the email matches a Kanthink account. */
+  userId: text('user_id'),
+
+  /** 'free' — opened it; 'paid' — bought it; 'refunded'/'canceled' — had access and lost it. */
+  status: text('status').$type<'free' | 'paid' | 'refunded' | 'canceled'>().notNull().default('free'),
+  stripeCustomerId: text('stripe_customer_id'),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+  /** Minor units actually charged, kept even if the app's price later changes. */
+  amountPaid: integer('amount_paid'),
+  currency: text('currency'),
+  paidAt: integer('paid_at', { mode: 'timestamp' }),
+  /** For subscriptions: when the current period runs out. Null for one-time buys. */
+  accessExpiresAt: integer('access_expires_at', { mode: 'timestamp' }),
+
+  /** Usage, as much as a static page can honestly report: opens and last seen. */
+  sessionCount: integer('session_count').notNull().default(0),
+  lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+  /** Unread messages from this person, for the publisher's badge. */
+  unreadForOwner: integer('unread_for_owner').notNull().default(0),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('app_users_app_email_idx').on(table.appId, table.email),
+  index('app_users_app_idx').on(table.appId),
+  index('app_users_owner_idx').on(table.ownerId),
+  index('app_users_user_idx').on(table.userId),
+])
+
+/**
+ * The conversation between one app user and the app's publisher.
+ *
+ * One thread per (app, person). A published app has a Feedback button; what arrives
+ * lands here, and the publisher answers from the app's Audience tab. Turning a
+ * complaint into a fix is a button on that thread — it posts the message into the
+ * app's own build thread, which is where the generator reads its brief from.
+ */
+export const appMessages = sqliteTable('app_messages', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
+  appUserId: text('app_user_id').notNull().references(() => appUsers.id, { onDelete: 'cascade' }),
+  /** 'user' — from the person using the app; 'publisher' — the reply. */
+  sender: text('sender').$type<'user' | 'publisher'>().notNull(),
+  body: text('body').notNull(),
+  /** Read by the other side. */
+  isRead: integer('is_read', { mode: 'boolean' }).default(false),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('app_messages_app_idx').on(table.appId, table.createdAt),
+  index('app_messages_thread_idx').on(table.appUserId, table.createdAt),
 ])
 
 // Instruction cards for AI automation

@@ -61,6 +61,8 @@ import { SubscriptionCanceled } from './SubscriptionCanceled'
 import { UsageLimitWarning } from './UsageLimitWarning'
 import { UsageLimitReached } from './UsageLimitReached'
 import { ChannelDigest } from './ChannelDigest'
+import { AppPurchased } from './AppPurchased'
+import { AppReply } from './AppReply'
 import { DynamicEmail, type EmailConfig } from './dynamicRenderer'
 import { db } from '@/lib/db'
 import { emailTemplates } from '@/lib/db/schema'
@@ -121,6 +123,28 @@ async function trySystemOverride(
     console.error(`[Email] Override check failed for ${systemSlug}, falling back to default:`, error)
     return null
   }
+}
+
+/**
+ * The receipt for buying a published app.
+ *
+ * Deliberately not routed through trySystemOverride: the link in here is the only
+ * way a buyer who changes device gets back into what they paid for, and a template
+ * edited in the email builder could drop it.
+ */
+export async function sendAppPurchasedEmail(
+  to: string,
+  props: { buyerName: string; appTitle: string; amount: string; appUrl: string; manageBillingUrl?: string }
+): Promise<boolean> {
+  return renderAndSend(to, `You're in — ${props.appTitle}`, React.createElement(AppPurchased, props))
+}
+
+/** A publisher answering someone who left feedback inside their app. */
+export async function sendAppReplyEmail(
+  to: string,
+  props: { appTitle: string; publisherName: string; message: string; appUrl: string }
+): Promise<boolean> {
+  return renderAndSend(to, `Reply about ${props.appTitle}`, React.createElement(AppReply, props))
 }
 
 export async function sendChannelInviteEmail(

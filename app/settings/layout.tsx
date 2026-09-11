@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 const TABS = [
   { label: 'Account', href: '/settings' },
   { label: 'AI', href: '/settings/ai' },
+  { label: 'Apps', href: '/settings/apps' },
   { label: 'Notifications', href: '/settings/notifications' },
   { label: 'Appearance', href: '/settings/appearance' },
 ] as const;

@@ -87,6 +87,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       id: string; cardId: string; channelId: string; title: string
       summary: string | null; generationCount: number; isPublic: boolean | null
       position: number; isArchived: boolean | null
+      thumbnailUrl: string | null; thumbnailStatus: 'none' | 'pending' | 'ready' | 'failed' | null
       createdAt: Date | null; updatedAt: Date | null
     }> = []
     try {
@@ -101,6 +102,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
           isPublic: playgroundApps.isPublic,
           position: playgroundApps.position,
           isArchived: playgroundApps.isArchived,
+          // Small enough to ride along, and it is what lets the card's Apps tab
+          // show the same faces the directory does.
+          thumbnailUrl: playgroundApps.thumbnailUrl,
+          thumbnailStatus: playgroundApps.thumbnailStatus,
           createdAt: playgroundApps.createdAt,
           updatedAt: playgroundApps.updatedAt,
         })

@@ -1,7 +1,15 @@
 import { db } from '@/lib/db';
-import { playgroundApps } from '@/lib/db/schema';
+import { appUsers, playgroundApps } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import {
+  accessCookieName,
+  formatAppPrice,
+  hasActiveAccess,
+  isPaywalled,
+  verifyAccessToken,
+} from '@/lib/playground/appAccess';
+import { AppPaywall } from '../../AppPaywall';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
 import { signAppToken } from '@/lib/playground/appToken';
@@ -48,6 +56,30 @@ export default async function PlayRecordPage({ params }: PageProps) {
   const record = (app.savedRecords || []).find((r) => r.slug === slug);
   if (!record) notFound();
 
+  // A record link is a second door into the same app, so it needs the same lock.
+  if (isPaywalled(app)) {
+    const jar = await cookies();
+    const memberId = verifyAccessToken(jar.get(accessCookieName(app.id))?.value);
+    const member = memberId
+      ? await db.query.appUsers.findFirst({ where: eq(appUsers.id, memberId) })
+      : null;
+    const valid = member && member.appId === app.id ? member : null;
+
+    if (!hasActiveAccess(app, valid)) {
+      return (
+        <AppPaywall
+          token={token}
+          title={app.title}
+          tagline={app.tagline || app.summary || ''}
+          thumbnailUrl={app.thumbnailUrl ?? null}
+          price={formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval)}
+          recurring={app.priceInterval === 'month' || app.priceInterval === 'year'}
+          notice={null}
+        />
+      );
+    }
+  }
+
   const title = app.title || 'Kanthink Playground';
 
   const h = await headers();
@@ -69,5 +101,5 @@ export default async function PlayRecordPage({ params }: PageProps) {
     },
   });
 
-  return <PublicPlaygroundFrame srcDoc={srcDoc} title={title} />;
+  return <PublicPlaygroundFrame srcDoc={srcDoc} title={title} token={token} />;
 }

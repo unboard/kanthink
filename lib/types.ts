@@ -543,8 +543,103 @@ export interface PlaygroundAppSummary {
   isPublic?: boolean;
   position: number;
   isArchived?: boolean;
+  /** The app's face in the directory. Null until someone generates one. */
+  thumbnailUrl?: string | null;
+  thumbnailStatus?: ThumbnailStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Where an app's thumbnail is up to. 'none' is the state every app starts in. */
+export type ThumbnailStatus = 'none' | 'pending' | 'ready' | 'failed';
+
+/** What a published app charges, if anything. */
+export type AppPriceInterval = 'one_time' | 'month' | 'year';
+
+export interface AppPricing {
+  paywallEnabled?: boolean;
+  /** Minor units — 400 is $4.00. */
+  priceAmount?: number | null;
+  priceCurrency?: string | null;
+  priceInterval?: AppPriceInterval | null;
+  stripeProductId?: string | null;
+  stripePriceId?: string | null;
+}
+
+/**
+ * One app as the directory sees it: the row, plus the card and channel it came
+ * from, plus the counts that make a tile worth looking at.
+ */
+export interface AppDirectoryEntry {
+  id: ID;
+  title: string;
+  summary?: string | null;
+  tagline?: string | null;
+  channelId: ID;
+  channelName: string;
+  cardId: ID;
+  cardTitle: string;
+  generationCount: number;
+  isPublic: boolean;
+  shareToken?: string | null;
+  thumbnailUrl?: string | null;
+  thumbnailStatus: ThumbnailStatus;
+  listedInDirectory: boolean;
+  viewCount: number;
+  paywallEnabled: boolean;
+  priceAmount?: number | null;
+  priceCurrency?: string | null;
+  priceInterval?: AppPriceInterval | null;
+  /** People who have opened it, and how many of those paid. */
+  audienceCount: number;
+  paidCount: number;
+  /** Messages from app users the publisher has not read. */
+  unreadCount: number;
+  updatedAt: string;
+  createdAt: string;
+}
+
+/** The publisher's account-level app settings. */
+export interface AppPublisherProfile {
+  /** House style for thumbnails — what makes one publisher's apps look like a set. */
+  appImagePrompt?: string | null;
+  appPageSlug?: string | null;
+  appPageTitle?: string | null;
+  appPageBio?: string | null;
+  appPagePublic: boolean;
+  name?: string | null;
+  image?: string | null;
+}
+
+export type AppUserStatus = 'free' | 'paid' | 'refunded' | 'canceled';
+
+/** Someone who uses a published app, as the publisher sees them. */
+export interface AppAudienceMember {
+  id: ID;
+  appId: ID;
+  email: string;
+  name?: string | null;
+  userId?: string | null;
+  status: AppUserStatus;
+  amountPaid?: number | null;
+  currency?: string | null;
+  paidAt?: string | null;
+  accessExpiresAt?: string | null;
+  sessionCount: number;
+  lastSeenAt?: string | null;
+  unreadForOwner: number;
+  messageCount: number;
+  lastMessageAt?: string | null;
+  createdAt: string;
+}
+
+/** One turn in the thread between an app user and the publisher. */
+export interface AppThreadMessage {
+  id: ID;
+  sender: 'user' | 'publisher';
+  body: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 export interface PlaygroundApp {
@@ -583,6 +678,23 @@ export interface PlaygroundApp {
   position: number;
   createdBy?: string | null;
   isArchived?: boolean;
+
+  // --- Directory ---
+  thumbnailUrl?: string | null;
+  thumbnailPrompt?: string | null;
+  thumbnailStatus?: ThumbnailStatus;
+  tagline?: string | null;
+  listedInDirectory?: boolean;
+  viewCount?: number;
+
+  // --- Paywall ---
+  paywallEnabled?: boolean;
+  priceAmount?: number | null;
+  priceCurrency?: string | null;
+  priceInterval?: AppPriceInterval | null;
+  stripeProductId?: string | null;
+  stripePriceId?: string | null;
+
   createdAt: string;
   updatedAt: string;
 }

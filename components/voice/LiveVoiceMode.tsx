@@ -46,7 +46,7 @@ const TOOLS = [
       },
       {
         name: 'create_card',
-        description: 'Create a new card in a channel with a rich first message. ONE CARD PER IDEA — if you already created a card for this idea in this conversation, call add_note on it instead; more detail arriving is not a new idea. Choose the channel by what the card is FOR, not what it is about (an app idea about birds belongs where the user builds things, not in their birding channel), and never put a personal idea in a work channel. If you are unsure which channel, ask the user BEFORE calling this — not after.',
+        description: 'Create a new card in a channel with a rich first message. ONE CARD PER IDEA — if you already created a card for this idea in this conversation, call add_note on it instead; more detail arriving is not a new idea, even when it is about a different part of the same feature. Choose the channel by what the card is FOR, not what it is about (an app idea about birds belongs where the user builds things, not in their birding channel), and never put a personal idea in a work channel. If you are unsure which channel, ask the user BEFORE calling this — not after.',
         parameters: {
           type: 'OBJECT',
           properties: {
@@ -54,6 +54,7 @@ const TOOLS = [
             columnName: { type: 'STRING', description: 'Column name. Pass this ONLY if you can see that column listed for this specific channel — most channels have no "Inbox". Omit it when unsure and the card lands in the channel default.' },
             title: { type: 'STRING', description: 'Card title' },
             content: { type: 'STRING', description: 'Card first message in markdown. Use ## headers, **bold**, - bullet lists, 1. numbered lists, [links](url), > blockquotes to make it well-structured and readable.' },
+            distinct: { type: 'STRING', description: 'Set to "true" ONLY after the user has explicitly said this is a separate card from one you already made in this conversation. Never set it on a first attempt, and never to get past a warning on your own judgement.' },
           },
           required: ['channelId', 'title'],
         },
@@ -435,6 +436,16 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
   const transcriptRef = useRef<TranscriptTurn[]>([]);
   /** Mirror of `actions` readable from unmount cleanup and saveTranscript. */
   const actionsRef = useRef<ActionLog[]>([]);
+  /**
+   * Cards created during this conversation, oldest first.
+   *
+   * The server has no way to tell "a card I made a minute ago, here, in this
+   * conversation" from any other recent card, and that is exactly the distinction
+   * that decides whether more detail is a new idea or an addition to one. A ref
+   * rather than state: nothing renders from it, and the tool dispatcher needs the
+   * current value without being re-created on every card.
+   */
+  const sessionCardIdsRef = useRef<string[]>([]);
   const [voiceName, setVoiceName] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
   );
@@ -844,11 +855,18 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
       const res = await fetch('/api/voice/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: name, args }),
+        body: JSON.stringify({ action: name, args, sessionCardIds: sessionCardIdsRef.current }),
       });
       const data = await res.json();
       // Use voiceResult (without chart JSON) for what Gemini speaks, but full result for UI
       const voiceReturn = data.voiceResult || data.result;
+
+      // Only a card this session actually made. A redirect or a question hands
+      // back the id of an existing card, and adding that would let one duplicate
+      // teach the check to accept the next.
+      if (name === 'create_card' && data.cardId && data.cardPreview) {
+        sessionCardIdsRef.current = [...sessionCardIdsRef.current, data.cardId].slice(-10);
+      }
 
       setActions(prev => [...prev, {
         id: crypto.randomUUID(), action: name, result: data.result,

@@ -51,6 +51,8 @@ export function useCardApps(cardId: ID | undefined) {
         isPublic: !!created.isPublic,
         position: created.position,
         isArchived: !!created.isArchived,
+        thumbnailUrl: created.thumbnailUrl,
+        thumbnailStatus: created.thumbnailStatus,
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
       };

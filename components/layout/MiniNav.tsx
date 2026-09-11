@@ -182,6 +182,17 @@ function DesktopNav() {
         />
 
         <NavIconButton
+          isActive={pathname.startsWith('/apps')}
+          onPointerDown={handleNavigate('/apps')}
+          label="Apps"
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM17 14v6M14 17h6" />
+            </svg>
+          }
+        />
+
+        <NavIconButton
           panel="shrooms"
           isActive={activePanel === 'shrooms'}
           onPointerDown={handleToggle('shrooms')}
@@ -293,6 +304,18 @@ function MobileNav() {
       />
 
       <NavIconButton
+        isActive={pathname.startsWith('/apps')}
+        onPointerDown={handleNavigate('/apps')}
+        label="Apps"
+        isMobile
+        icon={
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM17 14v6M14 17h6" />
+          </svg>
+        }
+      />
+
+      <NavIconButton
         panel="shrooms"
         isActive={activePanel === 'shrooms'}
         onPointerDown={handleToggle('shrooms')}
@@ -353,6 +376,7 @@ export function MiniNav() {
     pathname.startsWith('/marketplace') ||
     pathname.startsWith('/public') ||
     pathname.startsWith('/play') ||  // public playground apps own the full viewport
+    pathname.startsWith('/apps/u') ||  // a publisher's public shelf is for strangers
     pathname.startsWith('/watch') ||  // the recording watch page owns the full viewport
     pathname.startsWith('/wildwood') ||  // the Wildwood game owns the full viewport
     pathname.startsWith('/rescue') ||  // Paws & Found game owns the full viewport

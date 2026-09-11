@@ -19,7 +19,9 @@ interface RouteParams {
  * GET    — read it, including the code and thread. Also what the client polls when
  *          a generate request dies mid-flight (screen-off, tab suspension, blip):
  *          the server-side write completes regardless of whether anyone is listening.
- * PATCH  — rename, publish/unpublish, set the sticky model, append thread messages.
+ * PATCH  — rename, publish/unpublish, set the sticky model, write the directory
+ *          tagline and listing, append thread messages. Pricing is its own route:
+ *          it talks to Stripe and fails in ways worth reporting separately.
  * DELETE — remove it. The source card is untouched.
  */
 export async function GET(_req: NextRequest, { params }: RouteParams) {
@@ -59,6 +61,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     modelId?: string | null
     messages?: unknown
     position?: number
+    tagline?: string | null
+    listedInDirectory?: boolean
   }
   try {
     body = await req.json()
@@ -92,6 +96,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
     if (typeof body.position === 'number') {
       updates.position = body.position
+    }
+    if (body.tagline !== undefined) {
+      // One line, for the directory tile and the public page. Empty clears it.
+      const tagline = (body.tagline || '').trim().slice(0, 200)
+      updates.tagline = tagline || null
+    }
+    if (typeof body.listedInDirectory === 'boolean') {
+      updates.listedInDirectory = body.listedInDirectory
     }
 
     await db.update(playgroundApps).set(updates).where(eq(playgroundApps.id, appId))

@@ -22,8 +22,12 @@ export type NotificationType =
   // Board Activity
   | 'card_added_by_other'
   | 'card_moved_by_other'
+  // Published apps
+  | 'app_feedback'
+  | 'app_purchase'
+  | 'app_reply'
 
-export type NotificationCategory = 'collaboration' | 'ai' | 'automation' | 'board_activity'
+export type NotificationCategory = 'collaboration' | 'ai' | 'automation' | 'board_activity' | 'published_apps'
 
 export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, { label: string; description: string; types: NotificationType[] }> = {
   collaboration: {
@@ -45,6 +49,11 @@ export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, { label: stri
     label: 'Board Activity',
     description: 'Cards added or moved by collaborators in shared channels',
     types: ['card_added_by_other', 'card_moved_by_other'],
+  },
+  published_apps: {
+    label: 'Published Apps',
+    description: 'Feedback, purchases, and replies on apps you have published',
+    types: ['app_feedback', 'app_purchase', 'app_reply'],
   },
 }
 
