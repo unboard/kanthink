@@ -154,9 +154,20 @@ export function resolveSurfaceModel(
     return { provider: choice.provider, model: choice.model, fellBack: false }
   }
 
-  // Whatever we do hold a key for. Catalogue order is the preference order, and
-  // OpenAI is first there, so a pure-Google account still lands on Gemini.
-  for (const group of MODEL_CATALOG) {
+  // Whatever we do hold a key for — but a key the user brought outranks one this
+  // deployment shares, whatever order the catalogue happens to be in.
+  //
+  // This is not a tie-break detail. An account with its own Google key and nothing
+  // else set would otherwise land on OpenAI the moment the deployment had an owner
+  // key, which is both a different provider than the one they paid for and metered
+  // against quota that their own key exists to avoid.
+  const byOwnKeyFirst = [...MODEL_CATALOG].sort((a, b) => {
+    const aOwn = keys[a.provider]?.source === 'byok' ? 0 : 1
+    const bOwn = keys[b.provider]?.source === 'byok' ? 0 : 1
+    return aOwn - bOwn
+  })
+
+  for (const group of byOwnKeyFirst) {
     if (keys[group.provider]) {
       return {
         provider: group.provider,

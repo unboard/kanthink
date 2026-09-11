@@ -180,3 +180,44 @@ describe('the catalogues agree with themselves', () => {
     }
   })
 })
+
+/**
+ * The regression this file exists to prevent.
+ *
+ * An account that brought its own key and never set a default must keep running on
+ * that key. Falling through to a shared key would change provider *and* start
+ * metering someone against a quota their own key exists to avoid — silently, on a
+ * deploy they did not ask anything of.
+ */
+describe('an account with its own key and no stated preference', () => {
+  const ownGoogleSharedOpenAI: ProviderKeys = {
+    openai: { apiKey: 'owner-key', source: 'owner' },
+    google: { apiKey: 'users-own-key', source: 'byok' },
+  }
+
+  it('stays on the key the user brought', () => {
+    const resolved = resolveSurfaceModel(EMPTY_PREFERENCES, 'chat', ownGoogleSharedOpenAI)
+    expect(resolved?.provider).toBe('google')
+  })
+
+  it('holds for every area, not just chat', () => {
+    for (const surface of ['chat', 'automations', 'apps'] as const) {
+      expect(resolveSurfaceModel(EMPTY_PREFERENCES, surface, ownGoogleSharedOpenAI)?.provider).toBe('google')
+    }
+  })
+
+  it('still honours an explicit choice of the shared provider', () => {
+    // Preferring their own key is a fallback rule, not an override of what they asked for.
+    const resolved = resolveSurfaceModel(
+      prefs({ default: 'openai:gpt-5.6-terra' }),
+      'chat',
+      ownGoogleSharedOpenAI,
+    )
+    expect(resolved).toMatchObject({ provider: 'openai', model: 'gpt-5.6-terra', fellBack: false })
+  })
+
+  it('picks either one when both keys are the user’s own', () => {
+    const resolved = resolveSurfaceModel(EMPTY_PREFERENCES, 'chat', bothKeys)
+    expect(['openai', 'google']).toContain(resolved?.provider)
+  })
+})

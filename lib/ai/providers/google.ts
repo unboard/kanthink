@@ -1,7 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
+import { providerGroup } from '../modelCatalog';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
 
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+// From the catalogue — see the note in the OpenAI provider.
+const DEFAULT_MODEL = providerGroup('google').defaultModel;
 
 /**
  * Where to go when a model runs out of output room, by family tier.

@@ -1,7 +1,11 @@
 import OpenAI from 'openai';
+import { providerGroup } from '../modelCatalog';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
 
-const DEFAULT_MODEL = 'gpt-4.1';
+// From the catalogue, so "the OpenAI default" has exactly one answer. This used
+// to be a separate literal and had drifted to gpt-4.1 — two generations behind
+// what the settings screen offered, and silently what keyless accounts ran.
+const DEFAULT_MODEL = providerGroup('openai').defaultModel;
 
 function toOpenAIContent(content: string | LLMContentPart[]): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   if (typeof content === 'string') return content;
