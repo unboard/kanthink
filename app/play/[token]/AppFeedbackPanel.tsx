@@ -9,6 +9,11 @@ interface Props {
   appTitle: string;
 }
 
+/** While the drawer is open, a reply should just turn up. */
+const OPEN_POLL_MS = 6_000;
+/** While it is shut, this only feeds the unread badge. */
+const IDLE_POLL_MS = 60_000;
+
 /**
  * "Something is wrong with this" — from inside the app, to the person who made it.
  *
@@ -36,33 +41,57 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
   const [unread, setUnread] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts: { countUnread?: boolean } = {}) => {
     try {
       const res = await fetch(`/api/play/${token}/feedback`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) return;
-      setMessages(data.messages || []);
+      const list: AppThreadMessage[] = data.messages || [];
+      setMessages(list);
       setIdentified(!!data.identified);
       if (data.email) setEmail(data.email);
+      // Reading the thread marks the publisher's replies read server-side, so only
+      // a poll made while the panel is shut should raise the badge.
+      if (opts.countUnread) {
+        setUnread(list.filter((m) => m.sender === 'publisher' && !m.isRead).length);
+      }
     } catch { /* the panel still works, it just starts empty */ }
+    // Any completed round trip means we are past the initial spinner, including one
+    // that found nothing — an empty thread is a loaded thread.
     finally { setLoaded(true); }
   }, [token]);
 
-  // Checked once on mount so an answer waiting since last time is visible without
-  // opening anything. A reply nobody is told about is not a reply.
+  /**
+   * Keep the thread current without anyone reloading the page.
+   *
+   * Two speeds. Open, it checks every few seconds, because a reply arriving while
+   * you are reading should simply appear. Shut, it checks about once a minute, which
+   * is only feeding the badge. Both pause while the tab is hidden — an app left open
+   * in a background tab for a day should not spend the day asking.
+   *
+   * Polling rather than a socket: Pusher here runs on private channels that need a
+   * session, and someone using a published app has none. A public channel keyed by
+   * their id would be a new surface to no real benefit at conversation pace.
+   */
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/play/${token}/feedback`, { cache: 'no-store' });
-        const data = await res.json();
-        if (cancelled || !res.ok || !data.identified) return;
-        const list: AppThreadMessage[] = data.messages || [];
-        setUnread(list.filter((m) => m.sender === 'publisher' && !m.isRead).length);
-      } catch { /* no badge, no harm */ }
-    })();
-    return () => { cancelled = true; };
-  }, [token]);
+    const interval = open ? OPEN_POLL_MS : IDLE_POLL_MS;
+
+    const tick = () => {
+      if (cancelled || document.hidden) return;
+      void load({ countUnread: !open });
+    };
+
+    // Run once immediately so opening the panel shows what is already waiting.
+    tick();
+    const timer = setInterval(tick, interval);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [open, load]);
 
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ block: 'end' });
@@ -79,7 +108,7 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
   const openPanel = () => {
     setOpen(true);
     setUnread(0);
-    if (!loaded) void load();
+    // The poller fires immediately on open, so there is nothing to fetch here.
   };
 
   const send = async () => {

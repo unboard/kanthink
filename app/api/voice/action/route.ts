@@ -4,7 +4,7 @@ import { runEventTriggers } from '@/lib/shrooms/runEventTriggers';
 import { afterResponse } from '@/lib/afterResponse';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { cards, channels, columns, tasks, userChannelOrg } from '@/lib/db/schema';
+import { appMessages, appUsers, cards, channels, columns, playgroundApps, tasks, userChannelOrg } from '@/lib/db/schema';
 import { eq, and, desc, asc, gt, like, sql, inArray } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
@@ -13,6 +13,7 @@ import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
 import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
 import { findDuplicateCard, DUPLICATE_WINDOW_MS, type RecentCard } from '@/lib/voice/duplicateCard';
 import { getUserChannels } from '@/lib/api/permissions';
+import { formatAppPrice } from '@/lib/playground/appAccess';
 import { instructionCards } from '@/lib/db/schema';
 import { inferIntent } from '@/lib/channelCreation/inferIntent';
 import {
@@ -163,6 +164,105 @@ export async function POST(request: Request) {
         const updated = [...msgs, newMsg] as typeof card.messages;
         await db.update(cards).set({ messages: updated, updatedAt: new Date() }).where(eq(cards.id, card.id));
         return NextResponse.json({ result: `Added note to "${card.title}"`, cardId: card.id });
+      }
+
+      case 'app_audience': {
+        // Read-only, on purpose. Kan can tell you how a published app is doing; it
+        // cannot alter anybody's access, refund anyone, or write to the thread a
+        // customer is reading. Everything here is a SELECT.
+        const reachable = await getUserChannels(session.user.id);
+        const reachableIds = reachable.map(c => c.channelId);
+        if (reachableIds.length === 0) {
+          return NextResponse.json({ result: 'You have no channels, so there are no apps to report on.' });
+        }
+
+        const apps = await db.query.playgroundApps.findMany({
+          where: and(
+            inArray(playgroundApps.channelId, reachableIds),
+            eq(playgroundApps.isArchived, false),
+          ),
+          columns: {
+            id: true, title: true, isPublic: true, viewCount: true, shareToken: true,
+            paywallEnabled: true, priceAmount: true, priceCurrency: true, priceInterval: true,
+          },
+        });
+        if (apps.length === 0) {
+          return NextResponse.json({ result: 'No apps have been built yet.' });
+        }
+
+        // A name if one was given, otherwise every published app.
+        const wanted = (args.appName || '').trim().toLowerCase();
+        const matched = wanted
+          ? apps.filter(a => a.title.toLowerCase().includes(wanted))
+          : apps.filter(a => a.isPublic);
+
+        if (wanted && matched.length === 0) {
+          return NextResponse.json({
+            result: `No app matching "${args.appName}". Apps built so far: ${apps.map(a => a.title).join(', ')}.`,
+          });
+        }
+        if (matched.length === 0) {
+          return NextResponse.json({
+            result: 'Nothing is published yet, so no app has any users. Publishing one gives it a link and starts collecting an audience.',
+          });
+        }
+
+        const ids = matched.map(a => a.id);
+        const [members, unread] = await Promise.all([
+          db.query.appUsers.findMany({
+            where: inArray(appUsers.appId, ids),
+            columns: { appId: true, email: true, name: true, status: true, amountPaid: true, currency: true, lastSeenAt: true, sessionCount: true },
+            orderBy: [desc(appUsers.lastSeenAt)],
+          }),
+          db.query.appMessages.findMany({
+            where: and(
+              inArray(appMessages.appId, ids),
+              eq(appMessages.sender, 'user'),
+              eq(appMessages.isRead, false),
+            ),
+            columns: { appId: true, body: true },
+          }),
+        ]);
+
+        const lines: string[] = [];
+        for (const app of matched) {
+          const mine = members.filter(m => m.appId === app.id);
+          const paid = mine.filter(m => m.status === 'paid');
+          const revenue = paid.reduce((sum, m) => sum + (m.amountPaid || 0), 0);
+          const waiting = unread.filter(u => u.appId === app.id);
+
+          const parts = [
+            `${mine.length} ${mine.length === 1 ? 'person' : 'people'}`,
+            paid.length > 0
+              ? `${paid.length} paid (${formatAppPrice(revenue, paid[0]?.currency ?? 'usd', null)} collected)`
+              : app.paywallEnabled
+                ? `costs ${formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval)}, nobody has bought it yet`
+                : 'free',
+            `${app.viewCount ?? 0} opens`,
+          ];
+          if (waiting.length > 0) {
+            parts.push(`${waiting.length} unread ${waiting.length === 1 ? 'message' : 'messages'}`);
+          }
+          lines.push(`${app.title}: ${parts.join(', ')}.`);
+
+          // Only name individuals when one app was asked about — a roll call across
+          // every app is noise, and this gets read aloud in voice mode.
+          if (matched.length === 1) {
+            const recent = mine.slice(0, 5).map(m => {
+              const who = m.name?.trim() || m.email;
+              const seen = m.lastSeenAt
+                ? new Date(m.lastSeenAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                : 'not yet';
+              return `${who} (${m.status}, ${m.sessionCount} opens, last seen ${seen})`;
+            });
+            if (recent.length > 0) lines.push(`Most recent: ${recent.join('; ')}.`);
+            if (waiting.length > 0) {
+              lines.push(`Waiting on a reply: ${waiting.slice(0, 3).map(u => `"${u.body.slice(0, 120)}"`).join(' / ')}.`);
+            }
+          }
+        }
+
+        return NextResponse.json({ result: lines.join(' ') });
       }
 
       case 'create_card': {

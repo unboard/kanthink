@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'kan-reads-app-audience',
+    date: '2026-09-11',
+    kind: 'capability',
+    title: 'Ask Kan how a published app is doing',
+    body: 'Kan can now read the audience of any app you publish \u2014 how many people opened it, who paid, what was collected, and whether anyone is waiting on a reply. Ask in chat or out loud: "how is Lennon\u2019s Cat Math going?". It is read-only, so Kan can tell you someone is waiting but cannot answer them for you.',
+  },
+  {
     id: 'keys-per-provider-and-model-picker',
     date: '2026-09-11',
     kind: 'capability',

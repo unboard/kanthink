@@ -202,7 +202,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         .set({ messages: messages as typeof playgroundApps.$inferInsert.messages, updatedAt: new Date() })
         .where(eq(playgroundApps.id, appId))
 
-      return NextResponse.json({ success: true, addedToBrief: true })
+      // Hand back the whole app row, not just a success flag.
+      //
+      // The drawer loaded this app's thread when it opened and has been holding it
+      // ever since, so a note written here is invisible over on the Thread tab until
+      // something reloads — which read as "the button did nothing" right up until
+      // the next build, when the note turned out to have been there all along.
+      const updated = await db.query.playgroundApps.findFirst({
+        where: eq(playgroundApps.id, appId),
+      })
+      return NextResponse.json({ success: true, addedToBrief: true, app: updated, note })
     }
 
     const text = (body.body || '').trim()

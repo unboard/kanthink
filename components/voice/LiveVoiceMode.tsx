@@ -60,6 +60,17 @@ const TOOLS = [
         },
       },
       {
+        name: 'app_audience',
+        description: 'Read how a published app is doing: how many people use it, how many paid, revenue collected, opens, and any unread feedback. Use this whenever the user asks about usage, users, sales or feedback for an app they built. Read-only — it cannot change anyone\'s access or reply to anyone. Omit appName for a summary of every published app.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            appName: { type: 'STRING', description: 'Name of one app, or part of it. Omit to cover every published app.' },
+          },
+          required: [],
+        },
+      },
+      {
         name: 'add_note',
         description: 'Add a note/message to a card thread. Format the content as rich markdown.',
         parameters: {

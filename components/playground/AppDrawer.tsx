@@ -489,7 +489,14 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
               )}
             </div>
           ) : pane === 'audience' && app ? (
-            <AppAudiencePane appId={app.id} onUnreadChange={setUnread} />
+            <AppAudiencePane
+              appId={app.id}
+              onUnreadChange={setUnread}
+              // Adding feedback to the build brief rewrites this app's thread, and
+              // the drawer has been holding its own copy since it opened.
+              onAppUpdated={applyApp}
+              onOpenThread={() => setPane('thread')}
+            />
           ) : pane === 'settings' && app ? (
             <SettingsPane
               app={app}

@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ArrowRight,
+  Check,
   CornerUpRight,
   Loader2,
   MessageSquareText,
@@ -10,13 +12,23 @@ import {
   Users,
 } from 'lucide-react';
 import { formatAppPrice } from '@/lib/playground/appAccess';
-import type { AppAudienceMember, AppThreadMessage, ID } from '@/lib/types';
+import type { AppAudienceMember, AppThreadMessage, ID, PlaygroundApp } from '@/lib/types';
 
 interface Props {
   appId: ID;
   /** Told when the unread count changes, so the tab badge can follow. */
   onUnreadChange?: (unread: number) => void;
+  /**
+   * Handed the app row after something here changes it — adding a message to the
+   * build brief rewrites the app's thread, and the drawer is holding a copy.
+   */
+  onAppUpdated?: (app: PlaygroundApp) => void;
+  /** Jump the drawer to the Thread tab, so "view it" can actually show it. */
+  onOpenThread?: () => void;
 }
+
+/** How often an open thread checks for something new. */
+const THREAD_POLL_MS = 10_000;
 
 /**
  * Who uses this app, and the conversation with each of them.
@@ -26,7 +38,7 @@ interface Props {
  * Two levels: the list, and one person's thread. No triage, no inbox, no statuses —
  * an app with forty users does not need a helpdesk.
  */
-export function AppAudiencePane({ appId, onUnreadChange }: Props) {
+export function AppAudiencePane({ appId, onUnreadChange, onAppUpdated, onOpenThread }: Props) {
   const [audience, setAudience] = useState<AppAudienceMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +68,8 @@ export function AppAudiencePane({ appId, onUnreadChange }: Props) {
         appId={appId}
         member={openMember}
         onBack={() => { setOpenMember(null); void load(); }}
+        onAppUpdated={onAppUpdated}
+        onOpenThread={onOpenThread}
       />
     );
   }
@@ -141,36 +155,52 @@ export function AppAudiencePane({ appId, onUnreadChange }: Props) {
 
 /** A single person's thread, and the two things you can do about it. */
 function MemberThread({
-  appId, member, onBack,
+  appId, member, onBack, onAppUpdated, onOpenThread,
 }: {
   appId: ID;
   member: AppAudienceMember;
   onBack: () => void;
+  onAppUpdated?: (app: PlaygroundApp) => void;
+  onOpenThread?: () => void;
 }) {
   const [messages, setMessages] = useState<AppThreadMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
-  const [briefed, setBriefed] = useState(false);
+  /** The id of the message most recently pushed onto the build brief. */
+  const [briefedId, setBriefedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/playground/apps/${appId}/audience?memberId=${member.id}`, { cache: 'no-store' });
-        const data = await res.json();
-        if (cancelled) return;
-        if (!res.ok) { setError(data?.error || 'Could not load this thread'); return; }
-        setMessages(data.messages || []);
-      } catch {
-        if (!cancelled) setError('Could not load this thread');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+  const refresh = useCallback(async (showSpinner: boolean) => {
+    try {
+      const res = await fetch(`/api/playground/apps/${appId}/audience?memberId=${member.id}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) { if (showSpinner) setError(data?.error || 'Could not load this thread'); return; }
+      setMessages(data.messages || []);
+    } catch {
+      if (showSpinner) setError('Could not load this thread');
+    } finally {
+      if (showSpinner) setLoading(false);
+    }
   }, [appId, member.id]);
+
+  useEffect(() => { void refresh(true); }, [refresh]);
+
+  // Someone using the app can write back while this is open. Polling rather than a
+  // socket: a support thread moves at conversation pace, and a public Pusher
+  // channel for an anonymous visitor is a surface this does not need.
+  useEffect(() => {
+    const tick = () => { if (!document.hidden) void refresh(false); };
+    const timer = setInterval(tick, THREAD_POLL_MS);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [refresh]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [messages.length]);
 
   const send = async () => {
     const text = reply.trim();
@@ -202,9 +232,12 @@ function MemberThread({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ memberId: member.id, action: 'to_brief', messageId }),
       });
-      if (!res.ok) { setError('Could not add that to the brief'); return; }
-      setBriefed(true);
-      setTimeout(() => setBriefed(false), 2500);
+      const data = await res.json();
+      if (!res.ok) { setError(data?.error || 'Could not add that to the brief'); return; }
+      // The drawer is holding this app's thread; hand it the new one so the Thread
+      // tab is already correct by the time anyone looks at it.
+      if (data.app) onAppUpdated?.(data.app as PlaygroundApp);
+      setBriefedId(messageId);
     } catch {
       setError('Could not add that to the brief');
     }
@@ -249,33 +282,46 @@ function MemberThread({
               }`}>
                 {m.body}
               </div>
-              <div className="mt-1 flex items-center gap-2">
+              <div className="mt-1 flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] text-neutral-400">
                   {m.sender === 'publisher' ? 'You' : member.name || 'Them'} ·{' '}
                   {new Date(m.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                 </span>
+
                 {m.sender === 'user' && (
-                  // The whole point of the loop: a report becomes a line in the
-                  // brief the next build reads, without anyone retyping it.
-                  <button
-                    onClick={() => toBrief(m.id)}
-                    className="inline-flex items-center gap-1 text-[10px] text-neutral-400 hover:text-violet-600 dark:hover:text-violet-400"
-                  >
-                    <CornerUpRight className="w-2.5 h-2.5" />
-                    Add to build brief
-                  </button>
+                  briefedId === m.id ? (
+                    // Confirmation that names where it went, and offers to show you.
+                    <span className="inline-flex items-center gap-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+                      <Check className="w-2.5 h-2.5" />
+                      Added to the build brief
+                      {onOpenThread && (
+                        <button
+                          onClick={onOpenThread}
+                          className="inline-flex items-center gap-0.5 underline hover:no-underline"
+                        >
+                          View it <ArrowRight className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </span>
+                  ) : (
+                    // The whole point of the loop: a report becomes a line in the
+                    // brief the next build reads, without anyone retyping it.
+                    <button
+                      onClick={() => toBrief(m.id)}
+                      className="inline-flex items-center gap-1 text-[10px] text-neutral-400 hover:text-violet-600 dark:hover:text-violet-400"
+                    >
+                      <CornerUpRight className="w-2.5 h-2.5" />
+                      Add to build brief
+                    </button>
+                  )
                 )}
               </div>
             </div>
           ))}
+          <div ref={endRef} />
         </div>
       )}
 
-      {briefed && (
-        <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-400">
-          Added to this app&apos;s thread. The next Update app will take it into account.
-        </p>
-      )}
       {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
 
       <div className="mt-4 flex items-end gap-2">
@@ -298,8 +344,9 @@ function MemberThread({
         </button>
       </div>
       <p className="mt-1.5 text-[10px] text-neutral-400">
-        They see this in the app&apos;s feedback panel. If their email is a Kanthink account,
-        they get a notification too.
+        They see this in the app&apos;s feedback panel within seconds, without reloading. If
+        their email is a Kanthink account they get a notification too, and either way it
+        reaches them by email.
       </p>
     </div>
   );

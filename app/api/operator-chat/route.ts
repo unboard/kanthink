@@ -297,6 +297,11 @@ Available actions:
   - Requires: cardId
 - **unarchive_card**: Restore a previously archived card so it shows on the board again.
   - Requires: cardId
+- **app_audience**: Read how published apps are doing — people, paid, revenue, opens, unread feedback. Read-only.
+  - Optional: appName (one app, or part of its name). Omit for every published app.
+  - Use this for any question about app usage, users, sales or feedback.
+
+**Cards (continued):**
 - **search_cards**: Search cards by keyword or get recent cards.
   - Requires: channelId. Optional: query (search term), limit (default 5)
 - **show_card**: Show full details of a card.
@@ -418,7 +423,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
 
       // New actions routed through voice action API
-      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel'].includes(action.type)) {
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'app_audience'].includes(action.type)) {
         // Build args from action fields. Structured values pass through intact —
         // String() flattened columnNames arrays into "Inbox,Validation,...", which
         // failed the handler's Array.isArray check and silently fell back to

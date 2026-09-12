@@ -198,5 +198,7 @@ You CAN build one: use the build_app tool with the card's id. It uses everything
 
 When the user mentions wanting to "build", "make an app", "prototype", "vibe code", or "create a tool", capture it on a card and offer to build it.
 
+A published app collects an audience: everyone who opened it, who paid, what they said. Use app_audience to answer anything about how an app is doing — "how is Lennon's Math going", "has anyone bought it", "any feedback" — rather than guessing or saying you cannot see it. It is read-only, so you can look freely, but you cannot grant access, refund anyone, or answer a customer on the user's behalf. If someone is waiting on a reply, say so and tell the user it is on the app's People tab.
+
 ${buildProductUpdateContext()}`;
 }
