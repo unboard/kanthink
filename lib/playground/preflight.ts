@@ -2,10 +2,20 @@ import { GoogleGenAI, Type } from '@google/genai';
 import type { EditType } from './models';
 
 export interface PreflightResult {
-  decision: 'ACT' | 'ASK';
+  decision: 'ACT' | 'ASK' | 'UNSUPPORTED';
   questions?: string[]; // present when decision === 'ASK', max 2 questions
   editType: EditType;   // the model's read on what kind of edit this is
   rationale: string;    // one short sentence; useful for logs / future routing
+  /**
+   * Capabilities the request needs that this runtime does not have.
+   *
+   * Present when decision is UNSUPPORTED. Naming them before the build is the point:
+   * the alternative is an app that looks like it saves your progress across devices
+   * and silently does not, which is worse than being told up front.
+   */
+  unsupported?: string[];
+  /** What CAN be built well, offered instead. Present with UNSUPPORTED. */
+  smallerScope?: string;
 }
 
 const PREFLIGHT_SYSTEM = `You are a code-generation gatekeeper for a vibe-coding playground. Before we let the heavy model rewrite the app, you decide TWO things in one shot:
@@ -19,7 +29,30 @@ const PREFLIGHT_SYSTEM = `You are a code-generation gatekeeper for a vibe-coding
    - Never ask about minor preferences (font shade, exact pixel value).
    - NEVER ask the user for image URLs, image files, or descriptions of images. If the request mentions images and the input says images are attached, the builder can already see them — asking for them is always wrong, and tells the user their attachments were ignored when they were not. Return ACT.
 
-2. EDIT TYPE — classify what kind of change this request is:
+2. CAPABILITY — can this runtime actually deliver what was asked?
+
+   The apps run as a single React file in a sandboxed browser iframe. There is no
+   server you can write, no database, no account system, and no secret storage.
+   localStorage exists but is per-session and per-device: it does NOT survive a
+   device change and must never be described to the user as saving or syncing.
+
+   Return UNSUPPORTED when the request's CENTRAL promise needs one of:
+   - data that follows a person across devices, or private per-user storage
+   - user accounts, sign-in, or anyone else's login
+   - multi-user sync, shared live state, or anything collaborative in real time
+   - a secret API key, or an API that blocks browser origins
+   - work that happens while the app is closed — scheduling, reminders, email
+
+   Do NOT return UNSUPPORTED for something merely adjacent. A game that keeps a high
+   score on one device is fine. A note-taking app is fine. Judge the promise, not the
+   vocabulary: "save my score" is local and supported; "my progress on my phone and
+   my laptop" is not.
+
+   When you return UNSUPPORTED, fill "unsupported" with the missing capability in the
+   user's words, and "smallerScope" with the genuinely useful thing that CAN be built
+   — one sentence, concrete, not a consolation prize.
+
+3. EDIT TYPE — classify what kind of change this request is:
    - "cosmetic"    — color, font, spacing, copy, simple visual tweaks. No logic or layout changes.
    - "behavior"    — interaction, state, event handling, validation, animation logic.
    - "structural"  — new component, layout shift, state-shape change, multi-section rework.
@@ -33,7 +66,7 @@ Return JSON matching the schema. Keep "rationale" to one short sentence.`;
 const PREFLIGHT_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    decision: { type: Type.STRING, description: 'ACT or ASK' },
+    decision: { type: Type.STRING, description: 'ACT, ASK, or UNSUPPORTED' },
     questions: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
@@ -110,7 +143,12 @@ export async function runPreflight(opts: {
     });
     const text = response.text || '';
     const parsed = JSON.parse(text) as Partial<PreflightResult> & { questions?: unknown };
-    const decision = parsed.decision === 'ASK' ? 'ASK' : 'ACT';
+    // Three verdicts now, and anything unrecognised means build — a classifier
+  // that returns nonsense should not be able to block work.
+    const decision: 'ACT' | 'ASK' | 'UNSUPPORTED' =
+      parsed.decision === 'ASK' ? 'ASK'
+      : parsed.decision === 'UNSUPPORTED' ? 'UNSUPPORTED'
+      : 'ACT';
     const editType: EditType = (
       ['cosmetic', 'behavior', 'structural', 'redesign', 'first'] as const
     ).find((t) => t === parsed.editType) || 'structural';
@@ -124,6 +162,24 @@ export async function runPreflight(opts: {
     // holding those very images. A prompt rule is a request; this is not.
     const asksAboutImages = images > 0 && rawQuestions.some(asksForAttachedImages);
     const questions = asksAboutImages ? [] : rawQuestions;
+
+    const unsupported = Array.isArray(parsed.unsupported)
+      ? parsed.unsupported.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+      : [];
+    const smallerScope = typeof parsed.smallerScope === 'string' ? parsed.smallerScope.trim() : '';
+
+    // UNSUPPORTED only counts when it names what is missing. A verdict with no
+    // reason attached would stop the build and tell the user nothing, which is a
+    // worse outcome than building the runnable part.
+    if (decision === 'UNSUPPORTED' && unsupported.length > 0) {
+      return {
+        decision: 'UNSUPPORTED',
+        editType,
+        unsupported,
+        smallerScope: smallerScope || undefined,
+        rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
+      };
+    }
 
     return {
       decision: decision === 'ASK' && questions.length > 0 ? 'ASK' : 'ACT',

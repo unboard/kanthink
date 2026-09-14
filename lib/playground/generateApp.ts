@@ -19,7 +19,7 @@ import {
   type PlaygroundProvider,
 } from '@/lib/playground/models';
 import { signAppToken } from '@/lib/playground/appToken';
-import { runPreflight } from '@/lib/playground/preflight';
+import { runPreflight, type PreflightResult } from '@/lib/playground/preflight';
 import { applyCodeEdits, shouldPatch, type CodeEdit } from '@/lib/playground/applyEdits';
 import {
   resolveDeps,
@@ -78,12 +78,49 @@ CODE RULES (strict — your output runs unmodified):
 4. Use functional components and hooks only. No class components.
 5. Style with Tailwind utility classes only. No <style> tags. No CSS-in-JS.
 6. Wrap risky logic in try/catch. If you touch external APIs, audio, or canvas, wrap App in a small inline ErrorBoundary class.
-7. Persist state to localStorage when it makes sense (todo lists, mood logs, timer state, game high scores). Use a key prefixed with "kpg_" + a slug derived from the title.
+7. Persist state to localStorage when it makes sense (todo lists, mood logs, timer state, game high scores). Use a key prefixed with "kpg_" + a slug derived from the title. It is per-session and per-device — never describe it to the user as saved, synced, or kept across devices, because it is none of those.
 8. Mobile-first: must work in 375px width. Tap targets ≥ 44px tall. No hover-only UI.
 9. NEVER use document.write, eval, new Function, or innerHTML with user input.
-10. If the user describes something that needs a real backend (auth, multi-user sync, server storage), build the most useful localStorage-only version and add a one-line comment // BACKEND: <what would be needed>
+10. When a requirement needs something this runtime does not have — accounts, per-customer storage that survives a device change, multi-user sync, server-side secrets, scheduled work — do NOT quietly build a version that pretends. Build everything the runtime CAN do, leave a \`// UNSUPPORTED: <the missing capability>\` comment at the relevant code, and say plainly in your notes which promised part is not real and what it would need. A named gap is useful; a convincing fake is not.
 11. Multiple "screens" should use view state in one file, e.g. const [view, setView] = useState('home') with conditional rendering. Do NOT split into multiple files.
-12. Prefer beautiful, realistic-feeling screens over fully-working logic. Use placeholder data and clear "Coming soon" labels for unimplemented features. This is a prototype tool.
+12. The app must actually do its job. See COMPLETENESS below — it is the standard your output is judged against, and it outranks looking finished.
+
+COMPLETENESS — what counts as a finished build:
+
+The app reliably performs the core job described in the conversation. Not a
+convincing picture of doing it. This applies equally to a first build, an update, a
+redesign, and a rewrite after a failed edit.
+
+1. WORK OUT WHAT WAS PROMISED. Read the thread for the outcome the person actually
+   wants — "practise times tables", "track what I ate", "split a bill" — and the
+   handful of actions that outcome depends on. Those actions are the build.
+
+2. USE THE LATEST AGREED VERSION. A conversation contains changes of mind. Build what
+   was settled on most recently. Keep decisions that were accepted; do not reintroduce
+   an idea that was considered and dropped, however good it looked.
+
+3. FINISH THE CORE ACTIONS. Every control central to the promised outcome does the
+   thing it is labelled with. A button that says Save saves. A score that says 3/5
+   counted five answers. A message that says "Saved" appears only after the save
+   actually happened — never on a timer, never optimistically for something that did
+   not occur.
+
+4. HANDLE THE STATES A REAL USER HITS. Anything that can be slow shows that it is
+   working. Anything that can be empty says so and says what to do about it. Anything
+   that can fail says what went wrong in plain words and leaves a way forward. These
+   are part of the core job, not polish to add later.
+
+5. SAMPLE DATA IS LABELLED AS SAMPLE. Seeding a list so the first screen is not empty
+   is good. Presenting invented output as the result of work the app did not do is
+   not. If a number was made up, the screen says so.
+
+6. NEVER SIMULATE A PROMISED CAPABILITY. No setTimeout standing in for a real
+   operation. No hard-coded "result" where a computation belongs. No "Coming soon"
+   on something the person asked for — either build it, or name it as unsupported
+   under rule 10 and build the rest.
+
+Smaller and complete beats larger and pretend. If the full idea will not fit, build
+the part that works end to end and say what you left out.
 
 AI / LLM CALLS INSIDE THE APP (Gemini, owner's BYOK):
 The host runtime exposes \`window.kanthinkAI.generate(opts)\` for any AI feature in your app — vision (analyze a photo), text generation, classification, structured output, etc. NEVER hardcode a model name like "gemini-1.5-vision", "gemini-pro", or any stale model — those are deprecated. NEVER call the Gemini API directly from the app. Always use this helper, which routes through the playground owner's connected Gemini account and gives them access to current models.
@@ -520,20 +557,24 @@ export async function generatePlaygroundApp(
     ? `\n\n${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} ${attachedImages.length === 1 ? 'is' : 'are'} attached below — from this thread${isIteration ? '' : ' and the source card'}. Use them as visual reference for style, layout, colour and content.`
     : '';
 
-  // -- Preflight: on iterations, decide whether to ASK or ACT, and classify the edit type
-  //    so we can route to the right model when the user picked 'Auto'. First generations
-  //    skip preflight to keep the initial momentum.
+  // -- Preflight: decide whether to ASK, ACT, or say the runtime cannot do this, and
+  //    classify the edit type so 'Auto' routes to the right model.
+  //
+  //    First builds run it too. They used to skip it for momentum, but the request
+  //    most worth catching before spending a build — "keep my progress across my
+  //    devices" — usually arrives on the first one, and finding out after the fact
+  //    means an app that looks like it saves and does not.
   // Preflight is its own small Gemini call, made before the build model is chosen.
   // An OpenAI-only account simply skips it: the cost of not classifying an edit is
   // that 'auto' routes to the better model, which is the safe direction to be wrong.
   const preflightKey = keys.google?.apiKey;
-  const preflight = isIteration && !options.skipPreflight && preflightKey
+  const preflight: PreflightResult = !options.skipPreflight && preflightKey
     ? await runPreflight({
         apiKey: preflightKey,
         prompt: body.prompt,
         cardTitle: card.title,
         cardSummary: card.summary || undefined,
-        hasCurrentCode: true,
+        hasCurrentCode: isIteration,
         // Deliberately not the full thread. Preflight decides ACT-vs-ASK and an edit
         // type from a 600-token budget; handing it forty messages at six thousand
         // characters each cost real latency on every single edit and cannot have
@@ -552,6 +593,45 @@ export async function generatePlaygroundApp(
         editType: isIteration ? ('structural' as const) : ('first' as const),
         rationale: isIteration ? 'preflight unavailable' : 'first generation',
       };
+
+  // Short-circuit: the runtime cannot do the central thing that was asked for. Say
+  // which capability is missing and what can be built instead, and build nothing —
+  // an app that pretends to save your progress is worse than being told it cannot.
+  if (preflight.decision === 'UNSUPPORTED' && preflight.unsupported?.length) {
+    const missing = preflight.unsupported.map((u) => `- ${u}`).join('\n');
+    const offer = preflight.smallerScope?.trim();
+    const explanation =
+      `I can't build that as described. These apps run as a single page in a sandboxed browser tab — ` +
+      `there is no server, no accounts, and no storage that follows someone between devices.\n\n` +
+      `What's missing:\n${missing}\n\n` +
+      (offer
+        ? `What I can build instead: ${offer}\n\nSay the word and I'll build that, or tell me to go ahead anyway and I'll make the rest work with the limitation clearly marked in the app.`
+        : `Tell me which part matters most and I'll build as much of it as actually works.`);
+
+    const existingForUnsupported = stripOptimistic(app.messages);
+    const askUserMessage = {
+      id: nanoid(),
+      type: 'question' as const,
+      content: body.prompt,
+      imageUrls: attachedImages.length > 0 ? attachedImages : undefined,
+      authorId: session.user.id,
+      createdAt: new Date().toISOString(),
+    };
+    const answer = {
+      id: nanoid(),
+      type: 'ai_response' as const,
+      content: explanation,
+      createdAt: new Date().toISOString(),
+    };
+    const merged = [...existingForUnsupported, askUserMessage, answer];
+
+    await db.update(playgroundApps)
+      .set({ messages: merged as typeof playgroundApps.$inferInsert.messages, updatedAt: new Date() })
+      .where(eq(playgroundApps.id, app.id));
+
+    const after = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, app.id) });
+    return NextResponse.json({ app: after, unsupported: preflight.unsupported, asked: true });
+  }
 
   // Short-circuit: when preflight asks for clarification, append the questions as a Kan
   // message and don't burn a full generation. The user can answer in chat next turn.
