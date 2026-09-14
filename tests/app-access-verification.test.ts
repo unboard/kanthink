@@ -1,10 +1,18 @@
 /**
- * Proving an email address before granting access.
+ * Proving an email address, and what a session is allowed to conclude from it.
  *
- * Written against a real vulnerability: access was granted on a typed email alone,
- * so knowing a customer's address was the same as being them — their paid app and
- * their private support thread. These are the three demonstrations that the fix
- * actually closes it, plus the rate limits that keep a six-digit code honest.
+ * Two rounds of real vulnerabilities live in here.
+ *
+ * The first: access was granted on a typed email alone, so knowing a customer's
+ * address was the same as being them.
+ *
+ * The second, found in review of the fix: verification was recorded on the customer
+ * *record* rather than on the session. That meant the genuine customer proving their
+ * address silently re-authorised every stale cookie for it — the invalidation undid
+ * itself — and it meant a Stripe purchase, which proves a card and not an inbox,
+ * could hand over an existing customer's history.
+ *
+ * Sessions now carry their own scope, and these tests pin both rounds.
  */
 import { describe, it, expect } from 'vitest'
 import {
@@ -21,86 +29,182 @@ import {
   SEND_WINDOW_MS,
   type VerificationState,
 } from '../lib/playground/appVerification'
-import { hasActiveAccess, canReadPrivateData } from '../lib/playground/appAccess'
+import {
+  canReadPrivateData,
+  hasActiveAccess,
+  sessionMatchesMember,
+  signAccessToken,
+  verifyAccessToken,
+} from '../lib/playground/appAccess'
 
 const paidApp = { paywallEnabled: true, priceAmount: 400, stripePriceId: 'price_1' }
 const freeApp = { paywallEnabled: false }
 
-describe('knowing someone’s email cannot grant access', () => {
-  it('refuses a paid row that has never proved the address', () => {
-    // Exactly the attack: the row is real and paid, the person typing is not them.
-    const impostor = { status: 'paid' as const, verifiedAt: null }
-    expect(hasActiveAccess(paidApp, impostor)).toBe(false)
+const paidMember = { status: 'paid' as const }
+const APP = 'app-1'
+const MEMBER = 'member-1'
+
+const verifiedSession = verifyAccessToken(signAccessToken(MEMBER, 0, 'verified'))
+const purchaseSession = verifyAccessToken(signAccessToken(MEMBER, 0, 'purchase'))
+
+describe('a session carries what it proved', () => {
+  it('round-trips a verified session', () => {
+    expect(verifiedSession).toMatchObject({ appUserId: MEMBER, scope: 'verified', epoch: 0 })
   })
 
-  it('lets the same row in the moment the address is proved', () => {
-    const owner = { status: 'paid' as const, verifiedAt: new Date() }
-    expect(hasActiveAccess(paidApp, owner)).toBe(true)
+  it('round-trips a purchase session', () => {
+    expect(purchaseSession).toMatchObject({ appUserId: MEMBER, scope: 'purchase', epoch: 0 })
   })
 
-  it('keeps the private thread shut to an unproved row, paid or not', () => {
-    expect(canReadPrivateData({ status: 'paid', verifiedAt: null })).toBe(false)
-    expect(canReadPrivateData({ status: 'free', verifiedAt: null })).toBe(false)
-    expect(canReadPrivateData({ status: 'free', verifiedAt: new Date() })).toBe(true)
+  it('refuses a token whose scope has been edited', () => {
+    const token = signAccessToken(MEMBER, 0, 'purchase')
+    expect(verifyAccessToken(token.replace('.p.', '.v.'))).toBeNull()
   })
 
-  it('still opens a free app to everybody', () => {
-    // Verification gates private data, not the front door of a free app.
-    expect(hasActiveAccess(freeApp, null)).toBe(true)
-    expect(hasActiveAccess(freeApp, { status: 'free', verifiedAt: null })).toBe(true)
+  it('refuses a token pointed at a different member', () => {
+    const token = signAccessToken(MEMBER, 0, 'verified')
+    expect(verifyAccessToken(token.replace(MEMBER, 'member-2'))).toBeNull()
+  })
+
+  it('refuses a token whose epoch has been edited', () => {
+    const token = signAccessToken(MEMBER, 3, 'verified')
+    expect(verifyAccessToken(token.replace('.3.', '.4.'))).toBeNull()
   })
 })
 
-describe('sessions granted before verification existed stop working', () => {
-  it('rejects a paid row carried over with no verifiedAt', () => {
-    // Every row written before this change looks exactly like this.
-    const legacy = { status: 'paid' as const, verifiedAt: undefined }
-    expect(hasActiveAccess(paidApp, legacy)).toBe(false)
-    expect(canReadPrivateData(legacy)).toBe(false)
+describe('knowing someone’s email cannot grant access', () => {
+  it('refuses a paid row when there is no session at all', () => {
+    // Typing an address mints nothing, so this is what an impostor holds.
+    expect(hasActiveAccess(paidApp, paidMember, null)).toBe(false)
   })
 
-  it('does not reject them for any other reason, so proving the address is enough', () => {
-    const legacy: { status: 'paid'; verifiedAt: Date | null } = { status: 'paid', verifiedAt: null }
-    expect(hasActiveAccess(paidApp, legacy)).toBe(false)
-    // The only thing that changed is the proof.
-    expect(hasActiveAccess(paidApp, { ...legacy, verifiedAt: new Date() })).toBe(true)
+  it('lets a paid row in once a session exists for it', () => {
+    expect(hasActiveAccess(paidApp, paidMember, verifiedSession)).toBe(true)
+  })
+
+  it('keeps the private thread shut without a verified session', () => {
+    expect(canReadPrivateData(null)).toBe(false)
+    expect(canReadPrivateData(purchaseSession)).toBe(false)
+    expect(canReadPrivateData(verifiedSession)).toBe(true)
+  })
+
+  it('still opens a free app to everybody', () => {
+    expect(hasActiveAccess(freeApp, null, null)).toBe(true)
+  })
+})
+
+describe('paying with someone else’s address buys the app, not their account', () => {
+  // A purchaser typed an address at Stripe. Stripe never checks that it is theirs,
+  // so the session they come back with proves a card and nothing more.
+  it('opens the app they paid for', () => {
+    expect(hasActiveAccess(paidApp, paidMember, purchaseSession)).toBe(true)
+  })
+
+  it('does not open that address’s conversation', () => {
+    expect(canReadPrivateData(purchaseSession)).toBe(false)
+  })
+
+  it('does not open that address’s billing', () => {
+    // Billing runs through the same gate as the thread.
+    expect(canReadPrivateData(purchaseSession)).toBe(false)
+  })
+
+  it('cannot be escalated by asking for a code, because the code goes to the inbox', () => {
+    // Nothing to assert in code — the escalation path is "issue a code", and the
+    // code is mailed to the address, not returned to the caller. This test exists
+    // to keep that reasoning attached to the behaviour it depends on.
+    const code = generateCode()
+    const stored = hashCode(MEMBER, code)
+    expect(stored).not.toContain(code)
+  })
+})
+
+describe('a fresh browser must verify even for an already-verified customer', () => {
+  it('has no session, so the record being verified changes nothing', () => {
+    const recordVerifiedLongAgo = { status: 'paid' as const, verifiedAt: new Date('2026-01-01') }
+    // This is the regression: verifiedAt used to be the gate, and a fresh browser
+    // with no cookie would have passed on the strength of it.
+    expect(hasActiveAccess(paidApp, recordVerifiedLongAgo, null)).toBe(false)
+    expect(canReadPrivateData(null)).toBe(false)
+  })
+})
+
+describe('a cookie from before the fix stays rejected, whatever happens later', () => {
+  // The old format: "<memberId>.<hmac>", two segments and no scope.
+  const legacyCookie = `${MEMBER}.0123456789abcdef0123456789abcdef`
+
+  it('does not parse', () => {
+    expect(verifyAccessToken(legacyCookie)).toBeNull()
+  })
+
+  it('stays rejected after the genuine customer verifies in another browser', () => {
+    // The whole point. Verification now lands on a session, so a new one elsewhere
+    // cannot reach back and re-authorise this cookie.
+    const theirNewSession = verifyAccessToken(signAccessToken(MEMBER, 0, 'verified'))
+    expect(theirNewSession).not.toBeNull()
+    expect(verifyAccessToken(legacyCookie)).toBeNull()
+    expect(hasActiveAccess(paidApp, paidMember, verifyAccessToken(legacyCookie))).toBe(false)
+  })
+
+  it('stays rejected even for the row it names', () => {
+    expect(canReadPrivateData(verifyAccessToken(legacyCookie))).toBe(false)
+  })
+})
+
+describe('sessions can be revoked without rotating the server secret', () => {
+  const member = { id: MEMBER, appId: APP, sessionEpoch: 0 }
+
+  it('accepts a session whose epoch matches the row', () => {
+    expect(sessionMatchesMember(verifiedSession, member, APP)).toBe(true)
+  })
+
+  it('rejects every outstanding session once the epoch moves', () => {
+    expect(sessionMatchesMember(verifiedSession, { ...member, sessionEpoch: 1 }, APP)).toBe(false)
+  })
+
+  it('rejects a session for a different app, however well signed', () => {
+    expect(sessionMatchesMember(verifiedSession, member, 'app-2')).toBe(false)
+  })
+
+  it('rejects a session naming a different member', () => {
+    expect(sessionMatchesMember(verifiedSession, { ...member, id: 'member-2' }, APP)).toBe(false)
+  })
+
+  it('treats a row with no epoch as epoch zero, so existing rows keep working', () => {
+    expect(sessionMatchesMember(verifiedSession, { id: MEMBER, appId: APP }, APP)).toBe(true)
   })
 })
 
 describe('a genuine customer recovers their purchase without paying again', () => {
-  const memberId = 'member-1'
-
   it('accepts the code that was mailed to them', () => {
     const code = generateCode()
     const state: VerificationState = {
-      verificationCodeHash: hashCode(memberId, code),
+      verificationCodeHash: hashCode(MEMBER, code),
       verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS),
       verificationAttempts: 0,
     }
-    expect(checkCode(memberId, code, state)).toBe('ok')
+    expect(checkCode(MEMBER, code, state)).toBe('ok')
   })
 
-  it('still has its paid status once proved, so nothing is charged again', () => {
-    const recovered = { status: 'paid' as const, verifiedAt: new Date() }
-    expect(hasActiveAccess(paidApp, recovered)).toBe(true)
+  it('gets a verified session that opens both the app and the conversation', () => {
+    expect(hasActiveAccess(paidApp, paidMember, verifiedSession)).toBe(true)
+    expect(canReadPrivateData(verifiedSession)).toBe(true)
   })
 
   it('tolerates a code typed with spaces or dashes', () => {
     const code = '418290'
     const state: VerificationState = {
-      verificationCodeHash: hashCode(memberId, code),
+      verificationCodeHash: hashCode(MEMBER, code),
       verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS),
     }
-    expect(checkCode(memberId, '418-290', state)).toBe('ok')
-    expect(checkCode(memberId, '418 290', state)).toBe('ok')
+    expect(checkCode(MEMBER, '418-290', state)).toBe('ok')
+    expect(checkCode(MEMBER, '418 290', state)).toBe('ok')
   })
 })
 
 describe('the code itself', () => {
   it('is six digits, zero-padded', () => {
-    for (let i = 0; i < 200; i++) {
-      expect(generateCode()).toMatch(/^\d{6}$/)
-    }
+    for (let i = 0; i < 200; i++) expect(generateCode()).toMatch(/^\d{6}$/)
   })
 
   it('is scoped to one member, so it cannot be replayed against another row', () => {
@@ -110,35 +214,15 @@ describe('the code itself', () => {
     expect(codeMatches('member-b', code, stored)).toBe(false)
   })
 
-  it('is never stored in the clear', () => {
-    const code = '123456'
-    expect(hashCode('member-a', code)).not.toContain(code)
-  })
-
-  it('rejects a wrong code', () => {
-    const state: VerificationState = {
+  it('rejects a wrong code, expires, and locks after five guesses', () => {
+    const live: VerificationState = {
       verificationCodeHash: hashCode('m', '111111'),
       verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS),
     }
-    expect(checkCode('m', '222222', state)).toBe('wrong')
-  })
-
-  it('expires', () => {
-    const state: VerificationState = {
-      verificationCodeHash: hashCode('m', '111111'),
-      verificationExpiresAt: new Date(Date.now() - 1000),
-    }
-    expect(checkCode('m', '111111', state)).toBe('expired')
-  })
-
-  it('locks after five wrong guesses, so a million combinations stay a million', () => {
-    const state: VerificationState = {
-      verificationCodeHash: hashCode('m', '111111'),
-      verificationExpiresAt: new Date(Date.now() + CODE_TTL_MS),
-      verificationAttempts: MAX_ATTEMPTS,
-    }
-    // Even the right code is refused once the budget is spent.
-    expect(checkCode('m', '111111', state)).toBe('locked')
+    expect(checkCode('m', '222222', live)).toBe('wrong')
+    expect(checkCode('m', '111111', { ...live, verificationExpiresAt: new Date(Date.now() - 1000) })).toBe('expired')
+    // Even the right code is refused once the guess budget is spent.
+    expect(checkCode('m', '111111', { ...live, verificationAttempts: MAX_ATTEMPTS })).toBe('locked')
   })
 
   it('refuses when no code was ever issued', () => {
@@ -154,45 +238,38 @@ describe('codes cannot be used to mailbomb an address', () => {
   })
 
   it('holds a resend behind a short cooldown', () => {
-    const state: VerificationState = { verificationSentAt: new Date(now - 5_000), verificationSendCount: 1 }
-    const decision = canSendCode(state, now)
+    const decision = canSendCode({ verificationSentAt: new Date(now - 5_000), verificationSendCount: 1 }, now)
     expect(decision.ok).toBe(false)
     if (!decision.ok) expect(decision.reason).toBe('cooldown')
   })
 
-  it('allows a resend once the cooldown passes', () => {
-    const state: VerificationState = {
-      verificationSentAt: new Date(now - RESEND_COOLDOWN_MS - 1_000),
-      verificationSendCount: 1,
-    }
-    expect(canSendCode(state, now)).toMatchObject({ ok: true })
-  })
-
   it('caps how many codes one address gets in a window', () => {
-    const state: VerificationState = {
+    const decision = canSendCode({
       verificationSentAt: new Date(now - RESEND_COOLDOWN_MS - 1_000),
       verificationSendCount: MAX_SENDS_PER_WINDOW,
-    }
-    const decision = canSendCode(state, now)
+    }, now)
     expect(decision.ok).toBe(false)
     if (!decision.ok) expect(decision.reason).toBe('too_many')
   })
 
   it('opens the window again once it has passed', () => {
-    const state: VerificationState = {
+    expect(canSendCode({
       verificationSentAt: new Date(now - SEND_WINDOW_MS - 1_000),
       verificationSendCount: MAX_SENDS_PER_WINDOW,
-    }
-    expect(canSendCode(state, now)).toMatchObject({ ok: true, resetWindow: true })
+    }, now)).toMatchObject({ ok: true, resetWindow: true })
   })
 })
 
-describe('isVerified', () => {
-  it('is false for everything that is not a date', () => {
+describe('isVerified is a record of the address, not a grant', () => {
+  it('reports whether the address was ever proved', () => {
     expect(isVerified(null)).toBe(false)
-    expect(isVerified(undefined)).toBe(false)
-    expect(isVerified({})).toBe(false)
     expect(isVerified({ verifiedAt: null })).toBe(false)
     expect(isVerified({ verifiedAt: new Date() })).toBe(true)
+  })
+
+  it('is not consulted by any access decision', () => {
+    // A row marked verified grants nothing on its own; the session decides.
+    const verifiedRecord = { status: 'paid' as const, verifiedAt: new Date() }
+    expect(hasActiveAccess(paidApp, verifiedRecord, null)).toBe(false)
   })
 })

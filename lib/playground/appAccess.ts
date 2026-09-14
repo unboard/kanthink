@@ -18,31 +18,97 @@ const SECRET = process.env.PLAYGROUND_TOKEN_SECRET
   || process.env.AUTH_SECRET
   || 'kanthink-playground-dev-secret';
 
-function hmacFor(appUserId: string): string {
+/**
+ * What a session has actually proved.
+ *
+ * 'verified' — a code from this address was entered in THIS browser.
+ * 'purchase' — a payment completed in this browser using this address.
+ *
+ * They are not the same claim and must not grant the same things. Stripe never
+ * checks that `customer_email` belongs to the payer, so a purchase proves a card,
+ * not an inbox. Someone paying with a stranger's address gets the app they paid
+ * for and nothing of that stranger's.
+ */
+export type AccessScope = 'verified' | 'purchase';
+
+const SCOPE_CODES: Record<AccessScope, string> = { verified: 'v', purchase: 'p' };
+const SCOPE_BY_CODE: Record<string, AccessScope> = { v: 'verified', p: 'purchase' };
+
+export interface AccessSession {
+  appUserId: string;
+  scope: AccessScope;
+  epoch: number;
+}
+
+function sessionHmac(appUserId: string, epoch: number, scopeCode: string): string {
   return crypto
     .createHmac('sha256', `${SECRET}:app-user`)
-    .update(appUserId)
+    .update(`${appUserId}:${epoch}:${scopeCode}`)
     .digest('hex')
     .slice(0, 32);
 }
 
-export function signAccessToken(appUserId: string): string {
-  return `${appUserId}.${hmacFor(appUserId)}`;
+/**
+ * Mint a session token.
+ *
+ * Four segments, where the old format had two. That is deliberate and load-bearing:
+ * every cookie issued before sessions carried proof fails to parse here, and no
+ * later event can bring one back. Verification used to be a flag on the row, so the
+ * genuine customer proving their address re-enabled every stale cookie for it —
+ * the invalidation undid itself.
+ *
+ * `epoch` comes from the member row, so bumping it signs every outstanding session
+ * for that person out at once.
+ */
+export function signAccessToken(appUserId: string, epoch: number, scope: AccessScope): string {
+  const code = SCOPE_CODES[scope];
+  return `${appUserId}.${epoch}.${code}.${sessionHmac(appUserId, epoch, code)}`;
 }
 
-export function verifyAccessToken(token: string | null | undefined): string | null {
+/**
+ * Read a session token back.
+ *
+ * Returns null for anything that is not a well-formed, correctly signed four-part
+ * token — which includes every cookie minted before this format existed.
+ */
+export function verifyAccessToken(token: string | null | undefined): AccessSession | null {
   if (!token || typeof token !== 'string') return null;
-  const dot = token.lastIndexOf('.');
-  if (dot < 1) return null;
-  const appUserId = token.slice(0, dot);
-  const hmac = token.slice(dot + 1);
-  const expected = hmacFor(appUserId);
+
+  const parts = token.split('.');
+  if (parts.length !== 4) return null;
+
+  const [appUserId, epochRaw, scopeCode, hmac] = parts;
+  if (!appUserId || !SCOPE_BY_CODE[scopeCode]) return null;
+
+  const epoch = Number(epochRaw);
+  if (!Number.isInteger(epoch) || epoch < 0) return null;
+
+  const expected = sessionHmac(appUserId, epoch, scopeCode);
   if (hmac.length !== expected.length) return null;
   try {
-    return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected)) ? appUserId : null;
+    if (!crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected))) return null;
   } catch {
     return null;
   }
+
+  return { appUserId, scope: SCOPE_BY_CODE[scopeCode], epoch };
+}
+
+/**
+ * Does this token still belong to this row?
+ *
+ * The signature only proves the token was minted here. This proves it has not been
+ * revoked since, and that it is for the row the caller thinks it is.
+ */
+export function sessionMatchesMember(
+  session: AccessSession | null | undefined,
+  member: { id: string; appId: string; sessionEpoch?: number | null } | null | undefined,
+  appId: string,
+): boolean {
+  if (!session || !member) return false;
+  if (member.appId !== appId) return false;
+  if (session.appUserId !== member.id) return false;
+  return session.epoch === (member.sessionEpoch ?? 0);
 }
 
 /**
@@ -59,11 +125,12 @@ export interface AccessSubject {
   status: 'free' | 'paid' | 'refunded' | 'canceled';
   accessExpiresAt?: Date | null;
   /**
-   * When this person proved the email address is theirs.
+   * When this address was first proved by anyone.
    *
-   * Null means they never did — either they predate verification existing, or they
-   * are somebody who typed a customer's address. Those two are indistinguishable
-   * from here, which is exactly why neither one gets in.
+   * Kept as a record for the publisher, and deliberately NOT an input to any access
+   * decision. It used to be the gate, which made verification a property of the row
+   * rather than of the browser holding the cookie — so one person proving the
+   * address silently re-authorised every other session against it.
    */
   verifiedAt?: Date | null;
 }
@@ -99,11 +166,14 @@ export function isPaywalled(app: PaywallState): boolean {
 export function hasActiveAccess(
   app: PaywallState,
   member: AccessSubject | null | undefined,
+  session: AccessSession | null | undefined,
   now: Date = new Date(),
 ): boolean {
   if (!isPaywalled(app)) return true;
-  if (!member) return false;
-  if (!member.verifiedAt) return false;
+  // A session, of either scope. Somebody who just paid gets in on the purchase;
+  // somebody returning gets in on a code. What neither can do is get in on a typed
+  // address, because that mints no session at all.
+  if (!session || !member) return false;
   if (member.status !== 'paid') return false;
   // Subscriptions carry an expiry; a one-time purchase does not, and never lapses.
   if (member.accessExpiresAt && member.accessExpiresAt.getTime() < now.getTime()) return false;
@@ -118,8 +188,11 @@ export function hasActiveAccess(
  * still holding one private conversation per person. Reading that conversation is
  * not the same act as opening the app, and only one of them needs proof.
  */
-export function canReadPrivateData(member: AccessSubject | null | undefined): boolean {
-  return !!member?.verifiedAt;
+export function canReadPrivateData(session: AccessSession | null | undefined): boolean {
+  // Only a code entered in this browser. A purchase is not proof of the inbox, so a
+  // purchase-scope session may open the app and never sees the conversation or the
+  // billing attached to the address it paid with.
+  return session?.scope === 'verified';
 }
 
 /** `$4.00`, `$4.00/mo`, `Free`. Minor units in, something a buyer can read out. */

@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { appUsers } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { createPortalSession } from '@/lib/stripe'
-import { accessCookieName, canReadPrivateData, verifyAccessToken } from '@/lib/playground/appAccess'
+import { accessCookieName, canReadPrivateData } from '@/lib/playground/appAccess'
+import { resolveAppSession } from '@/lib/playground/appSession'
 import { findPublishedApp } from '@/lib/playground/publicApp'
 
 export const runtime = 'nodejs'
@@ -28,17 +26,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     const app = await findPublishedApp(token)
     if (!app) return NextResponse.redirect(new URL('/', req.nextUrl.origin))
 
+    // The link in a receipt email carries its own key; otherwise the cookie.
     const key = req.nextUrl.searchParams.get('k') || req.cookies.get(accessCookieName(app.id))?.value
-    const memberId = verifyAccessToken(key)
-    if (!memberId) return NextResponse.redirect(home)
+    const resolved = await resolveAppSession(key, app.id)
+    if (!resolved) return NextResponse.redirect(home)
 
-    const member = await db.query.appUsers.findFirst({ where: eq(appUsers.id, memberId) })
-    if (!member || member.appId !== app.id || !member.stripeCustomerId) {
-      return NextResponse.redirect(home)
-    }
-    // The billing portal can cancel a subscription and see payment history, so it
-    // is private data on the same terms as the support thread.
-    if (!canReadPrivateData(member)) return NextResponse.redirect(home)
+    const member = resolved.member
+    if (!member.stripeCustomerId) return NextResponse.redirect(home)
+
+    // Cancelling a subscription and reading payment history are private to the
+    // inbox, not to the card — a purchase-scope session does not get here.
+    if (!canReadPrivateData(resolved.session)) return NextResponse.redirect(home)
 
     const url = await createPortalSession(member.stripeCustomerId, home.toString())
     return NextResponse.redirect(url || home)

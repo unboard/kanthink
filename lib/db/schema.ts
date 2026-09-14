@@ -448,6 +448,13 @@ export const appUsers = sqliteTable('app_users', {
   // support thread. Nothing is granted now until the address is proved, and every
   // grant issued before this existed reads as unverified and has to be proved once.
   verifiedAt: integer('verified_at', { mode: 'timestamp' }),
+  /**
+   * Bumping this invalidates every outstanding session for this person.
+   *
+   * Sessions are signed over it, so revocation is a single increment rather than a
+   * secret rotation that would sign out every customer of every app.
+   */
+  sessionEpoch: integer('session_epoch').notNull().default(0),
   /** HMAC of the outstanding one-time code. The code itself is never stored. */
   verificationCodeHash: text('verification_code_hash'),
   verificationExpiresAt: integer('verification_expires_at', { mode: 'timestamp' }),

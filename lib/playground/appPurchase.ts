@@ -81,9 +81,12 @@ export async function recordAppPurchase(input: RecordPurchaseInput): Promise<voi
     // Only a subscription has anything to manage. The link points at our own
     // route rather than a Stripe portal session, because a session URL is
     // short-lived and single-use — one sitting in an inbox for a month is dead.
-    // The signed key identifies the buyer on a device that has never had a cookie.
+    // The key identifies the buyer on a device that has never had a cookie, and it
+    // carries verified scope because it is delivered to the inbox itself — following
+    // a link only that mailbox received proves the address, exactly as a code does.
+    // If somebody paid using a stranger's address, this reaches the stranger.
     const manageBillingUrl = input.stripeSubscriptionId && input.stripeCustomerId
-      ? `${siteOrigin()}/api/play/${app.shareToken}/billing?k=${signAccessToken(member.id)}`
+      ? `${siteOrigin()}/api/play/${app.shareToken}/billing?k=${signAccessToken(member.id, member.sessionEpoch ?? 0, 'verified')}`
       : undefined
 
     void sendAppPurchasedEmail(member.email, {

@@ -87,8 +87,8 @@ describe('free apps stay free', () => {
     expect(isPaywalled({ paywallEnabled: true, priceAmount: 400, stripePriceId: 'price_1' })).toBe(true)
   })
 
-  it('lets anyone in when it is not paywalled', () => {
-    expect(hasActiveAccess({ paywallEnabled: false }, null)).toBe(true)
+  it('lets anyone in when it is not paywalled, with or without a session', () => {
+    expect(hasActiveAccess({ paywallEnabled: false }, null, null)).toBe(true)
   })
 
   it('says Free rather than a zero price', () => {

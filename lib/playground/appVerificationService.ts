@@ -120,21 +120,14 @@ export async function verifyAccessCode(
   return { ok: true, member: refreshed ?? { ...member, verifiedAt: member.verifiedAt ?? now } }
 }
 
-/**
- * Mark someone verified because they just completed a Stripe checkout.
+/*
+ * There is deliberately no "mark verified because they paid" helper here.
  *
- * Completing a payment against an address is a live, attributable act — a card, a
- * bank, a receipt — not a string anyone can guess, so it stands in for the code.
- * Without this every buyer would be asked to prove an address seconds after paying
- * through it, which reads as the purchase having failed.
+ * There was one, and it was wrong: Stripe never checks that customer_email belongs
+ * to the payer, so paying with a stranger's address would have handed over that
+ * stranger's history. A purchase now mints a purchase-scope session, which opens
+ * the app and nothing attached to the address. See lib/playground/appAccess.
  */
-export async function markVerifiedByPurchase(appUserId: string): Promise<void> {
-  const member = await db.query.appUsers.findFirst({ where: eq(appUsers.id, appUserId) })
-  if (!member || member.verifiedAt) return
-  await db.update(appUsers)
-    .set({ verifiedAt: new Date(), updatedAt: new Date() })
-    .where(eq(appUsers.id, appUserId))
-}
 
 /** How long a send window runs, for messages that need to say so. */
 export const SEND_WINDOW_MINUTES = Math.round(SEND_WINDOW_MS / 60000)

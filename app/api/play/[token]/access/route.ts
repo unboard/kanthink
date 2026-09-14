@@ -5,11 +5,11 @@ import { eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import {
   accessCookieName,
-  hasActiveAccess,
   isPaywalled,
   signAccessToken,
-  verifyAccessToken,
+  type AccessScope,
 } from '@/lib/playground/appAccess'
+import { accessCookie, resolveAppSession } from '@/lib/playground/appSession'
 import { createAppCheckoutSession, PricingAuthError, PricingUnavailableError } from '@/lib/playground/appPricing'
 import { issueAccessCode, verifyAccessCode } from '@/lib/playground/appVerificationService'
 import { ensureAppUser, findAppOwnerId, findPublishedApp, requestOrigin } from '@/lib/playground/publicApp'
@@ -60,8 +60,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         return NextResponse.json({ error: outcome.error, needsCode: true }, { status: 400 })
       }
 
-      if (hasActiveAccess(app, outcome.member)) {
-        return grantResponse(app.id, outcome.member.id)
+      // A code entered here proves the inbox, so this session may read the
+      // conversation and the billing attached to it.
+      if (outcome.member.status === 'paid') {
+        return grantResponse(app.id, outcome.member, 'verified')
       }
 
       // Proved who they are, but have not bought it. Straight to checkout — and the
@@ -139,15 +141,13 @@ async function startCheckout(
  * every load — a refund, a cancelled subscription, or an unverified row all fail
  * there regardless of how much life the cookie has left.
  */
-function grantResponse(appId: string, memberId: string) {
-  const res = NextResponse.json({ granted: true })
-  res.cookies.set(accessCookieName(appId), signAccessToken(memberId), {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 365,
-  })
+function grantResponse(
+  appId: string,
+  member: { id: string; sessionEpoch?: number | null },
+  scope: AccessScope,
+) {
+  const res = NextResponse.json({ granted: true, scope })
+  res.cookies.set(accessCookie(appId, signAccessToken(member.id, member.sessionEpoch ?? 0, scope)))
   return res
 }
 
@@ -164,15 +164,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ to
     const app = await findPublishedApp(token)
     if (!app) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const memberId = verifyAccessToken(req.cookies.get(accessCookieName(app.id))?.value)
-    if (!memberId) return NextResponse.json({ ok: false })
-
-    const member = await db.query.appUsers.findFirst({ where: eq(appUsers.id, memberId) })
-    if (!member || member.appId !== app.id) return NextResponse.json({ ok: false })
+    const resolved = await resolveAppSession(req.cookies.get(accessCookieName(app.id))?.value, app.id)
+    if (!resolved) return NextResponse.json({ ok: false })
 
     await db.update(appUsers)
-      .set({ sessionCount: member.sessionCount + 1, lastSeenAt: new Date(), updatedAt: new Date() })
-      .where(eq(appUsers.id, memberId))
+      .set({ sessionCount: resolved.member.sessionCount + 1, lastSeenAt: new Date(), updatedAt: new Date() })
+      .where(eq(appUsers.id, resolved.member.id))
     return NextResponse.json({ ok: true })
   } catch {
     return NextResponse.json({ ok: false })

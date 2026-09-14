@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { appUsers, playgroundApps } from '@/lib/db/schema';
+import { playgroundApps } from '@/lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { cookies, headers } from 'next/headers';
 import { notFound } from 'next/navigation';
@@ -8,11 +8,12 @@ import { signAppToken } from '@/lib/playground/appToken';
 import { resolveDeps } from '@/lib/playground/runtime';
 import {
   accessCookieName,
+  canReadPrivateData,
   formatAppPrice,
   hasActiveAccess,
   isPaywalled,
-  verifyAccessToken,
 } from '@/lib/playground/appAccess';
+import { resolveAppSession } from '@/lib/playground/appSession';
 import { findPublishedApp } from '@/lib/playground/publicApp';
 import { PublicPlaygroundFrame } from './PublicPlaygroundFrame';
 import { AppPaywall } from './AppPaywall';
@@ -56,15 +57,15 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   let canManageBilling = false;
   if (isPaywalled(app)) {
     const jar = await cookies();
-    const memberId = verifyAccessToken(jar.get(accessCookieName(app.id))?.value);
-    const member = memberId
-      ? await db.query.appUsers.findFirst({ where: eq(appUsers.id, memberId) })
-      : null;
-    const valid = member && member.appId === app.id ? member : null;
+    const resolved = await resolveAppSession(jar.get(accessCookieName(app.id))?.value, app.id);
+    const valid = resolved?.member ?? null;
     // Only a subscription has anything to manage; a one-time purchase is done.
-    canManageBilling = Boolean(valid?.stripeSubscriptionId && valid.stripeCustomerId);
+    // Billing is inbox-private, so the link only appears for a verified session.
+    canManageBilling = Boolean(
+      valid?.stripeSubscriptionId && valid.stripeCustomerId && canReadPrivateData(resolved?.session),
+    );
 
-    if (!hasActiveAccess(app, valid)) {
+    if (!hasActiveAccess(app, valid, resolved?.session)) {
       return (
         <AppPaywall
           token={token}

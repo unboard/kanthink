@@ -4,10 +4,10 @@ import { appUsers } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { stripe } from '@/lib/stripe'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { accessCookieName, signAccessToken } from '@/lib/playground/appAccess'
+import { signAccessToken } from '@/lib/playground/appAccess'
+import { accessCookie } from '@/lib/playground/appSession'
 import { findPublishedApp } from '@/lib/playground/publicApp'
 import { recordAppPurchase } from '@/lib/playground/appPurchase'
-import { markVerifiedByPurchase } from '@/lib/playground/appVerificationService'
 
 export const runtime = 'nodejs'
 
@@ -50,12 +50,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       return NextResponse.redirect(appUrl)
     }
 
-    // Completing checkout against this address is a live, attributable act — a
-    // card, a bank, a receipt — so it stands in for the emailed code. Without this
-    // a buyer would be asked to prove an address seconds after paying through it,
-    // which reads as the purchase having failed.
-    await markVerifiedByPurchase(member.id)
-
     await recordAppPurchase({
       appUserId: member.id,
       amount: checkout.amount_total ?? null,
@@ -67,13 +61,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
     appUrl.searchParams.set('purchase', 'success')
     const res = NextResponse.redirect(appUrl)
-    res.cookies.set(accessCookieName(app.id), signAccessToken(member.id), {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 365,
-    })
+    // Purchase scope, not verified. Stripe does not check that customer_email
+    // belongs to the payer, so this proves a card and not an inbox: the buyer opens
+    // the app immediately and sees nothing private belonging to that address.
+    res.cookies.set(accessCookie(app.id, signAccessToken(member.id, member.sessionEpoch ?? 0, 'purchase')))
     return res
   } catch (error) {
     console.error('[play/grant] failed:', error)

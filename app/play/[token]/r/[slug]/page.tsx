@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { appUsers, playgroundApps } from '@/lib/db/schema';
+import { playgroundApps } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { cookies, headers } from 'next/headers';
 import {
@@ -7,8 +7,8 @@ import {
   formatAppPrice,
   hasActiveAccess,
   isPaywalled,
-  verifyAccessToken,
 } from '@/lib/playground/appAccess';
+import { resolveAppSession } from '@/lib/playground/appSession';
 import { AppPaywall } from '../../AppPaywall';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
@@ -59,13 +59,10 @@ export default async function PlayRecordPage({ params }: PageProps) {
   // A record link is a second door into the same app, so it needs the same lock.
   if (isPaywalled(app)) {
     const jar = await cookies();
-    const memberId = verifyAccessToken(jar.get(accessCookieName(app.id))?.value);
-    const member = memberId
-      ? await db.query.appUsers.findFirst({ where: eq(appUsers.id, memberId) })
-      : null;
-    const valid = member && member.appId === app.id ? member : null;
+    const resolved = await resolveAppSession(jar.get(accessCookieName(app.id))?.value, app.id);
+    const valid = resolved?.member ?? null;
 
-    if (!hasActiveAccess(app, valid)) {
+    if (!hasActiveAccess(app, valid, resolved?.session)) {
       return (
         <AppPaywall
           token={token}

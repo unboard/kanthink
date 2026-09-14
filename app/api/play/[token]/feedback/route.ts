@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { appMessages, appUsers } from '@/lib/db/schema'
 import { and, asc, eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { accessCookieName, canReadPrivateData, verifyAccessToken } from '@/lib/playground/appAccess'
+import { accessCookieName, canReadPrivateData } from '@/lib/playground/appAccess'
+import { resolveAppSession } from '@/lib/playground/appSession'
 import { createNotification } from '@/lib/notifications/createNotification'
 import {
   ensureAppUser,
@@ -39,8 +40,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     const app = await findPublishedApp(token)
     if (!app) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const member = await memberFromCookie(req, app.id)
-    if (!member) return NextResponse.json({ messages: [], identified: false })
+    const resolved = await sessionFor(req, app.id)
+    if (!resolved) return NextResponse.json({ messages: [], identified: false })
+
+    // A purchase-scope session bought the app; it did not prove the inbox, so the
+    // conversation attached to that address stays shut to it. A cookie predating
+    // scopes does not parse and never reaches here at all.
+    if (!canReadPrivateData(resolved.session)) {
+      return NextResponse.json({
+        messages: [],
+        identified: false,
+        needsVerification: true,
+        email: resolved.member.email,
+      })
+    }
+
+    const member = resolved.member
 
     const rows = await db.query.appMessages.findMany({
       where: eq(appMessages.appUserId, member.id),
@@ -90,7 +105,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
     // A free app has no reason to have asked for an email yet, so feedback is also
     // the moment someone first identifies themselves.
-    let member = await memberFromCookie(req, app.id)
+    const resolvedPost = await sessionFor(req, app.id)
+    let member = resolvedPost?.member ?? null
     if (!member) {
       const email = (body.email || '').trim().toLowerCase()
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
@@ -134,28 +150,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       createdAt: now.toISOString(),
     }
 
-    // A cookie is only issued once the address is proved. Writing with an unproved
-    // one is accepted and answered by email — what it must never do is open the
-    // thread, because that is the thing an unproved address could be lying about.
-    const verified = canReadPrivateData(member)
-    const res = NextResponse.json({
+    // No cookie is ever minted here. Writing is open to anyone, so issuing a
+    // session on a write would hand an account to whoever typed the address — which
+    // is the hole this route used to have in its own right.
+    const verified = canReadPrivateData(resolvedPost?.session)
+    return NextResponse.json({
       message,
       identified: verified,
       needsVerification: !verified,
       email: member.email,
     })
-
-    if (verified && !req.cookies.get(accessCookieName(app.id))) {
-      const { signAccessToken } = await import('@/lib/playground/appAccess')
-      res.cookies.set(accessCookieName(app.id), signAccessToken(member.id), {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 365,
-      })
-    }
-    return res
   } catch (error) {
     console.error('[play/feedback] POST failed:', error)
     return NextResponse.json({ error: 'Could not send that. Try again.' }, { status: 500 })
@@ -163,10 +167,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 }
 
 /** The visitor behind the access cookie, checked against this app. */
-async function memberFromCookie(req: NextRequest, appId: string) {
-  const memberId = verifyAccessToken(req.cookies.get(accessCookieName(appId))?.value)
-  if (!memberId) return null
-  const member = await db.query.appUsers.findFirst({ where: eq(appUsers.id, memberId) })
-  // A token signed for a different app must not resolve here, however valid it is.
-  return member && member.appId === appId ? member : null
+async function sessionFor(req: NextRequest, appId: string) {
+  return resolveAppSession(req.cookies.get(accessCookieName(appId))?.value, appId)
 }
