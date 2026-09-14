@@ -61,12 +61,28 @@ const PREFLIGHT_SYSTEM = `You are a code-generation gatekeeper for a vibe-coding
 
 When the request mixes types, pick the most ambitious one. (If both cosmetic and structural changes are requested, return "structural".)
 
+ONE VERDICT. The sections above are things to think about, not fields to fill in.
+Put a single value in "decision": UNSUPPORTED if the runtime cannot do the central
+thing, else ASK if clarity genuinely requires it, else ACT. UNSUPPORTED outranks ASK,
+which outranks ACT. Do NOT return separate "clarity" and "capability" fields.
+
+"unsupported" is an ARRAY of strings, even when there is one item.
+
 Return JSON matching the schema. Keep "rationale" to one short sentence.`;
 
 const PREFLIGHT_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    decision: { type: Type.STRING, description: 'ACT, ASK, or UNSUPPORTED' },
+    decision: {
+      type: Type.STRING,
+      description:
+        'ONE overall verdict: "UNSUPPORTED", "ASK", or "ACT". UNSUPPORTED outranks ASK, ' +
+        'which outranks ACT. Use UNSUPPORTED whenever the central promise needs something ' +
+        'this runtime does not have — data that follows a person across devices, user ' +
+        'accounts or sign-in, real-time collaboration, a secret API key, or work that ' +
+        'happens while the app is closed. Judging the request clear does NOT make it ACT ' +
+        'if the runtime cannot build it.',
+    },
     questions: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
@@ -77,8 +93,21 @@ const PREFLIGHT_SCHEMA = {
       description: 'cosmetic | behavior | structural | redesign | first',
     },
     rationale: { type: Type.STRING },
+    unsupported: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description:
+        'When decision is UNSUPPORTED: the missing capabilities, in the user\'s own words. ' +
+        'Empty array otherwise.',
+    },
+    smallerScope: {
+      type: Type.STRING,
+      description:
+        'When decision is UNSUPPORTED: one concrete sentence describing the genuinely ' +
+        'useful thing that CAN be built instead. Empty string otherwise.',
+    },
   },
-  required: ['decision', 'editType', 'rationale', 'questions'],
+  required: ['decision', 'editType', 'rationale', 'questions', 'unsupported', 'smallerScope'],
 };
 
 /**
@@ -112,12 +141,19 @@ export async function runPreflight(opts: {
    */
   imageCount?: number;
 }): Promise<PreflightResult> {
-  if (!opts.hasCurrentCode) {
-    // First generation never asks — get out of the way.
-    return { decision: 'ACT', editType: 'first', rationale: 'first generation' };
-  }
+  // A first build still gets checked, but only for whether the runtime can do the
+  // thing at all — never for clarity. Asking a clarifying question before the first
+  // build is friction at the worst possible moment; discovering afterwards that the
+  // app cannot keep anyone's progress is worse than a sentence up front.
+  const firstBuild = !opts.hasCurrentCode;
 
   const images = opts.imageCount ?? 0;
+  const firstBuildRider = firstBuild
+    ? '\n\nTHIS IS THE FIRST BUILD. There is no existing app. Never return ASK — the user is ' +
+      'waiting to see something, and a question here is friction at the worst moment. ' +
+      'Return UNSUPPORTED only if the CENTRAL promise needs a capability this runtime ' +
+      'does not have; otherwise return ACT with editType "first".'
+    : '';
   const userMsg = [
     `APP TITLE: ${opts.cardTitle}`,
     images > 0
@@ -135,23 +171,42 @@ export async function runPreflight(opts: {
       model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts: [{ text: userMsg }] }],
       config: {
-        systemInstruction: PREFLIGHT_SYSTEM,
+        systemInstruction: PREFLIGHT_SYSTEM + firstBuildRider,
         responseMimeType: 'application/json',
         responseSchema: PREFLIGHT_SCHEMA,
         maxOutputTokens: 600,
       },
     });
     const text = response.text || '';
-    const parsed = JSON.parse(text) as Partial<PreflightResult> & { questions?: unknown };
+    // Loosely typed on purpose: this is model output, and the fields it actually
+    // returns are not always the fields that were asked for.
+    const parsed = JSON.parse(text) as Partial<PreflightResult> & {
+      questions?: unknown;
+      capability?: unknown;
+      clarity?: unknown;
+      unsupported?: unknown;
+      smallerScope?: unknown;
+    };
     // Three verdicts now, and anything unrecognised means build — a classifier
   // that returns nonsense should not be able to block work.
+    // The prompt reasons in three sections, and a model given three headings will
+    // sometimes answer with three fields — clarity: ACT, capability: UNSUPPORTED —
+    // rather than the one verdict the schema asks for. Read whichever it used, and
+    // let the most restrictive win, because silently reading only 'decision' turned
+    // a correct refusal into a build.
+    const verdicts = [parsed.decision, parsed.capability, parsed.clarity]
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => v.trim().toUpperCase());
     const decision: 'ACT' | 'ASK' | 'UNSUPPORTED' =
-      parsed.decision === 'ASK' ? 'ASK'
-      : parsed.decision === 'UNSUPPORTED' ? 'UNSUPPORTED'
+      verdicts.includes('UNSUPPORTED') ? 'UNSUPPORTED'
+      : verdicts.includes('ASK') ? 'ASK'
       : 'ACT';
-    const editType: EditType = (
-      ['cosmetic', 'behavior', 'structural', 'redesign', 'first'] as const
-    ).find((t) => t === parsed.editType) || 'structural';
+    // A first build is 'first' whatever the classifier says — there is no existing
+    // app for an edit type to describe, and 'auto' routes on it.
+    const editType: EditType = firstBuild
+      ? 'first'
+      : (['cosmetic', 'behavior', 'structural', 'redesign', 'first'] as const)
+          .find((t) => t === parsed.editType) || 'structural';
     const rawQuestions = Array.isArray(parsed.questions)
       ? parsed.questions.filter((q): q is string => typeof q === 'string').slice(0, 2)
       : [];
@@ -161,11 +216,17 @@ export async function runPreflight(opts: {
     // turn and tells them their attachments never arrived — while the builder was
     // holding those very images. A prompt rule is a request; this is not.
     const asksAboutImages = images > 0 && rawQuestions.some(asksForAttachedImages);
-    const questions = asksAboutImages ? [] : rawQuestions;
+    // Never ask before the first build, whatever the classifier decided. The prompt
+    // says so; this is the backstop, because an ASK there cancels the build the user
+    // is sitting waiting for.
+    const questions = asksAboutImages || firstBuild ? [] : rawQuestions;
 
-    const unsupported = Array.isArray(parsed.unsupported)
-      ? parsed.unsupported.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
-      : [];
+    // Asked for an array, sometimes given a sentence. Both are usable.
+    const unsupported = (
+      Array.isArray(parsed.unsupported)
+        ? parsed.unsupported
+        : typeof parsed.unsupported === 'string' ? [parsed.unsupported] : []
+    ).filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
     const smallerScope = typeof parsed.smallerScope === 'string' ? parsed.smallerScope.trim() : '';
 
     // UNSUPPORTED only counts when it names what is missing. A verdict with no
@@ -193,7 +254,7 @@ export async function runPreflight(opts: {
     // If preflight fails, just act — we don't want a broken classifier to block work.
     return {
       decision: 'ACT',
-      editType: 'structural',
+      editType: firstBuild ? 'first' : 'structural',
       rationale: `preflight failed: ${err instanceof Error ? err.message : 'unknown'}`,
     };
   }
