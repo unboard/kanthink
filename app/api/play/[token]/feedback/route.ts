@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { appMessages, appUsers } from '@/lib/db/schema'
 import { and, asc, eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { accessCookieName, verifyAccessToken } from '@/lib/playground/appAccess'
+import { accessCookieName, canReadPrivateData, verifyAccessToken } from '@/lib/playground/appAccess'
 import { createNotification } from '@/lib/notifications/createNotification'
 import {
   ensureAppUser,
@@ -21,8 +21,16 @@ export const runtime = 'nodejs'
  * publisher answers from the app's Audience tab. It is one thread per person per
  * app — a support inbox scoped so tightly it needs no triage.
  *
- * GET  — this visitor's thread, and marks the publisher's replies read.
- * POST — send a message. An email identifies the sender when they have no cookie yet.
+ * Reading a thread needs a proved address; writing to one does not.
+ *
+ * That asymmetry is deliberate. The thread is private — it used to open to anyone
+ * who typed the right email, which handed over a stranger's support conversation.
+ * But putting a code in front of "this button is broken" would end feedback
+ * entirely, and the reply reaches them by email regardless. So anyone may write,
+ * only the proved may read back.
+ *
+ * GET  — this visitor's thread, if they have proved the address.
+ * POST — send a message. An unproved address may still write; it just cannot read.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
@@ -126,9 +134,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       createdAt: now.toISOString(),
     }
 
-    // Hand back the cookie when this was also the identifying step.
-    const res = NextResponse.json({ message, identified: true, email: member.email })
-    if (!req.cookies.get(accessCookieName(app.id))) {
+    // A cookie is only issued once the address is proved. Writing with an unproved
+    // one is accepted and answered by email — what it must never do is open the
+    // thread, because that is the thing an unproved address could be lying about.
+    const verified = canReadPrivateData(member)
+    const res = NextResponse.json({
+      message,
+      identified: verified,
+      needsVerification: !verified,
+      email: member.email,
+    })
+
+    if (verified && !req.cookies.get(accessCookieName(app.id))) {
       const { signAccessToken } = await import('@/lib/playground/appAccess')
       res.cookies.set(accessCookieName(app.id), signAccessToken(member.id), {
         httpOnly: true,

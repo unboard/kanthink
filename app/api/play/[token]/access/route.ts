@@ -11,26 +11,29 @@ import {
   verifyAccessToken,
 } from '@/lib/playground/appAccess'
 import { createAppCheckoutSession, PricingAuthError, PricingUnavailableError } from '@/lib/playground/appPricing'
+import { issueAccessCode, verifyAccessCode } from '@/lib/playground/appVerificationService'
 import { ensureAppUser, findAppOwnerId, findPublishedApp, requestOrigin } from '@/lib/playground/publicApp'
 
 export const runtime = 'nodejs'
 
 /**
- * "Let me in" on a published app.
+ * Getting into a published app.
  *
- * The visitor gives an email. Three things can happen:
- *   - the app is free → they get an access cookie and the app opens;
- *   - they have already paid → same, no second charge;
- *   - it costs money and they have not paid → a Stripe checkout URL.
+ * Two steps, and the split is the whole point. Step one takes an address and sends
+ * it a code; it never grants anything. Step two takes the code back and grants.
  *
- * The `app_users` row is written before checkout starts, on purpose. Someone who
- * abandons checkout still shows up in the publisher's audience as a person who
- * looked, which is a more useful list than one containing only buyers.
+ * It used to be one step: type the address you bought with and you were in. That
+ * made knowing a customer's email the same as being them — their paid app, and
+ * their private thread with whoever made it. The convenience and the hole were the
+ * same line of code, and nothing short of proving the address closes it.
+ *
+ * A buyer coming back from Stripe skips all of this: completing a payment against
+ * an address is itself proof, and /grant marks them verified.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
 
-  let body: { email?: string; name?: string }
+  let body: { email?: string; name?: string; code?: string }
   try {
     body = await req.json()
   } catch {
@@ -50,37 +53,49 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
     const ownerId = await findAppOwnerId(app)
     const member = await ensureAppUser({ appId: app.id, ownerId, email, name: body.name })
 
-    if (hasActiveAccess(app, member)) {
-      return grantResponse(app.id, member.id)
+    // ── Step two: a code came back ──────────────────────────────────────────
+    if (body.code) {
+      const outcome = await verifyAccessCode(member, body.code)
+      if (!outcome.ok) {
+        return NextResponse.json({ error: outcome.error, needsCode: true }, { status: 400 })
+      }
+
+      if (hasActiveAccess(app, outcome.member)) {
+        return grantResponse(app.id, outcome.member.id)
+      }
+
+      // Proved who they are, but have not bought it. Straight to checkout — and the
+      // row is already verified, so they come back from Stripe and stay in.
+      return startCheckout(app, outcome.member.id, email, token)
     }
 
+    // ── Step one: an address arrived ────────────────────────────────────────
+    //
+    // A free app has nothing to buy, so proving the address is only about reading
+    // the private thread — and that is handled on the feedback route, which asks
+    // for a code when it actually needs one. Sending one here would put a code in
+    // front of an app that opens for everybody.
     if (!isPaywalled(app)) {
-      // Belt and braces: hasActiveAccess already returns true for an unpaywalled
-      // app, so reaching here means the paywall is on but unbuyable.
-      return NextResponse.json(
-        { error: 'This app is not currently available to buy.' },
-        { status: 503 },
-      )
+      return NextResponse.json({ granted: true, free: true })
     }
 
-    const origin = await requestOrigin()
-    const url = await createAppCheckoutSession({
-      appId: app.id,
-      appUserId: member.id,
-      priceId: app.stripePriceId!,
-      interval: app.priceInterval || 'one_time',
-      email,
-      successUrl: `${origin}/api/play/${token}/grant?session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${origin}/play/${token}?purchase=canceled`,
+    // Someone who has never paid is sent to checkout rather than made to prove an
+    // address first: payment proves it, and one step beats two.
+    if (member.status !== 'paid') {
+      return startCheckout(app, member.id, email, token)
+    }
+
+    // A paying customer coming back. This is the case that used to be a hole.
+    const issued = await issueAccessCode(member, app.title)
+    if (!issued.sent) {
+      return NextResponse.json({ error: issued.error, needsCode: true }, { status: 429 })
+    }
+    return NextResponse.json({
+      needsCode: true,
+      message: 'You have already bought this. We sent a code to that address to check it is you.',
     })
-
-    if (!url) {
-      return NextResponse.json({ error: 'Could not start checkout.' }, { status: 502 })
-    }
-    return NextResponse.json({ checkoutUrl: url })
   } catch (error) {
     if (error instanceof PricingUnavailableError || error instanceof PricingAuthError) {
-      // The buyer is not told whose key is broken — only that they cannot pay yet.
       console.error('[play/access] checkout unavailable:', error.message)
       return NextResponse.json(
         { error: 'Payments are temporarily unavailable for this app. Try again later.' },
@@ -92,12 +107,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   }
 }
 
+async function startCheckout(
+  app: { id: string; stripePriceId: string | null; priceInterval: 'one_time' | 'month' | 'year' | null },
+  appUserId: string,
+  email: string,
+  token: string,
+) {
+  if (!isPaywalled(app as Parameters<typeof isPaywalled>[0])) {
+    return NextResponse.json({ error: 'This app is not currently available to buy.' }, { status: 503 })
+  }
+
+  const origin = await requestOrigin()
+  const url = await createAppCheckoutSession({
+    appId: app.id,
+    appUserId,
+    priceId: app.stripePriceId!,
+    interval: app.priceInterval || 'one_time',
+    email,
+    successUrl: `${origin}/api/play/${token}/grant?session_id={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${origin}/play/${token}?purchase=canceled`,
+  })
+
+  if (!url) return NextResponse.json({ error: 'Could not start checkout.' }, { status: 502 })
+  return NextResponse.json({ checkoutUrl: url })
+}
+
 /**
  * The access cookie.
  *
- * A year, httpOnly, lax — long enough that a one-time purchase does not feel like a
- * rental, and the token is checked against the row on every load anyway, so a refund
- * takes effect immediately regardless of how long the cookie lives.
+ * A year, httpOnly, lax. Long-lived because the token is checked against the row on
+ * every load — a refund, a cancelled subscription, or an unverified row all fail
+ * there regardless of how much life the cookie has left.
  */
 function grantResponse(appId: string, memberId: string) {
   const res = NextResponse.json({ granted: true })
@@ -114,9 +154,8 @@ function grantResponse(appId: string, memberId: string) {
 /**
  * Mark a return visit.
  *
- * Called by the public page once it has decided to render the app. Only the holder
- * of the access cookie is counted — usage the publisher sees should mean "this
- * person opened it", not "somebody did".
+ * Only the holder of the access cookie is counted — usage the publisher sees should
+ * mean "this person opened it", not "somebody did".
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params

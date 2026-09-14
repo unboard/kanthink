@@ -7,6 +7,7 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 import { accessCookieName, signAccessToken } from '@/lib/playground/appAccess'
 import { findPublishedApp } from '@/lib/playground/publicApp'
 import { recordAppPurchase } from '@/lib/playground/appPurchase'
+import { markVerifiedByPurchase } from '@/lib/playground/appVerificationService'
 
 export const runtime = 'nodejs'
 
@@ -48,6 +49,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       appUrl.searchParams.set('purchase', 'unconfirmed')
       return NextResponse.redirect(appUrl)
     }
+
+    // Completing checkout against this address is a live, attributable act — a
+    // card, a bank, a receipt — so it stands in for the emailed code. Without this
+    // a buyer would be asked to prove an address seconds after paying through it,
+    // which reads as the purchase having failed.
+    await markVerifiedByPurchase(member.id)
 
     await recordAppPurchase({
       appUserId: member.id,

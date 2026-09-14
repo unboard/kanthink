@@ -441,6 +441,23 @@ export const appUsers = sqliteTable('app_users', {
   /** Unread messages from this person, for the publisher's badge. */
   unreadForOwner: integer('unread_for_owner').notNull().default(0),
 
+  // --- Proof that this email belongs to whoever is holding the cookie ---
+  //
+  // Access used to be granted on a typed email alone, which meant knowing a
+  // customer's address was the same as being them: their paid access, and their
+  // support thread. Nothing is granted now until the address is proved, and every
+  // grant issued before this existed reads as unverified and has to be proved once.
+  verifiedAt: integer('verified_at', { mode: 'timestamp' }),
+  /** HMAC of the outstanding one-time code. The code itself is never stored. */
+  verificationCodeHash: text('verification_code_hash'),
+  verificationExpiresAt: integer('verification_expires_at', { mode: 'timestamp' }),
+  /** Wrong guesses against the current code. Burns the code when it runs out. */
+  verificationAttempts: integer('verification_attempts').notNull().default(0),
+  /** When the last code went out, so codes cannot be used to mailbomb someone. */
+  verificationSentAt: integer('verification_sent_at', { mode: 'timestamp' }),
+  /** Codes sent in the current window, for the same reason. */
+  verificationSendCount: integer('verification_send_count').notNull().default(0),
+
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [

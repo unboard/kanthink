@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { AlertCircle, Loader2, Lock } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, Lock, MailCheck } from 'lucide-react';
 
 interface Props {
   token: string;
@@ -20,37 +20,81 @@ interface Props {
 /**
  * The door on a paid app.
  *
- * Email first, then Stripe. The email is asked for before payment rather than taken
- * from the receipt afterwards because it is also how someone gets back in on another
- * device, and how the person who made this can answer them.
+ * Two states, because there are two different people at this door: somebody who has
+ * never bought it, and somebody who has and is back on a new device. The first goes
+ * to Stripe. The second gets a code in their inbox.
  *
- * Somebody who has already bought it and lost their cookie lands here too, types the
- * same email, and is let straight through — the server checks before it charges.
+ * That second path is new. It used to be enough to type the address you bought
+ * with — which meant knowing a customer's email was the same as being them. Paying
+ * proves the account is entitled; the code proves the person is the account.
  */
 export function AppPaywall({ token, title, tagline, thumbnailUrl, price, recurring, notice }: Props) {
+  const [step, setStep] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [code, setCode] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async (e: React.FormEvent) => {
+  const post = async (payload: Record<string, unknown>) => {
+    const res = await fetch(`/api/play/${token}/access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return { res, data: await res.json() };
+  };
+
+  const submitEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/play/${token}/access`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), name: name.trim() || undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data?.error || 'Something went wrong.'); return; }
+      const { res, data } = await post({ email: email.trim(), name: name.trim() || undefined });
       if (data.checkoutUrl) { window.location.href = data.checkoutUrl; return; }
       if (data.granted) { window.location.reload(); return; }
-      setError('Something went wrong.');
+      if (data.needsCode) {
+        // 429 here is the resend limit, which still means a code is expected.
+        setStep('code');
+        setMessage(data.message ?? null);
+        setError(res.ok ? null : data.error);
+        return;
+      }
+      setError(data?.error || 'Something went wrong.');
     } catch {
       setError('Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { data } = await post({ email: email.trim(), code: code.trim() });
+      if (data.granted) { window.location.reload(); return; }
+      if (data.checkoutUrl) { window.location.href = data.checkoutUrl; return; }
+      setError(data?.error || 'That did not work.');
+    } catch {
+      setError('Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resend = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { res, data } = await post({ email: email.trim() });
+      setMessage(res.ok ? 'A new code is on its way.' : null);
+      if (!res.ok) setError(data?.error || 'Could not send another code.');
     } finally {
       setBusy(false);
     }
@@ -83,51 +127,105 @@ export function AppPaywall({ token, title, tagline, thumbnailUrl, price, recurri
               </p>
             )}
 
-            {notice === 'canceled' && (
+            {notice === 'canceled' && step === 'email' && (
               <p className="mt-4 px-3 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-xs text-neutral-600 dark:text-neutral-300">
                 Checkout was cancelled — nothing was charged.
               </p>
             )}
-            {notice === 'unconfirmed' && (
+            {notice === 'unconfirmed' && step === 'email' && (
               <p className="mt-4 flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400">
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                 We could not confirm that payment yet. If you were charged, enter the same
-                email below and you will be let straight in.
+                email below and we will send you a code to get straight in.
               </p>
             )}
 
-            <form onSubmit={submit} className="mt-5 space-y-2.5">
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-400"
-              />
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your name (optional)"
-                className="w-full px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-400"
-              />
+            {step === 'email' ? (
+              <form onSubmit={submitEmail} className="mt-5 space-y-2.5">
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-400"
+                />
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name (optional)"
+                  className="w-full px-3 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-sm text-neutral-900 dark:text-white outline-none focus:border-violet-400"
+                />
 
-              {error && <p className="text-xs text-red-500">{error}</p>}
+                {error && <p className="text-xs text-red-500">{error}</p>}
 
-              <button
-                type="submit"
-                disabled={busy}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 disabled:opacity-50 transition-colors"
-              >
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                {busy ? 'One moment…' : `Get access · ${price}`}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 disabled:opacity-50 transition-colors"
+                >
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                  {busy ? 'One moment…' : `Get access · ${price}`}
+                </button>
 
-            <p className="mt-3 text-[11px] text-neutral-400 leading-relaxed">
-              Payment is handled by Stripe. Already bought it? Enter the same email and you
-              will be let through without paying again.
-            </p>
+                <p className="text-[11px] text-neutral-400 leading-relaxed">
+                  Payment is handled by Stripe. Already bought it? Use the same email and we
+                  will send a code instead of charging you again.
+                </p>
+              </form>
+            ) : (
+              <form onSubmit={submitCode} className="mt-5 space-y-2.5">
+                <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-emerald-500/10 text-xs text-emerald-700 dark:text-emerald-400">
+                  <MailCheck className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>{message || `We sent a code to ${email}.`}</span>
+                </div>
+
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  placeholder="000000"
+                  className="w-full px-3 py-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-center text-xl tracking-[0.35em] font-mono text-neutral-900 dark:text-white outline-none focus:border-violet-400"
+                />
+
+                {error && <p className="text-xs text-red-500">{error}</p>}
+
+                <button
+                  type="submit"
+                  disabled={busy || code.length !== 6}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-500 disabled:opacity-40 transition-colors"
+                >
+                  {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MailCheck className="w-4 h-4" />}
+                  {busy ? 'Checking…' : 'Let me in'}
+                </button>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setStep('email'); setCode(''); setError(null); }}
+                    className="flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300"
+                  >
+                    <ArrowLeft className="w-3 h-3" />
+                    Different email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resend}
+                    disabled={busy}
+                    className="text-[11px] text-violet-600 dark:text-violet-400 hover:underline disabled:opacity-40"
+                  >
+                    Send another code
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-neutral-400 leading-relaxed">
+                  The code lasts 15 minutes. It is how we check the purchase is yours before
+                  opening the app.
+                </p>
+              </form>
+            )}
           </div>
         </div>
 

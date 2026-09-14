@@ -36,6 +36,8 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
   const [text, setText] = useState('');
   const [email, setEmail] = useState('');
   const [needsEmail, setNeedsEmail] = useState(false);
+  /** Wrote to the thread but has not proved the address, so cannot read it back. */
+  const [unverified, setUnverified] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
@@ -49,6 +51,7 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
       const list: AppThreadMessage[] = data.messages || [];
       setMessages(list);
       setIdentified(!!data.identified);
+      setUnverified(!!data.needsVerification);
       if (data.email) setEmail(data.email);
       // Reading the thread marks the publisher's replies read server-side, so only
       // a poll made while the panel is shut should raise the badge.
@@ -129,7 +132,10 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
         return;
       }
       setMessages((prev) => [...prev, data.message as AppThreadMessage]);
-      setIdentified(true);
+      // Writing no longer implies a readable session: an address nobody has proved
+      // may send a message, and the answer reaches them by email instead.
+      setIdentified(!!data.identified);
+      setUnverified(!!data.needsVerification);
       setNeedsEmail(false);
       setText('');
     } catch {
@@ -191,6 +197,15 @@ export function AppFeedbackPanel({ token, appTitle }: Props) {
               {!loaded ? (
                 <div className="py-8 flex justify-center text-neutral-400">
                   <Loader2 className="w-4 h-4 animate-spin" />
+                </div>
+              ) : unverified ? (
+                <div className="py-6">
+                  <p className="text-sm text-neutral-800 leading-relaxed">Message sent.</p>
+                  <p className="mt-2 text-xs text-neutral-500 leading-relaxed">
+                    The reply comes to <strong>{email || 'your email'}</strong>. Conversations
+                    here are private to the person who owns the address, so this panel only
+                    shows them once that address has been confirmed.
+                  </p>
                 </div>
               ) : messages.length === 0 ? (
                 <div className="py-6">

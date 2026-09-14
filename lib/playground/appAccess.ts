@@ -58,6 +58,14 @@ export function accessCookieName(appId: string): string {
 export interface AccessSubject {
   status: 'free' | 'paid' | 'refunded' | 'canceled';
   accessExpiresAt?: Date | null;
+  /**
+   * When this person proved the email address is theirs.
+   *
+   * Null means they never did — either they predate verification existing, or they
+   * are somebody who typed a customer's address. Those two are indistinguishable
+   * from here, which is exactly why neither one gets in.
+   */
+  verifiedAt?: Date | null;
 }
 
 export interface PaywallState {
@@ -76,7 +84,18 @@ export function isPaywalled(app: PaywallState): boolean {
   return Boolean(app.paywallEnabled && app.priceAmount && app.priceAmount > 0 && app.stripePriceId);
 }
 
-/** Does this person get in right now? */
+/**
+ * Does this person get in right now?
+ *
+ * Three questions, and the first one is the one that was missing: is this actually
+ * them. A paid row used to be enough, so a paid row plus a guessed email address was
+ * enough. Payment says the account is entitled; verification says the person at the
+ * keyboard is the account.
+ *
+ * A grant made before verification existed has no verifiedAt, so it fails here — the
+ * session stops working and the real customer proves the address once and carries on
+ * without paying again.
+ */
 export function hasActiveAccess(
   app: PaywallState,
   member: AccessSubject | null | undefined,
@@ -84,10 +103,23 @@ export function hasActiveAccess(
 ): boolean {
   if (!isPaywalled(app)) return true;
   if (!member) return false;
+  if (!member.verifiedAt) return false;
   if (member.status !== 'paid') return false;
   // Subscriptions carry an expiry; a one-time purchase does not, and never lapses.
   if (member.accessExpiresAt && member.accessExpiresAt.getTime() < now.getTime()) return false;
   return true;
+}
+
+/**
+ * May this person read the private things attached to their row — their support
+ * thread, their billing?
+ *
+ * Separate from hasActiveAccess because a free app grants entry to everybody while
+ * still holding one private conversation per person. Reading that conversation is
+ * not the same act as opening the app, and only one of them needs proof.
+ */
+export function canReadPrivateData(member: AccessSubject | null | undefined): boolean {
+  return !!member?.verifiedAt;
 }
 
 /** `$4.00`, `$4.00/mo`, `Free`. Minor units in, something a buyer can read out. */

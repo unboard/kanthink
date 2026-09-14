@@ -4,7 +4,7 @@ import { appUsers } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { createPortalSession } from '@/lib/stripe'
-import { accessCookieName, verifyAccessToken } from '@/lib/playground/appAccess'
+import { accessCookieName, canReadPrivateData, verifyAccessToken } from '@/lib/playground/appAccess'
 import { findPublishedApp } from '@/lib/playground/publicApp'
 
 export const runtime = 'nodejs'
@@ -36,6 +36,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     if (!member || member.appId !== app.id || !member.stripeCustomerId) {
       return NextResponse.redirect(home)
     }
+    // The billing portal can cancel a subscription and see payment history, so it
+    // is private data on the same terms as the support thread.
+    if (!canReadPrivateData(member)) return NextResponse.redirect(home)
 
     const url = await createPortalSession(member.stripeCustomerId, home.toString())
     return NextResponse.redirect(url || home)

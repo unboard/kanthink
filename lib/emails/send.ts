@@ -61,6 +61,7 @@ import { SubscriptionCanceled } from './SubscriptionCanceled'
 import { UsageLimitWarning } from './UsageLimitWarning'
 import { UsageLimitReached } from './UsageLimitReached'
 import { ChannelDigest } from './ChannelDigest'
+import { AppAccessCode } from './AppAccessCode'
 import { AppPurchased } from './AppPurchased'
 import { AppReply } from './AppReply'
 import { DynamicEmail, type EmailConfig } from './dynamicRenderer'
@@ -123,6 +124,19 @@ async function trySystemOverride(
     console.error(`[Email] Override check failed for ${systemSlug}, falling back to default:`, error)
     return null
   }
+}
+
+/**
+ * The one-time code that proves an email address belongs to whoever typed it.
+ *
+ * Not routed through trySystemOverride: this is a credential, and a template edited
+ * in the email builder could drop the code itself and lock every customer out.
+ */
+export async function sendAppAccessCodeEmail(
+  to: string,
+  props: { appTitle: string; code: string; expiresInMinutes: number }
+): Promise<boolean> {
+  return renderAndSend(to, `${props.code} is your code for ${props.appTitle}`, React.createElement(AppAccessCode, props))
 }
 
 /**
