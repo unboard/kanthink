@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     return cors(NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }));
   }
 
-  const appId = verifyAppToken(body.appToken);
+  const appId = verifyAppToken(body.appToken)?.appId ?? null;
   if (!appId) {
     return cors(NextResponse.json({ error: 'Invalid or missing appToken' }, { status: 401 }));
   }

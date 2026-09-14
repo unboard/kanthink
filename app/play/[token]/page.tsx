@@ -15,6 +15,7 @@ import {
 } from '@/lib/playground/appAccess';
 import { resolveAppSession } from '@/lib/playground/appSession';
 import { findPublishedApp } from '@/lib/playground/publicApp';
+import { getPublishedVersion } from '@/lib/playground/appRelease';
 import { PublicPlaygroundFrame } from './PublicPlaygroundFrame';
 import { AppPaywall } from './AppPaywall';
 import type { Metadata } from 'next';
@@ -29,8 +30,9 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { token } = await params;
   const app = await findPublishedApp(token);
-  const title = app?.title || 'Kanthink Playground';
-  const summary = app?.tagline || app?.summary || 'A mini app built on Kanthink.';
+  const release = app ? await getPublishedVersion(app) : null;
+  const title = release?.title || app?.title || 'Kanthink Playground';
+  const summary = app?.tagline || release?.summary || app?.summary || 'A mini app built on Kanthink.';
   return {
     title: `${title} · Kanthink`,
     description: summary,
@@ -47,9 +49,12 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   const { purchase } = await searchParams;
 
   const app = await findPublishedApp(token);
-  if (!app?.code) {
-    notFound();
-  }
+  if (!app) notFound();
+
+  // The release, not the draft. A build in progress — or a broken one — cannot
+  // reach anybody here, because this never reads app.code at all.
+  const release = await getPublishedVersion(app);
+  if (!release) notFound();
 
   // The paywall, if there is one. Access is resolved from the row rather than from
   // the cookie alone, so a refund or a lapsed subscription takes effect on the very
@@ -88,20 +93,20 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
     .where(eq(playgroundApps.id, app.id))
     .catch(() => {});
 
-  const title = app.title || 'Kanthink Playground';
+  const title = release.title || app.title || 'Kanthink Playground';
   // Resolve the deployment origin from request headers so the iframe's upload
   // helper has an absolute URL it can call across the opaque-origin boundary.
   const h = await headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const origin = host ? `${proto}://${host}` : '';
-  const srcDoc = buildPlaygroundDoc(app.code, {
+  const srcDoc = buildPlaygroundDoc(release.code, {
     title,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,
     appToken: app.appToken || signAppToken(app.id),
-    deps: resolveDeps(app.dependencies || []).deps,
+    deps: resolveDeps(release.dependencies || []).deps,
   });
 
   return (

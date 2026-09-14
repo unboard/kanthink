@@ -10,6 +10,7 @@ import {
 } from '@/lib/playground/appAccess';
 import { resolveAppSession } from '@/lib/playground/appSession';
 import { AppPaywall } from '../../AppPaywall';
+import { getPublishedVersion } from '@/lib/playground/appRelease';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
 import { signAppToken } from '@/lib/playground/appToken';
@@ -51,7 +52,11 @@ export default async function PlayRecordPage({ params }: PageProps) {
   const app = await db.query.playgroundApps.findFirst({
     where: and(eq(playgroundApps.shareToken, token), eq(playgroundApps.isPublic, true)),
   });
-  if (!app?.code) notFound();
+  if (!app) notFound();
+
+  // A record link opens the published release, like every other way in.
+  const release = await getPublishedVersion(app);
+  if (!release) notFound();
 
   const record = (app.savedRecords || []).find((r) => r.slug === slug);
   if (!record) notFound();
@@ -77,20 +82,20 @@ export default async function PlayRecordPage({ params }: PageProps) {
     }
   }
 
-  const title = app.title || 'Kanthink Playground';
+  const title = release.title || app.title || 'Kanthink Playground';
 
   const h = await headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const origin = host ? `${proto}://${host}` : '';
 
-  const srcDoc = buildPlaygroundDoc(app.code, {
+  const srcDoc = buildPlaygroundDoc(release.code, {
     title,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,
     appToken: app.appToken || signAppToken(app.id),
-    deps: resolveDeps(app.dependencies || []).deps,
+    deps: resolveDeps(release.dependencies || []).deps,
     initialRecord: {
       slug: record.slug,
       data: record.data,

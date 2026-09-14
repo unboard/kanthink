@@ -37,10 +37,11 @@ export async function POST(request: Request) {
     return cors(NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }));
   }
 
-  const appId = verifyAppToken(body.appToken);
-  if (!appId) {
+  const claims = verifyAppToken(body.appToken);
+  if (!claims) {
     return cors(NextResponse.json({ error: 'Invalid or missing appToken' }, { status: 401 }));
   }
+  const { appId, isDraft } = claims;
   if (body.data === undefined || body.data === null) {
     return cors(NextResponse.json({ error: 'data is required' }, { status: 400 }));
   }
@@ -66,7 +67,13 @@ export async function POST(request: Request) {
     return cors(NextResponse.json({ error: 'App not found' }, { status: 404 }));
   }
 
-  const existing = Array.isArray(app.savedRecords) ? app.savedRecords : [];
+  // A draft preview and the live app run the same generated code against the same
+  // helper, so they must not share a place to write. Trying out a save while
+  // iterating would otherwise land in — and eventually evict — what real customers
+  // had stored.
+  const liveRecords = Array.isArray(app.savedRecords) ? app.savedRecords : [];
+  const draftRecords = Array.isArray(app.draftSavedRecords) ? app.draftSavedRecords : [];
+  const existing = isDraft ? draftRecords : liveRecords;
 
   const record: SavedRecord = {
     slug: newRecordSlug(),
@@ -81,19 +88,25 @@ export async function POST(request: Request) {
   const updated = [...existing, record];
   while (updated.length > MAX_RECORDS_PER_APP) updated.shift();
 
-  // Auto-publish: a saved record without a public URL is useless. If the app
-  // wasn't shared yet, share it now and mint a token. This is the moment of
-  // intent — the user (via the generated app) is explicitly creating a thing
-  // to share.
   const updates: Record<string, unknown> = {
-    savedRecords: updated,
+    [isDraft ? 'draftSavedRecords' : 'savedRecords']: updated,
     updatedAt: new Date(),
   };
+
+  // Auto-publish: a saved record without a public URL is useless, so a live save
+  // shares the app and mints a token. That is the moment of intent — someone using
+  // the app deliberately made a thing to share.
+  //
+  // A draft save is not that moment. Somebody trying a feature in preview has not
+  // decided to publish anything, and flipping the app public from a preview is
+  // exactly the kind of live change a draft is supposed to be incapable of.
   let shareToken = app.shareToken;
-  if (!app.isPublic) updates.isPublic = true;
-  if (!shareToken) {
-    shareToken = nanoid(16);
-    updates.shareToken = shareToken;
+  if (!isDraft) {
+    if (!app.isPublic) updates.isPublic = true;
+    if (!shareToken) {
+      shareToken = nanoid(16);
+      updates.shareToken = shareToken;
+    }
   }
 
   await db.update(playgroundApps).set(updates).where(eq(playgroundApps.id, appId));

@@ -674,6 +674,28 @@ export interface PlaygroundApp {
   shareToken?: string | null;
   /** Signed token the sandboxed iframe uses to call back into the AI/save routes. */
   appToken?: string | null;
+  /** The same, scoped to the draft — saves land in a bucket customers never read. */
+  draftToken?: string | null;
+
+  // --- Releases ---
+  /** The release customers are being served, or null if nothing is published. */
+  publishedVersion?: {
+    id: ID;
+    version: number;
+    publishedAt?: string | null;
+    notes?: string | null;
+  } | null;
+  /** True when the draft has moved on from what is published. */
+  hasUnpublishedChanges?: boolean;
+  /** Every release, newest first, for the history list and rollback. */
+  versions?: {
+    id: ID;
+    version: number;
+    title: string;
+    notes?: string | null;
+    publishedAt?: string | null;
+    isLive: boolean;
+  }[];
   savedRecords?: { slug: string; data: unknown; label?: string; createdAt: number }[];
   position: number;
   createdBy?: string | null;

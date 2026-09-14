@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { ensureSchema } from '@/lib/db/ensure-schema'
+import { signDraftAppToken } from '@/lib/playground/appToken'
+import { getPublishedVersion, hasUnpublishedChanges, listVersions } from '@/lib/playground/appRelease'
 
 export const runtime = 'nodejs'
 
@@ -38,7 +40,31 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'App not found' }, { status: 404 })
     }
     await requirePermission(app.channelId, session.user.id, 'view')
-    return NextResponse.json({ app })
+
+    // What the drawer needs to show the difference between what it is editing and
+    // what customers currently have, plus a draft token so its own preview iframe
+    // writes to the draft bucket rather than over live records.
+    const published = await getPublishedVersion(app)
+    const versions = await listVersions(app.id)
+
+    return NextResponse.json({
+      app: {
+        ...app,
+        draftToken: signDraftAppToken(app.id),
+        publishedVersion: published
+          ? { id: published.id, version: published.version, publishedAt: published.publishedAt, notes: published.notes }
+          : null,
+        hasUnpublishedChanges: hasUnpublishedChanges(app, published),
+        versions: versions.map((v) => ({
+          id: v.id,
+          version: v.version,
+          title: v.title,
+          notes: v.notes,
+          publishedAt: v.publishedAt,
+          isLive: v.id === app.publishedVersionId,
+        })),
+      },
+    })
   } catch (error) {
     if (error instanceof PermissionError) {
       return NextResponse.json({ error: error.message }, { status: 403 })

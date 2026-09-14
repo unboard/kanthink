@@ -11,6 +11,7 @@ import { buildPlaygroundDoc } from './buildPlaygroundDoc';
 import { AppAudiencePane } from './AppAudiencePane';
 import { AppThumbnailDialog } from './AppThumbnailDialog';
 import { AppPricingSection } from './AppPricingSection';
+import { AppReleaseSection } from './AppReleaseSection';
 import { resolveDeps } from '@/lib/playground/runtime';
 import type { Card, CardMessage, CardMessageType, ID, PlaygroundApp, WhiteboardAttachment } from '@/lib/types';
 import {
@@ -22,8 +23,6 @@ import {
 import {
   AlertCircle,
   Check,
-  Copy,
-  ExternalLink,
   Eye,
   Hammer,
   Loader2,
@@ -164,7 +163,9 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   const depsKey = (app?.dependencies || []).join(',');
   const appCode = app?.code;
   const appTitle = app?.title;
-  const appToken = app?.appToken;
+  // The draft token, not the live one: this iframe is the owner looking at work
+  // in progress, and anything it saves must stay off the customers' records.
+  const appToken = app?.draftToken;
   const srcDoc = useMemo(() => {
     if (!appCode) return null;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -712,7 +713,6 @@ function SettingsPane({
   onConfirmDelete: (v: boolean) => void;
   onDelete: () => void;
 }) {
-  const hasCode = Boolean(app.code);
   return (
     <div className="px-4 py-4 space-y-6">
       {/* How this app shows up in the directory and on the public page. */}
@@ -779,51 +779,14 @@ function SettingsPane({
           )}
         </div>
       </section>
-      {/* Sharing */}
-      <section>
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-          Sharing
-        </h3>
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
-          <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!app.isPublic}
-              onChange={onTogglePublic}
-              disabled={!hasCode}
-              className="w-4 h-4 rounded accent-violet-600 disabled:opacity-40"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-neutral-900 dark:text-white">Published</p>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                {hasCode
-                  ? 'Anyone with the link can open this app.'
-                  : 'Build it first — there is nothing to publish yet.'}
-              </p>
-            </div>
-          </label>
-          {shareLink && (
-            <button
-              onClick={onCopyLink}
-              className="w-full flex items-center gap-2 px-3 py-2.5 border-t border-neutral-200 dark:border-neutral-800 text-xs text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/5"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 flex-shrink-0" /> : <Copy className="w-3.5 h-3.5 flex-shrink-0" />}
-              <span className="truncate">{copied ? 'Link copied' : shareLink}</span>
-            </button>
-          )}
-          {hasCode && (
-            <a
-              href={`/play/preview/${app.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="w-full flex items-center gap-2 px-3 py-2.5 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
-            >
-              <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
-              Open full screen
-            </a>
-          )}
-        </div>
-      </section>
+      <AppReleaseSection
+        app={app}
+        shareLink={shareLink}
+        copied={copied}
+        onCopyLink={onCopyLink}
+        onUpdated={onApplyApp}
+        onTogglePublic={onTogglePublic}
+      />
 
       <AppPricingSection app={app} onUpdated={onApplyApp} />
 

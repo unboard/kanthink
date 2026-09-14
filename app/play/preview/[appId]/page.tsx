@@ -6,7 +6,7 @@ import { notFound } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { getChannelPermission } from '@/lib/api/permissions';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
-import { signAppToken } from '@/lib/playground/appToken';
+import { signDraftAppToken } from '@/lib/playground/appToken';
 import { resolveDeps } from '@/lib/playground/runtime';
 import { PreviewPlaygroundFrame } from './PreviewPlaygroundFrame';
 import type { Metadata } from 'next';
@@ -81,7 +81,9 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,
-    appToken: app.appToken || signAppToken(app.id),
+    // A draft token: anything this preview saves is kept off the live records,
+    // so trying out a save cannot overwrite what customers have stored.
+    appToken: signDraftAppToken(app.id),
     deps: resolveDeps(app.dependencies || []).deps,
   });
 

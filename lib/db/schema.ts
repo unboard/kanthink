@@ -383,6 +383,24 @@ export const playgroundApps = sqliteTable('playground_apps', {
   stripeProductId: text('stripe_product_id'),
   stripePriceId: text('stripe_price_id'),
 
+  // --- Draft and published ---
+  //
+  // `code` above is the DRAFT. It is what a build writes and what the owner
+  // previews, and customers never see it. What they get is the version row this
+  // points at, which only moves when somebody publishes.
+  //
+  // Before this existed a build went straight to whoever was using the app, so
+  // iterating on something you had sold meant rewriting it under its customers.
+  publishedVersionId: text('published_version_id'),
+  /**
+   * Records written by the app while being previewed as a draft.
+   *
+   * A draft preview runs the same generated code against the same helpers, so
+   * without somewhere else to put them, testing a save would overwrite what real
+   * customers had stored. Never read by the public page, and never promoted.
+   */
+  draftSavedRecords: safeJsonText<SavedRecordJson[]>([])('draft_saved_records').default([]),
+
   // --- Sharing ---
   isPublic: integer('is_public', { mode: 'boolean' }).default(false),
   shareToken: text('share_token'),
@@ -401,6 +419,41 @@ export const playgroundApps = sqliteTable('playground_apps', {
   index('playground_apps_card_idx').on(table.cardId),
   index('playground_apps_channel_idx').on(table.channelId),
   index('playground_apps_share_idx').on(table.shareToken),
+])
+
+/**
+ * A published release of an app.
+ *
+ * Immutable once written: publishing appends, it never edits. That is what makes
+ * rollback a pointer move rather than a restore, and what lets a customer keep
+ * using the thing they paid for while the next version is being argued with.
+ *
+ * Only what is needed to SERVE a version lives here. Purchases, feedback and saved
+ * records hang off the app, not the release, so publishing and rolling back cannot
+ * disturb them — the separation is the guarantee, not a rule anyone has to follow.
+ */
+export const playgroundAppVersions = sqliteTable('playground_app_versions', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
+
+  /** 1, 2, 3… per app. What the owner and the changelog call it. */
+  version: integer('version').notNull(),
+
+  code: text('code').notNull(),
+  dependencies: safeJsonText<string[]>([])('dependencies').default([]),
+  title: text('title').notNull(),
+  summary: text('summary'),
+  designNotes: text('design_notes'),
+  /** What changed in this release, for the history list. */
+  notes: text('notes'),
+  /** The build this was cut from, so a release can be traced to its generation. */
+  sourceGeneration: integer('source_generation'),
+  modelId: text('model_id'),
+
+  publishedAt: integer('published_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  publishedBy: text('published_by'),
+}, (table) => [
+  index('playground_app_versions_app_idx').on(table.appId, table.version),
 ])
 
 /**
