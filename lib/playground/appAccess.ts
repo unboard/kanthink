@@ -38,12 +38,23 @@ export interface AccessSession {
   appUserId: string;
   scope: AccessScope;
   epoch: number;
+  /**
+   * For a purchase session, the purchase that granted it.
+   *
+   * Without this, two purchases sharing an email share a session: refund one and
+   * the refunded buyer keeps getting in on the other's payment. A purchase session
+   * is access to the thing it bought, not to the address it bought under.
+   */
+  purchaseId: string | null;
 }
 
-function sessionHmac(appUserId: string, epoch: number, scopeCode: string): string {
+/** No purchase to name — a verified session is not tied to one. */
+const NO_REF = '-';
+
+function sessionHmac(appUserId: string, epoch: number, scopeCode: string, ref: string): string {
   return crypto
     .createHmac('sha256', `${SECRET}:app-user`)
-    .update(`${appUserId}:${epoch}:${scopeCode}`)
+    .update(`${appUserId}:${epoch}:${scopeCode}:${ref}`)
     .digest('hex')
     .slice(0, 32);
 }
@@ -60,9 +71,15 @@ function sessionHmac(appUserId: string, epoch: number, scopeCode: string): strin
  * `epoch` comes from the member row, so bumping it signs every outstanding session
  * for that person out at once.
  */
-export function signAccessToken(appUserId: string, epoch: number, scope: AccessScope): string {
+export function signAccessToken(
+  appUserId: string,
+  epoch: number,
+  scope: AccessScope,
+  purchaseId?: string | null,
+): string {
   const code = SCOPE_CODES[scope];
-  return `${appUserId}.${epoch}.${code}.${sessionHmac(appUserId, epoch, code)}`;
+  const ref = scope === 'purchase' ? (purchaseId ?? NO_REF) : NO_REF;
+  return `${appUserId}.${epoch}.${code}.${ref}.${sessionHmac(appUserId, epoch, code, ref)}`;
 }
 
 /**
@@ -75,15 +92,15 @@ export function verifyAccessToken(token: string | null | undefined): AccessSessi
   if (!token || typeof token !== 'string') return null;
 
   const parts = token.split('.');
-  if (parts.length !== 4) return null;
+  if (parts.length !== 5) return null;
 
-  const [appUserId, epochRaw, scopeCode, hmac] = parts;
-  if (!appUserId || !SCOPE_BY_CODE[scopeCode]) return null;
+  const [appUserId, epochRaw, scopeCode, ref, hmac] = parts;
+  if (!appUserId || !ref || !SCOPE_BY_CODE[scopeCode]) return null;
 
   const epoch = Number(epochRaw);
   if (!Number.isInteger(epoch) || epoch < 0) return null;
 
-  const expected = sessionHmac(appUserId, epoch, scopeCode);
+  const expected = sessionHmac(appUserId, epoch, scopeCode, ref);
   if (hmac.length !== expected.length) return null;
   try {
     if (!crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected))) return null;
@@ -91,7 +108,12 @@ export function verifyAccessToken(token: string | null | undefined): AccessSessi
     return null;
   }
 
-  return { appUserId, scope: SCOPE_BY_CODE[scopeCode], epoch };
+  return {
+    appUserId,
+    scope: SCOPE_BY_CODE[scopeCode],
+    epoch,
+    purchaseId: ref === NO_REF ? null : ref,
+  };
 }
 
 /**
@@ -121,18 +143,24 @@ export function accessCookieName(appId: string): string {
   return `kt_app_${appId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
 }
 
-export interface AccessSubject {
-  status: 'free' | 'paid' | 'refunded' | 'canceled';
+/**
+ * One purchase, as an access decision sees it.
+ *
+ * Deliberately not the customer: a customer is an address, and an address can have
+ * bought the same app twice. Entitlement belongs to the purchase.
+ */
+export interface PurchaseRef {
+  id: string;
+  status: 'active' | 'refunded' | 'canceled' | 'expired';
+  /** Subscriptions lapse; a one-time purchase never does. */
   accessExpiresAt?: Date | null;
-  /**
-   * When this address was first proved by anyone.
-   *
-   * Kept as a record for the publisher, and deliberately NOT an input to any access
-   * decision. It used to be the gate, which made verification a property of the row
-   * rather than of the browser holding the cookie — so one person proving the
-   * address silently re-authorised every other session against it.
-   */
-  verifiedAt?: Date | null;
+}
+
+/** Is this purchase currently granting anything? */
+export function isPurchaseActive(purchase: PurchaseRef, now: Date = new Date()): boolean {
+  if (purchase.status !== 'active') return false;
+  if (purchase.accessExpiresAt && purchase.accessExpiresAt.getTime() < now.getTime()) return false;
+  return true;
 }
 
 export interface PaywallState {
@@ -165,19 +193,26 @@ export function isPaywalled(app: PaywallState): boolean {
  */
 export function hasActiveAccess(
   app: PaywallState,
-  member: AccessSubject | null | undefined,
   session: AccessSession | null | undefined,
+  purchases: PurchaseRef[],
   now: Date = new Date(),
 ): boolean {
   if (!isPaywalled(app)) return true;
-  // A session, of either scope. Somebody who just paid gets in on the purchase;
-  // somebody returning gets in on a code. What neither can do is get in on a typed
-  // address, because that mints no session at all.
-  if (!session || !member) return false;
-  if (member.status !== 'paid') return false;
-  // Subscriptions carry an expiry; a one-time purchase does not, and never lapses.
-  if (member.accessExpiresAt && member.accessExpiresAt.getTime() < now.getTime()) return false;
-  return true;
+
+  // Typing an address mints no session, so this is what an impostor holds.
+  if (!session) return false;
+
+  // A purchase session gets in on the purchase it names and nothing else. Refund
+  // that one and it is out, however many siblings the address has — which is the
+  // whole point of a purchase being a row rather than a field on a customer.
+  if (session.scope === 'purchase') {
+    const mine = purchases.find((p) => p.id === session.purchaseId);
+    return !!mine && isPurchaseActive(mine, now);
+  }
+
+  // A verified session is the person, not a transaction, so any live purchase of
+  // theirs keeps them in — refunding one of two does not lock them out.
+  return purchases.some((p) => isPurchaseActive(p, now));
 }
 
 /**

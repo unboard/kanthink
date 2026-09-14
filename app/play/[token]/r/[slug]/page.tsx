@@ -9,6 +9,7 @@ import {
   isPaywalled,
 } from '@/lib/playground/appAccess';
 import { resolveAppSession } from '@/lib/playground/appSession';
+import { purchasesForMember, toRef } from '@/lib/playground/appPurchases';
 import { AppPaywall } from '../../AppPaywall';
 import { getPublishedVersion } from '@/lib/playground/appRelease';
 import { notFound } from 'next/navigation';
@@ -66,8 +67,11 @@ export default async function PlayRecordPage({ params }: PageProps) {
     const jar = await cookies();
     const resolved = await resolveAppSession(jar.get(accessCookieName(app.id))?.value, app.id);
     const valid = resolved?.member ?? null;
+    // Entitlement lives on purchases, not on the customer, so two purchases under
+    // one address are two separate grants that end independently.
+    const purchases = valid ? (await purchasesForMember(valid.id)).map(toRef) : [];
 
-    if (!hasActiveAccess(app, valid, resolved?.session)) {
+    if (!hasActiveAccess(app, resolved?.session, purchases)) {
       return (
         <AppPaywall
           token={token}

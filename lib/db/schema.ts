@@ -476,7 +476,15 @@ export const appUsers = sqliteTable('app_users', {
   /** Set when the email matches a Kanthink account. */
   userId: text('user_id'),
 
-  /** 'free' — opened it; 'paid' — bought it; 'refunded'/'canceled' — had access and lost it. */
+  /**
+   * A roll-up of this person's purchases, kept for the publisher's list and the
+   * directory counts. DERIVED — recomputed whenever a purchase changes, and never
+   * the thing an access decision reads.
+   *
+   * It used to be the whole story, which is why two purchases on one address
+   * collided: the second overwrote the first's identifiers, and refunding either
+   * one revoked both. Purchases live in app_purchases now, one row each.
+   */
   status: text('status').$type<'free' | 'paid' | 'refunded' | 'canceled'>().notNull().default('free'),
   stripeCustomerId: text('stripe_customer_id'),
   stripeSubscriptionId: text('stripe_subscription_id'),
@@ -549,6 +557,58 @@ export const appMessages = sqliteTable('app_messages', {
 }, (table) => [
   index('app_messages_app_idx').on(table.appId, table.createdAt),
   index('app_messages_thread_idx').on(table.appUserId, table.createdAt),
+])
+
+/**
+ * One purchase of one app.
+ *
+ * Separate from the person who made it, because those are different things and
+ * conflating them was a billing defect: two purchases against the same email shared
+ * a row, so the second overwrote the first's subscription id — leaving a live Stripe
+ * subscription nothing in Kanthink could cancel — and refunding either one revoked
+ * access for both.
+ *
+ * Each purchase now carries its own identifiers, its own status, and its own expiry.
+ * A refund touches one row. A session granted by a purchase names that purchase, so
+ * it cannot inherit access from a sibling that happens to share an address.
+ */
+export const appPurchases = sqliteTable('app_purchases', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
+  /** The identity it was bought against. Several purchases may share one. */
+  appUserId: text('app_user_id').notNull().references(() => appUsers.id, { onDelete: 'cascade' }),
+
+  /** 'active' — grants access; the rest are ways it stopped doing so. */
+  status: text('status').$type<'active' | 'refunded' | 'canceled' | 'expired'>().notNull().default('active'),
+
+  /**
+   * The checkout session that created it. Unique, and the reason a webhook
+   * delivered three times produces one purchase rather than three.
+   */
+  stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+  stripeCustomerId: text('stripe_customer_id'),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+
+  /** Minor units actually charged, kept even if the app's price later changes. */
+  amount: integer('amount'),
+  currency: text('currency'),
+  interval: text('interval').$type<'one_time' | 'month' | 'year'>(),
+
+  paidAt: integer('paid_at', { mode: 'timestamp' }),
+  /** Subscriptions lapse; a one-time purchase never does. */
+  accessExpiresAt: integer('access_expires_at', { mode: 'timestamp' }),
+  /** When it stopped granting access, and why, for the publisher's ledger. */
+  endedAt: integer('ended_at', { mode: 'timestamp' }),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('app_purchases_checkout_idx').on(table.stripeCheckoutSessionId),
+  index('app_purchases_user_idx').on(table.appUserId),
+  index('app_purchases_app_idx').on(table.appId),
+  index('app_purchases_subscription_idx').on(table.stripeSubscriptionId),
+  index('app_purchases_intent_idx').on(table.stripePaymentIntentId),
 ])
 
 // Instruction cards for AI automation

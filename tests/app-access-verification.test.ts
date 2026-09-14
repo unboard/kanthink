@@ -40,12 +40,15 @@ import {
 const paidApp = { paywallEnabled: true, priceAmount: 400, stripePriceId: 'price_1' }
 const freeApp = { paywallEnabled: false }
 
-const paidMember = { status: 'paid' as const }
 const APP = 'app-1'
 const MEMBER = 'member-1'
+const PURCHASE = 'purchase-1'
+
+/** One live purchase, which is what makes a session worth anything. */
+const livePurchase = [{ id: PURCHASE, status: 'active' as const }]
 
 const verifiedSession = verifyAccessToken(signAccessToken(MEMBER, 0, 'verified'))
-const purchaseSession = verifyAccessToken(signAccessToken(MEMBER, 0, 'purchase'))
+const purchaseSession = verifyAccessToken(signAccessToken(MEMBER, 0, 'purchase', PURCHASE))
 
 describe('a session carries what it proved', () => {
   it('round-trips a verified session', () => {
@@ -75,11 +78,11 @@ describe('a session carries what it proved', () => {
 describe('knowing someone’s email cannot grant access', () => {
   it('refuses a paid row when there is no session at all', () => {
     // Typing an address mints nothing, so this is what an impostor holds.
-    expect(hasActiveAccess(paidApp, paidMember, null)).toBe(false)
+    expect(hasActiveAccess(paidApp, null, livePurchase)).toBe(false)
   })
 
   it('lets a paid row in once a session exists for it', () => {
-    expect(hasActiveAccess(paidApp, paidMember, verifiedSession)).toBe(true)
+    expect(hasActiveAccess(paidApp, verifiedSession, livePurchase)).toBe(true)
   })
 
   it('keeps the private thread shut without a verified session', () => {
@@ -89,7 +92,7 @@ describe('knowing someone’s email cannot grant access', () => {
   })
 
   it('still opens a free app to everybody', () => {
-    expect(hasActiveAccess(freeApp, null, null)).toBe(true)
+    expect(hasActiveAccess(freeApp, null, [])).toBe(true)
   })
 })
 
@@ -97,7 +100,7 @@ describe('paying with someone else’s address buys the app, not their account',
   // A purchaser typed an address at Stripe. Stripe never checks that it is theirs,
   // so the session they come back with proves a card and nothing more.
   it('opens the app they paid for', () => {
-    expect(hasActiveAccess(paidApp, paidMember, purchaseSession)).toBe(true)
+    expect(hasActiveAccess(paidApp, purchaseSession, livePurchase)).toBe(true)
   })
 
   it('does not open that address’s conversation', () => {
@@ -121,17 +124,18 @@ describe('paying with someone else’s address buys the app, not their account',
 
 describe('a fresh browser must verify even for an already-verified customer', () => {
   it('has no session, so the record being verified changes nothing', () => {
-    const recordVerifiedLongAgo = { status: 'paid' as const, verifiedAt: new Date('2026-01-01') }
     // This is the regression: verifiedAt used to be the gate, and a fresh browser
     // with no cookie would have passed on the strength of it.
-    expect(hasActiveAccess(paidApp, recordVerifiedLongAgo, null)).toBe(false)
+    expect(hasActiveAccess(paidApp, null, livePurchase)).toBe(false)
     expect(canReadPrivateData(null)).toBe(false)
   })
 })
 
+const legacyCookieShape = `${MEMBER}.0.v.0123456789abcdef0123456789abcdef`
+
 describe('a cookie from before the fix stays rejected, whatever happens later', () => {
-  // The old format: "<memberId>.<hmac>", two segments and no scope.
-  const legacyCookie = `${MEMBER}.0123456789abcdef0123456789abcdef`
+  // Older formats: two segments with no scope, then four with no purchase.
+  const legacyCookie = `${MEMBER}.0.v.0123456789abcdef0123456789abcdef`
 
   it('does not parse', () => {
     expect(verifyAccessToken(legacyCookie)).toBeNull()
@@ -143,7 +147,7 @@ describe('a cookie from before the fix stays rejected, whatever happens later', 
     const theirNewSession = verifyAccessToken(signAccessToken(MEMBER, 0, 'verified'))
     expect(theirNewSession).not.toBeNull()
     expect(verifyAccessToken(legacyCookie)).toBeNull()
-    expect(hasActiveAccess(paidApp, paidMember, verifyAccessToken(legacyCookie))).toBe(false)
+    expect(hasActiveAccess(paidApp, verifyAccessToken(legacyCookie), livePurchase)).toBe(false)
   })
 
   it('stays rejected even for the row it names', () => {
@@ -187,7 +191,7 @@ describe('a genuine customer recovers their purchase without paying again', () =
   })
 
   it('gets a verified session that opens both the app and the conversation', () => {
-    expect(hasActiveAccess(paidApp, paidMember, verifiedSession)).toBe(true)
+    expect(hasActiveAccess(paidApp, verifiedSession, livePurchase)).toBe(true)
     expect(canReadPrivateData(verifiedSession)).toBe(true)
   })
 
@@ -269,7 +273,6 @@ describe('isVerified is a record of the address, not a grant', () => {
 
   it('is not consulted by any access decision', () => {
     // A row marked verified grants nothing on its own; the session decides.
-    const verifiedRecord = { status: 'paid' as const, verifiedAt: new Date() }
-    expect(hasActiveAccess(paidApp, verifiedRecord, null)).toBe(false)
+    expect(hasActiveAccess(paidApp, null, livePurchase)).toBe(false)
   })
 })

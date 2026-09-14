@@ -50,21 +50,31 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       return NextResponse.redirect(appUrl)
     }
 
-    await recordAppPurchase({
+    const purchase = await recordAppPurchase({
       appUserId: member.id,
+      // Same key the webhook uses, so whichever of the two arrives first wins and
+      // the other updates it rather than creating a second purchase.
+      checkoutSessionId: checkout.id,
       amount: checkout.amount_total ?? null,
       currency: checkout.currency ?? null,
       stripeCustomerId: typeof checkout.customer === 'string' ? checkout.customer : null,
       stripeSubscriptionId: typeof checkout.subscription === 'string' ? checkout.subscription : null,
       stripePaymentIntentId: typeof checkout.payment_intent === 'string' ? checkout.payment_intent : null,
+      interval: checkout.mode === 'subscription' ? 'month' : 'one_time',
     })
+    if (!purchase) {
+      appUrl.searchParams.set('purchase', 'unconfirmed')
+      return NextResponse.redirect(appUrl)
+    }
 
     appUrl.searchParams.set('purchase', 'success')
     const res = NextResponse.redirect(appUrl)
     // Purchase scope, not verified. Stripe does not check that customer_email
     // belongs to the payer, so this proves a card and not an inbox: the buyer opens
     // the app immediately and sees nothing private belonging to that address.
-    res.cookies.set(accessCookie(app.id, signAccessToken(member.id, member.sessionEpoch ?? 0, 'purchase')))
+    // The session names this purchase, so it cannot borrow access from another
+    // purchase that happens to share the buyer's email address.
+    res.cookies.set(accessCookie(app.id, signAccessToken(member.id, member.sessionEpoch ?? 0, 'purchase', purchase.id)))
     return res
   } catch (error) {
     console.error('[play/grant] failed:', error)

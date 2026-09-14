@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { stripe, handleSubscriptionUpdate, handleSubscriptionDeleted } from '@/lib/stripe'
 import { db } from '@/lib/db'
-import { appUsers, users } from '@/lib/db/schema'
+import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
+import { recordAppPurchase } from '@/lib/playground/appPurchase'
 import {
-  findMemberBySubscription,
-  recordAppPurchase,
-  revokeAppAccess,
-} from '@/lib/playground/appPurchase'
+  endPurchase,
+  findPurchaseByPaymentIntent,
+  findPurchaseBySubscription,
+} from '@/lib/playground/appPurchases'
 import {
   sendSubscriptionConfirmedEmail,
   sendSubscriptionCanceledEmail,
@@ -65,11 +66,15 @@ export async function POST(request: Request) {
         if (session.metadata?.kanthinkAppUserId) {
           await recordAppPurchase({
             appUserId: session.metadata.kanthinkAppUserId,
+            // The idempotency key. Stripe delivers at least once, and the redirect
+            // races this, so the same payment arrives here more than once by design.
+            checkoutSessionId: session.id,
             amount: session.amount_total ?? null,
             currency: session.currency ?? null,
             stripeCustomerId: typeof session.customer === 'string' ? session.customer : null,
             stripeSubscriptionId: typeof session.subscription === 'string' ? session.subscription : null,
             stripePaymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+            interval: session.mode === 'subscription' ? 'month' : 'one_time',
             accessExpiresAt: typeof session.subscription === 'string'
               ? await subscriptionPeriodEnd(session.subscription)
               : null,
@@ -100,21 +105,23 @@ export async function POST(request: Request) {
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription
 
-        // A recurring app subscription, not a Kanthink plan. Renewals push the
-        // access expiry out; anything that is no longer active takes access away.
-        const appMember = await findMemberBySubscription(subscription.id)
-        if (appMember) {
+        // A recurring app subscription, not a Kanthink plan. The purchase is found
+        // by its subscription id, so a renewal extends that purchase and nothing
+        // else the buyer's address happens to own.
+        const appPurchase = await findPurchaseBySubscription(subscription.id)
+        if (appPurchase) {
           const periodEnd = (subscription as unknown as { current_period_end?: number }).current_period_end
           if (subscription.status === 'active' || subscription.status === 'trialing') {
             await recordAppPurchase({
-              appUserId: appMember.id,
-              amount: appMember.amountPaid ?? null,
-              currency: appMember.currency ?? null,
+              appUserId: appPurchase.appUserId,
+              stripeSubscriptionId: subscription.id,
+              amount: appPurchase.amount ?? null,
+              currency: appPurchase.currency ?? null,
               accessExpiresAt: periodEnd ? new Date(periodEnd * 1000) : null,
             })
           } else if (subscription.status !== 'past_due') {
             // past_due keeps access during Stripe's own retry window.
-            await revokeAppAccess(appMember.id, 'canceled')
+            await endPurchase(appPurchase.id, 'canceled')
           }
           break
         }
@@ -126,9 +133,9 @@ export async function POST(request: Request) {
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription
 
-        const endedAppMember = await findMemberBySubscription(subscription.id)
-        if (endedAppMember) {
-          await revokeAppAccess(endedAppMember.id, 'canceled')
+        const endedPurchase = await findPurchaseBySubscription(subscription.id)
+        if (endedPurchase) {
+          await endPurchase(endedPurchase.id, 'canceled')
           break
         }
 
@@ -178,10 +185,10 @@ export async function POST(request: Request) {
         const charge = event.data.object as Stripe.Charge
         const intentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null
         if (intentId) {
-          const refunded = await db.query.appUsers.findFirst({
-            where: eq(appUsers.stripePaymentIntentId, intentId),
-          })
-          if (refunded) await revokeAppAccess(refunded.id, 'refunded')
+          // The one purchase that payment bought. A sibling purchase under the same
+          // address is a different transaction and keeps its access.
+          const refunded = await findPurchaseByPaymentIntent(intentId)
+          if (refunded) await endPurchase(refunded.id, 'refunded')
         }
         break
       }
