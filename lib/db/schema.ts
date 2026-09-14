@@ -75,6 +75,15 @@ export const users = sqliteTable('users', {
   // The publisher's side of the app directory.
   /** Account-level house style for app thumbnails — what makes a set of them look related. */
   appImagePrompt: text('app_image_prompt'),
+  /**
+   * Ceiling across every app this account publishes, in cents, per window.
+   *
+   * The backstop that per-app limits cannot defeat: twenty apps each under their own
+   * limit can still add up to a bill nobody agreed to.
+   */
+  appAiSpendLimitCents: integer('app_ai_spend_limit_cents'),
+  /** Default ceiling applied to an app that has not set its own. */
+  appAiDefaultLimitCents: integer('app_ai_default_limit_cents'),
   /** Vanity segment for the public app page at /apps/u/<slug>. */
   appPageSlug: text('app_page_slug'),
   appPageTitle: text('app_page_title'),
@@ -371,6 +380,19 @@ export const playgroundApps = sqliteTable('playground_apps', {
   /** Opens of the public /play link. Cheap counter, not analytics. */
   viewCount: integer('view_count').notNull().default(0),
 
+  // --- AI spending ---
+  //
+  // A published app's AI calls are billed to whoever published it, and until this
+  // existed there was no ceiling at all: an AI-flavoured app shared somewhere busy
+  // spent the owner's money once per visitor, uncapped.
+  //
+  // Null means "use the account default", which is itself finite. There is no
+  // setting anywhere that means unlimited.
+  /** Ceiling for this app, in cents, per window. */
+  aiSpendLimitCents: integer('ai_spend_limit_cents'),
+  /** Ceiling per identified customer, in cents, per window. */
+  aiCustomerLimitCents: integer('ai_customer_limit_cents'),
+
   // --- Paywall ---
   // A published app can charge. The price lives on Stripe; these columns are the
   // local handle on it, so flipping the paywall off never destroys the product.
@@ -609,6 +631,66 @@ export const appPurchases = sqliteTable('app_purchases', {
   index('app_purchases_app_idx').on(table.appId),
   index('app_purchases_subscription_idx').on(table.stripeSubscriptionId),
   index('app_purchases_intent_idx').on(table.stripePaymentIntentId),
+])
+
+/**
+ * Every AI call an app makes, reserved before it happens and settled after.
+ *
+ * Two rows would be simpler — a counter per app, incremented after each call — and
+ * would be wrong. A counter read, then written, lets ten simultaneous visitors all
+ * see the same remaining allowance and all spend it. So a call inserts its estimate
+ * FIRST, under a conditional that fails if the estimate would not fit, and the
+ * insert either happens or does not. Admission is the write.
+ *
+ * Rows are never deleted by publishing or rolling back, which is what keeps a
+ * release from resetting the bill.
+ */
+export const appAiUsage = sqliteTable('app_ai_usage', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
+  /** Denormalised so the owner's total is one query rather than a join per app. */
+  ownerId: text('owner_id').notNull(),
+
+  /** The customer this was spent on behalf of, when we know who that is. */
+  appUserId: text('app_user_id'),
+  /** A per-visitor key for people who have not identified themselves. */
+  visitorKey: text('visitor_key'),
+
+  /** 'text' | 'image'. Both count; image is the expensive one. */
+  kind: text('kind').$type<'text' | 'image'>().notNull(),
+  model: text('model'),
+  /** True when this came from an owner previewing a draft rather than a customer. */
+  isDraft: integer('is_draft', { mode: 'boolean' }).notNull().default(false),
+
+  /**
+   * What was set aside before the call, in tenths of a cent.
+   *
+   * Tenths because a cheap text call costs a fraction of a cent, and rounding every
+   * one up to a whole cent would overstate a busy app's spend by an order of magnitude.
+   */
+  reservedMillicents: integer('reserved_millicents').notNull(),
+  /** What it actually cost, once known. Null until settled. */
+  actualMillicents: integer('actual_millicents'),
+
+  /**
+   * 'reserved'  — in flight, still counts against the limit
+   * 'settled'   — finished, actual cost known (or assumed, after a timeout)
+   * 'released'  — provider refused before doing work; the reservation is given back
+   */
+  status: text('status').$type<'reserved' | 'settled' | 'released'>().notNull().default('reserved'),
+  /** Why a row was released or assumed-charged, for anyone auditing a bill. */
+  note: text('note'),
+
+  /** The window this belongs to, e.g. "2026-09". Limits are per window. */
+  periodKey: text('period_key').notNull(),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  settledAt: integer('settled_at', { mode: 'timestamp' }),
+}, (table) => [
+  index('app_ai_usage_app_period_idx').on(table.appId, table.periodKey, table.status),
+  index('app_ai_usage_owner_period_idx').on(table.ownerId, table.periodKey, table.status),
+  index('app_ai_usage_customer_idx').on(table.appId, table.appUserId, table.periodKey),
+  index('app_ai_usage_visitor_idx').on(table.appId, table.visitorKey, table.periodKey),
 ])
 
 // Instruction cards for AI automation

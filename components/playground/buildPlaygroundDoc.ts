@@ -87,6 +87,7 @@ ${buildImportMap(options?.deps || [])}
 <body>
 <div id="root"></div>
 <div id="__kpg_error"><span class="label">Runtime error</span><pre id="__kpg_error_msg" style="white-space:pre-wrap;margin:0;"></pre></div>
+<script>window.__kpg_seed = {};/*__KPG_SEED__*/</script>
 <script>
   // Storage shim — this iframe runs with an opaque origin (no allow-same-origin),
   // so reading window.localStorage / sessionStorage throws SecurityError. Without
@@ -107,16 +108,28 @@ ${buildImportMap(options?.deps || [])}
         return false;
       }
     }
-    function makeStorage() {
+    function makeStorage(name) {
+      // Seeded by the host page, which holds the real thing. The iframe runs on an
+      // opaque origin so it has no storage of its own — without this, a high score
+      // survived exactly as long as the tab was not reloaded, and an app that told
+      // someone their score was saved was lying to them.
+      var seed = (window.__kpg_seed && window.__kpg_seed[name]) || {};
       var store = Object.create(null);
+      for (var k in seed) store[k] = String(seed[k]);
+
+      function push() {
+        try {
+          parent.postMessage({ type: 'kpg_storage', area: name, data: Object.assign({}, store) }, '*');
+        } catch (_) {}
+      }
       var storage = {
         getItem: function(k) {
           k = String(k);
           return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null;
         },
-        setItem: function(k, v) { store[String(k)] = String(v); },
-        removeItem: function(k) { delete store[String(k)]; },
-        clear: function() { for (var k in store) delete store[k]; },
+        setItem: function(k, v) { store[String(k)] = String(v); push(); },
+        removeItem: function(k) { delete store[String(k)]; push(); },
+        clear: function() { for (var k in store) delete store[k]; push(); },
         key: function(i) {
           var keys = Object.keys(store);
           return i < keys.length ? keys[i] : null;
@@ -130,9 +143,9 @@ ${buildImportMap(options?.deps || [])}
     ['localStorage', 'sessionStorage'].forEach(function(name) {
       if (probeWorks(name)) return;
       try {
-        Object.defineProperty(window, name, { configurable: true, value: makeStorage() });
+        Object.defineProperty(window, name, { configurable: true, value: makeStorage(name) });
       } catch (_) {
-        try { window[name] = makeStorage(); } catch(__) {}
+        try { window[name] = makeStorage(name); } catch(__) {}
       }
     });
   })();

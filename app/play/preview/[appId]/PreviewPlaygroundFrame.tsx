@@ -2,9 +2,12 @@
 
 import { useState } from 'react';
 import { RefreshCw, Eye } from 'lucide-react';
+import { useAppStorage } from '@/lib/playground/useAppStorage';
 
 interface Props {
   srcDoc: string;
+  /** Scopes this preview's saved data away from the published app's. */
+  appId?: string;
   title: string;
   isPublished: boolean;
 }
@@ -16,7 +19,10 @@ interface Props {
  * footer (you know), just a title, a reload, and a note when the playground isn't
  * published yet. The iframe gets everything else.
  */
-export function PreviewPlaygroundFrame({ srcDoc, title, isPublished }: Props) {
+export function PreviewPlaygroundFrame({ srcDoc, title, isPublished, appId }: Props) {
+  // A draft's own bucket, separate from the published app's, so trying a save in
+  // preview cannot overwrite what customers have stored.
+  const { withSeed } = useAppStorage(appId ? 'draft_' + appId : 'draft');
   // Remounting the iframe is the only reliable way to re-run a srcDoc document —
   // the app keeps no state outside it, so a key bump is a clean restart.
   const [runId, setRunId] = useState(0);
@@ -46,7 +52,7 @@ export function PreviewPlaygroundFrame({ srcDoc, title, isPublished }: Props) {
       </div>
       <iframe
         key={runId}
-        srcDoc={srcDoc}
+        srcDoc={withSeed(srcDoc)}
         sandbox="allow-scripts allow-modals allow-popups allow-forms"
         allow="autoplay; clipboard-write"
         className="flex-1 w-full border-0"

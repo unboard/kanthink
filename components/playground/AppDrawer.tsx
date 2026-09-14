@@ -12,6 +12,7 @@ import { AppAudiencePane } from './AppAudiencePane';
 import { AppThumbnailDialog } from './AppThumbnailDialog';
 import { AppPricingSection } from './AppPricingSection';
 import { AppReleaseSection } from './AppReleaseSection';
+import { AppSpendSection } from './AppSpendSection';
 import { resolveDeps } from '@/lib/playground/runtime';
 import type { Card, CardMessage, CardMessageType, ID, PlaygroundApp, WhiteboardAttachment } from '@/lib/types';
 import {
@@ -787,6 +788,8 @@ function SettingsPane({
         onUpdated={onApplyApp}
         onTogglePublic={onTogglePublic}
       />
+
+      <AppSpendSection appId={app.id} />
 
       <AppPricingSection app={app} onUpdated={onApplyApp} />
 

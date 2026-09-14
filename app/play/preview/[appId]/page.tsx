@@ -87,5 +87,5 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
     deps: resolveDeps(app.dependencies || []).deps,
   });
 
-  return <PreviewPlaygroundFrame srcDoc={srcDoc} title={title} isPublished={!!app.isPublic} />;
+  return <PreviewPlaygroundFrame srcDoc={srcDoc} title={title} isPublished={!!app.isPublic} appId={app.id} />;
 }

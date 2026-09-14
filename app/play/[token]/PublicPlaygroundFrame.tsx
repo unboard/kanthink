@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { AppFeedbackPanel } from './AppFeedbackPanel';
+import { useAppStorage } from '@/lib/playground/useAppStorage';
 import { X } from 'lucide-react';
 
 interface Props {
@@ -26,6 +27,9 @@ interface Props {
  * which also hides the feedback button, so it is not dismissible by accident.
  */
 export function PublicPlaygroundFrame({ srcDoc, title, token, justPurchased, canManageBilling }: Props) {
+  // The app's own saved data, held by this page because the sandboxed iframe has
+  // no storage of its own. Without it a saved score lasts until the next refresh.
+  const { withSeed } = useAppStorage(token);
   const [hideFooter, setHideFooter] = useState(false);
   const [showPurchased, setShowPurchased] = useState(!!justPurchased);
 
@@ -50,7 +54,7 @@ export function PublicPlaygroundFrame({ srcDoc, title, token, justPurchased, can
       )}
 
       <iframe
-        srcDoc={srcDoc}
+        srcDoc={withSeed(srcDoc)}
         sandbox="allow-scripts allow-modals allow-popups allow-forms"
         allow="autoplay; clipboard-write"
         className="flex-1 w-full border-0"

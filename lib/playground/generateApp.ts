@@ -580,7 +580,7 @@ export async function generatePlaygroundApp(
         // characters each cost real latency on every single edit and cannot have
         // changed the answer. The last few turns are what the decision turns on.
         recentThread: appMessages
-          .slice(-4)
+          .slice(-14)
           .map(m => `[${m.type}] ${(m.content || '').slice(0, 500)}`)
           .join('\n'),
         designNotes: app.designNotes || undefined,

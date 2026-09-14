@@ -43,6 +43,11 @@ const PREFLIGHT_SYSTEM = `You are a code-generation gatekeeper for a vibe-coding
    - a secret API key, or an API that blocks browser origins
    - work that happens while the app is closed — scheduling, reminders, email
 
+   Judge the WHOLE conversation, not only the latest message. A requirement stated
+   several turns ago still counts — "and it should remember where I got to on my
+   phone" said early, then elaborated on, is still the promise being made. Equally,
+   a requirement the user later dropped is dropped.
+
    Do NOT return UNSUPPORTED for something merely adjacent. A game that keeps a high
    score on one device is fine. A note-taking app is fine. Judge the promise, not the
    vocabulary: "save my score" is local and supported; "my progress on my phone and

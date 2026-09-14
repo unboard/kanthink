@@ -5,6 +5,14 @@ import { playgroundApps, users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { decryptIfNeeded } from '@/lib/crypto';
 import { verifyAppToken } from '@/lib/playground/appToken';
+import {
+  assumeCharged,
+  denialMessage,
+  release,
+  reserve,
+  settle,
+} from '@/lib/playground/aiBudget';
+import { identifyVisitor } from '@/lib/playground/visitor';
 import { PLAYGROUND_MODELS, FALLBACK_GENERATION_MODEL_ID, getPlaygroundModel } from '@/lib/playground/models';
 
 export const runtime = 'nodejs';
@@ -48,7 +56,8 @@ export async function POST(request: Request) {
     return cors(NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }));
   }
 
-  const appId = verifyAppToken(body.appToken)?.appId ?? null;
+  const claims = verifyAppToken(body.appToken);
+  const appId = claims?.appId ?? null;
   if (!appId) {
     return cors(NextResponse.json({ error: 'Invalid or missing appToken' }, { status: 401 }));
   }
@@ -104,6 +113,36 @@ export async function POST(request: Request) {
   }
 
   const isImageMode = body.mode === 'image';
+
+  // ── Budget ──────────────────────────────────────────────────────────────
+  //
+  // Reserved BEFORE any provider call, and refused here rather than after the
+  // money is gone. Draft previews count too: an owner testing an AI feature is
+  // spending the same key as a customer using it.
+  //
+  // Identity is best-effort by design. A visitor of a free app has no session, and
+  // the per-customer limit is the part that needs one — the app and owner ceilings
+  // do not, and they are what actually bound the bill.
+  const visitorKey = identifyVisitor(request);
+  const reservation = await reserve({
+    appId: app.id,
+    ownerId: channel.ownerId,
+    kind: isImageMode ? 'image' : 'text',
+    model: body.model ?? null,
+    isDraft: claims?.isDraft ?? false,
+    visitorKey,
+    maxOutputTokens: Math.min(body.maxOutputTokens || MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
+  });
+
+  if (!reservation.ok) {
+    console.warn('[playground/ai] refused by budget:', reservation.denial.scope, app.id);
+    return cors(NextResponse.json({
+      error: denialMessage(reservation.denial, reservation.resetsAt),
+      limitReached: true,
+      scope: reservation.denial.scope,
+      resetsAt: reservation.resetsAt.toISOString(),
+    }, { status: 429 }));
+  }
 
   // Fall back to the frontier model if caller didn't specify (or specified 'auto',
   // which is a virtual id only meaningful for the code-gen route's edit-type routing).
@@ -181,11 +220,18 @@ export async function POST(request: Request) {
         if (typeof p.text === 'string') text += p.text;
       }
       if (!dataUrl) {
+        // The model ran and produced nothing usable. It was still a call, and
+        // almost certainly a billed one, so the reservation stands.
+        await assumeCharged(reservation.id, 'image model returned no image');
         return cors(NextResponse.json(
           { error: 'Image model returned no image. Try a different prompt or be more specific.' },
           { status: 502 }
         ));
       }
+
+      await settle(reservation.id, 'image', response.usageMetadata
+        ? { inputTokens: response.usageMetadata.promptTokenCount, outputTokens: response.usageMetadata.candidatesTokenCount }
+        : null);
       return cors(NextResponse.json({
         dataUrl,
         mimeType,
@@ -216,6 +262,10 @@ export async function POST(request: Request) {
           : undefined,
       },
     });
+    await settle(reservation.id, 'text', response.usageMetadata
+      ? { inputTokens: response.usageMetadata.promptTokenCount, outputTokens: response.usageMetadata.candidatesTokenCount }
+      : null);
+
     const text = response.text || '';
     let json: unknown = undefined;
     if (body.jsonSchema && text) {
@@ -234,6 +284,18 @@ export async function POST(request: Request) {
     }));
   } catch (err) {
     const raw = err instanceof Error ? err.message : 'AI call failed';
+
+    // Conservative on purpose. A request refused before any work — a bad schema, a
+    // rejected argument, a model that does not exist — cost nothing and the
+    // reservation goes back. Anything else, including a timeout or a dropped
+    // connection, may well have been completed and billed on the provider's side,
+    // and calling that free is how a ceiling quietly stops being one.
+    const certainlyFree = /INVALID_ARGUMENT|400|NOT_FOUND|404|PERMISSION_DENIED|403|is not found|unsupported/i.test(raw);
+    if (certainlyFree) {
+      await release(reservation.id, raw.slice(0, 200));
+    } else {
+      await assumeCharged(reservation.id, raw.slice(0, 200));
+    }
     // Google's SDK throws with .message set to the raw JSON error envelope —
     // e.g. '{"error":{"code":404,"message":"models/X is not found...","status":"NOT_FOUND"}}'.
     // Generated apps tend to render err.message verbatim, which leaks ugly JSON
