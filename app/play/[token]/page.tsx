@@ -17,6 +17,7 @@ import { resolveAppSession } from '@/lib/playground/appSession';
 import { purchasesForMember, toRef } from '@/lib/playground/appPurchases';
 import { findPublishedApp } from '@/lib/playground/publicApp';
 import { getPublishedVersion } from '@/lib/playground/appRelease';
+import { readAll, signDataToken } from '@/lib/playground/customerData';
 import { PublicPlaygroundFrame } from './PublicPlaygroundFrame';
 import { AppPaywall } from './AppPaywall';
 import type { Metadata } from 'next';
@@ -61,9 +62,12 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   // the cookie alone, so a refund or a lapsed subscription takes effect on the very
   // next load without anything having to expire.
   let canManageBilling = false;
+  // Resolved for every app, not only the paid ones. Customer storage means a free
+  // app has something private behind a sign-in as well, and the page needs to know
+  // who is here before it can hand the iframe anything.
+  const jar = await cookies();
+  const resolved = await resolveAppSession(jar.get(accessCookieName(app.id))?.value, app.id);
   if (isPaywalled(app)) {
-    const jar = await cookies();
-    const resolved = await resolveAppSession(jar.get(accessCookieName(app.id))?.value, app.id);
     const valid = resolved?.member ?? null;
     // Entitlement lives on purchases, not on the customer, so two purchases under
     // one address are two separate grants that end independently.
@@ -104,12 +108,28 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const origin = host ? `${proto}://${host}` : '';
+  // Only a session that proved its address may carry data. A purchase proves the
+  // payment, not the inbox, and someone's saved work is inbox-private.
+  const member = resolved && canReadPrivateData(resolved.session) ? resolved.member : null;
+  const saved = member ? await readAll(app.id, member.id, 'live') : [];
   const srcDoc = buildPlaygroundDoc(release.code, {
     title,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,
+    dataUrl: `${origin}/api/playground/data`,
     appToken: app.appToken || signAppToken(app.id),
+    dataToken: member
+      ? signDataToken({
+          appId: app.id,
+          appUserId: member.id,
+          epoch: member.sessionEpoch ?? 0,
+          scope: 'live',
+        })
+      : undefined,
+    customer: member ? { email: member.email, name: member.name } : null,
+    customerData: Object.fromEntries(saved.map((r) => [r.key, r.value])),
+    signInUrl: `${origin}/play/${token}`,
     deps: resolveDeps(release.dependencies || []).deps,
   });
 
@@ -120,6 +140,7 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
       token={token}
       justPurchased={purchase === 'success'}
       canManageBilling={canManageBilling}
+      customerEmail={member?.email ?? null}
     />
   );
 }

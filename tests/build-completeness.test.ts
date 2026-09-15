@@ -75,9 +75,33 @@ describe('the generator is told to finish the job', () => {
   })
 
   it('stops localStorage being described to the user as syncing', () => {
-    // The shim is per-session and per-device. An app that calls it "saved" is the
-    // single most misleading thing this runtime can produce.
-    expect(generator).toMatch(/never describe it to the user as saved, synced, or kept across devices/i)
+    // The shim is per-device. An app that calls it "saved" is the single most
+    // misleading thing this runtime can produce — and now that real per-customer
+    // storage exists, there is no reason to reach for localStorage for that at all.
+    expect(generator).toMatch(/never describe what is in it as saved or synced/i)
+    expect(generator).toMatch(/goes in window\.kanthinkData, not localStorage/i)
+  })
+
+  it('tells the generator never to claim a save that did not happen', () => {
+    // The one rule that decides whether customer storage is trustworthy: "Saved"
+    // must follow a resolved promise, not a hopeful one.
+    expect(generator).toMatch(/NEVER show "Saved" unless the set\(\) promise actually resolved/i)
+  })
+
+  it('keeps the app usable for somebody who is not signed in', () => {
+    // Blocking the whole app behind a sign-in wall is the obvious wrong turn.
+    expect(generator).toMatch(/must still WORK/i)
+    expect(generator).toMatch(/Never block the app behind sign-in/i)
+  })
+
+  it('tells the generator to seed from what is already saved', () => {
+    expect(generator).toMatch(/window\.kanthinkData\.initial/)
+  })
+
+  it('separates private customer storage from a public share link', () => {
+    // Reaching for the wrong one publishes somebody's private work, or keeps
+    // something private that was meant to be sent to a friend.
+    expect(generator).toMatch(/kanthinkSave vs kanthinkData/i)
   })
 })
 
@@ -87,14 +111,23 @@ describe('preflight can say the runtime cannot do this', () => {
     expect(preflight).toMatch(/decision: 'ACT' \| 'ASK' \| 'UNSUPPORTED'/)
   })
 
-  it('names cross-device storage and accounts as the things to catch', () => {
-    expect(preflight).toMatch(/data that follows a person across devices/i)
-    expect(preflight).toMatch(/user accounts, sign-in/i)
+  it('names what the runtime still cannot do', () => {
+    // Several different people sharing state is the real boundary now. Cross-device
+    // storage for ONE person moved to the supported side when kanthinkData shipped,
+    // and a preflight that still refuses it would turn working builds away.
+    expect(preflight).toMatch(/multi-user sync or shared live state/i)
+    expect(preflight).toMatch(/work that happens while the app is closed/i)
+  })
+
+  it('does not refuse per-customer storage any more', () => {
+    expect(preflight).toMatch(/window\.kanthinkData/)
+    expect(preflight).toMatch(/IS supported and is never a reason for UNSUPPORTED/i)
   })
 
   it('warns against tripping on adjacent vocabulary', () => {
-    // "Save my score" is local and fine; the check has to judge the promise.
-    expect(preflight).toMatch(/Judge the promise, not the\s*\n?\s*vocabulary/i)
+    // A second device for one person is the runtime working, not a limit being hit.
+    expect(preflight).toMatch(/do NOT return it for\s*\n?\s*anything customer storage now covers/i)
+    expect(preflight).toMatch(/two different people needing to see each other/i)
   })
 
   it('requires a smaller scope to be offered alongside the refusal', () => {

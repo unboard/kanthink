@@ -7,6 +7,8 @@ import { nanoid } from 'nanoid'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { signDraftAppToken } from '@/lib/playground/appToken'
+import { ownerDraftDataToken } from '@/lib/playground/publicApp'
+import { readAll } from '@/lib/playground/customerData'
 import { getPublishedVersion, hasUnpublishedChanges, listVersions } from '@/lib/playground/appRelease'
 
 export const runtime = 'nodejs'
@@ -45,12 +47,19 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     // what customers currently have, plus a draft token so its own preview iframe
     // writes to the draft bucket rather than over live records.
     const published = await getPublishedVersion(app)
+    // So the owner's own preview can save — against the draft namespace, where it
+    // cannot touch what customers have stored.
+    const draftData = await ownerDraftDataToken(app, session.user.id)
+    const draftSaved = draftData ? await readAll(app.id, draftData.member.id, 'draft') : []
     const versions = await listVersions(app.id)
 
     return NextResponse.json({
       app: {
         ...app,
         draftToken: signDraftAppToken(app.id),
+        draftDataToken: draftData?.token ?? null,
+        draftCustomer: draftData ? { email: draftData.member.email, name: draftData.member.name } : null,
+        draftCustomerData: Object.fromEntries(draftSaved.map((r) => [r.key, r.value])),
         publishedVersion: published
           ? { id: published.id, version: published.version, publishedAt: published.publishedAt, notes: published.notes }
           : null,

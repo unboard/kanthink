@@ -167,6 +167,9 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   // The draft token, not the live one: this iframe is the owner looking at work
   // in progress, and anything it saves must stay off the customers' records.
   const appToken = app?.draftToken;
+  const dataToken = app?.draftDataToken;
+  const draftCustomer = app?.draftCustomer ?? null;
+  const draftData = app?.draftCustomerData ?? null;
   const srcDoc = useMemo(() => {
     if (!appCode) return null;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -176,9 +179,13 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       aiUrl: `${origin}/api/playground/ai`,
       saveUrl: `${origin}/api/playground/save`,
       appToken: appToken || undefined,
+      dataUrl: `${origin}/api/playground/data`,
+      dataToken: dataToken || undefined,
+      customer: draftCustomer,
+      customerData: draftData,
       deps: resolveDeps(depsKey ? depsKey.split(',') : []).deps,
     });
-  }, [appCode, appTitle, appToken, depsKey]);
+  }, [appCode, appTitle, appToken, dataToken, draftCustomer, draftData, depsKey]);
 
   // Runtime errors reported by the sandboxed iframe.
   useEffect(() => {
@@ -840,7 +847,7 @@ function SettingsPane({
           {app.lastModelId && <Row label="Last built with" value={getPlaygroundModel(app.lastModelId).label} />}
           {app.lastUsage && (
             <Row
-              label="Last build cost"
+              label="Last build, estimated"
               value={
                 // Say which path produced it: a targeted edit regenerates only the
                 // changed lines, which is most of why one build costs a fraction of

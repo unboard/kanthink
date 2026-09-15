@@ -558,6 +558,50 @@ export const appUsers = sqliteTable('app_users', {
 ])
 
 /**
+ * What one customer has saved in one app.
+ *
+ * The thing a published app was missing. Generated apps had localStorage, which the
+ * sandbox does not really give them — the host keeps a copy per browser — so a
+ * person's work lived on one device and vanished if they cleared the site. An app
+ * that tells someone their progress is saved when it is only cached is worse than
+ * one that never claimed to save at all.
+ *
+ * Rows are addressed by (app, customer, scope, key) and nothing else. Notably NOT
+ * by release: publishing a new version of an app changes the code customers run and
+ * leaves every one of these rows exactly where it was.
+ *
+ * Ownership is enforced on the server. The key a request may write is derived from
+ * the session it arrives with, never from anything the app sends, so a page cannot
+ * ask for somebody else's row by naming it.
+ */
+export const appCustomerData = sqliteTable('app_customer_data', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
+  appUserId: text('app_user_id').notNull().references(() => appUsers.id, { onDelete: 'cascade' }),
+
+  /**
+   * 'live' for the published app; 'draft' for the owner previewing a build.
+   *
+   * Separate namespaces, because an owner checking that saving works should not be
+   * writing over what their customers have stored.
+   */
+  scope: text('scope').$type<'live' | 'draft'>().notNull().default('live'),
+
+  /** The app's own name for this piece of data. */
+  key: text('key').notNull(),
+  /** JSON, as text. Shape is the app's business. */
+  value: text('value').notNull(),
+  /** Byte length of value, so a customer's total is a sum rather than a scan. */
+  bytes: integer('bytes').notNull().default(0),
+
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('app_customer_data_key_idx').on(table.appId, table.appUserId, table.scope, table.key),
+  index('app_customer_data_member_idx').on(table.appUserId, table.scope),
+])
+
+/**
  * The conversation between one app user and the app's publisher.
  *
  * One thread per (app, person). A published app has a Feedback button; what arrives

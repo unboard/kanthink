@@ -29,6 +29,22 @@ export function buildPlaygroundDoc(
     aiUrl?: string;
     saveUrl?: string;
     appToken?: string;
+    /** Absolute URL for per-customer storage. */
+    dataUrl?: string;
+    /**
+     * Signed by the host after it resolved a real session from the cookie. Absent
+     * when nobody is signed in, which is what makes kanthinkData.signedIn false.
+     */
+    dataToken?: string;
+    /** Who is signed in, for the app to show. Never used for authorisation. */
+    customer?: { email: string; name?: string | null } | null;
+    /**
+     * Everything this customer has saved, baked in so an app can render their work
+     * on its first frame instead of flashing an empty state and filling it in.
+     */
+    customerData?: Record<string, unknown> | null;
+    /** Where to send someone who is not signed in. */
+    signInUrl?: string;
     /**
      * If set, baked into `window.kanthinkInitial.record` so the app can hydrate
      * from a specific saved record (used by /play/{token}/r/{slug}). Apps in the
@@ -50,6 +66,11 @@ export function buildPlaygroundDoc(
   const aiUrl = (options?.aiUrl || '/api/playground/ai').replace(/[<>"]/g, '');
   const saveUrl = (options?.saveUrl || '/api/playground/save').replace(/[<>"]/g, '');
   const appToken = (options?.appToken || '').replace(/[<>"]/g, '');
+  const dataUrl = (options?.dataUrl || '/api/playground/data').replace(/[<>"]/g, '');
+  const dataToken = (options?.dataToken || '').replace(/[<>"]/g, '');
+  const signInUrl = (options?.signInUrl || '').replace(/[<>"]/g, '');
+  const customer = options?.customer ?? null;
+  const customerData = options?.customerData ?? null;
   const initialRecord = options?.initialRecord ?? null;
   // Strip an accidental opening markdown fence if Gemini ever leaks one.
   // Also strip any `import React ...` lines: the iframe's wrapper already does
@@ -225,6 +246,82 @@ ${buildImportMap(options?.deps || [])}
         return j;
       });
     });
+  };
+
+  // Per-customer storage. The one thing in this runtime that follows a person
+  // rather than a browser: rows live against their account on the server, so the
+  // same sign-in on another device sees the same work.
+  //
+  // The token is minted by the host page from the access cookie. This document
+  // never names whose data it wants — the server derives that from the token —
+  // so nothing an app sends can reach another customer.
+  var __KPG_DATA_URL = ${JSON.stringify(dataUrl)};
+  var __KPG_DATA_TOKEN = ${JSON.stringify(dataToken)};
+  var __KPG_SIGNIN_URL = ${JSON.stringify(signInUrl)};
+  var __KPG_DATA_SEED = ${JSON.stringify(customerData ?? {})};
+
+  function __kpg_data(op, key, value) {
+    if (!__KPG_DATA_TOKEN) {
+      return Promise.reject(new Error("Nobody is signed in, so there is nowhere to save this. Call kanthinkData.signIn() first."));
+    }
+    return fetch(__KPG_DATA_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataToken: __KPG_DATA_TOKEN, op: op, key: key, value: value }),
+      mode: "cors"
+    }).then(function(res) {
+      return res.json().catch(function() { return {}; }).then(function(j) {
+        if (!res.ok) {
+          // Every failure path rejects. An app cannot show "Saved" off the back
+          // of a refusal, because there is no resolved promise to hang it on.
+          var err = new Error(j && j.error ? j.error : "Could not save (" + res.status + ")");
+          err.code = j && j.code;
+          err.signedIn = j && j.signedIn;
+          throw err;
+        }
+        return j;
+      });
+    });
+  }
+
+  window.kanthinkData = {
+    /** True when there is somebody to save against. */
+    signedIn: !!__KPG_DATA_TOKEN,
+    /** Who that is, for display. Never the thing the server trusts. */
+    customer: ${JSON.stringify(customer)},
+    /**
+     * Everything they had saved, already here on the first render. Read this for
+     * initial state instead of awaiting list() and flashing an empty screen.
+     */
+    initial: __KPG_DATA_SEED,
+    /** One value. Resolves to the saved value, or null if there is none. */
+    get: function(key) {
+      return __kpg_data("get", key).then(function(j) {
+        return j && j.record ? j.record.value : null;
+      });
+    },
+    /** Save one value. Rejects if it would cross a limit; nothing is dropped. */
+    set: function(key, value) {
+      return __kpg_data("set", key, value).then(function(j) { return j; });
+    },
+    /** Forget one value. */
+    remove: function(key) { return __kpg_data("delete", key); },
+    /** Every key this customer has here, as a plain object. */
+    all: function() {
+      return __kpg_data("list").then(function(j) {
+        var out = {};
+        (j.records || []).forEach(function(r) { out[r.key] = r.value; });
+        return out;
+      });
+    },
+    /** Bytes and keys used, against their limits. */
+    usage: function() { return __kpg_data("usage").then(function(j) { return j.usage; }); },
+    /** Send someone to sign in. Returns false if the host offered no route. */
+    signIn: function() {
+      if (!__KPG_SIGNIN_URL) return false;
+      try { parent.postMessage({ type: "kpg_signin" }, "*"); } catch(_) {}
+      return true;
+    }
   };
 
   // AI helper — generated apps use this for any AI/LLM feature (vision, text gen,

@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'apps-remember-their-customers',
+    date: '2026-09-14',
+    kind: 'capability',
+    title: 'Your apps can remember the people who use them',
+    body: "Published apps now save each person's own work against the email they sign in with, so they can carry on from another device — and nobody else can read it. Kan builds this in automatically, and publishing a new version leaves every customer's work where it was.",
+  },
+  {
     id: 'kan-reads-app-audience',
     date: '2026-09-11',
     kind: 'capability',

@@ -8,6 +8,8 @@ import { getChannelPermission } from '@/lib/api/permissions';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
 import { signDraftAppToken } from '@/lib/playground/appToken';
 import { resolveDeps } from '@/lib/playground/runtime';
+import { ownerDraftDataToken } from '@/lib/playground/publicApp';
+import { readAll } from '@/lib/playground/customerData';
 import { PreviewPlaygroundFrame } from './PreviewPlaygroundFrame';
 import type { Metadata } from 'next';
 
@@ -76,6 +78,9 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const origin = host ? `${proto}://${host}` : '';
 
+  const draftData = session?.user?.id ? await ownerDraftDataToken(app, session.user.id) : null;
+  const draftSaved = draftData ? await readAll(app.id, draftData.member.id, 'draft') : [];
+
   const srcDoc = buildPlaygroundDoc(app.code, {
     title,
     uploadUrl: `${origin}/api/playground/upload`,
@@ -84,6 +89,10 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
     // A draft token: anything this preview saves is kept off the live records,
     // so trying out a save cannot overwrite what customers have stored.
     appToken: signDraftAppToken(app.id),
+    dataUrl: `${origin}/api/playground/data`,
+    dataToken: draftData?.token,
+    customer: draftData ? { email: draftData.member.email, name: draftData.member.name } : null,
+    customerData: Object.fromEntries(draftSaved.map((r) => [r.key, r.value])),
     deps: resolveDeps(app.dependencies || []).deps,
   });
 

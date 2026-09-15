@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { signDataToken } from './customerData'
 import { appUsers, playgroundApps, users } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
@@ -106,4 +107,36 @@ export async function findAppOwnerId(app: { createdBy?: string | null; channelId
     columns: { ownerId: true },
   })
   return channel?.ownerId ?? app.createdBy ?? ''
+}
+
+/**
+ * The owner, as a customer of their own app, in the draft namespace.
+ *
+ * Testing that saving works needs somebody to save against, and the owner is the
+ * only person present in a draft. They get an app_users row like anyone else, and
+ * a draft-scoped token — so what they store while trying the app out sits beside
+ * the live records rather than on top of them.
+ */
+export async function ownerDraftDataToken(app: { id: string }, ownerId: string) {
+  const account = await db.query.users.findFirst({
+    where: eq(users.id, ownerId),
+    columns: { email: true, name: true },
+  })
+  if (!account?.email) return null
+
+  const member = await ensureAppUser({
+    appId: app.id,
+    ownerId,
+    email: account.email,
+    name: account.name ?? undefined,
+  })
+  return {
+    token: signDataToken({
+      appId: app.id,
+      appUserId: member.id,
+      epoch: member.sessionEpoch ?? 0,
+      scope: 'draft',
+    }),
+    member,
+  }
 }

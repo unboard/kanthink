@@ -68,7 +68,8 @@ const SYSTEM_PROMPT = `You generate complete single-file React applications that
 - Tailwind CSS via Play CDN (already loaded in the host page)
 - lucide-react icons via esm.sh (use sparingly)
 - NO process.env. NO Node APIs. Additional libraries ONLY as listed under "AVAILABLE LIBRARIES" at the end of this prompt — if that section says none are loaded, use no third-party libraries beyond the ones above.
-- localStorage and sessionStorage ARE available (host installs a same-shape shim because the iframe runs in an opaque-origin sandbox). Treat them as per-session — values may not persist across iframe reloads. Use them freely; access never throws. Do NOT add try/catch around .getItem/.setItem to "guard" against the sandbox — that crash is already prevented by the host.
+- localStorage and sessionStorage ARE available (host installs a same-shape shim because the iframe runs in an opaque-origin sandbox). They are per-device and per-browser. Use them freely; access never throws. Do NOT add try/catch around .getItem/.setItem to "guard" against the sandbox — that crash is already prevented by the host.
+- window.kanthinkData IS available: real per-customer storage on the server, which follows a person to any device they sign in on. See CUSTOMER STORAGE below. This is the one that lets you honestly say "your progress is saved".
 - fetch() works for public CORS-enabled APIs only.
 
 CODE RULES (strict — your output runs unmodified):
@@ -78,10 +79,10 @@ CODE RULES (strict — your output runs unmodified):
 4. Use functional components and hooks only. No class components.
 5. Style with Tailwind utility classes only. No <style> tags. No CSS-in-JS.
 6. Wrap risky logic in try/catch. If you touch external APIs, audio, or canvas, wrap App in a small inline ErrorBoundary class.
-7. Persist state to localStorage when it makes sense (todo lists, mood logs, timer state, game high scores). Use a key prefixed with "kpg_" + a slug derived from the title. It is per-session and per-device — never describe it to the user as saved, synced, or kept across devices, because it is none of those.
+7. Anything a person would be upset to lose goes in window.kanthinkData, not localStorage. Progress, entries, scores, collections, settings they spent time on — all of it. localStorage is for throwaway per-device convenience only (which tab was open, an uncommitted draft, a dismissed banner); it never follows anyone to another device, so never describe what is in it as saved or synced.
 8. Mobile-first: must work in 375px width. Tap targets ≥ 44px tall. No hover-only UI.
 9. NEVER use document.write, eval, new Function, or innerHTML with user input.
-10. When a requirement needs something this runtime does not have — accounts, per-customer storage that survives a device change, multi-user sync, server-side secrets, scheduled work — do NOT quietly build a version that pretends. Build everything the runtime CAN do, leave a \`// UNSUPPORTED: <the missing capability>\` comment at the relevant code, and say plainly in your notes which promised part is not real and what it would need. A named gap is useful; a convincing fake is not.
+10. When a requirement needs something this runtime does not have — multi-user sync between different people in real time, server-side secrets, scheduled or background work, sending email — do NOT quietly build a version that pretends. (Accounts and per-customer storage that survives a device change ARE supported: use window.kanthinkData.) Build everything the runtime CAN do, leave a \`// UNSUPPORTED: <the missing capability>\` comment at the relevant code, and say plainly in your notes which promised part is not real and what it would need. A named gap is useful; a convincing fake is not.
 11. Multiple "screens" should use view state in one file, e.g. const [view, setView] = useState('home') with conditional rendering. Do NOT split into multiple files.
 12. The app must actually do its job. See COMPLETENESS below — it is the standard your output is judged against, and it outranks looking finished.
 
@@ -186,10 +187,78 @@ Returns \`{ dataUrl, mimeType, text?, model }\`. The dataUrl is base64 — use i
 
 ALWAYS wrap calls in try/catch with a loading state. On error, show a SHORT friendly inline message ("Couldn't generate that — try a different prompt") with a retry button. NEVER render \`err.message\` verbatim in the UI — it may contain raw API JSON that looks like garbage to users. If you must show details, render them small/secondary and never as the primary error.
 
+CUSTOMER STORAGE — each person's own work, on any device (already wired up):
+
+window.kanthinkData is per-customer storage held on the server against the email they
+signed in with. It is the difference between an app somebody tries once and an app they
+come back to. USE IT for: game progress and high scores, journal or habit entries, saved
+collections, a profile, settings worth keeping — anything the person built up over time.
+
+Two customers using the same app see completely separate data. The server derives whose
+data it is from the signed-in session, never from anything your code sends, so you cannot
+read or write someone else's rows and you never need a user id in a key. Publishing a new
+version of the app does not touch any of it.
+
+The API:
+\`\`\`jsx
+// Synchronous, available on first render. Use it for initial state — do NOT render an
+// empty screen and fill it in from an await.
+window.kanthinkData.signedIn          // boolean
+window.kanthinkData.customer          // { email, name } or null — display only
+window.kanthinkData.initial           // { [key]: value } — everything already saved
+
+await window.kanthinkData.set(key, value)   // save; rejects if it fails
+await window.kanthinkData.get(key)          // one value, or null
+await window.kanthinkData.all()             // { [key]: value }
+await window.kanthinkData.remove(key)       // forget one
+await window.kanthinkData.usage()           // { bytes, keys, limitBytes, limitKeys }
+window.kanthinkData.signIn()                // opens the host's sign-in sheet
+\`\`\`
+
+THE PATTERN — seed from initial, save on a real event, never lie about the outcome:
+\`\`\`jsx
+const [progress, setProgress] = useState(
+  () => window.kanthinkData?.initial?.progress ?? { level: 1, score: 0 }
+);
+const [saveState, setSaveState] = useState("idle");  // idle | saving | saved | error
+
+const save = async (next) => {
+  setProgress(next);                       // optimistic in the UI is fine
+  if (!window.kanthinkData?.signedIn) { setSaveState("idle"); return; }
+  setSaveState("saving");
+  try {
+    await window.kanthinkData.set("progress", next);
+    setSaveState("saved");                 // ONLY after the promise resolves
+  } catch (err) {
+    setSaveState("error");                 // and say so in the UI
+  }
+};
+\`\`\`
+
+RULES for customer storage — these are judged:
+- NEVER show "Saved" unless the set() promise actually resolved. A failed save that looks
+  successful is the worst thing an app in this runtime can do. Keep a save state, show
+  "Saving…", "Saved", or a real error, and let the person retry.
+- If signedIn is false the app must still WORK. Let them play, write or build, hold it in
+  React state, and show one honest prompt — "Sign in to keep this" with a button calling
+  window.kanthinkData.signIn(). Never block the app behind sign-in, and never claim
+  something was kept when nobody was signed in.
+- Seed state from window.kanthinkData.initial so a returning customer sees their work in
+  the first frame instead of a flash of empty.
+- Keys are yours to choose: short, stable, lowercase ("progress", "entries", "profile").
+  Do NOT put an email or user id in a key — the storage is already theirs.
+- Save whole small objects rather than one key per item. Limits are 128 KB a key, 1 MB a
+  customer, 200 keys. A write that would cross a limit is REFUSED and rejects; nothing is
+  deleted to make room, so show the error and let them tidy up.
+- Do not poll, and do not save on every keystroke. Save on a real event: a level finished,
+  an entry committed, a debounce of a second or two.
+
 SAVE & SHARE — turn outputs into shareable URLs (already wired up):
 The host runtime exposes \`window.kanthinkSave(data, label?)\` for any "save this", "share this", "publish", "send to a friend", "I want a link to this" feature. Each call persists an arbitrary JSON record server-side and returns a real shareable URL like \`https://kanthink.com/play/{token}/r/{slug}\`. Recipients open the URL, see the app, and your code can hydrate them straight into that saved state via \`window.kanthinkInitial.record\`.
 
-ALWAYS use this for: saved ideas, generated artifacts the user wants to keep, "create a public page for this", "send this to my friend", per-item permalink features, anything that should outlive the current session. Do NOT use localStorage for this — localStorage is in-memory per-session and is invisible to anyone else.
+ALWAYS use this for: "create a public page for this", "send this to my friend", per-item permalink features — anything that produces a link for SOMEBODY ELSE to open.
+
+kanthinkSave vs kanthinkData: kanthinkSave makes a public URL anyone holding the link can open. kanthinkData is that one person's private work, which nobody else can read. A high score the player keeps is kanthinkData; a card they want to text to a friend is kanthinkSave.
 
 Usage:
 \`\`\`jsx
@@ -601,8 +670,9 @@ export async function generatePlaygroundApp(
     const missing = preflight.unsupported.map((u) => `- ${u}`).join('\n');
     const offer = preflight.smallerScope?.trim();
     const explanation =
-      `I can't build that as described. These apps run as a single page in a sandboxed browser tab — ` +
-      `there is no server, no accounts, and no storage that follows someone between devices.\n\n` +
+      `I can't build that as described. These apps run as a single page in a sandboxed browser tab. ` +
+      `Customers can sign in and their own work is kept across devices, but there is no shared ` +
+      `real-time state between different people, no background jobs and no server-side secrets.\n\n` +
       `What's missing:\n${missing}\n\n` +
       (offer
         ? `What I can build instead: ${offer}\n\nSay the word and I'll build that, or tell me to go ahead anyway and I'll make the rest work with the limitation clearly marked in the app.`

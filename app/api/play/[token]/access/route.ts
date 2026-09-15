@@ -66,6 +66,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         return grantResponse(app.id, outcome.member, 'verified')
       }
 
+      // A free app has nothing to buy. The code proved the address, which is all
+      // that was ever needed to reach their saved work, so grant and stop.
+      if (!isPaywalled(app)) {
+        return grantResponse(app.id, outcome.member, 'verified')
+      }
+
       // Proved who they are, but have not bought it. Straight to checkout — and the
       // row is already verified, so they come back from Stripe and stay in.
       return startCheckout(app, outcome.member.id, email, token)
@@ -73,12 +79,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
 
     // ── Step one: an address arrived ────────────────────────────────────────
     //
-    // A free app has nothing to buy, so proving the address is only about reading
-    // the private thread — and that is handled on the feedback route, which asks
-    // for a code when it actually needs one. Sending one here would put a code in
-    // front of an app that opens for everybody.
+    // A free app used to grant here without proving anything, on the grounds that
+    // there was nothing private to reach. Customer storage changed that: a free app
+    // now holds somebody's saved work, and typing their address must not be enough
+    // to open it. So a code goes out here too.
+    //
+    // Opening the app itself is untouched — a free app still needs no sign-in to
+    // use. This is the door to a person's own data, not to the app.
     if (!isPaywalled(app)) {
-      return NextResponse.json({ granted: true, free: true })
+      const issued = await issueAccessCode(member, app.title)
+      if (!issued.sent) {
+        return NextResponse.json({ error: issued.error, needsCode: true }, { status: 429 })
+      }
+      return NextResponse.json({
+        needsCode: true,
+        message: 'We sent a code to that address. Enter it to reach your saved work.',
+      })
     }
 
     // Someone who has never paid is sent to checkout rather than made to prove an

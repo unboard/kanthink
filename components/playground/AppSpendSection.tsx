@@ -108,7 +108,7 @@ export function AppSpendSection({ appId }: { appId: ID }) {
   return (
     <section>
       <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-        AI spending
+        Estimated AI spending
       </h3>
 
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
@@ -132,6 +132,18 @@ export function AppSpendSection({ appId }: { appId: ID }) {
           <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
             {spend.calls.text} text and {spend.calls.image} image {spend.calls.text + spend.calls.image === 1 ? 'call' : 'calls'} ·
             resets {resets}
+          </p>
+
+          {/*
+            Say what this number is. It is each call's reported tokens priced at the
+            provider's list rates, which is close but is not the invoice — and a call
+            still in flight is counted at the most it could cost, so the figure can
+            fall slightly once it settles. Limits are enforced against this estimate,
+            which is why it is deliberately never optimistic.
+          */}
+          <p className="mt-1.5 text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">
+            Estimated from reported tokens at list prices, and rounded up while a call is
+            still running. Your provider&apos;s bill is the final word.
           </p>
         </div>
 

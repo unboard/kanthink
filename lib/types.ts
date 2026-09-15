@@ -676,6 +676,10 @@ export interface PlaygroundApp {
   appToken?: string | null;
   /** The same, scoped to the draft — saves land in a bucket customers never read. */
   draftToken?: string | null;
+  /** Draft-scoped per-customer storage, so the owner's preview can save safely. */
+  draftDataToken?: string | null;
+  draftCustomer?: { email: string; name?: string | null } | null;
+  draftCustomerData?: Record<string, unknown> | null;
 
   // --- Releases ---
   /** The release customers are being served, or null if nothing is published. */
