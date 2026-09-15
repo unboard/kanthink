@@ -21,7 +21,7 @@ for (const file of ['.env.local', '.stripe-test.env']) {
 
 const TITLE = 'Checkout Test'
 const BUYER = process.env.TEST_BUYER ?? 'dhodg22@gmail.com'
-const LOCAL = 'http://localhost:3000'
+const LOCAL = process.env.TEST_ORIGIN ?? 'http://localhost:3007'
 
 async function main() {
   const mode = process.argv[2] ?? 'check'
@@ -72,8 +72,12 @@ async function main() {
 
   // ── check ──────────────────────────────────────────────────────────────
   const purchases = member ? (await purchasesForMember(member.id)).map(toRef) : []
+  // The session the grant route actually mints: purchase scope NAMING the purchase.
+  // Minting one without the id is not a weaker session, it is a different thing —
+  // hasActiveAccess refuses it on purpose, so leaving the id out tests nothing.
+  const live = purchases.find((p) => !p.endedAt) ?? purchases[0] ?? null
   const session = member
-    ? verifyAccessToken(signAccessToken(member.id, member.sessionEpoch ?? 0, 'purchase'))
+    ? verifyAccessToken(signAccessToken(member.id, member.sessionEpoch ?? 0, 'purchase', live?.id))
     : null
   const saved = member
     ? await db.select().from(appCustomerData).where(

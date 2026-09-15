@@ -65,3 +65,6 @@ lib/mcs/scrape-results.json
 
 # Local test-mode Stripe credentials — never committed, never in chat
 .stripe-test.env
+
+# Payment-test logs — generated
+.verify/logs/

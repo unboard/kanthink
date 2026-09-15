@@ -13,6 +13,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# An explicit port, because the machine may already have a dev server on 3000 —
+# and that one runs with .env.local, which holds the LIVE key. Sharing a port with
+# it means the live key answers a test-mode request.
+PORT=${PORT:-3007}
 KEYFILE=.stripe-test.env
 STRIPE=./.tools/stripe/stripe.exe
 
@@ -24,7 +28,8 @@ SK=$(grep -oE '^[[:space:]]*STRIPE_SECRET_KEY[[:space:]]*=[[:space:]]*.*' "$KEYF
 
 case "$SK" in
   sk_test_*) : ;;
-  *) echo "REFUSING: the key in $KEYFILE is not a test key (starts \"${SK:0:8}\")."; exit 1 ;;
+  PASTE_YOUR_TEST_KEY_HERE) echo "The placeholder in $KEYFILE has not been replaced yet."; exit 1 ;;
+  *) echo "REFUSING: the key in $KEYFILE is not a test key (starts \"${SK:0:8}\"). Only sk_test_ is allowed."; exit 1 ;;
 esac
 echo "Using a test-mode key (sk_test_…${SK: -4}). Live credentials untouched."
 
@@ -40,16 +45,16 @@ mkdir -p .verify/logs
 : > .verify/logs/stripe.log
 
 STRIPE_SECRET_KEY="$SK" STRIPE_WEBHOOK_SECRET="$WHSEC" \
-  npm run dev > .verify/logs/dev.log 2>&1 &
+  npx next dev --port "$PORT" > .verify/logs/dev.log 2>&1 &
 DEV=$!
 
 "$STRIPE" listen --api-key "$SK" \
-  --forward-to localhost:3000/api/webhooks/stripe \
+  --forward-to "localhost:$PORT/api/webhooks/stripe" \
   --events checkout.session.completed,charge.refunded,customer.subscription.updated,customer.subscription.deleted \
   > .verify/logs/stripe.log 2>&1 &
 FWD=$!
 
-echo "dev pid $DEV, forwarder pid $FWD"
+echo "dev on :$PORT (pid $DEV), forwarder pid $FWD"
 echo "logs: .verify/logs/dev.log and .verify/logs/stripe.log"
 trap 'kill $DEV $FWD 2>/dev/null || true' EXIT
 wait
