@@ -54,3 +54,8 @@ next-env.d.ts
 lib/mcs/scrape-results.json
 
 .vercel
+
+# Journey verification scratch — generated, and some of it holds secrets
+.verify/*.env
+.verify/harness.html
+.verify/app.jsx
