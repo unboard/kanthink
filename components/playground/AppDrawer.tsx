@@ -29,6 +29,7 @@ import {
   Loader2,
   Image as ImageIcon,
   MessageSquareText,
+  ChevronDown,
   Settings2,
   Trash2,
   Users,
@@ -801,41 +802,7 @@ function SettingsPane({
       <AppPricingSection app={app} onUpdated={onApplyApp} />
 
       {/* Model */}
-      <section>
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-          Model
-        </h3>
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden divide-y divide-neutral-100 dark:divide-neutral-800">
-          {PLAYGROUND_MODELS.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => onSetModel(m.id)}
-              className={`w-full text-left px-3 py-2.5 flex items-start gap-2 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 ${
-                m.id === modelId ? 'bg-violet-500/5' : ''
-              }`}
-            >
-              <div className="min-w-0 flex-1">
-                <span className={`block text-xs font-semibold ${
-                  m.id === modelId
-                    ? 'text-violet-700 dark:text-violet-300'
-                    : 'text-neutral-800 dark:text-neutral-200'
-                }`}>
-                  {m.label}
-                  {m.isPreview && (
-                    <span className="ml-1.5 text-[9px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-500">
-                      preview
-                    </span>
-                  )}
-                </span>
-                <span className="block text-[10.5px] text-neutral-500 dark:text-neutral-400 leading-snug">
-                  {m.blurb}
-                </span>
-              </div>
-              {m.id === modelId && <Check className="w-3.5 h-3.5 text-violet-600 flex-shrink-0 mt-0.5" />}
-            </button>
-          ))}
-        </div>
-      </section>
+      <ModelPicker modelId={modelId} onSetModel={onSetModel} />
 
       {/* Build */}
       <section>
@@ -903,5 +870,112 @@ function Row({ label, value }: { label: string; value: string }) {
       <dt className="text-neutral-500 dark:text-neutral-400 flex-shrink-0">{label}</dt>
       <dd className="ml-auto text-right text-neutral-800 dark:text-neutral-200 break-words min-w-0">{value}</dd>
     </div>
+  );
+}
+
+/**
+ * Which model builds this app.
+ *
+ * Collapsed by default. There are a dozen-odd models and listing them all put a
+ * wall between the settings above and the ones below, which meant scrolling past
+ * everything to reach anything — for a choice most people set once, if ever.
+ *
+ * The closed state still says which model is in use and why, because "Auto" with no
+ * explanation is the kind of setting people flip nervously. Opening it keeps the
+ * blurbs: the difference between these is not the name, and a bare dropdown of
+ * model ids would make the choice harder rather than tidier.
+ */
+function ModelPicker({
+  modelId,
+  onSetModel,
+}: {
+  modelId: string;
+  onSetModel: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = getPlaygroundModel(modelId);
+
+  const groups: Array<{ name: string; models: typeof PLAYGROUND_MODELS }> = [
+    { name: '', models: PLAYGROUND_MODELS.filter((m) => m.isAuto) },
+    { name: 'Google', models: PLAYGROUND_MODELS.filter((m) => !m.isAuto && m.provider === 'google') },
+    { name: 'OpenAI', models: PLAYGROUND_MODELS.filter((m) => !m.isAuto && m.provider === 'openai') },
+  ].filter((g) => g.models.length > 0);
+
+  return (
+    <section>
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
+        Model
+      </h3>
+
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="w-full text-left px-3 py-2.5 flex items-center gap-2 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
+        >
+          <div className="min-w-0 flex-1">
+            <span className="block text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+              {selected.label}
+              {selected.isPreview && (
+                <span className="ml-1.5 text-[9px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                  preview
+                </span>
+              )}
+            </span>
+            <span className="block text-[10.5px] text-neutral-500 dark:text-neutral-400 leading-snug truncate">
+              {selected.blurb}
+            </span>
+          </div>
+          <ChevronDown
+            className={`w-4 h-4 text-neutral-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        {open && (
+          <div className="border-t border-neutral-200 dark:border-neutral-800 max-h-72 overflow-y-auto">
+            {groups.map((group) => (
+              <div key={group.name || 'auto'}>
+                {group.name && (
+                  <div className="px-3 pt-2 pb-1 text-[9px] font-semibold uppercase tracking-wider text-neutral-400 bg-neutral-50 dark:bg-neutral-900/60">
+                    {group.name}
+                  </div>
+                )}
+                {group.models.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => { onSetModel(m.id); setOpen(false); }}
+                    className={`w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 ${
+                      m.id === modelId ? 'bg-violet-500/5' : ''
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className={`block text-xs font-semibold ${
+                        m.id === modelId
+                          ? 'text-violet-700 dark:text-violet-300'
+                          : 'text-neutral-800 dark:text-neutral-200'
+                      }`}>
+                        {m.label}
+                        {m.isPreview && (
+                          <span className="ml-1.5 text-[9px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                            preview
+                          </span>
+                        )}
+                      </span>
+                      <span className="block text-[10.5px] text-neutral-500 dark:text-neutral-400 leading-snug">
+                        {m.blurb}
+                      </span>
+                    </div>
+                    {m.id === modelId && (
+                      <Check className="w-3.5 h-3.5 text-violet-600 flex-shrink-0 mt-0.5" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
