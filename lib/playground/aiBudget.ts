@@ -1,6 +1,11 @@
 import { db } from '@/lib/db'
 import { appAiUsage, playgroundApps, users } from '@/lib/db/schema'
 import { and, eq, sql } from 'drizzle-orm'
+import {
+  MILLICENTS_PER_CENT,
+  actualCostMillicents,
+  maximumCostMillicents,
+} from './aiPricing'
 
 /**
  * What a published app is allowed to spend on AI, and stopping it when it has.
@@ -17,16 +22,26 @@ import { and, eq, sql } from 'drizzle-orm'
  * gap between reading and writing is the bug, and no amount of care inside it helps.
  *
  * So there is no counter. A call inserts its own estimate as a row, under a WHERE
- * that fails if the estimate would not fit — one statement, evaluated by the
- * database, admission and record in the same write. Simultaneous callers contend on
- * the insert, and only as many as fit get rows.
+ * that fails if the estimate would not fit — admission and record in the same write.
  *
- * Money is held in **tenths of a cent**. A cheap text call costs a fraction of a
- * cent, and rounding each one up to a whole cent would overstate a busy app's spend
- * by an order of magnitude.
+ * One statement is not enough on its own. Tested across ten independent connections,
+ * three were admitted where one fit: the subquery inside the INSERT can read a
+ * snapshot taken before another connection committed, so several callers each see
+ * room that is already gone. It looked safe only because an earlier test shared a
+ * single client, which serialised the writers for us.
+ *
+ * The insert therefore runs inside a write transaction, which takes the write lock
+ * BEFORE the read rather than upgrading to it afterwards. Contenders then queue or
+ * fail busy, and a busy one retries.
+ *
+ * Money is held in millicents — thousandths of a cent, as the name says. An earlier
+ * version used the same name for tenths of a cent, which is the sort of mismatch
+ * that survives right up until somebody does arithmetic with it.
+ *
+ * Cost comes from lib/playground/aiPricing, per model. A generic estimate is not a
+ * reservation: it is a number in roughly the right area, and it stops being even
+ * that the moment an app is switched to a dearer model.
  */
-
-export const MILLICENTS_PER_CENT = 10
 
 /** Finite, and applied when nobody has chosen anything. Nothing here means unlimited. */
 export const DEFAULT_APP_LIMIT_CENTS = 500          // $5 per app per month
@@ -43,54 +58,47 @@ export function periodResetsAt(now: Date = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
 }
 
-/**
- * What one call is expected to cost, in tenths of a cent.
- *
- * Deliberately an over-estimate. The reservation is what protects the ceiling, so
- * guessing low is the dangerous direction: a call that reserves less than it spends
- * lets the total drift past the limit. Settlement corrects it downward afterwards.
- */
-export function estimateMillicents(kind: 'text' | 'image', maxOutputTokens = 4000): number {
-  if (kind === 'image') {
-    // Nano Banana is roughly 4c an image at the time of writing. Rounded up.
-    return 50
-  }
-  // Frontier-ish text pricing, output-dominated, with the input assumed generous.
-  // $12/1M output => 0.0012c per token => 0.012 millicents per token.
-  const output = Math.ceil(maxOutputTokens * 0.012)
-  const input = 5
-  return Math.max(2, output + input)
-}
-
-/** Actual cost once the provider reports tokens. Same units. */
-export function actualMillicents(
-  kind: 'text' | 'image',
-  usage?: { inputTokens?: number; outputTokens?: number } | null,
-): number {
-  if (kind === 'image') return 50
-  if (!usage) return estimateMillicents('text')
-  const input = (usage.inputTokens ?? 0) * 0.002
-  const output = (usage.outputTokens ?? 0) * 0.012
-  return Math.max(1, Math.ceil(input + output))
-}
+/** Re-exported so every caller reserves and settles through one module. */
+export {
+  MILLICENTS_PER_CENT,
+  maximumCostMillicents,
+  actualCostMillicents,
+  isPriced,
+  pricedModelIds,
+  formatMillicents,
+} from './aiPricing'
 
 export interface BudgetSubject {
   appId: string
   ownerId: string
   kind: 'text' | 'image'
-  model?: string | null
   isDraft?: boolean
   /** The identified customer, when there is one. */
   appUserId?: string | null
   /** A stable per-visitor key for anyone who has not identified themselves. */
   visitorKey?: string | null
-  maxOutputTokens?: number
+
+  // What the maximum cost is computed from. All of it: a reservation made without
+  // the model is a guess, and one made without the enforced output ceiling is a
+  // guess about the expensive half.
+  /** The model that will actually be called. Unpriced models are refused. */
+  modelId: string
+  /** Prompt plus system instruction, for sizing the input. */
+  promptChars: number
+  /** Images being sent in. */
+  attachedImages?: number
+  /** The ceiling the route will enforce on the response. */
+  maxOutputTokens: number
+  /** Images the call may produce. */
+  imagesOut?: number
 }
 
 export type Denial =
   | { scope: 'app'; limitCents: number; spentCents: number }
   | { scope: 'owner'; limitCents: number; spentCents: number }
   | { scope: 'customer'; limitCents: number; spentCents: number }
+  /** No price for that model, so no honest reservation can be made for it. */
+  | { scope: 'unpriced'; modelId: string }
 
 export type Reservation =
   | { ok: true; id: string; reservedMillicents: number }
@@ -102,7 +110,7 @@ interface Limits {
   customerMillicents: number
 }
 
-async function resolveLimits(appId: string, ownerId: string): Promise<Limits> {
+export async function resolveLimits(appId: string, ownerId: string): Promise<Limits> {
   const [app, owner] = await Promise.all([
     db.query.playgroundApps.findFirst({
       where: eq(playgroundApps.id, appId),
@@ -145,52 +153,70 @@ async function spentMillicents(where: ReturnType<typeof sql>): Promise<number> {
  * and then decides has a window in it, and that window is exactly how ten
  * simultaneous visitors each spend the last of an allowance.
  */
+/**
+ * Admissions are serialised within this process before they reach the database.
+ *
+ * Two reasons. The connection is shared, and overlapping BEGIN/COMMIT pairs on one
+ * connection interleave into each other — one transaction commits another's work,
+ * or a lock is left standing. And admission is a single fast statement, so queueing
+ * costs almost nothing while removing that whole class of failure.
+ *
+ * This does not replace the write transaction below. It orders the writers inside
+ * one server; BEGIN IMMEDIATE is what orders them across separate instances.
+ */
+let admissions: Promise<unknown> = Promise.resolve()
+function inTurn<T>(work: () => Promise<T>): Promise<T> {
+  const next = admissions.then(work, work)
+  admissions = next.then(() => undefined, () => undefined)
+  return next
+}
 export async function reserve(subject: BudgetSubject): Promise<Reservation> {
   const period = currentPeriodKey()
+
+  // Priced first. A model nobody has costed cannot be reserved for, and admitting
+  // it on a generic figure would put an unknown amount on the owner's bill.
+  const cost = maximumCostMillicents({
+    modelId: subject.modelId,
+    kind: subject.kind,
+    promptChars: subject.promptChars,
+    attachedImages: subject.attachedImages,
+    maxOutputTokens: subject.maxOutputTokens,
+    imagesOut: subject.imagesOut,
+  })
+  if (cost === null) {
+    return {
+      ok: false,
+      denial: { scope: 'unpriced', modelId: subject.modelId },
+      resetsAt: periodResetsAt(),
+    }
+  }
+
   const limits = await resolveLimits(subject.appId, subject.ownerId)
-  const cost = estimateMillicents(subject.kind, subject.maxOutputTokens)
   const id = crypto.randomUUID()
   const now = Math.floor(Date.now() / 1000)
 
-  // Per-customer first: it is the cheapest to check and the most specific refusal.
-  const who = subject.appUserId
-    ? sql`app_user_id = ${subject.appUserId}`
-    : subject.visitorKey
-      ? sql`visitor_key = ${subject.visitorKey}`
-      : null
+  const who = whoClause(subject)
+  const statement = admissionStatement(subject, cost, limits, period, id, now)
 
-  const conditions: ReturnType<typeof sql>[] = [
-    sql`(SELECT COALESCE(SUM(COALESCE(actual_millicents, reserved_millicents)), 0)
-         FROM app_ai_usage
-         WHERE app_id = ${subject.appId} AND period_key = ${period} AND ${COUNTS}
-        ) + ${cost} <= ${limits.appMillicents}`,
-    sql`(SELECT COALESCE(SUM(COALESCE(actual_millicents, reserved_millicents)), 0)
-         FROM app_ai_usage
-         WHERE owner_id = ${subject.ownerId} AND period_key = ${period} AND ${COUNTS}
-        ) + ${cost} <= ${limits.ownerMillicents}`,
-  ]
-  if (who) {
-    conditions.push(sql`(SELECT COALESCE(SUM(COALESCE(actual_millicents, reserved_millicents)), 0)
-         FROM app_ai_usage
-         WHERE app_id = ${subject.appId} AND ${who} AND period_key = ${period} AND ${COUNTS}
-        ) + ${cost} <= ${limits.customerMillicents}`)
+  // The write lock is taken before the totals are read, so a contender cannot base
+  // its decision on a snapshot that another admission has already invalidated.
+  // Busy means somebody else holds the lock right now, which is a reason to wait
+  // rather than to refuse — refusing there would deny a request that fits.
+  let admitted = false
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const result = await inTurn(() => db.transaction(async (tx) => tx.run(statement)))
+      admitted = Number(result.rowsAffected ?? 0) > 0
+      break
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/SQLITE_BUSY|database is locked|write conflict/i.test(message)) throw error
+      // Jittered, so a burst does not retry in lockstep forever.
+      await new Promise((r) => setTimeout(r, 10 * (attempt + 1) + Math.random() * 15))
+    }
   }
 
-  const guard = conditions.reduce((acc, c, i) => (i === 0 ? c : sql`${acc} AND ${c}`))
-
-  // INSERT ... SELECT ... WHERE: the database evaluates the totals and the insert
-  // together, so two callers cannot both pass the same check.
-  const result = await db.run(sql`
-    INSERT INTO app_ai_usage
-      (id, app_id, owner_id, app_user_id, visitor_key, kind, model, is_draft,
-       reserved_millicents, status, period_key, created_at)
-    SELECT ${id}, ${subject.appId}, ${subject.ownerId}, ${subject.appUserId ?? null},
-           ${subject.visitorKey ?? null}, ${subject.kind}, ${subject.model ?? null},
-           ${subject.isDraft ? 1 : 0}, ${cost}, 'reserved', ${period}, ${now}
-    WHERE ${guard}
-  `)
-
-  if (Number(result.rowsAffected ?? 0) > 0) {
+  if (admitted) {
     return { ok: true, id, reservedMillicents: cost }
   }
 
@@ -217,13 +243,69 @@ export async function reserve(subject: BudgetSubject): Promise<Reservation> {
 }
 
 /** The call finished and we know what it cost. */
+/**
+ * The admission itself: one conditional insert whose WHERE clause re-reads every
+ * ceiling. Exported so the guard can be exercised on connections other than the
+ * app's own — a shared client serialises writers by itself, which makes a
+ * single-client test pass for the wrong reason.
+ */
+/** Which customer this call belongs to, for the per-customer ceiling. */
+function whoClause(subject: BudgetSubject) {
+  return subject.appUserId
+    ? sql`app_user_id = ${subject.appUserId}`
+    : subject.visitorKey
+      ? sql`visitor_key = ${subject.visitorKey}`
+      : null
+}
+
+export function admissionStatement(
+  subject: BudgetSubject,
+  cost: number,
+  limits: { appMillicents: number; ownerMillicents: number; customerMillicents: number },
+  period: string,
+  id: string,
+  now: number,
+) {
+  // Per-customer first: it is the cheapest to check and the most specific refusal.
+  const who = whoClause(subject)
+
+  const conditions: ReturnType<typeof sql>[] = [
+    sql`(SELECT COALESCE(SUM(COALESCE(actual_millicents, reserved_millicents)), 0)
+         FROM app_ai_usage
+         WHERE app_id = ${subject.appId} AND period_key = ${period} AND ${COUNTS}
+        ) + ${cost} <= ${limits.appMillicents}`,
+    sql`(SELECT COALESCE(SUM(COALESCE(actual_millicents, reserved_millicents)), 0)
+         FROM app_ai_usage
+         WHERE owner_id = ${subject.ownerId} AND period_key = ${period} AND ${COUNTS}
+        ) + ${cost} <= ${limits.ownerMillicents}`,
+  ]
+  if (who) {
+    conditions.push(sql`(SELECT COALESCE(SUM(COALESCE(actual_millicents, reserved_millicents)), 0)
+         FROM app_ai_usage
+         WHERE app_id = ${subject.appId} AND ${who} AND period_key = ${period} AND ${COUNTS}
+        ) + ${cost} <= ${limits.customerMillicents}`)
+  }
+
+  const guard = conditions.reduce((acc, c, i) => (i === 0 ? c : sql`${acc} AND ${c}`))
+
+  return sql`
+    INSERT INTO app_ai_usage
+      (id, app_id, owner_id, app_user_id, visitor_key, kind, model, is_draft,
+       reserved_millicents, status, period_key, created_at)
+    SELECT ${id}, ${subject.appId}, ${subject.ownerId}, ${subject.appUserId ?? null},
+           ${subject.visitorKey ?? null}, ${subject.kind}, ${subject.modelId},
+           ${subject.isDraft ? 1 : 0}, ${cost}, 'reserved', ${period}, ${now}
+    WHERE ${guard}
+  `
+}
 export async function settle(
   reservationId: string,
   kind: 'text' | 'image',
+  modelId: string,
   usage?: { inputTokens?: number; outputTokens?: number } | null,
 ): Promise<void> {
   await db.update(appAiUsage).set({
-    actualMillicents: actualMillicents(kind, usage),
+    actualMillicents: actualCostMillicents(modelId, kind, usage),
     status: 'settled',
     settledAt: new Date(),
   }).where(eq(appAiUsage.id, reservationId))
@@ -310,6 +392,9 @@ export async function summarise(appId: string, ownerId: string): Promise<SpendSu
 
 /** A sentence for whoever hit the wall, without leaking the owner's finances. */
 export function denialMessage(denial: Denial, resetsAt: Date): string {
+  if (denial.scope === 'unpriced') {
+    return `This app asked for a model we cannot price (${denial.modelId}), so the request was not sent. Ask for one of the supported models.`
+  }
   const when = resetsAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
   if (denial.scope === 'customer') {
     return `You have used this app's AI allowance for now. It resets on ${when}. Everything you have already done is saved.`

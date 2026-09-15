@@ -20,6 +20,10 @@ export const maxDuration = 120;
 
 const MAX_OUTPUT_TOKENS = 4000;
 const MAX_PROMPT_LENGTH = 16000;
+// The system instruction counts toward the reservation too, so it needs a ceiling of
+// its own. Without one there is no largest possible request, and nothing to check a
+// reservation against.
+const MAX_SYSTEM_LENGTH = 8000;
 // Gemini's image-gen model. Used when mode === 'image'. Not in PLAYGROUND_MODELS
 // because it's not a code-gen option for users — it's only reachable from inside
 // generated apps via window.kanthinkAI.generateImage().
@@ -70,6 +74,12 @@ export async function POST(request: Request) {
       { status: 400 }
     ));
   }
+  if ((body.system?.length ?? 0) > MAX_SYSTEM_LENGTH) {
+    return cors(NextResponse.json(
+      { error: `system instruction too long (${body.system!.length} > ${MAX_SYSTEM_LENGTH})` },
+      { status: 400 }
+    ));
+  }
 
   // Find the app and resolve the owner.
   const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
@@ -114,36 +124,6 @@ export async function POST(request: Request) {
 
   const isImageMode = body.mode === 'image';
 
-  // ── Budget ──────────────────────────────────────────────────────────────
-  //
-  // Reserved BEFORE any provider call, and refused here rather than after the
-  // money is gone. Draft previews count too: an owner testing an AI feature is
-  // spending the same key as a customer using it.
-  //
-  // Identity is best-effort by design. A visitor of a free app has no session, and
-  // the per-customer limit is the part that needs one — the app and owner ceilings
-  // do not, and they are what actually bound the bill.
-  const visitorKey = identifyVisitor(request);
-  const reservation = await reserve({
-    appId: app.id,
-    ownerId: channel.ownerId,
-    kind: isImageMode ? 'image' : 'text',
-    model: body.model ?? null,
-    isDraft: claims?.isDraft ?? false,
-    visitorKey,
-    maxOutputTokens: Math.min(body.maxOutputTokens || MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
-  });
-
-  if (!reservation.ok) {
-    console.warn('[playground/ai] refused by budget:', reservation.denial.scope, app.id);
-    return cors(NextResponse.json({
-      error: denialMessage(reservation.denial, reservation.resetsAt),
-      limitReached: true,
-      scope: reservation.denial.scope,
-      resetsAt: reservation.resetsAt.toISOString(),
-    }, { status: 429 }));
-  }
-
   // Fall back to the frontier model if caller didn't specify (or specified 'auto',
   // which is a virtual id only meaningful for the code-gen route's edit-type routing).
   // Image mode is handled in its own branch below and uses dedicated image-gen models.
@@ -174,6 +154,39 @@ export async function POST(request: Request) {
     } catch {
       // Silently skip a bad URL — generation continues with prompt only.
     }
+  }
+
+  // ── Budget ──────────────────────────────────────────────────────────────
+  //
+  // Reserved BEFORE any provider call, and refused here rather than after the
+  // money is gone. Draft previews count too: an owner testing an AI feature is
+  // spending the same key as a customer using it.
+  //
+  // Identity is best-effort by design. A visitor of a free app has no session, and
+  // the per-customer limit is the part that needs one — the app and owner ceilings
+  // do not, and they are what actually bound the bill.
+  const visitorKey = identifyVisitor(request);
+  const reservation = await reserve({
+    appId: app.id,
+    ownerId: channel.ownerId,
+    kind: isImageMode ? 'image' : 'text',
+    modelId: resolvedModelId,
+    isDraft: claims?.isDraft ?? false,
+    visitorKey,
+    promptChars: (body.prompt?.length ?? 0) + (body.system?.length ?? 0),
+    attachedImages: (body.imageUrl ? 1 : 0) + (body.imageData ? 1 : 0),
+    maxOutputTokens: Math.min(body.maxOutputTokens || MAX_OUTPUT_TOKENS, MAX_OUTPUT_TOKENS),
+    imagesOut: isImageMode ? 1 : 0,
+  });
+
+  if (!reservation.ok) {
+    console.warn('[playground/ai] refused by budget:', reservation.denial.scope, app.id);
+    return cors(NextResponse.json({
+      error: denialMessage(reservation.denial, reservation.resetsAt),
+      limitReached: true,
+      scope: reservation.denial.scope,
+      resetsAt: reservation.resetsAt.toISOString(),
+    }, { status: 429 }));
   }
 
   const client = new GoogleGenAI({ apiKey });
@@ -229,7 +242,7 @@ export async function POST(request: Request) {
         ));
       }
 
-      await settle(reservation.id, 'image', response.usageMetadata
+      await settle(reservation.id, 'image', modelUsed, response.usageMetadata
         ? { inputTokens: response.usageMetadata.promptTokenCount, outputTokens: response.usageMetadata.candidatesTokenCount }
         : null);
       return cors(NextResponse.json({
@@ -262,7 +275,7 @@ export async function POST(request: Request) {
           : undefined,
       },
     });
-    await settle(reservation.id, 'text', response.usageMetadata
+    await settle(reservation.id, 'text', resolvedModelId, response.usageMetadata
       ? { inputTokens: response.usageMetadata.promptTokenCount, outputTokens: response.usageMetadata.candidatesTokenCount }
       : null);
 
