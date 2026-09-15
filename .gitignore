@@ -59,3 +59,9 @@ lib/mcs/scrape-results.json
 .verify/*.env
 .verify/harness.html
 .verify/app.jsx
+
+# Local Stripe CLI, downloaded not committed
+.tools/
+
+# Local test-mode Stripe credentials — never committed, never in chat
+.stripe-test.env
