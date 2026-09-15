@@ -4838,10 +4838,23 @@ export const useStore = create<KanthinkState>()(
         channels: state.channels,
         cards: state.cards,
         tasks: state.tasks,
-        // playgroundApps is deliberately absent: apps are server-owned and never
-        // created offline, so a persisted copy could only ever be stale. It comes
-        // back with every channel fetch, and the initial {} keeps reads safe until
-        // then. Adding it here would resurrect deleted apps on the board.
+        // Persisted alongside the cards they hang off, because a card and its app
+        // are one thing on screen.
+        //
+        // This used to be left out on the grounds that a persisted copy could only
+        // ever be stale and might briefly show an app deleted somewhere else. True,
+        // but it bought that at the cost of every single load: cards painted
+        // instantly from this cache while their app rows waited on the network, so
+        // every board visibly assembled itself in two stages and every card twitched
+        // as its app row appeared underneath.
+        //
+        // The staleness argument applies just as much to cards, which are persisted
+        // anyway, and for the same reason: loadFromServer REPLACES this map rather
+        // than merging into it, so the fetch is authoritative and anything deleted
+        // elsewhere is gone the moment it lands. That bounds the ghost to one fetch,
+        // against a layout shift on every load. Keep that replace — a merge here
+        // really would resurrect deleted apps, permanently.
+        playgroundApps: state.playgroundApps,
         instructionCards: state.instructionCards,
         channelOrder: state.channelOrder,
         folders: state.folders,
