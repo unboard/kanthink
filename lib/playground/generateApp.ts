@@ -22,6 +22,11 @@ import { signAppToken } from '@/lib/playground/appToken';
 import { runPreflight, type PreflightResult } from '@/lib/playground/preflight';
 import { applyCodeEdits, shouldPatch, type CodeEdit } from '@/lib/playground/applyEdits';
 import {
+  capabilitiesLost,
+  preservationInstruction,
+  type CapabilityLoss,
+} from '@/lib/playground/capabilityGuard';
+import {
   resolveDeps,
   describeDepsForPrompt,
   MAX_RUNTIME_DEPS,
@@ -420,8 +425,18 @@ const RESPONSE_SCHEMA = {
       items: { type: 'string' },
       description: 'Libraries this code imports beyond react/lucide-react. Format: "three", "three@0.185.0", "@scope/pkg", "gh:owner/repo@ref", or "alias=gh:owner/repo". Empty array if none.',
     },
+    requirements: {
+      type: 'string',
+      description:
+        'The running contract for this app: a terse bullet list of everything it must do, carried forward and updated every turn. Start from the REQUIREMENTS block you were given, keep every line that is still wanted, add whatever this turn asked for, and only drop a line when the user has actually said to. This is what stops an early request being forgotten once it scrolls out of the thread — treat dropping a line as a decision, not tidying.',
+    },
+    removedCapabilities: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Runtime features you deliberately removed this turn because the user asked for them to go — e.g. "AI text generation", "saving customer work". Leave empty unless removal was requested. An undeclared removal is treated as a mistake and the build is refused.',
+    },
   },
-  required: ['title', 'summary', 'code', 'notes', 'designNotes', 'dependencies'],
+  required: ['title', 'summary', 'code', 'notes', 'designNotes', 'dependencies', 'requirements'],
 };
 
 export interface GenerateRequest {
@@ -748,11 +763,19 @@ export async function generatePlaygroundApp(
     ? `\n\n⚠️ THIS IS AN EDIT, NOT A REDESIGN. Edit type (preflight): ${preflight.editType}. Change only what the request asks. Everything else in the current code must come through unchanged — same classes, copy, structure, colors, behavior. If your diff is bigger than the request implies, you are drifting — shrink it.`
     : '';
 
+  // The contract, ahead of the request, because a new request is an addition to it
+  // rather than a replacement for it. Without this the only memory of an early
+  // requirement is the thread, and the thread is a window.
+  const requirementsBlock = app.requirements?.trim()
+    ? `REQUIREMENTS — everything this app must do. All of it still applies; this turn's request is IN ADDITION unless it explicitly replaces a line. Do not regress any of these:\n${app.requirements.trim()}`
+    : 'REQUIREMENTS: (none recorded yet — start the list from what this turn asks for)';
+
   const requestBlock = `USER REQUEST:
 ${body.prompt}${imageNote}${iterationReminder}`;
 
   const userMessage = [
     `APP: ${app.title}`,
+    requirementsBlock,
     currentCode
       ? `CURRENT CODE (this is your starting point — preserve it except for what the user asks to change):\n\`\`\`jsx\n${currentCode}\n\`\`\``
       : 'CURRENT CODE: (none yet — this is the first generation, design freely)',
@@ -798,6 +821,10 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     notes: string;
     designNotes?: string;
     dependencies?: string[];
+    /** The running contract, carried forward and updated each turn. */
+    requirements?: string;
+    /** Features the model says it removed on purpose. An undeclared removal is a regression. */
+    removedCapabilities?: string[];
   }
 
   let parsed: ParsedBuild | null = null;
@@ -824,6 +851,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   // worse off than before, only slower on the turns where it misses.
   const patchMode = !options.skipPatch && shouldPatch(preflight.editType, !!currentCode);
   let patchOutcome: 'applied' | 'declined' | 'rejected' | null = null;
+  /** Set when a rewrite came back missing something the current code does. */
+  let capabilityLoss: CapabilityLoss | null = null;
 
   try {
     if (patchMode && currentCode) {
@@ -849,6 +878,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
             edits?: CodeEdit[];
             notes?: string;
             designNotes?: string;
+            requirements?: string;
           };
           const result = applyCodeEdits(currentCode, patch.edits ?? []);
           if (result.ok) {
@@ -861,10 +891,32 @@ ${body.prompt}${imageNote}${iterationReminder}`;
               code: result.code,
               notes: patch.notes || 'Updated.',
               designNotes: patch.designNotes,
+              requirements: patch.requirements,
+              dependencies: app.dependencies ?? [],
+            };
+          } else if ((patch.edits ?? []).length === 0) {
+            // The model looked at the request against the current code and decided
+            // there was nothing to do. That is an answer, and the right response to
+            // it is to change nothing.
+            //
+            // It used to fall through to a full rewrite, which is how a turn that
+            // concluded "no changes were requested" still regenerated the entire
+            // file — and a regeneration is exactly where working features go
+            // missing. A no-op that silently rewrites the app is worse than either
+            // a no-op or a rewrite.
+            patchOutcome = 'declined';
+            parsed = {
+              title: app.title,
+              summary: app.summary ?? '',
+              code: currentCode,
+              notes: patch.notes?.trim()
+                || 'Nothing to change — the app already does what was asked.',
+              designNotes: app.designNotes ?? undefined,
+              requirements: app.requirements ?? undefined,
               dependencies: app.dependencies ?? [],
             };
           } else {
-            patchOutcome = (patch.edits ?? []).length === 0 ? 'declined' : 'rejected';
+            patchOutcome = 'rejected';
             console.warn('[playground] patch not applied, rewriting instead:', result.reason);
           }
         } catch {
@@ -907,6 +959,55 @@ ${body.prompt}${imageNote}${iterationReminder}`;
       }
 
       parsed = JSON.parse(response.text || '') as ParsedBuild;
+
+      // A rewrite regenerates the whole file, which is the one moment a working
+      // feature can vanish without anyone asking. Check before persisting, and give
+      // the model one chance to put back what it dropped.
+      if (currentCode && parsed?.code) {
+        capabilityLoss = capabilitiesLost(
+          currentCode,
+          parsed.code,
+          Array.isArray(parsed.removedCapabilities) ? parsed.removedCapabilities : [],
+        );
+
+        if (capabilityLoss) {
+          console.warn('[playground] rewrite dropped capabilities, retrying:', capabilityLoss.ids.join(', '));
+          const retry = await runStructured({
+            model,
+            apiKey,
+            systemInstruction: SYSTEM_PROMPT + runtimeSection,
+            userText: userMessage + preservationInstruction(capabilityLoss),
+            images: imageParts.map((p) => p.inlineData),
+            schema: RESPONSE_SCHEMA,
+            schemaName: 'generated_app',
+            maxOutputTokens: 32000,
+            signal: deadline,
+          });
+          addUsage(retry);
+
+          if (!retry.truncated) {
+            try {
+              const second = JSON.parse(retry.text || '') as ParsedBuild;
+              const stillLost = second.code
+                ? capabilitiesLost(
+                    currentCode,
+                    second.code,
+                    Array.isArray(second.removedCapabilities) ? second.removedCapabilities : [],
+                  )
+                : capabilityLoss;
+              if (!stillLost) {
+                parsed = second;
+                capabilityLoss = null;
+              } else {
+                parsed = second;
+                capabilityLoss = stillLost;
+              }
+            } catch {
+              // Keep the first attempt and let the refusal below stand.
+            }
+          }
+        }
+      }
     }
   } catch (err) {
     if (deadline.aborted) {
@@ -923,6 +1024,22 @@ ${body.prompt}${imageNote}${iterationReminder}`;
 
   if (!parsed?.code) {
     return NextResponse.json({ error: `${model.label} returned no code` }, { status: 502 });
+  }
+
+  // Two attempts and it still came back without features the app already had. Keep
+  // the working app. Shipping this would trade a change nobody can see for a
+  // regression they will find later, after building three more turns on top of it.
+  if (capabilityLoss) {
+    return NextResponse.json(
+      {
+        error:
+          `That build came back missing ${capabilityLoss.labels.join(', ')}, which the app ` +
+          `currently does and you didn't ask to remove — so it wasn't saved and your app is ` +
+          `untouched. Try again, or ask for a smaller change: big rewrites are where features ` +
+          `get dropped.`,
+      },
+      { status: 409 }
+    );
   }
 
   // Persist the build onto the app row, and append the turn to the app's thread.
@@ -991,6 +1108,12 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
     designNotes: typeof parsed.designNotes === 'string' && parsed.designNotes.trim().length > 0
       ? parsed.designNotes.trim()
       : app.designNotes,
+    // The running contract. Kept rather than cleared when a turn returns nothing,
+    // because an empty answer is far more likely to be a model that skipped the
+    // field than a user who withdrew every requirement they ever had.
+    requirements: typeof parsed.requirements === 'string' && parsed.requirements.trim().length > 0
+      ? parsed.requirements.trim()
+      : app.requirements,
     // Store declarations rather than resolved URLs so resolution rules stay changeable.
     dependencies: merged.deps.map(d => d.raw),
     // Stable HMAC of the app id, used by the iframe runtime to authenticate

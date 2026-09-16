@@ -343,6 +343,19 @@ export const playgroundApps = sqliteTable('playground_apps', {
   generationCount: integer('generation_count').notNull().default(0),
   /** Running list of established design decisions, re-injected on every iteration. */
   designNotes: text('design_notes'),
+  /**
+   * What this app must do, carried forward on every build.
+   *
+   * Separate from designNotes, which records how it looks and how it was put
+   * together. This is the contract: the things that have to stay true however the
+   * code is rearranged.
+   *
+   * It exists because a thread is a window. The builder sees the last forty
+   * messages and preflight the last fourteen, so a requirement stated early stops
+   * being visible long before it stops mattering — which is why people end up
+   * saying the same thing three times, each time a little less politely.
+   */
+  requirements: text('requirements'),
   /** Kan's notes from the most recent build, shown under the preview. */
   lastNotes: text('last_notes'),
   /**
