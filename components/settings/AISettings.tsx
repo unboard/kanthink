@@ -9,11 +9,13 @@ import {
   type ProviderGroup,
 } from '@/lib/ai/modelCatalog';
 import type { AiSurface, SurfaceDefinition } from '@/lib/ai/modelPreferences';
+import type { ImageModel } from '@/lib/ai/imageModels';
 import { Check, ChevronDown, ExternalLink, Loader2, Plus, Trash2, TriangleAlert } from 'lucide-react';
 
 interface Preferences {
   default: string | null;
   overrides: Partial<Record<AiSurface, string>>;
+  imageDefault: string | null;
 }
 
 interface Resolved {
@@ -28,6 +30,10 @@ interface Config {
   resolved: Partial<Record<AiSurface, Resolved | null>>;
   catalog: ProviderGroup[];
   surfaces: SurfaceDefinition[];
+  imageCatalog: ImageModel[];
+  /** What a null imageDefault means, so the picker can name it. */
+  imageDefaultFallback: string;
+  resolvedImage: Resolved | null;
 }
 
 /**
@@ -39,8 +45,11 @@ interface Config {
  *      choice from being constrained by which single key you happened to save.
  *   2. **The default model.** One control, and for most accounts the only one that
  *      is ever touched. It governs everything.
- *   3. **Exceptions**, folded away. Three areas may opt out of the default, and the
- *      screen says what each currently resolves to so the setting is legible.
+ *   3. **The image model.** Its own control, because a text model cannot draw and
+ *      folding the two together would offer GPT-5 for pictures. This is also where
+ *      transparency lives, as a property of the model rather than a checkbox here.
+ *   4. **Exceptions**, folded away. Three areas may opt out of the text default, and
+ *      the screen says what each currently resolves to so the setting is legible.
  *
  * The shape is lopsided on purpose. Giving every area its own picker would turn a
  * decision into an administration task, which is the thing to avoid.
@@ -170,7 +179,32 @@ export function AISettings() {
         </p>
       </section>
 
-      {/* 3. Exceptions */}
+      {/* 3. Images */}
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          Image model
+        </h3>
+        <ImageModelSelect
+          models={config.imageCatalog}
+          available={config.availableProviders}
+          value={config.preferences.imageDefault}
+          fallbackId={config.imageDefaultFallback}
+          disabled={!hasAnyKey || busy}
+          onChange={(value) => patch({
+            action: 'savePreferences',
+            default: config.preferences.default,
+            overrides: config.preferences.overrides,
+            imageDefault: value,
+          })}
+        />
+        <p className="text-xs text-neutral-500">
+          {config.resolvedImage?.fellBack
+            ? 'No key for that provider — images are running on something else.'
+            : 'Every picture Kan draws, unless a single message picks differently. Only the OpenAI models can cut the background out.'}
+        </p>
+      </section>
+
+      {/* 4. Exceptions */}
       <section>
         <button
           onClick={() => setAdvancedOpen((v) => !v)}
@@ -402,6 +436,53 @@ function ModelSelect({
         );
       })}
     </select>
+  );
+}
+
+/**
+ * The image model picker.
+ *
+ * Separate from ModelSelect rather than a generic one taking either catalogue: the
+ * two lists answer different questions, and the thing worth saying next to an image
+ * model — whether it can produce a real alpha channel — has no counterpart on a text
+ * model. A shared component would carry both sets of fields and show the wrong half.
+ */
+function ImageModelSelect({
+  models, available, value, fallbackId, disabled, onChange,
+}: {
+  models: ImageModel[];
+  available: ModelProvider[];
+  value: string | null;
+  fallbackId: string;
+  disabled: boolean;
+  onChange: (value: string | null) => void;
+}) {
+  const fallbackLabel = models.find((m) => m.id === fallbackId)?.label ?? 'the default';
+  const selected = models.find((m) => m.id === value);
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={value ?? ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-violet-500 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white"
+      >
+        <option value="">Default ({fallbackLabel})</option>
+        {models.map((model) => {
+          const usable = available.includes(model.provider);
+          return (
+            <option key={model.id} value={model.id} disabled={!usable}>
+              {model.label}
+              {model.isPreview ? ' (preview)' : ''}
+              {model.supportsTransparency ? ' · transparent' : ''}
+              {usable ? '' : ` — add a ${model.provider === 'openai' ? 'OpenAI' : 'Google'} key`}
+            </option>
+          );
+        })}
+      </select>
+      {selected && <p className="text-xs text-neutral-500">{selected.blurb}</p>}
+    </div>
   );
 }
 

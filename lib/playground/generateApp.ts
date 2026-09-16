@@ -172,8 +172,21 @@ console.log(json.todos);  // ['Buy milk', 'schedule dentist', 'finish report']
 
 The helper returns \`{ text, json?, model, usage? }\`. Default model is gemini-3.1-pro-preview. Always wrap calls in try/catch and surface a friendly message on failure.
 
-IMAGE GENERATION (Gemini Nano Banana, already wired up):
-You CAN generate images. Use \`window.kanthinkAI.generateImage({ prompt, imageUrl? })\` for any "draw X", "make a picture of Y", "generate an avatar/illustration/logo", style-transfer, or photo-edit feature ("turn this photo into a watercolor"). It routes through the owner's Gemini key to the image model (Nano Banana / gemini-2.5-flash-image-preview). NEVER tell the user "I can't generate images" — you can. NEVER use external image APIs like DALL-E, Stable Diffusion, Unsplash placeholder URLs, or via.placeholder.com — use this helper.
+IMAGE GENERATION (already wired up, both providers):
+You CAN generate images. Use \`window.kanthinkAI.generateImage({ prompt, imageUrl?, model?, background?, size? })\` for any "draw X", "make a picture of Y", "generate an avatar/illustration/logo", sticker, style-transfer, or photo-edit feature ("turn this photo into a watercolor"). It routes through the owner's key. NEVER tell the user "I can't generate images" — you can. NEVER use external image APIs like DALL-E, Stable Diffusion, Unsplash placeholder URLs, or via.placeholder.com — use this helper.
+
+Models (omit \`model\` to use the owner's account default):
+- \`gemini-3.1-flash-image-preview\` / \`gemini-2.5-flash-image\` — Nano Banana. Best at editing a photo you hand it. NO transparency.
+- \`gpt-image-2.5-flare\` — fast, and supports \`background: 'transparent'\`.
+- \`gpt-image-2.5-sunburst\` — most capable, also transparent, slower and dearer.
+
+TRANSPARENT BACKGROUNDS — this is what makes sticker, cut-out, icon and overlay apps
+possible. \`background: 'transparent'\` returns a real alpha-channel PNG, so the subject
+composites over any backdrop with no white box and no halo. It requires a gpt-image
+model, so pass BOTH \`model\` and \`background\` together — asking a Gemini model for a
+transparent background gets you a picture of a checkerboard. Do not describe a
+backdrop in the prompt when you want a cut-out; a scene in the words overrides the
+parameter.
 
 Usage:
 \`\`\`jsx
@@ -183,6 +196,15 @@ const { dataUrl } = await window.kanthinkAI.generateImage({
 });
 setImage(dataUrl);  // drop straight into <img src={dataUrl} />
 
+// A sticker: die-cut subject, no background at all
+const { dataUrl } = await window.kanthinkAI.generateImage({
+  prompt: 'A fluffy orange tabby cat wearing tiny sunglasses, die-cut sticker art, bold clean outline, flat vibrant colors',
+  model: 'gpt-image-2.5-flare',
+  background: 'transparent',
+  size: '1:1',
+});
+// Real alpha — safe over any colour, and ready to save or print as a sticker sheet.
+
 // Image edit — pass the source via imageUrl (CDN/Cloudinary) or imageData (data: URL)
 const { dataUrl } = await window.kanthinkAI.generateImage({
   prompt: 'Make the sky a dramatic sunset and add a flock of birds',
@@ -190,7 +212,7 @@ const { dataUrl } = await window.kanthinkAI.generateImage({
 });
 \`\`\`
 
-Returns \`{ dataUrl, mimeType, text?, model }\`. The dataUrl is base64 — use it directly in \`<img src>\`, or pass to \`window.kanthinkUpload\` (convert to a File first) if you need a permanent CDN URL.
+Returns \`{ dataUrl, mimeType, text?, model }\`. The dataUrl is base64 — use it directly in \`<img src>\`, or pass to \`window.kanthinkUpload\` (convert to a File first) if you need a permanent CDN URL. When you render a transparent image, put it on a checkerboard or a coloured surface so the user can see the cut-out worked — a transparent PNG on a white card looks identical to an opaque one.
 
 ALWAYS wrap calls in try/catch with a loading state. On error, show a SHORT friendly inline message ("Couldn't generate that — try a different prompt") with a retry button. NEVER render \`err.message\` verbatim in the UI — it may contain raw API JSON that looks like garbage to users. If you must show details, render them small/secondary and never as the primary error.
 

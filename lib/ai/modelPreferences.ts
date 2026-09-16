@@ -9,6 +9,7 @@ import {
   type ModelChoice,
   type ModelProvider,
 } from './modelCatalog'
+import { DEFAULT_IMAGE_MODEL_ID, findImageModel } from './imageModels'
 import type { ProviderKeys } from './keys'
 
 /**
@@ -24,9 +25,10 @@ import type { ProviderKeys } from './keys'
  * disclosure, and every one of them is allowed to be absent.
  *
  * Three surfaces, and no more, because a fourth would be a list rather than a
- * choice. Voice and image generation are deliberately not here: those are pinned to
+ * choice. Voice and image generation are deliberately not in this list: those need
  * models that can do speech and pictures, and offering a text model against them
- * would be a setting that silently does nothing.
+ * would be a setting that silently does nothing. Image generation has its own
+ * `imageDefault` field below, drawn from its own catalogue.
  */
 export type AiSurface = 'chat' | 'automations' | 'apps'
 
@@ -58,9 +60,22 @@ export interface ModelPreferences {
   /** Provider-qualified, or null for "whatever the configured key's provider defaults to". */
   default: string | null
   overrides: Partial<Record<AiSurface, string>>
+  /**
+   * The image model, provider-qualified, or null for the catalogue default.
+   *
+   * Its own field rather than a fourth surface override, because the surfaces above
+   * all take a *text* model and this one cannot. Putting an image model in that list
+   * would offer people a choice that does nothing wherever it was picked, and offer
+   * them GPT-5 for drawing.
+   */
+  imageDefault: string | null
 }
 
-export const EMPTY_PREFERENCES: ModelPreferences = { default: null, overrides: {} }
+export const EMPTY_PREFERENCES: ModelPreferences = {
+  default: null,
+  overrides: {},
+  imageDefault: null,
+}
 
 /** Is this a surface we know about? Guards whatever arrives from a request body. */
 export function isAiSurface(value: unknown): value is AiSurface {
@@ -72,7 +87,13 @@ export async function getModelPreferences(userId: string): Promise<ModelPreferen
   const billingUserId = await resolveBillingUserId(userId)
   const user = await db.query.users.findFirst({
     where: eq(users.id, billingUserId),
-    columns: { modelDefault: true, modelOverrides: true, byokModel: true, byokProvider: true },
+    columns: {
+      modelDefault: true,
+      modelOverrides: true,
+      byokModel: true,
+      byokProvider: true,
+      imageModelDefault: true,
+    },
   })
   if (!user) return EMPTY_PREFERENCES
 
@@ -86,7 +107,14 @@ export async function getModelPreferences(userId: string): Promise<ModelPreferen
   return {
     default: user.modelDefault ?? fallbackDefault,
     overrides: sanitizeOverrides(user.modelOverrides),
+    imageDefault: findImageModel(user.imageModelDefault)?.id ?? null,
   }
+}
+
+/** The image model an account draws with, always a real one. */
+export async function getImageModelDefault(userId: string): Promise<string> {
+  const preferences = await getModelPreferences(userId)
+  return preferences.imageDefault ?? DEFAULT_IMAGE_MODEL_ID
 }
 
 /** Drop anything that is not a surface we offer or a choice we can parse. */
@@ -103,7 +131,7 @@ export function sanitizeOverrides(raw: unknown): Partial<Record<AiSurface, strin
 
 export async function setModelPreferences(
   userId: string,
-  next: { default?: string | null; overrides?: unknown },
+  next: { default?: string | null; overrides?: unknown; imageDefault?: string | null },
 ): Promise<void> {
   const updates: Record<string, unknown> = { updatedAt: new Date() }
 
@@ -115,6 +143,12 @@ export async function setModelPreferences(
   if (next.overrides !== undefined) {
     const clean = sanitizeOverrides(next.overrides)
     updates.modelOverrides = Object.keys(clean).length > 0 ? clean : null
+  }
+  if (next.imageDefault !== undefined) {
+    // Same rule as the text default: an unrecognised value means "no preference"
+    // rather than an error, because the only way to send one is to pick from a list
+    // we control, and a model we have retired should decay to the default quietly.
+    updates.imageModelDefault = findImageModel(next.imageDefault)?.id ?? null
   }
 
   await db.update(users).set(updates).where(eq(users.id, userId))

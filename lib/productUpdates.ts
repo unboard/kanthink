@@ -35,6 +35,20 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'pick-your-image-model',
+    date: '2026-09-16',
+    kind: 'capability',
+    title: 'Pick what Kan draws with — including transparent backgrounds',
+    body: 'Settings → AI now has an image model, and the picker in chat can override it for one message. The OpenAI models can cut the background out, so asking for a sticker or an icon gives you a real transparent PNG rather than a subject on a painted backdrop. Apps you build can use it too.',
+  },
+  {
+    id: 'openai-live-voice',
+    date: '2026-09-16',
+    kind: 'capability',
+    title: 'A second voice for voice mode',
+    body: 'The gear in voice mode now lets you run the conversation on OpenAI Live instead of Gemini, with its own set of voices. Everything else works the same — same tools, same cards, same history — except web search, which stays on Gemini.',
+  },
+  {
     id: 'apps-remember-their-customers',
     date: '2026-09-14',
     kind: 'capability',

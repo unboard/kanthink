@@ -179,7 +179,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreen]);
 
-  const handleSubmit = async (content: string, type: CardMessageType, imageUrls?: string[], imageSettings?: { aspectRatio: string; quality: string }) => {
+  const handleSubmit = async (content: string, type: CardMessageType, imageUrls?: string[], imageSettings?: { aspectRatio: string; quality: string; model?: string; background?: string }) => {
     // If it's a question, check auth before proceeding
     if (type === 'question' && !requireSignInForAI()) {
       return;

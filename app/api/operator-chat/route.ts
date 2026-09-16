@@ -50,7 +50,7 @@ interface OperatorChatRequest {
   threadId?: string;
   message: string;
   imageUrls?: string[];
-  imageSettings?: { aspectRatio?: string; quality?: string };
+  imageSettings?: { aspectRatio?: string; quality?: string; model?: string; background?: string };
   history: { role: 'user' | 'assistant'; content: string }[];
   channels: ChannelSummary[];
   tasks?: TaskSummary[];
@@ -604,7 +604,12 @@ export async function POST(request: Request) {
           const imgRes = await fetch(`${baseUrl}/api/generate-image`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
-            body: JSON.stringify({ prompt: imgAction.prompt, aspectRatio: imgAction.aspectRatio || '1:1' }),
+            body: JSON.stringify({
+              prompt: imgAction.prompt,
+              aspectRatio: imgAction.aspectRatio || '1:1',
+              model: imageSettings?.model,
+              background: imageSettings?.background,
+            }),
           });
           if (imgRes.ok) {
             const imgData = await imgRes.json();
@@ -661,6 +666,9 @@ export async function POST(request: Request) {
             prompt: imagePrompt,
             aspectRatio: imageSettings?.aspectRatio || '1:1',
             quality: imageSettings?.quality || 'standard',
+            // Absent means the account default from Settings → AI.
+            model: imageSettings?.model,
+            background: imageSettings?.background,
           }),
         });
         if (imgRes.ok) {

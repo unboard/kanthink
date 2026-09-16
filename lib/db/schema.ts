@@ -57,6 +57,13 @@ export const users = sqliteTable('users', {
    * and these exist for the one area where somebody wants something different.
    */
   modelOverrides: text('model_overrides', { mode: 'json' }).$type<Record<string, string>>(),
+  /**
+   * The image model Kan draws with, provider-qualified ("openai:gpt-image-2.5-flare").
+   * Separate from modelDefault because a text model cannot make a picture — one
+   * setting covering both would be a choice that silently does nothing half the time.
+   * NULL means the catalogue default; see lib/ai/imageModels.
+   */
+  imageModelDefault: text('image_model_default'),
 
   // Agent seats. An 'agent' row is a real identity — its own name, avatar, session
   // and channel shares — but it owns no commercial relationship. Tier, BYOK and

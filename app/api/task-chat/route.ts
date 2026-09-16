@@ -14,7 +14,7 @@ interface TaskChatRequest {
   taskId: string;
   questionContent: string;
   imageUrls?: string[];
-  imageSettings?: { aspectRatio?: string; quality?: string };
+  imageSettings?: { aspectRatio?: string; quality?: string; model?: string; background?: string };
   context: {
     taskTitle: string;
     taskStatus: string;
@@ -181,6 +181,11 @@ export async function POST(request: Request) {
               prompt: imagePrompt,
               aspectRatio: imageSettings?.aspectRatio || '1:1',
               quality: imageSettings?.quality || 'standard',
+              // Absent means the account default from Settings → AI, which is what
+              // the vast majority of messages want. The composer only sends these
+              // when the user opened the popover and chose something else.
+              model: imageSettings?.model,
+              background: imageSettings?.background,
             }),
           });
           if (imgRes.ok) {

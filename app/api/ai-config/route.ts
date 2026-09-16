@@ -21,6 +21,11 @@ import {
   providerGroup,
   type ModelProvider,
 } from '@/lib/ai/modelCatalog'
+import {
+  DEFAULT_IMAGE_MODEL_ID,
+  IMAGE_MODELS,
+  resolveImageModel,
+} from '@/lib/ai/imageModels'
 
 export const runtime = 'nodejs'
 
@@ -65,6 +70,13 @@ export async function GET() {
       }),
     )
 
+    // Same question the per-area rows answer, asked of image generation: with these
+    // keys and this preference, what will actually draw the next picture.
+    const imageResolution = resolveImageModel({
+      accountDefault: preferences.imageDefault ?? DEFAULT_IMAGE_MODEL_ID,
+      available,
+    })
+
     return NextResponse.json({
       /** Providers the user saved their own key for — the ones they can clear. */
       ownedProviders: owned,
@@ -74,6 +86,11 @@ export async function GET() {
       resolved,
       catalog: MODEL_CATALOG,
       surfaces: AI_SURFACES,
+      imageCatalog: IMAGE_MODELS,
+      imageDefaultFallback: DEFAULT_IMAGE_MODEL_ID,
+      resolvedImage: imageResolution
+        ? { choice: imageResolution.model.id, fellBack: imageResolution.fellBack }
+        : null,
     })
   } catch (error) {
     console.error('[ai-config] GET failed:', error)
@@ -100,6 +117,7 @@ export async function PATCH(request: Request) {
     apiKey?: string
     default?: string | null
     overrides?: unknown
+    imageDefault?: string | null
   }
   try {
     body = await request.json()
@@ -148,6 +166,10 @@ export async function PATCH(request: Request) {
       await setModelPreferences(session.user.id, {
         default: body.default ?? null,
         overrides: body.overrides ?? {},
+        // Only when the field was actually sent. `?? null` here would mean every
+        // save of the text default silently cleared the image one, because the
+        // model picker and the image picker post independently.
+        ...('imageDefault' in body ? { imageDefault: body.imageDefault ?? null } : {}),
       })
       return GET()
     }

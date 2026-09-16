@@ -370,17 +370,26 @@ ${buildImportMap(options?.deps || [])}
       });
     },
     /**
-     * Generate (or edit) an image with Gemini's image model (Nano Banana).
+     * Generate (or edit) an image.
      * Use for: "draw X", "make me a picture of Y", AI avatars, illustration apps,
-     * style transfer, photo edits ("turn this into a watercolor").
+     * style transfer, photo edits ("turn this into a watercolor"), stickers.
      *
      * @param {Object} opts
      * @param {string} opts.prompt - what to draw / how to edit the input image
      * @param {string} [opts.imageUrl] - optional input image URL to edit/transform
      * @param {string} [opts.imageData] - optional data: URL input image
+     * @param {string} [opts.model] - 'gpt-image-2.5-flare' | 'gpt-image-2.5-sunburst'
+     *          | 'gemini-3.1-flash-image-preview' | 'gemini-2.5-flash-image'.
+     *          Omit for the owner's account default.
+     * @param {string} [opts.background] - 'transparent' for a real alpha channel
+     *          (stickers, cut-outs, icons over any backdrop), 'opaque', or 'auto'.
+     *          Transparent needs one of the gpt-image models — pass opts.model too.
+     * @param {string} [opts.size] - '1:1' | '4:3' | '16:9' | '3:4' | '9:16'
      * @returns Promise<{ dataUrl: string, mimeType: string, text?: string, model: string }>
      *          dataUrl is a base64 data: URL ready to drop into <img src> or
      *          to pass to window.kanthinkUpload to convert to a permanent CDN URL.
+     *          With background:'transparent' it is a PNG with real alpha, so it
+     *          composites over any background without a halo.
      */
     generateImage: function(opts) {
       if (!opts || typeof opts !== 'object') return Promise.reject(new Error('kanthinkAI.generateImage requires an options object.'));
@@ -390,6 +399,9 @@ ${buildImportMap(options?.deps || [])}
         appToken: __KPG_APP_TOKEN,
         mode: 'image',
         prompt: opts.prompt,
+        imageModel: opts.model,
+        background: opts.background,
+        size: opts.size,
         imageUrl: opts.imageUrl,
         imageData: opts.imageData
       };

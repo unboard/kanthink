@@ -13,13 +13,17 @@ import type { ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
 import { KanChart, parseChartDirectives, type TableConfig } from '@/components/charts/KanChart';
 import { KanWorkingBar } from '@/components/kan/KanThinking';
 import { startWorkingSound } from '@/lib/audio/workingSound';
-
-const VOICE_OPTIONS = [
-  { id: 'Kore', label: 'Kore' }, { id: 'Puck', label: 'Puck' },
-  { id: 'Charon', label: 'Charon' }, { id: 'Fenrir', label: 'Fenrir' },
-  { id: 'Aoede', label: 'Aoede' }, { id: 'Leda', label: 'Leda' },
-  { id: 'Orus', label: 'Orus' }, { id: 'Zephyr', label: 'Zephyr' },
-];
+import {
+  LIVE_PROVIDERS,
+  buildAudioMessage,
+  buildSetupMessage,
+  buildSilentNote,
+  buildToolResponses,
+  isLiveProvider,
+  normalizeLiveEvent,
+  resolveVoice,
+  type LiveProvider,
+} from '@/lib/voice/liveProviders';
 
 const TOOLS = [
   {
@@ -333,6 +337,120 @@ interface TranscriptTurn {
 }
 
 const VOICE_KEY = 'kanthink-voice-name';
+/**
+ * Which backend live voice runs on, per device.
+ *
+ * Local rather than on the account on purpose: this is the setting you flip to try
+ * the other one mid-conversation, and a round trip to change which voice answers
+ * you is the wrong shape for that. The voice name is stored per provider because
+ * the two have entirely different casts — carrying "Kore" to OpenAI would silently
+ * land on whatever it defaults to.
+ */
+const PROVIDER_KEY = 'kanthink-voice-provider';
+
+/**
+ * The rules appended to whatever system prompt the caller passes in.
+ *
+ * Lifted out of the connection setup when live voice gained a second backend: the
+ * two providers want the same instructions in differently-shaped frames, and a
+ * prompt that lives inside one provider's frame is a prompt the other cannot have.
+ * Nothing about the text changed in the move.
+ */
+/**
+ * Grounded web search is Gemini's, and a built-in rather than a tool we declare.
+ * OpenAI's live model has no counterpart, so it is told it cannot search instead of
+ * being told it may — a model that believes it has a tool it does not will promise
+ * the user a lookup and then invent the answer.
+ */
+const SEARCH_RULES: Record<LiveProvider, string> = {
+  google:
+    'Google Search is the exception — you may use it freely when the user asks about current information, URLs, or research topics.',
+  openai:
+    'You have NO web search in this mode. When the user asks about current information, a URL, or anything you would need to look up, say plainly that you cannot search right now and offer to make a card about it instead. Never guess at a fact you would have searched for.',
+};
+
+const VOICE_TOOL_RULES = `
+
+TOOL USE RULES — CRITICAL:
+You have tools available, but ONLY use them when the user EXPLICITLY asks you to take an action. Examples of explicit requests: "mark that task complete", "create a card for this", "archive that card", "send an email to Bob".
+
+NEVER call a tool based on:
+- Your own interpretation of what might be helpful
+- Conversational context that wasn't a direct request
+- Assumptions about what the user wants done
+
+If you're unsure whether the user wants you to take an action, ASK first — don't just do it. Say "Would you like me to [action]?" and wait for confirmation.
+
+__SEARCH_RULE__
+
+EMAIL WORKFLOW:
+Before drafting an email, make sure you understand:
+1. The recipient (who is it going to?)
+2. The intent/purpose (what's the goal of this email?)
+Do NOT ask about email style — infer it from context (tone, recipient, purpose). Say something like "I'll draft that in a professional tone" and proceed. The user can request changes after seeing the draft.
+
+When drafting, use the draft_email tool. This creates a visual draft on screen — it does NOT send it. Do NOT read the email content aloud. Just say "I've drafted that — you can review and send it on screen." Write the body using clean prose, not raw markdown syntax. Use headers and structure naturally — avoid showing asterisks or markdown characters in the email text.
+
+ANALYTICS DATA EXPLORATION:
+When the user asks about analytics, events, or Mixpanel data, act as a data concierge:
+1. First query the event to show an overview (count + daily chart)
+2. Mention the available properties: "I can break this down by screen, plan_type, or source — which one interests you?"
+3. If they pick a property, use action="list_values" to show what values exist
+4. If they pick a value, filter the query with property + value params
+5. Always mention the date range and offer to change it: "This shows the last 7 days — want a different range?"
+6. Suggest comparisons: "Want me to compare this to the previous period?"
+7. If the user isn't sure of the exact event name, show the top events list and help them find it
+Be proactive — don't just answer, guide them to insights.
+
+IMAGE GENERATION:
+When the user asks you to create, generate, or draw an image, use the generate_image tool. Provide a detailed, descriptive prompt. Do NOT describe the generated image verbally — just say "I'm generating that for you" and let the visual card appear. If they specify an orientation (landscape, portrait, square), map to the appropriate aspectRatio (16:9, 9:16, 1:1 etc.).
+
+When the user asks to create an email with images, use BOTH draft_email and generate_image tools. The image will be automatically attached to the email when it finishes generating.
+
+CARDS vs TASKS — DEFAULT TO CARDS:
+When the user asks you to capture something — an idea, a bug, a feature, a note, a thing to look into — create a CARD, not a task. Cards are the primary kanban unit; they have a thread, can be moved between columns, and gain context over time. Only call create_task when:
+- The user literally says "task", "to-do", "todo", or "checklist item", OR
+- You are breaking down an existing card into sub-items (cardId is set).
+For standalone tasks, you MUST pass columnName so it lands on the board — never create a task without a column or a parent card. ALWAYS write a real description for tasks (1-3 sentences explaining what it involves). Empty-description tasks are a known regression and a user complaint.
+
+CONTENT FORMATTING:
+When creating notes, cards, or tasks with content, ALWAYS use rich markdown formatting. The app renders markdown so it looks great. Use:
+- ## Headers for sections
+- **Bold** for emphasis
+- Bullet lists (- item) for multiple points
+- Numbered lists (1. item) for steps
+- [Links](url) for references
+- > Blockquotes for callouts
+Never write plain unformatted paragraphs — structure the content so it's scannable and well-organized.
+
+After any tool executes, always confirm what you did.
+
+NEVER claim you completed an action unless you actually called the corresponding tool and saw it succeed. Do not say "I created that card", "I added the task", "I archived it", or any similar past-tense confirmation unless the tool was invoked and returned a result. If the user asks for an action and you haven't called the tool yet, say what you're about to do ("I'll create that card now") — then call the tool. Fabricating a success message is worse than asking for clarification.
+
+And the reverse, which is just as bad: NEVER deny an action you did take. If a tool returned a result, that thing happened — say so plainly. Telling the user "I haven't created anything yet" moments after creating a card sends them looking for a problem that does not exist, and teaches them not to trust anything you say about your own actions. Read the tool results in this conversation as the record of what you have done, and trust them over your own recollection.
+
+CREATING CARDS BY VOICE:
+- One idea gets one card. When the user keeps adding detail to something you already carded in this conversation, use add_note on that card. Do NOT create a second card for the same idea, and do not create a fresh card because you thought of a better title.
+- Choose the channel by what the card is FOR, not what it is about. An app idea about birds goes where the user builds things, not in their birding channel. Never put a personal idea in a work or client channel.
+- If you are unsure which channel, ASK FIRST and wait for the answer. Never create a card and ask which channel in the same turn.
+- Only pass columnName if you can see that column listed for that channel. Most channels have no "Inbox" — when unsure, omit it and let the card land in the default column.`;
+
+function storedProvider(): LiveProvider {
+  if (typeof window === 'undefined') return 'google';
+  const saved = localStorage.getItem(PROVIDER_KEY);
+  return isLiveProvider(saved) ? saved : 'google';
+}
+
+function storedVoice(provider: LiveProvider): string {
+  if (typeof window === 'undefined') return LIVE_PROVIDERS[provider].defaultVoice;
+  // The unsuffixed key is what every existing install holds, and it was always a
+  // Gemini voice. Reading it as Gemini's means nobody silently loses the voice they
+  // picked the day this shipped.
+  const saved =
+    localStorage.getItem(`${VOICE_KEY}-${provider}`) ??
+    (provider === 'google' ? localStorage.getItem(VOICE_KEY) : null);
+  return resolveVoice(provider, saved);
+}
 
 function VoiceTable({ config }: { config: TableConfig }) {
   return (
@@ -457,9 +575,12 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
    * current value without being re-created on every card.
    */
   const sessionCardIdsRef = useRef<string[]>([]);
-  const [voiceName, setVoiceName] = useState(() =>
-    typeof window !== 'undefined' ? localStorage.getItem(VOICE_KEY) || 'Kore' : 'Kore'
-  );
+  const [provider, setProvider] = useState<LiveProvider>(storedProvider);
+  const [voiceName, setVoiceName] = useState(() => storedVoice(storedProvider()));
+  // The socket handlers are built once per connection and must not read a stale
+  // provider from a closure that outlived a toggle.
+  const providerRef = useRef<LiveProvider>(provider);
+  useEffect(() => { providerRef.current = provider; }, [provider]);
 
   const wsRef = useRef<WebSocket | null>(null);
   /** Window the last analytics query used, carried into follow-ups. */
@@ -649,7 +770,9 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
     proc.onaudioprocess = (e) => {
       if (ws.readyState !== 1 || !activeRef.current) return;
       const data = e.inputBuffer.getChannelData(0);
-      ws.send(JSON.stringify({ realtimeInput: { audio: { data: float32ToBase64PCM16(resample(data, ctx.sampleRate, 16000)), mimeType: 'audio/pcm;rate=16000' } } }));
+      const rate = LIVE_PROVIDERS[providerRef.current].micSampleRate;
+      const encoded = float32ToBase64PCM16(resample(data, ctx.sampleRate, rate));
+      ws.send(JSON.stringify(buildAudioMessage(providerRef.current, encoded)));
     };
     src.connect(proc); proc.connect(ctx.destination);
   }, [interruptPlayback]);
@@ -686,12 +809,7 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
         const note = success
           ? `[System] The user just pressed Send on the draft email to ${draft.to} (subject "${draft.subject}"). It has been delivered. Treat the send_email action as complete for the rest of this conversation and don't ask about it again unless the user brings it up.`
           : `[System] The user pressed Send on the draft email to ${draft.to} but delivery failed.`;
-        ws.send(JSON.stringify({
-          clientContent: {
-            turns: [{ role: 'user', parts: [{ text: note }] }],
-            turnComplete: false,
-          },
-        }));
+        ws.send(JSON.stringify(buildSilentNote(providerRef.current, note)));
       }
     } catch {
       setActions(prev => prev.map(a =>
@@ -912,9 +1030,10 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
     if (playCtxRef.current.state === 'suspended') await playCtxRef.current.resume();
 
     try {
-      const res = await fetch('/api/voice/live');
+      const activeProvider = providerRef.current;
+      const res = await fetch(`/api/voice/live?provider=${activeProvider}`);
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Server error ${res.status}`); }
-      const { wsUrl, model } = await res.json();
+      const { wsUrl, model, clientSecret } = await res.json();
       if (!wsUrl) throw new Error('No WebSocket URL returned');
 
       // Retry logic for transient WebSocket errors (e.g. 1011 server errors)
@@ -922,107 +1041,45 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
       const connectWs = (attempt: number): Promise<void> => new Promise<void>((resolve, reject) => {
         if (!activeRef.current) { reject(new Error('Cancelled')); return; }
         setStatus(attempt > 0 ? `Reconnecting (attempt ${attempt + 1})...` : 'Connecting...');
-        const ws = new WebSocket(wsUrl);
+        // OpenAI authenticates a browser socket through the subprotocol, because a
+        // WebSocket cannot carry an Authorization header and credentials in the
+        // query string are rejected before the socket opens. Gemini puts its key in
+        // the URL and takes no subprotocol at all.
+        const ws = clientSecret
+          ? new WebSocket(wsUrl, ['realtime', `openai-insecure-api-key.${clientSecret}`])
+          : new WebSocket(wsUrl);
         wsRef.current = ws;
         const timeout = setTimeout(() => { ws.close(); reject(new Error('Connection timed out')); }, 10000);
+        // `ready` arrives once from Gemini and can arrive twice from OpenAI
+        // (session.created, then session.updated). Starting two microphones would
+        // double every frame the model hears.
+        let started = false;
 
         ws.onopen = () => {
           setStatus('Setting up...');
-          ws.send(JSON.stringify({
-            setup: {
-              model: `models/${model}`,
-              generationConfig: {
-                responseModalities: ['AUDIO'],
-                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
-              },
-              // Transcribe both sides. Without these the session produces no text at
-              // all, which is why voice conversations left no history.
-              inputAudioTranscription: {},
-              outputAudioTranscription: {},
-              // Keep long back-and-forth conversations alive past Gemini's default audio-session cap
-              // by compressing older context into a sliding window.
-              contextWindowCompression: { slidingWindow: {} },
-              // Ask the server for resumption handles so we can reconnect mid-conversation if the
-              // transport drops before the user intentionally ends the session.
-              sessionResumption: resumptionHandleRef.current
-                ? { handle: resumptionHandleRef.current }
-                : {},
-              systemInstruction: { parts: [{ text: (systemPrompt || 'You are Kan, a helpful AI assistant.') + `
-
-TOOL USE RULES — CRITICAL:
-You have tools available, but ONLY use them when the user EXPLICITLY asks you to take an action. Examples of explicit requests: "mark that task complete", "create a card for this", "archive that card", "send an email to Bob".
-
-NEVER call a tool based on:
-- Your own interpretation of what might be helpful
-- Conversational context that wasn't a direct request
-- Assumptions about what the user wants done
-
-If you're unsure whether the user wants you to take an action, ASK first — don't just do it. Say "Would you like me to [action]?" and wait for confirmation.
-
-Google Search is the exception — you may use it freely when the user asks about current information, URLs, or research topics.
-
-EMAIL WORKFLOW:
-Before drafting an email, make sure you understand:
-1. The recipient (who is it going to?)
-2. The intent/purpose (what's the goal of this email?)
-Do NOT ask about email style — infer it from context (tone, recipient, purpose). Say something like "I'll draft that in a professional tone" and proceed. The user can request changes after seeing the draft.
-
-When drafting, use the draft_email tool. This creates a visual draft on screen — it does NOT send it. Do NOT read the email content aloud. Just say "I've drafted that — you can review and send it on screen." Write the body using clean prose, not raw markdown syntax. Use headers and structure naturally — avoid showing asterisks or markdown characters in the email text.
-
-ANALYTICS DATA EXPLORATION:
-When the user asks about analytics, events, or Mixpanel data, act as a data concierge:
-1. First query the event to show an overview (count + daily chart)
-2. Mention the available properties: "I can break this down by screen, plan_type, or source — which one interests you?"
-3. If they pick a property, use action="list_values" to show what values exist
-4. If they pick a value, filter the query with property + value params
-5. Always mention the date range and offer to change it: "This shows the last 7 days — want a different range?"
-6. Suggest comparisons: "Want me to compare this to the previous period?"
-7. If the user isn't sure of the exact event name, show the top events list and help them find it
-Be proactive — don't just answer, guide them to insights.
-
-IMAGE GENERATION:
-When the user asks you to create, generate, or draw an image, use the generate_image tool. Provide a detailed, descriptive prompt. Do NOT describe the generated image verbally — just say "I'm generating that for you" and let the visual card appear. If they specify an orientation (landscape, portrait, square), map to the appropriate aspectRatio (16:9, 9:16, 1:1 etc.).
-
-When the user asks to create an email with images, use BOTH draft_email and generate_image tools. The image will be automatically attached to the email when it finishes generating.
-
-CARDS vs TASKS — DEFAULT TO CARDS:
-When the user asks you to capture something — an idea, a bug, a feature, a note, a thing to look into — create a CARD, not a task. Cards are the primary kanban unit; they have a thread, can be moved between columns, and gain context over time. Only call create_task when:
-- The user literally says "task", "to-do", "todo", or "checklist item", OR
-- You are breaking down an existing card into sub-items (cardId is set).
-For standalone tasks, you MUST pass columnName so it lands on the board — never create a task without a column or a parent card. ALWAYS write a real description for tasks (1-3 sentences explaining what it involves). Empty-description tasks are a known regression and a user complaint.
-
-CONTENT FORMATTING:
-When creating notes, cards, or tasks with content, ALWAYS use rich markdown formatting. The app renders markdown so it looks great. Use:
-- ## Headers for sections
-- **Bold** for emphasis
-- Bullet lists (- item) for multiple points
-- Numbered lists (1. item) for steps
-- [Links](url) for references
-- > Blockquotes for callouts
-Never write plain unformatted paragraphs — structure the content so it's scannable and well-organized.
-
-After any tool executes, always confirm what you did.
-
-NEVER claim you completed an action unless you actually called the corresponding tool and saw it succeed. Do not say "I created that card", "I added the task", "I archived it", or any similar past-tense confirmation unless the tool was invoked and returned a result. If the user asks for an action and you haven't called the tool yet, say what you're about to do ("I'll create that card now") — then call the tool. Fabricating a success message is worse than asking for clarification.
-
-And the reverse, which is just as bad: NEVER deny an action you did take. If a tool returned a result, that thing happened — say so plainly. Telling the user "I haven't created anything yet" moments after creating a card sends them looking for a problem that does not exist, and teaches them not to trust anything you say about your own actions. Read the tool results in this conversation as the record of what you have done, and trust them over your own recollection.
-
-CREATING CARDS BY VOICE:
-- One idea gets one card. When the user keeps adding detail to something you already carded in this conversation, use add_note on that card. Do NOT create a second card for the same idea, and do not create a fresh card because you thought of a better title.
-- Choose the channel by what the card is FOR, not what it is about. An app idea about birds goes where the user builds things, not in their birding channel. Never put a personal idea in a work or client channel.
-- If you are unsure which channel, ASK FIRST and wait for the answer. Never create a card and ask which channel in the same turn.
-- Only pass columnName if you can see that column listed for that channel. Most channels have no "Inbox" — when unsure, omit it and let the card land in the default column.` }] },
-              tools: TOOLS,
-            },
-          }));
+          ws.send(JSON.stringify(buildSetupMessage(activeProvider, {
+            model,
+            voice: resolveVoice(activeProvider, voiceName),
+            tools: TOOLS,
+            resumptionHandle: resumptionHandleRef.current,
+            systemInstruction:
+              (systemPrompt || 'You are Kan, a helpful AI assistant.') +
+              VOICE_TOOL_RULES.replace('__SEARCH_RULE__', SEARCH_RULES[activeProvider]),
+          })));
         };
+
 
         ws.onmessage = async (event) => {
           try {
             const raw = typeof event.data === 'string' ? event.data : await event.data.text();
-            const msg = JSON.parse(raw);
+            // normalizeLiveEvent flattens the two providers' very different frames
+            // into one shape, so everything below is provider-agnostic. The shape it
+            // produces is Gemini's, because that is the side that already worked.
+            const evt = normalizeLiveEvent(activeProvider, JSON.parse(raw));
+            if (!evt) return;
 
-            if (msg.setupComplete) {
+            if (evt.ready && !started) {
+              started = true;
               clearTimeout(timeout);
               setStatus('Requesting microphone...');
               try {
@@ -1032,67 +1089,55 @@ CREATING CARDS BY VOICE:
                 startMic(ws, stream);
                 resolve();
               } catch { reject(new Error('Microphone access denied')); }
-              return;
             }
 
             // Transcription fragments — user speech and Kan's audio, respectively.
             // A user fragment arriving while Kan's buffer has text means Kan's turn
             // ended (barge-in or natural close), so flush his buffer first.
-            if (msg.serverContent?.inputTranscription?.text) {
+            if (evt.inputTranscript) {
               if (kanBufRef.current.trim()) flushTranscript('kan');
-              userBufRef.current += msg.serverContent.inputTranscription.text;
+              userBufRef.current += evt.inputTranscript;
             }
-            if (msg.serverContent?.outputTranscription?.text) {
+            if (evt.outputTranscript) {
               if (userBufRef.current.trim()) flushTranscript('user');
-              kanBufRef.current += msg.serverContent.outputTranscription.text;
+              kanBufRef.current += evt.outputTranscript;
             }
-            if (msg.serverContent?.turnComplete) {
+            if (evt.turnComplete) {
               if (userBufRef.current.trim()) flushTranscript('user');
               if (kanBufRef.current.trim()) flushTranscript('kan');
             }
 
-            // Audio response
-            if (msg.serverContent?.modelTurn?.parts) {
-              for (const p of msg.serverContent.modelTurn.parts) {
-                if (p.inlineData?.data) playChunk(p.inlineData.data);
-              }
-            }
+            // OpenAI's server VAD reports barge-in directly. The mic-level detector
+            // in startMic still runs for Gemini, which reports nothing of the kind.
+            if (evt.interrupted) interruptPlayback();
 
-            // Tool call from Gemini
-            if (msg.toolCall?.functionCalls) {
+            if (evt.audio) playChunk(evt.audio);
+
+            if (evt.toolCalls?.length) {
               setIsProcessing(true);
               startProcessingSound();
-              for (const call of msg.toolCall.functionCalls) {
-                const result = await executeAction(call.name, call.args || {});
-                // Send tool response back to Gemini
-                ws.send(JSON.stringify({
-                  toolResponse: {
-                    functionResponses: [{
-                      id: call.id,
-                      name: call.name,
-                      response: { result },
-                    }],
-                  },
-                }));
+              const results = [];
+              for (const call of evt.toolCalls) {
+                results.push({
+                  id: call.id,
+                  name: call.name,
+                  result: await executeAction(call.name, call.args || {}),
+                });
+              }
+              for (const frame of buildToolResponses(activeProvider, results)) {
+                ws.send(JSON.stringify(frame));
               }
               stopProcessingSound();
               setIsProcessing(false);
             }
 
-            // Track the resumption handle so we can reconnect transparently if the socket drops.
-            if (msg.sessionResumptionUpdate?.resumable && msg.sessionResumptionUpdate?.newHandle) {
-              resumptionHandleRef.current = msg.sessionResumptionUpdate.newHandle;
-            }
+            // Gemini hands out resumption handles so a dropped socket can pick the
+            // conversation back up. OpenAI has no equivalent, and never sets this.
+            if (evt.resumptionHandle) resumptionHandleRef.current = evt.resumptionHandle;
 
-            // Gemini warns us ~60s before it tears down the connection for rotation. We don't need
-            // to do anything beyond logging — sessionResumption + ws.onclose auto-retry handle it.
-            if (msg.goAway?.timeLeft) {
-              console.info('[Voice] Server rotating session in', msg.goAway.timeLeft);
-            }
-
-            if (msg.error) {
+            if (evt.error) {
               clearTimeout(timeout);
-              reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+              reject(new Error(evt.error));
             }
           } catch { /* ignore parse errors */ }
         };
@@ -1127,7 +1172,10 @@ CREATING CARDS BY VOICE:
       setError(err instanceof Error ? err.message : 'Unknown error');
       setStatus(''); stop();
     }
-  }, [voiceName, systemPrompt, stop, playChunk, startMic, executeAction, connected]);
+  }, [
+    voiceName, systemPrompt, stop, playChunk, startMic, executeAction, connected,
+    flushTranscript, interruptPlayback, startProcessingSound, stopProcessingSound,
+  ]);
 
   // Save voice session to operator chat thread on close
   // Auto-scroll action feed when new actions appear. Use instant scroll (not smooth)
@@ -1271,11 +1319,35 @@ CREATING CARDS BY VOICE:
 
         {/* Settings dropdown */}
         {showSettings && (
-          <div className="absolute top-16 left-6 bg-neutral-800 border border-neutral-700 rounded-xl p-4 w-56 z-20">
-            <p className="text-xs text-neutral-400 font-medium mb-2">Voice</p>
+          <div className="absolute top-16 left-6 bg-neutral-800 border border-neutral-700 rounded-xl p-4 w-60 z-20">
+            <p className="text-xs text-neutral-400 font-medium mb-2">Model</p>
             <div className="grid grid-cols-2 gap-1.5">
-              {VOICE_OPTIONS.map(v => (
-                <button key={v.id} onClick={() => { setVoiceName(v.id); localStorage.setItem(VOICE_KEY, v.id); }}
+              {(Object.values(LIVE_PROVIDERS)).map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    // The two have entirely different casts, so switching provider
+                    // switches to that provider's remembered voice rather than
+                    // carrying a name across that means nothing on the other side.
+                    setProvider(p.id);
+                    setVoiceName(storedVoice(p.id));
+                    localStorage.setItem(PROVIDER_KEY, p.id);
+                  }}
+                  className={`px-2 py-1.5 rounded-lg text-xs ${provider === p.id ? 'bg-violet-600 text-white' : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'}`}
+                >{p.label}</button>
+              ))}
+            </div>
+            <p className="text-[10px] text-neutral-500 mt-2">{LIVE_PROVIDERS[provider].blurb}</p>
+
+            <p className="text-xs text-neutral-400 font-medium mb-2 mt-4">Voice</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {LIVE_PROVIDERS[provider].voices.map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => {
+                    setVoiceName(v.id);
+                    localStorage.setItem(`${VOICE_KEY}-${provider}`, v.id);
+                  }}
                   className={`px-2 py-1.5 rounded-lg text-xs ${voiceName === v.id ? 'bg-violet-600 text-white' : 'bg-neutral-700 text-neutral-300 hover:bg-neutral-600'}`}
                 >{v.label}</button>
               ))}

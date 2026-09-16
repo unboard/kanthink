@@ -38,13 +38,22 @@ export interface ModelPrice {
  * Image model prices, which the playground model catalogue does not carry because
  * those models are excluded from it — they are not code generators.
  *
- * Verified against ai.google.dev/gemini-api/docs/pricing, rounded up.
+ * Verified against ai.google.dev/gemini-api/docs/pricing and
+ * developers.openai.com/api/docs/models, rounded up.
+ *
+ * The OpenAI entries bill by output tokens rather than per image, which is why they
+ * carry both a token rate and a per-image figure: the per-image number is what the
+ * reservation is computed from, because a ceiling has to be knowable before the call
+ * and OpenAI does not tell you the token count until after. Settlement corrects it.
  */
 const IMAGE_PRICES: Record<string, ModelPrice> = {
   'gemini-3.1-flash-image-preview': { input: perToken(0.5), output: 0, perImage: 4_000 },
   'gemini-3.1-flash-lite-image': { input: perToken(0.25), output: 0, perImage: 2_500 },
   'gemini-2.5-flash-image': { input: perToken(0.3), output: 0, perImage: 4_000 },
   'gemini-3-pro-image': { input: perToken(2), output: 0, perImage: 14_000 },
+  'gpt-image-2.5-flare': { input: perToken(8), output: 0, perImage: 4_000 },
+  'gpt-image-2.5-sunburst': { input: perToken(8), output: 0, perImage: 17_000 },
+  'gpt-image-1': { input: perToken(10), output: 0, perImage: 4_000 },
 }
 
 /** Text prices come from the catalogue the picker already offers. */

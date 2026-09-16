@@ -10,6 +10,7 @@ import { AudioLines } from 'lucide-react';
 import { MentionDropdown } from './MentionDropdown';
 import { detectMentionAtCaret, mentionInsertText } from '@/lib/chat/mentionAtCaret';
 import { detectImageGenerationIntent } from '@/lib/ai/imageDetection';
+import { IMAGE_MODELS, findImageModel } from '@/lib/ai/imageModels';
 import { useAutoResizeTextarea, useIsomorphicLayoutEffect } from '@/lib/hooks/useAutoResizeTextarea';
 
 // Keyword highlighting for question mode
@@ -169,6 +170,9 @@ interface CardMentionState {
 interface ImageSettings {
   aspectRatio: '1:1' | '3:4' | '4:3' | '9:16' | '16:9';
   quality: 'standard' | 'hd';
+  /** Empty string means "the account default from Settings → AI". */
+  model: string;
+  background: 'auto' | 'transparent';
 }
 
 /**
@@ -238,7 +242,12 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   const [cardMention, setCardMention] = useState<CardMentionState>({ isActive: false, query: '', startIndex: 0 });
   const [cardMentionSelectedIndex, setCardMentionSelectedIndex] = useState(0);
   const [cardMentionsMap, setCardMentionsMap] = useState<Record<string, string>>({}); // title -> cardId
-  const [imageSettings, setImageSettings] = useState<ImageSettings>({ aspectRatio: '1:1', quality: 'standard' });
+  const [imageSettings, setImageSettings] = useState<ImageSettings>({
+    aspectRatio: '1:1',
+    quality: 'standard',
+    model: '',
+    background: 'auto',
+  });
   const [showImageSettings, setShowImageSettings] = useState(false);
   const [slash, setSlash] = useState<SlashState>({ isActive: false, stage: 'commands', query: '' });
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
@@ -1121,6 +1130,58 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
                 {q === 'standard' ? '1K' : '2K'}
               </button>
             ))}
+
+            <div className="flex w-full items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Model</span>
+              <select
+                value={imageSettings.model}
+                onChange={(e) => {
+                  const model = e.target.value;
+                  setImageSettings(s => ({
+                    ...s,
+                    model,
+                    // A model with no `background` parameter cannot honour a
+                    // transparent request, so switching to one drops the toggle
+                    // rather than leaving a setting on that does nothing.
+                    background:
+                      s.background === 'transparent' && !findImageModel(model)?.supportsTransparency
+                        ? 'auto'
+                        : s.background,
+                  }));
+                }}
+                className="min-w-0 flex-1 rounded border border-neutral-200 bg-white px-2 py-0.5 text-xs text-neutral-700 outline-none focus:border-violet-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+              >
+                <option value="">Account default</option>
+                {IMAGE_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}{m.supportsTransparency ? ' · transparent' : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                // Only offered once a model that can actually do it is picked. On
+                // "Account default" we cannot know what will run, and a toggle that
+                // might silently do nothing is worse than one that isn't there.
+                disabled={!findImageModel(imageSettings.model)?.supportsTransparency}
+                onClick={() => setImageSettings(s => ({
+                  ...s,
+                  background: s.background === 'transparent' ? 'auto' : 'transparent',
+                }))}
+                title={
+                  findImageModel(imageSettings.model)?.supportsTransparency
+                    ? 'Generate with a real transparent background'
+                    : 'Pick a model marked “transparent” to cut the background out'
+                }
+                className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  imageSettings.background === 'transparent'
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-600'
+                }`}
+              >
+                Transparent
+              </button>
+            </div>
           </div>
         )}
 

@@ -1,27 +1,43 @@
 import { GoogleGenAI, Modality } from '@google/genai'
-import { getOpenAIClientForUser } from '@/lib/ai/openai-client'
-import { getGoogleClientForVoice } from '@/lib/ai/google-voice'
+import OpenAI from 'openai'
+import { resolveProviderKeys } from '@/lib/ai/keys'
+import { getImageModelDefault } from '@/lib/ai/modelPreferences'
+import {
+  GOOGLE_IMAGE_FALLBACK_ID,
+  findImageModel,
+  resolveImageModel,
+  type ImageBackground,
+  type ImageModel,
+  type ImageProvider,
+} from '@/lib/ai/imageModels'
 import { uploadImageToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary'
 
 /**
- * Image generation, on Gemini, as a function rather than a route.
+ * Image generation, as a function rather than a route.
  *
  * This used to live inside /api/generate-image. It was lifted out when app
  * thumbnails needed the same thing server-side: a route calling its own sibling
  * route over HTTP has to forward a session cookie it does not always have, and a
  * background thumbnail job has no request to borrow one from.
  *
- * Nano Banana leads because it works on a standard Gemini key and is the model the
- * playground's own image calls already use. OpenAI is a last resort, and only for
- * accounts that actually hold an OpenAI key.
+ * ## Which model
+ *
+ * It no longer tries Google and then OpenAI and hopes. The account names an image
+ * model in Settings → AI, a single request may name a different one, and
+ * `resolveImageModel` picks between them against the keys actually held. The old
+ * chain survives only as the shape of the catalogue's default — Nano Banana first,
+ * because that is what every existing card cover was drawn with.
+ *
+ * The one thing that still overrides a stated preference is transparency: a request
+ * for a cut-out that lands on a Gemini model comes back with a painted background,
+ * and an opaque sticker is the wrong thing rather than a lesser one. So a
+ * transparent request goes to a model that has the parameter, or it fails saying why.
  */
-const GEMINI_IMAGE_PRIMARY = 'gemini-3.1-flash-image-preview'
-const GEMINI_IMAGE_FALLBACK = 'gemini-2.5-flash-image'
 
 export type AspectRatio = '1:1' | '4:3' | '16:9' | '3:4' | '9:16'
 
-/** Sizes for the OpenAI last resort. */
-const OPENAI_SIZE_MAP: Record<string, '1024x1024' | '1536x1024' | '1024x1536'> = {
+/** Sizes the OpenAI image endpoint accepts, by the shape asked for. */
+const OPENAI_SIZE_MAP: Record<AspectRatio, '1024x1024' | '1536x1024' | '1024x1536'> = {
   '1:1': '1024x1024',
   '4:3': '1536x1024',
   '16:9': '1536x1024',
@@ -29,8 +45,8 @@ const OPENAI_SIZE_MAP: Record<string, '1024x1024' | '1536x1024' | '1024x1536'> =
   '9:16': '1024x1536',
 }
 
-/** Nano Banana takes no aspect-ratio parameter, so the shape goes in the words. */
-const SHAPE_HINT: Record<string, string> = {
+/** Gemini's image models take no aspect-ratio parameter, so the shape goes in the words. */
+const SHAPE_HINT: Record<AspectRatio, string> = {
   '1:1': 'Square composition.',
   '4:3': 'Landscape composition, 4:3.',
   '16:9': 'Wide landscape composition, 16:9.',
@@ -42,6 +58,16 @@ export interface GenerateImageOptions {
   prompt: string
   aspectRatio?: AspectRatio
   quality?: 'standard' | 'hd'
+  /**
+   * Override the account's image model for this one call. Qualified
+   * ("openai:gpt-image-2.5-flare") or bare ("gpt-image-2.5-flare").
+   */
+  model?: string | null
+  /**
+   * `transparent` asks for a real alpha channel, and restricts the model choice to
+   * something that can produce one. `auto` lets the model decide.
+   */
+  background?: ImageBackground
   /** Cloudinary folder hint, so generated art is filed near what it belongs to. */
   folder?: string
 }
@@ -51,111 +77,180 @@ export interface GenerateImageResult {
   error?: string
   /** HTTP status the route should use when this failed. */
   status?: number
+  /** The model that actually drew it, qualified. Worth showing when it moved. */
+  model?: string
+  /** Set when the request named a model that could not be honoured. */
+  fellBackFrom?: string
 }
 
 /**
- * Generate one image for a user, honouring their BYOK keys.
- *
- * Returns the first provider's error rather than the last. Falling back and then
- * surfacing the final provider's message is how "dall-e-3 does not exist" ended up
- * being shown to someone whose account is on Google and never asked for OpenAI.
+ * Generate one image for a user, honouring their keys and their model preference.
  */
 export async function generateImageForUser(
   userId: string,
   options: GenerateImageOptions,
 ): Promise<GenerateImageResult> {
-  const { prompt, aspectRatio = '1:1', quality = 'standard', folder } = options
-  let firstError: string | null = null
+  const {
+    prompt,
+    aspectRatio = '1:1',
+    quality = 'standard',
+    model: requested,
+    background = 'auto',
+    folder,
+  } = options
 
-  const googleResult = await getGoogleClientForVoice(userId)
-  const googleClient =
-    googleResult.client ||
-    (process.env.OWNER_GOOGLE_API_KEY
-      ? new GoogleGenAI({ apiKey: process.env.OWNER_GOOGLE_API_KEY })
-      : null) ||
-    (process.env.GOOGLE_API_KEY ? new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY }) : null)
+  const { keys, error: keyError, quotaExhausted, quotaMessage } = await resolveProviderKeys(userId)
+  const available: ImageProvider[] = (['google', 'openai'] as const).filter((p) => !!keys[p])
 
-  if (googleClient) {
-    const shaped = `${prompt}\n\n${SHAPE_HINT[aspectRatio] ?? SHAPE_HINT['1:1']}`
-    const call = (model: string) =>
-      googleClient.models.generateContent({
-        model,
-        contents: [{ role: 'user', parts: [{ text: shaped }] }],
-        config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
-      })
+  const accountDefault = await getImageModelDefault(userId)
+  const needsTransparency = background === 'transparent'
 
-    try {
-      let response
-      try {
-        response = await call(GEMINI_IMAGE_PRIMARY)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : ''
-        // Preview models come and go per key; the GA one is the safety net.
-        if (/NOT_FOUND|404|is not found|not supported|does not exist/i.test(msg)) {
-          response = await call(GEMINI_IMAGE_FALLBACK)
-        } else {
-          throw err
-        }
+  const resolution = resolveImageModel({
+    requested,
+    accountDefault,
+    available,
+    needsTransparency,
+  })
+
+  if (!resolution) {
+    if (needsTransparency && available.length > 0) {
+      return {
+        error:
+          'Transparent backgrounds need an OpenAI key — the Gemini image models have no way to produce one. Add one in Settings → AI.',
+        status: 400,
       }
-
-      for (const part of response.candidates?.[0]?.content?.parts ?? []) {
-        const inline = part.inlineData
-        if (inline?.data && inline.mimeType?.startsWith('image/')) {
-          return { url: await persist(Buffer.from(inline.data, 'base64'), inline.mimeType, folder) }
-        }
-      }
-      firstError = 'The image model returned no image. Try being more specific.'
-    } catch (err: unknown) {
-      firstError = err instanceof Error ? err.message : 'Gemini image generation failed'
-      console.warn('[generateImage] Gemini failed:', firstError)
+    }
+    // Out of quota is a different failure from never having configured anything, and
+    // saying "no provider configured" to someone who has one is how a billing
+    // problem gets mistaken for a settings problem.
+    if (quotaExhausted) {
+      return { error: quotaMessage ?? 'This account is out of AI quota.', status: 403 }
+    }
+    return {
+      error: keyError ?? 'No AI provider configured for image generation.',
+      status: 400,
     }
   }
 
-  const openaiResult = await getOpenAIClientForUser(userId)
-  const openaiClient =
-    openaiResult.client ||
-    (process.env.OWNER_OPENAI_API_KEY
-      ? new (await import('openai')).default({ apiKey: process.env.OWNER_OPENAI_API_KEY })
-      : null) ||
-    (process.env.OPENAI_API_KEY
-      ? new (await import('openai')).default({ apiKey: process.env.OPENAI_API_KEY })
-      : null)
+  const chosen = resolution.model
+  const fellBackFrom =
+    resolution.fellBack ? findImageModel(requested ?? accountDefault)?.id : undefined
 
-  if (openaiClient) {
-    try {
-      const response = await openaiClient.images.generate({
-        // gpt-image-1, not dall-e-3: the latter is retired and was the error people
-        // were actually being shown.
-        model: 'gpt-image-1',
-        prompt,
-        n: 1,
-        size: OPENAI_SIZE_MAP[aspectRatio] || '1024x1024',
-        quality: quality === 'hd' ? 'high' : 'medium',
-      })
+  try {
+    const url =
+      chosen.provider === 'google'
+        ? await drawWithGemini(keys.google!.apiKey, chosen, { prompt, aspectRatio, folder })
+        : await drawWithOpenAI(keys.openai!.apiKey, chosen, {
+            prompt,
+            aspectRatio,
+            quality,
+            background,
+            folder,
+          })
 
-      const first = response.data?.[0]
-      // gpt-image-1 returns base64 rather than a URL.
-      if (first?.b64_json) {
-        return { url: await persist(Buffer.from(first.b64_json, 'base64'), 'image/png', folder) }
-      }
-      if (first?.url) {
-        if (!isCloudinaryConfigured()) return { url: first.url }
-        const imageRes = await fetch(first.url)
-        return { url: await persist(Buffer.from(await imageRes.arrayBuffer()), 'image/png', folder) }
-      }
+    return { url, model: chosen.id, fellBackFrom }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Image generation failed'
+    console.error('[generateImage]', chosen.id, 'failed:', message)
+    return { error: message, status: 502, model: chosen.id, fellBackFrom }
+  }
+}
 
-      return { error: firstError ?? 'No image generated', status: 502 }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Image generation failed'
-      console.error('[generateImage] OpenAI failed:', message)
-      return { error: firstError ?? message, status: 502 }
+/**
+ * Gemini, with the GA model as a safety net.
+ *
+ * Preview models come and go per key, so a NOT_FOUND on the frontier one is retried
+ * against Nano Banana rather than surfaced — an account without preview access
+ * should still get a picture.
+ */
+async function drawWithGemini(
+  apiKey: string,
+  model: ImageModel,
+  opts: { prompt: string; aspectRatio: AspectRatio; folder?: string },
+): Promise<string> {
+  const client = new GoogleGenAI({ apiKey })
+  const shaped = `${opts.prompt}\n\n${SHAPE_HINT[opts.aspectRatio] ?? SHAPE_HINT['1:1']}`
+
+  const call = (modelId: string) =>
+    client.models.generateContent({
+      model: modelId,
+      contents: [{ role: 'user', parts: [{ text: shaped }] }],
+      config: { responseModalities: [Modality.IMAGE, Modality.TEXT] },
+    })
+
+  let response
+  try {
+    response = await call(model.model)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    const fallback = findImageModel(GOOGLE_IMAGE_FALLBACK_ID)
+    if (
+      fallback &&
+      fallback.model !== model.model &&
+      /NOT_FOUND|404|is not found|not supported|does not exist/i.test(msg)
+    ) {
+      response = await call(fallback.model)
+    } else {
+      throw err
     }
   }
 
-  return {
-    error: firstError ?? 'No AI provider configured for image generation.',
-    status: firstError ? 502 : 400,
+  for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+    const inline = part.inlineData
+    if (inline?.data && inline.mimeType?.startsWith('image/')) {
+      return persist(Buffer.from(inline.data, 'base64'), inline.mimeType, opts.folder)
+    }
   }
+  throw new Error('The image model returned no image. Try being more specific.')
+}
+
+/**
+ * OpenAI's images endpoint.
+ *
+ * `background: 'transparent'` only produces an alpha channel alongside a lossless
+ * `output_format`, so PNG is forced whenever transparency is asked for — the two
+ * settings are one decision, and letting them disagree yields a transparent request
+ * flattened onto white by the encoder.
+ */
+async function drawWithOpenAI(
+  apiKey: string,
+  model: ImageModel,
+  opts: {
+    prompt: string
+    aspectRatio: AspectRatio
+    quality: 'standard' | 'hd'
+    background: ImageBackground
+    folder?: string
+  },
+): Promise<string> {
+  const client = new OpenAI({ apiKey })
+  const transparent = opts.background === 'transparent'
+
+  const response = await client.images.generate({
+    model: model.model,
+    // A stated backdrop in the words beats the parameter, so a transparent request
+    // says plainly that there is no scene to paint.
+    prompt: transparent
+      ? `${opts.prompt}\n\nIsolated subject on a fully transparent background. No backdrop, scene, shadow, or ground plane.`
+      : opts.prompt,
+    n: 1,
+    size: OPENAI_SIZE_MAP[opts.aspectRatio] || '1024x1024',
+    quality: opts.quality === 'hd' ? 'high' : 'medium',
+    ...(opts.background !== 'auto' ? { background: opts.background } : {}),
+    ...(transparent ? { output_format: 'png' as const } : {}),
+  })
+
+  const first = response.data?.[0]
+  // The gpt-image models return base64 rather than a URL.
+  if (first?.b64_json) {
+    return persist(Buffer.from(first.b64_json, 'base64'), 'image/png', opts.folder)
+  }
+  if (first?.url) {
+    if (!isCloudinaryConfigured()) return first.url
+    const imageRes = await fetch(first.url)
+    return persist(Buffer.from(await imageRes.arrayBuffer()), 'image/png', opts.folder)
+  }
+  throw new Error('The image model returned no image. Try being more specific.')
 }
 
 /**

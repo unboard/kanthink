@@ -12,6 +12,7 @@ const IMAGE_GEN_PATTERNS = [
   'generate illustration', 'create illustration',
   'image of', 'picture of', 'illustration of',
   'dall-e', 'dalle', 'imagen',
+  'sticker', 'stickers', 'transparent background', 'cut out', 'cutout',
 ]
 
 /**
@@ -42,11 +43,19 @@ export function extractImagePrompt(text: string): string {
 export type ImageSettings = {
   aspectRatio: '1:1' | '3:4' | '4:3' | '9:16' | '16:9'
   quality: 'standard' | 'hd'
+  /**
+   * Image model for this one message, qualified. Empty means the account default
+   * from Settings → AI — which is the case for almost every message, and why this
+   * is optional rather than seeded with a model id.
+   */
+  model?: string
+  background?: 'auto' | 'transparent' | 'opaque'
 }
 
 export const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
   aspectRatio: '1:1',
   quality: 'standard',
+  background: 'auto',
 }
 
 export const ASPECT_RATIOS = ['1:1', '3:4', '4:3', '9:16', '16:9'] as const
