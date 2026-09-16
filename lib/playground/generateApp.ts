@@ -18,7 +18,7 @@ import {
   computeGenerationCost,
   type PlaygroundProvider,
 } from '@/lib/playground/models';
-import { signAppToken } from '@/lib/playground/appToken';
+import { signAppToken, signDraftAppToken } from '@/lib/playground/appToken';
 import { runPreflight, type PreflightResult } from '@/lib/playground/preflight';
 import { applyCodeEdits, shouldPatch, type CodeEdit } from '@/lib/playground/applyEdits';
 import {
@@ -1263,7 +1263,11 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
       summary: parsed.summary,
       notes: parsed.notes,
     },
-    app: { ...app, ...updated },
+    // The draft token travels with the build. The drawer bakes it into the preview
+    // iframe, and an iframe without one cannot call the AI, save, or upload at all —
+    // so a response that omits it can leave a working app looking broken. The client
+    // also merges rather than replaces, but the payload should be right on its own.
+    app: { ...app, ...updated, draftToken: signDraftAppToken(app.id) },
     messages: newMessages,
     usage: sawUsage ? usage : null,
     // How this turn was produced, so the effect of patch mode is observable rather

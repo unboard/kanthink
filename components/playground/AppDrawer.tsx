@@ -36,6 +36,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
+import { mergeAppUpdate } from '@/lib/playground/mergeAppUpdate';
 
 // Loaded on demand: the editor pulls in a canvas stack that nothing else in this
 // drawer needs, and most sessions never open it.
@@ -125,8 +126,27 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
     });
   }, [upsertPlaygroundApp]);
 
+  /**
+   * Take an updated app from the server without losing what the server did not send.
+   *
+   * Several fields on the drawer's app are computed by GET /apps/[appId] rather than
+   * stored on the row: the draft token the preview authenticates with, the
+   * customer-storage token, the release list. Every other endpoint returns the row
+   * itself, so those keys are simply absent from its payload.
+   *
+   * This used to replace the whole object. So finishing a build handed the drawer an
+   * app with no draft token, the preview was rebuilt with an empty one, and
+   * window.kanthinkAI rejected every call before it left the browser — which an app
+   * with a catch around its AI call shows as its fallback content. The app looked
+   * like it had reverted to a version that never had AI, when what it had actually
+   * lost was permission to make the call. Reopening the drawer fixed it, because
+   * that re-fetched the token, which is exactly why it looked intermittent.
+   *
+   * Merging instead: an absent key keeps the value already held, while a key the
+   * server did send — including one it deliberately set to null — still wins.
+   */
   const applyApp = useCallback((next: PlaygroundApp) => {
-    setApp(next);
+    setApp((prev) => mergeAppUpdate(prev, next));
     syncSummary(next);
   }, [syncSummary]);
 
