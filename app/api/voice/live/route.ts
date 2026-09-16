@@ -6,15 +6,6 @@ import { LIVE_PROVIDERS, isLiveProvider, type LiveProvider } from '@/lib/voice/l
 
 export const runtime = 'nodejs';
 
-/** The live model each provider connects to. */
-const LIVE_MODELS: Record<LiveProvider, string> = {
-  google: 'gemini-3.1-flash-live-preview',
-  // gpt-live-1 is OpenAI's model for natural, expressive voice conversation, as
-  // distinct from the gpt-realtime-* reasoning models. Voice mode here is a
-  // conversation with tools, not a reasoning session, so this is the right one.
-  openai: 'gpt-live-1',
-};
-
 /**
  * GET /api/voice/live?provider=google|openai
  *
@@ -55,14 +46,16 @@ export async function GET(request: Request) {
     if (quotaExhausted) {
       return NextResponse.json({ error: quotaMessage }, { status: 403 });
     }
-    const name = provider === 'openai' ? 'OpenAI' : 'Google';
+    const definition = LIVE_PROVIDERS[provider];
     return NextResponse.json(
-      { error: `${LIVE_PROVIDERS[provider].label} needs a ${name} API key. Add one in Settings → AI.` },
+      {
+        error: `${definition.label} needs ${definition.article} ${definition.providerName} API key. Add one in Settings → AI.`,
+      },
       { status: 400 },
     );
   }
 
-  const model = LIVE_MODELS[provider];
+  const model = LIVE_PROVIDERS[provider].model;
 
   if (provider === 'openai') {
     try {

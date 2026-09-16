@@ -7,6 +7,7 @@ import {
   buildToolResponses,
   isLiveProvider,
   normalizeLiveEvent,
+  REALTIME_REJECTED,
   resolveVoice,
   toOpenAITools,
   type GeminiToolBlock,
@@ -71,7 +72,7 @@ describe('tool translation', () => {
 
 describe('setup frames', () => {
   const options = {
-    model: 'gpt-live-1',
+    model: 'gpt-realtime-2.1',
     voice: 'marin',
     systemInstruction: 'You are Kan.',
     tools: TOOLS,
@@ -258,6 +259,28 @@ describe('normalizing server events', () => {
     expect(normalizeLiveEvent('openai', { type: 'error', error: { message: 'nope' } })?.error)
       .toBe('nope')
     expect(normalizeLiveEvent('google', { error: { message: 'nope' } })?.error).toBe('nope')
+  })
+})
+
+describe('the models each provider connects to', () => {
+  it('never picks a model the realtime socket rejects', () => {
+    // gpt-live-1 mints a client secret happily and then fails on connect, because
+    // the mint endpoint does not validate the model. Picking one by name is how
+    // this broke the first time.
+    expect(REALTIME_REJECTED).not.toContain(LIVE_PROVIDERS.openai.model)
+  })
+
+  it('names a live model for both providers', () => {
+    expect(LIVE_PROVIDERS.openai.model).toMatch(/^gpt-realtime/)
+    expect(LIVE_PROVIDERS.google.model).toMatch(/^gemini-.*-live/)
+  })
+
+  it('reads correctly in a sentence about a missing key', () => {
+    // "needs a OpenAI API key" is the kind of thing nobody catches in review.
+    expect(`needs ${LIVE_PROVIDERS.openai.article} ${LIVE_PROVIDERS.openai.providerName}`)
+      .toBe('needs an OpenAI')
+    expect(`needs ${LIVE_PROVIDERS.google.article} ${LIVE_PROVIDERS.google.providerName}`)
+      .toBe('needs a Google')
   })
 })
 

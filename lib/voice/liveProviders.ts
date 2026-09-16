@@ -32,6 +32,12 @@ export interface LiveProviderDefinition {
   label: string
   /** One line under the toggle, for someone deciding. */
   blurb: string
+  /** The model the live session actually connects to. */
+  model: string
+  /** How the provider is named in a sentence — "an OpenAI key", "a Google key". */
+  article: 'a' | 'an'
+  /** What the provider is called when talking to a person. */
+  providerName: string
   /** Microphone sample rate this backend expects, in Hz. */
   micSampleRate: number
   /** Sample rate of the audio it sends back, in Hz. */
@@ -45,6 +51,9 @@ export const LIVE_PROVIDERS: Record<LiveProvider, LiveProviderDefinition> = {
     id: 'google',
     label: 'Gemini Live',
     blurb: 'Gemini 3.1 Flash Live. What voice mode has always run on.',
+    model: 'gemini-3.1-flash-live-preview',
+    article: 'a',
+    providerName: 'Google',
     micSampleRate: 16000,
     playbackSampleRate: 24000,
     voices: [
@@ -62,7 +71,12 @@ export const LIVE_PROVIDERS: Record<LiveProvider, LiveProviderDefinition> = {
   openai: {
     id: 'openai',
     label: 'OpenAI Live',
-    blurb: 'gpt-live-1. Warmer delivery, smoother interruptions. No web search, and needs an OpenAI key.',
+    blurb: 'gpt-realtime-2.1. Warmer delivery, smoother interruptions. No web search, and needs an OpenAI key.',
+    // Verified by opening a socket, not by reading the model list. See
+    // REALTIME_REJECTED below for why that distinction cost an afternoon.
+    model: 'gpt-realtime-2.1',
+    article: 'an',
+    providerName: 'OpenAI',
     // OpenAI's realtime PCM format is 24 kHz in both directions, which also means
     // the microphone path does less resampling than the Gemini one.
     micSampleRate: 24000,
@@ -81,6 +95,20 @@ export const LIVE_PROVIDERS: Record<LiveProvider, LiveProviderDefinition> = {
     defaultVoice: 'marin',
   },
 }
+
+/**
+ * Models that look right and are not.
+ *
+ * `gpt-live-1` is described as OpenAI's premier model for natural voice
+ * conversation, and `POST /v1/realtime/client_secrets` will mint a secret for it
+ * without complaint — the mint endpoint does not validate the model at all. The
+ * socket then closes with "Model gpt-live-1 is not supported in realtime mode".
+ *
+ * The only way to know a model works on this transport is to open a socket with it.
+ * This list exists so the next person who picks a model by name gets a failing test
+ * rather than a broken voice session.
+ */
+export const REALTIME_REJECTED = ['gpt-live-1', 'gpt-audio-mini'] as const
 
 export function isLiveProvider(value: unknown): value is LiveProvider {
   return value === 'google' || value === 'openai'
