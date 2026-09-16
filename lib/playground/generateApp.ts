@@ -26,7 +26,6 @@ import {
   preservationInstruction,
   reconcileRequirements,
   type CapabilityLoss,
-  type DeclaredRemoval,
 } from '@/lib/playground/capabilityGuard';
 import { backfillRequirements } from '@/lib/playground/backfillRequirements';
 import {
@@ -442,24 +441,6 @@ const RESPONSE_SCHEMA = {
       description:
         'The running contract for this app: a terse bullet list of everything it must do, carried forward and updated every turn. Start from the REQUIREMENTS block you were given, keep every line that is still wanted, add whatever this turn asked for, and only drop a line when the user has actually said to. This is what stops an early request being forgotten once it scrolls out of the thread — treat dropping a line as a decision, not tidying.',
     },
-    removedCapabilities: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          capability: {
-            type: 'string',
-            description: 'What you removed — a runtime feature ("AI text generation", "saving customer work") or a requirement line you dropped from the contract.',
-          },
-          userAsked: {
-            type: 'string',
-            description: 'The user\'s own words asking for it, quoted EXACTLY as they wrote them, at least a dozen characters. This is checked against the conversation: a quote that is not found there does not authorise anything, and the removal will be treated as a mistake. Do not paraphrase and do not quote yourself.',
-          },
-        },
-        required: ['capability', 'userAsked'],
-      },
-      description: 'Only things the user explicitly asked you to remove. Leave empty otherwise — your own judgement that something is no longer needed is not authorisation.',
-    },
   },
   required: ['title', 'summary', 'code', 'notes', 'designNotes', 'dependencies', 'requirements'],
 };
@@ -824,14 +805,15 @@ export async function generatePlaygroundApp(
     ? `REQUIREMENTS — everything this app must do. All of it still applies; this turn's request is IN ADDITION unless it explicitly replaces a line. Do not regress any of these:\n${activeRequirements}`
     : 'REQUIREMENTS: (none recorded yet — start the list from what this turn asks for)';
 
-  // Everything the user has written: this turn plus their earlier messages. A
-  // declared removal is only authorised if its quote is found in here.
-  const userText = [
-    body.prompt,
-    ...appMessages
-      .filter((m) => m.type === 'question' || m.type === 'user' || m.type === 'note')
-      .map((m) => m.content ?? ''),
-  ].join('\n');
+  // The only thing that can authorise deleting anything, decided by preflight from
+  // the request itself before a line of code existed. Scoped to this turn, and not
+  // re-derived from text anywhere downstream — reading intent out of a transcript
+  // after the fact is what let "do not remove the AI comments" authorise removing
+  // the AI comments.
+  const authorisedRemovals = preflight.requestedRemovals ?? [];
+  if (authorisedRemovals.length > 0) {
+    console.log('[playground] user asked to remove:', authorisedRemovals.join(' | '));
+  }
 
   const requestBlock = `USER REQUEST:
 ${body.prompt}${imageNote}${iterationReminder}`;
@@ -888,8 +870,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     dependencies?: string[];
     /** The running contract, carried forward and updated each turn. */
     requirements?: string;
-    /** Removals the model claims the user asked for. Each is checked against the transcript. */
-    removedCapabilities?: DeclaredRemoval[];
+
   }
 
   let parsed: ParsedBuild | null = null;
@@ -1029,12 +1010,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
       // feature can vanish without anyone asking. Check before persisting, and give
       // the model one chance to put back what it dropped.
       if (currentCode && parsed?.code) {
-        capabilityLoss = capabilitiesLost(
-          currentCode,
-          parsed.code,
-          Array.isArray(parsed.removedCapabilities) ? parsed.removedCapabilities : [],
-          userText,
-        );
+        capabilityLoss = capabilitiesLost(currentCode, parsed.code, authorisedRemovals);
 
         if (capabilityLoss) {
           console.warn('[playground] rewrite dropped capabilities, retrying:', capabilityLoss.ids.join(', '));
@@ -1055,12 +1031,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
             try {
               const second = JSON.parse(retry.text || '') as ParsedBuild;
               const stillLost = second.code
-                ? capabilitiesLost(
-                    currentCode,
-                    second.code,
-                    Array.isArray(second.removedCapabilities) ? second.removedCapabilities : [],
-                    userText,
-                  )
+                ? capabilitiesLost(currentCode, second.code, authorisedRemovals)
                 : capabilityLoss;
               if (!stillLost) {
                 parsed = second;
@@ -1127,8 +1098,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   const reconciledRequirements = reconcileRequirements(
     activeRequirements,
     parsed.requirements,
-    Array.isArray(parsed.removedCapabilities) ? parsed.removedCapabilities : [],
-    userText,
+    authorisedRemovals,
   );
   if (reconciledRequirements.restored.length > 0) {
     console.warn(

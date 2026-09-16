@@ -16,6 +16,17 @@ export interface PreflightResult {
   unsupported?: string[];
   /** What CAN be built well, offered instead. Present with UNSUPPORTED. */
   smallerScope?: string;
+  /**
+   * Features the user has explicitly asked to REMOVE on this turn.
+   *
+   * Decided here, before a line of code is written, and nowhere else. The builder
+   * cannot add to this list: a generator that has just deleted something is the
+   * least reliable witness to whether deleting it was wanted.
+   *
+   * Empty whenever there is any doubt. Keeping a feature nobody wants costs one
+   * more sentence; deleting one somebody still needs costs their work.
+   */
+  requestedRemovals?: string[];
 }
 
 const PREFLIGHT_SYSTEM = `You are a code-generation gatekeeper for a vibe-coding playground. Before we let the heavy model rewrite the app, you decide TWO things in one shot:
@@ -76,6 +87,37 @@ const PREFLIGHT_SYSTEM = `You are a code-generation gatekeeper for a vibe-coding
 
 When the request mixes types, pick the most ambitious one. (If both cosmetic and structural changes are requested, return "structural".)
 
+4. REMOVALS — has the user, on THIS turn, explicitly asked for an existing feature to be taken OUT?
+
+   Fill "requestedRemovals" only for features they have asked you to delete. This is
+   the only place a removal can be authorised, so read it strictly:
+
+   - An instruction to KEEP something is not a removal. "Do not remove the AI
+     comments", "keep the share link", "leave the upload alone" — all of these mean
+     the feature STAYS. They are the opposite of a removal and must never appear here.
+   - A removal of one feature says nothing about any other. "Get rid of the image
+     upload" authorises removing the upload and nothing else.
+   - A request the user later took back is not a removal. If they asked for something
+     to go and then changed their mind — "actually keep it", "ignore that", "put it
+     back" — the reversal wins, and the list is empty.
+   - Talking ABOUT a feature is not asking for its removal. Complaints, questions and
+     descriptions of how it behaves are not instructions to delete it.
+   - If you are not sure, leave it empty. An unremoved feature is a sentence of
+     inconvenience; a wrongly removed one is lost work.
+
+   NAME IT FROM THIS LIST, EXACTLY. When the thing being removed is one of the
+   runtime features, copy its name character for character:
+     "AI text generation", "AI image generation", "saving customer work",
+     "loading saved customer work", "image upload", "shareable save links",
+     "opening a shared link"
+   The user will not use these words — they will say "the AI comments" or "the
+   upload button". Your job is to map what they said onto the right name above. A
+   name you invent matches nothing and silently preserves the feature, so a removal
+   the user clearly asked for would be refused every time they tried it.
+
+   For a requirement rather than a runtime feature, quote the contract line being
+   dropped verbatim instead.
+
 ONE VERDICT. The sections above are things to think about, not fields to fill in.
 Put a single value in "decision": UNSUPPORTED if the runtime cannot do the central
 thing, else ASK if clarity genuinely requires it, else ACT. UNSUPPORTED outranks ASK,
@@ -123,8 +165,17 @@ const PREFLIGHT_SCHEMA = {
         'When decision is UNSUPPORTED: one concrete sentence describing the genuinely ' +
         'useful thing that CAN be built instead. Empty string otherwise.',
     },
+    requestedRemovals: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description:
+        'Features the user explicitly asked to REMOVE on this turn. An instruction to ' +
+        'KEEP a feature is never a removal. A removal of one feature never covers ' +
+        'another. A request the user later reversed is not a removal. Empty array ' +
+        'whenever there is any doubt.',
+    },
   },
-  required: ['decision', 'editType', 'rationale', 'questions', 'unsupported', 'smallerScope'],
+  required: ['decision', 'editType', 'rationale', 'questions', 'unsupported', 'smallerScope', 'requestedRemovals'],
 };
 
 /**
@@ -203,6 +254,7 @@ export async function runPreflight(opts: {
       clarity?: unknown;
       unsupported?: unknown;
       smallerScope?: unknown;
+      requestedRemovals?: unknown;
     };
     // Three verdicts now, and anything unrecognised means build — a classifier
   // that returns nonsense should not be able to block work.
@@ -246,6 +298,18 @@ export async function runPreflight(opts: {
     ).filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
     const smallerScope = typeof parsed.smallerScope === 'string' ? parsed.smallerScope.trim() : '';
 
+    // The only list that can authorise deleting something. Read defensively: a
+    // classifier that answers oddly should end up authorising nothing, never
+    // authorising something by accident.
+    const requestedRemovals = (
+      Array.isArray(parsed.requestedRemovals)
+        ? parsed.requestedRemovals
+        : typeof parsed.requestedRemovals === 'string' ? [parsed.requestedRemovals] : []
+    )
+      .filter((r): r is string => typeof r === 'string')
+      .map((r) => r.trim())
+      .filter((r) => r.length > 0 && !/^(none|n\/a|nothing|empty)$/i.test(r));
+
     // UNSUPPORTED only counts when it names what is missing. A verdict with no
     // reason attached would stop the build and tell the user nothing, which is a
     // worse outcome than building the runnable part.
@@ -256,10 +320,12 @@ export async function runPreflight(opts: {
         unsupported,
         smallerScope: smallerScope || undefined,
         rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
+        requestedRemovals,
       };
     }
 
     return {
+      requestedRemovals,
       decision: decision === 'ASK' && questions.length > 0 ? 'ASK' : 'ACT',
       questions: questions.length > 0 ? questions : undefined,
       editType,

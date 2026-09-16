@@ -9,14 +9,20 @@
  *
  * ## Who is allowed to remove things
  *
- * Only the user. The model's own say-so is not enough, and the first version of this
- * got that wrong: it accepted any declared removal, so a model that dropped the AI
- * calls and wrote "AI text generation" in removedCapabilities was waved straight
- * through — the exact regression the guard existed to catch, with a note attached.
+ * Only the user, and the decision is made in preflight before any code is written.
  *
- * So a removal now has to carry the user's own words, and those words are checked
- * against what the user actually wrote. A model cannot invent authority it was not
- * given, because the quote has to be found in the transcript to count.
+ * Two earlier versions got this wrong in the same direction. The first accepted any
+ * removal the generator declared, so a model that deleted the AI calls and wrote
+ * "AI text generation" in its own notes was waved straight through. The second asked
+ * it to quote the user, and checked the quote appeared in the transcript — which
+ * proves a string is present, not that removal was wanted. "Do not remove the AI
+ * comments" contains "remove the AI comments", so an instruction to KEEP a feature
+ * read as permission to delete it.
+ *
+ * Whether the user asked for something to go is a judgement about intent, and it is
+ * made once, up front, by the component whose whole job is reading the request. By
+ * the time the guard runs it is settled: a list of names, scoped to this turn. The
+ * generator cannot add to it, and nothing here re-derives it from text.
  */
 
 export interface RuntimeCapability {
@@ -37,12 +43,26 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
   { id: 'record', pattern: /kanthinkInitial\s*(\?\.)?\s*\.?\s*record/, label: 'opening a shared link' },
 ]
 
-/** A removal the model says was requested, and the words it says requested it. */
-export interface DeclaredRemoval {
-  capability?: string
-  /** The user's own words, quoted. Checked against the transcript — see isAuthorised. */
-  userAsked?: string
-}
+/**
+ * A removal preflight decided the user asked for, before any code was written.
+ *
+ * A plain string, named as preflight named it — "AI text generation", "image
+ * upload", or a requirement line quoted back.
+ */
+export type AuthorisedRemoval = string
+
+/**
+ * The exact names preflight must use when it authorises removing a runtime feature.
+ *
+ * A fixed vocabulary rather than free text, because the alternative is matching one
+ * phrase against another and guessing whether they mean the same thing. They often
+ * do not: preflight once authorised "AI-generated comments" for a capability called
+ * "AI text generation", the names did not overlap, and a removal the user had asked
+ * for in plain words was refused every time they tried it.
+ *
+ * Given the list, preflight returns a member of it, and the check here is equality.
+ */
+export const REMOVABLE_CAPABILITY_NAMES: string[] = RUNTIME_CAPABILITIES.map((c) => c.label)
 
 export function capabilitiesIn(code: string): Set<string> {
   const found = new Set<string>()
@@ -56,56 +76,46 @@ export function capabilitiesIn(code: string): Set<string> {
 const normalise = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim()
 
 /**
- * Shortest quote worth trusting.
+ * Does this authorisation cover this capability?
  *
- * Long enough that it cannot match by accident — "remove it" appears in half the
- * messages ever written — and short enough that a genuine instruction qualifies.
+ * Deliberately a name match against a decision already made, and nothing cleverer.
+ * The earlier version searched the transcript for a quote, which answered the wrong
+ * question: "do not remove the AI comments" contains "remove the AI comments", so a
+ * instruction to KEEP a feature read as permission to delete it. Whether removal was
+ * wanted is a judgement, it is made once in preflight, and by the time it gets here
+ * it is settled.
  */
-export const MIN_QUOTE_LENGTH = 12
-
-/**
- * Did the user actually ask for this?
- *
- * The quote has to appear in what the user wrote. That is the whole check, and it is
- * the reason a declaration cannot authorise anything on its own: the model can claim
- * whatever it likes, but it cannot put words in the transcript.
- */
-export function isAuthorised(quote: string | undefined, userText: string): boolean {
-  if (!quote || !userText) return false
-  const needle = normalise(quote)
-  if (needle.length < MIN_QUOTE_LENGTH) return false
-  return normalise(userText).includes(needle)
+export function coversCapability(authorised: AuthorisedRemoval, cap: RuntimeCapability): boolean {
+  const a = normalise(authorised)
+  if (a.length === 0) return false
+  return a === normalise(cap.label) || a === cap.id.toLowerCase()
 }
-
 export interface CapabilityLoss {
   ids: string[]
   labels: string[]
 }
 
 /**
- * What the new code stopped doing, minus whatever the user actually asked to drop.
+ * What the new code stopped doing, minus what preflight said the user asked to drop.
  *
- * `userText` is everything the user has said — this turn's request and their earlier
- * messages. A declared removal counts only when its quote is found there.
+ * `authorisedRemovals` comes from preflight and from nowhere else. The generator's
+ * own account of what it meant to remove is not an input here — a model that has
+ * just deleted something is the least reliable witness to whether deleting it was
+ * wanted, and treating its say-so as permission is how the first version of this
+ * guard would have waved through the very regression it exists to catch.
  */
 export function capabilitiesLost(
   before: string,
   after: string,
-  declaredRemovals: DeclaredRemoval[] = [],
-  userText = '',
+  authorisedRemovals: AuthorisedRemoval[] = [],
 ): CapabilityLoss | null {
   const had = capabilitiesIn(before)
   if (had.size === 0) return null
   const has = capabilitiesIn(after)
 
-  const authorised = declaredRemovals
-    .filter((d) => isAuthorised(d.userAsked, userText))
-    .map((d) => normalise(d.capability ?? ''))
-    .filter(Boolean)
-
   const lost = RUNTIME_CAPABILITIES.filter((cap) => {
     if (!had.has(cap.id) || has.has(cap.id)) return false
-    return !authorised.some((a) => a.includes(cap.id.toLowerCase()) || a.includes(normalise(cap.label)))
+    return !authorisedRemovals.some((a) => coversCapability(a, cap))
   })
 
   if (lost.length === 0) return null
@@ -116,12 +126,12 @@ export function capabilitiesLost(
 export function preservationInstruction(loss: CapabilityLoss): string {
   return (
     `\n\n⚠️ YOUR LAST ATTEMPT DELETED WORKING FEATURES. The previous code called ` +
-    `${loss.labels.join(', ')}, and your version does not. Nobody asked for that to be ` +
-    `removed. Produce the file again with ${loss.labels.length === 1 ? 'that feature' : 'those features'} ` +
-    `still wired up exactly as before, plus the change that was actually requested. ` +
-    `Only if the user explicitly asked for one to go, put it in "removedCapabilities" ` +
-    `with their exact words in "userAsked" — a quote that is not in the conversation ` +
-    `will not be accepted.`
+    `${loss.labels.join(', ')}, and your version does not. The user did not ask for ` +
+    `${loss.labels.length === 1 ? 'it' : 'them'} to be removed. Produce the file again with ` +
+    `${loss.labels.length === 1 ? 'that feature' : 'those features'} still wired up exactly as ` +
+    `before, plus the change that was actually requested. You cannot authorise a removal ` +
+    `yourself — if the user wants one, they will say so and it will be allowed before you ` +
+    `are asked to build.`
   )
 }
 
@@ -141,12 +151,30 @@ export interface RequirementReconciliation {
 }
 
 /**
+ * Does an authorised removal name this requirement line?
+ *
+ * Whole-line identity, not overlap. Overlap was the bug: "do not remove the rule
+ * that a flop gets silence" CONTAINS "a flop gets silence", so a sentence insisting
+ * a line stay read as authorisation to drop it — the same substring-for-intent
+ * mistake the capability side had, surviving one layer down.
+ *
+ * Preflight is asked to quote the line it is dropping, so identity is what it should
+ * produce. Anything less exact preserves the line, which is the direction to be
+ * wrong in.
+ */
+function coversRequirement(authorised: AuthorisedRemoval, line: string): boolean {
+  const strip = (t: string) => normalise(t).replace(/^[-*•]\s*/, '').replace(/[.]+$/, '')
+  const a = strip(authorised)
+  const body = strip(line)
+  return a.length >= 8 && a === body
+}
+/**
  * Keep the contract from shrinking by accident.
  *
  * The model rewrites this list every turn, which means every turn is a chance for a
  * line to fall off — and a requirement that silently disappears is indistinguishable
- * from one that was never asked for. A line may only leave when the user said so, on
- * the same terms as a capability: their words, found in the transcript.
+ * from one that was never asked for. A line may only leave when preflight said the
+ * user asked for it to, on exactly the same terms as a capability.
  *
  * Anything else is put back. Restoring a line the user had genuinely abandoned costs
  * them one sentence to say so again; dropping one they still wanted costs them
@@ -155,8 +183,7 @@ export interface RequirementReconciliation {
 export function reconcileRequirements(
   previous: string | null | undefined,
   proposed: string | null | undefined,
-  removals: DeclaredRemoval[] = [],
-  userText = '',
+  authorisedRemovals: AuthorisedRemoval[] = [],
 ): RequirementReconciliation {
   const had = requirementLines(previous)
   const now = requirementLines(proposed)
@@ -165,18 +192,13 @@ export function reconcileRequirements(
   if (now.length === 0) return { requirements: (previous ?? '').trim(), restored: [] }
   if (had.length === 0) return { requirements: now.join('\n'), restored: [] }
 
-  const authorised = removals
-    .filter((d) => isAuthorised(d.userAsked, userText))
-    .map((d) => normalise(d.capability ?? ''))
-    .filter(Boolean)
-
   const kept = new Set(now.map(normalise))
   const restored = had.filter((line) => {
     if (kept.has(normalise(line))) return false
     // Reworded rather than removed: if most of the line survives somewhere, let it be.
     const body = normalise(line).replace(/^[-*•]\s*/, '')
     if (body.length >= 20 && now.some((n) => normalise(n).includes(body.slice(0, 20)))) return false
-    return !authorised.some((a) => body.includes(a) || a.includes(body.slice(0, 20)))
+    return !authorisedRemovals.some((a) => coversRequirement(a, line))
   })
 
   return {
