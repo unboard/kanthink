@@ -24,8 +24,11 @@ import { applyCodeEdits, shouldPatch, type CodeEdit } from '@/lib/playground/app
 import {
   capabilitiesLost,
   preservationInstruction,
+  reconcileRequirements,
   type CapabilityLoss,
+  type DeclaredRemoval,
 } from '@/lib/playground/capabilityGuard';
+import { backfillRequirements } from '@/lib/playground/backfillRequirements';
 import {
   resolveDeps,
   describeDepsForPrompt,
@@ -412,6 +415,15 @@ Rules — these are strict, a bad edit corrupts a working app:
 4. Make the smallest set of edits that fully satisfies the request. Do not tidy, reformat, or improve anything you were not asked to touch.
 5. If the change genuinely cannot be expressed as a handful of find/replace pairs, return an empty "edits" array and nothing else — the system will rebuild the file instead. That is a valid answer, not a failure.`;
 
+/**
+ * Model for reading an existing thread back into a contract.
+ *
+ * Cheap and deliberately so: pulling requirements out of messages somebody already
+ * wrote is extraction, and paying frontier prices for it once per legacy app would
+ * be a bad trade for an answer that is then cached forever.
+ */
+const REQUIREMENT_RECOVERY_MODEL_ID = 'gemini-3.1-flash-lite';
+
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
@@ -432,8 +444,21 @@ const RESPONSE_SCHEMA = {
     },
     removedCapabilities: {
       type: 'array',
-      items: { type: 'string' },
-      description: 'Runtime features you deliberately removed this turn because the user asked for them to go — e.g. "AI text generation", "saving customer work". Leave empty unless removal was requested. An undeclared removal is treated as a mistake and the build is refused.',
+      items: {
+        type: 'object',
+        properties: {
+          capability: {
+            type: 'string',
+            description: 'What you removed — a runtime feature ("AI text generation", "saving customer work") or a requirement line you dropped from the contract.',
+          },
+          userAsked: {
+            type: 'string',
+            description: 'The user\'s own words asking for it, quoted EXACTLY as they wrote them, at least a dozen characters. This is checked against the conversation: a quote that is not found there does not authorise anything, and the removal will be treated as a mistake. Do not paraphrase and do not quote yourself.',
+          },
+        },
+        required: ['capability', 'userAsked'],
+      },
+      description: 'Only things the user explicitly asked you to remove. Leave empty otherwise — your own judgement that something is no longer needed is not authorisation.',
     },
   },
   required: ['title', 'summary', 'code', 'notes', 'designNotes', 'dependencies', 'requirements'],
@@ -678,6 +703,35 @@ export async function generatePlaygroundApp(
         rationale: isIteration ? 'preflight unavailable' : 'first generation',
       };
 
+  // An app built before the contract existed has its requirements scattered through
+  // a thread instead — and that thread is precisely what the builder cannot see all
+  // of, which is the problem the contract solves. Left alone those apps would start
+  // empty and keep losing what their owner asked for early on, so the first build
+  // after this reads the whole history once and writes it down.
+  //
+  // On a cheap model: this is extraction, not authorship, and it should not cost
+  // frontier tokens. Best effort on purpose — a recovered contract is an improvement,
+  // not a precondition, and failing to get one must never block the build.
+  let recoveredRequirements: string | null = null;
+  if (!app.requirements?.trim() && isIteration && appMessages.length > 0 && preflightKey) {
+    recoveredRequirements = await backfillRequirements({
+      messages: appMessages,
+      appTitle: app.title,
+      cardTitle: card.title,
+      model: getPlaygroundModel(REQUIREMENT_RECOVERY_MODEL_ID),
+      apiKey: preflightKey,
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (recoveredRequirements) {
+      console.log('[playground] recovered a contract from the thread for', app.id);
+      await db.update(playgroundApps)
+        .set({ requirements: recoveredRequirements, updatedAt: new Date() })
+        .where(eq(playgroundApps.id, app.id));
+    }
+  }
+  /** The contract in force for this build — the stored one, or the one just recovered. */
+  const activeRequirements = app.requirements?.trim() || recoveredRequirements || null;
+
   // Short-circuit: the runtime cannot do the central thing that was asked for. Say
   // which capability is missing and what can be built instead, and build nothing —
   // an app that pretends to save your progress is worse than being told it cannot.
@@ -766,9 +820,18 @@ export async function generatePlaygroundApp(
   // The contract, ahead of the request, because a new request is an addition to it
   // rather than a replacement for it. Without this the only memory of an early
   // requirement is the thread, and the thread is a window.
-  const requirementsBlock = app.requirements?.trim()
-    ? `REQUIREMENTS — everything this app must do. All of it still applies; this turn's request is IN ADDITION unless it explicitly replaces a line. Do not regress any of these:\n${app.requirements.trim()}`
+  const requirementsBlock = activeRequirements
+    ? `REQUIREMENTS — everything this app must do. All of it still applies; this turn's request is IN ADDITION unless it explicitly replaces a line. Do not regress any of these:\n${activeRequirements}`
     : 'REQUIREMENTS: (none recorded yet — start the list from what this turn asks for)';
+
+  // Everything the user has written: this turn plus their earlier messages. A
+  // declared removal is only authorised if its quote is found in here.
+  const userText = [
+    body.prompt,
+    ...appMessages
+      .filter((m) => m.type === 'question' || m.type === 'user' || m.type === 'note')
+      .map((m) => m.content ?? ''),
+  ].join('\n');
 
   const requestBlock = `USER REQUEST:
 ${body.prompt}${imageNote}${iterationReminder}`;
@@ -808,6 +871,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
 
   const apiKey = keys[model.provider]!.apiKey;
 
+
+
   // Resolve attached images into inlineData parts so Gemini can see them.
   // Fetched together rather than one at a time — six sequential round trips to
   // Cloudinary added seconds to every build for no reason.
@@ -823,8 +888,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     dependencies?: string[];
     /** The running contract, carried forward and updated each turn. */
     requirements?: string;
-    /** Features the model says it removed on purpose. An undeclared removal is a regression. */
-    removedCapabilities?: string[];
+    /** Removals the model claims the user asked for. Each is checked against the transcript. */
+    removedCapabilities?: DeclaredRemoval[];
   }
 
   let parsed: ParsedBuild | null = null;
@@ -912,7 +977,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
               notes: patch.notes?.trim()
                 || 'Nothing to change — the app already does what was asked.',
               designNotes: app.designNotes ?? undefined,
-              requirements: app.requirements ?? undefined,
+              requirements: activeRequirements ?? undefined,
               dependencies: app.dependencies ?? [],
             };
           } else {
@@ -968,6 +1033,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
           currentCode,
           parsed.code,
           Array.isArray(parsed.removedCapabilities) ? parsed.removedCapabilities : [],
+          userText,
         );
 
         if (capabilityLoss) {
@@ -993,6 +1059,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
                     currentCode,
                     second.code,
                     Array.isArray(second.removedCapabilities) ? second.removedCapabilities : [],
+                    userText,
                   )
                 : capabilityLoss;
               if (!stillLost) {
@@ -1054,6 +1121,22 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     ...(patchOutcome ? { patchOutcome } : {}),
   };
 
+  // Anything the model dropped from the contract without the user asking is put
+  // back. Restoring a line they had abandoned costs one sentence to say so again;
+  // dropping one they still wanted costs several builds and their patience.
+  const reconciledRequirements = reconcileRequirements(
+    activeRequirements,
+    parsed.requirements,
+    Array.isArray(parsed.removedCapabilities) ? parsed.removedCapabilities : [],
+    userText,
+  );
+  if (reconciledRequirements.restored.length > 0) {
+    console.warn(
+      '[playground] restored requirement(s) dropped without the user asking:',
+      reconciledRequirements.restored.join(' | ')
+    );
+  }
+
   // -- Dependencies for the code we just received.
   //    The model declares what it imported, so the import map is built in the same
   //    turn as the code that needs it — no second round trip, no "install then use".
@@ -1108,12 +1191,10 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
     designNotes: typeof parsed.designNotes === 'string' && parsed.designNotes.trim().length > 0
       ? parsed.designNotes.trim()
       : app.designNotes,
-    // The running contract. Kept rather than cleared when a turn returns nothing,
-    // because an empty answer is far more likely to be a model that skipped the
-    // field than a user who withdrew every requirement they ever had.
-    requirements: typeof parsed.requirements === 'string' && parsed.requirements.trim().length > 0
-      ? parsed.requirements.trim()
-      : app.requirements,
+    // The running contract, reconciled rather than taken at face value. The model
+    // rewrites this list every turn, so every turn is a chance for a line to fall
+    // off — and a line may only leave when the user asked for it to.
+    requirements: reconciledRequirements.requirements || null,
     // Store declarations rather than resolved URLs so resolution rules stay changeable.
     dependencies: merged.deps.map(d => d.raw),
     // Stable HMAC of the app id, used by the iframe runtime to authenticate

@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   capabilitiesIn,
   capabilitiesLost,
+  isAuthorised,
   preservationInstruction,
+  reconcileRequirements,
+  MIN_QUOTE_LENGTH,
 } from '../lib/playground/capabilityGuard'
 
 /**
@@ -12,6 +15,11 @@ import {
  * having quietly dropped the AI calls and kept everything around them. Nothing
  * noticed. The next three messages in that thread are the owner trying to work out
  * why their app had stopped doing the thing it was for.
+ *
+ * The rule these tests hold to the line on: only the user removes things. A model
+ * saying it meant to is not authorisation, because the first version of this guard
+ * accepted exactly that and would have waved the original regression through with a
+ * note attached.
  */
 
 const WITH_AI = `
@@ -33,6 +41,9 @@ function App() {
 }
 `
 
+const USER_WANTS_AI_GONE =
+  'this is costing too much, please take the AI comments out entirely and just use a fixed list'
+
 describe('what the code can do', () => {
   it('sees the calls that matter', () => {
     const found = capabilitiesIn(WITH_AI)
@@ -42,13 +53,11 @@ describe('what the code can do', () => {
   })
 
   it('does not count a mention in prose as a call', () => {
-    const found = capabilitiesIn(`// TODO: maybe use window.kanthinkAI one day\nfunction App() {}`)
-    expect(found.has('ai.generate')).toBe(false)
+    expect(capabilitiesIn(`// TODO: maybe use window.kanthinkAI one day`).has('ai.generate')).toBe(false)
   })
 
   it('reads the optional-chained form apps actually write', () => {
-    const found = capabilitiesIn(`const s = window.kanthinkData?.initial?.stats;`)
-    expect(found.has('data.initial')).toBe(true)
+    expect(capabilitiesIn(`const s = window.kanthinkData?.initial?.stats;`).has('data.initial')).toBe(true)
   })
 })
 
@@ -57,17 +66,10 @@ describe('an undeclared removal is a regression', () => {
     const loss = capabilitiesLost(WITH_AI, AI_REMOVED)
     expect(loss).not.toBeNull()
     expect(loss!.ids).toEqual(['ai.generate'])
-    expect(loss!.labels[0]).toMatch(/AI text generation/i)
   })
 
   it('says nothing when everything survives', () => {
-    const tidied = WITH_AI.replace('function App()', 'function App() /* tidied */')
-    expect(capabilitiesLost(WITH_AI, tidied)).toBeNull()
-  })
-
-  it('says nothing when a capability is added', () => {
-    const more = WITH_AI + `\nconst save = () => window.kanthinkData.set('x', 1);`
-    expect(capabilitiesLost(WITH_AI, more)).toBeNull()
+    expect(capabilitiesLost(WITH_AI, WITH_AI + '\n// tidied')).toBeNull()
   })
 
   it('never fires on a first build, where there is nothing to lose', () => {
@@ -75,30 +77,140 @@ describe('an undeclared removal is a regression', () => {
   })
 })
 
-describe('a declared removal is allowed', () => {
-  it('accepts a removal the model owns up to by label', () => {
-    expect(capabilitiesLost(WITH_AI, AI_REMOVED, ['AI text generation'])).toBeNull()
+describe('only the user can authorise a removal', () => {
+  it('REFUSES a removal the model declared on its own', () => {
+    // The model says it meant to. Nobody asked. This is the case the first version
+    // of the guard let through.
+    const loss = capabilitiesLost(
+      WITH_AI,
+      AI_REMOVED,
+      [{ capability: 'AI text generation', userAsked: 'the user wanted it simpler' }],
+      'make the replies appear one at a time',
+    )
+    expect(loss).not.toBeNull()
+    expect(loss!.ids).toEqual(['ai.generate'])
   })
 
-  it('accepts one named by id', () => {
-    expect(capabilitiesLost(WITH_AI, AI_REMOVED, ['ai.generate'])).toBeNull()
+  it('refuses a declaration carrying no quote at all', () => {
+    const loss = capabilitiesLost(WITH_AI, AI_REMOVED, [{ capability: 'AI text generation' }], USER_WANTS_AI_GONE)
+    expect(loss).not.toBeNull()
   })
 
-  it('is not fooled into allowing a different removal', () => {
-    // Owning up to dropping uploads does not license dropping the AI calls.
+  it('accepts a removal whose quote is really in the conversation', () => {
+    const loss = capabilitiesLost(
+      WITH_AI,
+      AI_REMOVED,
+      [{ capability: 'AI text generation', userAsked: 'take the AI comments out entirely' }],
+      USER_WANTS_AI_GONE,
+    )
+    expect(loss).toBeNull()
+  })
+
+  it('accepts a quote that differs only in spacing and case', () => {
+    const loss = capabilitiesLost(
+      WITH_AI,
+      AI_REMOVED,
+      [{ capability: 'AI text generation', userAsked: 'Take The AI   Comments Out Entirely' }],
+      USER_WANTS_AI_GONE,
+    )
+    expect(loss).toBeNull()
+  })
+
+  it('does not let one authorised removal license another', () => {
     const bothGone = AI_REMOVED.replace('window.kanthinkUpload(f)', 'null')
-    const loss = capabilitiesLost(WITH_AI, bothGone, ['image upload'])
+    const loss = capabilitiesLost(
+      WITH_AI,
+      bothGone,
+      [{ capability: 'image upload', userAsked: 'take the AI comments out entirely' }],
+      USER_WANTS_AI_GONE,
+    )
     expect(loss).not.toBeNull()
     expect(loss!.ids).toEqual(['ai.generate'])
   })
 })
 
+describe('a quote has to be worth something', () => {
+  it('rejects a quote too short to mean anything', () => {
+    expect(isAuthorised('remove it', 'remove it please')).toBe(false)
+    expect('remove it'.length).toBeLessThan(MIN_QUOTE_LENGTH)
+  })
+
+  it('rejects a quote the user never wrote', () => {
+    expect(isAuthorised('please delete the AI features', 'add a dark mode toggle')).toBe(false)
+  })
+
+  it('accepts a long enough quote that is genuinely there', () => {
+    expect(isAuthorised('delete the AI features', 'can you delete the AI features now')).toBe(true)
+  })
+})
+
+describe('the contract does not shrink by accident', () => {
+  const CONTRACT = [
+    '- Comments are generated per post by AI, never from a fixed pool',
+    '- A flop gets silence or criticism, never praise',
+    '- Metrics tick up on reveal',
+  ].join('\n')
+
+  it('puts back a line the model dropped without being asked', () => {
+    const proposed = [
+      '- Comments are generated per post by AI, never from a fixed pool',
+      '- Metrics tick up on reveal',
+    ].join('\n')
+    const result = reconcileRequirements(CONTRACT, proposed, [], 'make the ticking faster')
+    expect(result.restored).toHaveLength(1)
+    expect(result.restored[0]).toMatch(/flop gets silence/)
+    expect(result.requirements).toMatch(/flop gets silence/)
+  })
+
+  it('lets a line go when the user asked', () => {
+    const proposed = [
+      '- Comments are generated per post by AI, never from a fixed pool',
+      '- Metrics tick up on reveal',
+    ].join('\n')
+    const result = reconcileRequirements(
+      CONTRACT,
+      proposed,
+      [{ capability: 'a flop gets silence or criticism, never praise', userAsked: 'drop the silence rule, always show some replies' }],
+      'drop the silence rule, always show some replies',
+    )
+    expect(result.restored).toHaveLength(0)
+    expect(result.requirements).not.toMatch(/flop gets silence/)
+  })
+
+  it('treats a missing field as no change, not as repeal', () => {
+    const result = reconcileRequirements(CONTRACT, '', [], '')
+    expect(result.requirements).toBe(CONTRACT)
+    expect(result.restored).toHaveLength(0)
+  })
+
+  it('accepts a rewording without duplicating the line', () => {
+    const reworded = [
+      '- Comments are generated per post by AI, never from a fixed pool, and must vary',
+      '- A flop gets silence or criticism, never praise',
+      '- Metrics tick up on reveal',
+    ].join('\n')
+    const result = reconcileRequirements(CONTRACT, reworded, [], 'make them vary more')
+    expect(result.restored).toHaveLength(0)
+    expect(result.requirements.match(/generated per post/g)).toHaveLength(1)
+  })
+
+  it('keeps new lines alongside the old ones', () => {
+    const grown = CONTRACT + '\n- The X logo is the real one'
+    const result = reconcileRequirements(CONTRACT, grown, [], 'use the real X logo')
+    expect(result.requirements).toMatch(/X logo/)
+    expect(result.requirements).toMatch(/flop gets silence/)
+  })
+
+  it('starts a contract from nothing on a first build', () => {
+    const result = reconcileRequirements(null, '- Does the thing', [], '')
+    expect(result.requirements).toBe('- Does the thing')
+  })
+})
+
 describe('what the model is told to fix', () => {
-  it('names the features rather than describing the problem abstractly', () => {
-    const loss = capabilitiesLost(WITH_AI, AI_REMOVED)!
-    const instruction = preservationInstruction(loss)
+  it('names the features and refuses invented authority', () => {
+    const instruction = preservationInstruction(capabilitiesLost(WITH_AI, AI_REMOVED)!)
     expect(instruction).toMatch(/AI text generation/)
-    expect(instruction).toMatch(/DELETED WORKING FEATURES/i)
-    expect(instruction).toMatch(/removedCapabilities/)
+    expect(instruction).toMatch(/not in the conversation will not be accepted/i)
   })
 })
