@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import {
+import { Undo2,
   Check,
   Copy,
   ExternalLink,
@@ -40,6 +40,7 @@ export function AppReleaseSection({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   const hasCode = Boolean(app.code);
   const live = app.publishedVersion ?? null;
@@ -130,6 +131,41 @@ export function AppReleaseSection({
               <span className="ml-auto text-[10px] text-amber-600 dark:text-amber-400">unpublished</span>
             )}
           </a>
+        )}
+
+        {/* One step back, which exists whether or not anything was ever published.
+            Rollback below needs a release; this does not, and the case it covers is
+            the common one — a build that went somewhere you did not want. */}
+        {app.previousBuild?.code && (
+          <div className="px-3 py-2.5 border-t border-neutral-200 dark:border-neutral-800">
+            <div className="flex items-center gap-2">
+              <Undo2 className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-neutral-700 dark:text-neutral-200">
+                  Undo the last build
+                </p>
+                <p className="text-[10.5px] text-neutral-500 dark:text-neutral-400 leading-snug truncate">
+                  {app.previousBuild.notes?.trim() || `Back to v${app.previousBuild.generationCount}`}
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  setUndoing(true);
+                  try {
+                    const res = await fetch(`/api/playground/apps/${app.id}/undo`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data?.app) onUpdated(data.app as PlaygroundApp);
+                  } finally {
+                    setUndoing(false);
+                  }
+                }}
+                disabled={undoing}
+                className="flex-shrink-0 px-2.5 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+              >
+                {undoing ? 'Going back…' : 'Undo'}
+              </button>
+            </div>
+          </div>
         )}
 
         {/* History and rollback. */}

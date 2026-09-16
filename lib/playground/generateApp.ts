@@ -421,6 +421,15 @@ Rules — these are strict, a bad edit corrupts a working app:
  * wrote is extraction, and paying frontier prices for it once per legacy app would
  * be a bad trade for an answer that is then cached forever.
  */
+/**
+ * What the composer sends when Update is pressed with an empty box.
+ *
+ * Not a request — the absence of one. Treating it as a request is how a stray click
+ * on a finished app spent thirteen cents rewriting twenty-two thousand characters to
+ * arrive back where it started.
+ */
+const EMPTY_UPDATE = 'Update the app based on everything discussed in this thread.';
+
 const REQUIREMENT_RECOVERY_MODEL_ID = 'gemini-3.1-flash-lite';
 
 const RESPONSE_SCHEMA = {
@@ -519,6 +528,38 @@ export async function generatePlaygroundApp(
     return NextResponse.json({ error: 'appId and prompt are required' }, { status: 400 });
   }
 
+  // Checked before the model is chosen or a key is resolved: there is nothing to
+  // build, so there is nothing to bill for either.
+  //
+  // Only when the app already has code. On a first build the thread IS the request,
+  // and an empty composer is the normal way to start.
+  const appForEmptyCheck = await db.query.playgroundApps.findFirst({
+    where: eq(playgroundApps.id, body.appId),
+    columns: { code: true, messages: true },
+  });
+  if (appForEmptyCheck?.code && body.prompt.trim() === EMPTY_UPDATE) {
+    const said = stripOptimistic<ThreadMessage>(appForEmptyCheck.messages);
+    let lastBuilt = -1;
+    let lastAsked = -1;
+    said.forEach((m, i) => {
+      const built = (m as { builtVersion?: number }).builtVersion;
+      if (typeof built === 'number') lastBuilt = i;
+      else if (m.type === 'question' || m.type === 'note') lastAsked = i;
+    });
+    // Only when we can actually tell. A thread from before builds were marked gets
+    // the benefit of the doubt rather than a refusal based on a guess.
+    if (lastBuilt > -1 && lastAsked < lastBuilt) {
+      return NextResponse.json(
+        {
+          error:
+            'Nothing new to build — everything in this thread has already been built. ' +
+            'Describe a change first, then press Update.',
+          noChange: true,
+        },
+        { status: 409 }      );
+    }
+  }
+
   // Every provider this account can call. A build is no longer Gemini-only, so the
   // question is not "is there a Google key" but "which models are actually
   // reachable" — the model the user picked decides which key gets used.
@@ -533,6 +574,7 @@ export async function generatePlaygroundApp(
       { status: 400 }
     );
   }
+
 
   // Load the app being built, plus the card it is an artifact of.
   const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, body.appId) });
@@ -1145,6 +1187,10 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
     id: nanoid(),
     type: 'ai_response' as const,
     content: (parsed.notes || (generationCount === 0 ? `Built **${parsed.title}** — ${parsed.summary}` : 'Updated.')) + providerNote,
+    // Marks this reply as a BUILD rather than a chat answer. Both are ai_response,
+    // so without it there is no way to ask "has anything been said since the last
+    // build?" — and that question is what decides whether Update has work to do.
+    builtVersion: generationCount + 1,
     createdAt: new Date().toISOString(),
   };
   const newMessages = [...existingMessages, userMessageObj, aiMessageObj];
@@ -1161,6 +1207,21 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
     designNotes: typeof parsed.designNotes === 'string' && parsed.designNotes.trim().length > 0
       ? parsed.designNotes.trim()
       : app.designNotes,
+    // One step back, written on the way past. A build overwrites the draft in
+    // place, and an app that has never been published has no other history — so
+    // without this a mis-aimed click is simply the end of that work.
+    previousBuild: currentCode
+      ? {
+          code: currentCode,
+          designNotes: app.designNotes,
+          requirements: activeRequirements,
+          notes: app.lastNotes,
+          dependencies: app.dependencies ?? null,
+          generationCount,
+          savedAt: new Date().toISOString(),
+        }
+      : app.previousBuild,
+
     // The running contract, reconciled rather than taken at face value. The model
     // rewrites this list every turn, so every turn is a chance for a line to fall
     // off — and a line may only leave when the user asked for it to.

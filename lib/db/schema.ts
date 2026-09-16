@@ -356,6 +356,26 @@ export const playgroundApps = sqliteTable('playground_apps', {
    * saying the same thing three times, each time a little less politely.
    */
   requirements: text('requirements'),
+  /**
+   * The app as it stood immediately before the most recent build.
+   *
+   * Releases are the deliberate history: you publish, and that version is kept. But
+   * a build overwrites the draft in place, and until you have published even once
+   * there is no history at all — so a single mis-aimed click could destroy work with
+   * nothing to go back to. One step of undo, written before every build, costs one
+   * column and removes that cliff.
+   *
+   * Deeper history is still what publishing is for.
+   */
+  previousBuild: text('previous_build', { mode: 'json' }).$type<{
+    code: string
+    designNotes?: string | null
+    requirements?: string | null
+    notes?: string | null
+    dependencies?: string[] | null
+    generationCount: number
+    savedAt: string
+  } | null>(),
   /** Kan's notes from the most recent build, shown under the preview. */
   lastNotes: text('last_notes'),
   /**

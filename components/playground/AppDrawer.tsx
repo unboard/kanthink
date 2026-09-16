@@ -348,6 +348,33 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   }, [app, busy, applyApp]);
 
   /**
+   * Is there anything new to build?
+   *
+   * Update with an empty composer means "apply what we discussed", which is only a
+   * request if something has been said since the last build. When the newest thing
+   * in the thread is the previous build's own reply, there is nothing to apply — and
+   * pressing it anyway used to rewrite the whole file to arrive back where it
+   * started, which on a finished app is a way to lose work rather than gain any.
+   */
+  const hasSomethingToBuild = useMemo(() => {
+    if (!hasCode) return true; // A first build IS the thread.
+    const thread = app?.messages ?? [];
+    // The last BUILD, not the last reply — chatting with Kan also writes an
+    // ai_response, and a conversation about a change is exactly when Update should
+    // still be available.
+    let lastBuilt = -1;
+    let lastAsked = -1;
+    thread.forEach((m, i) => {
+      if (typeof m.builtVersion === 'number') lastBuilt = i;
+      else if (m.type === 'question' || m.type === 'note') lastAsked = i;
+    });
+    // No marker anywhere means a thread from before builds were marked. Say yes
+    // rather than block work on a guess about history we cannot read.
+    if (lastBuilt === -1) return true;
+    return lastAsked > lastBuilt;
+  }, [hasCode, app?.messages]);
+
+  /**
    * Build. Takes whatever is in the composer as this turn's request and the whole
    * thread as context — which is why a conversation that never mentioned building
    * still shapes what comes out.
@@ -609,9 +636,11 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
                 that turns it into code. */}
             <button
               onClick={() => void build('', false)}
-              disabled={busy || !app}
+              disabled={busy || !app || !hasSomethingToBuild}
               className="ml-auto flex flex-shrink-0 items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white shadow-sm shadow-violet-600/30 hover:from-violet-700 hover:to-fuchsia-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              title="Build the app from this thread"
+              title={hasSomethingToBuild
+                ? 'Build the app from this thread'
+                : 'Nothing new to build — describe a change first'}
             >
               {isBuilding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Hammer className="w-3.5 h-3.5" />}
               Update

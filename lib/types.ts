@@ -444,6 +444,8 @@ export interface CardMessage {
    * and is sitting in the thread waiting to be run.
    */
   shroomRan?: boolean;
+  /** Set on a build reply, not a chat reply: which version this turn produced. */
+  builtVersion?: number;
 }
 
 export interface ChannelMember {
@@ -676,6 +678,13 @@ export interface PlaygroundApp {
   appToken?: string | null;
   /** The same, scoped to the draft — saves land in a bucket customers never read. */
   draftToken?: string | null;
+  /** The draft as it stood before the last build, for one step of undo. */
+  previousBuild?: {
+    code: string;
+    notes?: string | null;
+    generationCount: number;
+    savedAt: string;
+  } | null;
   /** Draft-scoped per-customer storage, so the owner's preview can save safely. */
   draftDataToken?: string | null;
   draftCustomer?: { email: string; name?: string | null } | null;
