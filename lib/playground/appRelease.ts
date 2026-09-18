@@ -37,6 +37,84 @@ export async function listVersions(appId: string): Promise<AppVersion[]> {
   })
 }
 
+/**
+ * What the app is, from a customer's point of view.
+ *
+ * Derived rather than stored, because the two columns it reads already decide it
+ * and a third one could disagree with them. There is no state a column could hold
+ * that these cannot express, and no way for them to drift apart.
+ *
+ * 'draft'       — nothing has ever been published. The link goes nowhere.
+ * 'published'   — a release is live and the link is open.
+ * 'unpublished' — a release is still chosen, but the link is closed. Taken down,
+ *                 not undone: reopening it serves the same version again.
+ */
+export type AppStatus = 'draft' | 'published' | 'unpublished'
+
+export function appStatus(app: Pick<AppRow, 'publishedVersionId' | 'isPublic'>): AppStatus {
+  if (!app.publishedVersionId) return 'draft'
+  return app.isPublic ? 'published' : 'unpublished'
+}
+
+/**
+ * The release state the drawer renders, assembled in one place.
+ *
+ * It used to be assembled at each endpoint that returned an app, and two of them —
+ * the build-completion poll and undo — returned the bare row instead. Absent keys
+ * are deliberately kept from the previously held app by mergeAppUpdate, so those
+ * two answered a finished build with a stale `hasUnpublishedChanges`: you published
+ * version 1, asked for a change, the build landed, and the panel still said the
+ * draft and the release were the same with Publish greyed out. Reopening the drawer
+ * fixed it, which is exactly why it read as intermittent.
+ *
+ * Every route that hands an app back now calls this. A new one that forgets returns
+ * no release keys at all rather than wrong ones, which shows up immediately.
+ */
+export interface AppReleaseView {
+  status: AppStatus
+  publishedVersion: {
+    id: string
+    version: number
+    publishedAt: Date | null
+    notes: string | null
+  } | null
+  hasUnpublishedChanges: boolean
+  versions: {
+    id: string
+    version: number
+    title: string | null
+    notes: string | null
+    publishedAt: Date | null
+    isLive: boolean
+  }[]
+}
+
+export async function releaseView(app: AppRow): Promise<AppReleaseView> {
+  const published = await getPublishedVersion(app)
+  const versions = await listVersions(app.id)
+
+  return {
+    status: appStatus(app),
+    publishedVersion: published
+      ? {
+          id: published.id,
+          version: published.version,
+          publishedAt: published.publishedAt,
+          notes: published.notes,
+        }
+      : null,
+    hasUnpublishedChanges: hasUnpublishedChanges(app, published),
+    versions: versions.map((v) => ({
+      id: v.id,
+      version: v.version,
+      title: v.title,
+      notes: v.notes,
+      publishedAt: v.publishedAt,
+      isLive: v.id === app.publishedVersionId,
+    })),
+  }
+}
+
 export type PublishResult =
   | { ok: true; version: AppVersion; reused: boolean }
   | { ok: false; error: string }

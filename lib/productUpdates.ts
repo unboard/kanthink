@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'app-status-and-versions',
+    date: '2026-09-18',
+    kind: 'workflow',
+    title: 'Take an app down, and choose which version is live',
+    body: 'An app is now Draft, Published or Unpublished, set from the release panel — unpublishing closes the link but keeps the release, so putting it back serves the same app on the same link. Every release has a Preview button, so you can open an old version before deciding to make it live. Publishing a change after a build also works now: the panel no longer claims your draft is up to date when it is not.',
+  },
+  {
     id: 'charge-for-an-action',
     date: '2026-09-18',
     kind: 'capability',

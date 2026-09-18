@@ -578,7 +578,6 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
               copied={copied}
               confirmDelete={confirmDelete}
               onCopyLink={copyShareLink}
-              onTogglePublic={() => void patch({ isPublic: !app.isPublic })}
               onEditThumbnail={() => setIsThumbnailOpen(true)}
               onSetTagline={(value) => void patch({ tagline: value })}
               onToggleListed={() => void patch({ listedInDirectory: app.listedInDirectory === false })}
@@ -763,7 +762,6 @@ function SettingsPane({
   copied,
   confirmDelete,
   onCopyLink,
-  onTogglePublic,
   onEditThumbnail,
   onSetTagline,
   onToggleListed,
@@ -778,7 +776,6 @@ function SettingsPane({
   copied: boolean;
   confirmDelete: boolean;
   onCopyLink: () => void;
-  onTogglePublic: () => void;
   onEditThumbnail: () => void;
   onSetTagline: (value: string) => void;
   onToggleListed: () => void;
@@ -859,7 +856,6 @@ function SettingsPane({
         copied={copied}
         onCopyLink={onCopyLink}
         onUpdated={onApplyApp}
-        onTogglePublic={onTogglePublic}
       />
 
       <AppSpendSection appId={app.id} />

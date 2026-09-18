@@ -10,7 +10,9 @@
  * never app.code — so what is worth testing is the state machine around it.
  */
 import { describe, it, expect } from 'vitest'
-import { hasUnpublishedChanges } from '../lib/playground/appRelease'
+import fs from 'fs'
+import path from 'path'
+import { appStatus, hasUnpublishedChanges } from '../lib/playground/appRelease'
 import { signAppToken, signDraftAppToken, verifyAppToken } from '../lib/playground/appToken'
 
 type App = Parameters<typeof hasUnpublishedChanges>[0]
@@ -75,4 +77,66 @@ describe('a draft preview cannot be mistaken for the live app', () => {
     expect(verifyAppToken('a.b.c.d')).toBeNull()
     expect(verifyAppToken(`${APP}.notdraft.abc`)).toBeNull()
   })
+})
+
+describe('where an app stands, as a customer would see it', () => {
+  const status = (publishedVersionId: string | null, isPublic: boolean) =>
+    appStatus({ publishedVersionId, isPublic } as Parameters<typeof appStatus>[0])
+
+  it('is a draft until something is published', () => {
+    expect(status(null, false)).toBe('draft')
+    // Even with the link flag on: there is no release for it to point at, so
+    // "published" would name a page that 404s.
+    expect(status(null, true)).toBe('draft')
+  })
+
+  it('is published when a release is chosen and the link is open', () => {
+    expect(status('v1', true)).toBe('published')
+  })
+
+  it('is unpublished — not draft — when the link is closed on a live release', () => {
+    // The distinction the old single control could not make. Taking an app down
+    // used to be the same act as forgetting which version it had been serving.
+    expect(status('v1', false)).toBe('unpublished')
+  })
+
+  it('remembers the release through a trip to unpublished and back', () => {
+    const down = { publishedVersionId: 'v3', isPublic: false }
+    expect(appStatus(down as Parameters<typeof appStatus>[0])).toBe('unpublished')
+    expect(appStatus({ ...down, isPublic: true } as Parameters<typeof appStatus>[0])).toBe('published')
+    // The pointer never moved, so republishing serves the same code.
+    expect(down.publishedVersionId).toBe('v3')
+  })
+})
+
+/**
+ * The guard for the bug that actually got reported.
+ *
+ * mergeAppUpdate keeps any key a response omits, which is deliberate — most
+ * endpoints return the bare row and must not wipe the view's computed fields. The
+ * cost is that a route which CHANGES the draft and returns a bare row leaves the
+ * drawer holding a stale answer to "does this differ from what customers have".
+ *
+ * That is what happened: the build-completion poll returned the row, so publishing
+ * version 1 and then building a change left the panel saying the draft and the
+ * release matched, with Publish greyed out. Reopening the drawer fixed it, which is
+ * why it read as flaky rather than broken.
+ *
+ * Scanning the source rather than calling the routes because the thing worth
+ * pinning is that a future route cannot forget.
+ */
+describe('every route that moves the draft re-sends the release state', () => {
+  const ROUTES = [
+    'app/api/playground/apps/[appId]/route.ts',        // load and patch
+    'app/api/playground/apps/[appId]/release/route.ts', // publish, roll back, take down
+    'app/api/playground/apps/[appId]/undo/route.ts',    // one step back
+    'app/api/playground/status/[appId]/route.ts',       // a finished build
+  ]
+
+  for (const route of ROUTES) {
+    it(`${route} calls releaseView`, () => {
+      const src = fs.readFileSync(path.join(process.cwd(), route), 'utf8')
+      expect(src).toContain('releaseView')
+    })
+  }
 })

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
+import { releaseView } from '@/lib/playground/appRelease'
 
 export const runtime = 'nodejs'
 
@@ -65,7 +66,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ appId:
     }).where(eq(playgroundApps.id, appId))
 
     const restored = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) })
-    return NextResponse.json({ app: restored })
+    if (!restored) return NextResponse.json({ error: 'App not found' }, { status: 404 })
+
+    // Undo moves the draft, so it moves the answer to "does this differ from what
+    // customers have" — including back to no, when the step undone was the only
+    // change since the release.
+    return NextResponse.json({ app: { ...restored, ...(await releaseView(restored)) } })
   } catch (error) {
     if (error instanceof PermissionError) {
       return NextResponse.json({ error: error.message }, { status: 403 })

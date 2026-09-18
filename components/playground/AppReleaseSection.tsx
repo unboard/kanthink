@@ -4,14 +4,17 @@ import { useState } from 'react';
 import { Undo2,
   Check,
   Copy,
+  Eye,
   ExternalLink,
+  FileEdit,
   Globe,
   History,
   Loader2,
+  Lock,
   RotateCcw,
   Upload,
 } from 'lucide-react';
-import type { PlaygroundApp } from '@/lib/types';
+import type { AppStatus, PlaygroundApp } from '@/lib/types';
 
 interface Props {
   app: PlaygroundApp;
@@ -19,8 +22,6 @@ interface Props {
   copied: boolean;
   onCopyLink: () => void;
   onUpdated: (app: PlaygroundApp) => void;
-  /** Turning the link off entirely, which is separate from which release is on it. */
-  onTogglePublic: () => void;
 }
 
 /**
@@ -33,19 +34,37 @@ interface Props {
  * They are two acts now. The draft is yours to break. This panel is the only thing
  * that moves the public link, and it moves it to a release that already exists —
  * which is why rolling back is instant and cannot half-happen.
+ *
+ * ## Two questions, asked separately
+ *
+ * The panel used to ask one: "publish?" — with a checkbox for the link buried
+ * underneath, visible only once you were already public. That conflated whether the
+ * app is up with which version is on it, and there was no way to say "take it down
+ * but remember what I was serving".
+ *
+ * So: a status row at the top — Draft, Published, Unpublished — and a version list
+ * below it. The status says whether anyone can reach the app. The list says what
+ * they get when they do, with every release previewable before you point the link
+ * at it. Neither answer moves the other.
  */
 export function AppReleaseSection({
-  app, shareLink, copied, onCopyLink, onUpdated, onTogglePublic,
+  app, shareLink, copied, onCopyLink, onUpdated,
 }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+  // Open when there is actually a choice to make. One release is a fact; two or
+  // more is a decision, and hiding it behind a toggle is how you end up not knowing
+  // you could have gone back.
+  const [showHistory, setShowHistory] = useState((app.versions?.length ?? 0) > 1);
   const [undoing, setUndoing] = useState(false);
 
   const hasCode = Boolean(app.code);
   const live = app.publishedVersion ?? null;
   const versions = app.versions ?? [];
   const changed = !!app.hasUnpublishedChanges;
+  // Fall back to deriving it, so an older response that predates the field still
+  // renders the right state rather than claiming everything is a draft.
+  const status: AppStatus = app.status ?? (live ? (app.isPublic ? 'published' : 'unpublished') : 'draft');
 
   const act = async (label: string, body: Record<string, unknown>) => {
     setBusy(label);
@@ -73,42 +92,64 @@ export function AppReleaseSection({
       </h3>
 
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
-        {/* The live state, stated plainly. */}
-        <div className="px-3 py-3 flex items-start gap-3">
-          <span className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
-            live ? 'bg-emerald-500' : 'bg-neutral-300 dark:bg-neutral-700'
-          }`} />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-neutral-900 dark:text-white">
-              {live ? `Version ${live.version} is live` : 'Nothing published yet'}
-            </p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              {live
-                ? changed
-                  ? 'Your draft has changes nobody can see yet.'
-                  : 'The draft and the live version are the same.'
-                : hasCode
-                  ? 'Your draft is ready. Publishing it gives it a link.'
-                  : 'Build it first — there is nothing to publish.'}
-            </p>
+        {/* Whether anyone can reach it. Three states, exactly one lit, each naming
+            what it IS rather than what pressing it would do. */}
+        <div className="px-3 pt-3 pb-2">
+          <div className="flex items-center gap-1 p-1 rounded-lg bg-neutral-100 dark:bg-neutral-800/60">
+            <StatusPill
+              active={status === 'draft'}
+              // Draft is not a thing you choose; it is where you are until you
+              // publish, and there is no way back to it without losing history.
+              disabled
+              icon={<FileEdit className="w-3 h-3" />}
+              label="Draft"
+            />
+            <StatusPill
+              active={status === 'published'}
+              disabled={!hasCode || !!busy}
+              busy={busy === 'status'}
+              onClick={() => act('status', live ? { action: 'republish' } : { action: 'publish' })}
+              icon={<Globe className="w-3 h-3" />}
+              label="Published"
+            />
+            <StatusPill
+              active={status === 'unpublished'}
+              disabled={!live || !!busy}
+              busy={busy === 'status'}
+              onClick={() => act('status', { action: 'unpublish' })}
+              icon={<Lock className="w-3 h-3" />}
+              label="Unpublished"
+            />
           </div>
+          <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+            {status === 'draft'
+              ? hasCode
+                ? 'Nobody can open this yet. Publishing gives it a link.'
+                : 'Build it first — there is nothing to publish.'
+              : status === 'unpublished'
+                ? `The link is closed. Version ${live!.version} is still the chosen release, so republishing puts it straight back.`
+                : `Version ${live!.version} is live on the link.`}
+          </p>
         </div>
 
-        {/* Publish. */}
+        {/* What they get. Separate from whether they can get it — an app can be
+            unpublished and still have a version waiting, which is the state the old
+            single control could not express. */}
         <button
           onClick={() => act('publish', { action: 'publish' })}
-          disabled={!hasCode || !!busy || (!!live && !changed)}
+          disabled={!hasCode || !!busy || !changed}
           className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border-t border-neutral-200 dark:border-neutral-800 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 disabled:bg-neutral-100 dark:disabled:bg-neutral-800 disabled:text-neutral-400 transition-colors"
         >
           {busy === 'publish'
             ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Publishing…</>
-            : live && !changed
-              ? <><Check className="w-3.5 h-3.5" /> Up to date</>
+            : !changed
+              ? <><Check className="w-3.5 h-3.5" /> Draft matches version {live?.version ?? 1}</>
               : <><Upload className="w-3.5 h-3.5" /> {live ? `Publish version ${live.version + 1}` : 'Publish'}</>}
         </button>
 
-        {/* The link, and the draft that is not on it. */}
-        {shareLink && (
+        {/* The link, while it is open. An unpublished app still has a share token,
+            but offering it to copy would be offering a link that 404s. */}
+        {shareLink && status === 'published' && (
           <button
             onClick={onCopyLink}
             className="w-full flex items-center gap-2 px-3 py-2.5 border-t border-neutral-200 dark:border-neutral-800 text-xs text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/5"
@@ -206,18 +247,32 @@ export function AppReleaseSection({
                         </p>
                       )}
                     </div>
-                    {!v.isLive && (
-                      <button
-                        onClick={() => act(v.id, { action: 'rollback', versionId: v.id })}
-                        disabled={!!busy}
-                        className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 text-[10px] text-neutral-600 dark:text-neutral-300 hover:border-violet-400 disabled:opacity-40 transition-colors"
+                    <div className="flex-shrink-0 flex items-center gap-1">
+                      {/* Look before you point the link at it. Runs this release's
+                          own code, not the draft. */}
+                      <a
+                        href={`/play/preview/${app.id}?v=${v.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`Preview version ${v.version}`}
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 text-[10px] text-neutral-600 dark:text-neutral-300 hover:border-violet-400 transition-colors"
                       >
-                        {busy === v.id
-                          ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                          : <RotateCcw className="w-2.5 h-2.5" />}
-                        Serve this
-                      </button>
-                    )}
+                        <Eye className="w-2.5 h-2.5" />
+                        Preview
+                      </a>
+                      {!v.isLive && (
+                        <button
+                          onClick={() => act(v.id, { action: 'rollback', versionId: v.id })}
+                          disabled={!!busy}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 text-[10px] text-neutral-600 dark:text-neutral-300 hover:border-violet-400 disabled:opacity-40 transition-colors"
+                        >
+                          {busy === v.id
+                            ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                            : <RotateCcw className="w-2.5 h-2.5" />}
+                          Make live
+                        </button>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -225,26 +280,6 @@ export function AppReleaseSection({
           </>
         )}
 
-        {/* Taking the link down is a different decision from which release is on it. */}
-        {app.isPublic && (
-          <label className="flex items-center gap-3 px-3 py-2.5 border-t border-neutral-200 dark:border-neutral-800 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!app.isPublic}
-              onChange={onTogglePublic}
-              className="w-4 h-4 rounded accent-violet-600"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-neutral-900 dark:text-white flex items-center gap-1.5">
-                <Globe className="w-3 h-3 text-emerald-500" />
-                Link is open
-              </p>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Turning this off closes the link without changing which release is on it.
-              </p>
-            </div>
-          </label>
-        )}
       </div>
 
       {error && (
@@ -253,5 +288,38 @@ export function AppReleaseSection({
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * One state in the status row.
+ *
+ * Reads as a segmented control rather than three buttons because the states are
+ * exclusive, and the lit one is where you are — not a thing you are about to do.
+ */
+function StatusPill({
+  active, disabled, busy, onClick, icon, label,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  busy?: boolean;
+  onClick?: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || active}
+      aria-pressed={active}
+      className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+        active
+          ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-sm ring-1 ring-black/5'
+          : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 disabled:opacity-40 disabled:hover:text-neutral-500'
+      }`}
+    >
+      {busy && !active ? <Loader2 className="w-3 h-3 animate-spin" /> : icon}
+      {label}
+    </button>
   );
 }

@@ -10,6 +10,10 @@ interface Props {
   appId?: string;
   title: string;
   isPublished: boolean;
+  /** Set when this is one release rather than the draft. */
+  versionLabel?: string | null;
+  /** Whether that release is the one customers are currently served. */
+  versionIsLive?: boolean;
 }
 
 /**
@@ -19,7 +23,9 @@ interface Props {
  * footer (you know), just a title, a reload, and a note when the playground isn't
  * published yet. The iframe gets everything else.
  */
-export function PreviewPlaygroundFrame({ srcDoc, title, isPublished, appId }: Props) {
+export function PreviewPlaygroundFrame({
+  srcDoc, title, isPublished, appId, versionLabel, versionIsLive,
+}: Props) {
   // A draft's own bucket, separate from the published app's, so trying a save in
   // preview cannot overwrite what customers have stored.
   const { withSeed } = useAppStorage(appId ? 'draft_' + appId : 'draft');
@@ -35,9 +41,24 @@ export function PreviewPlaygroundFrame({ srcDoc, title, isPublished, appId }: Pr
           <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200 truncate">
             {title}
           </span>
-          {!isPublished && (
+          {/* Which copy this is. An old release running under the app's own title
+              is indistinguishable from the draft otherwise, and the whole reason to
+              open one is to compare it against what you have now. */}
+          {versionLabel ? (
+            <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+              versionIsLive
+                ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+            }`}>
+              {versionLabel}{versionIsLive ? ' — live' : ''}
+            </span>
+          ) : !isPublished ? (
             <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
               Preview — not published
+            </span>
+          ) : (
+            <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/15 text-violet-600 dark:text-violet-400">
+              Draft
             </span>
           )}
         </div>

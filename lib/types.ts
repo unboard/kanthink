@@ -558,6 +558,9 @@ export type ThumbnailStatus = 'none' | 'pending' | 'ready' | 'failed';
 /** What a published app charges, if anything. */
 export type AppPriceInterval = 'one_time' | 'month' | 'year';
 
+/** Where a published app stands. See lib/playground/appRelease for how it is derived. */
+export type AppStatus = 'draft' | 'published' | 'unpublished';
+
 /**
  * Where a paid app's gate sits: at the door, or on something inside it.
  * See lib/playground/appAccess for what each one actually enforces.
@@ -698,6 +701,14 @@ export interface PlaygroundApp {
   draftCustomerData?: Record<string, unknown> | null;
 
   // --- Releases ---
+  /**
+   * Where the app stands, from a customer's point of view.
+   *
+   * Derived on the server from publishedVersionId and isPublic rather than stored,
+   * so it cannot disagree with them. 'unpublished' is a live release with the link
+   * closed — taken down, not undone.
+   */
+  status?: AppStatus;
   /** The release customers are being served, or null if nothing is published. */
   publishedVersion?: {
     id: ID;

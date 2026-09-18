@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
-import { publishDraft, rollbackTo, listVersions, getPublishedVersion, hasUnpublishedChanges } from '@/lib/playground/appRelease'
+import { publishDraft, rollbackTo, releaseView } from '@/lib/playground/appRelease'
 import { signDraftAppToken } from '@/lib/playground/appToken'
 
 export const runtime = 'nodejs'
@@ -20,6 +20,14 @@ interface RouteParams {
  *
  * POST { action: 'publish' }              — cut the draft as a release and serve it
  * POST { action: 'rollback', versionId }  — serve an earlier release again
+ * POST { action: 'unpublish' }            — close the link, keep the release chosen
+ * POST { action: 'republish' }            — open it again on the same release
+ *
+ * The last two are a pair on purpose. Taking an app down and changing which version
+ * it serves were the same control once, so the only way to stop serving something
+ * was to lose the record of what you had been serving. They are separate decisions
+ * and now separate actions: unpublishing keeps the pointer and the share token, so
+ * republishing puts the identical app back on the identical link.
  *
  * Neither touches the draft, and neither touches purchases, feedback or saved
  * records: a release carries only what is needed to run the app, so everything a
@@ -32,7 +40,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   const { appId } = await params
-  let body: { action?: 'publish' | 'rollback'; versionId?: string }
+  let body: {
+    action?: 'publish' | 'rollback' | 'unpublish' | 'republish'
+    versionId?: string
+  }
   try {
     body = await req.json()
   } catch {
@@ -51,6 +62,26 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       }
       const result = await rollbackTo(app, body.versionId)
       if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
+      return respond(appId)
+    }
+
+    if (body.action === 'unpublish' || body.action === 'republish') {
+      const open = body.action === 'republish'
+      if (open && !app.publishedVersionId) {
+        return NextResponse.json(
+          { error: 'There is no release to put back. Publish the draft instead.' },
+          { status: 400 },
+        )
+      }
+      await db.update(playgroundApps)
+        .set({
+          isPublic: open,
+          // Minted once and kept, so a link already shared survives a trip through
+          // unpublished and comes back working rather than moving.
+          ...(open && !app.shareToken ? { shareToken: nanoid(16) } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(playgroundApps.id, appId))
       return respond(appId)
     }
 
@@ -88,9 +119,6 @@ async function respond(appId: string, reused = false) {
   const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) })
   if (!app) return NextResponse.json({ error: 'App not found' }, { status: 404 })
 
-  const published = await getPublishedVersion(app)
-  const versions = await listVersions(app.id)
-
   return NextResponse.json({
     reused,
     app: {
@@ -98,18 +126,7 @@ async function respond(appId: string, reused = false) {
       // Carried through so the drawer's preview iframe keeps a working draft token
       // after a publish — without it the preview goes blank on the next render.
       draftToken: signDraftAppToken(app.id),
-      publishedVersion: published
-        ? { id: published.id, version: published.version, publishedAt: published.publishedAt, notes: published.notes }
-        : null,
-      hasUnpublishedChanges: hasUnpublishedChanges(app, published),
-      versions: versions.map((v) => ({
-        id: v.id,
-        version: v.version,
-        title: v.title,
-        notes: v.notes,
-        publishedAt: v.publishedAt,
-        isLive: v.id === app.publishedVersionId,
-      })),
+      ...(await releaseView(app)),
     },
   })
 }

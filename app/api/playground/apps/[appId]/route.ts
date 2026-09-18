@@ -9,7 +9,7 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 import { signDraftAppToken } from '@/lib/playground/appToken'
 import { ownerDraftDataToken } from '@/lib/playground/publicApp'
 import { readAll } from '@/lib/playground/customerData'
-import { getPublishedVersion, hasUnpublishedChanges, listVersions } from '@/lib/playground/appRelease'
+import { releaseView } from '@/lib/playground/appRelease'
 
 export const runtime = 'nodejs'
 
@@ -43,15 +43,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     }
     await requirePermission(app.channelId, session.user.id, 'view')
 
-    // What the drawer needs to show the difference between what it is editing and
-    // what customers currently have, plus a draft token so its own preview iframe
-    // writes to the draft bucket rather than over live records.
-    const published = await getPublishedVersion(app)
     // So the owner's own preview can save — against the draft namespace, where it
     // cannot touch what customers have stored.
     const draftData = await ownerDraftDataToken(app, session.user.id)
     const draftSaved = draftData ? await readAll(app.id, draftData.member.id, 'draft') : []
-    const versions = await listVersions(app.id)
 
     return NextResponse.json({
       app: {
@@ -60,18 +55,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
         draftDataToken: draftData?.token ?? null,
         draftCustomer: draftData ? { email: draftData.member.email, name: draftData.member.name } : null,
         draftCustomerData: Object.fromEntries(draftSaved.map((r) => [r.key, r.value])),
-        publishedVersion: published
-          ? { id: published.id, version: published.version, publishedAt: published.publishedAt, notes: published.notes }
-          : null,
-        hasUnpublishedChanges: hasUnpublishedChanges(app, published),
-        versions: versions.map((v) => ({
-          id: v.id,
-          version: v.version,
-          title: v.title,
-          notes: v.notes,
-          publishedAt: v.publishedAt,
-          isLive: v.id === app.publishedVersionId,
-        })),
+        ...(await releaseView(app)),
       },
     })
   } catch (error) {
@@ -143,7 +127,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
     await db.update(playgroundApps).set(updates).where(eq(playgroundApps.id, appId))
     const updated = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) })
-    return NextResponse.json({ app: updated })
+    if (!updated) return NextResponse.json({ error: 'App not found' }, { status: 404 })
+
+    // isPublic is half of what decides the status, so any patch that can touch it
+    // has to hand the recomputed state back with it.
+    return NextResponse.json({ app: { ...updated, ...(await releaseView(updated)) } })
   } catch (error) {
     if (error instanceof PermissionError) {
       return NextResponse.json({ error: error.message }, { status: 403 })

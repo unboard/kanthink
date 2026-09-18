@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { playgroundApps } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { requirePermission, PermissionError } from '@/lib/api/permissions';
+import { releaseView } from '@/lib/playground/appRelease';
 
 export const runtime = 'nodejs';
 
@@ -58,5 +59,17 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
-  return NextResponse.json({ app, generationCount: head.generationCount });
+  if (!app) return NextResponse.json({ error: 'App not found' }, { status: 404 });
+
+  // The release state, on the one tick that carries a payload.
+  //
+  // This used to return the bare row, and the drawer keeps keys a response omits —
+  // so a build finishing here left `hasUnpublishedChanges` at whatever it was
+  // before the build. Publish, ask for a change, watch it land, and the panel still
+  // said the draft matched the release with Publish greyed out. A finished build is
+  // precisely the moment that answer changes, so it has to be recomputed here.
+  return NextResponse.json({
+    app: { ...app, ...(await releaseView(app)) },
+    generationCount: head.generationCount,
+  });
 }

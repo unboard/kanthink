@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
-import { playgroundApps } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { playgroundAppVersions, playgroundApps } from '@/lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { auth } from '@/lib/auth';
@@ -24,10 +24,18 @@ import type { Metadata } from 'next';
  *
  * Unlike /play/{token} this does NOT require the app to be public — it's gated on
  * channel permission instead, so you can try an app before deciding to publish.
+ *
+ * With `?v=<versionId>` it runs one release rather than the draft. Choosing which
+ * version customers get is a real decision, and making it from a list of dates and
+ * build notes is guessing; this is how you look at one before you point the link at
+ * it. The release's own code and dependencies are used — the draft is not consulted
+ * at all — so what you see is exactly what that version serves.
  */
 
 interface PageProps {
   params: Promise<{ appId: string }>;
+  /** `?v=<versionId>` previews one release instead of the draft. */
+  searchParams: Promise<{ v?: string }>;
 }
 
 export const dynamic = 'force-dynamic';
@@ -38,8 +46,9 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function PlaygroundPreviewPage({ params }: PageProps) {
+export default async function PlaygroundPreviewPage({ params, searchParams }: PageProps) {
   const { appId } = await params;
+  const { v: versionId } = await searchParams;
 
   const session = await auth();
   if (!session?.user?.id) notFound();
@@ -55,10 +64,26 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
   );
   if (!permission) notFound();
 
+  // Which copy is being previewed. A named version is loaded from the versions
+  // table and must belong to this app, so a guessed id from another app resolves
+  // to nothing rather than rendering somebody else's code under this title.
+  const version = versionId
+    ? await db.query.playgroundAppVersions.findFirst({
+        where: and(
+          eq(playgroundAppVersions.id, versionId),
+          eq(playgroundAppVersions.appId, app.id),
+        ),
+      })
+    : null;
+  if (versionId && !version) notFound();
+
+  const code = version?.code ?? app.code;
+  const dependencies = version?.dependencies ?? app.dependencies;
+
   // An app with no code yet is a real app mid-build, not a missing one. A build
   // runs for minutes and this link is handed out the moment the app is created,
   // so 404ing here would report a working flow as broken.
-  if (!app.code) {
+  if (!code) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-950 px-6">
         <div className="text-center">
@@ -72,7 +97,7 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
     );
   }
 
-  const title = app.title || 'Kanthink Playground';
+  const title = version?.title || app.title || 'Kanthink Playground';
 
   const h = await headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
@@ -82,7 +107,7 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
   const draftData = session?.user?.id ? await ownerDraftDataToken(app, session.user.id) : null;
   const draftSaved = draftData ? await readAll(app.id, draftData.member.id, 'draft') : [];
 
-  const srcDoc = buildPlaygroundDoc(app.code, {
+  const srcDoc = buildPlaygroundDoc(code, {
     title,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
@@ -105,8 +130,18 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
           preview: true,
         }
       : null,
-    deps: resolveDeps(app.dependencies || []).deps,
+    deps: resolveDeps(dependencies || []).deps,
   });
 
-  return <PreviewPlaygroundFrame srcDoc={srcDoc} title={title} isPublished={!!app.isPublic} appId={app.id} />;
+  return (
+    <PreviewPlaygroundFrame
+      srcDoc={srcDoc}
+      title={title}
+      isPublished={!!app.isPublic}
+      appId={app.id}
+      // Named so nobody mistakes an old release for the draft they were editing.
+      versionLabel={version ? `Version ${version.version}` : null}
+      versionIsLive={version ? version.id === app.publishedVersionId : false}
+    />
+  );
 }
