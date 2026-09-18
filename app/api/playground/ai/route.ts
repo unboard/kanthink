@@ -14,6 +14,7 @@ import {
   settle,
 } from '@/lib/playground/aiBudget';
 import { identifyVisitor } from '@/lib/playground/visitor';
+import { appAllowsPaidCapability } from '@/lib/playground/payToken';
 import { PLAYGROUND_MODELS, FALLBACK_GENERATION_MODEL_ID, getPlaygroundModel } from '@/lib/playground/models';
 import {
   DEFAULT_IMAGE_MODEL_ID,
@@ -57,6 +58,13 @@ const OPENAI_SIZE_MAP: Record<string, '1024x1024' | '1536x1024' | '1024x1536'> =
 
 interface AIRequest {
   appToken: string;
+  /**
+   * Entitlement, for an app that charges for something inside itself.
+   *
+   * Only such an app needs it. One gated at the door never reached an unpaid
+   * visitor in the first place, and a free app has nothing to prove.
+   */
+  payToken?: string;
   prompt: string;
   system?: string;
   model?: string;
@@ -85,10 +93,10 @@ export async function POST(request: Request) {
   }
 
   const claims = verifyAppToken(body.appToken);
-  const appId = claims?.appId ?? null;
-  if (!appId) {
+  if (!claims?.appId) {
     return cors(NextResponse.json({ error: 'Invalid or missing appToken' }, { status: 401 }));
   }
+  const appId = claims.appId;
   if (!body.prompt || typeof body.prompt !== 'string') {
     return cors(NextResponse.json({ error: 'prompt is required' }, { status: 400 }));
   }
@@ -109,6 +117,29 @@ export async function POST(request: Request) {
   const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });
   if (!app) {
     return cors(NextResponse.json({ error: 'App not found' }, { status: 404 }));
+  }
+
+  // Has this visitor paid for what they are asking for?
+  //
+  // Checked before anything else touches the owner's account, because this is the
+  // one capability an unpaid visitor could use to spend real money. An action-gated
+  // app hands its code to everybody, so `kanthinkPay.entitled` inside the iframe is
+  // a flag the visitor can flip; the token is what actually decides, and it is
+  // re-checked against live purchase rows rather than trusted on its face.
+  //
+  // 402 rather than 403: an app catches it as `payment_required` and opens its own
+  // purchase prompt, which turns a refusal into the thing it should have been.
+  // A draft token is the owner looking at their own work in progress. They are not
+  // a customer, and making them buy their own app to test the thing they are
+  // selling would be absurd — so entitlement is a question for released code only.
+  if (!claims.isDraft && !(await appAllowsPaidCapability(app, body.payToken))) {
+    return cors(NextResponse.json(
+      {
+        error: 'This needs to be unlocked before it can run.',
+        code: 'payment_required',
+      },
+      { status: 402 }
+    ));
   }
 
   // Calls arrive from a sandboxed iframe with no session, so the key is the app

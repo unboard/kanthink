@@ -5,12 +5,14 @@ import { cookies, headers } from 'next/headers';
 import {
   accessCookieName,
   formatAppPrice,
+  gatesAction,
   hasActiveAccess,
   isPaywalled,
 } from '@/lib/playground/appAccess';
 import { resolveAppSession } from '@/lib/playground/appSession';
 import { purchasesForMember, toRef } from '@/lib/playground/appPurchases';
 import { AppPaywall } from '../../AppPaywall';
+import { signPayToken } from '@/lib/playground/payToken';
 import { getPublishedVersion } from '@/lib/playground/appRelease';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
@@ -62,16 +64,22 @@ export default async function PlayRecordPage({ params }: PageProps) {
   const record = (app.savedRecords || []).find((r) => r.slug === slug);
   if (!record) notFound();
 
-  // A record link is a second door into the same app, so it needs the same lock.
+  // A record link is a second door into the same app, so it needs the same lock —
+  // and the same choice of where that lock sits. Gating this at the door while the
+  // app gates an action would make a shared record the way around the paywall.
+  let resolved = null as Awaited<ReturnType<typeof resolveAppSession>>;
+  let entitled = false;
   if (isPaywalled(app)) {
     const jar = await cookies();
-    const resolved = await resolveAppSession(jar.get(accessCookieName(app.id))?.value, app.id);
+    resolved = await resolveAppSession(jar.get(accessCookieName(app.id))?.value, app.id);
     const valid = resolved?.member ?? null;
     // Entitlement lives on purchases, not on the customer, so two purchases under
     // one address are two separate grants that end independently.
     const purchases = valid ? (await purchasesForMember(valid.id)).map(toRef) : [];
 
-    if (!hasActiveAccess(app, resolved?.session, purchases)) {
+    entitled = hasActiveAccess(app, resolved?.session, purchases);
+
+    if (!entitled && !gatesAction(app)) {
       return (
         <AppPaywall
           token={token}
@@ -99,6 +107,23 @@ export default async function PlayRecordPage({ params }: PageProps) {
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,
     appToken: app.appToken || signAppToken(app.id),
+    pay: gatesAction(app)
+      ? {
+          entitled,
+          price: formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval),
+          recurring: app.priceInterval === 'month' || app.priceInterval === 'year',
+          token:
+            entitled && resolved
+              ? signPayToken({
+                  appId: app.id,
+                  appUserId: resolved.member.id,
+                  epoch: resolved.member.sessionEpoch ?? 0,
+                  scope: resolved.session.scope,
+                  purchaseId: resolved.session.purchaseId,
+                })
+              : null,
+        }
+      : null,
     deps: resolveDeps(release.dependencies || []).deps,
     initialRecord: {
       slug: record.slug,
@@ -107,5 +132,17 @@ export default async function PlayRecordPage({ params }: PageProps) {
     },
   });
 
-  return <PublicPlaygroundFrame srcDoc={srcDoc} title={title} token={token} />;
+  return (
+    <PublicPlaygroundFrame
+      srcDoc={srcDoc}
+      title={title}
+      token={token}
+      unlockPrice={
+        gatesAction(app) && !entitled
+          ? formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval)
+          : null
+      }
+      unlockRecurring={app.priceInterval === 'month' || app.priceInterval === 'year'}
+    />
+  );
 }

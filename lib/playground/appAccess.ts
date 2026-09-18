@@ -163,10 +163,48 @@ export function isPurchaseActive(purchase: PurchaseRef, now: Date = new Date()):
   return true;
 }
 
+/**
+ * Where a paid app puts its gate.
+ *
+ * 'app' — at the door. The unpaid visitor is handed a paywall page and never
+ * receives the app's code at all. Strongest, and the right default.
+ *
+ * 'action' — inside the app. Everybody gets in; the app decides which of its own
+ * buttons cost money and calls window.kanthinkPay.unlock() at that point.
+ *
+ * The difference is not cosmetic. In 'action' mode the code is delivered to people
+ * who have not paid, so `kanthinkPay.entitled` is a flag in a browser they control.
+ * Anything that must actually hold — anything that spends the publisher's money —
+ * is re-checked on the server against a token this file mints. Gate the UI here;
+ * gate the capability there.
+ */
+export type PaywallMode = 'app' | 'action';
+
 export interface PaywallState {
   paywallEnabled?: boolean | null;
+  paywallMode?: PaywallMode | string | null;
   priceAmount?: number | null;
   stripePriceId?: string | null;
+}
+
+/** Null and anything unrecognised mean 'app' — the safer of the two. */
+export function paywallMode(app: PaywallState): PaywallMode {
+  return app.paywallMode === 'action' ? 'action' : 'app';
+}
+
+/**
+ * Should this app's page refuse to render for someone unpaid?
+ *
+ * Only in 'app' mode. An action-gated app renders for everybody by design, and
+ * asking `isPaywalled()` alone at a door is how it would accidentally not.
+ */
+export function gatesWholeApp(app: PaywallState): boolean {
+  return isPaywalled(app) && paywallMode(app) === 'app';
+}
+
+/** Is this app charging for something inside itself? */
+export function gatesAction(app: PaywallState): boolean {
+  return isPaywalled(app) && paywallMode(app) === 'action';
 }
 
 /**

@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'charge-for-an-action',
+    date: '2026-09-18',
+    kind: 'capability',
+    title: 'Charge for one action instead of the whole app',
+    body: "A paid app can now be free to open, with the price attached to whatever you decide is worth paying for — exporting, generating, a run of free tries before it asks. Pick \"An action inside\" when you set the price, then tell Kan which action costs money and it wires the button up.",
+  },
+  {
     id: 'pick-your-image-model',
     date: '2026-09-16',
     kind: 'capability',

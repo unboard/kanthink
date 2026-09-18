@@ -1,12 +1,31 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Loader2, Mail, ArrowLeft } from 'lucide-react';
+import { X, Loader2, Mail, ArrowLeft, Lock } from 'lucide-react';
+
+/**
+ * Why this sheet is open.
+ *
+ * 'signin' — they want their own saved work.
+ * 'unlock' — they pressed something inside the app that costs money.
+ *
+ * One component for both because the steps really are identical: an address goes
+ * to /access, which answers with a code to enter or a checkout to go to, and it
+ * decides which from what it knows about the app and the address. Only the framing
+ * differs, and a second copy of the flow would be a second place for the code path
+ * to drift.
+ */
+export type SignInPurpose = 'signin' | 'unlock';
 
 interface Props {
   token: string;
   appTitle: string;
   onClose: () => void;
+  purpose?: SignInPurpose;
+  /** Unlock only, already formatted: "$4.00", "$4.00/mo". */
+  price?: string;
+  /** Unlock only. True for a subscription. */
+  recurring?: boolean;
 }
 
 /**
@@ -28,7 +47,15 @@ interface Props {
  * field — the one control they actually needed. The address is now a line of text
  * with a way back, and the code box is the only thing competing for attention.
  */
-export function AppSignIn({ token, appTitle, onClose }: Props) {
+export function AppSignIn({
+  token,
+  appTitle,
+  onClose,
+  purpose = 'signin',
+  price = '',
+  recurring = false,
+}: Props) {
+  const unlocking = purpose === 'unlock';
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [stage, setStage] = useState<'email' | 'code'>('email');
@@ -106,7 +133,7 @@ export function AppSignIn({ token, appTitle, onClose }: Props) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Sign in to ${appTitle}`}
+        aria-label={unlocking ? `Unlock ${appTitle}` : `Sign in to ${appTitle}`}
         className="w-full sm:max-w-[22rem] bg-white rounded-t-2xl sm:rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.4)] ring-1 ring-black/5"
       >
         <div className="flex items-center justify-between px-5 pt-4 pb-1">
@@ -120,10 +147,16 @@ export function AppSignIn({ token, appTitle, onClose }: Props) {
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
+            ) : unlocking ? (
+              <Lock className="w-4 h-4 text-violet-500" />
             ) : (
               <Mail className="w-4 h-4 text-violet-500" />
             )}
-            {stage === 'email' ? `Sign in to ${appTitle}` : 'Check your email'}
+            {stage === 'code'
+              ? 'Check your email'
+              : unlocking
+                ? `Unlock ${appTitle}`
+                : `Sign in to ${appTitle}`}
           </div>
           <button
             onClick={onClose}
@@ -138,8 +171,19 @@ export function AppSignIn({ token, appTitle, onClose }: Props) {
           {stage === 'email' ? (
             <>
               <p className="text-[13px] text-neutral-500 leading-relaxed mb-3">
-                Your saved work is kept against your email address, so it follows you to any
-                device you sign in on.
+                {unlocking ? (
+                  <>
+                    {price ? <span className="text-neutral-900 font-medium">{price}</span> : null}
+                    {price ? (recurring ? ' — ' : ' once — ') : null}
+                    payment is handled by Stripe. Already bought it? Use the same address and
+                    we&apos;ll send a code instead of charging you again.
+                  </>
+                ) : (
+                  <>
+                    Your saved work is kept against your email address, so it follows you to any
+                    device you sign in on.
+                  </>
+                )}
               </p>
               <input
                 type="email"
@@ -184,7 +228,13 @@ export function AppSignIn({ token, appTitle, onClose }: Props) {
             className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-violet-600 text-white text-[15px] font-medium hover:bg-violet-700 active:bg-violet-800 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
           >
             {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-            {busy ? 'Just a moment…' : stage === 'email' ? 'Send me a code' : 'Sign in'}
+            {busy
+              ? 'Just a moment…'
+              : stage === 'code'
+                ? 'Sign in'
+                : unlocking
+                  ? price ? `Continue · ${price}` : 'Continue'
+                  : 'Send me a code'}
           </button>
 
           {stage === 'code' && (

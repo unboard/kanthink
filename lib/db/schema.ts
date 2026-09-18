@@ -437,6 +437,19 @@ export const playgroundApps = sqliteTable('playground_apps', {
   // A published app can charge. The price lives on Stripe; these columns are the
   // local handle on it, so flipping the paywall off never destroys the product.
   paywallEnabled: integer('paywall_enabled', { mode: 'boolean' }).default(false),
+  /**
+   * Where the gate sits.
+   *
+   * 'app' — the door. Nobody unpaid ever receives the code, which is the strongest
+   * thing this can be and the right default for something whose whole value is the
+   * thing itself.
+   *
+   * 'action' — inside. Everyone gets in and the app decides what costs money, via
+   * window.kanthinkPay. The code ships to everyone, so the gate is only as honest
+   * as the server behind it: entitlement is re-checked on /api/playground/ai, which
+   * is the one capability an unpaid visitor could otherwise spend real money on.
+   */
+  paywallMode: text('paywall_mode').$type<'app' | 'action'>().default('app'),
   /** Minor units (cents). Null until a price is set. */
   priceAmount: integer('price_amount'),
   priceCurrency: text('price_currency').default('usd'),

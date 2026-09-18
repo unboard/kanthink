@@ -6,7 +6,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { AppFeedbackPanel } from './AppFeedbackPanel';
 import { useAppStorage } from '@/lib/playground/useAppStorage';
 import { X, UserRound } from 'lucide-react';
-import { AppSignIn } from './AppSignIn';
+import { AppSignIn, type SignInPurpose } from './AppSignIn';
 
 interface Props {
   srcDoc: string;
@@ -19,6 +19,13 @@ interface Props {
   canManageBilling?: boolean;
   /** Who is signed in, if anyone. Their saved work is already inside srcDoc. */
   customerEmail?: string | null;
+  /**
+   * Set for an app that charges for something inside itself. The app raises
+   * `kpg_unlock` from whichever of its own buttons costs money, and this is what
+   * the sheet needs to name the price when it opens.
+   */
+  unlockPrice?: string | null;
+  unlockRecurring?: boolean;
 }
 
 /**
@@ -29,13 +36,25 @@ interface Props {
  * person who made it that something is wrong. The strip can be dismissed per visit,
  * which also hides the feedback button, so it is not dismissible by accident.
  */
-export function PublicPlaygroundFrame({ srcDoc, title, token, justPurchased, canManageBilling, customerEmail }: Props) {
+export function PublicPlaygroundFrame({
+  srcDoc,
+  title,
+  token,
+  justPurchased,
+  canManageBilling,
+  customerEmail,
+  unlockPrice,
+  unlockRecurring,
+}: Props) {
   // The app's own saved data, held by this page because the sandboxed iframe has
   // no storage of its own. Without it a saved score lasts until the next refresh.
   const { withSeed } = useAppStorage(token);
   const [hideFooter, setHideFooter] = useState(false);
   const [showPurchased, setShowPurchased] = useState(!!justPurchased);
   const [showSignIn, setShowSignIn] = useState(false);
+  // Which sheet the last request asked for. Same component, same steps — an
+  // unlock is a sign-in that ends at checkout instead of at somebody's saved work.
+  const [purpose, setPurpose] = useState<SignInPurpose>('signin');
 
   // Count the visit for whoever holds the access cookie. Best-effort and silent:
   // the app is already on screen, and a failed counter is not worth an error.
@@ -44,10 +63,13 @@ export function PublicPlaygroundFrame({ srcDoc, title, token, justPurchased, can
   }, [token]);
 
   // Apps call kanthinkData.signIn() when someone tries to save and nobody is
-  // signed in. The iframe cannot open a dialog on this page, so it asks.
+  // signed in, and kanthinkPay.unlock() when someone presses something that costs
+  // money. The iframe cannot open a dialog on this page, so it asks.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if ((event.data as { type?: string })?.type === 'kpg_signin') setShowSignIn(true);
+      const type = (event.data as { type?: string })?.type;
+      if (type === 'kpg_signin') { setPurpose('signin'); setShowSignIn(true); }
+      if (type === 'kpg_unlock') { setPurpose('unlock'); setShowSignIn(true); }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -84,7 +106,7 @@ export function PublicPlaygroundFrame({ srcDoc, title, token, justPurchased, can
 
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setShowSignIn(true)}
+              onClick={() => { setPurpose('signin'); setShowSignIn(true); }}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-neutral-500 hover:text-violet-600 hover:bg-violet-50 font-medium transition-colors"
               title={customerEmail ? `Signed in as ${customerEmail}` : 'Sign in to save your work'}
             >
@@ -114,7 +136,14 @@ export function PublicPlaygroundFrame({ srcDoc, title, token, justPurchased, can
       )}
 
       {showSignIn && (
-        <AppSignIn token={token} appTitle={title} onClose={() => setShowSignIn(false)} />
+        <AppSignIn
+          token={token}
+          appTitle={title}
+          purpose={purpose}
+          price={unlockPrice ?? ''}
+          recurring={!!unlockRecurring}
+          onClose={() => setShowSignIn(false)}
+        />
       )}
     </div>
   );

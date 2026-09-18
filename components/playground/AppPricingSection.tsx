@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, CreditCard, Globe, Loader2, Lock } from 'lucide-react';
-import { formatAppPrice } from '@/lib/playground/appAccess';
-import type { AppPriceInterval, PlaygroundApp } from '@/lib/types';
+import { Check, CreditCard, DoorClosed, Globe, Loader2, Lock, MousePointerClick } from 'lucide-react';
+import { formatAppPrice, paywallMode } from '@/lib/playground/appAccess';
+import type { AppPaywallMode, AppPriceInterval, PlaygroundApp } from '@/lib/types';
 
 interface Props {
   app: PlaygroundApp;
@@ -16,6 +16,30 @@ const INTERVALS: { key: AppPriceInterval; label: string }[] = [
   { key: 'one_time', label: 'One-time' },
   { key: 'month', label: 'Monthly' },
   { key: 'year', label: 'Yearly' },
+];
+
+/**
+ * Where the gate sits — the whole admin surface for action paywalls.
+ *
+ * It is one control on purpose. There is nothing here that names a button or a
+ * feature, because the app's own code already knows which of its actions costs
+ * money; it calls kanthinkPay.unlock() at that point. Configuring that from
+ * outside would mean describing the app's interior in a settings panel, which is
+ * both more work to fill in and immediately wrong after the next build.
+ */
+const MODES: { key: AppPaywallMode; label: string; blurb: string; icon: React.ReactNode }[] = [
+  {
+    key: 'app',
+    label: 'The whole app',
+    blurb: 'Pay at the door',
+    icon: <DoorClosed className="w-3.5 h-3.5" />,
+  },
+  {
+    key: 'action',
+    label: 'An action inside',
+    blurb: 'Free to open',
+    icon: <MousePointerClick className="w-3.5 h-3.5" />,
+  },
 ];
 
 /**
@@ -39,6 +63,7 @@ export function AppPricingSection({ app, onUpdated }: Props) {
   );
   const [currency, setCurrency] = useState(app.priceCurrency || 'usd');
   const [interval, setInterval] = useState<AppPriceInterval>(app.priceInterval || 'one_time');
+  const [mode, setMode] = useState<AppPaywallMode>(paywallMode(app));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +108,7 @@ export function AppPricingSection({ app, onUpdated }: Props) {
       amount: Math.round(major * 100),
       currency,
       interval,
+      mode,
     });
     if (ok) setChoosingPrice(false);
   };
@@ -126,12 +152,40 @@ export function AppPricingSection({ app, onUpdated }: Props) {
           {!hasCode
             ? 'Build it first — there is nothing to charge for yet.'
             : charging
-              ? 'Visitors give an email, pay, and the link opens for them from then on.'
+              ? mode === 'action'
+                ? 'Anyone can open it. The app asks for payment at whatever it decides costs money.'
+                : 'Visitors give an email, pay, and the link opens for them from then on.'
               : 'This app opens straight through. Nobody is asked for anything.'}
         </p>
 
         {showPriceFields && hasCode && (
           <div className="border-t border-neutral-200 dark:border-neutral-800 px-3 py-3 space-y-2.5">
+            <div>
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                What they&apos;re paying for
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {MODES.map((m) => (
+                  <StateButton
+                    key={m.key}
+                    active={mode === m.key}
+                    disabled={saving}
+                    onClick={() => { setMode(m.key); setError(null); }}
+                    icon={m.icon}
+                    label={m.label}
+                    blurb={m.blurb}
+                  />
+                ))}
+              </div>
+              {mode === 'action' && (
+                <p className="mt-1.5 text-[10.5px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                  Ask Kan for the paid action — &ldquo;charge for exporting&rdquo;, &ldquo;first three
+                  free, then pay&rdquo; — and it wires the button up. AI calls stay locked until
+                  someone pays, so an unpaid visitor can never spend your AI credit.
+                </p>
+              )}
+            </div>
+
             <div className="flex items-center gap-2">
               <div className="flex items-stretch flex-1 min-w-0 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden focus-within:border-violet-400">
                 <span className="flex items-center px-2.5 text-xs text-neutral-400 bg-neutral-50 dark:bg-neutral-800/60">

@@ -558,8 +558,15 @@ export type ThumbnailStatus = 'none' | 'pending' | 'ready' | 'failed';
 /** What a published app charges, if anything. */
 export type AppPriceInterval = 'one_time' | 'month' | 'year';
 
+/**
+ * Where a paid app's gate sits: at the door, or on something inside it.
+ * See lib/playground/appAccess for what each one actually enforces.
+ */
+export type AppPaywallMode = 'app' | 'action';
+
 export interface AppPricing {
   paywallEnabled?: boolean;
+  paywallMode?: AppPaywallMode | null;
   /** Minor units — 400 is $4.00. */
   priceAmount?: number | null;
   priceCurrency?: string | null;
@@ -724,6 +731,7 @@ export interface PlaygroundApp {
 
   // --- Paywall ---
   paywallEnabled?: boolean;
+  paywallMode?: AppPaywallMode | null;
   priceAmount?: number | null;
   priceCurrency?: string | null;
   priceInterval?: AppPriceInterval | null;

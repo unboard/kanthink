@@ -7,7 +7,8 @@
  * and then write the purchase row that the Stripe webhook writes — which is the only
  * thing downstream of the card form that anything in Kanthink actually reads.
  *
- *   node .verify/paywall.mjs on      — gate the app
+ *   node .verify/paywall.mjs on      — gate the app at the door
+ *   node .verify/paywall.mjs action  — gate an action inside it instead
  *   node .verify/paywall.mjs buy     — record Alice's purchase, as the webhook would
  *   node .verify/paywall.mjs refund  — end it
  *   node .verify/paywall.mjs off     — back to free, and tidy up
@@ -26,14 +27,18 @@ const run = (sql, args = []) => client.execute({ sql, args })
 
 const mode = process.argv[2]
 
-if (mode === 'on') {
+if (mode === 'on' || mode === 'action') {
+  // 'on' locks the door — an unpaid visitor never receives the code. 'action' lets
+  // everybody in and leaves the app to ask, which is the mode worth checking twice:
+  // the page renders for someone unpaid, and /api/playground/ai must still say no.
+  const gate = mode === 'action' ? 'action' : 'app'
   await run(
-    `UPDATE playground_apps SET paywall_enabled = 1, price_amount = 300, price_currency = 'usd',
-     price_interval = 'one_time', stripe_price_id = 'price_demo_not_a_real_stripe_price',
-     updated_at = ? WHERE id = ?`,
-    [now(), APP],
+    `UPDATE playground_apps SET paywall_enabled = 1, paywall_mode = ?, price_amount = 300,
+     price_currency = 'usd', price_interval = 'one_time',
+     stripe_price_id = 'price_demo_not_a_real_stripe_price', updated_at = ? WHERE id = ?`,
+    [gate, now(), APP],
   )
-  console.log('Paywall on: $3.00 one-time. stripe_price_id is a placeholder, so checkout would fail — deliberately.')
+  console.log(`Paywall on (${gate}): $3.00 one-time. stripe_price_id is a placeholder, so checkout would fail — deliberately.`)
 }
 
 if (mode === 'buy') {
@@ -58,8 +63,8 @@ if (mode === 'refund') {
 
 if (mode === 'off') {
   await run(
-    `UPDATE playground_apps SET paywall_enabled = 0, price_amount = NULL, price_interval = NULL,
-     stripe_price_id = NULL, updated_at = ? WHERE id = ?`,
+    `UPDATE playground_apps SET paywall_enabled = 0, paywall_mode = 'app', price_amount = NULL,
+     price_interval = NULL, stripe_price_id = NULL, updated_at = ? WHERE id = ?`,
     [now(), APP],
   )
   await run(`DELETE FROM app_purchases WHERE app_id = ? AND stripe_checkout_session_id LIKE 'cs_demo_%'`, [APP])
@@ -69,7 +74,7 @@ if (mode === 'off') {
 }
 
 const { rows: app } = await run(
-  `SELECT paywall_enabled, price_amount, price_currency FROM playground_apps WHERE id = ?`, [APP])
+  `SELECT paywall_enabled, paywall_mode, price_amount, price_currency FROM playground_apps WHERE id = ?`, [APP])
 const { rows: buys } = await run(
   `SELECT status, amount, paid_at FROM app_purchases WHERE app_id = ?`, [APP])
 const { rows: data } = await run(

@@ -38,6 +38,7 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
   { id: 'ai.generateImage', pattern: /kanthinkAI\s*\.\s*generateImage\s*\(/, label: 'AI image generation' },
   { id: 'data.set', pattern: /kanthinkData\s*\.\s*set\s*\(/, label: 'saving customer work' },
   { id: 'data.initial', pattern: /kanthinkData\s*(\?\.)?\s*\.?\s*initial/, label: 'loading saved customer work' },
+  { id: 'pay.unlock', pattern: /kanthinkPay\s*(\?\.)?\s*\.?\s*unlock\s*\(/, label: 'charging for an action' },
   { id: 'upload', pattern: /kanthinkUpload\s*\(/, label: 'image upload' },
   { id: 'save', pattern: /kanthinkSave\s*\(/, label: 'shareable save links' },
   { id: 'record', pattern: /kanthinkInitial\s*(\?\.)?\s*\.?\s*record/, label: 'opening a shared link' },

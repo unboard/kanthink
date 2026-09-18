@@ -8,6 +8,7 @@ import { getChannelPermission } from '@/lib/api/permissions';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
 import { signDraftAppToken } from '@/lib/playground/appToken';
 import { resolveDeps } from '@/lib/playground/runtime';
+import { formatAppPrice, gatesAction } from '@/lib/playground/appAccess';
 import { ownerDraftDataToken } from '@/lib/playground/publicApp';
 import { readAll } from '@/lib/playground/customerData';
 import { PreviewPlaygroundFrame } from './PreviewPlaygroundFrame';
@@ -93,6 +94,17 @@ export default async function PlaygroundPreviewPage({ params }: PageProps) {
     dataToken: draftData?.token,
     customer: draftData ? { email: draftData.member.email, name: draftData.member.name } : null,
     customerData: Object.fromEntries(draftSaved.map((r) => [r.key, r.value])),
+    // The author's own preview of an action-gated app. It starts locked so they
+    // can see what a visitor sees, and unlock() flips it in place — there is
+    // nobody to sell to here, and buying your own app to test it is not a flow.
+    pay: gatesAction(app)
+      ? {
+          entitled: false,
+          price: formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval),
+          recurring: app.priceInterval === 'month' || app.priceInterval === 'year',
+          preview: true,
+        }
+      : null,
     deps: resolveDeps(app.dependencies || []).deps,
   });
 

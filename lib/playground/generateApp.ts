@@ -77,6 +77,7 @@ const SYSTEM_PROMPT = `You generate complete single-file React applications that
 - NO process.env. NO Node APIs. Additional libraries ONLY as listed under "AVAILABLE LIBRARIES" at the end of this prompt — if that section says none are loaded, use no third-party libraries beyond the ones above.
 - localStorage and sessionStorage ARE available (host installs a same-shape shim because the iframe runs in an opaque-origin sandbox). They are per-device and per-browser. Use them freely; access never throws. Do NOT add try/catch around .getItem/.setItem to "guard" against the sandbox — that crash is already prevented by the host.
 - window.kanthinkData IS available: real per-customer storage on the server, which follows a person to any device they sign in on. See CUSTOMER STORAGE below. This is the one that lets you honestly say "your progress is saved".
+- window.kanthinkPay MAY be available: when the publisher charges for something inside the app rather than for opening it. See CHARGING FOR AN ACTION below. Taking payments is NOT something this runtime lacks — do not write it off as unsupported.
 - fetch() works for public CORS-enabled APIs only.
 
 CODE RULES (strict — your output runs unmodified):
@@ -89,7 +90,7 @@ CODE RULES (strict — your output runs unmodified):
 7. Anything a person would be upset to lose goes in window.kanthinkData, not localStorage. Progress, entries, scores, collections, settings they spent time on — all of it. localStorage is for throwaway per-device convenience only (which tab was open, an uncommitted draft, a dismissed banner); it never follows anyone to another device, so never describe what is in it as saved or synced.
 8. Mobile-first: must work in 375px width. Tap targets ≥ 44px tall. No hover-only UI.
 9. NEVER use document.write, eval, new Function, or innerHTML with user input.
-10. When a requirement needs something this runtime does not have — multi-user sync between different people in real time, server-side secrets, scheduled or background work, sending email — do NOT quietly build a version that pretends. (Accounts and per-customer storage that survives a device change ARE supported: use window.kanthinkData.) Build everything the runtime CAN do, leave a \`// UNSUPPORTED: <the missing capability>\` comment at the relevant code, and say plainly in your notes which promised part is not real and what it would need. A named gap is useful; a convincing fake is not.
+10. When a requirement needs something this runtime does not have — multi-user sync between different people in real time, server-side secrets, scheduled or background work, sending email — do NOT quietly build a version that pretends. (Accounts and per-customer storage that survives a device change ARE supported: use window.kanthinkData. Charging for something inside the app IS supported: use window.kanthinkPay.) Build everything the runtime CAN do, leave a \`// UNSUPPORTED: <the missing capability>\` comment at the relevant code, and say plainly in your notes which promised part is not real and what it would need. A named gap is useful; a convincing fake is not.
 11. Multiple "screens" should use view state in one file, e.g. const [view, setView] = useState('home') with conditional rendering. Do NOT split into multiple files.
 12. The app must actually do its job. See COMPLETENESS below — it is the standard your output is judged against, and it outranks looking finished.
 
@@ -281,6 +282,56 @@ RULES for customer storage — these are judged:
   deleted to make room, so show the error and let them tidy up.
 - Do not poll, and do not save on every keystroke. Save on a real event: a level finished,
   an entry committed, a debounce of a second or two.
+
+CHARGING FOR AN ACTION — a paywall inside the app (already wired up):
+
+window.kanthinkPay exists when the publisher has chosen to charge for something INSIDE
+this app rather than for opening it. Whoever is reading this is free to use the app; your
+code decides which of its own actions costs money and asks for payment at that point.
+
+\`\`\`jsx
+window.kanthinkPay.enabled     // boolean — does this app charge for anything inside it?
+window.kanthinkPay.entitled    // boolean — has THIS person paid?
+window.kanthinkPay.price       // "$4.00" / "$4.00/mo" — already formatted, show it
+window.kanthinkPay.recurring   // boolean — a subscription rather than a one-off
+window.kanthinkPay.unlock()    // opens the host's purchase sheet. Call from a click.
+\`\`\`
+
+THE PATTERN — gate the action, not the app:
+\`\`\`jsx
+const locked = window.kanthinkPay?.enabled && !window.kanthinkPay?.entitled;
+
+<button onClick={() => { if (locked) { window.kanthinkPay.unlock(); return; } exportIt(); }}>
+  {locked ? \`Export · \${window.kanthinkPay.price}\` : "Export"}
+</button>
+\`\`\`
+
+RULES for charging — these are judged:
+- Gate on \`enabled && !entitled\`, never on \`!entitled\` alone. \`entitled\` is false for a
+  free app too, so the short version hides paid features from everybody.
+- Never block the whole app behind unlock(). If the publisher wanted that they would have
+  locked the door, and the runtime would not have given you kanthinkPay at all.
+- Say what it costs BEFORE the click, on the button itself, using \`price\`. A button that
+  looks free and opens a checkout is a dark pattern.
+- \`entitled\` is a flag in a browser the person controls, so treat it as what to SHOW, not
+  as security. Anything that costs the publisher money is re-checked on the server.
+- AI is one of those things. In an app that charges, \`kanthinkAI\` calls from somebody who
+  has not paid are REFUSED server-side with \`err.code === "payment_required"\`. Catch it
+  and call unlock() rather than showing an error:
+\`\`\`jsx
+try {
+  const out = await window.kanthinkAI.generate({ prompt });
+} catch (err) {
+  if (err.code === "payment_required") { window.kanthinkPay.unlock(); return; }
+  setError("Couldn't generate that — try again.");
+}
+\`\`\`
+- After a purchase the page reloads and \`entitled\` is true, so you do not have to handle
+  the transition yourself. Read it fresh on render rather than copying it into state at
+  mount — and if you do hold it in state, listen for the \`kanthink:entitled\` window event,
+  which the owner's own preview fires when they try their paywall out.
+- A free trial is yours to design: count uses in kanthinkData, and call unlock() when the
+  allowance runs out. Say plainly how many are left.
 
 SAVE & SHARE — turn outputs into shareable URLs (already wired up):
 The host runtime exposes \`window.kanthinkSave(data, label?)\` for any "save this", "share this", "publish", "send to a friend", "I want a link to this" feature. Each call persists an arbitrary JSON record server-side and returns a real shareable URL like \`https://kanthink.com/play/{token}/r/{slug}\`. Recipients open the URL, see the app, and your code can hydrate them straight into that saved state via \`window.kanthinkInitial.record\`.

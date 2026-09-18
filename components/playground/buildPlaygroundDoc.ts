@@ -46,6 +46,30 @@ export function buildPlaygroundDoc(
     /** Where to send someone who is not signed in. */
     signInUrl?: string;
     /**
+     * Set only for an app that charges for something inside itself, rather than at
+     * the door. Drives window.kanthinkPay: `price` is already formatted, `entitled`
+     * says whether this visitor has paid, and `payToken` is the proof the server
+     * asks for before it will spend the publisher's money on their behalf.
+     *
+     * Absent entirely for a free app and for one gated at the door — in both cases
+     * there is nothing inside to buy, and kanthinkPay reflects that.
+     */
+    pay?: {
+      entitled: boolean;
+      price: string;
+      recurring: boolean;
+      /** Only present when entitled. */
+      token?: string | null;
+      /**
+       * The owner looking at their own draft.
+       *
+       * There is nobody to sell to here, so unlock() flips entitlement in place
+       * rather than opening a checkout. That is the only way an author gets to
+       * walk both sides of their own paywall without buying their own app.
+       */
+      preview?: boolean;
+    } | null;
+    /**
      * If set, baked into `window.kanthinkInitial.record` so the app can hydrate
      * from a specific saved record (used by /play/{token}/r/{slug}). Apps in the
      * editor view receive `null`.
@@ -68,6 +92,8 @@ export function buildPlaygroundDoc(
   const appToken = (options?.appToken || '').replace(/[<>"]/g, '');
   const dataUrl = (options?.dataUrl || '/api/playground/data').replace(/[<>"]/g, '');
   const dataToken = (options?.dataToken || '').replace(/[<>"]/g, '');
+  const pay = options?.pay ?? null;
+  const payToken = (pay?.token || '').replace(/[<>"]/g, '');
   const signInUrl = (options?.signInUrl || '').replace(/[<>"]/g, '');
   const customer = options?.customer ?? null;
   const customerData = options?.customerData ?? null;
@@ -324,10 +350,87 @@ ${buildImportMap(options?.deps || [])}
     }
   };
 
+  // Paying for something inside the app, rather than for the app.
+  //
+  // entitled is a flag in a browser the visitor controls, and nothing here
+  // pretends otherwise — an app should use it to decide what to SHOW, never as the
+  // last word on what it will do. The last word lives on the server: __KPG_PAY_TOKEN
+  // rides along with every AI call, and an action-gated app without a live purchase
+  // behind that token gets a 402 there whatever the flag said.
+  var __KPG_PAY = ${JSON.stringify(
+    pay
+      ? {
+          enabled: true,
+          entitled: !!pay.entitled,
+          price: pay.price,
+          recurring: !!pay.recurring,
+          preview: !!pay.preview,
+        }
+      : null,
+  )};
+  var __KPG_PAY_TOKEN = ${JSON.stringify(payToken)};
+
+  window.kanthinkPay = {
+    /** True when this app charges for something inside itself. */
+    enabled: !!(__KPG_PAY && __KPG_PAY.enabled),
+    /**
+     * Has this visitor paid?
+     *
+     * Always false for an app that does not charge, so a bare !entitled check
+     * would hide a free app's features from everyone. Gate on
+     * kanthinkPay.enabled && !kanthinkPay.entitled instead.
+     */
+    entitled: !!(__KPG_PAY && __KPG_PAY.entitled),
+    /** Formatted for showing on the button: "$4.00", "$4.00/mo". */
+    price: (__KPG_PAY && __KPG_PAY.price) || '',
+    /** True for a subscription, false for a one-off. */
+    recurring: !!(__KPG_PAY && __KPG_PAY.recurring),
+    /**
+     * Open the host's purchase sheet. Call it from the button the person pressed.
+     *
+     * Returns false when there is nothing to buy — a free app, or one already paid
+     * for — so a button can fall through to doing the thing instead.
+     */
+    unlock: function() {
+      if (!__KPG_PAY || !__KPG_PAY.enabled) return false;
+      if (__KPG_PAY.entitled) return false;
+      if (__KPG_PAY.preview) {
+        // A draft preview has no buyer. Flip it here and tell anyone listening,
+        // so the author sees the paid side of their own app immediately.
+        __KPG_PAY.entitled = true;
+        window.kanthinkPay.entitled = true;
+        try {
+          window.dispatchEvent(new CustomEvent("kanthink:entitled"));
+          parent.postMessage({ type: "kpg_unlock_preview" }, "*");
+        } catch(_) {}
+        return true;
+      }
+      try { parent.postMessage({ type: "kpg_unlock" }, "*"); } catch(_) {}
+      return true;
+    }
+  };
+
   // AI helper — generated apps use this for any AI/LLM feature (vision, text gen,
   // structured output). Routes through the card owner's BYOK key so the apps you
   // build use the same Gemini account as your code-gen calls.
   var __KPG_AI_URL = ${JSON.stringify(aiUrl)};
+  /**
+   * Turn a failed AI response into an error an app can act on.
+   *
+   * A 402 means the person has not bought what they just asked for. That is not a
+   * fault — it is the purchase prompt arriving through the only channel that can
+   * honestly raise it — so it is tagged rather than described, and an app catches
+   * err.code === 'payment_required' and calls kanthinkPay.unlock().
+   */
+  function __kpg_ai_error(res, data, fallback) {
+    var err = new Error(
+      (data && data.error) || (fallback || 'AI call failed') + ' (' + res.status + ')'
+    );
+    err.status = res.status;
+    err.code = (data && data.code) || (res.status === 402 ? 'payment_required' : undefined);
+    return err;
+  }
+
   window.kanthinkAI = {
     // Frontier 3.x first (recommended). 2.5 family kept as stable fallbacks.
     models: ['gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
@@ -349,6 +452,7 @@ ${buildImportMap(options?.deps || [])}
       if (!__KPG_APP_TOKEN) return Promise.reject(new Error('AI is not available in this playground (no app token).'));
       var payload = {
         appToken: __KPG_APP_TOKEN,
+        payToken: __KPG_PAY_TOKEN,
         prompt: opts.prompt,
         system: opts.system,
         model: opts.model,
@@ -364,7 +468,7 @@ ${buildImportMap(options?.deps || [])}
         mode: 'cors'
       }).then(function(res) {
         return res.json().then(function(data) {
-          if (!res.ok) throw new Error(data && data.error ? data.error : 'AI call failed (' + res.status + ')');
+          if (!res.ok) throw __kpg_ai_error(res, data);
           return data;
         });
       });
@@ -397,6 +501,7 @@ ${buildImportMap(options?.deps || [])}
       if (!__KPG_APP_TOKEN) return Promise.reject(new Error('AI is not available in this playground (no app token).'));
       var payload = {
         appToken: __KPG_APP_TOKEN,
+        payToken: __KPG_PAY_TOKEN,
         mode: 'image',
         prompt: opts.prompt,
         imageModel: opts.model,
@@ -412,7 +517,7 @@ ${buildImportMap(options?.deps || [])}
         mode: 'cors'
       }).then(function(res) {
         return res.json().then(function(data) {
-          if (!res.ok) throw new Error(data && data.error ? data.error : 'Image generation failed (' + res.status + ')');
+          if (!res.ok) throw __kpg_ai_error(res, data, 'Image generation failed');
           return data;
         });
       });

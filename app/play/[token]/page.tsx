@@ -10,9 +10,11 @@ import {
   accessCookieName,
   canReadPrivateData,
   formatAppPrice,
+  gatesAction,
   hasActiveAccess,
   isPaywalled,
 } from '@/lib/playground/appAccess';
+import { signPayToken } from '@/lib/playground/payToken';
 import { resolveAppSession } from '@/lib/playground/appSession';
 import { purchasesForMember, toRef } from '@/lib/playground/appPurchases';
 import { findPublishedApp } from '@/lib/playground/publicApp';
@@ -62,6 +64,7 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   // the cookie alone, so a refund or a lapsed subscription takes effect on the very
   // next load without anything having to expire.
   let canManageBilling = false;
+  let entitled = false;
   // Resolved for every app, not only the paid ones. Customer storage means a free
   // app has something private behind a sign-in as well, and the page needs to know
   // who is here before it can hand the iframe anything.
@@ -78,7 +81,12 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
       valid?.stripeSubscriptionId && valid.stripeCustomerId && canReadPrivateData(resolved?.session),
     );
 
-    if (!hasActiveAccess(app, resolved?.session, purchases)) {
+    entitled = hasActiveAccess(app, resolved?.session, purchases);
+
+    // The same answer, two different doors. An app-gated app turns an unentitled
+    // visitor away here and never sends them the code. An action-gated one lets
+    // them in and hands the app a flag, because the thing being sold is inside.
+    if (!entitled && !gatesAction(app)) {
       return (
         <AppPaywall
           token={token}
@@ -130,6 +138,28 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
     customer: member ? { email: member.email, name: member.name } : null,
     customerData: Object.fromEntries(saved.map((r) => [r.key, r.value])),
     signInUrl: `${origin}/play/${token}`,
+    // Only an action-gated app gets this. A free app has nothing to sell and an
+    // app-gated one already sold it at the door, so in both cases kanthinkPay
+    // reports `enabled: false` and an app built for either stays correct.
+    pay: gatesAction(app)
+      ? {
+          entitled,
+          price: formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval),
+          recurring: app.priceInterval === 'month' || app.priceInterval === 'year',
+          // Proof, not a flag. Minted only for someone who actually has a live
+          // purchase, and only from a session this page resolved from the cookie.
+          token:
+            entitled && resolved
+              ? signPayToken({
+                  appId: app.id,
+                  appUserId: resolved.member.id,
+                  epoch: resolved.member.sessionEpoch ?? 0,
+                  scope: resolved.session.scope,
+                  purchaseId: resolved.session.purchaseId,
+                })
+              : null,
+        }
+      : null,
     deps: resolveDeps(release.dependencies || []).deps,
   });
 
@@ -141,6 +171,12 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
       justPurchased={purchase === 'success'}
       canManageBilling={canManageBilling}
       customerEmail={member?.email ?? null}
+      unlockPrice={
+        gatesAction(app) && !entitled
+          ? formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval)
+          : null
+      }
+      unlockRecurring={app.priceInterval === 'month' || app.priceInterval === 'year'}
     />
   );
 }

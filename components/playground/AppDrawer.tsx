@@ -14,6 +14,7 @@ import { AppPricingSection } from './AppPricingSection';
 import { AppReleaseSection } from './AppReleaseSection';
 import { AppSpendSection } from './AppSpendSection';
 import { resolveDeps } from '@/lib/playground/runtime';
+import { formatAppPrice } from '@/lib/playground/appAccess';
 import type { Card, CardMessage, CardMessageType, ID, PlaygroundApp, WhiteboardAttachment } from '@/lib/types';
 import {
   PLAYGROUND_MODELS,
@@ -191,6 +192,18 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   const dataToken = app?.draftDataToken;
   const draftCustomer = app?.draftCustomer ?? null;
   const draftData = app?.draftCustomerData ?? null;
+  // An action-gated app shows the author its locked state, with unlock() flipping
+  // it in place. Nothing is charged here — the server lets a draft token through
+  // regardless, so the paid path can actually be exercised.
+  const previewPay = app?.paywallEnabled && app?.paywallMode === 'action'
+    ? {
+        entitled: false,
+        price: formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval),
+        recurring: app.priceInterval === 'month' || app.priceInterval === 'year',
+        preview: true,
+      }
+    : null;
+  const previewPayKey = previewPay ? `${previewPay.price}:${previewPay.recurring}` : '';
   const srcDoc = useMemo(() => {
     if (!appCode) return null;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -204,9 +217,12 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       dataToken: dataToken || undefined,
       customer: draftCustomer,
       customerData: draftData,
+      pay: previewPay,
       deps: resolveDeps(depsKey ? depsKey.split(',') : []).deps,
     });
-  }, [appCode, appTitle, appToken, dataToken, draftCustomer, draftData, depsKey]);
+    // previewPay is rebuilt each render; previewPayKey is what actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appCode, appTitle, appToken, dataToken, draftCustomer, draftData, depsKey, previewPayKey]);
 
   // Runtime errors reported by the sandboxed iframe.
   useEffect(() => {

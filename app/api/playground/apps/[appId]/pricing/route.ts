@@ -24,6 +24,11 @@ interface RouteParams {
  * PUT with `enabled: false` switches the paywall off without touching Stripe — the
  * product and price stay, so turning it back on later does not mint duplicates and
  * does not disturb anyone already subscribed.
+ *
+ * `mode` says where the gate sits. It rides along with the price rather than having
+ * an endpoint of its own because the two are one decision: what someone is buying
+ * and what it costs are answered in the same breath, and a mode saved without a
+ * price would describe a paywall that is not running.
  */
 export async function PUT(req: NextRequest, { params }: RouteParams) {
   const session = await auth()
@@ -37,6 +42,8 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     amount?: number
     currency?: string
     interval?: 'one_time' | 'month' | 'year'
+    /** 'app' (at the door) | 'action' (inside). Anything else is read as 'app'. */
+    mode?: 'app' | 'action'
   }
   try {
     body = await req.json()
@@ -68,6 +75,9 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     await db.update(playgroundApps).set({
       paywallEnabled: true,
+      // Only ever the two, and an unrecognised value falls to the stricter one —
+      // a typo here would otherwise quietly publish a paid app to everybody.
+      paywallMode: body.mode === 'action' ? 'action' : 'app',
       priceAmount: price.amount,
       priceCurrency: price.currency,
       priceInterval: price.interval,
