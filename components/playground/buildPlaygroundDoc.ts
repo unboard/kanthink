@@ -244,6 +244,123 @@ ${buildImportMap(options?.deps || [])}
       });
   };
 
+  // Handing the person a file.
+  //
+  // This is a browser capability and always was — what was missing is the iframe's
+  // allow-downloads flag, without which Chrome drops every download silently and
+  // leaves only a console line. Generated apps learned the wrong lesson from that
+  // and started telling people to right-click an image to save it, which on a phone
+  // is not a thing you can do.
+  //
+  // It is a helper rather than four lines of inline blob code because the two cases
+  // that actually come up are the two a model gets wrong:
+  //
+  //   - a remote URL. The download attribute is IGNORED cross-origin, so linking
+  //     straight to a Cloudinary image navigates to it instead of saving it. It
+  //     has to be fetched into a blob of this origin first.
+  //   - a data: URL. Large ones are slow or refused as an href; decoding to a blob
+  //     is both faster and reliable.
+  //
+  // Everything resolves to a blob, an object URL and one synthetic click.
+  function __kpg_blob(data, mime) {
+    // Already one.
+    if (typeof Blob !== 'undefined' && data instanceof Blob) return Promise.resolve(data);
+
+    // A canvas — the shape an export button usually has in hand.
+    if (typeof HTMLCanvasElement !== 'undefined' && data instanceof HTMLCanvasElement) {
+      return new Promise(function(resolve, reject) {
+        data.toBlob(function(b) {
+          b ? resolve(b) : reject(new Error('Could not read that canvas.'));
+        }, mime || 'image/png');
+      });
+    }
+
+    if (typeof data === 'string') {
+      // data:<mime>;base64,<payload> — decode rather than hand it over as an href.
+      if (/^data:/i.test(data)) {
+        var comma = data.indexOf(',');
+        var head = data.slice(5, comma);
+        var body = data.slice(comma + 1);
+        var type = head.replace(/;base64$/i, '') || mime || 'application/octet-stream';
+        if (/;base64$/i.test(head)) {
+          var bin = atob(body);
+          var bytes = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          return Promise.resolve(new Blob([bytes], { type: type }));
+        }
+        return Promise.resolve(new Blob([decodeURIComponent(body)], { type: type }));
+      }
+
+      // A URL somewhere else. Fetched, because the download attribute does not
+      // survive a cross-origin href — the browser navigates instead of saving.
+      //
+      // Prefix checks rather than a regex: this whole runtime is one template
+      // literal, and an escaped forward slash inside it collapses on the way out,
+      // so a URL pattern arrives in the emitted script as a line comment that
+      // swallows the rest of the condition. Plain string comparisons cannot.
+      var lower = data.toLowerCase();
+      var isRemote = lower.indexOf('http:') === 0
+        || lower.indexOf('https:') === 0
+        || lower.indexOf('blob:') === 0
+        || lower.indexOf('//') === 0;
+      if (isRemote) {
+        return fetch(data, { mode: 'cors' }).then(function(res) {
+          if (!res.ok) throw new Error('Could not fetch that file (' + res.status + ')');
+          return res.blob();
+        });
+      }
+
+      // Plain text: CSV, JSON, SVG markup, anything the app built as a string.
+      return Promise.resolve(new Blob([data], { type: mime || 'text/plain;charset=utf-8' }));
+    }
+
+    // Anything else is treated as JSON, which is what an "export my data" button
+    // has: an object or an array.
+    try {
+      return Promise.resolve(
+        new Blob([JSON.stringify(data, null, 2)], { type: mime || 'application/json' })
+      );
+    } catch (e) {
+      return Promise.reject(new Error('kanthinkDownload could not turn that into a file.'));
+    }
+  }
+
+  /**
+   * Save something to the person's device.
+   *
+   * @param {Blob|HTMLCanvasElement|string|object} data - blob, canvas, data: URL,
+   *        http(s) URL, plain string (CSV/JSON/SVG), or any JSON-able value.
+   * @param {string} filename - what it should be called, extension included.
+   * @param {string} [mimeType] - only needed to override what is inferred.
+   * @returns {Promise<void>} resolves once the download has been handed to the
+   *          browser; rejects with something worth showing if it could not be.
+   */
+  window.kanthinkDownload = function(data, filename, mimeType) {
+    if (data === undefined || data === null) {
+      return Promise.reject(new Error('kanthinkDownload needs something to save.'));
+    }
+    if (!filename || typeof filename !== 'string') {
+      return Promise.reject(new Error('kanthinkDownload needs a filename, e.g. "logo.png".'));
+    }
+    // A path separator in a filename is how a download escapes its folder.
+    var name = filename.replace(/[\/\\:*?"<>|]/g, '_').slice(0, 120) || 'download';
+
+    return __kpg_blob(data, mimeType).then(function(blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.rel = 'noopener';
+      // Appended before clicking: a detached anchor is ignored in some browsers.
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Late enough that the download has started, and it cannot be revoked
+      // synchronously — doing so cancels it in Safari.
+      setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+    });
+  };
+
   // Saved-record helper — generated apps use this to persist arbitrary JSON
   // server-side and get back a shareable per-record URL.
   var __KPG_SAVE_URL = ${JSON.stringify(saveUrl)};

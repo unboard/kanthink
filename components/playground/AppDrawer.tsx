@@ -555,7 +555,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
                   srcDoc={srcDoc}
                   title={appTitle}
                   className="flex-1 w-full border-0 bg-white"
-                  sandbox="allow-scripts allow-forms allow-popups allow-modals"
+                  sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
                 />
               ) : (
                 <EmptyPreview />

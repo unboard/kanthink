@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'apps-can-hand-you-a-file',
+    date: '2026-09-19',
+    kind: 'fix',
+    title: 'Apps can give you the file they made',
+    body: 'Download buttons now work — a logo, a CSV, a JSON export — on desktop and on a phone. The frame was blocking every download without saying so, and Kan had started calling it an unsupported feature and offering right-click instructions instead. Ask for an export and you get one.',
+  },
+  {
     id: 'app-status-and-versions',
     date: '2026-09-18',
     kind: 'workflow',
