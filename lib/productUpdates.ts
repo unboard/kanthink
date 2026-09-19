@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'kan-can-see-your-apps',
+    date: '2026-09-19',
+    kind: 'capability',
+    title: 'Ask Kan about an app out loud',
+    body: 'In voice mode Kan can now read an app built on a card — whether it is a draft, published or taken down, which version is live, whether your draft has changes nobody has seen, and the app\'s own thread. Drafts included, which is where most of the work happens. Reading a card out loud mentions what was built from it too.',
+  },
+  {
     id: 'apps-can-hand-you-a-file',
     date: '2026-09-19',
     kind: 'fix',

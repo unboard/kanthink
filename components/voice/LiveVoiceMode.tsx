@@ -75,6 +75,17 @@ const TOOLS = [
         },
       },
       {
+        name: 'show_app',
+        description: 'Read an app built on a card: what state it is in (draft, published, or unpublished), which version is live, whether the draft has unpublished changes, its price, and its own thread — the conversation that built it, which is separate from the card thread. Use this for ANY question about an app itself rather than its sales: "what state is the launch simulator in", "is that published yet", "what did we last change", "read me the app thread", "what is left to do on it". Works for drafts that have never been published. Read-only. Prefer this over saying you cannot see an app.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            appName: { type: 'STRING', description: 'Name of the app, or part of it. The name of the card it lives on also works. Omit to list every app, most recently worked on first.' },
+          },
+          required: [],
+        },
+      },
+      {
         name: 'add_note',
         description: 'Add a note/message to a card thread. Format the content as rich markdown.',
         parameters: {
@@ -126,7 +137,7 @@ const TOOLS = [
       },
       {
         name: 'show_card',
-        description: 'Open a card and return its full content (title, summary, every thread message, tasks, tags). Use this whenever the user wants to view, read, or hear a card — including "read me this card", "what does that card say", "open this card", or any request for card details. The tool result includes the actual thread text so you can read it aloud verbatim.',
+        description: 'Open a card and return its full content (title, summary, every thread message, tasks, tags) plus any apps built from it and what state they are in. Use this whenever the user wants to view, read, or hear a card — including "read me this card", "what does that card say", "open this card", or any request for card details. The tool result includes the actual thread text so you can read it aloud verbatim. For an app\'s own thread or its release state in detail, use show_app.',
         parameters: {
           type: 'OBJECT',
           properties: { cardId: { type: 'STRING', description: 'Card ID or card title' } },

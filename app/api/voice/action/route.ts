@@ -14,6 +14,8 @@ import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
 import { findDuplicateCard, DUPLICATE_WINDOW_MS, type RecentCard } from '@/lib/voice/duplicateCard';
 import { getUserChannels } from '@/lib/api/permissions';
 import { formatAppPrice } from '@/lib/playground/appAccess';
+import { appStatus, getPublishedVersion } from '@/lib/playground/appRelease';
+import { describeApp } from '@/lib/playground/describeApp';
 import { instructionCards } from '@/lib/db/schema';
 import { inferIntent } from '@/lib/channelCreation/inferIntent';
 import {
@@ -39,6 +41,14 @@ async function findCard(cardId: string) {
   if (card) return card;
   const byTitle = await db.query.cards.findFirst({ where: like(cards.title, `%${cardId}%`) });
   return byTitle;
+}
+
+/** describeApp, with the release it needs fetched for it. */
+async function describeAppRow(
+  app: typeof playgroundApps.$inferSelect,
+  opts: { full: boolean },
+): Promise<string> {
+  return describeApp(app, await getPublishedVersion(app), opts);
 }
 
 export const runtime = 'nodejs';
@@ -523,6 +533,18 @@ export async function POST(request: Request) {
           contentLines.push(`Tasks:\n${taskLines}`);
         }
 
+        // The apps on this card. Reading a card and never mentioning the app built
+        // from it is how Kan came across as blind to apps entirely — the card was
+        // the only thing it looked at, and the app is usually the point of the card.
+        const cardApps = await db.query.playgroundApps.findMany({
+          where: and(eq(playgroundApps.cardId, card.id), eq(playgroundApps.isArchived, false)),
+        });
+        for (const cardApp of cardApps) {
+          // One app on the card gets its thread; several get a line each, because
+          // this is read aloud.
+          contentLines.push(await describeAppRow(cardApp, { full: cardApps.length === 1 }));
+        }
+
         return NextResponse.json({
           result: contentLines.join('\n\n'),
           cardPreview: {
@@ -536,7 +558,70 @@ export async function POST(request: Request) {
             tasks: cardTasks.map(t => ({ id: t.id, title: t.title, status: t.status })),
             tags: card.tags,
             coverImageUrl: card.coverImageUrl,
+            apps: cardApps.map(a => ({
+              id: a.id,
+              title: a.title,
+              status: appStatus(a),
+              hasCode: !!a.code,
+            })),
           },
+        });
+      }
+
+      case 'show_app': {
+        // Read-only, like app_audience. That one answers "how is it doing"; this
+        // one answers "what is it and where is it up to". Both were needed and only
+        // the second existed, so a DRAFT app had no tool pointing at it at all —
+        // which is what "you seem blind to it" was describing.
+        const reachable = await getUserChannels(session.user.id);
+        const reachableIds = reachable.map(c => c.channelId);
+        if (reachableIds.length === 0) {
+          return NextResponse.json({ result: 'You have no channels, so there are no apps to look at.' });
+        }
+
+        const allApps = await db.query.playgroundApps.findMany({
+          where: and(
+            inArray(playgroundApps.channelId, reachableIds),
+            eq(playgroundApps.isArchived, false),
+          ),
+          orderBy: [desc(playgroundApps.updatedAt)],
+        });
+        if (allApps.length === 0) {
+          return NextResponse.json({ result: 'No apps have been built yet.' });
+        }
+
+        const wanted = (args.appName || args.cardId || '').trim().toLowerCase();
+        let matched = wanted
+          ? allApps.filter(a => a.title.toLowerCase().includes(wanted))
+          : allApps;
+
+        // Reached through the card it hangs off. "The launch simulator card" and
+        // "the launch simulator app" are the same request to whoever is speaking.
+        if (wanted && matched.length === 0) {
+          const viaCard = await findCard(args.appName || args.cardId || '');
+          if (viaCard) matched = allApps.filter(a => a.cardId === viaCard.id);
+        }
+
+        if (matched.length === 0) {
+          return NextResponse.json({
+            result: `No app matching "${args.appName || args.cardId}". Apps so far: ${allApps.map(a => a.title).join(', ')}.`,
+          });
+        }
+
+        // Prefer an exact title when a partial match caught several.
+        if (matched.length > 1 && wanted) {
+          const exact = matched.filter(a => a.title.toLowerCase() === wanted);
+          if (exact.length === 1) matched = exact;
+        }
+
+        const described = await Promise.all(
+          matched.slice(0, 5).map(a => describeAppRow(a, { full: matched.length === 1 })),
+        );
+        return NextResponse.json({
+          result: described.join('\n\n'),
+          appPreview: matched.length === 1
+            ? { id: matched[0].id, title: matched[0].title, cardId: matched[0].cardId }
+            : undefined,
         });
       }
 

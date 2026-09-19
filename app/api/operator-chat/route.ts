@@ -300,6 +300,9 @@ Available actions:
 - **app_audience**: Read how published apps are doing — people, paid, revenue, opens, unread feedback. Read-only.
   - Optional: appName (one app, or part of its name). Omit for every published app.
   - Use this for any question about app usage, users, sales or feedback.
+- **show_app**: Read the app itself — draft / published / unpublished, which version is live, whether the draft has unpublished changes, its price, and its own thread (separate from the card thread). Read-only.
+  - Optional: appName (the app's name, or the name of the card it lives on). Omit to list every app, most recently worked on first.
+  - Use this for any question about what an app IS or where it is up to, including drafts that were never published. app_audience answers how it is doing; this answers what it is.
 
 **Cards (continued):**
 - **search_cards**: Search cards by keyword or get recent cards.
@@ -423,7 +426,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
 
       // New actions routed through voice action API
-      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'app_audience'].includes(action.type)) {
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'app_audience', 'show_app'].includes(action.type)) {
         // Build args from action fields. Structured values pass through intact —
         // String() flattened columnNames arrays into "Inbox,Validation,...", which
         // failed the handler's Array.isArray check and silently fell back to
