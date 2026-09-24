@@ -162,6 +162,17 @@ const TOOLS = [
         },
       },
       {
+        name: 'kanwatch_lookup',
+        description: 'Look up the user\'s Kanwatch browsing record beyond what is already in your instructions: a specific day in detail (pass date: "today", "yesterday" or YYYY-MM-DD), or pages they read on a topic in the last 30 days (pass query). Use only when they ask about their browsing, their day, or something they read or watched.',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            date: { type: 'STRING', description: '"today", "yesterday" or YYYY-MM-DD' },
+            query: { type: 'STRING', description: 'Words to find a page they read, e.g. "agents thread"' },
+          },
+        },
+      },
+      {
         name: 'archive_card',
         description: 'Archive a card (remove it from the board)',
         parameters: {
@@ -1140,10 +1151,20 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
 
     try {
       const activeProvider = providerRef.current;
+      // Kanwatch context is fetched alongside the session and never allowed to hold
+      // it up: past 1.5s, voice starts without it.
+      const kanwatchContext = Promise.race([
+        fetch(`/api/kanwatch/context?tz=${new Date().getTimezoneOffset()}`)
+          .then((r) => (r.ok ? r.json() : { context: '' }))
+          .then((d: { context?: string }) => d.context ?? '')
+          .catch(() => ''),
+        new Promise<string>((resolve) => setTimeout(() => resolve(''), 1500)),
+      ]);
       const res = await fetch(`/api/voice/live?provider=${activeProvider}`);
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Server error ${res.status}`); }
       const { wsUrl, model, clientSecret } = await res.json();
       if (!wsUrl) throw new Error('No WebSocket URL returned');
+      const kanwatchBlock = await kanwatchContext;
 
       // Retry logic for transient WebSocket errors (e.g. 1011 server errors)
       const MAX_RETRIES = 2;
@@ -1173,6 +1194,7 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
             resumptionHandle: resumptionHandleRef.current,
             systemInstruction:
               (systemPrompt || 'You are Kan, a helpful AI assistant.') +
+              kanwatchBlock +
               VOICE_TOOL_RULES.replace('__SEARCH_RULE__', SEARCH_RULES[activeProvider]),
           })));
         };

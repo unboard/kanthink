@@ -679,6 +679,14 @@ export async function POST(request: Request) {
         });
       }
 
+      case 'kanwatch_lookup': {
+        if (!session.user.isAdmin) {
+          return NextResponse.json({ result: 'Kanwatch is not available on this account.' });
+        }
+        const { kanwatchLookup } = await import('@/lib/kanwatch/context');
+        return NextResponse.json({ result: await kanwatchLookup(session.user.id, { date: args.date, query: args.query }) });
+      }
+
       case 'query_mixpanel': {
         // This is Kanthink's own Mixpanel project, read with the server's secret —
         // the company's analytics, not the caller's.

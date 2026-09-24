@@ -9,6 +9,7 @@ import { cards, columns, operatorChatThreads } from '@/lib/db/schema';
 import { eq, and, desc, asc, inArray } from 'drizzle-orm';
 import { loadAccess, type Access } from '@/lib/voice/resolveReference';
 import { findCardsInFocus } from '@/lib/chat/cardsInFocus';
+import { buildKanwatchContext } from '@/lib/kanwatch/context';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { buildProductUpdateContext } from '@/lib/productUpdates';
 
@@ -81,6 +82,7 @@ interface OperatorAction {
   ctaUrl?: string;
   // Search/show
   query?: string;
+  date?: string;
   limit?: string;
   // Image
   prompt?: string;
@@ -328,6 +330,10 @@ Available actions:
   - Requires: to (email address), subject, body (clean prose, NOT markdown). Optional: style (professional/casual/newsletter/update, default professional), recipientName, ctaText, ctaUrl
   - Do NOT ask about email style — infer it from context. Just draft and send.
 
+**Kanwatch (browsing record):**
+- **kanwatch_lookup**: Look up the user's browsing record beyond what the KANWATCH section already shows — a specific day in detail, or pages they read on a topic.
+  - Optional: date ("today", "yesterday" or YYYY-MM-DD), query (words to find a page they read). Only when they ask about their day, browsing, or something they read.
+
 **Analytics:**
 - **query_mixpanel**: Query Mixpanel analytics data.
   - Requires: question. Optional: action (query/list_properties/list_values), event, property, value, dateRange
@@ -442,7 +448,7 @@ async function executeActions(
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
 
       // New actions routed through voice action API
-      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'app_audience', 'show_app'].includes(action.type)) {
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'app_audience', 'show_app', 'kanwatch_lookup'].includes(action.type)) {
         // Build args from action fields. Structured values pass through intact —
         // String() flattened columnNames arrays into "Inbox,Validation,...", which
         // failed the handler's Array.isArray check and silently fell back to
@@ -517,7 +523,7 @@ export async function POST(request: Request) {
       : Promise.resolve(null);
 
     // Query channel membership — only for channels this user can reach.
-    let membershipMap: Record<string, string[]> = {};
+    const membershipMap: Record<string, string[]> = {};
     try {
       const { channelShares, channels: channelsTable, users: usersTable } = await import('@/lib/db/schema');
       const reachable = access.readable.length > 0 ? access.readable : ['__none__'];
@@ -568,6 +574,11 @@ export async function POST(request: Request) {
     const llm = result.client;
     const usingOwnerKey = result.source === 'owner';
 
+    // Kanwatch is admin-only while it is tried out; empty when there is nothing recorded.
+    const kanwatchBlock = session.user.isAdmin
+      ? await buildKanwatchContext(session.user.id, { lookup: 'the kanwatch_lookup action' }).catch(() => '')
+      : '';
+
     const messages: LLMMessage[] = [
       { role: 'system', content: buildSystemPrompt(
         channelData,
@@ -575,7 +586,7 @@ export async function POST(request: Request) {
         { ...userData, id: session.user.id },
         membershipMap,
         shroomData,
-      ) },
+      ) + kanwatchBlock },
     ];
 
     // Add conversation history (last 20 messages)
