@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { cards, kanwatchEpisodes } from '@/lib/db/schema';
 import { kanwatchUser } from '@/lib/kanwatch/access';
 import { loadAccess } from '@/lib/voice/resolveReference';
-import { rereadSites } from '@/lib/kanwatch/judge';
+import { MODES, rereadSites } from '@/lib/kanwatch/judge';
 
 /**
  * PATCH /api/kanwatch/episodes/:id — what an episode actually was.
@@ -13,6 +13,7 @@ import { rereadSites } from '@/lib/kanwatch/judge';
  * { verdict: 'corrected', channelId?, cardId?, label? }  it was this instead
  * { verdict: 'not_work', label? }                   not work
  * { verdict: null }                                 undo
+ * { mode: 'admin' }                                 what you were doing — separate from what it was for
  *
  * These answers are the training signal: the most recent ones ride along as
  * examples every time a new episode is judged.
@@ -28,6 +29,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!ep) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const body = await request.json().catch(() => ({}));
+
+  // "Doing" can be changed on its own, without touching what the stretch was for.
+  if ('mode' in body) {
+    const mode = body.mode === null ? null : String(body.mode);
+    if (mode !== null && !(mode in MODES)) return NextResponse.json({ error: 'Bad mode' }, { status: 400 });
+    await db.update(kanwatchEpisodes).set({ verdictMode: mode, updatedAt: new Date() }).where(eq(kanwatchEpisodes.id, ep.id));
+    if (!('verdict' in body)) {
+      let touched: string[] = [];
+      try { touched = JSON.parse(ep.domains ?? '[]'); } catch {}
+      await rereadSites(userId, touched, ep.id);
+      return NextResponse.json({ ok: true });
+    }
+  }
+
+  // "It was… Admin" with no channel is an answer about doing, not about what for.
+  const typed = typeof body.label === 'string' ? body.label.trim().toLowerCase() : '';
+  if (body.verdict === 'corrected' && !body.channelId && typed in MODES) {
+    await db.update(kanwatchEpisodes).set({ verdictMode: typed, updatedAt: new Date() }).where(eq(kanwatchEpisodes.id, ep.id));
+    return NextResponse.json({ ok: true, movedToMode: typed });
+  }
+
   const verdict = body.verdict as 'confirmed' | 'corrected' | 'not_work' | null;
   if (verdict !== null && !['confirmed', 'corrected', 'not_work'].includes(verdict)) {
     return NextResponse.json({ error: 'Bad verdict' }, { status: 400 });

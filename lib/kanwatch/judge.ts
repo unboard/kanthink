@@ -126,6 +126,26 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   ]);
   const cards = cardShortlist.slice(0, 15);
 
+  // Areas in the user's own words ("MyCreativeShop · template manufacturing"). Once
+  // named, an area is a choice like any channel, so it can be recognised next time.
+  const named = await db.query.kanwatchEpisodes.findMany({
+    where: and(
+      eq(kanwatchEpisodes.userId, ep.userId),
+      eq(kanwatchEpisodes.verdict, 'corrected'),
+      isNotNull(kanwatchEpisodes.label),
+      gte(kanwatchEpisodes.startedAt, new Date(Date.now() - 60 * 86400000)),
+    ),
+    columns: { label: true, verdictChannelId: true },
+  });
+  const areaCounts = new Map<string, { label: string; channelId: string | null; n: number }>();
+  for (const r of named) {
+    const key = r.label!.trim().toLowerCase();
+    const cur = areaCounts.get(key) ?? { label: r.label!.trim(), channelId: r.verdictChannelId, n: 0 };
+    cur.n += 1;
+    areaCounts.set(key, cur);
+  }
+  const areas = [...areaCounts.values()].sort((a, b) => b.n - a.n).slice(0, 12);
+
   // What the user said about these exact sites before — the most direct thing they
   // have taught it, and what makes a correction on one visit carry to the next.
   const siteAnswers = await db.query.kanwatchEpisodes.findMany({
@@ -143,9 +163,11 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     ? await db.query.kanwatchVisits.findMany({ where: inArray(kanwatchVisits.episodeId, history.map((h) => h.id)) })
     : [];
   const channelName = new Map(channelRows.map((c) => [c.id, c.name]));
-  const answerLabel = (h: typeof history[number]) =>
-    h.verdict === 'not_work' ? 'not work'
-    : h.label || (h.verdictChannelId ? `work for ${channelName.get(h.verdictChannelId) ?? 'a channel'}` : 'work');
+  const answerLabel = (h: typeof history[number]) => {
+    const what = h.verdict === 'not_work' ? 'not work'
+      : h.label || (h.verdictChannelId ? `work for ${channelName.get(h.verdictChannelId) ?? 'a channel'}` : 'work');
+    return h.verdictMode ? `${what}, doing ${h.verdictMode}` : what;
+  };
 
   const bySite = siteList.flatMap((site) => {
     const counts = new Map<string, number>();
@@ -172,7 +194,14 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   cards.forEach((c, i) => {
     criteria[`card_${i + 1}`] = { card: c.title, in: c.where, ...(c.detail.summary ? { summary: c.detail.summary } : {}) };
   });
-  criteria.new_work = 'Work toward something that none of the listed channels or cards covers.';
+  areas.forEach((a, i) => {
+    criteria[`area_${i + 1}`] = {
+      area: a.label,
+      described_by: 'the user, in their own words',
+      ...(a.channelId && channelName.has(a.channelId) ? { in_channel: channelName.get(a.channelId) } : {}),
+    };
+  });
+  criteria.new_work = 'Work toward something that none of the listed channels, cards or areas covers.';
   criteria.not_work = 'Not work: entertainment, errands, personal browsing.';
   criteria.unclear = 'Too little to tell what this was for.';
 
@@ -205,8 +234,9 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     belongs: {
       type: 'choice' as const,
       instructions:
-        'This is a stretch of someone\'s web browsing, grouped into `episode`. Which of their channels or cards was it ' +
-        'serving? Prefer a card when the pages are clearly about that card, a channel when they serve its broader goal. ' +
+        'This is a stretch of someone\'s web browsing, grouped into `episode`. Which of their channels, cards or areas was it ' +
+        'serving? Areas are ones they named themselves; prefer an area that matches over a card that only shares a word with ' +
+        'the pages. Prefer a card when the pages are clearly about that card, a channel when they serve its broader goal. ' +
         'Their own words beat everything else: `what_they_said_before_about_these_sites` is what they answered for these ' +
         'same sites before, and `their_notes_on_these_sites` is how they describe them. Follow those unless the pages ' +
         'clearly show something different this time. `how_they_labelled_past_browsing` shows how they think about the rest.',
@@ -214,7 +244,9 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     },
     mode: {
       type: 'choice' as const,
-      instructions: 'What kind of activity was `episode` mostly? The `doing` field on each page says whether they were typing, reading or watching.',
+      instructions:
+        'What kind of activity was `episode` mostly? The `doing` field on each page says whether they were typing, reading or ' +
+        'watching. If `what_they_said_before_about_these_sites` says what they were doing on these sites, that is how they see it.',
       criteria: MODES,
     },
     worth_card: {
@@ -250,6 +282,13 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     guessCardId = card?.id ?? null;
     guessChannelId = card?.channelId ?? null;
   }
+  let guessLabel: string | null = null;
+  if (pick.startsWith('area_')) {
+    const area = areas[Number(pick.split('_')[1]) - 1];
+    guessKind = 'area';
+    guessLabel = area?.label ?? null;
+    guessChannelId = area?.channelId ?? null;
+  }
   // A weak pick is not a guess worth showing as one.
   if (probability < 35 && guessKind !== 'not_work') guessKind = 'unclear';
 
@@ -265,6 +304,7 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     domains: JSON.stringify(siteList),
     basis: JSON.stringify(basis),
     guessKind,
+    guessLabel,
     guessChannelId,
     guessCardId,
     guessProbability: probability,

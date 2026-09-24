@@ -37,8 +37,12 @@ interface Episode {
     cardId: string | null;
     cardTitle: string | null;
     probability: number | null;
+    /** guess kind 'area': one of the areas you named yourself */
+    label: string | null;
   } | null;
+  /** What you were doing — yours if you set it, Jev's read otherwise. */
   mode: string | null;
+  modeIsYours: boolean;
   focusScore: number | null;
   worthCard: number | null;
   verdict: 'confirmed' | 'corrected' | 'not_work' | null;
@@ -67,6 +71,8 @@ interface DayData {
   intention: string;
   extension: { connected: boolean; lastSeenAt?: number | null; fresh?: boolean };
   channels: { id: string; name: string }[];
+  /** Areas you've named before, in your own words. */
+  areas: string[];
   episodes: Episode[];
   sites: Site[];
   week: { start: number; activeSeconds: number; notWorkSeconds: number; privateSeconds: number }[];
@@ -171,16 +177,27 @@ interface Reading {
 function readEpisode(e: Episode): Reading {
   if (e.verdict === 'not_work') return { bucket: 'not_work', label: e.label || 'Not work', color: NOT_WORK, decided: true };
   if (e.verdict) {
+    // Your own words lead; they are the most specific thing anyone said about it.
+    if (e.label) {
+      const key = `label:${e.label.trim().toLowerCase()}`;
+      return { bucket: key, label: e.label.trim(), color: colorFor(key), decided: true };
+    }
     const name = e.verdictCardTitle
       ? `${e.verdictChannelName ?? ''} › ${e.verdictCardTitle}`
-      : e.verdictChannelName ?? e.label ?? 'Work';
-    const key = e.verdictChannelId ?? `label:${e.label ?? 'work'}`;
-    return { bucket: key, label: e.label && !e.verdictChannelName ? e.label : name, color: colorFor(key), decided: true };
+      : e.verdictChannelName ?? 'Work';
+    const key = e.verdictChannelId ?? 'label:work';
+    return { bucket: key, label: name, color: colorFor(key), decided: true };
   }
   if (e.pages.length === 0 && e.privateSeconds > 0) return { bucket: 'private', label: 'Private', color: PRIVATE, decided: true };
   const g = e.guess;
   if (!g) return { bucket: 'unread', label: 'Not read yet', color: UNCLEAR, decided: false };
   switch (g.kind) {
+    case 'area':
+      if (g.label) {
+        const key = `label:${g.label.trim().toLowerCase()}`;
+        return { bucket: key, label: g.label.trim(), color: colorFor(key), decided: false };
+      }
+      return { bucket: 'unclear', label: 'Unclear', color: UNCLEAR, decided: false };
     case 'channel':
     case 'card':
       if (g.channelId) {
@@ -290,6 +307,7 @@ export function KanwatchDay() {
             <Episodes
               episodes={data.episodes}
               channels={data.channels}
+              areas={data.areas ?? []}
               onlyNeedsYou={onlyNeedsYou}
               setOnlyNeedsYou={setOnlyNeedsYou}
               onChanged={() => load(date)}
@@ -560,7 +578,7 @@ function WhereItWent({ episodes }: { episodes: Episode[] }) {
   return (
     <section className="grid gap-6 sm:grid-cols-[1.4fr_1fr]">
       <div>
-        <SectionTitle>Where the time went</SectionTitle>
+        <SectionTitle>What it was for</SectionTitle>
         <div className="space-y-2">
           {buckets.map((b) => (
             <div key={b.label + b.color}>
@@ -577,7 +595,7 @@ function WhereItWent({ episodes }: { episodes: Episode[] }) {
       </div>
       {modes.length > 0 && (
         <div>
-          <SectionTitle>What kind of work</SectionTitle>
+          <SectionTitle>What you were doing</SectionTitle>
           <div className="flex flex-wrap gap-2">
             {modes.map(([mode, seconds]) => (
               <span key={mode} className="rounded-full border border-neutral-200 px-2.5 py-1 text-xs text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
@@ -599,10 +617,11 @@ function needsYou(e: Episode): boolean {
 }
 
 function Episodes({
-  episodes, channels, onlyNeedsYou, setOnlyNeedsYou, onChanged,
+  episodes, channels, areas, onlyNeedsYou, setOnlyNeedsYou, onChanged,
 }: {
   episodes: Episode[];
   channels: DayData['channels'];
+  areas: string[];
   onlyNeedsYou: boolean;
   setOnlyNeedsYou: (v: boolean) => void;
   onChanged: () => void;
@@ -625,22 +644,26 @@ function Episodes({
         )}
       </div>
       <p className="mb-3 text-xs text-neutral-500">
-        Tell Kan when it&rsquo;s right or wrong. Each answer becomes an example it uses to read the next stretch.
+        Each stretch has two things: <strong className="font-medium text-neutral-700 dark:text-neutral-300">for</strong> — a channel, a card, or your own words —
+        and <strong className="font-medium text-neutral-700 dark:text-neutral-300">doing</strong> — building, researching, admin… Correct either; each answer is an example Kan uses for the next stretch.
       </p>
       <div className="space-y-2">
         {shown.map((e) => (
-          <EpisodeRow key={e.id} episode={e} channels={channels} onChanged={onChanged} />
+          <EpisodeRow key={e.id} episode={e} channels={channels} areas={areas} onChanged={onChanged} />
         ))}
       </div>
     </section>
   );
 }
 
-function EpisodeRow({ episode: e, channels, onChanged }: { episode: Episode; channels: DayData['channels']; onChanged: () => void }) {
+function EpisodeRow({
+  episode: e, channels, areas, onChanged,
+}: { episode: Episode; channels: DayData['channels']; areas: string[]; onChanged: () => void }) {
   const r = readEpisode(e);
   const [editing, setEditing] = useState(false);
   const [channelId, setChannelId] = useState(e.verdictChannelId ?? e.guess?.channelId ?? '');
-  const [label, setLabel] = useState(e.label ?? '');
+  const [label, setLabel] = useState(e.label ?? e.guess?.label ?? '');
+  const [mode, setMode] = useState(e.mode ?? '');
   const [busy, setBusy] = useState(false);
 
   const send = async (body: Record<string, unknown>) => {
@@ -661,6 +684,7 @@ function EpisodeRow({ episode: e, channels, onChanged }: { episode: Episode; cha
     <div id={`ep-${e.id}`} className="rounded-xl border border-neutral-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: r.color }} />
+        <span className="text-[11px] uppercase tracking-wide text-neutral-400">For</span>
         <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{r.label}</span>
         {!r.decided && r.bucket !== 'unread' && e.guess?.probability != null && (
           <span className="text-[11px] text-neutral-400">Kan&rsquo;s guess · {e.guess.probability}% sure</span>
@@ -672,7 +696,24 @@ function EpisodeRow({ episode: e, channels, onChanged }: { episode: Episode; cha
             {e.guess ? 'reading live' : 'in progress'}
           </span>
         )}
-        {e.mode && <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">{MODE_LABELS[e.mode] ?? e.mode}</span>}
+        {!onlyPrivate && (e.mode || e.guess) && (
+          <label className="inline-flex items-center gap-1 text-[11px] text-neutral-400" title="What you were doing — change it here without changing what it was for">
+            Doing
+            <select
+              value={e.mode ?? ''}
+              disabled={busy}
+              onChange={(ev) => send({ mode: ev.target.value || null })}
+              className={`cursor-pointer appearance-none rounded-full px-2 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-violet-500 ${
+                e.modeIsYours
+                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400'
+              }`}
+            >
+              {!e.mode && <option value="">—</option>}
+              {Object.entries(MODE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </label>
+        )}
         {e.focusScore !== null && !onlyPrivate && (
           <span className="text-[11px] text-neutral-400">{e.focusScore >= 67 ? 'On plan' : e.focusScore >= 34 ? 'Near the plan' : 'Off plan'}</span>
         )}
@@ -720,24 +761,50 @@ function EpisodeRow({ episode: e, channels, onChanged }: { episode: Episode; cha
       )}
 
       {editing && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 pl-5">
-          <select
-            value={channelId}
-            onChange={(ev) => setChannelId(ev.target.value)}
-            className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-          >
-            <option value="">No channel</option>
-            {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <input
-            value={label}
-            onChange={(ev) => setLabel(ev.target.value)}
-            placeholder="In your words (optional)"
-            className="min-w-[12rem] flex-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-          />
-          <SmallButton primary disabled={busy || (!channelId && !label.trim())} onClick={() => send({ verdict: 'corrected', channelId: channelId || undefined, label })}>
-            Save
-          </SmallButton>
+        <div className="mt-3 space-y-2 rounded-lg bg-neutral-50 p-3 pl-5 dark:bg-neutral-950/50">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="w-12 text-[11px] uppercase tracking-wide text-neutral-400">For</span>
+            <input
+              list={`areas-${e.id}`}
+              value={label}
+              onChange={(ev) => setLabel(ev.target.value)}
+              placeholder="In your words, e.g. MyCreativeShop · template manufacturing"
+              className="min-w-[14rem] flex-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+            />
+            <datalist id={`areas-${e.id}`}>
+              {areas.map((a) => <option key={a} value={a} />)}
+            </datalist>
+            <select
+              value={channelId}
+              onChange={(ev) => setChannelId(ev.target.value)}
+              className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+              title="Optionally, the channel it belongs to"
+            >
+              <option value="">No channel</option>
+              {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="w-12 text-[11px] uppercase tracking-wide text-neutral-400">Doing</span>
+            <select
+              value={mode}
+              onChange={(ev) => setMode(ev.target.value)}
+              className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+            >
+              <option value="">Leave as Kan read it</option>
+              {Object.entries(MODE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <SmallButton
+              primary
+              disabled={busy || (!channelId && !label.trim())}
+              onClick={() => send({ verdict: 'corrected', channelId: channelId || undefined, label, ...(mode && mode !== e.mode ? { mode } : {}) })}
+            >
+              Save
+            </SmallButton>
+          </div>
+          <p className="text-[11px] text-neutral-400">
+            Names you give here become choices Kan can pick for future stretches, just like a channel.
+          </p>
         </div>
       )}
     </div>

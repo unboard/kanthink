@@ -109,6 +109,7 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
     if (card && cardTitle.has(card)) return `${channelName.get(chan ?? '') ?? 'a channel'} › ${cardTitle.get(card)}`;
     if (chan && channelName.has(chan)) return channelName.get(chan)!;
     if (e.verdict && e.label) return e.label;
+    if (!e.verdict && e.guessKind === 'area' && e.guessLabel) return e.guessLabel;
     if (e.guessKind === 'new_work') return 'something new (not on any board yet)';
     return null;
   };
@@ -123,7 +124,8 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
     const area = areaOf(e);
     if (area === 'not work') notWork += pub;
     else if (area && pub > 0) areas.set(area.split(' › ')[0], (areas.get(area.split(' › ')[0]) ?? 0) + pub);
-    if (e.activityMode && pub > 0) modes.set(e.activityMode, (modes.get(e.activityMode) ?? 0) + pub);
+    const mode = e.verdictMode ?? e.activityMode;
+    if (mode && pub > 0) modes.set(mode, (modes.get(mode) ?? 0) + pub);
   }
 
   const pagesOf = (id: string, n: number) =>
@@ -142,7 +144,7 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
     notWorkSeconds: notWork,
     areas: [...areas.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, seconds]) => ({ name, seconds })),
     modes: [...modes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([mode, seconds]) => ({ mode, seconds })),
-    now: open ? { area: areaOf(open), mode: open.activityMode, pages: pagesOf(open.id, 2) } : null,
+    now: open ? { area: areaOf(open), mode: open.verdictMode ?? open.activityMode, pages: pagesOf(open.id, 2) } : null,
     stretches: episodes
       .filter((e) => e.activeSeconds - e.privateSeconds >= 120)
       .map((e) => ({ from: e.startedAt.getTime(), to: e.endedAt.getTime(), area: areaOf(e) ?? 'unclear', pages: pagesOf(e.id, 2) })),

@@ -111,6 +111,7 @@ export async function GET(request: Request) {
     if (e.verdict === 'not_work') return 'Not work';
     if (e.verdict) return (e.verdictCardId && cardTitle.get(e.verdictCardId)) || (e.verdictChannelId && channelName.get(e.verdictChannelId)) || e.label || null;
     if (e.guessKind === 'not_work') return 'Not work';
+    if (e.guessKind === 'area') return e.guessLabel;
     if (e.guessKind === 'channel' || e.guessKind === 'card') {
       return (e.guessCardId && cardTitle.get(e.guessCardId)) || (e.guessChannelId && channelName.get(e.guessChannelId)) || null;
     }
@@ -157,6 +158,16 @@ export async function GET(request: Request) {
         }
       : { connected: false },
     channels: channelRows,
+    // Areas the user has named before, offered when they correct a stretch.
+    areas: await (async () => {
+      const rows = await db.query.kanwatchEpisodes.findMany({
+        where: and(eq(kanwatchEpisodes.userId, userId), eq(kanwatchEpisodes.verdict, 'corrected')),
+        columns: { label: true },
+        orderBy: [desc(kanwatchEpisodes.updatedAt)],
+        limit: 200,
+      });
+      return [...new Set(rows.map((r) => r.label?.trim()).filter((l): l is string => !!l))].slice(0, 30);
+    })(),
     episodes: episodes.map((e) => ({
       id: e.id,
       startedAt: e.startedAt.getTime(),
@@ -172,9 +183,11 @@ export async function GET(request: Request) {
             cardId: e.guessCardId && cardTitle.has(e.guessCardId) ? e.guessCardId : null,
             cardTitle: e.guessCardId ? cardTitle.get(e.guessCardId) ?? null : null,
             probability: e.guessProbability,
+            label: e.guessLabel,
           }
         : null,
-      mode: e.activityMode,
+      mode: e.verdictMode ?? e.activityMode,
+      modeIsYours: !!e.verdictMode,
       focusScore: e.focusScore,
       worthCard: e.worthCardProbability,
       verdict: e.verdict,
