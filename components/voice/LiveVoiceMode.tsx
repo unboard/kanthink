@@ -995,7 +995,17 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
       const res = await fetch('/api/voice/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: name, args, sessionCardIds: sessionCardIdsRef.current }),
+        body: JSON.stringify({
+          action: name,
+          args,
+          sessionCardIds: sessionCardIdsRef.current,
+          // What was said just before this call — the words still streaming in are
+          // usually the ones naming the card — so "move it to done" can be resolved.
+          recentTurns: [
+            ...transcriptRef.current.slice(-3),
+            ...(userBufRef.current.trim() ? [{ role: 'user', text: userBufRef.current.trim() }] : []),
+          ].map(({ role, text }) => ({ role, text })),
+        }),
       });
       const data = await res.json();
       // Use voiceResult (without chart JSON) for what Gemini speaks, but full result for UI

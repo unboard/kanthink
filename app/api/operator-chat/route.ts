@@ -559,7 +559,8 @@ export async function POST(request: Request) {
     // Add Mixpanel context only when the user explicitly asks for it.
     // Operator chat is workspace-wide and has no per-channel data-source gate,
     // so we require an explicit mention to avoid leaking analytics into unrelated chats.
-    const analyticsIntent = /\bmixpanel\b|@mixpanel/i.test(message);
+    // The direct query reads Kanthink's own project with the server secret, so it is admin-only.
+    const analyticsIntent = !!session.user.isAdmin && /\bmixpanel\b|@mixpanel/i.test(message);
     if (analyticsIntent) {
       try {
         const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');

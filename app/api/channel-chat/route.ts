@@ -445,7 +445,9 @@ export async function POST(request: Request) {
 
           try {
             const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
-            if (isMixpanelConfigured()) {
+            // Kanthink's own project, read with the server secret — admins only.
+            // Everyone else gets their connected data source via the fallback below.
+            if (session.user.isAdmin && isMixpanelConfigured()) {
               mixpanelContext = await queryForChat(questionContent);
             }
           } catch { /* non-critical */ }

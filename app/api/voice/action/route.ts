@@ -12,7 +12,7 @@ import { generatePlaygroundApp } from '@/lib/playground/generateApp';
 import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
 import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
 import { findDuplicateCard, DUPLICATE_WINDOW_MS, type RecentCard } from '@/lib/voice/duplicateCard';
-import { getUserChannels } from '@/lib/api/permissions';
+import { loadAccess, resolveReference, clarifyingInstruction, type Access, type ReferenceKind, type ResolveContext } from '@/lib/voice/resolveReference';
 import { formatAppPrice } from '@/lib/playground/appAccess';
 import { appStatus, getPublishedVersion } from '@/lib/playground/appRelease';
 import { describeApp } from '@/lib/playground/describeApp';
@@ -25,23 +25,66 @@ import {
   getChannelInstructions,
 } from '@/lib/channelCreation/generateShrooms';
 
-/** Find a task by ID, or fallback to title search if ID doesn't match */
-async function findTask(taskId: string) {
-  // Try exact ID first
-  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
-  if (task) return task;
-  // Fallback: maybe Gemini passed a title instead of ID
-  const byTitle = await db.query.tasks.findFirst({ where: like(tasks.title, `%${taskId}%`) });
-  return byTitle;
+/**
+ * Every lookup below is confined to `access.readable`. The live model hands us ids
+ * and titles it was told about, but nothing stops it — or a crafted request — from
+ * naming something in another user's workspace, so the id alone is never enough.
+ *
+ * An exact id wins outright. Anything else is a spoken reference: Jev resolves it
+ * when configured (see lib/voice/resolveReference.ts), and plain title matching
+ * is the fallback when it is not.
+ */
+
+/** Thrown when a reference fits more than one item; the message is what the model relays. */
+class NeedsClarification extends Error {}
+
+async function resolveOrThrow(kind: ReferenceKind, ref: string, access: Access, ctx: ResolveContext) {
+  const resolution = await resolveReference(kind, ref, access, ctx);
+  if (resolution?.status === 'ambiguous') {
+    throw new NeedsClarification(clarifyingInstruction(kind, ref, resolution.options));
+  }
+  return resolution;
 }
 
-/** Find a card by ID, or fallback to title search */
-async function findCard(cardId: string) {
-  const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId) });
-  if (card) return card;
-  const byTitle = await db.query.cards.findFirst({ where: like(cards.title, `%${cardId}%`) });
-  return byTitle;
+/** Find a task by ID, or by what the user called it */
+async function findTask(taskId: string, access: Access, ctx: ResolveContext = {}) {
+  if (!taskId || access.readable.length === 0) return undefined;
+  const inReach = inArray(tasks.channelId, access.readable);
+  const task = await db.query.tasks.findFirst({ where: and(eq(tasks.id, taskId), inReach) });
+  if (task) return task;
+  const resolved = await resolveOrThrow('task', taskId, access, ctx);
+  if (resolved?.status === 'resolved') return db.query.tasks.findFirst({ where: and(eq(tasks.id, resolved.id), inReach) });
+  if (resolved?.status === 'none') return undefined;
+  // Jev unavailable: maybe the model passed a title instead of an id
+  return db.query.tasks.findFirst({ where: and(like(tasks.title, `%${taskId}%`), inReach) });
 }
+
+/** Find a card by ID, or by what the user called it */
+async function findCard(cardId: string, access: Access, ctx: ResolveContext = {}) {
+  if (!cardId || access.readable.length === 0) return undefined;
+  const inReach = inArray(cards.channelId, access.readable);
+  const card = await db.query.cards.findFirst({ where: and(eq(cards.id, cardId), inReach) });
+  if (card) return card;
+  const resolved = await resolveOrThrow('card', cardId, access, ctx);
+  if (resolved?.status === 'resolved') return db.query.cards.findFirst({ where: and(eq(cards.id, resolved.id), inReach) });
+  if (resolved?.status === 'none') return undefined;
+  return db.query.cards.findFirst({ where: and(like(cards.title, `%${cardId}%`), inReach) });
+}
+
+/** Find a channel by ID, or by what the user called it */
+async function findChannel(channelId: string, access: Access, ctx: ResolveContext = {}) {
+  if (!channelId || access.readable.length === 0) return undefined;
+  const inReach = inArray(channels.id, access.readable);
+  const channel = await db.query.channels.findFirst({ where: and(eq(channels.id, channelId), inReach) });
+  if (channel) return channel;
+  const resolved = await resolveOrThrow('channel', channelId, access, ctx);
+  if (resolved?.status === 'resolved') return db.query.channels.findFirst({ where: and(eq(channels.id, resolved.id), inReach) });
+  if (resolved?.status === 'none') return undefined;
+  return db.query.channels.findFirst({ where: and(like(channels.name, `%${channelId}%`), inReach) });
+}
+
+const READ_ONLY = (title: string) =>
+  `You can view "${title}" but not change it — it was shared with you as a viewer.`;
 
 /** describeApp, with the release it needs fetched for it. */
 async function describeAppRow(
@@ -68,6 +111,8 @@ interface ActionRequest {
    * the whole basis for folding a second card into the first one's thread.
    */
   sessionCardIds?: string[];
+  /** The last few spoken turns, so "it" and "the other one" can be resolved. */
+  recentTurns?: ResolveContext['recentTurns'];
 }
 
 export async function POST(request: Request) {
@@ -77,7 +122,7 @@ export async function POST(request: Request) {
   }
 
   await ensureSchema();
-  const { action, args: rawArgs, sessionCardIds }: ActionRequest = await request.json();
+  const { action, args: rawArgs, sessionCardIds, recentTurns }: ActionRequest = await request.json();
 
   // Live-model tool arguments are not schema-enforced — a non-string here reaches
   // string methods downstream and throws, which used to surface as "no data found".
@@ -85,11 +130,20 @@ export async function POST(request: Request) {
     Object.entries(rawArgs || {}).map(([k, v]) => [k, v == null ? '' : String(v)]),
   ) as typeof rawArgs;
 
+  const access = await loadAccess(session.user.id);
+  const ctx: ResolveContext = {
+    sessionCardIds,
+    recentTurns: Array.isArray(recentTurns)
+      ? recentTurns.slice(-4).map((t) => ({ role: t?.role === 'kan' ? 'kan' as const : 'user' as const, text: String(t?.text ?? '').slice(0, 500) }))
+      : undefined,
+  };
+
   try {
     switch (action) {
       case 'complete_task': {
-        const task = await findTask(args.taskId);
+        const task = await findTask(args.taskId, access, ctx);
         if (!task) return NextResponse.json({ result: `Task not found: "${args.taskId}"` });
+        if (!access.writable.has(task.channelId)) return NextResponse.json({ result: READ_ONLY(task.title) });
         await db.update(tasks).set({ status: 'done', completedAt: new Date(), updatedAt: new Date() }).where(eq(tasks.id, task.id));
         return NextResponse.json({ result: `Completed task "${task.title}"`, taskId: task.id });
       }
@@ -100,21 +154,22 @@ export async function POST(request: Request) {
 
         // Resolve cardId — might be an ID or a card name
         let resolvedCardId: string | null = null;
+        let cardChannelId: string | null = null;
         if (args.cardId) {
-          const card = await findCard(args.cardId);
+          const card = await findCard(args.cardId, access, ctx);
           resolvedCardId = card?.id || null;
+          cardChannelId = card?.channelId || null;
         }
 
-        // Resolve channelId — might be an ID or channel name
-        let resolvedChannelId = args.channelId;
-        if (args.channelId) {
-          const ch = await db.query.channels.findFirst({ where: eq(channels.id, args.channelId) });
-          if (!ch) {
-            // Try by name
-            const { channels: channelsTable } = await import('@/lib/db/schema');
-            const byName = await db.query.channels.findFirst({ where: like(channelsTable.name, `%${args.channelId}%`) });
-            if (byName) resolvedChannelId = byName.id;
-          }
+        // Resolve channelId — might be an ID or channel name. A task on a card
+        // lives in that card's channel, whatever channel the model named.
+        const channel = cardChannelId ? null : await findChannel(args.channelId, access, ctx);
+        const resolvedChannelId = cardChannelId ?? channel?.id;
+        if (!resolvedChannelId) {
+          return NextResponse.json({ result: `Channel not found: "${args.channelId}"` });
+        }
+        if (!access.writable.has(resolvedChannelId)) {
+          return NextResponse.json({ result: READ_ONLY(channel?.name ?? 'that card') });
         }
 
         // For standalone tasks (no parent card), resolve columnName so the task
@@ -167,8 +222,9 @@ export async function POST(request: Request) {
       }
 
       case 'add_note': {
-        const card = await findCard(args.cardId);
+        const card = await findCard(args.cardId, access, ctx);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        if (!access.writable.has(card.channelId)) return NextResponse.json({ result: READ_ONLY(card.title) });
         const msgs = (card.messages || []) as unknown[];
         const newMsg = { id: nanoid(), type: 'ai_response' as const, content: args.content, createdAt: new Date().toISOString() };
         const updated = [...msgs, newMsg] as typeof card.messages;
@@ -180,8 +236,7 @@ export async function POST(request: Request) {
         // Read-only, on purpose. Kan can tell you how a published app is doing; it
         // cannot alter anybody's access, refund anyone, or write to the thread a
         // customer is reading. Everything here is a SELECT.
-        const reachable = await getUserChannels(session.user.id);
-        const reachableIds = reachable.map(c => c.channelId);
+        const reachableIds = access.readable;
         if (reachableIds.length === 0) {
           return NextResponse.json({ result: 'You have no channels, so there are no apps to report on.' });
         }
@@ -277,12 +332,14 @@ export async function POST(request: Request) {
 
       case 'create_card': {
         // Resolve channelId from name if needed
-        let cardChannelId = args.channelId;
-        const chCheck = await db.query.channels.findFirst({ where: eq(channels.id, args.channelId) });
-        if (!chCheck) {
-          const byName = await db.query.channels.findFirst({ where: like(channels.name, `%${args.channelId}%`) });
-          if (byName) cardChannelId = byName.id;
+        const targetChannel = await findChannel(args.channelId, access, ctx);
+        if (!targetChannel) {
+          return NextResponse.json({ result: `Channel not found: "${args.channelId}"` });
         }
+        if (!access.writable.has(targetChannel.id)) {
+          return NextResponse.json({ result: READ_ONLY(targetChannel.name) });
+        }
+        const cardChannelId = targetChannel.id;
 
         const channelCols = await db.query.columns.findMany({
           where: eq(columns.channelId, cardChannelId),
@@ -312,7 +369,7 @@ export async function POST(request: Request) {
         // said "no, a separate card", which is the one case where a second card is
         // exactly what was asked for.
         if (args.distinct !== 'true') {
-          const candidates = await gatherDuplicateCandidates(session.user.id, sessionCardIds);
+          const candidates = await gatherDuplicateCandidates(access, sessionCardIds);
           const duplicate = findDuplicateCard(
             { title: args.title, content: args.content },
             candidates,
@@ -364,7 +421,7 @@ export async function POST(request: Request) {
           messages: messages as typeof cards.$inferInsert.messages,
           source: 'ai', position: pos, createdAt: now, updatedAt: now,
         });
-        const channelInfo = await db.query.channels.findFirst({ where: eq(channels.id, cardChannelId), columns: { name: true } });
+        const channelInfo = targetChannel;
 
         // Same as the cards route and the bookmark inbox: a card arriving by voice should
         // wake a shroom watching that column too.
@@ -398,8 +455,9 @@ export async function POST(request: Request) {
       }
 
       case 'update_task_status': {
-        const task = await findTask(args.taskId);
+        const task = await findTask(args.taskId, access, ctx);
         if (!task) return NextResponse.json({ result: `Task not found: "${args.taskId}"` });
+        if (!access.writable.has(task.channelId)) return NextResponse.json({ result: READ_ONLY(task.title) });
         const updates: Record<string, unknown> = { status: args.status, updatedAt: new Date() };
         if (args.status === 'done') updates.completedAt = new Date();
         await db.update(tasks).set(updates).where(eq(tasks.id, task.id));
@@ -407,8 +465,9 @@ export async function POST(request: Request) {
       }
 
       case 'update_task': {
-        const task = await findTask(args.taskId);
+        const task = await findTask(args.taskId, access, ctx);
         if (!task) return NextResponse.json({ result: `Task not found: "${args.taskId}"` });
+        if (!access.writable.has(task.channelId)) return NextResponse.json({ result: READ_ONLY(task.title) });
         const updates: Record<string, unknown> = { updatedAt: new Date() };
         const changedFields: string[] = [];
         if (typeof args.title === 'string' && args.title.trim().length > 0 && args.title.trim() !== task.title) {
@@ -440,13 +499,9 @@ export async function POST(request: Request) {
 
       case 'search_cards': {
         // Resolve channel
-        let chId = args.channelId;
-        const ch = await db.query.channels.findFirst({ where: eq(channels.id, chId) });
-        if (!ch) {
-          const byName = await db.query.channels.findFirst({ where: like(channels.name, `%${chId}%`) });
-          if (byName) chId = byName.id;
-          else return NextResponse.json({ result: `Channel not found: "${args.channelId}"` });
-        }
+        const ch = await findChannel(args.channelId, access, ctx);
+        if (!ch) return NextResponse.json({ result: `Channel not found: "${args.channelId}"` });
+        const chId = ch.id;
 
         const limit = parseInt(args.limit || '5') || 5;
         let results;
@@ -467,7 +522,7 @@ export async function POST(request: Request) {
           });
         }
 
-        const channelName = ch?.name || (await db.query.channels.findFirst({ where: eq(channels.id, chId), columns: { name: true } }))?.name || chId;
+        const channelName = ch.name;
         const cardSummaries = results.map(c => {
           const fmtDate = (d: Date | null) => d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' }) : '?';
           return `- "${c.title}" (cardId: ${c.id}) — modified: ${fmtDate(c.updatedAt)}, created: ${fmtDate(c.createdAt)}${c.summary ? ` — ${c.summary}` : ''}`;
@@ -481,11 +536,11 @@ export async function POST(request: Request) {
       }
 
       case 'show_card': {
-        let card = await findCard(args.cardId);
+        let card = await findCard(args.cardId, access, ctx);
 
         // If card not found, check if it's a task name
         if (!card) {
-          const task = await findTask(args.cardId);
+          const task = await findTask(args.cardId, access, ctx);
           if (task && task.cardId) {
             card = await db.query.cards.findFirst({ where: eq(cards.id, task.cardId) });
           } else if (task) {
@@ -573,8 +628,7 @@ export async function POST(request: Request) {
         // one answers "what is it and where is it up to". Both were needed and only
         // the second existed, so a DRAFT app had no tool pointing at it at all —
         // which is what "you seem blind to it" was describing.
-        const reachable = await getUserChannels(session.user.id);
-        const reachableIds = reachable.map(c => c.channelId);
+        const reachableIds = access.readable;
         if (reachableIds.length === 0) {
           return NextResponse.json({ result: 'You have no channels, so there are no apps to look at.' });
         }
@@ -598,7 +652,7 @@ export async function POST(request: Request) {
         // Reached through the card it hangs off. "The launch simulator card" and
         // "the launch simulator app" are the same request to whoever is speaking.
         if (wanted && matched.length === 0) {
-          const viaCard = await findCard(args.appName || args.cardId || '');
+          const viaCard = await findCard(args.appName || args.cardId || '', access, ctx);
           if (viaCard) matched = allApps.filter(a => a.cardId === viaCard.id);
         }
 
@@ -626,6 +680,11 @@ export async function POST(request: Request) {
       }
 
       case 'query_mixpanel': {
+        // This is Kanthink's own Mixpanel project, read with the server's secret —
+        // the company's analytics, not the caller's.
+        if (!session.user.isAdmin) {
+          return NextResponse.json({ result: 'Analytics queries are not available on this account.' });
+        }
         try {
           const { isMixpanelConfigured, queryForChat } = await import('@/lib/ai/mixpanelDirect');
           if (!isMixpanelConfigured()) {
@@ -703,8 +762,9 @@ export async function POST(request: Request) {
       }
 
       case 'archive_card': {
-        const card = await findCard(args.cardId);
+        const card = await findCard(args.cardId, access, ctx);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        if (!access.writable.has(card.channelId)) return NextResponse.json({ result: READ_ONLY(card.title) });
         if (card.isPendingReview) {
           return NextResponse.json({ result: `Card "${card.title}" is awaiting review — approve or reject it on the board first`, cardId: card.id });
         }
@@ -727,8 +787,9 @@ export async function POST(request: Request) {
       }
 
       case 'unarchive_card': {
-        const card = await findCard(args.cardId);
+        const card = await findCard(args.cardId, access, ctx);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        if (!access.writable.has(card.channelId)) return NextResponse.json({ result: READ_ONLY(card.title) });
         if (card.isPendingReview) {
           return NextResponse.json({ result: `Card "${card.title}" is awaiting review, not archived`, cardId: card.id });
         }
@@ -750,8 +811,9 @@ export async function POST(request: Request) {
       }
 
       case 'move_card': {
-        const card = await findCard(args.cardId);
+        const card = await findCard(args.cardId, access, ctx);
         if (!card) return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
+        if (!access.writable.has(card.channelId)) return NextResponse.json({ result: READ_ONLY(card.title) });
         if (card.isPendingReview) {
           return NextResponse.json({ result: `Card "${card.title}" is awaiting review — approve it before moving it`, cardId: card.id });
         }
@@ -933,11 +995,12 @@ export async function POST(request: Request) {
         if (!args.cardId) {
           return NextResponse.json({ result: 'Which card should I build from?' });
         }
-        const card = await db.query.cards.findFirst({ where: eq(cards.id, args.cardId) });
+        const card = await findCard(args.cardId, access, ctx);
         if (!card) {
           return NextResponse.json({ result: `Card not found: "${args.cardId}"` });
         }
-        const app = await resolveAppForAutomatedBuild({ cardId: args.cardId, userId: session.user.id });
+        if (!access.writable.has(card.channelId)) return NextResponse.json({ result: READ_ONLY(card.title) });
+        const app = await resolveAppForAutomatedBuild({ cardId: card.id, userId: session.user.id });
         if (!app) {
           return NextResponse.json({ result: `Couldn't create an app on "${card.title}".` });
         }
@@ -1000,6 +1063,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ result: `Unknown action: ${action}` });
     }
   } catch (err) {
+    if (err instanceof NeedsClarification) return NextResponse.json({ result: err.message });
     console.error('[Voice action]', err);
     return NextResponse.json({ result: `Failed: ${err instanceof Error ? err.message : 'Unknown error'}` });
   }
@@ -1019,17 +1083,19 @@ export async function POST(request: Request) {
  *     lot of reading for a weak signal.
  */
 async function gatherDuplicateCandidates(
-  userId: string,
+  access: Access,
   sessionCardIds: string[] | undefined,
 ): Promise<RecentCard[]> {
   const candidates: RecentCard[] = [];
   const seen = new Set<string>();
+  const reachableIds = access.readable;
+  if (reachableIds.length === 0) return candidates;
 
   // Capped: a long session's earliest cards are no longer the same train of thought.
   const ids = (sessionCardIds || []).filter(Boolean).slice(-10);
   if (ids.length > 0) {
     const sessionCards = await db.query.cards.findMany({
-      where: inArray(cards.id, ids),
+      where: and(inArray(cards.id, ids), inArray(cards.channelId, reachableIds)),
       columns: { id: true, title: true, channelId: true, createdAt: true, messages: true },
     });
     for (const card of sessionCards) {
@@ -1045,9 +1111,7 @@ async function gatherDuplicateCandidates(
     }
   }
 
-  const userChannels = await getUserChannels(userId);
-  const reachableIds = userChannels.map((c) => c.channelId);
-  if (reachableIds.length > 0) {
+  {
     const recent = await db.query.cards.findMany({
       where: and(
         inArray(cards.channelId, reachableIds),
