@@ -40,6 +40,39 @@ describe('private sites keep nothing but time', () => {
     expect(isPrivateUrl(url)).toBe(true)
   })
 
+  it.each([
+    'https://www.google.com/maps/dir/123+Main+St,+Springfield/Work',
+    'https://maps.google.com/?q=742+Evergreen+Terrace',
+    'https://maps.apple.com/place?address=1+Infinite+Loop',
+    'https://www.waze.com/live-map/directions',
+  ])('maps, which put home addresses in the URL: %s', (url) => {
+    expect(isPrivateUrl(url)).toBe(true)
+  })
+
+  it.each([
+    'https://app.example.com/reset-password/some-token',
+    'https://example.com/forgot-password',
+    'https://login.example.com/',
+    'https://accounts.spotify.com/en/status',
+    'https://sso.company.com/start',
+    'https://acme.okta.com/app/home',
+    'https://id.atlassian.com/manage-profile',
+  ])('sign-in systems and hyphenated account pages: %s', (url) => {
+    expect(isPrivateUrl(url)).toBe(true)
+  })
+
+  it.each([
+    'Passport scan - Google Docs',
+    'W-2 2025.pdf',
+    "Driver's license front",
+    '1099-NEC forms',
+    'Credit report - Experian',
+    'Birth certificate copy',
+    'Taxes 2025 - Google Sheets',
+  ])('identity-document titles on any site: %s', (title) => {
+    expect(sanitizeVisit({ url: 'https://docs.google.com/document/d/abc/edit', title })).toEqual({ private: true })
+  })
+
   it('treats a page whose title gives it away as private', () => {
     expect(isPrivateTitle('Enter your verification code')).toBe(true)
     expect(sanitizeVisit({ url: 'https://example.com/step', title: 'Sign in to continue' })).toEqual({ private: true })

@@ -48,6 +48,8 @@ export const PRIVATE_DOMAINS = [
   'goodrx.com', 'zocdoc.com', 'teladoc.com', 'onemedical.com', 'anthem.com', 'aetna.com',
   'cigna.com', 'uhc.com', 'bcbs.com', 'humana.com', 'geico.com', 'progressive.com', 'statefarm.com',
   'allstate.com', 'libertymutual.com',
+  // Maps: directions and saved places put home and work addresses in the URL path.
+  'maps.google.com', 'maps.apple.com', 'waze.com', 'mapquest.com',
 ];
 
 /** Whole top-level domains that are private: government and military. */
@@ -57,6 +59,15 @@ const PRIVATE_TLDS = ['.gov', '.mil'];
 const PRIVATE_HOST_WORDS = [
   'bank', 'creditunion', 'fcu', 'mychart', 'patient', 'pharmacy', 'health', 'medical', 'clinic',
   'hospital', 'insurance', 'mortgage', 'loan', 'wallet', 'payroll', 'adp', 'gusto', 'tax',
+];
+
+/**
+ * Host labels that mean "this is a sign-in or account system", whatever the company:
+ * login.acme.com, accounts.spotify.com, sso.corp.com, acme.okta.com.
+ */
+const PRIVATE_HOST_LABELS = [
+  'login', 'signin', 'auth', 'sso', 'accounts', 'account', 'secure', 'identity', 'id',
+  'vault', 'okta', 'auth0', 'onelogin', 'passport', 'myaccount',
 ];
 
 /** A path containing any of these, as a whole segment or word, is private on any site. */
@@ -69,7 +80,7 @@ const PRIVATE_PATH_WORDS = [
 
 /** Titles that give a sensitive page away even when its URL does not. */
 const PRIVATE_TITLE_PATTERN =
-  /\b(sign[ -]?in|log[ -]?in|password|passcode|verification code|security code|two[- ]factor|2fa|checkout|payment|billing|bank|account number|routing number|social security|tax return|medical|prescription|diagnosis)\b/i;
+  /\b(sign[ -]?in|log[ -]?in|password|passcode|verification code|security code|two[- ]factor|2fa|checkout|payment|billing|bank|account number|routing number|bank statement|social security|ssn|tax|taxes|tax return|w-?2|w-?9|1099|passport|driver'?s licen[cs]e|licen[cs]e number|birth certificate|date of birth|dob|credit card|credit report|credit score|identity|medical|prescription|diagnosis|insurance)\b/i;
 
 function hostOf(url) {
   try {
@@ -90,6 +101,8 @@ export function isPrivateUrl(url, extraDomains = []) {
   if (PRIVATE_TLDS.some((tld) => host.endsWith(tld))) return true;
   // Short words must match a whole label ("adp", "tax"); longer ones anywhere in one
   // ("firstbankohio"), which is where over-matching is rare.
+  const labels = host.split('.');
+  if (labels.slice(0, -1).some((l) => PRIVATE_HOST_LABELS.includes(l))) return true;
   const hostWords = host.split(/[.\-]/);
   if (PRIVATE_HOST_WORDS.some((w) => hostWords.some((part) => part === w || (w.length >= 4 && part.includes(w))))) return true;
 
@@ -99,8 +112,12 @@ export function isPrivateUrl(url, extraDomains = []) {
   } catch {
     return true;
   }
+  // Whole segments ("sign-in") and the words inside them ("reset-password" → "reset").
   const segments = path.split(/[/_.]+/).filter(Boolean);
-  if (segments.some((s) => PRIVATE_PATH_WORDS.includes(s))) return true;
+  const words = path.split(/[/_.-]+/).filter(Boolean);
+  if ([...segments, ...words].some((s) => PRIVATE_PATH_WORDS.includes(s))) return true;
+  // Google Maps lives under google.com/maps.
+  if (/(^|\.)google\.[a-z.]+$/.test(host) && segments[0] === 'maps') return true;
   return false;
 }
 
