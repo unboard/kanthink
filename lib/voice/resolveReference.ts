@@ -239,9 +239,9 @@ export function decide(ranked: Array<{ c: Candidate; p: number }>, none: number)
     .filter((r) => r.p >= ASK_MIN)
     .slice(0, 3)
     .map((r) => ({ id: r.c.id, title: r.c.title, where: r.c.where }));
-  return options.length === 1
-    ? { status: 'resolved', id: options[0].id, title: options[0].title }
-    : { status: 'ambiguous', options };
+  // One plausible candidate that Jev is still unsure of is a "did you mean…?", not an
+  // action: "MyCreativeShop Prototypes" → MCS AI Builder at 43% acted without asking.
+  return { status: 'ambiguous', options };
 }
 
 export async function resolveReference(
@@ -329,6 +329,13 @@ export async function resolveReference(
 
 /** The spoken question for an ambiguous reference, phrased for the live model to relay. */
 export function clarifyingInstruction(kind: ReferenceKind, phrase: string, options: Candidate[]): string {
+  if (options.length === 1) {
+    const [only] = options;
+    return (
+      `Not done yet — there is no ${kind} called "${phrase}"; the closest is "${only.title}" (${only.where}, id ${only.id}). ` +
+      'Ask the user in one short question whether that is the one they mean. If yes, call the same action again with that id.'
+    );
+  }
   const listed = options.map((o) => `"${o.title}" (${o.where}, id ${o.id})`).join(' or ');
   return (
     `Not done yet — "${phrase}" could be more than one ${kind}: ${listed}. ` +

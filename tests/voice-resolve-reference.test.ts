@@ -51,12 +51,21 @@ describe('decide', () => {
     if (result.status === 'ambiguous') expect(result.options).toHaveLength(3)
   })
 
-  it('resolves when only one candidate clears the bar', () => {
-    expect(decide(ranked(['a', 0.5], ['b', 0.1]), 0.4)).toEqual({ status: 'resolved', id: 'a', title: 'a' })
+  it('asks "did you mean…?" when one candidate is plausible but not confident', () => {
+    // From production: "MyCreativeShop Prototypes" → MCS AI Builder at 0.43, none 0.22.
+    const result = decide(ranked(['a', 0.43], ['b', 0.11], ['c', 0.05]), 0.22)
+    expect(result.status).toBe('ambiguous')
+    if (result.status === 'ambiguous') expect(result.options.map(o => o.id)).toEqual(['a'])
   })
 })
 
 describe('clarifyingInstruction', () => {
+  it('phrases a single candidate as a confirmation', () => {
+    const text = clarifyingInstruction('channel', 'MyCreativeShop Prototypes', [card('c1', 'MCS AI Builder')])
+    expect(text).toContain('closest is "MCS AI Builder"')
+    expect(text).toMatch(/whether that is the one they mean/)
+  })
+
   it('names each option with its location and id, and asks for one short question', () => {
     const text = clarifyingInstruction('card', 'launch', [card('c1', 'Launch checklist'), card('c2', 'Launch email')])
     expect(text).toContain('"Launch checklist" (Work › Doing, id c1)')
