@@ -5,7 +5,7 @@ const FOREVER = Number.MAX_SAFE_INTEGER;
 
 async function render() {
   const s = await chrome.storage.local.get({
-    endpoint: 'https://kanthink.com', token: '', pausedUntil: 0, includeSearch: true,
+    endpoint: 'https://www.kanthink.com', token: '', pausedUntil: 0, includeSearch: true,
     extraPrivateDomains: [], lastUpload: null, queue: [],
   });
   const now = Date.now();
@@ -74,7 +74,7 @@ $('blockSite').onclick = async (e) => {
 };
 
 $('save').onclick = async () => {
-  const endpoint = ($('endpoint').value.trim() || 'https://kanthink.com').replace(/\/$/, '');
+  const endpoint = ($('endpoint').value.trim() || 'https://www.kanthink.com').replace(/\/$/, '');
   const token = $('token').value.trim();
   if (!/^https:\/\/|^http:\/\/localhost(:\d+)?$/.test(endpoint)) {
     $('detail').textContent = 'The address must be https (or http://localhost for testing).';

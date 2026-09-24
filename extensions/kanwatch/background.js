@@ -13,7 +13,9 @@
 
 import { sanitizeVisit } from './privacy.js';
 
-const DEFAULT_ENDPOINT = 'https://kanthink.com';
+// The bare domain redirects to www, and browsers drop the Authorization header on a
+// cross-origin redirect — so the key would never arrive. Always talk to www.
+const DEFAULT_ENDPOINT = 'https://www.kanthink.com';
 const MIN_VISIT_MS = 3000;            // quicker than this is a flip-through, not a visit
 const CHECKPOINT_MS = 5 * 60 * 1000;  // long visits are split so the day view stays current
 const MEDIA_FRESH_MS = 20000;         // a "video playing" report counts for this long
@@ -187,7 +189,8 @@ async function upload() {
   const batch = queue.slice(0, 200);
   let lastUpload;
   try {
-    const res = await fetch(`${settings.endpoint.replace(/\/$/, '')}/api/kanwatch/ingest`, {
+    const base = settings.endpoint.replace(/\/$/, '').replace(/^https:\/\/kanthink\.com$/, DEFAULT_ENDPOINT);
+    const res = await fetch(`${base}/api/kanwatch/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.token}` },
       body: JSON.stringify({ visits: batch, tzOffsetMinutes: new Date().getTimezoneOffset() }),
