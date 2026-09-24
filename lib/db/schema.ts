@@ -1563,3 +1563,42 @@ export const kanwatchSites = sqliteTable('kanwatch_sites', {
 }, (table) => [
   uniqueIndex('kanwatch_sites_user_domain_idx').on(table.userId, table.domain),
 ])
+
+// A public page you spent real time reading, and what Kan made of it. Only pages that
+// pass readablePageKind() in extensions/kanwatch/privacy.js ever get a row: posts,
+// articles, videos, discussions, docs — never feeds, inboxes, or your own tools.
+export const kanwatchReads = sqliteTable('kanwatch_reads', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  url: text('url').notNull(),                         // public link back, no query string
+  domain: text('domain'),
+  title: text('title'),
+  kind: text('kind'),                                 // post | video | discussion | article | docs
+  text: text('text'),                                 // scrubbed page text, capped; expires with visits
+  seconds: integer('seconds').notNull().default(0),   // total time spent reading, across visits
+  manual: integer('manual', { mode: 'boolean' }).default(false), // you pressed "Kan, read this page"
+  status: text('status').$type<'pending' | 'judged' | 'failed'>().notNull().default('pending'),
+  // Jev's read (0–100)
+  category: text('category'),
+  aboutWork: integer('about_work'),
+  worth: integer('worth'),
+  kanthinkFit: integer('kanthink_fit'),
+  appIdea: integer('app_idea'),
+  // The LLM's, only for pages Jev thought were worth it
+  tldr: text('tldr'),
+  why: text('why'),
+  nudgeKind: text('nudge_kind'),                      // kanthink | app | revisit | reflect
+  nudge: text('nudge'),
+  // What you did with it
+  verdict: text('verdict').$type<'saved' | 'dismissed'>(),
+  reflection: text('reflection'),
+  cardId: text('card_id'),
+  jevModel: text('jev_model'),
+  firstSeenAt: integer('first_seen_at', { mode: 'timestamp' }),
+  lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('kanwatch_reads_user_url_idx').on(table.userId, table.url),
+  index('kanwatch_reads_user_seen_idx').on(table.userId, table.lastSeenAt),
+])

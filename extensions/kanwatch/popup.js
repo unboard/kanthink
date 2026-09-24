@@ -38,6 +38,7 @@ async function render() {
   $('siteBox').hidden = !host;
   $('siteName').textContent = host + (alreadyPrivate ? ' (private)' : '');
   $('blockSite').hidden = alreadyPrivate;
+  $('readNow').hidden = alreadyPrivate || !connected;
   $('blockSite').dataset.domain = host;
 
   $('blockedWrap').hidden = s.extraPrivateDomains.length === 0;
@@ -65,6 +66,12 @@ $('pause1h').onclick = async () => { await chrome.storage.local.set({ pausedUnti
 $('pauseAll').onclick = async () => { await chrome.storage.local.set({ pausedUntil: FOREVER }); render(); };
 $('resume').onclick = async () => { await chrome.storage.local.set({ pausedUntil: 0 }); render(); };
 $('includeSearch').onchange = async (e) => { await chrome.storage.local.set({ includeSearch: e.target.checked }); };
+
+$('readNow').onclick = async () => {
+  $('readNow').textContent = 'Reading...';
+  await chrome.runtime.sendMessage({ type: 'readNow' });
+  $('readNow').textContent = 'Sent to Kan';
+};
 
 $('blockSite').onclick = async (e) => {
   const domain = e.target.dataset.domain;

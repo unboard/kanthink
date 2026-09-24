@@ -70,7 +70,51 @@ interface DayData {
   episodes: Episode[];
   sites: Site[];
   week: { start: number; activeSeconds: number; notWorkSeconds: number; privateSeconds: number }[];
+  reads: {
+    counts: Record<string, number>;
+    total: number;
+    worthALook: WorthRead[];
+    others: { id: string; url: string; domain: string | null; title: string | null; category: string | null; seconds: number; status: string }[];
+  };
 }
+
+interface WorthRead {
+  id: string;
+  url: string;
+  domain: string | null;
+  title: string | null;
+  kind: string | null;
+  seconds: number;
+  category: string | null;
+  tldr: string | null;
+  why: string | null;
+  nudge: string | null;
+  nudgeKind: 'kanthink' | 'app' | 'revisit' | 'reflect' | null;
+  verdict: 'saved' | 'dismissed' | null;
+  reflection: string | null;
+  cardId: string | null;
+  manual: boolean | null;
+  scores: { worth: number | null; kanthink: number | null; app: number | null };
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  work_learning: 'work learning',
+  general_learning: 'learning',
+  reference: 'reference',
+  news: 'news',
+  entertainment: 'entertainment',
+  social_chatter: 'social chatter',
+  shopping: 'shopping',
+  reading: 'still reading',
+  other: 'other',
+};
+
+const NUDGE_LABELS: Record<string, string> = {
+  kanthink: 'For Kanthink?',
+  app: 'An app?',
+  revisit: 'Worth coming back to',
+  reflect: 'What did you think?',
+};
 
 const MODE_LABELS: Record<string, string> = {
   building: 'Building',
@@ -239,6 +283,7 @@ export function KanwatchDay() {
             {/* Keyed so a new day or a saved value resets the field. */}
             <Intention key={`${date}:${data.intention}`} date={date} value={data.intention} onSaved={() => load(date)} />
             <Summary data={data} />
+            <WorthALook reads={data.reads} channels={data.channels} onChanged={() => load(date)} />
             <Week week={data.week} date={date} onPick={changeDate} />
             <Timeline episodes={data.episodes} />
             <WhereItWent episodes={data.episodes} />
@@ -869,6 +914,125 @@ function SetupPanel({ connected, date, onChanged, onClose }: { connected: boolea
         )}
       </div>
     </section>
+  );
+}
+
+// ---- worth a look ----------------------------------------------------------------
+
+function WorthALook({ reads, channels, onChanged }: { reads: DayData['reads']; channels: DayData['channels']; onChanged: () => void }) {
+  const [showOthers, setShowOthers] = useState(false);
+  if (!reads || reads.total === 0) return null;
+  const counts = Object.entries(reads.counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `${n} ${CATEGORY_LABELS[k] ?? k}`)
+    .join(' · ');
+
+  return (
+    <section>
+      <SectionTitle>Worth a look</SectionTitle>
+      <p className="mb-3 text-xs text-neutral-500">
+        Kan read {reads.total} public {reads.total === 1 ? 'page' : 'pages'} you spent time on today: {counts}.
+        {reads.worthALook.length > 0 ? ' These stood out.' : ' Nothing stood out yet.'}
+      </p>
+      <div className="space-y-3">
+        {reads.worthALook.map((r) => <WorthCard key={r.id} read={r} channels={channels} onChanged={onChanged} />)}
+      </div>
+      {reads.others.length > 0 && (
+        <div className="mt-3">
+          <button onClick={() => setShowOthers(!showOthers)} className="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200">
+            {showOthers ? 'Hide' : 'Show'} the other {reads.others.length} {reads.others.length === 1 ? 'page' : 'pages'} Kan read
+          </button>
+          {showOthers && (
+            <ul className="mt-2 space-y-1">
+              {reads.others.map((o) => (
+                <li key={o.id} className="flex items-baseline gap-2 text-[13px]">
+                  <a href={o.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-neutral-700 hover:underline dark:text-neutral-300">
+                    <span className="text-neutral-400">{o.domain}</span> · {o.title || o.url}
+                  </a>
+                  <span className="flex-shrink-0 text-[11px] text-neutral-400">
+                    {o.status === 'judged' ? CATEGORY_LABELS[o.category ?? 'other'] ?? o.category : 'still reading'} · {duration(o.seconds)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WorthCard({ read: r, channels, onChanged }: { read: WorthRead; channels: DayData['channels']; onChanged: () => void }) {
+  const [reflection, setReflection] = useState(r.reflection ?? '');
+  const [channelId, setChannelId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const send = async (body: Record<string, unknown>) => {
+    setBusy(true);
+    setError('');
+    const res = await fetch(`/api/kanwatch/reads/${r.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) setError((await res.json().catch(() => ({}))).error ?? 'That didn’t work.');
+    setBusy(false);
+    onChanged();
+  };
+
+  return (
+    <article className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <a href={r.url} target="_blank" rel="noreferrer" className="min-w-0 text-[15px] font-medium text-neutral-900 hover:underline dark:text-neutral-100">
+          {r.title || r.url}
+        </a>
+        <span className="text-[11px] text-neutral-400">
+          {r.domain}{r.kind ? ` · ${r.kind}` : ''} · read {duration(r.seconds)}{r.category ? ` · ${CATEGORY_LABELS[r.category] ?? r.category}` : ''}
+        </span>
+        {r.verdict === 'saved' && <span className="text-[11px] text-emerald-600 dark:text-emerald-400">Saved as a card</span>}
+      </div>
+
+      {r.tldr && <p className="mt-2 text-[14px] leading-relaxed text-neutral-700 dark:text-neutral-300">{r.tldr}</p>}
+      {r.why && <p className="mt-1.5 text-[13px] text-neutral-500">{r.why}</p>}
+
+      {r.nudge && (
+        <div className="mt-3 rounded-lg bg-violet-500/5 p-3">
+          <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-violet-600 dark:text-violet-400">
+            {NUDGE_LABELS[r.nudgeKind ?? 'reflect'] ?? 'Kan asks'}
+          </div>
+          <p className="text-[14px] text-neutral-800 dark:text-neutral-200">{r.nudge}</p>
+          <div className="mt-2 flex gap-2">
+            <input
+              value={reflection}
+              onChange={(e) => setReflection(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && reflection.trim() && send({ reflection })}
+              placeholder="Your take (optional)"
+              className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+            />
+            {reflection.trim() !== (r.reflection ?? '') && (
+              <SmallButton disabled={busy} onClick={() => send({ reflection })}>Keep</SmallButton>
+            )}
+          </div>
+        </div>
+      )}
+
+      {r.verdict !== 'saved' && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select
+            value={channelId}
+            onChange={(e) => setChannelId(e.target.value)}
+            className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+          >
+            <option value="">Save to…</option>
+            {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <SmallButton primary disabled={busy || !channelId} onClick={() => send({ verdict: 'saved', channelId, reflection })}>Save as card</SmallButton>
+          <SmallButton disabled={busy} onClick={() => send({ verdict: 'dismissed' })}>Not interesting</SmallButton>
+          {error && <span className="text-xs text-red-500">{error}</span>}
+        </div>
+      )}
+    </article>
   );
 }
 

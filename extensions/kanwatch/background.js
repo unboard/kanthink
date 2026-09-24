@@ -11,7 +11,7 @@
  * rules again on arrival.
  */
 
-import { sanitizeVisit } from './privacy.js';
+import { sanitizeVisit, readablePageKind, publicUrlOf, isPrivateUrl, isPrivateTitle, scrubText, scrubPageText } from './privacy.js';
 
 // The bare domain redirects to www, and browsers drop the Authorization header on a
 // cross-origin redirect — so the key would never arrive. Always talk to www.
@@ -20,6 +20,8 @@ const MIN_VISIT_MS = 3000;            // quicker than this is a flip-through, no
 const CHECKPOINT_MS = 5 * 60 * 1000;  // long visits are split so the day view stays current
 const MEDIA_FRESH_MS = 20000;         // a "video playing" report counts for this long
 const MAX_QUEUE = 2000;
+const READ_AFTER_MS = 30 * 1000;       // reading this long on a public page earns a read
+const REREAD_AFTER_MS = 3 * 60 * 1000; // ...and a fuller one for long threads that kept loading
 
 // ---- storage ------------------------------------------------------------------
 
@@ -81,6 +83,9 @@ function startVisit(tab, now) {
     clicks: 0,
     scrollDepth: 0,
     mediaSeconds: 0,
+    ogType: '',
+    read: null,      // { title, text, ogType, manual } once the page's text is read
+    readAt: 0,       // activeMs when it was last read
   };
 }
 
@@ -114,8 +119,24 @@ async function finishVisit(visit, now) {
     await enqueue({ ...timing, private: true });
     return;
   }
+  // Page text only for public reading that privacy.js allows, checked again here, at
+  // the last moment, with any sites you've made private since.
+  // Scrubbed here, before it leaves the browser, exactly as the server will scrub it again.
+  const readable = visit.read
+    && !isPrivateTitle(visit.read.title)
+    && (visit.read.manual || readablePageKind(visit.url, visit.read.ogType, settings.extraPrivateDomains));
+  const read = readable
+    ? {
+        url: publicUrlOf(visit.url),
+        title: scrubText(visit.read.title, 200),
+        text: scrubPageText(visit.read.text),
+        ogType: visit.read.ogType,
+        manual: !!visit.read.manual,
+      }
+    : undefined;
   await enqueue({
     ...timing,
+    ...(read ? { read } : {}),
     domain: clean.domain,
     path: clean.path,
     title: clean.title,
@@ -170,12 +191,46 @@ async function refresh() {
       const carry = { ...current };
       await finishVisit(current, now);
       current = { ...startVisit({ id: carry.tabId, url: carry.url, title: carry.title }, now),
-        heading: carry.heading, description: carry.description };
+        heading: carry.heading, description: carry.description, ogType: carry.ogType,
+        // Time on the continued visit keeps counting toward the same read.
+        read: carry.read, readAt: 0 };
       if (present) current.runningSince = now;
     }
   }
 
   session.current = current;
+  await setSession(session);
+
+  if (current && present) await maybeReadPage(current);
+}
+
+/** Ask the page for its text, if it is public reading and you've been reading it a while. */
+async function maybeReadPage(visit, manual = false) {
+  const settings = await getSettings();
+  if (isPrivateUrl(visit.url, settings.extraPrivateDomains)) return;
+  if (!manual) {
+    if (!readablePageKind(visit.url, visit.ogType, settings.extraPrivateDomains)) return;
+    const active = visit.activeMs + (visit.runningSince ? Date.now() - visit.runningSince : 0);
+    const due = visit.read ? active - visit.readAt >= REREAD_AFTER_MS : active >= READ_AFTER_MS;
+    if (!due) return;
+  }
+  let reply;
+  try {
+    reply = await chrome.tabs.sendMessage(visit.tabId, { type: 'extract' });
+  } catch {
+    return; // no page script here (it declined, or the page predates the extension)
+  }
+  if (!reply?.text) return;
+  const session = await getSession();
+  const current = session.current;
+  if (!current || current.id !== visit.id) return;
+  current.read = {
+    title: reply.title || current.title,
+    text: String(reply.text).slice(0, 8000),
+    ogType: reply.ogType || current.ogType,
+    manual: manual || !!current.read?.manual,
+  };
+  current.readAt = current.activeMs + (current.runningSince ? Date.now() - current.runningSince : 0);
   await setSession(session);
 }
 
@@ -280,6 +335,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (msg.type === 'meta') {
           current.heading = String(msg.heading || '').slice(0, 300);
           current.description = String(msg.description || '').slice(0, 500);
+          current.ogType = String(msg.ogType || '').slice(0, 40);
         } else {
           current.keystrokes += Math.max(0, Math.min(5000, msg.keystrokes | 0));
           current.clicks += Math.max(0, Math.min(5000, msg.clicks | 0));
@@ -299,6 +355,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     serial(async () => {
       await refresh();
       await upload();
+    }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === 'readNow') {
+    // "Kan, read this page": read it now and send it, rather than waiting a minute.
+    serial(async () => {
+      await refresh();
+      const session = await getSession();
+      if (!session.current) return;
+      await maybeReadPage(session.current, true);
+      const after = await getSession();
+      if (after.current?.read?.manual) {
+        const carry = after.current;
+        await finishVisit(carry, Date.now());
+        after.current = { ...startVisit({ id: carry.tabId, url: carry.url, title: carry.title }, Date.now()),
+          heading: carry.heading, description: carry.description, ogType: carry.ogType, read: carry.read };
+        after.current.runningSince = Date.now();
+        await setSession(after);
+        await upload();
+      }
     }).then(() => sendResponse({ ok: true }));
     return true;
   }

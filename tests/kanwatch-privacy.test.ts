@@ -8,7 +8,58 @@
 import { describe, it, expect } from 'vitest'
 import {
   isPrivateUrl, isPrivateTitle, scrubText, scrubUrl, searchQueryOf, sanitizeVisit,
+  readablePageKind, publicUrlOf, scrubPageText,
 } from '@/extensions/kanwatch/privacy.js'
+
+describe('which pages may have their text read', () => {
+  it.each([
+    ['https://x.com/emmanuel_2m/status/2103097017073361137', '', 'post'],
+    ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', '', 'video'],
+    ['https://news.ycombinator.com/item?id=41234567', '', 'discussion'],
+    ['https://www.reddit.com/r/webdev/comments/abc123/some_thread/', '', 'discussion'],
+    ['https://someone.substack.com/p/on-building', '', 'article'],
+    ['https://docs.stripe.com/webhooks', '', 'docs'],
+    ['https://blog.example.com/why-kanban', 'article', 'article'],
+  ])('public reading: %s', (url, ogType, kind) => {
+    expect(readablePageKind(url, ogType)).toBe(kind)
+  })
+
+  it.each([
+    'https://x.com/home',
+    'https://x.com/messages/123-456',
+    'https://x.com/i/bookmarks',
+    'https://x.com/notifications',
+    'https://docs.google.com/document/d/abc/edit',
+    'https://github.com/unboard/kanthink/pull/12',
+    'https://app.slack.com/client/T123/C456',
+    'https://www.notion.so/My-private-page-abc',
+    'https://www.facebook.com/some.person',
+    'https://kanthink.com/channel/abc',
+    'https://www.youtube.com/feed/subscriptions',
+    'https://example.com/random-page',
+  ])('never read — feeds, messages, your own tools, or not clearly public: %s', (url) => {
+    expect(readablePageKind(url, '')).toBeNull()
+  })
+
+  it('never reads a private page, whatever it claims to be', () => {
+    expect(readablePageKind('https://secure.chase.com/news', 'article')).toBeNull()
+    expect(readablePageKind('https://example.com/login', 'article')).toBeNull()
+    expect(readablePageKind('https://news.ycombinator.com/item?id=1', '', ['ycombinator.com'])).toBeNull()
+  })
+
+  it('keeps a working link to public pages, without query strings', () => {
+    expect(publicUrlOf('https://x.com/emmanuel_2m/status/2103097017073361137?s=20&t=abc'))
+      .toBe('https://x.com/emmanuel_2m/status/2103097017073361137')
+    expect(publicUrlOf('https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123&t=42'))
+      .toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+    expect(publicUrlOf('https://news.ycombinator.com/item?id=41234567&p=2'))
+      .toBe('https://news.ycombinator.com/item?id=41234567')
+  })
+
+  it('scrubs page text like every other field', () => {
+    expect(scrubPageText('DM me at jane@example.com or 555-123-4567')).toBe('DM me at [email] or [phone]')
+  })
+})
 
 describe('private sites keep nothing but time', () => {
   it.each([

@@ -241,3 +241,74 @@ export function sanitizeVisit(raw) {
     searchQuery: raw.includeSearch === false ? '' : searchQueryOf(raw.url),
   };
 }
+
+// ---- Reading page text ---------------------------------------------------------
+//
+// Page text is only ever read from PUBLIC reading: a post or thread, an article, a
+// video, a discussion, documentation. Never a feed, an inbox, messages, a settings
+// page, a dashboard, or anything isPrivateUrl() rejects. Public content is what
+// anyone could read; it holds nothing about your accounts.
+
+const X_HOSTS = ['x.com', 'twitter.com', 'mobile.twitter.com'];
+// Paths on X that are yours, not the public's.
+const X_PRIVATE_FIRST = new Set(['i', 'messages', 'home', 'notifications', 'settings', 'compose', 'explore', 'search', 'bookmarks', 'lists']);
+
+/**
+ * What kind of public reading a page is, or null if its text must not be read.
+ * `ogType` is the page's own <meta property="og:type">, when the page has one.
+ */
+export function readablePageKind(url, ogType = '', extraPrivateDomains = []) {
+  if (isPrivateUrl(url, extraPrivateDomains)) return null;
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  const host = u.hostname.toLowerCase().replace(/^www\./, '');
+  const seg = u.pathname.split('/').filter(Boolean);
+
+  if (X_HOSTS.includes(host)) {
+    return seg.length >= 3 && seg[1] === 'status' && !X_PRIVATE_FIRST.has(seg[0].toLowerCase()) ? 'post' : null;
+  }
+  if (host === 'youtube.com' || host === 'm.youtube.com') return seg[0] === 'watch' && u.searchParams.get('v') ? 'video' : null;
+  if (host === 'news.ycombinator.com') return seg[0] === 'item' ? 'discussion' : null;
+  if (host === 'reddit.com' || host === 'old.reddit.com') return seg[0] === 'r' && seg[2] === 'comments' ? 'discussion' : null;
+  if (host === 'linkedin.com') return seg[0] === 'posts' || (seg[0] === 'pulse' && seg.length > 1) ? 'post' : null;
+  if (host.endsWith('.substack.com') || host === 'medium.com' || host.endsWith('.medium.com') || host === 'dev.to') {
+    return seg.length >= 1 ? 'article' : null;
+  }
+  // Public documentation sites (docs.stripe.com, developer.apple.com) — but not the
+  // document editors that share the prefix: docs.google.com is people's own files.
+  const docsHost = host.startsWith('docs.') || host.startsWith('developer.') || host.startsWith('developers.');
+  if (docsHost && !/(^|\.)(google|microsoft|office|notion|dropbox|box|atlassian|airtable|quip|zoho)\./.test(`.${host}.`)) {
+    return 'docs';
+  }
+  // Social and work tools whose pages are mostly someone's private space.
+  if (/(^|\.)(facebook|instagram|tiktok|slack|discord|notion|figma|linear|atlassian|github|gitlab|vercel|google|microsoft|office|zoom|dropbox|box|airtable|asana|trello|monday|hubspot|salesforce|intercom|zendesk|shopify|stripe|kanthink|mycreativeshop)\./.test(`.${host}.`)) {
+    return null;
+  }
+  if (seg[0] === 'docs') return 'docs';
+  // Anything else only when the page itself says it is an article.
+  if (String(ogType).toLowerCase() === 'article') return 'article';
+  return null;
+}
+
+/**
+ * A link back to a public page, for revisiting it. Unlike scrubUrl, ids in the path
+ * are kept (a post's id is what makes the link work, and it is public), but every
+ * query parameter is still dropped — except YouTube's video id.
+ */
+export function publicUrlOf(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    // The one parameter some public pages can't be found without.
+    const keep = /(^|\.)youtube\.com$/.test(host) ? 'v' : host === 'news.ycombinator.com' ? 'id' : null;
+    const value = keep ? u.searchParams.get(keep) : null;
+    return `${u.protocol}//${u.host}${u.pathname}${value ? `?${keep}=${encodeURIComponent(value)}` : ''}`.slice(0, 500);
+  } catch {
+    return null;
+  }
+}
+
+/** Page text as it may be kept: scrubbed like every other field, and capped. */
+export function scrubPageText(text) {
+  return scrubText(text, 6000);
+}

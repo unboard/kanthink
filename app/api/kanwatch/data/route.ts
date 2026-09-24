@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, eq, gte, inArray, lt } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { kanwatchDays, kanwatchEpisodes, kanwatchSites, kanwatchVisits } from '@/lib/db/schema';
+import { kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchVisits } from '@/lib/db/schema';
 import { kanwatchUser } from '@/lib/kanwatch/access';
 
 /**
@@ -36,6 +36,11 @@ export async function DELETE(request: Request) {
       await db.delete(kanwatchVisits).where(and(eq(kanwatchVisits.userId, userId), inArray(kanwatchVisits.episodeId, ids)));
       await db.delete(kanwatchEpisodes).where(and(eq(kanwatchEpisodes.userId, userId), inArray(kanwatchEpisodes.id, ids)));
     }
+    await db.delete(kanwatchReads).where(and(
+      eq(kanwatchReads.userId, userId),
+      gte(kanwatchReads.lastSeenAt, new Date(from)),
+      lt(kanwatchReads.lastSeenAt, new Date(to)),
+    ));
     return NextResponse.json({ ok: true, deletedEpisodes: ids.length });
   }
 
@@ -43,5 +48,6 @@ export async function DELETE(request: Request) {
   await db.delete(kanwatchEpisodes).where(eq(kanwatchEpisodes.userId, userId));
   await db.delete(kanwatchDays).where(eq(kanwatchDays.userId, userId));
   await db.delete(kanwatchSites).where(eq(kanwatchSites.userId, userId));
+  await db.delete(kanwatchReads).where(eq(kanwatchReads.userId, userId));
   return NextResponse.json({ ok: true });
 }

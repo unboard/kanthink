@@ -11,9 +11,10 @@ import { nanoid } from 'nanoid';
 import { db } from '@/lib/db';
 import { kanwatchEpisodes, kanwatchVisits } from '@/lib/db/schema';
 import { isPrivateUrl, isPrivateTitle, scrubText, scrubUrl } from '@/extensions/kanwatch/privacy.js';
-import { assignEpisodes, GAP_MS } from './episodes';
+import { assignEpisodes, GAP_MS, RETENTION_DAYS } from './episodes';
+import { expireReadText, recordRead, type IncomingRead } from './reads';
 
-export const RETENTION_DAYS = 30;
+export { RETENTION_DAYS };
 const MAX_VISITS_PER_BATCH = 300;
 const MAX_VISIT_SECONDS = 4 * 60 * 60;
 
@@ -33,6 +34,8 @@ export interface IncomingVisit {
   clicks?: number;
   scrollDepth?: number;
   mediaSeconds?: number;
+  /** Page text, sent only for pages privacy.js allows to be read (public reading). */
+  read?: IncomingRead;
 }
 
 const clampInt = (n: unknown, max: number) => Math.max(0, Math.min(max, Math.round(Number(n) || 0)));
@@ -142,6 +145,13 @@ export async function ingestVisits(userId: string, incoming: IncomingVisit[], tz
     await db.insert(kanwatchVisits).values(
       fresh.map((v) => ({ ...v, userId, episodeId: visitEpisode.get(v.id) ?? null })),
     ).onConflictDoNothing();
+
+    // Page reads ride along with their visit; recordRead re-checks the privacy rules.
+    const incomingById = new Map(incoming.map((v) => [v?.id, v]));
+    for (const v of fresh) {
+      const read = incomingById.get(v.id)?.read;
+      if (read && !v.isPrivate) await recordRead(userId, read, v.activeSeconds ?? 0, v.endedAt!);
+    }
   }
 
   await closeStaleEpisodes(userId, now);
@@ -151,6 +161,8 @@ export async function ingestVisits(userId: string, incoming: IncomingVisit[], tz
     eq(kanwatchVisits.userId, userId),
     lt(kanwatchVisits.startedAt, new Date(now - RETENTION_DAYS * 86400000)),
   ));
+
+  await expireReadText(userId);
 
   return { received: incoming.length, stored: fresh.length };
 }

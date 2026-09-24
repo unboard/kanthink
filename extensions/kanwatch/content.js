@@ -9,7 +9,12 @@
  *   - the page's own summary: its first heading and meta description
  *   - engagement as COUNTS: how many keys were pressed, clicks, how far you
  *     scrolled, whether audio/video was playing. It never reads which keys, what
- *     was typed, form contents, or the page text.
+ *     was typed, or form contents.
+ *
+ * The page's main text is read only when the worker asks, and the worker asks only
+ * for public reading that privacy.js allows (a post, article, video, discussion,
+ * docs). Anything you could type into (reply boxes, forms, editors) is removed
+ * before the text is taken, so a draft is never read.
  */
 (() => {
   if (window.top !== window) return;
@@ -34,6 +39,7 @@
         type: 'meta',
         heading: text(document.querySelector('h1')),
         description: (meta('description') || meta('og:description')).slice(0, 300),
+        ogType: meta('og:type').slice(0, 40),
       }).catch?.(() => {});
     };
 
@@ -70,6 +76,29 @@
       mediaSeconds = 0;
       // scrollDepth is a high-water mark; the worker keeps the max.
     };
+
+    /** The main readable text, with every typing surface stripped out first. */
+    const mainText = () => {
+      const tweets = [...document.querySelectorAll('article[data-testid="tweet"]')];
+      const roots = tweets.length
+        ? tweets.slice(0, 12)
+        : [document.querySelector('article') || document.querySelector('main') || document.body];
+      return roots
+        .map((root) => {
+          const copy = root.cloneNode(true);
+          copy.querySelectorAll('input, textarea, select, form, [contenteditable], [role="textbox"], script, style, noscript, nav, footer, aside')
+            .forEach((el) => el.remove());
+          return (copy.innerText || copy.textContent || '').replace(/\s+/g, ' ').trim();
+        })
+        .filter(Boolean)
+        .join('\n\n')
+        .slice(0, 8000);
+    };
+
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg?.type !== 'extract') return;
+      sendResponse({ text: mainText(), ogType: meta('og:type'), title: document.title });
+    });
 
     sendMeta();
     measureScroll();

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { cards, channels, kanwatchDays, kanwatchEpisodes, kanwatchSites, kanwatchTokens, kanwatchVisits } from '@/lib/db/schema';
+import { cards, channels, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits } from '@/lib/db/schema';
+import { judgePendingReads } from '@/lib/kanwatch/reads';
 import { kanwatchUser } from '@/lib/kanwatch/access';
 import { closeStaleEpisodes } from '@/lib/kanwatch/ingest';
 import { judgePending, summarizePages } from '@/lib/kanwatch/judge';
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
 
   // Bring the day up to date before showing it.
   await closeStaleEpisodes(userId);
-  await judgePending(userId, 12);
+  await Promise.all([judgePending(userId, 12), judgePendingReads(userId, 6)]);
 
   const [episodes, day, token, week] = await Promise.all([
     db.query.kanwatchEpisodes.findMany({
@@ -56,6 +57,17 @@ export async function GET(request: Request) {
       columns: { startedAt: true, activeSeconds: true, privateSeconds: true, guessKind: true, verdict: true },
     }),
   ]);
+
+  // Public pages read today. The page text itself is never sent to the browser.
+  const reads = await db.query.kanwatchReads.findMany({
+    where: and(
+      eq(kanwatchReads.userId, userId),
+      gte(kanwatchReads.lastSeenAt, new Date(from)),
+      lt(kanwatchReads.lastSeenAt, new Date(to)),
+    ),
+    columns: { text: false },
+    orderBy: [desc(kanwatchReads.lastSeenAt)],
+  });
 
   const visits = episodes.length
     ? await db.query.kanwatchVisits.findMany({ where: inArray(kanwatchVisits.episodeId, episodes.map((e) => e.id)) })
@@ -184,6 +196,30 @@ export async function GET(request: Request) {
       return { domain, seconds, want: note?.want ?? null, purpose: note?.purpose ?? '', kanThinks: kanThinks(domain) };
     }),
     week: weekDays,
+    reads: {
+      // Everything read today, by what Jev made of it.
+      counts: reads.reduce<Record<string, number>>((acc, r) => {
+        const key = r.status === 'judged' ? r.category ?? 'other' : 'reading';
+        acc[key] = (acc[key] ?? 0) + 1;
+        return acc;
+      }, {}),
+      total: reads.length,
+      // The ones worth a look: Jev thought so, and an LLM wrote them up.
+      worthALook: reads
+        .filter((r) => r.tldr && r.verdict !== 'dismissed')
+        .sort((a, b) => Math.max(b.worth ?? 0, b.kanthinkFit ?? 0, b.appIdea ?? 0) - Math.max(a.worth ?? 0, a.kanthinkFit ?? 0, a.appIdea ?? 0))
+        .map((r) => ({
+          id: r.id, url: r.url, domain: r.domain, title: r.title, kind: r.kind, seconds: r.seconds,
+          category: r.category, tldr: r.tldr, why: r.why, nudge: r.nudge, nudgeKind: r.nudgeKind,
+          verdict: r.verdict, reflection: r.reflection, cardId: r.cardId, manual: r.manual,
+          scores: { worth: r.worth, kanthink: r.kanthinkFit, app: r.appIdea },
+        })),
+      // Read, judged, not written up: shown compactly so nothing Kan saw is hidden.
+      others: reads
+        .filter((r) => !r.tldr && r.verdict !== 'dismissed')
+        .slice(0, 30)
+        .map((r) => ({ id: r.id, url: r.url, domain: r.domain, title: r.title, category: r.category, seconds: r.seconds, status: r.status })),
+    },
   });
 }
 

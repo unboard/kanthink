@@ -7,6 +7,9 @@
  * is already cut out by the extension, so a gap here means you stepped away.
  */
 
+/** Raw visits and page text are deleted after this many days. */
+export const RETENTION_DAYS = 30;
+
 export const GAP_MS = 5 * 60 * 1000;
 export const MAX_SPAN_MS = 30 * 60 * 1000;
 

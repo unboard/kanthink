@@ -4,6 +4,7 @@ import { afterResponse } from '@/lib/afterResponse';
 import { userFromBearer } from '@/lib/kanwatch/token';
 import { ingestVisits, type IncomingVisit } from '@/lib/kanwatch/ingest';
 import { judgePending } from '@/lib/kanwatch/judge';
+import { judgePendingReads } from '@/lib/kanwatch/reads';
 
 /**
  * POST /api/kanwatch/ingest — visits from the Kanwatch extension.
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
 
   // Finished episodes get read in the background, so the day view is ready when opened.
   afterResponse(async () => {
-    await judgePending(userId, 5);
+    await Promise.all([judgePending(userId, 5), judgePendingReads(userId, 3)]);
   });
 
   return NextResponse.json(result);
