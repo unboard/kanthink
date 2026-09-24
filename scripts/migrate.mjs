@@ -25,7 +25,7 @@ import { createClient } from '@libsql/client'
 import { readFileSync, existsSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { ALL_STATEMENTS, REQUIRED_COLUMNS, isBenignMigrationError } from '../lib/db/migrations.mjs'
+import { ALL_STATEMENTS, REQUIRED_COLUMNS, SCHEMA_FINGERPRINT, isBenignMigrationError } from '../lib/db/migrations.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -102,6 +102,13 @@ async function main() {
   }
 
   console.log(`[migrate] Schema verified — ${REQUIRED_COLUMNS.length} required columns present.`)
+
+  // Only now, with the schema verified, tell request-time checks they can skip.
+  await db.execute({
+    sql: `INSERT INTO schema_meta (key, value) VALUES ('fingerprint', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    args: [SCHEMA_FINGERPRINT],
+  })
+  console.log(`[migrate] Recorded schema fingerprint ${SCHEMA_FINGERPRINT}.`)
 }
 
 main().catch((error) => {

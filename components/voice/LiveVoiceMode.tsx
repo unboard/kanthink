@@ -629,13 +629,19 @@ export function LiveVoiceMode({ isOpen, onClose, systemPrompt }: LiveVoiceModePr
    * Persist the session as an operator chat thread: everything said, with the
    * session's actions — cards made, channels created, builds — woven in
    * chronologically as markdown with links, so history shows what happened as
-   * well as what was spoken. Fire-and-forget.
+   * well as what was spoken.
+   *
+   * Saved as the conversation goes (a few seconds after each turn or action, and
+   * the moment the page is hidden), not only at the end. The end-of-session save
+   * never runs when a phone locks or a tab is killed, and a whole conversation
+   * used to vanish that way. Every save replaces the same thread.
    */
-  const saveTranscript = useCallback(() => {
-    if (userBufRef.current.trim()) flushTranscript('user');
-    if (kanBufRef.current.trim()) flushTranscript('kan');
+  const buildTurns = useCallback((includePartial: boolean): TranscriptTurn[] => {
+    // Long tool results (a whole card read aloud) are for the model, not history;
+    // trimmed, a save stays small enough for keepalive's 64KB limit.
+    const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
     const actionTurns: TranscriptTurn[] = actionsRef.current.map((a) => {
-      let text = `⚡ ${a.result}`;
+      let text = `⚡ ${clip(a.result, 1200)}`;
       if (a.emailDraft) {
         const sent = a.emailDraft.status === 'sent' ? ' (sent)' : '';
         text = `⚡ **Email${sent}** to ${a.emailDraft.to}
@@ -652,26 +658,108 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
 ![generated](${a.imageGen.imageUrl})` : ''}`;
       }
       if (a.cardPreview) {
-        text += `\n\n> **${a.cardPreview.title}** · ${a.cardPreview.channelName}${a.cardPreview.columnName ? ` › ${a.cardPreview.columnName}` : ''}\n> [Open card](/channel/${a.cardPreview.channelId}/card/${a.cardPreview.id})`;
+        text += `
+
+> **${a.cardPreview.title}** · ${a.cardPreview.channelName}${a.cardPreview.columnName ? ` › ${a.cardPreview.columnName}` : ''}
+> [Open card](/channel/${a.cardPreview.channelId}/card/${a.cardPreview.id})`;
       }
       if (a.channelPreview) {
         const cfg = a.channelPreview.config;
-        text += `\n\n> **${cfg.name}** · ${cfg.columns.map((c) => c.name).join(' → ')}${cfg.shrooms.length ? `\n> Shrooms: ${cfg.shrooms.map((sh) => sh.title).join(', ')}` : ''}\n> [Open channel](/channel/${a.channelPreview.channelId})`;
+        text += `
+
+> **${cfg.name}** · ${cfg.columns.map((c) => c.name).join(' → ')}${cfg.shrooms.length ? `
+> Shrooms: ${cfg.shrooms.map((sh) => sh.title).join(', ')}` : ''}
+> [Open channel](/channel/${a.channelPreview.channelId})`;
       }
       const at = a.timestamp instanceof Date ? a.timestamp.toISOString() : new Date(a.timestamp).toISOString();
       return { role: 'kan' as const, text, at };
     });
-    const turns = [...transcriptRef.current, ...actionTurns].sort((x, y) => x.at.localeCompare(y.at));
+    const now = new Date().toISOString();
+    // Words still streaming in are part of the record if the page is about to go away.
+    const partial: TranscriptTurn[] = includePartial
+      ? [
+          ...(userBufRef.current.trim() ? [{ role: 'user' as const, text: userBufRef.current.trim(), at: now }] : []),
+          ...(kanBufRef.current.trim() ? [{ role: 'kan' as const, text: kanBufRef.current.trim(), at: now }] : []),
+        ]
+      : [];
+    return [...transcriptRef.current, ...actionTurns, ...partial]
+      .map((t) => ({ ...t, text: clip(t.text, 4000) }))
+      .sort((x, y) => x.at.localeCompare(y.at));
+  }, []);
+
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  // Bumped when a session ends, so a save still in flight can't write into, or
+  // hand its thread id to, the next session.
+  const sessionKeyRef = useRef(0);
+
+  /**
+   * checkpoint — mid-conversation, queued behind any earlier save
+   * final      — the session ended normally; queued, and allowed to outlive the page
+   * leaving    — the page is being hidden or closed; sent immediately, with the words
+   *              still streaming in, and allowed to outlive the page
+   */
+  const persistTranscript = useCallback((mode: 'checkpoint' | 'final' | 'leaving') => {
+    const turns = buildTurns(mode === 'leaving');
     if (turns.length === 0) return;
+    const key = sessionKeyRef.current;
+    const send = async () => {
+      if (key !== sessionKeyRef.current && mode === 'checkpoint') return;
+      const body = JSON.stringify({ threadId: threadIdRef.current, turns });
+      const res = await fetch('/api/voice/transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        // keepalive lets the save outlive a closing page, but only under 64KB.
+        keepalive: mode !== 'checkpoint' && body.length < 60000,
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.threadId && key === sessionKeyRef.current) threadIdRef.current = data.threadId;
+    };
+    if (mode === 'leaving') {
+      // The page may be going away: send now rather than queue behind another save.
+      send().catch(() => {});
+      return;
+    }
+    // In order, so the first save's thread id reaches the next one.
+    saveChainRef.current = saveChainRef.current.then(send, send).catch(() => {});
+  }, [buildTurns]);
+
+  /** Final save at the end of a session; then the next session starts clean. */
+  const saveTranscript = useCallback(() => {
+    if (userBufRef.current.trim()) flushTranscript('user');
+    if (kanBufRef.current.trim()) flushTranscript('kan');
+    persistTranscript('final');
+    // The queued final save still knows its thread; everything after is a new session.
+    saveChainRef.current = saveChainRef.current.then(() => {
+      sessionKeyRef.current += 1;
+      threadIdRef.current = null;
+    });
     transcriptRef.current = [];
     actionsRef.current = [];
-    fetch('/api/voice/transcript', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ turns }),
-      keepalive: true,
-    }).catch(() => {/* history is best-effort; the session itself already happened */});
-  }, [flushTranscript]);
+  }, [flushTranscript, persistTranscript]);
+
+  // Checkpoint a few seconds after the conversation moves.
+  useEffect(() => {
+    if (!activeRef.current) return;
+    const t = setTimeout(() => persistTranscript('checkpoint'), 4000);
+    return () => clearTimeout(t);
+  }, [transcript, actions, persistTranscript]);
+
+  // A locked phone or a backgrounded tab may never come back to end the session.
+  useEffect(() => {
+    const onHide = () => {
+      if (activeRef.current && document.visibilityState === 'hidden') persistTranscript('leaving');
+    };
+    const onPageHide = () => {
+      if (activeRef.current) persistTranscript('leaving');
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [persistTranscript]);
 
   const stop = useCallback(() => {
     activeRef.current = false;

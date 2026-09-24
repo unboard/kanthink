@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { sql } from 'drizzle-orm'
-import { ALL_STATEMENTS, isBenignMigrationError } from './migrations.mjs'
+import { ALL_STATEMENTS, SCHEMA_FINGERPRINT, isBenignMigrationError } from './migrations.mjs'
 
 let ensured = false
 
@@ -24,6 +24,19 @@ let ensured = false
 export async function ensureSchema() {
   if (ensured) return
 
+  // Fast path: the deploy step records a fingerprint once it has verified the schema.
+  // If it matches this build, the database is current and one read replaces ~200
+  // round trips on every cold start — which users felt as a slow first request.
+  try {
+    const rows = await db.all<{ value: string }>(sql`SELECT value FROM schema_meta WHERE key = 'fingerprint'`)
+    if (rows[0]?.value === SCHEMA_FINGERPRINT) {
+      ensured = true
+      return
+    }
+  } catch {
+    // No schema_meta yet (fresh or drifted database) — fall through and migrate.
+  }
+
   for (const stmt of ALL_STATEMENTS) {
     try {
       await db.run(sql.raw(stmt))
@@ -35,6 +48,14 @@ export async function ensureSchema() {
         console.error('[ensureSchema] statement failed:', stmt, error)
       }
     }
+  }
+
+  // Record it, so the next cold start takes the fast path.
+  try {
+    await db.run(sql`INSERT INTO schema_meta (key, value) VALUES ('fingerprint', ${SCHEMA_FINGERPRINT})
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+  } catch (error) {
+    console.error('[ensureSchema] could not record fingerprint:', error)
   }
 
   ensured = true

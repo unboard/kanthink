@@ -11,3 +11,4 @@ export declare const INDEX_STATEMENTS: string[]
 export declare const ALL_STATEMENTS: string[]
 export declare const REQUIRED_COLUMNS: Array<[string, string]>
 export declare function isBenignMigrationError(error: unknown): boolean
+export declare const SCHEMA_FINGERPRINT: string

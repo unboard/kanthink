@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { operatorChatThreads } from '@/lib/db/schema';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { nanoid } from 'nanoid';
+import { and, eq } from 'drizzle-orm';
 
 export const runtime = 'nodejs';
 
@@ -13,6 +14,11 @@ export const runtime = 'nodejs';
  * Voice conversations used to vanish when the overlay closed — nothing the user or
  * Kan said was stored anywhere. Each session now lands as an operator chat thread,
  * so it shows up in the same history as typed conversations with Kan.
+ *
+ * The client saves as the conversation goes, not only at the end: a phone that
+ * locks or a tab that is killed never runs the end-of-session save, and a whole
+ * conversation used to disappear that way. The first save creates the thread and
+ * returns its id; later saves pass `threadId` and replace its messages.
  */
 export async function POST(request: Request) {
   const session = await auth();
@@ -35,17 +41,33 @@ export async function POST(request: Request) {
   const title = `🎙 ${(firstUserLine || 'Voice conversation').slice(0, 60)}`;
 
   const now = new Date();
+  const messages = meaningful.map((t) => ({
+    id: nanoid(),
+    type: t.role === 'user' ? ('question' as const) : ('ai_response' as const),
+    content: String(t.text).trim().slice(0, 8000),
+    createdAt: t.at || now.toISOString(),
+  }));
+
+  // A later save in the same session: replace that thread, if it is this user's.
+  if (typeof body?.threadId === 'string') {
+    const existing = await db.query.operatorChatThreads.findFirst({
+      where: and(eq(operatorChatThreads.id, body.threadId), eq(operatorChatThreads.userId, session.user.id)),
+      columns: { id: true },
+    });
+    if (existing) {
+      await db.update(operatorChatThreads)
+        .set({ title, messages, updatedAt: now })
+        .where(eq(operatorChatThreads.id, existing.id));
+      return NextResponse.json({ saved: true, threadId: existing.id });
+    }
+  }
+
   const id = nanoid();
   await db.insert(operatorChatThreads).values({
     id,
     userId: session.user.id,
     title,
-    messages: meaningful.map((t) => ({
-      id: nanoid(),
-      type: t.role === 'user' ? ('question' as const) : ('ai_response' as const),
-      content: t.text.trim(),
-      createdAt: t.at || now.toISOString(),
-    })),
+    messages,
     createdAt: now,
     updatedAt: now,
   });
