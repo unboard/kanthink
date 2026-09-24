@@ -97,7 +97,9 @@ async function describeAppRow(
 export const runtime = 'nodejs';
 // Mixpanel exports normally take ~1s but can stall; the default ceiling cut those
 // requests off mid-flight, leaving the caller hanging with no response at all.
-export const maxDuration = 60;
+// App builds (build_app, kanwatch_build_app) run for minutes — the latter after the
+// response — and a function is frozen at this ceiling, so it matches the build route.
+export const maxDuration = 800;
 
 interface ActionRequest {
   action: string;
@@ -685,6 +687,35 @@ export async function POST(request: Request) {
         }
         const { kanwatchLookup } = await import('@/lib/kanwatch/context');
         return NextResponse.json({ result: await kanwatchLookup(session.user.id, { date: args.date, query: args.query }) });
+      }
+
+      case 'kanwatch_build_app': {
+        if (!session.user.isAdmin) {
+          return NextResponse.json({ result: 'Kanwatch is not available on this account.' });
+        }
+        const { findAppIdeaRead, buildAppFromRead, extendAppFromRead, BuildError } = await import('@/lib/kanwatch/build');
+        const read = await findAppIdeaRead(session.user.id, args.query || '');
+        if (!read) return NextResponse.json({ result: `Couldn't find a page matching "${args.query}" in Kanwatch's recent reads.` });
+        try {
+          if (args.mode === 'extend') {
+            const done = await extendAppFromRead(session.user.id, read.id);
+            return NextResponse.json({
+              result: `Added the idea from "${read.title}" to the ${done.appTitle} app's thread. It isn't rebuilt yet — they can press Update app there when they're ready.`,
+              cardId: done.cardId, channelId: done.channelId,
+            });
+          }
+          const target = args.channelId ? (await findChannel(args.channelId, access, ctx))?.id : undefined;
+          const done = await buildAppFromRead(session.user.id, read.id, target);
+          return NextResponse.json({
+            result: done.alreadyBuilt
+              ? `An app from "${read.title}" already exists — it's on its card.`
+              : `Started building an app from "${read.title}". It takes a few minutes; they'll get a notification when it's ready.`,
+            cardId: done.cardId, channelId: done.channelId,
+          });
+        } catch (err) {
+          if (err instanceof BuildError) return NextResponse.json({ result: err.message });
+          throw err;
+        }
       }
 
       case 'query_mixpanel': {

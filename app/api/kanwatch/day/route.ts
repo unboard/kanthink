@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { cards, channels, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits } from '@/lib/db/schema';
+import { cards, channels, folders, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits, playgroundApps, userChannelOrg } from '@/lib/db/schema';
 import { judgePendingReads } from '@/lib/kanwatch/reads';
 import { kanwatchUser } from '@/lib/kanwatch/access';
 import { closeStaleEpisodes } from '@/lib/kanwatch/ingest';
@@ -96,6 +96,24 @@ export async function GET(request: Request) {
   const channelName = new Map(channelRows.map((c) => [c.id, c.name]));
   const cardTitle = new Map(cardRows.map((c) => [c.id, c.title]));
 
+  // Your folders, so the breakdown can group channels the way your sidebar does.
+  const [orgRows, folderRows] = await Promise.all([
+    db.query.userChannelOrg.findMany({ where: eq(userChannelOrg.userId, userId), columns: { channelId: true, folderId: true } }),
+    db.query.folders.findMany({ where: eq(folders.userId, userId), columns: { id: true, name: true } }),
+  ]);
+  const folderName = new Map(folderRows.map((f) => [f.id, f.name]));
+  const channelFolder = new Map(orgRows.filter((o) => o.folderId).map((o) => [o.channelId, folderName.get(o.folderId!) ?? null]));
+
+  // Apps that pages relate to, or were built from them.
+  const appIds = [...new Set(reads.flatMap((r) => [r.relatedAppId, r.appId]).filter((x): x is string => !!x))];
+  const appRows = appIds.length
+    ? await db.query.playgroundApps.findMany({
+        where: inArray(playgroundApps.id, appIds),
+        columns: { id: true, title: true, channelId: true, cardId: true, isArchived: true, code: true },
+      })
+    : [];
+  const appById = new Map(appRows.filter((a) => !a.isArchived && access.readable.includes(a.channelId)).map((a) => [a.id, a]));
+
   // Time per site across the day, for the sites panel.
   const siteSeconds = new Map<string, number>();
   for (const v of visits) {
@@ -157,7 +175,7 @@ export async function GET(request: Request) {
           fresh: !!token.lastUsedAt && Date.now() - token.lastUsedAt.getTime() < 5 * 60 * 1000,
         }
       : { connected: false },
-    channels: channelRows,
+    channels: channelRows.map((c) => ({ ...c, folder: channelFolder.get(c.id) ?? null })),
     // Areas the user has named before, offered when they correct a stretch.
     areas: await (async () => {
       const rows = await db.query.kanwatchEpisodes.findMany({
@@ -226,6 +244,15 @@ export async function GET(request: Request) {
           category: r.category, tldr: r.tldr, why: r.why, nudge: r.nudge, nudgeKind: r.nudgeKind,
           verdict: r.verdict, reflection: r.reflection, cardId: r.cardId, manual: r.manual,
           scores: { worth: r.worth, kanthink: r.kanthinkFit, app: r.appIdea },
+          relatedApp: r.relatedAppId && appById.has(r.relatedAppId)
+            ? { id: r.relatedAppId, title: appById.get(r.relatedAppId)!.title }
+            : null,
+          builtApp: r.appId && appById.has(r.appId)
+            ? (() => {
+                const a = appById.get(r.appId!)!;
+                return { id: a.id, title: a.title, channelId: a.channelId, cardId: a.cardId, ready: !!a.code };
+              })()
+            : null,
         })),
       // Read, judged, not written up: shown compactly so nothing Kan saw is hidden.
       others: reads

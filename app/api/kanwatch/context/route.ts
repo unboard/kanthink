@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   const context = await buildKanwatchContext(userId, {
     tzOffsetMinutes: Number.isFinite(tz) ? tz : null,
     lookup: 'the kanwatch_lookup tool',
+    build: 'the kanwatch_build_app tool',
   });
   return NextResponse.json({ context });
 }

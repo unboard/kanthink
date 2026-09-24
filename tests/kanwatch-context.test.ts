@@ -32,6 +32,12 @@ describe('Kanwatch context rules', () => {
     expect(KANWATCH_RULES).toMatch(/Mention a flagged page or its open question just because it is here/)
   })
 
+  it('allows one app-idea offer per conversation, never as an opener', () => {
+    expect(KANWATCH_RULES).toMatch(/ONE EXCEPTION, for app ideas/)
+    expect(KANWATCH_RULES).toMatch(/Never as your opening line, and never twice/)
+    expect(KANWATCH_RULES).toMatch(/__BUILD__/)
+  })
+
   it('still says when to use it, so it is not dead weight', () => {
     expect(KANWATCH_RULES).toMatch(/When they ask about their day/)
     expect(KANWATCH_RULES).toMatch(/what to work on next/)

@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
-import { and, asc, desc, eq } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { cards, columns, kanwatchReads } from '@/lib/db/schema';
-import { inColumnBucket } from '@/lib/db/cardBuckets';
+import { kanwatchReads } from '@/lib/db/schema';
 import { kanwatchUser } from '@/lib/kanwatch/access';
-import { loadAccess } from '@/lib/voice/resolveReference';
+import { BuildError, cardFromRead } from '@/lib/kanwatch/build';
 
 /**
  * PATCH /api/kanwatch/reads/:id — what you made of a page Kan flagged.
@@ -16,7 +14,8 @@ import { loadAccess } from '@/lib/voice/resolveReference';
  * { verdict: null }                    undo
  *
  * Saved and dismissed pages both ride along the next time Jev decides what's worth a
- * look, which is how it learns what you care about.
+ * look, which is how it learns what you care about. Building an app from a page is
+ * POST …/build.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await kanwatchUser();
@@ -39,49 +38,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     update.verdict = body.verdict;
   }
 
-  let cardId: string | null = null;
-  let channelId: string | null = null;
+  let saved: { cardId: string; channelId: string } | null = null;
   if (body.verdict === 'saved' && typeof body.channelId === 'string') {
-    const access = await loadAccess(userId);
-    if (!access.writable.has(body.channelId)) {
-      return NextResponse.json({ error: 'You can’t add cards to that channel' }, { status: 403 });
+    try {
+      saved = await cardFromRead(userId, read, body.channelId, { reflection: update.reflection ?? read.reflection });
+    } catch (err) {
+      if (err instanceof BuildError) return NextResponse.json({ error: err.message }, { status: 400 });
+      throw err;
     }
-    const cols = await db.query.columns.findMany({
-      where: eq(columns.channelId, body.channelId),
-      orderBy: [asc(columns.position)],
-    });
-    const col = cols.find((c) => c.isAiTarget) ?? cols[0];
-    if (!col) return NextResponse.json({ error: 'That channel has no columns' }, { status: 400 });
-
-    const last = await db.query.cards.findFirst({
-      where: inColumnBucket(col.id, 'active'),
-      orderBy: [desc(cards.position)],
-      columns: { position: true },
-    });
-    const reflection = update.reflection ?? read.reflection;
-    const content = [
-      read.tldr,
-      read.why ? `**Why it matters:** ${read.why}` : '',
-      reflection ? `**My take:** ${reflection}` : '',
-      `[${read.domain ?? 'Open the page'}](${read.url})`,
-    ].filter(Boolean).join('\n\n');
-    const now = new Date();
-    cardId = nanoid();
-    channelId = body.channelId;
-    await db.insert(cards).values({
-      id: cardId,
-      channelId: body.channelId,
-      columnId: col.id,
-      title: (read.title || read.domain || 'Saved page').slice(0, 200),
-      messages: [{ id: nanoid(), type: 'note', content, createdAt: now.toISOString() }] as typeof cards.$inferInsert.messages,
-      source: 'manual',
-      position: (last?.position ?? -1) + 1,
-      createdAt: now,
-      updatedAt: now,
-    });
-    update.cardId = cardId;
+    update.cardId = saved.cardId;
   }
 
   await db.update(kanwatchReads).set(update).where(eq(kanwatchReads.id, read.id));
-  return NextResponse.json({ ok: true, cardId, channelId });
+  return NextResponse.json({ ok: true, cardId: saved?.cardId ?? null, channelId: saved?.channelId ?? null });
 }

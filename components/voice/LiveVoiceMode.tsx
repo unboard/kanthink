@@ -173,6 +173,19 @@ const TOOLS = [
         },
       },
       {
+        name: 'kanwatch_build_app',
+        description: 'Build an app from a page the user read that Kanwatch flagged as an app idea. Only after they say yes. mode "new" (default) makes a card from the page and starts building a new app; "extend" adds the idea to the existing app Kanwatch said it fits (they press Update app there).',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            query: { type: 'STRING', description: 'A few words of the page title or subject' },
+            mode: { type: 'STRING', description: '"new" or "extend"' },
+            channelId: { type: 'STRING', description: 'Optional: channel for the new card' },
+          },
+          required: ['query'],
+        },
+      },
+      {
         name: 'archive_card',
         description: 'Archive a card (remove it from the board)',
         parameters: {

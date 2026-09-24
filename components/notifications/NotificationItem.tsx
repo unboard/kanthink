@@ -69,6 +69,11 @@ export function getNavigationUrl(notification: NotificationData, tasks: Record<s
   const data = notification.data as Record<string, unknown> | null
   if (!data) return null
 
+  // An idea from something you read lives on Kanwatch, not on a board.
+  if (notification.type === 'kanwatch_idea') {
+    return data.readId ? `/kanwatch#read-${data.readId}` : '/kanwatch'
+  }
+
   const channelId = data.channelId as string | undefined
   if (!channelId) return null
 
@@ -130,6 +135,7 @@ function getTypeLabel(notification: NotificationData): string | null {
     case 'ai_instruction_refinement': return 'AI'
     case 'ai_clarifying_questions': return 'Insights'
     case 'drift_detected': return 'Drift'
+    case 'kanwatch_idea': return 'Idea'
     case 'automation_completed': return 'Auto'
     case 'threshold_fired': return 'Threshold'
     case 'safeguard_tripped': return 'Safeguard'

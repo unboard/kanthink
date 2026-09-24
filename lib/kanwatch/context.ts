@@ -12,7 +12,7 @@
 
 import { and, desc, eq, gte, inArray, isNotNull, like, lt, or } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { cards, channels, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchVisits } from '@/lib/db/schema';
+import { cards, channels, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchVisits, playgroundApps } from '@/lib/db/schema';
 import { loadAccess } from '@/lib/voice/resolveReference';
 import { summarizePages } from './judge';
 import { localDate } from './episodes';
@@ -59,7 +59,7 @@ interface DaySummary {
   modes: { mode: string; seconds: number }[];
   now: { area: string | null; mode: string | null; pages: string[] } | null;
   stretches: { from: number; to: number; area: string; pages: string[] }[];
-  worth: { title: string; site: string; tldr: string; nudge: string | null; answered: boolean }[];
+  worth: { title: string; site: string; tldr: string; nudge: string | null; answered: boolean; appIdea: boolean; relatedApp: string | null; built: boolean }[];
   wants: { site: string; want: string; seconds: number }[];
 }
 
@@ -101,6 +101,13 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
   ]);
   const channelName = new Map(channelRows.map((c) => [c.id, c.name]));
   const cardTitle = new Map(cardRows.map((c) => [c.id, c.title]));
+  const relatedIds = [...new Set(reads.map((r) => r.relatedAppId).filter((x): x is string => !!x))];
+  const appTitles = new Map(
+    (relatedIds.length
+      ? await db.query.playgroundApps.findMany({ where: inArray(playgroundApps.id, relatedIds), columns: { id: true, title: true } })
+      : []
+    ).map((a) => [a.id, a.title]),
+  );
 
   const areaOf = (e: (typeof episodes)[number]): string | null => {
     if (e.verdict === 'not_work' || (!e.verdict && e.guessKind === 'not_work')) return 'not work';
@@ -154,6 +161,9 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
       tldr: (r.tldr ?? '').slice(0, 260),
       nudge: r.nudge,
       answered: !!(r.reflection || r.verdict),
+      appIdea: r.nudgeKind === 'app',
+      relatedApp: r.relatedAppId ? appTitles.get(r.relatedAppId) ?? null : null,
+      built: !!r.appId,
     })),
     wants: siteRows
       .map((s) => ({ site: s.domain, want: s.want!, seconds: siteSeconds.get(s.domain) ?? 0 }))
@@ -184,7 +194,12 @@ function describeDay(s: DaySummary, label: string, tz: number, detail: boolean):
   if (s.worth.length) {
     lines.push('- Pages they read that Kanwatch flagged as worth a look:');
     for (const w of s.worth) {
-      lines.push(`  - "${w.title}" (${w.site}): ${w.tldr}${w.nudge ? ` Open question for them: ${w.nudge}${w.answered ? ' (they have already responded)' : ''}` : ''}`);
+      const app = w.appIdea
+        ? w.built
+          ? ' [App idea — already being built.]'
+          : ` [App idea${w.relatedApp ? `; it could fit their existing "${w.relatedApp}" app` : '; new, no overlap with their apps'}.]`
+        : '';
+      lines.push(`  - "${w.title}" (${w.site}): ${w.tldr}${app}${w.nudge ? ` Open question for them: ${w.nudge}${w.answered ? ' (they have already responded)' : ''}` : ''}`);
     }
   }
   return lines.join('\n');
@@ -203,13 +218,20 @@ DO use it:
 - When they ask what to work on next — weigh what the day is for against what they have already done.
 - When they refer to something they read or watched ("that thread about agents", "the video earlier") — you know it from here.
 - When the conversation is already on a subject one of the flagged pages covers — you may mention that page once, briefly, as something they read.
-- If they ask whether you have anything for them, the open questions on flagged pages are what to offer.`;
+- If they ask whether you have anything for them, the open questions on flagged pages are what to offer.
+
+ONE EXCEPTION, for app ideas they want to hear about:
+- If a flagged page is marked as an app idea and has not been answered or built, you may offer it once in a conversation, on your own initiative — at a natural pause, or when they are open to ideas. Never as your opening line, and never twice.
+- Offer it as a question: what the app would be, and whether it fits one of their existing apps or would be new. If they say yes, use __BUILD__ (new app, or add to the existing one).`;
 
 /**
  * The Kanwatch block for a system prompt, or '' when there is nothing to say.
  * `lookup` names the tool or action the model can use for more.
  */
-export async function buildKanwatchContext(userId: string, opts: { tzOffsetMinutes?: number | null; lookup: string }): Promise<string> {
+export async function buildKanwatchContext(
+  userId: string,
+  opts: { tzOffsetMinutes?: number | null; lookup: string; build: string },
+): Promise<string> {
   const recorded = await recentOffset(userId);
   if (recorded === undefined) return ''; // no Kanwatch activity this week
   const tz = opts.tzOffsetMinutes ?? recorded ?? 0;
@@ -222,7 +244,7 @@ export async function buildKanwatchContext(userId: string, opts: { tzOffsetMinut
 
   return `\n\n## KANWATCH — the user's day in their browser (private; reference only)
 
-${KANWATCH_RULES}
+${KANWATCH_RULES.replace('__BUILD__', opts.build)}
 
 For anything not below — another day, the stretches of a day in detail, or finding a page they read by topic — use ${opts.lookup}.
 

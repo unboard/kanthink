@@ -1595,6 +1595,12 @@ export const kanwatchReads = sqliteTable('kanwatch_reads', {
   verdict: text('verdict').$type<'saved' | 'dismissed'>(),
   reflection: text('reflection'),
   cardId: text('card_id'),
+  // App ideas: which existing app it would extend (if any), the app built from it,
+  // and when Kan nudged you about it (capped per day).
+  relatedAppId: text('related_app_id'),
+  relatedAppFit: integer('related_app_fit'),
+  appId: text('app_id'),
+  notifiedAt: integer('notified_at', { mode: 'timestamp' }),
   jevModel: text('jev_model'),
   firstSeenAt: integer('first_seen_at', { mode: 'timestamp' }),
   lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),

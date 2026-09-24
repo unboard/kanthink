@@ -70,7 +70,7 @@ interface DayData {
   date: string;
   intention: string;
   extension: { connected: boolean; lastSeenAt?: number | null; fresh?: boolean };
-  channels: { id: string; name: string }[];
+  channels: { id: string; name: string; folder: string | null }[];
   /** Areas you've named before, in your own words. */
   areas: string[];
   episodes: Episode[];
@@ -101,6 +101,10 @@ interface WorthRead {
   cardId: string | null;
   manual: boolean | null;
   scores: { worth: number | null; kanthink: number | null; app: number | null };
+  /** An existing app this idea would fit into, if Jev thinks so. */
+  relatedApp: { id: string; title: string } | null;
+  /** The app built from this page, once you've asked for one. */
+  builtApp: { id: string; title: string; channelId: string; cardId: string; ready: boolean } | null;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -254,6 +258,13 @@ export function KanwatchDay() {
     load(date);
   }, [date, load]);
 
+  // A notification links to /kanwatch#read-…; the page renders after the data arrives,
+  // so scroll to it once it is there.
+  useEffect(() => {
+    if (!data || typeof window === 'undefined' || !window.location.hash.startsWith('#read-')) return;
+    document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [data]);
+
   // The day keeps filling in while you watch it.
   useEffect(() => {
     if (date !== toDateString(new Date())) return;
@@ -303,7 +314,7 @@ export function KanwatchDay() {
             <WorthALook reads={data.reads} channels={data.channels} onChanged={() => load(date)} />
             <Week week={data.week} date={date} onPick={changeDate} />
             <Timeline episodes={data.episodes} />
-            <WhereItWent episodes={data.episodes} />
+            <WhereItWent episodes={data.episodes} channels={data.channels} />
             <Episodes
               episodes={data.episodes}
               channels={data.channels}
@@ -544,52 +555,93 @@ function Timeline({ episodes }: { episodes: Episode[] }) {
   );
 }
 
-function WhereItWent({ episodes }: { episodes: Episode[] }) {
-  const { buckets, modes, total } = useMemo(() => {
-    const b = new Map<string, { label: string; color: string; seconds: number }>();
+function WhereItWent({ episodes, channels }: { episodes: Episode[]; channels: DayData['channels'] }) {
+  const { groups, modes, total } = useMemo(() => {
+    const b = new Map<string, { key: string; label: string; color: string; seconds: number }>();
     const m = new Map<string, number>();
     let t = 0;
     for (const e of episodes) {
       const r = readEpisode(e);
       const publicSeconds = e.activeSeconds - e.privateSeconds;
       if (e.privateSeconds > 0) {
-        const p = b.get('private') ?? { label: 'Private', color: PRIVATE, seconds: 0 };
+        const p = b.get('private') ?? { key: 'private', label: 'Private', color: PRIVATE, seconds: 0 };
         p.seconds += e.privateSeconds;
         b.set('private', p);
       }
       if (publicSeconds > 0 && r.bucket !== 'private') {
         // Group by channel, not by card, so the bars read as areas of work.
         const label = r.label.split(' › ')[0];
-        const cur = b.get(r.bucket) ?? { label, color: r.color, seconds: 0 };
+        const cur = b.get(r.bucket) ?? { key: r.bucket, label, color: r.color, seconds: 0 };
         cur.seconds += publicSeconds;
         b.set(r.bucket, cur);
         if (e.mode) m.set(e.mode, (m.get(e.mode) ?? 0) + publicSeconds);
       }
       t += e.activeSeconds;
     }
+    // Channels in a folder roll up under it, as in your sidebar; everything else
+    // (your own named areas, not work, private) stands alone.
+    const folderOf = new Map(channels.map((c) => [c.id, c.folder]));
+    const grouped = new Map<string, { folder: string | null; seconds: number; items: typeof bucketsList }>();
+    const bucketsList = [...b.values()];
+    for (const item of bucketsList) {
+      const folder = folderOf.get(item.key) ?? null;
+      const key = folder ? `folder:${folder}` : `item:${item.key}`;
+      const g = grouped.get(key) ?? { folder, seconds: 0, items: [] };
+      g.seconds += item.seconds;
+      g.items.push(item);
+      grouped.set(key, g);
+    }
+    for (const g of grouped.values()) g.items.sort((x, y) => y.seconds - x.seconds);
     return {
-      buckets: [...b.values()].sort((x, y) => y.seconds - x.seconds),
+      groups: [...grouped.values()].sort((x, y) => y.seconds - x.seconds),
       modes: [...m.entries()].sort((x, y) => y[1] - x[1]),
       total: t,
     };
-  }, [episodes]);
+  }, [episodes, channels]);
 
   if (total === 0) return null;
   return (
     <section className="grid gap-6 sm:grid-cols-[1.4fr_1fr]">
       <div>
         <SectionTitle>What it was for</SectionTitle>
-        <div className="space-y-2">
-          {buckets.map((b) => (
-            <div key={b.label + b.color}>
+        <div className="space-y-2.5">
+          {groups.map((g) => g.folder ? (
+            <div key={`folder:${g.folder}`}>
               <div className="flex justify-between text-sm">
-                <span className="truncate text-neutral-800 dark:text-neutral-200">{b.label}</span>
-                <span className="tabular-nums text-neutral-500">{duration(b.seconds)}</span>
+                <span className="truncate font-medium text-neutral-900 dark:text-neutral-100">
+                  <span className="mr-1 text-neutral-400">▸</span>{g.folder}
+                </span>
+                <span className="tabular-nums text-neutral-500">{duration(g.seconds)}</span>
               </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
-                <div className="h-full rounded-full" style={{ width: `${(b.seconds / total) * 100}%`, background: b.color }} />
+              <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
+                {g.items.map((b) => (
+                  <div key={b.key} className="h-full" style={{ width: `${(b.seconds / total) * 100}%`, background: b.color }} />
+                ))}
+              </div>
+              <div className="mt-1.5 space-y-0.5 pl-4">
+                {g.items.map((b) => (
+                  <div key={b.key} className="flex items-center justify-between text-[13px]">
+                    <span className="flex min-w-0 items-center gap-1.5 truncate text-neutral-600 dark:text-neutral-400">
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: b.color }} />
+                      {b.label}
+                    </span>
+                    <span className="tabular-nums text-neutral-400">{duration(b.seconds)}</span>
+                  </div>
+                ))}
               </div>
             </div>
+          ) : (
+            g.items.map((b) => (
+              <div key={b.key}>
+                <div className="flex justify-between text-sm">
+                  <span className="truncate text-neutral-800 dark:text-neutral-200">{b.label}</span>
+                  <span className="tabular-nums text-neutral-500">{duration(b.seconds)}</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
+                  <div className="h-full rounded-full" style={{ width: `${(b.seconds / total) * 100}%`, background: b.color }} />
+                </div>
+              </div>
+            ))
           ))}
         </div>
       </div>
@@ -781,7 +833,7 @@ function EpisodeRow({
               title="Optionally, the channel it belongs to"
             >
               <option value="">No channel</option>
-              {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <ChannelOptions channels={channels} />
             </select>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -984,6 +1036,26 @@ function SetupPanel({ connected, date, onChanged, onClose }: { connected: boolea
   );
 }
 
+/** Channel options grouped under your folders, the way the sidebar shows them. */
+function ChannelOptions({ channels }: { channels: DayData['channels'] }) {
+  const groups = new Map<string, DayData['channels']>();
+  for (const c of channels) {
+    const key = c.folder ?? '';
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  const named = [...groups.entries()].filter(([f]) => f).sort((a, b) => a[0].localeCompare(b[0]));
+  return (
+    <>
+      {named.map(([folder, list]) => (
+        <optgroup key={folder} label={folder}>
+          {list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </optgroup>
+      ))}
+      {(groups.get('') ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+    </>
+  );
+}
+
 // ---- worth a look ----------------------------------------------------------------
 
 function WorthALook({ reads, channels, onChanged }: { reads: DayData['reads']; channels: DayData['channels']; onChanged: () => void }) {
@@ -1034,6 +1106,26 @@ function WorthCard({ read: r, channels, onChanged }: { read: WorthRead; channels
   const [channelId, setChannelId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const isAppIdea = r.nudgeKind === 'app' || (r.scores.app ?? 0) >= 60;
+
+  const build = async (mode: 'new' | 'extend') => {
+    setBusy(true);
+    setError('');
+    const res = await fetch(`/api/kanwatch/reads/${r.id}/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, channelId: channelId || undefined }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) return setError(data.error ?? 'That didn’t work.');
+    if (mode === 'extend') {
+      // The idea is in the app's thread; open it there to decide and press Update app.
+      window.location.href = `/channel/${data.channelId}/card/${data.cardId}?app=${data.appId}`;
+      return;
+    }
+    onChanged();
+  };
 
   const send = async (body: Record<string, unknown>) => {
     setBusy(true);
@@ -1049,7 +1141,7 @@ function WorthCard({ read: r, channels, onChanged }: { read: WorthRead; channels
   };
 
   return (
-    <article className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
+    <article id={`read-${r.id}`} className="scroll-mt-6 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <a href={r.url} target="_blank" rel="noreferrer" className="min-w-0 text-[15px] font-medium text-neutral-900 hover:underline dark:text-neutral-100">
           {r.title || r.url}
@@ -1084,6 +1176,28 @@ function WorthCard({ read: r, channels, onChanged }: { read: WorthRead; channels
         </div>
       )}
 
+      {r.builtApp && (
+        <a
+          href={`/channel/${r.builtApp.channelId}/card/${r.builtApp.cardId}?app=${r.builtApp.id}`}
+          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-[13px] text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
+        >
+          {r.builtApp.ready ? '✓' : <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />}
+          {r.builtApp.ready ? `${r.builtApp.title} is built — open it` : `Building ${r.builtApp.title}… you’ll get a notification when it lands`}
+        </a>
+      )}
+
+      {isAppIdea && !r.builtApp && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <SmallButton primary disabled={busy} onClick={() => build('new')}>Build as a new app</SmallButton>
+          {r.relatedApp && (
+            <SmallButton disabled={busy} onClick={() => build('extend')}>Add to {r.relatedApp.title}</SmallButton>
+          )}
+          <span className="text-[11px] text-neutral-400">
+            {r.relatedApp ? `Kan thinks it could fit your ${r.relatedApp.title} app.` : 'Doesn’t overlap any of your apps.'}
+          </span>
+        </div>
+      )}
+
       {r.verdict !== 'saved' && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <select
@@ -1091,8 +1205,8 @@ function WorthCard({ read: r, channels, onChanged }: { read: WorthRead; channels
             onChange={(e) => setChannelId(e.target.value)}
             className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
           >
-            <option value="">Save to…</option>
-            {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <option value="">{isAppIdea ? 'Channel (optional)…' : 'Save to…'}</option>
+            <ChannelOptions channels={channels} />
           </select>
           <SmallButton primary disabled={busy || !channelId} onClick={() => send({ verdict: 'saved', channelId, reflection })}>Save as card</SmallButton>
           <SmallButton disabled={busy} onClick={() => send({ verdict: 'dismissed' })}>Not interesting</SmallButton>

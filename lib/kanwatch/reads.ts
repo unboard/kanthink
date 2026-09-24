@@ -18,7 +18,8 @@
 
 import { and, desc, eq, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { channels, kanwatchReads, kanwatchSites, users } from '@/lib/db/schema';
+import { channels, kanwatchReads, kanwatchSites, playgroundApps, users } from '@/lib/db/schema';
+import { createNotification } from '@/lib/notifications/createNotification';
 import { askJev, isJevConfigured } from '@/lib/jev/client';
 import { getLLMClientForUser } from '@/lib/ai/llm';
 import { recordUsage } from '@/lib/usage';
@@ -30,6 +31,11 @@ import { RETENTION_DAYS } from './episodes';
 const MIN_READ_SECONDS = 30;
 /** Above this (0–100) on worth, Kanthink fit or app idea, a page earns a TL;DR and a nudge. */
 const NUDGE_AT = 60;
+/** App ideas this strong get a notification, not just a place on the Kanwatch page. */
+const NOTIFY_AT = 75;
+const NOTIFY_PER_DAY = 2;
+/** Above this (0–100), an idea is pitched as extending an existing app rather than a new one. */
+const EXTENDS_AT = 50;
 
 const KANTHINK_ABOUT =
   'Kanthink is an AI-assisted Kanban app: channels and cards that an assistant named Kan helps create and organise, ' +
@@ -115,7 +121,8 @@ function nudgeKindFor(r: { worth: number; kanthinkFit: number; appIdea: number }
 
 const NUDGE_GUIDE: Record<string, string> = {
   kanthink: 'Ask whether this should shape Kanthink, naming the specific idea from the page that might apply.',
-  app: 'Ask whether this should become an app they build, naming the app in a short phrase.',
+  app: 'Ask whether they want Kan to build this as an app, naming the app in a short phrase.',
+  app_extends: 'It fits their existing app named in `related_app`: ask whether to add it to that app, or build it as a separate new app. Name the idea in a short phrase.',
   revisit: 'Say in one line why it is worth coming back to.',
   reflect: 'Ask what they thought of it, pointing at the page\'s central claim.',
 };
@@ -217,8 +224,47 @@ export async function judgeRead(read: ReadRow): Promise<void> {
     return;
   }
 
+  // An app idea: is it new, or does it extend an app they already have? Asked only
+  // for app ideas, since it means listing their apps.
+  let related: { id: string; title: string; fit: number } | null = null;
+  if (scores.appIdea >= NUDGE_AT && access.readable.length) {
+    const apps = await db.query.playgroundApps.findMany({
+      where: and(inArray(playgroundApps.channelId, access.readable), eq(playgroundApps.isArchived, false)),
+      columns: { id: true, title: true, tagline: true, summary: true },
+      orderBy: [desc(playgroundApps.updatedAt)],
+      limit: 30,
+    });
+    if (apps.length) {
+      const criteria: Record<string, Record<string, unknown> | string> = {};
+      apps.forEach((a, i) => {
+        criteria[`app_${i + 1}`] = { app: a.title, what_it_does: (a.tagline || a.summary || '').slice(0, 200) || undefined };
+      });
+      criteria.new_app = 'None of these: it would be a new, separate app.';
+      const fit = await askJev(
+        { idea_from: { site: read.domain, title: read.title, text: (read.text ?? '').slice(0, 3000) } },
+        {
+          home: {
+            type: 'choice',
+            instructions:
+              'The page in `idea_from` suggests an app. Would it be best built as a new app, or as part of one of the ' +
+              'person\'s existing apps? Only pick an existing app if the idea clearly belongs inside it.',
+            criteria,
+          },
+        },
+        { label: 'kanwatch app fit', timeoutMs: 8000 },
+      );
+      if (fit) {
+        const pick = fit.answers.home.choice;
+        const p = Math.round((fit.answers.home.probabilities[pick] ?? 0) * 100);
+        const app = pick.startsWith('app_') ? apps[Number(pick.split('_')[1]) - 1] : null;
+        if (app && p >= EXTENDS_AT) related = { id: app.id, title: app.title, fit: p };
+      }
+    }
+  }
+
   // Stage two: words. Only for the few pages that earned them.
   const nudgeKind = nudgeKindFor(scores);
+  const guide = nudgeKind === 'app' && related ? NUDGE_GUIDE.app_extends : NUDGE_GUIDE[nudgeKind];
   const firstName = user?.name?.split(/\s+/)[0] || 'them';
   let written: { tldr?: string; why?: string; nudge?: string } = {};
   try {
@@ -231,7 +277,7 @@ export async function judgeRead(read: ReadRow): Promise<void> {
             `You are Kan, the assistant in Kanthink. ${firstName} read a page; you summarise it for them and ask one short question. ` +
             'Reply with JSON only: {"tldr": "2–3 plain sentences on what the page says", ' +
             '"why": "one line on why it matters to them, given their work", "nudge": "one question to them, under 25 words"}. ' +
-            `For the nudge: ${NUDGE_GUIDE[nudgeKind]} No preamble, no markdown.`,
+            `For the nudge: ${guide} No preamble, no markdown.`,
         },
         {
           role: 'user',
@@ -239,6 +285,7 @@ export async function judgeRead(read: ReadRow): Promise<void> {
             page: { site: read.domain, title: read.title, text: (read.text ?? '').slice(0, 6000) },
             their_channels: state.the_person.their_channels,
             kanthink: KANTHINK_ABOUT,
+            ...(related ? { related_app: related.title } : {}),
           }),
         },
       ]);
@@ -256,7 +303,28 @@ export async function judgeRead(read: ReadRow): Promise<void> {
     why: typeof written.why === 'string' ? written.why.slice(0, 300) : null,
     nudge: typeof written.nudge === 'string' ? written.nudge.slice(0, 300) : null,
     nudgeKind,
+    relatedAppId: related?.id ?? null,
+    relatedAppFit: related?.fit ?? null,
   }).where(eq(kanwatchReads.id, read.id));
+
+  // Strong app ideas are worth a tap on the shoulder — a few a day at most, once each.
+  if (scores.appIdea >= NOTIFY_AT && !read.notifiedAt && !read.appId && written.nudge) {
+    const startOfDay = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const sentToday = await db.query.kanwatchReads.findMany({
+      where: and(eq(kanwatchReads.userId, read.userId), sql`${kanwatchReads.notifiedAt} >= ${Math.floor(startOfDay.getTime() / 1000)}`),
+      columns: { id: true },
+    });
+    if (sentToday.length < NOTIFY_PER_DAY) {
+      const sent = await createNotification({
+        userId: read.userId,
+        type: 'kanwatch_idea',
+        title: related ? `An idea for ${related.title}` : 'An app idea from something you read',
+        body: `${read.title ? `"${read.title.slice(0, 80)}" — ` : ''}${written.nudge}`,
+        data: { readId: read.id },
+      });
+      if (sent) await db.update(kanwatchReads).set({ notifiedAt: new Date() }).where(eq(kanwatchReads.id, read.id));
+    }
+  }
 }
 
 /** Read the pages waiting to be read: enough time spent, or asked for. */
