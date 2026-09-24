@@ -17,10 +17,11 @@
 
 import { and, asc, desc, eq, gte, inArray, isNotNull, like, lt, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { channels, kanwatchDays, kanwatchEpisodes, kanwatchSites, kanwatchVisits } from '@/lib/db/schema';
+import { kanwatchDays, kanwatchEpisodes, kanwatchSites, kanwatchVisits } from '@/lib/db/schema';
 import { askJev, isJevConfigured } from '@/lib/jev/client';
 import { cardCandidates, loadAccess, type Access } from '@/lib/voice/resolveReference';
 import { describeEngagement, localDate, partOfDay } from './episodes';
+import { loadBoard } from './board';
 
 export const MODES = {
   building: 'Making or changing something: writing code, editing a document or design, configuring a tool.',
@@ -104,15 +105,8 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   const date = localDate(ep.startedAt.getTime(), ep.tzOffsetMinutes);
 
   const searchText = pages.map((p) => [p.title, p.heading, p.search].join(' ')).join(' ').slice(0, 1000);
-  const [channelRows, cardShortlist, day, sites, history] = await Promise.all([
-    reach.readable.length
-      ? db.query.channels.findMany({
-          where: inArray(channels.id, reach.readable),
-          columns: { id: true, name: true, description: true },
-          orderBy: [desc(channels.updatedAt)],
-          limit: 25,
-        })
-      : Promise.resolve([]),
+  const [board, cardShortlist, day, sites, history] = await Promise.all([
+    loadBoard(ep.userId, reach),
     reach.readable.length ? cardCandidates(searchText, reach, {}) : Promise.resolve([]),
     db.query.kanwatchDays.findFirst({ where: eq(kanwatchDays.id, `${ep.userId}:${date}`) }),
     db.query.kanwatchSites.findMany({
@@ -125,6 +119,7 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     }),
   ]);
   const cards = cardShortlist.slice(0, 15);
+  const channelRows = board.channels.slice(0, 25);
 
   // Areas in the user's own words ("MyCreativeShop · template manufacturing"). Once
   // named, an area is a choice like any channel, so it can be recognised next time.
@@ -189,7 +184,12 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
 
   const criteria: Record<string, Record<string, unknown> | string> = {};
   channelRows.forEach((c, i) => {
-    criteria[`channel_${i + 1}`] = { channel: c.name, about: c.description?.slice(0, 140) || undefined };
+    criteria[`channel_${i + 1}`] = {
+      channel: c.name,
+      // The folder is often the clearest signal: a "Work" channel in a MyCreativeShop folder is MyCreativeShop work.
+      ...(c.folder ? { in_folder: c.folder } : {}),
+      about: c.description?.slice(0, 140) || undefined,
+    };
   });
   cards.forEach((c, i) => {
     criteria[`card_${i + 1}`] = { card: c.title, in: c.where, ...(c.detail.summary ? { summary: c.detail.summary } : {}) };
@@ -301,6 +301,7 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
 
   await db.update(kanwatchEpisodes).set({
     status: nextStatus,
+    boardSig: board.signature,
     domains: JSON.stringify(siteList),
     basis: JSON.stringify(basis),
     guessKind,

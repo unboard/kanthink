@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNull, lt, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { cards, channels, folders, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits, playgroundApps, userChannelOrg } from '@/lib/db/schema';
 import { judgePendingReads } from '@/lib/kanwatch/reads';
+import { requeueForBoardChange } from '@/lib/kanwatch/board';
 import { kanwatchUser } from '@/lib/kanwatch/access';
 import { closeStaleEpisodes } from '@/lib/kanwatch/ingest';
 import { judgePending, summarizePages } from '@/lib/kanwatch/judge';
@@ -30,8 +31,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Bad range' }, { status: 400 });
   }
 
-  // Bring the day up to date before showing it.
+  // Bring the day up to date before showing it — including re-reading stretches that
+  // were read against an older version of your channels and folders.
   await closeStaleEpisodes(userId);
+  await requeueForBoardChange(userId, await loadAccess(userId), from, to);
   await Promise.all([judgePending(userId, 12), judgePendingReads(userId, 6)]);
 
   const [episodes, day, token, week] = await Promise.all([

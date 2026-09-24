@@ -1528,6 +1528,7 @@ export const kanwatchEpisodes = sqliteTable('kanwatch_episodes', {
   judgedAt: integer('judged_at', { mode: 'timestamp' }),
   guessLabel: text('guess_label'),                    // guess_kind 'area': one of the user's own named areas
   verdictMode: text('verdict_mode'),                  // what the user said they were doing (overrides activity_mode)
+  boardSig: text('board_sig'),                        // fingerprint of the channels/folders it was read against
   domains: text('domains'),                           // JSON string[] of sites, for per-site learning
   basis: text('basis'),                               // JSON: what the read drew on (notes, past answers)
   // What the user said it actually was — the training signal.
