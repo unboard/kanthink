@@ -53,6 +53,7 @@ Kanthink is well past MVP. A rough map of the surfaces, so you don't rebuild som
 - **Publishing** — public card pages (`/p`), digests + newsletters, Customer.IO email
 - **Billing** — Stripe checkout + webhooks, usage records, BYOK
 - **Record studio** (`app/record`) — screen/audio recording, gallery, sharing
+- **Kanwatch** (`app/kanwatch`, `lib/kanwatch/*`, `extensions/kanwatch`) — admin-only. A Chrome extension records where browsing time goes; Jev reads each stretch against your channels and cards; the page shows the day's focus and takes your corrections. **`extensions/kanwatch/privacy.js` is the privacy boundary** — the extension and the server both apply it, and `tests/kanwatch-privacy.test.ts` guards it. Never widen what is captured without going through that file.
 - **Games** — `/catlife`, `/wildwood`, `/rescue`. Personal side projects for the user's family, not Kanthink features. Leave them alone unless asked directly.
 
 `app/prototypes` holds live UI experiments. Nothing in there ships.

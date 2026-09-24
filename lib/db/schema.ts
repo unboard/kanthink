@@ -1460,3 +1460,104 @@ export const catlifePlayers = sqliteTable('catlife_players', {
 ])
 
 export type DbCatlifePlayer = typeof catlifePlayers.$inferSelect
+
+// ---- Kanwatch -----------------------------------------------------------------
+// Browser activity, reduced by extensions/kanwatch/privacy.js before it is stored:
+// sensitive sites keep timing only, and every text field is scrubbed. Raw visits
+// expire after 30 days; episodes (the judged summaries) are what the day view reads.
+
+// A revocable key for the extension. Only the SHA-256 of the token is stored.
+export const kanwatchTokens = sqliteTable('kanwatch_tokens', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(),
+  label: text('label'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+  revokedAt: integer('revoked_at', { mode: 'timestamp' }),
+}, (table) => [
+  uniqueIndex('kanwatch_tokens_hash_idx').on(table.tokenHash),
+])
+
+// One stretch of time on one page. The id comes from the extension, so a retried
+// upload is a no-op rather than a duplicate.
+export const kanwatchVisits = sqliteTable('kanwatch_visits', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  episodeId: text('episode_id'),
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
+  endedAt: integer('ended_at', { mode: 'timestamp' }).notNull(),
+  activeSeconds: integer('active_seconds').notNull().default(0),
+  isPrivate: integer('is_private', { mode: 'boolean' }).notNull().default(false),
+  domain: text('domain'),
+  path: text('path'),
+  title: text('title'),
+  heading: text('heading'),
+  description: text('description'),
+  searchQuery: text('search_query'),
+  // Engagement, as counts only — never what was typed.
+  keystrokes: integer('keystrokes').default(0),
+  clicks: integer('clicks').default(0),
+  scrollDepth: integer('scroll_depth').default(0),     // furthest point reached, 0–100
+  mediaSeconds: integer('media_seconds').default(0),   // audio/video playing while active
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('kanwatch_visits_user_time_idx').on(table.userId, table.startedAt),
+  index('kanwatch_visits_episode_idx').on(table.episodeId),
+])
+
+// Consecutive visits grouped into one stretch of work, and what Jev made of it.
+export const kanwatchEpisodes = sqliteTable('kanwatch_episodes', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
+  endedAt: integer('ended_at', { mode: 'timestamp' }).notNull(),
+  activeSeconds: integer('active_seconds').notNull().default(0),
+  privateSeconds: integer('private_seconds').notNull().default(0),
+  tzOffsetMinutes: integer('tz_offset_minutes'),
+  status: text('status').$type<'open' | 'closed' | 'judged'>().notNull().default('open'),
+  // Jev's read. guess_kind: 'channel' | 'card' | 'new_work' | 'not_work' | 'unclear' | 'private'
+  guessKind: text('guess_kind'),
+  guessChannelId: text('guess_channel_id'),
+  guessCardId: text('guess_card_id'),
+  guessProbability: integer('guess_probability'),     // 0–100
+  activityMode: text('activity_mode'),                // building, researching, learning, …
+  focusScore: integer('focus_score'),                 // 0–100 against the day's intention
+  worthCardProbability: integer('worth_card_probability'),
+  jevModel: text('jev_model'),
+  judgedAt: integer('judged_at', { mode: 'timestamp' }),
+  // What the user said it actually was — the training signal.
+  verdict: text('verdict').$type<'confirmed' | 'corrected' | 'not_work'>(),
+  verdictChannelId: text('verdict_channel_id'),
+  verdictCardId: text('verdict_card_id'),
+  label: text('label'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('kanwatch_episodes_user_time_idx').on(table.userId, table.startedAt),
+  index('kanwatch_episodes_status_idx').on(table.userId, table.status),
+])
+
+// What a given day was meant to be about. Keyed by the user's local date.
+export const kanwatchDays = sqliteTable('kanwatch_days', {
+  id: text('id').primaryKey(),                        // `${userId}:${YYYY-MM-DD}`
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(),
+  intention: text('intention'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+// The user's own read on a site: what it is for them, and whether they want more
+// or less of it. Fed back into judging, and the basis for focus tips.
+export const kanwatchSites = sqliteTable('kanwatch_sites', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  domain: text('domain').notNull(),
+  want: text('want').$type<'more' | 'right' | 'less'>(),
+  purpose: text('purpose'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('kanwatch_sites_user_domain_idx').on(table.userId, table.domain),
+])

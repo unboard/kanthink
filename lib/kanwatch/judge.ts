@@ -1,0 +1,259 @@
+/**
+ * What was an episode? Jev reads it; code decides what to keep.
+ *
+ * One request per finished episode, four questions over the same state:
+ *   - belongs (Choice): which of your channels or cards it served, or new work,
+ *     not work, or unclear.
+ *   - mode (Choice): building, researching, learning, communicating, …
+ *   - focus (Score): against what you said the day was for — only when you said.
+ *   - worth_card (Noul): a distinct new line of work worth its own card?
+ *
+ * Code does the counting Jev should not: minutes per page, what the engagement
+ * counts say you were doing, the time of day. Your past confirmations and your own
+ * notes on sites ride along, which is how its guesses become yours over time.
+ *
+ * Only scrubbed, stored fields are sent — the same ones you can see on the page.
+ */
+
+import { and, asc, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { channels, kanwatchDays, kanwatchEpisodes, kanwatchSites, kanwatchVisits } from '@/lib/db/schema';
+import { askJev, isJevConfigured } from '@/lib/jev/client';
+import { cardCandidates, loadAccess, type Access } from '@/lib/voice/resolveReference';
+import { describeEngagement, localDate, partOfDay } from './episodes';
+
+export const MODES = {
+  building: 'Making or changing something: writing code, editing a document or design, configuring a tool.',
+  researching: 'Looking things up to answer a specific question or solve a specific problem.',
+  learning: 'Studying a topic more broadly: courses, tutorials, long explanations.',
+  communicating: 'Messages, chat, forums, comments, meetings.',
+  planning: 'Organising work: boards, calendars, notes, to-do lists.',
+  admin: 'Accounts, settings, forms, errands.',
+  entertainment: 'Video, games, music or reading for fun.',
+  shopping: 'Browsing or comparing things to buy.',
+  news_social: 'News, feeds and social media.',
+} as const;
+
+export type ActivityMode = keyof typeof MODES;
+
+type VisitRow = typeof kanwatchVisits.$inferSelect;
+
+/** The pages of an episode, merged and ranked by time — what Jev (and the page) see. */
+export function summarizePages(visits: VisitRow[], limit = 8) {
+  const byPage = new Map<string, {
+    site: string; path: string; title: string; heading: string; description: string; search: string;
+    seconds: number; keystrokes: number; clicks: number; scrollDepth: number; mediaSeconds: number;
+  }>();
+  for (const v of visits) {
+    if (v.isPrivate || !v.domain) continue;
+    const key = `${v.domain}${v.path ?? ''}|${v.title ?? ''}`;
+    const page = byPage.get(key) ?? {
+      site: v.domain, path: v.path ?? '/', title: v.title ?? '', heading: v.heading ?? '',
+      description: v.description ?? '', search: v.searchQuery ?? '',
+      seconds: 0, keystrokes: 0, clicks: 0, scrollDepth: 0, mediaSeconds: 0,
+    };
+    page.seconds += v.activeSeconds;
+    page.keystrokes += v.keystrokes ?? 0;
+    page.clicks += v.clicks ?? 0;
+    page.scrollDepth = Math.max(page.scrollDepth, v.scrollDepth ?? 0);
+    page.mediaSeconds += v.mediaSeconds ?? 0;
+    if (!page.heading && v.heading) page.heading = v.heading;
+    if (!page.search && v.searchQuery) page.search = v.searchQuery;
+    byPage.set(key, page);
+  }
+  return [...byPage.values()]
+    .sort((a, b) => b.seconds - a.seconds)
+    .slice(0, limit)
+    .map((p) => ({
+      ...p,
+      doing: describeEngagement({
+        activeSeconds: p.seconds, keystrokes: p.keystrokes, clicks: p.clicks,
+        scrollDepth: p.scrollDepth, mediaSeconds: p.mediaSeconds,
+      }),
+    }));
+}
+
+const minutes = (s: number) => {
+  const m = Math.max(1, Math.round(s / 60));
+  return `${m} minute${m === 1 ? '' : 's'}`;
+};
+
+export async function judgeEpisode(episodeId: string, access?: Access): Promise<void> {
+  const ep = await db.query.kanwatchEpisodes.findFirst({ where: eq(kanwatchEpisodes.id, episodeId) });
+  if (!ep || ep.status === 'judged') return;
+  const visits = await db.query.kanwatchVisits.findMany({
+    where: eq(kanwatchVisits.episodeId, ep.id),
+    orderBy: [asc(kanwatchVisits.startedAt)],
+  });
+  const pages = summarizePages(visits);
+
+  // Nothing but private time: there is nothing to read, and nothing is sent.
+  if (pages.length === 0) {
+    await db.update(kanwatchEpisodes)
+      .set({ status: 'judged', guessKind: 'private', judgedAt: new Date(), updatedAt: new Date() })
+      .where(eq(kanwatchEpisodes.id, ep.id));
+    return;
+  }
+
+  const reach = access ?? (await loadAccess(ep.userId));
+  const date = localDate(ep.startedAt.getTime(), ep.tzOffsetMinutes);
+
+  const searchText = pages.map((p) => [p.title, p.heading, p.search].join(' ')).join(' ').slice(0, 1000);
+  const [channelRows, cardShortlist, day, sites, history] = await Promise.all([
+    reach.readable.length
+      ? db.query.channels.findMany({
+          where: inArray(channels.id, reach.readable),
+          columns: { id: true, name: true, description: true },
+          orderBy: [desc(channels.updatedAt)],
+          limit: 25,
+        })
+      : Promise.resolve([]),
+    reach.readable.length ? cardCandidates(searchText, reach, {}) : Promise.resolve([]),
+    db.query.kanwatchDays.findFirst({ where: eq(kanwatchDays.id, `${ep.userId}:${date}`) }),
+    db.query.kanwatchSites.findMany({
+      where: and(eq(kanwatchSites.userId, ep.userId), inArray(kanwatchSites.domain, [...new Set(pages.map((p) => p.site))])),
+    }),
+    db.query.kanwatchEpisodes.findMany({
+      where: and(eq(kanwatchEpisodes.userId, ep.userId), isNotNull(kanwatchEpisodes.verdict)),
+      orderBy: [desc(kanwatchEpisodes.startedAt)],
+      limit: 8,
+    }),
+  ]);
+  const cards = cardShortlist.slice(0, 15);
+
+  // The user's own past answers, as examples of what this kind of browsing turned out to be.
+  const historyVisits = history.length
+    ? await db.query.kanwatchVisits.findMany({ where: inArray(kanwatchVisits.episodeId, history.map((h) => h.id)) })
+    : [];
+  const channelName = new Map(channelRows.map((c) => [c.id, c.name]));
+  const examples = history.map((h) => ({
+    pages: summarizePages(historyVisits.filter((v) => v.episodeId === h.id), 3).map((p) => p.title || p.site),
+    it_was:
+      h.verdict === 'not_work' ? 'not work'
+      : h.label || (h.verdictChannelId ? `work for ${channelName.get(h.verdictChannelId) ?? 'a channel'}` : 'work'),
+  })).filter((e) => e.pages.length > 0);
+
+  const criteria: Record<string, Record<string, unknown> | string> = {};
+  channelRows.forEach((c, i) => {
+    criteria[`channel_${i + 1}`] = { channel: c.name, about: c.description?.slice(0, 140) || undefined };
+  });
+  cards.forEach((c, i) => {
+    criteria[`card_${i + 1}`] = { card: c.title, in: c.where, ...(c.detail.summary ? { summary: c.detail.summary } : {}) };
+  });
+  criteria.new_work = 'Work toward something that none of the listed channels or cards covers.';
+  criteria.not_work = 'Not work: entertainment, errands, personal browsing.';
+  criteria.unclear = 'Too little to tell what this was for.';
+
+  const state = {
+    episode: {
+      length: minutes(ep.activeSeconds),
+      when: partOfDay(ep.startedAt.getTime(), ep.tzOffsetMinutes),
+      private_time: ep.privateSeconds > 0 ? minutes(ep.privateSeconds) : undefined,
+      pages: pages.map((p) => ({
+        site: p.site,
+        path: p.path !== '/' ? p.path : undefined,
+        title: p.title || undefined,
+        heading: p.heading && p.heading !== p.title ? p.heading : undefined,
+        about: p.description || undefined,
+        searched_for: p.search || undefined,
+        time: minutes(p.seconds),
+        doing: p.doing,
+      })),
+    },
+    todays_intention: day?.intention || undefined,
+    their_notes_on_these_sites: sites.filter((s) => s.purpose || s.want).map((s) => ({
+      site: s.domain, what_it_is_for_them: s.purpose || undefined,
+      wants: s.want ? `${s.want} time here` : undefined,
+    })),
+    how_they_labelled_past_browsing: examples,
+  };
+
+  const questions = {
+    belongs: {
+      type: 'choice' as const,
+      instructions:
+        'This is a stretch of someone\'s web browsing, grouped into `episode`. Which of their channels or cards was it ' +
+        'serving? Prefer a card when the pages are clearly about that card, a channel when they serve its broader goal. ' +
+        'Use `how_they_labelled_past_browsing` and `their_notes_on_these_sites` as strong hints about how this person works.',
+      criteria,
+    },
+    mode: {
+      type: 'choice' as const,
+      instructions: 'What kind of activity was `episode` mostly? The `doing` field on each page says whether they were typing, reading or watching.',
+      criteria: MODES,
+    },
+    worth_card: {
+      type: 'noul' as const,
+      instructions: 'Is `episode` a distinct, deliberate line of work — something they would want tracked as its own card — rather than a quick lookup, a distraction or part of something ongoing?',
+    },
+    ...(day?.intention
+      ? {
+          focus: {
+            type: 'score' as const,
+            instructions: 'How directly did `episode` serve what they said today was for, in `todays_intention`?',
+            criteria: ['Unrelated to it', 'Loosely related or supporting', 'Directly working on it'],
+          },
+        }
+      : {}),
+  };
+
+  const result = await askJev(state, questions, { label: 'kanwatch episode', timeoutMs: 8000 });
+  if (!result) return; // stays 'closed'; the next pass retries
+
+  const belongs = result.answers.belongs;
+  const pick = belongs.choice;
+  const probability = Math.round((belongs.probabilities[pick] ?? 0) * 100);
+  let guessKind: string = pick;
+  let guessChannelId: string | null = null;
+  let guessCardId: string | null = null;
+  if (pick.startsWith('channel_')) {
+    guessKind = 'channel';
+    guessChannelId = channelRows[Number(pick.split('_')[1]) - 1]?.id ?? null;
+  } else if (pick.startsWith('card_')) {
+    const card = cards[Number(pick.split('_')[1]) - 1];
+    guessKind = 'card';
+    guessCardId = card?.id ?? null;
+    guessChannelId = card?.channelId ?? null;
+  }
+  // A weak pick is not a guess worth showing as one.
+  if (probability < 35 && guessKind !== 'not_work') guessKind = 'unclear';
+
+  const focus = (result.answers as { focus?: { score: number } }).focus ?? null;
+
+  await db.update(kanwatchEpisodes).set({
+    status: 'judged',
+    guessKind,
+    guessChannelId,
+    guessCardId,
+    guessProbability: probability,
+    activityMode: result.answers.mode.choice,
+    focusScore: focus ? Math.round((focus.score / 2) * 100) : null,
+    worthCardProbability: Math.round(result.answers.worth_card.noul * 100),
+    jevModel: result.model,
+    judgedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(kanwatchEpisodes.id, ep.id));
+
+  console.log('[jev-kanwatch]', JSON.stringify({
+    pages: pages.length, guess: guessKind, p: probability, mode: result.answers.mode.choice, ms: result.latencyMs,
+  }));
+}
+
+/** Judge finished episodes that have not been read yet, oldest first. */
+export async function judgePending(userId: string, limit = 10): Promise<number> {
+  if (!isJevConfigured()) return 0;
+  const pending = await db.query.kanwatchEpisodes.findMany({
+    where: and(eq(kanwatchEpisodes.userId, userId), eq(kanwatchEpisodes.status, 'closed')),
+    orderBy: [asc(kanwatchEpisodes.startedAt)],
+    limit,
+  });
+  if (pending.length === 0) return 0;
+  const access = await loadAccess(userId);
+  // A few at a time: TypeSafe rate-limits bursts, and a day's backlog is small.
+  for (let i = 0; i < pending.length; i += 3) {
+    await Promise.all(pending.slice(i, i + 3).map((ep) => judgeEpisode(ep.id, access).catch((err) => {
+      console.warn('[kanwatch] judge failed', ep.id, err instanceof Error ? err.message : err);
+    })));
+  }
+  return pending.length;
+}

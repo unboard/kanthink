@@ -87,6 +87,7 @@ function ago(date: Date | null | undefined): string | undefined {
 export interface Described extends Candidate {
   /** What Jev sees for this option. */
   detail: Record<string, unknown>;
+  channelId?: string;
 }
 
 async function channelNames(ids: string[]): Promise<Map<string, string>> {
@@ -138,6 +139,7 @@ export async function cardCandidates(reference: string, access: Access, ctx: Res
     return {
       id: r.id,
       title: r.title,
+      channelId: r.channelId,
       where: column ? `${channel} › ${column}` : channel,
       detail: {
         title: r.title,

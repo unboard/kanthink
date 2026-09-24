@@ -1,0 +1,317 @@
+/**
+ * Kanwatch background worker.
+ *
+ * Keeps one "current visit" — the active tab in the focused window — and counts
+ * time on it only while you are actually there: Chrome focused, you not idle (or a
+ * video playing), and recording not paused. When the page changes, the visit is
+ * finished, run through privacy.js, and queued. The queue uploads every minute.
+ *
+ * The full URL, the page, and anything you type never leave this worker. What is
+ * queued is the scrubbed record privacy.js allows — and the server applies the same
+ * rules again on arrival.
+ */
+
+import { sanitizeVisit } from './privacy.js';
+
+const DEFAULT_ENDPOINT = 'https://kanthink.com';
+const MIN_VISIT_MS = 3000;            // quicker than this is a flip-through, not a visit
+const CHECKPOINT_MS = 5 * 60 * 1000;  // long visits are split so the day view stays current
+const MEDIA_FRESH_MS = 20000;         // a "video playing" report counts for this long
+const MAX_QUEUE = 2000;
+
+// ---- storage ------------------------------------------------------------------
+
+const SETTINGS_DEFAULTS = {
+  endpoint: DEFAULT_ENDPOINT,
+  token: '',
+  pausedUntil: 0,          // ms; Infinity-like values mean "until resumed"
+  includeSearch: true,
+  extraPrivateDomains: [],
+  lastUpload: null,        // { at, ok, message }
+};
+
+async function getSettings() {
+  const s = await chrome.storage.local.get(SETTINGS_DEFAULTS);
+  return { ...SETTINGS_DEFAULTS, ...s };
+}
+
+// One chain for every state change, so events cannot interleave mid-update.
+let chain = Promise.resolve();
+function serial(fn) {
+  chain = chain.then(fn, fn).catch((err) => console.warn('[kanwatch]', err));
+  return chain;
+}
+
+async function getSession() {
+  const { session } = await chrome.storage.session.get({ session: null });
+  return session ?? { current: null, windowFocused: true, idleState: 'active', mediaAt: 0 };
+}
+
+async function setSession(session) {
+  await chrome.storage.session.set({ session });
+}
+
+async function enqueue(visit) {
+  const { queue = [] } = await chrome.storage.local.get({ queue: [] });
+  queue.push(visit);
+  await chrome.storage.local.set({ queue: queue.slice(-MAX_QUEUE) });
+}
+
+// ---- visits -------------------------------------------------------------------
+
+const newId = () => crypto.randomUUID().replace(/-/g, '');
+
+const isWeb = (url) => /^https?:\/\//.test(url || '');
+const sameUrl = (a, b) => (a || '').split('#')[0] === (b || '').split('#')[0];
+
+function startVisit(tab, now) {
+  return {
+    id: newId(),
+    tabId: tab.id,
+    url: tab.url,
+    title: tab.title || '',
+    heading: '',
+    description: '',
+    startedAt: now,
+    activeMs: 0,
+    runningSince: null,
+    keystrokes: 0,
+    clicks: 0,
+    scrollDepth: 0,
+    mediaSeconds: 0,
+  };
+}
+
+function stopClock(visit, now) {
+  if (visit.runningSince) {
+    visit.activeMs += Math.max(0, now - visit.runningSince);
+    visit.runningSince = null;
+  }
+}
+
+async function finishVisit(visit, now) {
+  stopClock(visit, now);
+  if (visit.activeMs < MIN_VISIT_MS) return;
+  const settings = await getSettings();
+  const clean = sanitizeVisit({
+    url: visit.url,
+    title: visit.title,
+    heading: visit.heading,
+    description: visit.description,
+    includeSearch: settings.includeSearch,
+    extraPrivateDomains: settings.extraPrivateDomains,
+  });
+  const timing = {
+    id: visit.id,
+    startedAt: visit.startedAt,
+    endedAt: now,
+    activeSeconds: Math.round(visit.activeMs / 1000),
+  };
+  if (clean.private) {
+    // Private: how long, and nothing else. Not even which site.
+    await enqueue({ ...timing, private: true });
+    return;
+  }
+  await enqueue({
+    ...timing,
+    domain: clean.domain,
+    path: clean.path,
+    title: clean.title,
+    heading: clean.heading,
+    description: clean.description,
+    searchQuery: clean.searchQuery,
+    keystrokes: visit.keystrokes,
+    clicks: visit.clicks,
+    scrollDepth: visit.scrollDepth,
+    mediaSeconds: Math.min(visit.mediaSeconds, Math.round(visit.activeMs / 1000)),
+  });
+}
+
+async function isPaused() {
+  const { pausedUntil, token } = await getSettings();
+  return !token || Date.now() < pausedUntil;
+}
+
+/** Re-derive what should be counting right now, finishing or starting visits as needed. */
+async function refresh() {
+  const now = Date.now();
+  const session = await getSession();
+  const paused = await isPaused();
+
+  let tab = null;
+  if (session.windowFocused && !paused) {
+    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (active && !active.incognito && isWeb(active.url)) tab = active;
+  }
+
+  const present =
+    session.idleState === 'active' ||
+    (session.idleState === 'idle' && now - (session.mediaAt || 0) < MEDIA_FRESH_MS);
+
+  let current = session.current;
+
+  // A different page (or no page) ends the current visit.
+  if (current && (!tab || tab.id !== current.tabId || !sameUrl(tab.url, current.url))) {
+    await finishVisit(current, now);
+    current = null;
+  }
+
+  if (tab && !current) current = startVisit(tab, now);
+  if (current && tab && tab.title) current.title = tab.title;
+
+  if (current) {
+    if (present && !current.runningSince) current.runningSince = now;
+    if (!present) stopClock(current, now);
+
+    // Split long visits so an afternoon on one page still shows up as it happens.
+    if (now - current.startedAt >= CHECKPOINT_MS) {
+      const carry = { ...current };
+      await finishVisit(current, now);
+      current = { ...startVisit({ id: carry.tabId, url: carry.url, title: carry.title }, now),
+        heading: carry.heading, description: carry.description };
+      if (present) current.runningSince = now;
+    }
+  }
+
+  session.current = current;
+  await setSession(session);
+}
+
+// ---- upload -------------------------------------------------------------------
+
+async function upload() {
+  const settings = await getSettings();
+  const { queue = [] } = await chrome.storage.local.get({ queue: [] });
+  if (!settings.token || queue.length === 0) return;
+
+  const batch = queue.slice(0, 200);
+  let lastUpload;
+  try {
+    const res = await fetch(`${settings.endpoint.replace(/\/$/, '')}/api/kanwatch/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.token}` },
+      body: JSON.stringify({ visits: batch, tzOffsetMinutes: new Date().getTimezoneOffset() }),
+    });
+    if (res.ok) {
+      const sent = new Set(batch.map((v) => v.id));
+      const { queue: latest = [] } = await chrome.storage.local.get({ queue: [] });
+      await chrome.storage.local.set({ queue: latest.filter((v) => !sent.has(v.id)) });
+      lastUpload = { at: Date.now(), ok: true, message: `Sent ${batch.length}` };
+    } else {
+      lastUpload = {
+        at: Date.now(),
+        ok: false,
+        message: res.status === 401 ? 'Key rejected — reconnect from Kanwatch in Kanthink' : `Upload failed (${res.status})`,
+      };
+    }
+  } catch {
+    lastUpload = { at: Date.now(), ok: false, message: 'Offline — will retry' };
+  }
+  await chrome.storage.local.set({ lastUpload });
+}
+
+// ---- events -------------------------------------------------------------------
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create('tick', { periodInMinutes: 1 });
+  chrome.idle.setDetectionInterval(60);
+});
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create('tick', { periodInMinutes: 1 });
+  chrome.idle.setDetectionInterval(60);
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== 'tick') return;
+  serial(async () => {
+    await refresh();
+    await upload();
+  });
+});
+
+chrome.tabs.onActivated.addListener(() => serial(refresh));
+chrome.tabs.onRemoved.addListener(() => serial(refresh));
+chrome.tabs.onUpdated.addListener((_id, change) => {
+  if (change.url || change.title || change.status === 'complete') serial(refresh);
+});
+chrome.windows.onFocusChanged.addListener((windowId) => serial(async () => {
+  const session = await getSession();
+  session.windowFocused = windowId !== chrome.windows.WINDOW_ID_NONE;
+  await setSession(session);
+  await refresh();
+}));
+chrome.idle.onStateChanged.addListener((state) => serial(async () => {
+  const session = await getSession();
+  session.idleState = state; // 'active' | 'idle' | 'locked'
+  await setSession(session);
+  await refresh();
+}));
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  // Pausing, resuming or connecting takes effect immediately.
+  if (area === 'local' && (changes.pausedUntil || changes.token)) serial(refresh);
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  const tab = sender.tab;
+  if (msg?.type === 'hello') {
+    // The content script asks before doing anything. Private pages get "no", and the
+    // script then attaches no listeners at all.
+    (async () => {
+      const settings = await getSettings();
+      const clean = tab && !tab.incognito
+        ? sanitizeVisit({ url: tab.url, title: tab.title, extraPrivateDomains: settings.extraPrivateDomains })
+        : { private: true };
+      sendResponse({ track: !clean.private && !!settings.token });
+    })();
+    return true;
+  }
+
+  if (!tab) return;
+  if (msg?.type === 'meta' || msg?.type === 'engagement') {
+    serial(async () => {
+      const session = await getSession();
+      const current = session.current;
+      if (msg.type === 'engagement' && msg.playing) session.mediaAt = Date.now();
+      if (current && current.tabId === tab.id && sameUrl(current.url, tab.url)) {
+        if (msg.type === 'meta') {
+          current.heading = String(msg.heading || '').slice(0, 300);
+          current.description = String(msg.description || '').slice(0, 500);
+        } else {
+          current.keystrokes += Math.max(0, Math.min(5000, msg.keystrokes | 0));
+          current.clicks += Math.max(0, Math.min(5000, msg.clicks | 0));
+          current.scrollDepth = Math.max(current.scrollDepth, Math.max(0, Math.min(100, msg.scrollDepth | 0)));
+          current.mediaSeconds += Math.max(0, Math.min(60, msg.mediaSeconds | 0));
+        }
+      }
+      await setSession(session);
+      if (msg.type === 'engagement' && msg.playing) await refresh();
+    });
+  }
+});
+
+// Popup actions.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'flush') {
+    serial(async () => {
+      await refresh();
+      await upload();
+    }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg?.type === 'blockSite' && typeof msg.domain === 'string') {
+    (async () => {
+      const settings = await getSettings();
+      const list = [...new Set([...settings.extraPrivateDomains, msg.domain.toLowerCase()])];
+      await chrome.storage.local.set({ extraPrivateDomains: list });
+      // Anything from this site still waiting to upload is dropped, not sent.
+      const { queue = [] } = await chrome.storage.local.get({ queue: [] });
+      await chrome.storage.local.set({
+        queue: queue.filter((v) => !v.domain || !(v.domain === msg.domain || v.domain.endsWith(`.${msg.domain}`))),
+      });
+      serial(refresh);
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+});

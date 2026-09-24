@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Kanwatch</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; width: 300px; font: 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background: #0a0a0a; color: #e5e5e5; }
+    main { padding: 14px; display: grid; gap: 12px; }
+    h1 { font-size: 14px; margin: 0; display: flex; align-items: center; gap: 8px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #525252; }
+    .dot.on { background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, .15); }
+    .dot.paused { background: #fbbf24; }
+    .muted { color: #a3a3a3; font-size: 12px; }
+    .row { display: flex; gap: 6px; flex-wrap: wrap; }
+    button { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid #333; background: #171717; color: #e5e5e5; cursor: pointer; }
+    button:hover { background: #262626; }
+    button.primary { background: #7c3aed; border-color: #7c3aed; color: white; }
+    button.danger { color: #fca5a5; }
+    input[type=text], input[type=password] { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid #333; background: #111; color: #e5e5e5; }
+    label.check { display: flex; gap: 8px; align-items: center; }
+    section { border-top: 1px solid #1f1f1f; padding-top: 10px; display: grid; gap: 8px; }
+    ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+    li { display: flex; justify-content: space-between; align-items: center; }
+    li button { padding: 2px 6px; }
+    a { color: #a78bfa; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1><span id="dot" class="dot"></span><span id="status">Kanwatch</span></h1>
+    <div id="detail" class="muted"></div>
+
+    <div id="controls" class="row">
+      <button id="pause1h">Pause 1 hour</button>
+      <button id="pauseAll">Pause</button>
+      <button id="resume" class="primary">Resume</button>
+    </div>
+
+    <section id="siteBox">
+      <div class="muted">This site: <strong id="siteName"></strong></div>
+      <button id="blockSite" class="danger">Never record this site</button>
+    </section>
+
+    <section id="connectBox">
+      <div class="muted">Connect: open Kanwatch in Kanthink, press <em>Connect extension</em>, and paste the key here.</div>
+      <input id="endpoint" type="text" placeholder="https://kanthink.com" />
+      <input id="token" type="password" placeholder="kw_…" />
+      <div class="row"><button id="save" class="primary">Connect</button><button id="disconnect">Disconnect</button></div>
+    </section>
+
+    <section>
+      <label class="check"><input id="includeSearch" type="checkbox" /> Include what I search for (scrubbed)</label>
+      <div class="muted">Never recorded: typing, form contents, page text, incognito. Banking, email, health, government, password and sign-in/checkout pages count as private time only.</div>
+      <div id="blockedWrap" hidden>
+        <div class="muted">Sites you've made private:</div>
+        <ul id="blocked"></ul>
+      </div>
+      <a id="open" href="#">Open my day in Kanthink →</a>
+    </section>
+  </main>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
