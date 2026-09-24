@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { kanwatchSites } from '@/lib/db/schema';
 import { kanwatchUser } from '@/lib/kanwatch/access';
+import { rereadSites } from '@/lib/kanwatch/judge';
 
 /**
  * PUT /api/kanwatch/sites — { domain, want?, purpose? }: your own read on a site.
@@ -30,6 +31,8 @@ export async function PUT(request: Request) {
   await db.insert(kanwatchSites)
     .values({ userId, domain, want, purpose: purpose || null, createdAt: now, updatedAt: now })
     .onConflictDoUpdate({ target: [kanwatchSites.userId, kanwatchSites.domain], set });
+
+  await rereadSites(userId, [domain]);
 
   return NextResponse.json({ ok: true });
 }

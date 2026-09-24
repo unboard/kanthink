@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { cards, kanwatchEpisodes } from '@/lib/db/schema';
 import { kanwatchUser } from '@/lib/kanwatch/access';
 import { loadAccess } from '@/lib/voice/resolveReference';
+import { rereadSites } from '@/lib/kanwatch/judge';
 
 /**
  * PATCH /api/kanwatch/episodes/:id — what an episode actually was.
@@ -58,6 +59,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     label: verdict ? String(body.label ?? '').trim().slice(0, 120) || null : null,
     updatedAt: new Date(),
   }).where(eq(kanwatchEpisodes.id, ep.id));
+
+  // Teach the rest of today's reads on these sites.
+  let sites: string[] = [];
+  try { sites = JSON.parse(ep.domains ?? '[]'); } catch {}
+  await rereadSites(userId, sites, ep.id);
 
   return NextResponse.json({ ok: true });
 }

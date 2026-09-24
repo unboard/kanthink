@@ -15,7 +15,7 @@
  * Only scrubbed, stored fields are sent — the same ones you can see on the page.
  */
 
-import { and, asc, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, like, lt, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { channels, kanwatchDays, kanwatchEpisodes, kanwatchSites, kanwatchVisits } from '@/lib/db/schema';
 import { askJev, isJevConfigured } from '@/lib/jev/client';
@@ -81,6 +81,10 @@ const minutes = (s: number) => {
 export async function judgeEpisode(episodeId: string, access?: Access): Promise<void> {
   const ep = await db.query.kanwatchEpisodes.findFirst({ where: eq(kanwatchEpisodes.id, episodeId) });
   if (!ep || ep.status === 'judged') return;
+  // An episode still in progress gets a live read; it stays open, and gets a final
+  // read once it ends.
+  const nextStatus = ep.status === 'open' ? ('open' as const) : ('judged' as const);
+  const now = new Date();
   const visits = await db.query.kanwatchVisits.findMany({
     where: eq(kanwatchVisits.episodeId, ep.id),
     orderBy: [asc(kanwatchVisits.startedAt)],
@@ -90,10 +94,11 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   // Nothing but private time: there is nothing to read, and nothing is sent.
   if (pages.length === 0) {
     await db.update(kanwatchEpisodes)
-      .set({ status: 'judged', guessKind: 'private', judgedAt: new Date(), updatedAt: new Date() })
+      .set({ status: nextStatus, guessKind: 'private', domains: '[]', judgedAt: now, updatedAt: now })
       .where(eq(kanwatchEpisodes.id, ep.id));
     return;
   }
+  const siteList = [...new Set(pages.map((p) => p.site))];
 
   const reach = access ?? (await loadAccess(ep.userId));
   const date = localDate(ep.startedAt.getTime(), ep.tzOffsetMinutes);
@@ -111,7 +116,7 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     reach.readable.length ? cardCandidates(searchText, reach, {}) : Promise.resolve([]),
     db.query.kanwatchDays.findFirst({ where: eq(kanwatchDays.id, `${ep.userId}:${date}`) }),
     db.query.kanwatchSites.findMany({
-      where: and(eq(kanwatchSites.userId, ep.userId), inArray(kanwatchSites.domain, [...new Set(pages.map((p) => p.site))])),
+      where: and(eq(kanwatchSites.userId, ep.userId), inArray(kanwatchSites.domain, siteList)),
     }),
     db.query.kanwatchEpisodes.findMany({
       where: and(eq(kanwatchEpisodes.userId, ep.userId), isNotNull(kanwatchEpisodes.verdict)),
@@ -121,16 +126,43 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   ]);
   const cards = cardShortlist.slice(0, 15);
 
+  // What the user said about these exact sites before — the most direct thing they
+  // have taught it, and what makes a correction on one visit carry to the next.
+  const siteAnswers = await db.query.kanwatchEpisodes.findMany({
+    where: and(
+      eq(kanwatchEpisodes.userId, ep.userId),
+      isNotNull(kanwatchEpisodes.verdict),
+      or(...siteList.map((site) => like(kanwatchEpisodes.domains, `%"${site}"%`))),
+    ),
+    orderBy: [desc(kanwatchEpisodes.startedAt)],
+    limit: 30,
+  });
+
   // The user's own past answers, as examples of what this kind of browsing turned out to be.
   const historyVisits = history.length
     ? await db.query.kanwatchVisits.findMany({ where: inArray(kanwatchVisits.episodeId, history.map((h) => h.id)) })
     : [];
   const channelName = new Map(channelRows.map((c) => [c.id, c.name]));
+  const answerLabel = (h: typeof history[number]) =>
+    h.verdict === 'not_work' ? 'not work'
+    : h.label || (h.verdictChannelId ? `work for ${channelName.get(h.verdictChannelId) ?? 'a channel'}` : 'work');
+
+  const bySite = siteList.flatMap((site) => {
+    const counts = new Map<string, number>();
+    for (const h of siteAnswers) {
+      if (!(h.domains ?? '').includes(`"${site}"`)) continue;
+      const label = answerLabel(h);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([it_was, times]) => ({ site, it_was, times }));
+  });
+
   const examples = history.map((h) => ({
     pages: summarizePages(historyVisits.filter((v) => v.episodeId === h.id), 3).map((p) => p.title || p.site),
-    it_was:
-      h.verdict === 'not_work' ? 'not work'
-      : h.label || (h.verdictChannelId ? `work for ${channelName.get(h.verdictChannelId) ?? 'a channel'}` : 'work'),
+    it_was: answerLabel(h),
   })).filter((e) => e.pages.length > 0);
 
   const criteria: Record<string, Record<string, unknown> | string> = {};
@@ -165,6 +197,7 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
       site: s.domain, what_it_is_for_them: s.purpose || undefined,
       wants: s.want ? `${s.want} time here` : undefined,
     })),
+    what_they_said_before_about_these_sites: bySite,
     how_they_labelled_past_browsing: examples,
   };
 
@@ -174,7 +207,9 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
       instructions:
         'This is a stretch of someone\'s web browsing, grouped into `episode`. Which of their channels or cards was it ' +
         'serving? Prefer a card when the pages are clearly about that card, a channel when they serve its broader goal. ' +
-        'Use `how_they_labelled_past_browsing` and `their_notes_on_these_sites` as strong hints about how this person works.',
+        'Their own words beat everything else: `what_they_said_before_about_these_sites` is what they answered for these ' +
+        'same sites before, and `their_notes_on_these_sites` is how they describe them. Follow those unless the pages ' +
+        'clearly show something different this time. `how_they_labelled_past_browsing` shows how they think about the rest.',
       criteria,
     },
     mode: {
@@ -220,8 +255,15 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
 
   const focus = (result.answers as { focus?: { score: number } }).focus ?? null;
 
+  const basis = {
+    notes: sites.filter((s) => s.purpose).map((s) => s.domain),
+    pastAnswers: bySite.reduce((n, b) => n + b.times, 0),
+  };
+
   await db.update(kanwatchEpisodes).set({
-    status: 'judged',
+    status: nextStatus,
+    domains: JSON.stringify(siteList),
+    basis: JSON.stringify(basis),
     guessKind,
     guessChannelId,
     guessCardId,
@@ -230,8 +272,8 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     focusScore: focus ? Math.round((focus.score / 2) * 100) : null,
     worthCardProbability: Math.round(result.answers.worth_card.noul * 100),
     jevModel: result.model,
-    judgedAt: new Date(),
-    updatedAt: new Date(),
+    judgedAt: now,
+    updatedAt: now,
   }).where(eq(kanwatchEpisodes.id, ep.id));
 
   console.log('[jev-kanwatch]', JSON.stringify({
@@ -239,11 +281,30 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   }));
 }
 
-/** Judge finished episodes that have not been read yet, oldest first. */
+const LIVE_READ_EVERY_MS = 2 * 60 * 1000;
+
+/**
+ * Read what needs reading: finished episodes not yet judged, and the episode in
+ * progress if it has grown since its last live read (at most every two minutes).
+ */
 export async function judgePending(userId: string, limit = 10): Promise<number> {
   if (!isJevConfigured()) return 0;
   const pending = await db.query.kanwatchEpisodes.findMany({
-    where: and(eq(kanwatchEpisodes.userId, userId), eq(kanwatchEpisodes.status, 'closed')),
+    where: and(
+      eq(kanwatchEpisodes.userId, userId),
+      or(
+        eq(kanwatchEpisodes.status, 'closed'),
+        and(
+          eq(kanwatchEpisodes.status, 'open'),
+          gte(kanwatchEpisodes.activeSeconds, 45),
+          sql`${kanwatchEpisodes.updatedAt} > coalesce(${kanwatchEpisodes.judgedAt}, 0)`,
+          or(
+            sql`${kanwatchEpisodes.judgedAt} is null`,
+            lt(kanwatchEpisodes.judgedAt, new Date(Date.now() - LIVE_READ_EVERY_MS)),
+          ),
+        ),
+      ),
+    ),
     orderBy: [asc(kanwatchEpisodes.startedAt)],
     limit,
   });
@@ -256,4 +317,29 @@ export async function judgePending(userId: string, limit = 10): Promise<number> 
     })));
   }
   return pending.length;
+}
+
+/**
+ * After the user teaches something about a site — a correction, a note, a "more or
+ * less" — re-read the recent episodes on that site that they haven't answered, so
+ * the lesson shows up straight away rather than only on tomorrow's browsing.
+ */
+export async function rereadSites(userId: string, sites: string[], exceptEpisodeId?: string) {
+  if (sites.length === 0) return;
+  const since = new Date(Date.now() - 36 * 60 * 60 * 1000);
+  const touched = await db.query.kanwatchEpisodes.findMany({
+    where: and(
+      eq(kanwatchEpisodes.userId, userId),
+      gte(kanwatchEpisodes.startedAt, since),
+      sql`${kanwatchEpisodes.verdict} is null`,
+      or(...sites.map((site) => like(kanwatchEpisodes.domains, `%"${site}"%`))),
+    ),
+    columns: { id: true, status: true },
+  });
+  for (const e of touched) {
+    if (e.id === exceptEpisodeId) continue;
+    await db.update(kanwatchEpisodes)
+      .set(e.status === 'judged' ? { status: 'closed' } : { judgedAt: null })
+      .where(eq(kanwatchEpisodes.id, e.id));
+  }
 }

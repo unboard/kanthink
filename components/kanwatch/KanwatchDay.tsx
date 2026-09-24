@@ -46,6 +46,10 @@ interface Episode {
   verdictChannelName: string | null;
   verdictCardTitle: string | null;
   label: string | null;
+  /** Still in progress: this is a live read, and it will be read again when it ends. */
+  live: boolean;
+  /** What the read drew on: your site notes, and how many past answers about these sites. */
+  basis: { notes: string[]; pastAnswers: number } | null;
   pages: Page[];
 }
 
@@ -54,6 +58,8 @@ interface Site {
   seconds: number;
   want: 'more' | 'right' | 'less' | null;
   purpose: string;
+  /** Kan's read on the site from today's episodes, when you haven't described it. */
+  kanThinks: string | null;
 }
 
 interface DayData {
@@ -129,7 +135,7 @@ function readEpisode(e: Episode): Reading {
   }
   if (e.pages.length === 0 && e.privateSeconds > 0) return { bucket: 'private', label: 'Private', color: PRIVATE, decided: true };
   const g = e.guess;
-  if (!g || e.status !== 'judged') return { bucket: 'unread', label: 'Not read yet', color: UNCLEAR, decided: false };
+  if (!g) return { bucket: 'unread', label: 'Not read yet', color: UNCLEAR, decided: false };
   switch (g.kind) {
     case 'channel':
     case 'card':
@@ -348,6 +354,7 @@ function Intention({ date, value, onSaved }: { date: string; value: string; onSa
 function Summary({ data }: { data: DayData }) {
   const stats = useMemo(() => {
     let active = 0;
+    let read = 0;
     let privateTime = 0;
     let notWork = 0;
     let focusWeighted = 0;
@@ -356,6 +363,7 @@ function Summary({ data }: { data: DayData }) {
       active += e.activeSeconds;
       privateTime += e.privateSeconds;
       const r = readEpisode(e);
+      if (r.bucket !== 'unread') read += e.activeSeconds;
       if (r.bucket === 'not_work') notWork += e.activeSeconds;
       if (e.focusScore !== null && r.bucket !== 'private') {
         focusWeighted += e.focusScore * e.activeSeconds;
@@ -365,7 +373,8 @@ function Summary({ data }: { data: DayData }) {
     return {
       active,
       privateTime,
-      workShare: active > 0 ? Math.round(((active - notWork - privateTime) / active) * 100) : null,
+      // Only what Kan has read counts either way; unread time is not assumed to be work.
+      workShare: read > 0 ? Math.round(((read - notWork - privateTime) / read) * 100) : null,
       focus: focusSeconds > 0 ? Math.round(focusWeighted / focusSeconds) : null,
     };
   }, [data.episodes]);
@@ -538,7 +547,7 @@ function WhereItWent({ episodes }: { episodes: Episode[] }) {
 }
 
 function needsYou(e: Episode): boolean {
-  if (e.verdict || e.status !== 'judged') return false;
+  if (e.verdict || !e.guess) return false;
   if (e.pages.length === 0) return false;
   const r = readEpisode(e);
   return r.bucket === 'unclear' || r.bucket === 'new_work' || (e.guess?.probability ?? 0) < 60;
@@ -612,6 +621,12 @@ function EpisodeRow({ episode: e, channels, onChanged }: { episode: Episode; cha
           <span className="text-[11px] text-neutral-400">Kan&rsquo;s guess · {e.guess.probability}% sure</span>
         )}
         {r.decided && e.verdict && <span className="text-[11px] text-emerald-600 dark:text-emerald-400">You said</span>}
+        {e.live && !e.verdict && (
+          <span className="inline-flex items-center gap-1 text-[11px] text-violet-600 dark:text-violet-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-500" />
+            {e.guess ? 'reading live' : 'in progress'}
+          </span>
+        )}
         {e.mode && <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">{MODE_LABELS[e.mode] ?? e.mode}</span>}
         {e.focusScore !== null && !onlyPrivate && (
           <span className="text-[11px] text-neutral-400">{e.focusScore >= 67 ? 'On plan' : e.focusScore >= 34 ? 'Near the plan' : 'Off plan'}</span>
@@ -639,7 +654,16 @@ function EpisodeRow({ episode: e, channels, onChanged }: { episode: Episode; cha
         <p className="mt-1.5 pl-5 text-[11px] text-neutral-400">+ {duration(e.privateSeconds)} private (nothing recorded but the time)</p>
       )}
 
-      {!onlyPrivate && e.status === 'judged' && (
+      {!e.verdict && e.basis && (e.basis.notes.length > 0 || e.basis.pastAnswers > 0) && (
+        <p className="mt-2 pl-5 text-[11px] text-neutral-400">
+          Read using {[
+            e.basis.notes.length > 0 ? `your note on ${e.basis.notes.join(', ')}` : '',
+            e.basis.pastAnswers > 0 ? `${e.basis.pastAnswers} earlier ${e.basis.pastAnswers === 1 ? 'answer' : 'answers'} about these sites` : '',
+          ].filter(Boolean).join(' and ')}
+        </p>
+      )}
+
+      {!onlyPrivate && e.guess && (
         <div className="mt-3 flex flex-wrap items-center gap-2 pl-5">
           {!e.verdict && r.bucket !== 'unclear' && r.bucket !== 'new_work' && (
             <SmallButton disabled={busy} onClick={() => send({ verdict: r.bucket === 'not_work' ? 'not_work' : 'confirmed' })}>✓ Right</SmallButton>
@@ -686,7 +710,7 @@ function Sites({ sites, onChanged }: { sites: Site[]; onChanged: () => void }) {
     <section>
       <SectionTitle>Sites</SectionTitle>
       <p className="mb-3 text-xs text-neutral-500">
-        Say what a site is for and whether you want more or less of it. Kan reads future visits with that in mind.
+        What each site is for, and whether you want more or less of it. Where you haven&rsquo;t said, Kan&rsquo;s read is shown — confirm it or write your own, and today&rsquo;s other visits are re-read with it.
       </p>
       {notes.length > 0 && (
         <div className="mb-3 space-y-1 rounded-lg bg-violet-500/5 px-3 py-2 text-[13px] text-neutral-700 dark:text-neutral-300">
@@ -722,9 +746,18 @@ function SiteRow({ site, onChanged }: { site: Site; onChanged: () => void }) {
         value={purpose}
         onChange={(e) => setPurpose(e.target.value)}
         onBlur={() => purpose !== site.purpose && save({ purpose })}
-        placeholder="What is it for you?"
+        placeholder={site.kanThinks ? `Kan thinks: ${site.kanThinks}` : 'What is it for you?'}
         className="min-w-[10rem] flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-neutral-700 hover:border-neutral-200 focus:border-neutral-300 focus:outline-none dark:text-neutral-300 dark:hover:border-neutral-700"
       />
+      {!site.purpose && site.kanThinks && (
+        <button
+          onClick={() => save({ purpose: site.kanThinks })}
+          className="rounded-md px-2 py-1 text-[11px] text-violet-700 hover:bg-violet-500/10 dark:text-violet-300"
+          title="Keep Kan's read as your note for this site"
+        >
+          ✓ Right
+        </button>
+      )}
       <div className="flex overflow-hidden rounded-md border border-neutral-200 text-[11px] dark:border-neutral-700">
         {(['less', 'right', 'more'] as const).map((w) => (
           <button

@@ -91,6 +91,28 @@ export async function GET(request: Request) {
     siteSeconds.set(v.domain, (siteSeconds.get(v.domain) ?? 0) + v.activeSeconds);
   }
   const topSites = [...siteSeconds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+
+  // Kan's read on each site, from the episodes it appeared in: your answers first,
+  // then Jev's reads. Shown as a hint where you haven't described the site yourself.
+  const episodeSites = new Map(episodes.map((e) => [e.id, new Set(visits.filter((v) => v.episodeId === e.id && v.domain).map((v) => v.domain!))]));
+  const readOf = (e: (typeof episodes)[number]): string | null => {
+    if (e.verdict === 'not_work') return 'Not work';
+    if (e.verdict) return (e.verdictCardId && cardTitle.get(e.verdictCardId)) || (e.verdictChannelId && channelName.get(e.verdictChannelId)) || e.label || null;
+    if (e.guessKind === 'not_work') return 'Not work';
+    if (e.guessKind === 'channel' || e.guessKind === 'card') {
+      return (e.guessCardId && cardTitle.get(e.guessCardId)) || (e.guessChannelId && channelName.get(e.guessChannelId)) || null;
+    }
+    return null;
+  };
+  const kanThinks = (domain: string): string | null => {
+    const counts = new Map<string, number>();
+    for (const e of episodes) {
+      if (!episodeSites.get(e.id)?.has(domain)) continue;
+      const read = readOf(e);
+      if (read) counts.set(read, (counts.get(read) ?? 0) + (e.verdict ? 3 : 1));
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  };
   const siteNotes = topSites.length
     ? await db.query.kanwatchSites.findMany({
         where: and(eq(kanwatchSites.userId, userId), inArray(kanwatchSites.domain, topSites.map(([d]) => d))),
@@ -148,6 +170,10 @@ export async function GET(request: Request) {
       verdictChannelName: e.verdictChannelId ? channelName.get(e.verdictChannelId) ?? null : null,
       verdictCardTitle: e.verdictCardId ? cardTitle.get(e.verdictCardId) ?? null : null,
       label: e.label,
+      live: e.status === 'open',
+      basis: (() => {
+        try { return e.basis ? JSON.parse(e.basis) as { notes: string[]; pastAnswers: number } : null; } catch { return null; }
+      })(),
       pages: summarizePages(visits.filter((v) => v.episodeId === e.id), 6).map((p) => ({
         site: p.site, path: p.path, title: p.title, heading: p.heading, search: p.search,
         seconds: p.seconds, doing: p.doing,
@@ -155,7 +181,7 @@ export async function GET(request: Request) {
     })),
     sites: topSites.map(([domain, seconds]) => {
       const note = siteNotes.find((n) => n.domain === domain);
-      return { domain, seconds, want: note?.want ?? null, purpose: note?.purpose ?? '' };
+      return { domain, seconds, want: note?.want ?? null, purpose: note?.purpose ?? '', kanThinks: kanThinks(domain) };
     }),
     week: weekDays,
   });

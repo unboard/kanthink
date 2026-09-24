@@ -1526,6 +1526,8 @@ export const kanwatchEpisodes = sqliteTable('kanwatch_episodes', {
   worthCardProbability: integer('worth_card_probability'),
   jevModel: text('jev_model'),
   judgedAt: integer('judged_at', { mode: 'timestamp' }),
+  domains: text('domains'),                           // JSON string[] of sites, for per-site learning
+  basis: text('basis'),                               // JSON: what the read drew on (notes, past answers)
   // What the user said it actually was — the training signal.
   verdict: text('verdict').$type<'confirmed' | 'corrected' | 'not_work'>(),
   verdictChannelId: text('verdict_channel_id'),
