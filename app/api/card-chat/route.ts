@@ -1,3 +1,4 @@
+import { canViewChannel } from '@/lib/api/permissions';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { nanoid } from 'nanoid';
@@ -468,7 +469,9 @@ export async function POST(request: Request) {
     let mixpanelContext = '';
     let dataSourceContext = '';
 
-    if (channelId) {
+    // A channel's data sources hold its owner's tokens — only someone who can see
+    // the channel gets to query them. The id comes from the request, so check it.
+    if (channelId && userId && await canViewChannel(channelId, userId)) {
       try {
         const sources = await getChannelDataSources(channelId);
         dataSourceContext = buildDataSourcePromptContext(sources);

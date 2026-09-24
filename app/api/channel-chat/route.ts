@@ -1,3 +1,6 @@
+import { canViewChannel } from '@/lib/api/permissions';
+import { loadAccess } from '@/lib/voice/resolveReference';
+import { findCardsInFocus } from '@/lib/chat/cardsInFocus';
 import { NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import type { ChannelChatMessage, ChannelStoredAction, ChannelProposedActionType, ChannelActionData } from '@/lib/types';
@@ -386,6 +389,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Which of this channel's cards the message is about, loaded in full — see
+    // lib/chat/cardsInFocus.ts. Started here so it overlaps the web and data lookups.
+    const focusPromise = questionContent
+      ? loadAccess(session.user.id)
+          .then((access) => findCardsInFocus(
+            questionContent,
+            (context.threadMessages || []).map((m) => ({ role: m.type === 'question' ? 'user' as const : 'assistant' as const, content: m.content })),
+            access,
+            { channelId },
+          ))
+          .catch(() => null)
+      : Promise.resolve(null);
+
     // Get LLM client
     const result = await getLLMClientForUser(session.user.id, undefined, 'chat');
     if (!result.client) {
@@ -431,7 +447,8 @@ export async function POST(request: Request) {
 
     let mixpanelContext = '';
     let retainedContext = '';
-    if (channelId && (detectsMixpanelIntent(questionContent) || isDataFollowUp)) {
+    // A channel's data sources hold its owner's tokens; the id comes from the request.
+    if (channelId && (detectsMixpanelIntent(questionContent) || isDataFollowUp) && await canViewChannel(channelId, session.user.id)) {
       try {
         const sources = await getChannelDataSources(channelId);
         const hasMixpanel = sources.some(s => s.provider === 'mixpanel' && s.status === 'active' && s.hasToken);
@@ -463,7 +480,11 @@ export async function POST(request: Request) {
       } catch { /* non-critical */ }
     }
 
-    const messages = await buildPrompt(questionContent, context, channelId, imageUrls, webContext + retainedContext + mixpanelContext);
+    const focus = await focusPromise;
+    const focusContext = focus ? `
+
+${focus.context}` : '';
+    const messages = await buildPrompt(questionContent, context, channelId, imageUrls, webContext + retainedContext + mixpanelContext + focusContext);
 
     try {
       let llmResponse;

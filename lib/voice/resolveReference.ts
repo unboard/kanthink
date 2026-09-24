@@ -65,7 +65,7 @@ const STOPWORDS = new Set([
   'with', 'from', 'and', 'into', 'called', 'named', 'other', 'it', 'on', 'in', 'of', 'to',
 ]);
 
-function searchWords(reference: string): string[] {
+export function searchWords(reference: string): string[] {
   return [...new Set(
     reference
       .toLowerCase()
@@ -84,7 +84,7 @@ function ago(date: Date | null | undefined): string | undefined {
   return `${Math.round(hours / 24)} days ago`;
 }
 
-interface Described extends Candidate {
+export interface Described extends Candidate {
   /** What Jev sees for this option. */
   detail: Record<string, unknown>;
 }
@@ -98,7 +98,8 @@ async function channelNames(ids: string[]): Promise<Map<string, string>> {
   return new Map(rows.map((r) => [r.id, r.name]));
 }
 
-async function cardCandidates(reference: string, access: Access, ctx: ResolveContext): Promise<Described[]> {
+/** The cards a phrase could plausibly mean: word matches, this conversation's cards, and recent ones. */
+export async function cardCandidates(reference: string, access: Access, ctx: ResolveContext): Promise<Described[]> {
   const inReach = inArray(cards.channelId, access.readable);
   const words = searchWords(reference);
   const cols = { id: true, title: true, channelId: true, columnId: true, summary: true, updatedAt: true, isArchived: true } as const;

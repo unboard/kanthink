@@ -35,6 +35,20 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shrooms-screen-against-rejections',
+    date: '2026-09-24',
+    kind: 'automation',
+    title: 'Shrooms stop repeating what you rejected',
+    body: 'A shroom that makes cards now drafts a few extra and holds back any that look like cards you have rejected before, including for the reasons you gave, so only the best of them reach review. The notification says how many were held back.',
+  },
+  {
+    id: 'kan-knows-which-card-you-mean',
+    date: '2026-09-24',
+    kind: 'capability',
+    title: 'Kan knows which card you mean',
+    body: 'In voice and chat, Kan works out which card you are talking about even from a nickname, a misheard word or "it", and reads that card in full before answering. When two cards could fit, it asks which one instead of guessing.',
+  },
+  {
     id: 'kan-can-see-your-apps',
     date: '2026-09-19',
     kind: 'capability',

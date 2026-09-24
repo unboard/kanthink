@@ -22,6 +22,7 @@ import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
 import { setCardProcessingServerSide } from '@/lib/shrooms/cardProcessing';
 import { stripEchoedContent, cardContentStrings } from '@/lib/shrooms/stripEchoedContent';
 import { loadRejectionsForShroom } from '@/lib/shrooms/rejections';
+import { screenGeneratedCards, shouldScreen, draftCountFor } from '@/lib/shrooms/tasteGate';
 import { sendShroomRunEmail, type ShroomRunOutcome } from '@/lib/shrooms/sendRunEmail';
 
 // Configure marked for safe HTML output
@@ -166,9 +167,11 @@ function buildGeneratePrompt(
   systemInstructions?: string,
   targetColumnIds?: string[],
   members?: MemberInfo[],
-  scope?: ShroomScope
+  scope?: ShroomScope,
+  /** Ask for this many instead of the shroom's count — extra drafts to screen down from. */
+  draftCount?: number
 ): LLMMessage[] {
-  const count = instructionCard.cardCount ?? 5;
+  const count = draftCount ?? instructionCard.cardCount ?? 5;
   const allowAssignment = resolveCapabilities(instructionCard).assignment;
 
   // Get target column instructions if targeting a specific column
@@ -1358,6 +1361,23 @@ export async function POST(request: Request) {
 
         // Multi-step can generate cards too — route them through the same server-side
         // creation path so they land pending-review like any other generated card.
+        // Same taste check as a plain generate run. No extra drafts here — the plan is
+        // one prompt for every step — so this only drops, it never swaps in.
+        if (multiStepResult.generatedCards.length > 0) {
+          const screen = await screenGeneratedCards({
+            channelId: channel.id,
+            channelName: channel.name,
+            channelPurpose: channel.description || channel.aiInstructions,
+            instructionCardId: instructionCard.id,
+            shroomTitle: instructionCard.title,
+            shroomInstructions: instructionCard.instructions,
+            rejections: await resolveRejections(),
+            drafts: multiStepResult.generatedCards,
+            keep: multiStepResult.generatedCards.length,
+          });
+          multiStepResult.generatedCards = screen.cards;
+        }
+
         let multiStepApplied: Awaited<ReturnType<typeof createShroomCards>> | undefined;
         const multiStepColumnId = allTargetColumnIds[0] || channel.columns[0]?.id;
         if (apply && userId && multiStepColumnId && multiStepResult.generatedCards.length > 0) {
@@ -1451,6 +1471,10 @@ export async function POST(request: Request) {
 
     if (instructionCard.action === 'generate') {
       // GENERATE action
+      // With a rejection history to screen against, draft a few extra and let the
+      // taste check keep the best — see lib/shrooms/tasteGate.ts.
+      const keepCount = instructionCard.cardCount ?? 5;
+      const screening = shouldScreen(await resolveRejections());
       const messages = buildGeneratePrompt(
         instructionCard,
         channel,
@@ -1459,7 +1483,8 @@ export async function POST(request: Request) {
         effectiveSystemInstructions,
         targetColumnIds,
         members,
-        scope
+        scope,
+        screening ? draftCountFor(keepCount) : undefined
       );
 
       // Web research: when the shroom's Web ability is on (explicitly, or inferred from
@@ -1583,13 +1608,27 @@ export async function POST(request: Request) {
         // Record usage after successful generation
         await recordUsageAfterSuccess();
 
-        const cardsToCreate = generatedCards.slice(0, instructionCard.cardCount ?? 5);
+        const screen = await screenGeneratedCards({
+          channelId: channel.id,
+          channelName: channel.name,
+          channelPurpose: channel.description || channel.aiInstructions,
+          instructionCardId: instructionCard.id,
+          shroomTitle: instructionCard.title,
+          shroomInstructions: instructionCard.instructions,
+          rejections: await resolveRejections(),
+          drafts: generatedCards,
+          keep: keepCount,
+        });
+        const cardsToCreate = screen.cards;
+        const heldBackNote = screen.heldBack.length > 0
+          ? ` (held back ${screen.heldBack.length} that looked like ones you've rejected)`
+          : '';
         const targetColumnId = targetColumnIds[0] || channel.columns[0]?.id;
 
         // When applying, write the cards here so they're born pending-review — see
         // lib/shrooms/apply.ts for why creation can't happen on the client.
         let applied: Awaited<ReturnType<typeof createShroomCards>> | undefined;
-        if (apply && userId && targetColumnId) {
+        if (apply && userId && targetColumnId && cardsToCreate.length > 0) {
           applied = await createShroomCards({
             channelId: channel.id,
             columnId: targetColumnId,
@@ -1607,9 +1646,11 @@ export async function POST(request: Request) {
             userId,
             type: 'shroom_completed',
             title: 'Shroom finished running',
-            body: pending
-              ? `"${instructionCard.title}" generated ${cardsToCreate.length} card(s) — tap to review`
-              : `"${instructionCard.title}" added ${cardsToCreate.length} card(s)`,
+            body: cardsToCreate.length === 0
+              ? `"${instructionCard.title}" made nothing new — every draft looked like one you've rejected`
+              : pending
+                ? `"${instructionCard.title}" generated ${cardsToCreate.length} card(s)${heldBackNote} — tap to review`
+                : `"${instructionCard.title}" added ${cardsToCreate.length} card(s)${heldBackNote}`,
             data: {
               channelId: channel.id,
               instructionCardId: instructionCard.id,
@@ -1634,6 +1675,7 @@ export async function POST(request: Request) {
           action: 'generate',
           targetColumnIds,
           generatedCards: cardsToCreate,
+          heldBack: screen.heldBack.length > 0 ? screen.heldBack : undefined,
           applied: applied
             ? { runId: applied.runId, columnId: targetColumnId, pending: applied.pending, cardIds: applied.created.map((c) => c.id) }
             : undefined,

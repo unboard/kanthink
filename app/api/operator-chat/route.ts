@@ -6,7 +6,9 @@ import { recordUsage } from '@/lib/usage';
 import { detectImageGenerationIntent, extractImagePrompt } from '@/lib/ai/imageDetection';
 import { db } from '@/lib/db';
 import { cards, columns, operatorChatThreads } from '@/lib/db/schema';
-import { eq, and, desc, asc } from 'drizzle-orm';
+import { eq, and, desc, asc, inArray } from 'drizzle-orm';
+import { loadAccess, type Access } from '@/lib/voice/resolveReference';
+import { findCardsInFocus } from '@/lib/chat/cardsInFocus';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { buildProductUpdateContext } from '@/lib/productUpdates';
 
@@ -395,24 +397,38 @@ async function executeVoiceAction(
   actionType: string,
   args: Record<string, unknown>,
   cookie: string,
+  recentTurns: { role: 'user' | 'kan'; text: string }[],
 ): Promise<{ result: string; modelResult?: string; cardId?: string; channelId?: string; taskId?: string; cardPreview?: ActionResult['cardPreview']; taskPreview?: ActionResult['taskPreview']; channelPreview?: ActionResult['channelPreview'] }> {
   const baseUrl = process.env.NEXTAUTH_URL || 'https://kanthink.com';
   const res = await fetch(`${baseUrl}/api/voice/action`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
-    body: JSON.stringify({ action: actionType, args }),
+    // The turns let the action route resolve "it" and "that card" the way voice does.
+    body: JSON.stringify({ action: actionType, args, recentTurns }),
   });
   return res.json();
 }
 
-async function executeActions(actions: OperatorAction[], userId: string, cookie: string): Promise<ActionResult[]> {
+async function executeActions(
+  actions: OperatorAction[],
+  access: Access,
+  cookie: string,
+  recentTurns: { role: 'user' | 'kan'; text: string }[],
+): Promise<ActionResult[]> {
   const results: ActionResult[] = [];
+
+  // These two write directly rather than through the action route, so they need
+  // their own check: the model's card id is only trusted if the caller can edit it.
+  const editableCard = async (cardId: string) => {
+    const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId) });
+    return card && access.writable.has(card.channelId) ? card : undefined;
+  };
 
   for (const action of actions) {
     try {
       // Legacy actions handled directly (original 3)
       if (action.type === 'add_note' && action.cardId && action.content) {
-        const card = await db.query.cards.findFirst({ where: eq(cards.id, action.cardId) });
+        const card = await editableCard(action.cardId);
         if (!card) { results.push({ type: 'add_note', success: false, description: `Card not found: ${action.cardId}` }); continue; }
         const existingMessages = (card.messages || []) as unknown[];
         const newMessage = { id: nanoid(), type: 'ai_response' as const, content: action.content, createdAt: new Date().toISOString() };
@@ -420,7 +436,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
         results.push({ type: 'add_note', success: true, description: `Added note to card`, cardId: action.cardId, channelId: card.channelId });
 
       } else if (action.type === 'update_summary' && action.cardId && action.content) {
-        const card = await db.query.cards.findFirst({ where: eq(cards.id, action.cardId) });
+        const card = await editableCard(action.cardId);
         if (!card) { results.push({ type: 'update_summary', success: false, description: `Card not found: ${action.cardId}` }); continue; }
         await db.update(cards).set({ summary: action.content, summaryUpdatedAt: new Date(), updatedAt: new Date() }).where(eq(cards.id, action.cardId));
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
@@ -437,7 +453,7 @@ async function executeActions(actions: OperatorAction[], userId: string, cookie:
             args[key] = typeof val === 'object' ? val : String(val);
           }
         }
-        const data = await executeVoiceAction(action.type, args, cookie);
+        const data = await executeVoiceAction(action.type, args, cookie, recentTurns);
         const success = !data.result.startsWith('Failed') && !data.result.includes('not found') && !data.result.includes('not configured');
 
         const result: ActionResult = {
@@ -491,15 +507,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing message' }, { status: 400 });
     }
 
-    // Query channel membership
+    const access = await loadAccess(session.user.id);
+    const recentHistory = history.slice(-20);
+
+    // Started now, awaited just before the LLM call — it runs alongside the
+    // membership and client lookups rather than in front of them.
+    const focusPromise = message
+      ? findCardsInFocus(message, recentHistory, access).catch(() => null)
+      : Promise.resolve(null);
+
+    // Query channel membership — only for channels this user can reach.
     let membershipMap: Record<string, string[]> = {};
     try {
       const { channelShares, channels: channelsTable, users: usersTable } = await import('@/lib/db/schema');
+      const reachable = access.readable.length > 0 ? access.readable : ['__none__'];
       const shares = await db.query.channelShares.findMany({
+        where: inArray(channelShares.channelId, reachable),
         columns: { channelId: true, userId: true },
       });
       // Also get channel owners
       const ownedChannels = await db.query.channels.findMany({
+        where: inArray(channelsTable.id, reachable),
         columns: { id: true, ownerId: true },
       });
       // Get all relevant user names
@@ -507,7 +535,7 @@ export async function POST(request: Request) {
       for (const s of shares) if (s.userId) userIds.add(s.userId);
       for (const c of ownedChannels) if (c.ownerId) userIds.add(c.ownerId);
       const allUsers = userIds.size > 0
-        ? await db.query.users.findMany({ columns: { id: true, name: true, email: true } })
+        ? await db.query.users.findMany({ where: inArray(usersTable.id, [...userIds]), columns: { id: true, name: true, email: true } })
         : [];
       const userNameMap = new Map(allUsers.map(u => [u.id, u.name || u.email || u.id]));
 
@@ -551,7 +579,6 @@ export async function POST(request: Request) {
     ];
 
     // Add conversation history (last 20 messages)
-    const recentHistory = history.slice(-20);
     for (const msg of recentHistory) {
       messages.push({ role: msg.role, content: msg.content });
     }
@@ -571,6 +598,12 @@ export async function POST(request: Request) {
           }
         }
       } catch { /* non-critical */ }
+    }
+
+    // The cards this message is about, in full — see lib/chat/cardsInFocus.ts.
+    const focus = await focusPromise;
+    if (focus) {
+      messages.push({ role: 'user', content: focus.context });
     }
 
     // Add current message
@@ -600,7 +633,9 @@ export async function POST(request: Request) {
       // Handle generate_image actions separately (needs image API, not voice action API)
       const imageActions = parsed.actions.filter(a => a.type === 'generate_image');
       const otherActions = parsed.actions.filter(a => a.type !== 'generate_image');
-      actionResults = otherActions.length > 0 ? await executeActions(otherActions, session.user.id, cookie) : [];
+      const recentTurns = [...recentHistory.slice(-3), { role: 'user' as const, content: message }]
+        .map((t) => ({ role: t.role === 'assistant' ? 'kan' as const : 'user' as const, text: t.content.slice(0, 500) }));
+      actionResults = otherActions.length > 0 ? await executeActions(otherActions, access, cookie, recentTurns) : [];
 
       for (const imgAction of imageActions) {
         try {
