@@ -1549,6 +1549,10 @@ export const kanwatchDays = sqliteTable('kanwatch_days', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   date: text('date').notNull(),
   intention: text('intention'),
+  // Kan's written read on the day (JSON DayStory), and the day it was written from.
+  story: text('story'),
+  storySig: text('story_sig'),
+  storyAt: integer('story_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })

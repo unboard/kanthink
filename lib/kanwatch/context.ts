@@ -12,10 +12,11 @@
 
 import { and, desc, eq, gte, inArray, isNotNull, like, lt, or } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { cards, channels, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchVisits, playgroundApps } from '@/lib/db/schema';
+import { cards, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchVisits, playgroundApps } from '@/lib/db/schema';
 import { loadAccess } from '@/lib/voice/resolveReference';
 import { summarizePages } from './judge';
 import { localDate } from './episodes';
+import { loadBoard } from './board';
 
 const DAY_MS = 86400000;
 
@@ -77,10 +78,8 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
 
   const access = await loadAccess(userId);
   const cardIds = [...new Set(episodes.flatMap((e) => [e.guessCardId, e.verdictCardId]).filter((x): x is string => !!x))];
-  const [channelRows, cardRows, day, visits, reads, siteRows] = await Promise.all([
-    access.readable.length
-      ? db.query.channels.findMany({ where: inArray(channels.id, access.readable), columns: { id: true, name: true } })
-      : Promise.resolve([]),
+  const [board, cardRows, day, visits, reads, siteRows] = await Promise.all([
+    loadBoard(userId, access),
     cardIds.length && access.readable.length
       ? db.query.cards.findMany({ where: and(inArray(cards.id, cardIds), inArray(cards.channelId, access.readable)), columns: { id: true, title: true } })
       : Promise.resolve([]),
@@ -99,7 +98,8 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
     }),
     db.query.kanwatchSites.findMany({ where: and(eq(kanwatchSites.userId, userId), isNotNull(kanwatchSites.want)) }),
   ]);
-  const channelName = new Map(channelRows.map((c) => [c.id, c.name]));
+  // "MyCreativeShop / Work": a channel name alone is ambiguous when folders repeat them.
+  const channelName = new Map(board.channels.map((c) => [c.id, c.folder ? `${c.folder} / ${c.name}` : c.name]));
   const cardTitle = new Map(cardRows.map((c) => [c.id, c.title]));
   const relatedIds = [...new Set(reads.map((r) => r.relatedAppId).filter((x): x is string => !!x))];
   const appTitles = new Map(

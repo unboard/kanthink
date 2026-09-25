@@ -23,8 +23,44 @@ interface Page {
   doing: string;
 }
 
+interface ServerReading {
+  key: string;
+  label: string;
+  folder: string | null;
+  channelName: string | null;
+  decided: boolean;
+  probability: number | null;
+}
+
+interface SessionData {
+  id: string;
+  episodeIds: string[];
+  startedAt: number;
+  endedAt: number;
+  activeSeconds: number;
+  privateSeconds: number;
+  reading: ServerReading;
+  modes: { mode: string; seconds: number; yours: boolean }[];
+  live: boolean;
+  answered: boolean;
+  focusScore: number | null;
+  pages: Page[];
+  basis: { notes: string[]; pastAnswers: number } | null;
+}
+
+interface DayStory {
+  headline: string;
+  threads: { title: string; detail: string }[];
+  looseEnds: string[];
+  sessions: Record<string, string>;
+  writtenAt: number;
+  stale?: boolean;
+}
+
 interface Episode {
   id: string;
+  /** What it was for, as the server reads it: Folder / Channel › Card, your words, or a state. */
+  reading: ServerReading;
   startedAt: number;
   endedAt: number;
   activeSeconds: number;
@@ -73,6 +109,7 @@ interface DayData {
   channels: { id: string; name: string; folder: string | null }[];
   /** Areas you've named before, in your own words. */
   areas: string[];
+  sessions: SessionData[];
   episodes: Episode[];
   sites: Site[];
   week: { start: number; activeSeconds: number; notWorkSeconds: number; privateSeconds: number }[];
@@ -169,59 +206,35 @@ function duration(seconds: number) {
 }
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-// ---- what an episode was -------------------------------------------------------
+// ---- what a stretch was for ----------------------------------------------------
 
 interface Reading {
-  bucket: string;       // grouping key
-  label: string;        // what to call it
+  bucket: string;
+  label: string;
   color: string;
-  decided: boolean;     // the user said so, rather than Jev guessing
+  decided: boolean;
+  folder: string | null;
+  channelName: string | null;
+  probability: number | null;
+}
+
+function colorOf(key: string): string {
+  if (key === 'not_work') return NOT_WORK;
+  if (key === 'private') return PRIVATE;
+  if (key === 'unread' || key === 'unclear') return UNCLEAR;
+  if (key === 'new_work') return '#a78bfa';
+  return colorFor(key);
+}
+
+function toReading(r: ServerReading): Reading {
+  return {
+    bucket: r.key, label: r.label, color: colorOf(r.key), decided: r.decided,
+    folder: r.folder, channelName: r.channelName, probability: r.probability,
+  };
 }
 
 function readEpisode(e: Episode): Reading {
-  if (e.verdict === 'not_work') return { bucket: 'not_work', label: e.label || 'Not work', color: NOT_WORK, decided: true };
-  if (e.verdict) {
-    // Your own words lead; they are the most specific thing anyone said about it.
-    if (e.label) {
-      const key = `label:${e.label.trim().toLowerCase()}`;
-      return { bucket: key, label: e.label.trim(), color: colorFor(key), decided: true };
-    }
-    const name = e.verdictCardTitle
-      ? `${e.verdictChannelName ?? ''} › ${e.verdictCardTitle}`
-      : e.verdictChannelName ?? 'Work';
-    const key = e.verdictChannelId ?? 'label:work';
-    return { bucket: key, label: name, color: colorFor(key), decided: true };
-  }
-  if (e.pages.length === 0 && e.privateSeconds > 0) return { bucket: 'private', label: 'Private', color: PRIVATE, decided: true };
-  const g = e.guess;
-  if (!g) return { bucket: 'unread', label: 'Not read yet', color: UNCLEAR, decided: false };
-  switch (g.kind) {
-    case 'area':
-      if (g.label) {
-        const key = `label:${g.label.trim().toLowerCase()}`;
-        return { bucket: key, label: g.label.trim(), color: colorFor(key), decided: false };
-      }
-      return { bucket: 'unclear', label: 'Unclear', color: UNCLEAR, decided: false };
-    case 'channel':
-    case 'card':
-      if (g.channelId) {
-        return {
-          bucket: g.channelId,
-          label: g.cardTitle ? `${g.channelName} › ${g.cardTitle}` : g.channelName ?? 'Work',
-          color: colorFor(g.channelId),
-          decided: false,
-        };
-      }
-      return { bucket: 'unclear', label: 'Unclear', color: UNCLEAR, decided: false };
-    case 'new_work':
-      return { bucket: 'new_work', label: 'Something new', color: '#a78bfa', decided: false };
-    case 'not_work':
-      return { bucket: 'not_work', label: 'Not work', color: NOT_WORK, decided: false };
-    case 'private':
-      return { bucket: 'private', label: 'Private', color: PRIVATE, decided: true };
-    default:
-      return { bucket: 'unclear', label: 'Unclear', color: UNCLEAR, decided: false };
-  }
+  return toReading(e.reading);
 }
 
 // ---- page ------------------------------------------------------------------------
@@ -233,6 +246,23 @@ export function KanwatchDay() {
   const [state, setState] = useState<'loading' | 'ready' | 'forbidden' | 'error'>('loading');
   const [showSetup, setShowSetup] = useState(false);
   const [onlyNeedsYou, setOnlyNeedsYou] = useState(false);
+  const [story, setStory] = useState<DayStory | null>(null);
+  const [storyLoading, setStoryLoading] = useState(false);
+
+  // The story is fetched on its own: the day's numbers never wait on an LLM.
+  const loadStory = useCallback(async (d: string, refresh = false) => {
+    const { from, to } = dayBounds(d);
+    setStoryLoading(true);
+    try {
+      const res = await fetch(`/api/kanwatch/story?date=${d}&from=${from}&to=${to}${refresh ? '&refresh=1' : ''}`);
+      const body = res.ok ? await res.json() : null;
+      setStory(body?.story ?? null);
+    } catch {
+      /* the story is a nicety; the day works without it */
+    } finally {
+      setStoryLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async (d: string) => {
     const { from, to } = dayBounds(d);
@@ -249,14 +279,15 @@ export function KanwatchDay() {
 
   const changeDate = (d: string) => {
     setState('loading');
+    setStory(null);
     setDate(d);
   };
 
   useEffect(() => {
     // Fetching the day is syncing with the server; state is only set once it answers.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     load(date);
-  }, [date, load]);
+    loadStory(date);
+  }, [date, load, loadStory]);
 
   // A notification links to /kanwatch#read-…; the page renders after the data arrives,
   // so scroll to it once it is there.
@@ -308,21 +339,23 @@ export function KanwatchDay() {
 
         {data && (
           <>
+            <DayStoryCard story={story} loading={storyLoading} onRefresh={() => loadStory(date, true)} />
             {/* Keyed so a new day or a saved value resets the field. */}
-            <Intention key={`${date}:${data.intention}`} date={date} value={data.intention} onSaved={() => load(date)} />
+            <Intention key={`${date}:${data.intention}`} date={date} value={data.intention} onSaved={() => { load(date); loadStory(date, true); }} />
             <Summary data={data} />
-            <WorthALook reads={data.reads} channels={data.channels} onChanged={() => load(date)} />
-            <Week week={data.week} date={date} onPick={changeDate} />
             <Timeline episodes={data.episodes} />
-            <WhereItWent episodes={data.episodes} channels={data.channels} />
-            <Episodes
-              episodes={data.episodes}
+            <WhereItWent episodes={data.episodes} />
+            <WorthALook reads={data.reads} channels={data.channels} onChanged={() => load(date)} />
+            <Sessions
+              sessions={data.sessions ?? []}
+              story={story}
               channels={data.channels}
               areas={data.areas ?? []}
               onlyNeedsYou={onlyNeedsYou}
               setOnlyNeedsYou={setOnlyNeedsYou}
               onChanged={() => load(date)}
             />
+            <Week week={data.week} date={date} onPick={changeDate} />
             <Sites sites={data.sites} onChanged={() => load(date)} />
           </>
         )}
@@ -406,21 +439,18 @@ function Intention({ date, value, onSaved }: { date: string; value: string; onSa
   };
 
   return (
-    <section>
-      <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-400 dark:text-neutral-500">
-        This day is for
-      </label>
+    <section className="flex items-center gap-3">
+      <label htmlFor="kw-intention" className="flex-shrink-0 text-[13px] text-neutral-500">This day is for</label>
       <input
+        id="kw-intention"
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={save}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-        placeholder="e.g. Ship the billing fixes and answer support"
-        className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-[15px] text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-500/40 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+        placeholder="say what you meant to do, and focus is measured against it"
+        className="min-w-0 flex-1 border-b border-neutral-200 bg-transparent px-1 py-1 text-[14px] text-neutral-900 placeholder:text-neutral-400 focus:border-violet-500 focus:outline-none dark:border-neutral-800 dark:text-neutral-100"
       />
-      <p className="mt-1.5 text-xs text-neutral-500">
-        {saving ? 'Saving — the day will be re-read against it…' : 'Focus is measured against this. Without it, Kanwatch only says where time went.'}
-      </p>
+      {saving && <span className="text-[11px] text-neutral-400">re-reading…</span>}
     </section>
   );
 }
@@ -555,38 +585,35 @@ function Timeline({ episodes }: { episodes: Episode[] }) {
   );
 }
 
-function WhereItWent({ episodes, channels }: { episodes: Episode[]; channels: DayData['channels'] }) {
+function WhereItWent({ episodes }: { episodes: Episode[] }) {
   const { groups, modes, total } = useMemo(() => {
-    const b = new Map<string, { key: string; label: string; color: string; seconds: number }>();
+    const items = new Map<string, { key: string; label: string; short: string; folder: string | null; color: string; seconds: number }>();
     const m = new Map<string, number>();
     let t = 0;
     for (const e of episodes) {
       const r = readEpisode(e);
-      const publicSeconds = e.activeSeconds - e.privateSeconds;
+      const pub = e.activeSeconds - e.privateSeconds;
       if (e.privateSeconds > 0) {
-        const p = b.get('private') ?? { key: 'private', label: 'Private', color: PRIVATE, seconds: 0 };
+        const p = items.get('private') ?? { key: 'private', label: 'Private', short: 'Private', folder: null, color: PRIVATE, seconds: 0 };
         p.seconds += e.privateSeconds;
-        b.set('private', p);
+        items.set('private', p);
       }
-      if (publicSeconds > 0 && r.bucket !== 'private') {
-        // Group by channel, not by card, so the bars read as areas of work.
+      if (pub > 0 && r.bucket !== 'private') {
+        // By channel, not card: the bars read as areas of work.
         const label = r.label.split(' › ')[0];
-        const cur = b.get(r.bucket) ?? { key: r.bucket, label, color: r.color, seconds: 0 };
-        cur.seconds += publicSeconds;
-        b.set(r.bucket, cur);
-        if (e.mode) m.set(e.mode, (m.get(e.mode) ?? 0) + publicSeconds);
+        const cur = items.get(r.bucket) ?? { key: r.bucket, label, short: r.channelName ?? label, folder: r.folder, color: r.color, seconds: 0 };
+        cur.seconds += pub;
+        items.set(r.bucket, cur);
+        if (e.mode) m.set(e.mode, (m.get(e.mode) ?? 0) + pub);
       }
       t += e.activeSeconds;
     }
-    // Channels in a folder roll up under it, as in your sidebar; everything else
-    // (your own named areas, not work, private) stands alone.
-    const folderOf = new Map(channels.map((c) => [c.id, c.folder]));
-    const grouped = new Map<string, { folder: string | null; seconds: number; items: typeof bucketsList }>();
-    const bucketsList = [...b.values()];
-    for (const item of bucketsList) {
-      const folder = folderOf.get(item.key) ?? null;
-      const key = folder ? `folder:${folder}` : `item:${item.key}`;
-      const g = grouped.get(key) ?? { folder, seconds: 0, items: [] };
+    // Channels in a folder roll up under it, as in the sidebar. A folder with a single
+    // channel is one line — "MyCreativeShop / Work" — not a header over "Work".
+    const grouped = new Map<string, { folder: string | null; seconds: number; items: (typeof items extends Map<string, infer V> ? V : never)[] }>();
+    for (const item of items.values()) {
+      const key = item.folder ? `folder:${item.folder}` : `item:${item.key}`;
+      const g = grouped.get(key) ?? { folder: item.folder, seconds: 0, items: [] };
       g.seconds += item.seconds;
       g.items.push(item);
       grouped.set(key, g);
@@ -597,62 +624,73 @@ function WhereItWent({ episodes, channels }: { episodes: Episode[]; channels: Da
       modes: [...m.entries()].sort((x, y) => y[1] - x[1]),
       total: t,
     };
-  }, [episodes, channels]);
+  }, [episodes]);
 
   if (total === 0) return null;
+
+  const bar = (seconds: number, color: string) => (
+    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
+      <div className="h-full rounded-full" style={{ width: `${(seconds / total) * 100}%`, background: color }} />
+    </div>
+  );
+
   return (
-    <section className="grid gap-6 sm:grid-cols-[1.4fr_1fr]">
+    <section className="grid gap-8 sm:grid-cols-[1.5fr_1fr]">
       <div>
         <SectionTitle>What it was for</SectionTitle>
-        <div className="space-y-2.5">
-          {groups.map((g) => g.folder ? (
-            <div key={`folder:${g.folder}`}>
-              <div className="flex justify-between text-sm">
-                <span className="truncate font-medium text-neutral-900 dark:text-neutral-100">
-                  <span className="mr-1 text-neutral-400">▸</span>{g.folder}
-                </span>
-                <span className="tabular-nums text-neutral-500">{duration(g.seconds)}</span>
-              </div>
-              <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
-                {g.items.map((b) => (
-                  <div key={b.key} className="h-full" style={{ width: `${(b.seconds / total) * 100}%`, background: b.color }} />
-                ))}
-              </div>
-              <div className="mt-1.5 space-y-0.5 pl-4">
-                {g.items.map((b) => (
-                  <div key={b.key} className="flex items-center justify-between text-[13px]">
-                    <span className="flex min-w-0 items-center gap-1.5 truncate text-neutral-600 dark:text-neutral-400">
-                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: b.color }} />
+        <div className="space-y-3">
+          {groups.map((g) => {
+            if (!g.folder || g.items.length === 1) {
+              return g.items.map((b) => (
+                <div key={b.key}>
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="flex min-w-0 items-center gap-2 truncate text-neutral-800 dark:text-neutral-200">
+                      <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: b.color }} />
                       {b.label}
                     </span>
-                    <span className="tabular-nums text-neutral-400">{duration(b.seconds)}</span>
+                    <span className="tabular-nums text-neutral-500">{duration(b.seconds)}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            g.items.map((b) => (
-              <div key={b.key}>
-                <div className="flex justify-between text-sm">
-                  <span className="truncate text-neutral-800 dark:text-neutral-200">{b.label}</span>
-                  <span className="tabular-nums text-neutral-500">{duration(b.seconds)}</span>
+                  {bar(b.seconds, b.color)}
                 </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
-                  <div className="h-full rounded-full" style={{ width: `${(b.seconds / total) * 100}%`, background: b.color }} />
+              ));
+            }
+            return (
+              <div key={`folder:${g.folder}`}>
+                <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="truncate font-medium text-neutral-900 dark:text-neutral-100">{g.folder}</span>
+                  <span className="tabular-nums text-neutral-500">{duration(g.seconds)}</span>
+                </div>
+                <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
+                  {g.items.map((b) => <div key={b.key} className="h-full" style={{ width: `${(b.seconds / total) * 100}%`, background: b.color }} />)}
+                </div>
+                <div className="mt-1.5 space-y-0.5 pl-3">
+                  {g.items.map((b) => (
+                    <div key={b.key} className="flex items-center justify-between text-[13px]">
+                      <span className="flex min-w-0 items-center gap-1.5 truncate text-neutral-600 dark:text-neutral-400">
+                        <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: b.color }} />
+                        {b.short}
+                      </span>
+                      <span className="tabular-nums text-neutral-400">{duration(b.seconds)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))
-          ))}
+            );
+          })}
         </div>
       </div>
       {modes.length > 0 && (
         <div>
           <SectionTitle>What you were doing</SectionTitle>
-          <div className="flex flex-wrap gap-2">
+          <div className="space-y-2">
             {modes.map(([mode, seconds]) => (
-              <span key={mode} className="rounded-full border border-neutral-200 px-2.5 py-1 text-xs text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
-                {MODE_LABELS[mode] ?? mode} <span className="tabular-nums text-neutral-400">{duration(seconds)}</span>
-              </span>
+              <div key={mode} className="flex items-center gap-3 text-[13px]">
+                <span className="w-28 flex-shrink-0 text-neutral-700 dark:text-neutral-300">{MODE_LABELS[mode] ?? mode}</span>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-900">
+                  <div className="h-full rounded-full bg-neutral-400 dark:bg-neutral-600" style={{ width: `${(seconds / modes[0][1]) * 100}%` }} />
+                </div>
+                <span className="w-12 text-right tabular-nums text-neutral-400">{duration(seconds)}</span>
+              </div>
             ))}
           </div>
         </div>
@@ -661,122 +699,148 @@ function WhereItWent({ episodes, channels }: { episodes: Episode[]; channels: Da
   );
 }
 
-function needsYou(e: Episode): boolean {
-  if (e.verdict || !e.guess) return false;
-  if (e.pages.length === 0) return false;
-  const r = readEpisode(e);
-  return r.bucket === 'unclear' || r.bucket === 'new_work' || (e.guess?.probability ?? 0) < 60;
+function needsYou(s: SessionData): boolean {
+  if (s.answered || s.reading.decided || s.pages.length === 0) return false;
+  return s.reading.key === 'unclear' || s.reading.key === 'new_work' || s.reading.key === 'unread' || (s.reading.probability ?? 0) < 60;
 }
 
-function Episodes({
-  episodes, channels, areas, onlyNeedsYou, setOnlyNeedsYou, onChanged,
+function Sessions({
+  sessions, story, channels, areas, onlyNeedsYou, setOnlyNeedsYou, onChanged,
 }: {
-  episodes: Episode[];
+  sessions: SessionData[];
+  story: DayStory | null;
   channels: DayData['channels'];
   areas: string[];
   onlyNeedsYou: boolean;
   setOnlyNeedsYou: (v: boolean) => void;
   onChanged: () => void;
 }) {
-  const pending = episodes.filter(needsYou).length;
-  const shown = (onlyNeedsYou ? episodes.filter(needsYou) : episodes).slice().reverse();
-  if (episodes.length === 0) return null;
+  if (sessions.length === 0) return null;
+  const pending = sessions.filter(needsYou).length;
+  const shown = (onlyNeedsYou ? sessions.filter(needsYou) : sessions).slice().reverse();
 
   return (
     <section>
       <div className="mb-3 flex items-center gap-3">
-        <SectionTitle className="mb-0">The day, piece by piece</SectionTitle>
+        <SectionTitle className="mb-0">Your day, session by session</SectionTitle>
         {pending > 0 && (
           <button
             onClick={() => setOnlyNeedsYou(!onlyNeedsYou)}
             className={`ml-auto rounded-full px-2.5 py-1 text-xs ${onlyNeedsYou ? 'bg-violet-600 text-white' : 'bg-violet-500/10 text-violet-700 dark:text-violet-300'}`}
           >
-            {onlyNeedsYou ? 'Show all' : `${pending} Kan isn't sure about`}
+            {onlyNeedsYou ? 'Show all' : `${pending} Kan isn’t sure about`}
           </button>
         )}
       </div>
-      <p className="mb-3 text-xs text-neutral-500">
-        Each stretch has two things: <strong className="font-medium text-neutral-700 dark:text-neutral-300">for</strong> — a channel, a card, or your own words —
-        and <strong className="font-medium text-neutral-700 dark:text-neutral-300">doing</strong> — building, researching, admin… Correct either; each answer is an example Kan uses for the next stretch.
-      </p>
       <div className="space-y-2">
-        {shown.map((e) => (
-          <EpisodeRow key={e.id} episode={e} channels={channels} areas={areas} onChanged={onChanged} />
+        {shown.map((s) => (
+          <SessionRow key={s.id} session={s} summary={story?.sessions[s.id] ?? null} channels={channels} areas={areas} onChanged={onChanged} />
         ))}
       </div>
     </section>
   );
 }
 
-function EpisodeRow({
-  episode: e, channels, areas, onChanged,
-}: { episode: Episode; channels: DayData['channels']; areas: string[]; onChanged: () => void }) {
-  const r = readEpisode(e);
+function SessionRow({
+  session: s, summary, channels, areas, onChanged,
+}: {
+  session: SessionData;
+  summary: string | null;
+  channels: DayData['channels'];
+  areas: string[];
+  onChanged: () => void;
+}) {
+  const r = toReading(s.reading);
   const [editing, setEditing] = useState(false);
-  const [channelId, setChannelId] = useState(e.verdictChannelId ?? e.guess?.channelId ?? '');
-  const [label, setLabel] = useState(e.label ?? e.guess?.label ?? '');
-  const [mode, setMode] = useState(e.mode ?? '');
+  const [showPages, setShowPages] = useState(false);
+  const [channelId, setChannelId] = useState('');
+  const [label, setLabel] = useState(r.bucket.startsWith('label:') ? r.label : '');
+  const [mode, setMode] = useState('');
   const [busy, setBusy] = useState(false);
+  const onlyPrivate = s.pages.length === 0;
+  const topMode = s.modes[0];
 
+  // A session is several stretches; an answer about it is an answer about each.
   const send = async (body: Record<string, unknown>) => {
     setBusy(true);
-    await fetch(`/api/kanwatch/episodes/${e.id}`, {
+    await Promise.all(s.episodeIds.map((id) => fetch(`/api/kanwatch/episodes/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
+    })));
     setBusy(false);
     setEditing(false);
     onChanged();
   };
 
-  const onlyPrivate = e.pages.length === 0;
-
   return (
-    <div id={`ep-${e.id}`} className="rounded-xl border border-neutral-200 bg-white p-3.5 dark:border-neutral-800 dark:bg-neutral-900">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div id={`ep-${s.id}`} className="rounded-xl border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ background: r.color }} />
-        <span className="text-[11px] uppercase tracking-wide text-neutral-400">For</span>
         <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{r.label}</span>
-        {!r.decided && r.bucket !== 'unread' && e.guess?.probability != null && (
-          <span className="text-[11px] text-neutral-400">Kan&rsquo;s guess · {e.guess.probability}% sure</span>
+        {s.answered && <span className="text-[11px] text-emerald-600 dark:text-emerald-400">you said</span>}
+        {!s.answered && !r.decided && r.probability !== null && (
+          <span className="text-[11px] text-neutral-400">Kan · {r.probability}%</span>
         )}
-        {r.decided && e.verdict && <span className="text-[11px] text-emerald-600 dark:text-emerald-400">You said</span>}
-        {e.live && !e.verdict && (
+        {s.live && (
           <span className="inline-flex items-center gap-1 text-[11px] text-violet-600 dark:text-violet-400">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-500" />
-            {e.guess ? 'reading live' : 'in progress'}
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-violet-500" /> now
           </span>
         )}
-        {!onlyPrivate && (e.mode || e.guess) && (
-          <label className="inline-flex items-center gap-1 text-[11px] text-neutral-400" title="What you were doing — change it here without changing what it was for">
-            Doing
-            <select
-              value={e.mode ?? ''}
-              disabled={busy}
-              onChange={(ev) => send({ mode: ev.target.value || null })}
-              className={`cursor-pointer appearance-none rounded-full px-2 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-violet-500 ${
-                e.modeIsYours
-                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400'
-              }`}
-            >
-              {!e.mode && <option value="">—</option>}
-              {Object.entries(MODE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </label>
-        )}
-        {e.focusScore !== null && !onlyPrivate && (
-          <span className="text-[11px] text-neutral-400">{e.focusScore >= 67 ? 'On plan' : e.focusScore >= 34 ? 'Near the plan' : 'Off plan'}</span>
-        )}
         <span className="ml-auto text-xs tabular-nums text-neutral-500">
-          {clock(e.startedAt)}–{clock(e.endedAt)} · {duration(e.activeSeconds)}
+          {clock(s.startedAt)}–{clock(s.endedAt)} · {duration(s.activeSeconds)}
         </span>
       </div>
 
-      {e.pages.length > 0 && (
-        <ul className="mt-2.5 space-y-1 pl-5">
-          {e.pages.map((p, i) => (
+      {summary && <p className="mt-1.5 pl-5 text-[14px] leading-snug text-neutral-800 dark:text-neutral-200">{summary}</p>}
+
+      {!onlyPrivate && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 pl-5 text-[11px] text-neutral-500">
+          {topMode && (
+            <label className="inline-flex items-center gap-1" title="What you were doing — change it without changing what it was for">
+              <select
+                value={topMode.mode}
+                disabled={busy}
+                onChange={(ev) => send({ mode: ev.target.value })}
+                className={`cursor-pointer appearance-none rounded-full px-2 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-violet-500 ${
+                  topMode.yours
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400'
+                }`}
+              >
+                {Object.entries(MODE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </label>
+          )}
+          {s.modes.slice(1, 3).map((m) => <span key={m.mode}>+ {MODE_LABELS[m.mode]?.toLowerCase() ?? m.mode}</span>)}
+          {s.focusScore !== null && (
+            <span>· {s.focusScore >= 67 ? 'on plan' : s.focusScore >= 34 ? 'near the plan' : 'off plan'}</span>
+          )}
+          {s.privateSeconds > 0 && <span>· {duration(s.privateSeconds)} private</span>}
+          <button onClick={() => setShowPages(!showPages)} className="ml-1 text-neutral-500 underline-offset-2 hover:text-neutral-800 hover:underline dark:hover:text-neutral-200">
+            {showPages ? 'hide pages' : `${s.pages.length} ${s.pages.length === 1 ? 'page' : 'pages'}`}
+          </button>
+          {!s.answered && s.reading.probability !== null && (
+            <span className="ml-auto flex gap-1.5">
+              {!r.decided && r.bucket !== 'unclear' && r.bucket !== 'new_work' && r.bucket !== 'unread' && (
+                <SmallButton disabled={busy} onClick={() => send({ verdict: r.bucket === 'not_work' ? 'not_work' : 'confirmed' })}>✓ Right</SmallButton>
+              )}
+              <SmallButton disabled={busy} onClick={() => setEditing(!editing)}>It was…</SmallButton>
+              {r.bucket !== 'not_work' && <SmallButton disabled={busy} onClick={() => send({ verdict: 'not_work' })}>Not work</SmallButton>}
+            </span>
+          )}
+          {s.answered && (
+            <span className="ml-auto flex gap-1.5">
+              <SmallButton disabled={busy} onClick={() => setEditing(!editing)}>Change</SmallButton>
+              <SmallButton disabled={busy} onClick={() => send({ verdict: null })}>Undo</SmallButton>
+            </span>
+          )}
+        </div>
+      )}
+
+      {showPages && (
+        <ul className="mt-2 space-y-1 border-t border-neutral-100 pl-5 pt-2 dark:border-neutral-800">
+          {s.pages.map((p, i) => (
             <li key={i} className="flex items-baseline gap-2 text-[13px]">
               <span className="min-w-0 flex-1 truncate text-neutral-700 dark:text-neutral-300">
                 <span className="text-neutral-400">{p.site}</span>
@@ -786,55 +850,38 @@ function EpisodeRow({
               <span className="flex-shrink-0 text-[11px] text-neutral-400">{p.doing} · {duration(p.seconds)}</span>
             </li>
           ))}
-        </ul>
-      )}
-      {e.privateSeconds > 0 && (
-        <p className="mt-1.5 pl-5 text-[11px] text-neutral-400">+ {duration(e.privateSeconds)} private (nothing recorded but the time)</p>
-      )}
-
-      {!e.verdict && e.basis && (e.basis.notes.length > 0 || e.basis.pastAnswers > 0) && (
-        <p className="mt-2 pl-5 text-[11px] text-neutral-400">
-          Read using {[
-            e.basis.notes.length > 0 ? `your note on ${e.basis.notes.join(', ')}` : '',
-            e.basis.pastAnswers > 0 ? `${e.basis.pastAnswers} earlier ${e.basis.pastAnswers === 1 ? 'answer' : 'answers'} about these sites` : '',
-          ].filter(Boolean).join(' and ')}
-        </p>
-      )}
-
-      {!onlyPrivate && e.guess && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 pl-5">
-          {!e.verdict && r.bucket !== 'unclear' && r.bucket !== 'new_work' && (
-            <SmallButton disabled={busy} onClick={() => send({ verdict: r.bucket === 'not_work' ? 'not_work' : 'confirmed' })}>✓ Right</SmallButton>
+          {s.basis && (s.basis.notes.length > 0 || s.basis.pastAnswers > 0) && !s.answered && (
+            <li className="pt-1 text-[11px] text-neutral-400">
+              Kan read this using {[
+                s.basis.notes.length > 0 ? `your note on ${s.basis.notes.join(', ')}` : '',
+                s.basis.pastAnswers > 0 ? `${s.basis.pastAnswers} earlier ${s.basis.pastAnswers === 1 ? 'answer' : 'answers'} about these sites` : '',
+              ].filter(Boolean).join(' and ')}.
+            </li>
           )}
-          <SmallButton disabled={busy} onClick={() => setEditing(!editing)}>{e.verdict ? 'Change' : 'It was…'}</SmallButton>
-          {e.verdict !== 'not_work' && <SmallButton disabled={busy} onClick={() => send({ verdict: 'not_work', label })}>Not work</SmallButton>}
-          {e.verdict && <SmallButton disabled={busy} onClick={() => send({ verdict: null })}>Undo</SmallButton>}
-        </div>
+        </ul>
       )}
 
       {editing && (
-        <div className="mt-3 space-y-2 rounded-lg bg-neutral-50 p-3 pl-5 dark:bg-neutral-950/50">
+        <div className="mt-3 space-y-2 rounded-lg bg-neutral-50 p-3 dark:bg-neutral-950/50">
           <div className="flex flex-wrap items-center gap-2">
             <span className="w-12 text-[11px] uppercase tracking-wide text-neutral-400">For</span>
-            <input
-              list={`areas-${e.id}`}
-              value={label}
-              onChange={(ev) => setLabel(ev.target.value)}
-              placeholder="In your words, e.g. MyCreativeShop · template manufacturing"
-              className="min-w-[14rem] flex-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-            />
-            <datalist id={`areas-${e.id}`}>
-              {areas.map((a) => <option key={a} value={a} />)}
-            </datalist>
             <select
               value={channelId}
               onChange={(ev) => setChannelId(ev.target.value)}
               className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-              title="Optionally, the channel it belongs to"
             >
-              <option value="">No channel</option>
+              <option value="">Pick a channel…</option>
               <ChannelOptions channels={channels} />
             </select>
+            <span className="text-[11px] text-neutral-400">or</span>
+            <input
+              list={`areas-${s.id}`}
+              value={label}
+              onChange={(ev) => setLabel(ev.target.value)}
+              placeholder="your own words"
+              className="min-w-[12rem] flex-1 rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+            />
+            <datalist id={`areas-${s.id}`}>{areas.map((a) => <option key={a} value={a} />)}</datalist>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="w-12 text-[11px] uppercase tracking-wide text-neutral-400">Doing</span>
@@ -843,20 +890,18 @@ function EpisodeRow({
               onChange={(ev) => setMode(ev.target.value)}
               className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-950"
             >
-              <option value="">Leave as Kan read it</option>
+              <option value="">Leave as it is</option>
               {Object.entries(MODE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
             <SmallButton
               primary
               disabled={busy || (!channelId && !label.trim())}
-              onClick={() => send({ verdict: 'corrected', channelId: channelId || undefined, label, ...(mode && mode !== e.mode ? { mode } : {}) })}
+              onClick={() => send({ verdict: 'corrected', channelId: channelId || undefined, label, ...(mode ? { mode } : {}) })}
             >
               Save
             </SmallButton>
+            <span className="text-[11px] text-neutral-400">Names you give here become choices Kan can pick next time.</span>
           </div>
-          <p className="text-[11px] text-neutral-400">
-            Names you give here become choices Kan can pick for future stretches, just like a channel.
-          </p>
         </div>
       )}
     </div>
@@ -1053,6 +1098,47 @@ function ChannelOptions({ channels }: { channels: DayData['channels'] }) {
       ))}
       {(groups.get('') ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
     </>
+  );
+}
+
+// ---- the day story ----------------------------------------------------------------
+
+function DayStoryCard({ story, loading, onRefresh }: { story: DayStory | null; loading: boolean; onRefresh: () => void }) {
+  if (!story && !loading) return null;
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
+      <div className="mb-2 flex items-center gap-2">
+        <KanthinkIcon size={16} className="text-violet-500" />
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-400">Kan’s read on your day</span>
+        {story && (
+          <button onClick={onRefresh} disabled={loading} className="ml-auto text-[11px] text-neutral-400 hover:text-neutral-700 disabled:opacity-40 dark:hover:text-neutral-200">
+            {loading ? 'Reading…' : story.stale ? 'Update — the day has moved on' : `Written ${clock(story.writtenAt)} · refresh`}
+          </button>
+        )}
+      </div>
+      {!story ? (
+        <p className="text-sm text-neutral-500">Kan is reading your day…</p>
+      ) : (
+        <>
+          <p className="text-[17px] leading-snug text-neutral-900 dark:text-neutral-100">{story.headline}</p>
+          {story.threads.length > 0 && (
+            <ul className="mt-3 space-y-1.5">
+              {story.threads.map((t) => (
+                <li key={t.title} className="text-[14px] leading-snug text-neutral-700 dark:text-neutral-300">
+                  <span className="font-medium text-neutral-900 dark:text-neutral-100">{t.title}.</span> {t.detail}
+                </li>
+              ))}
+            </ul>
+          )}
+          {story.looseEnds.length > 0 && (
+            <div className="mt-3 border-t border-neutral-100 pt-3 dark:border-neutral-800">
+              <div className="mb-1 text-[11px] uppercase tracking-wide text-amber-600 dark:text-amber-400">Loose ends</div>
+              {story.looseEnds.map((l) => <p key={l} className="text-[13px] text-neutral-600 dark:text-neutral-400">{l}</p>)}
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

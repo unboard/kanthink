@@ -4,6 +4,8 @@ import { db } from '@/lib/db';
 import { cards, channels, folders, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits, playgroundApps, userChannelOrg } from '@/lib/db/schema';
 import { judgePendingReads } from '@/lib/kanwatch/reads';
 import { requeueForBoardChange } from '@/lib/kanwatch/board';
+import { groupSessions, readingOf } from '@/lib/kanwatch/sessions';
+import { namesFor } from '@/lib/kanwatch/story';
 import { kanwatchUser } from '@/lib/kanwatch/access';
 import { closeStaleEpisodes } from '@/lib/kanwatch/ingest';
 import { judgePending, summarizePages } from '@/lib/kanwatch/judge';
@@ -99,6 +101,12 @@ export async function GET(request: Request) {
   const channelName = new Map(channelRows.map((c) => [c.id, c.name]));
   const cardTitle = new Map(cardRows.map((c) => [c.id, c.title]));
 
+  // Every stretch's "for" in one form (Folder / Channel › Card), and stretches grouped
+  // into sessions — the same reading the day story and Kan's context use.
+  const names = await namesFor(userId, [...cardTitle.keys()]);
+  const sessions = groupSessions(episodes, visits, names);
+  const pageCount = (id: string) => visits.filter((v) => v.episodeId === id && !v.isPrivate && v.domain).length;
+
   // Your folders, so the breakdown can group channels the way your sidebar does.
   const [orgRows, folderRows] = await Promise.all([
     db.query.userChannelOrg.findMany({ where: eq(userChannelOrg.userId, userId), columns: { channelId: true, folderId: true } }),
@@ -189,8 +197,10 @@ export async function GET(request: Request) {
       });
       return [...new Set(rows.map((r) => r.label?.trim()).filter((l): l is string => !!l))].slice(0, 30);
     })(),
+    sessions,
     episodes: episodes.map((e) => ({
       id: e.id,
+      reading: readingOf(e, pageCount(e.id), names),
       startedAt: e.startedAt.getTime(),
       endedAt: e.endedAt.getTime(),
       activeSeconds: e.activeSeconds,
