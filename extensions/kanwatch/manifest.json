@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Kanwatch",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Sends Kanthink a private, scrubbed record of where your browsing time goes, so Kan can show your day's focus.",
   "incognito": "not_allowed",
-  "permissions": ["tabs", "idle", "storage", "alarms"],
+  "permissions": ["tabs", "idle", "storage", "alarms", "notifications"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js",
@@ -18,6 +18,7 @@
       "all_frames": false
     }
   ],
+  "icons": { "128": "icon128.png" },
   "action": {
     "default_title": "Kanwatch",
     "default_popup": "popup.html"

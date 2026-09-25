@@ -32,6 +32,10 @@ const SETTINGS_DEFAULTS = {
   includeSearch: true,
   extraPrivateDomains: [],
   lastUpload: null,        // { at, ok, message }
+  nudges: true,            // a notification when browsing drifts from today's priority
+  nudgeSnoozedUntil: 0,
+  lastNudge: null,         // { key, at }
+  quietSites: {},          // domain → ms: "it counts" keeps these out of nudges for a while
 };
 
 async function getSettings() {
@@ -330,6 +334,8 @@ async function upload() {
       const { queue: latest = [] } = await chrome.storage.local.get({ queue: [] });
       await chrome.storage.local.set({ queue: latest.filter((v) => !sent.has(v.id)) });
       lastUpload = { at: Date.now(), ok: true, message: `Sent ${batch.length}` };
+      const reply = await res.json().catch(() => null);
+      if (reply?.nudge) await maybeNudge(reply.nudge);
     } else {
       lastUpload = {
         at: Date.now(),
@@ -342,6 +348,60 @@ async function upload() {
   }
   await chrome.storage.local.set({ lastUpload });
 }
+
+// ---- nudges -------------------------------------------------------------------
+//
+// The server says when the last stretch of browsing has drifted from today's priority
+// (it reads the scores Jev already keeps). Whether to actually interrupt is decided
+// here: switched on, not snoozed, not the same drift twice, not more than one every
+// half hour, and not about sites you've said count.
+
+const NUDGE_GAP_MS = 30 * 60 * 1000;
+const SNOOZE_MS = 60 * 60 * 1000;
+const QUIET_SITE_MS = 2 * 60 * 60 * 1000;
+
+async function maybeNudge(nudge) {
+  const settings = await getSettings();
+  const now = Date.now();
+  if (!settings.nudges || now < settings.nudgeSnoozedUntil || await isPaused()) return;
+  if (settings.lastNudge && (settings.lastNudge.key === nudge.key || now - settings.lastNudge.at < NUDGE_GAP_MS)) return;
+  const quiet = settings.quietSites || {};
+  const sites = (nudge.sites || []).filter((s) => !(quiet[s] > now));
+  if (sites.length === 0) return;
+
+  await chrome.storage.local.set({ lastNudge: { key: nudge.key, at: now, sites: nudge.sites || [] } });
+  chrome.notifications.create(`kanwatch-nudge:${nudge.key}`, {
+    type: 'basic',
+    iconUrl: 'icon128.png',
+    title: String(nudge.title || 'Still on today’s priority?').slice(0, 80),
+    message: String(nudge.message || '').slice(0, 240),
+    buttons: [{ title: 'It counts' }, { title: 'Snooze 1 hour' }],
+    priority: 1,
+  });
+}
+
+chrome.notifications.onButtonClicked.addListener(async (id, button) => {
+  if (!id.startsWith('kanwatch-nudge:')) return;
+  const settings = await getSettings();
+  if (button === 0) {
+    // "It counts": these sites are part of the priority today; stop nudging about them.
+    const quiet = { ...(settings.quietSites || {}) };
+    const until = Date.now() + QUIET_SITE_MS;
+    for (const s of settings.lastNudge?.sites || []) quiet[s] = until;
+    for (const [s, t] of Object.entries(quiet)) if (t < Date.now()) delete quiet[s];
+    await chrome.storage.local.set({ quietSites: quiet });
+  } else {
+    await chrome.storage.local.set({ nudgeSnoozedUntil: Date.now() + SNOOZE_MS });
+  }
+  chrome.notifications.clear(id);
+});
+
+chrome.notifications.onClicked.addListener(async (id) => {
+  if (!id.startsWith('kanwatch-nudge:')) return;
+  const { endpoint } = await getSettings();
+  chrome.tabs.create({ url: `${endpoint.replace(/\/$/, '')}/kanwatch` });
+  chrome.notifications.clear(id);
+});
 
 // ---- events -------------------------------------------------------------------
 

@@ -5,6 +5,7 @@ import { userFromBearer } from '@/lib/kanwatch/token';
 import { ingestVisits, type IncomingVisit } from '@/lib/kanwatch/ingest';
 import { judgePending } from '@/lib/kanwatch/judge';
 import { judgePendingReads } from '@/lib/kanwatch/reads';
+import { nudgeFor } from '@/lib/kanwatch/nudge';
 
 /**
  * POST /api/kanwatch/ingest — visits from the Kanwatch extension.
@@ -33,5 +34,9 @@ export async function POST(request: Request) {
     await Promise.all([judgePending(userId, 5), judgePendingReads(userId, 3)]);
   });
 
-  return NextResponse.json(result);
+  // Read from the scores already in hand; this batch's are judged after the response
+  // and show up on the next check-in a minute from now.
+  const nudge = await nudgeFor(userId, tz).catch(() => null);
+
+  return NextResponse.json({ ...result, nudge });
 }

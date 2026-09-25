@@ -6,7 +6,7 @@ const FOREVER = Number.MAX_SAFE_INTEGER;
 async function render() {
   const s = await chrome.storage.local.get({
     endpoint: 'https://www.kanthink.com', token: '', pausedUntil: 0, includeSearch: true,
-    extraPrivateDomains: [], lastUpload: null, queue: [],
+    extraPrivateDomains: [], lastUpload: null, queue: [], nudges: true, nudgeSnoozedUntil: 0,
   });
   const now = Date.now();
   const paused = now < s.pausedUntil;
@@ -30,6 +30,12 @@ async function render() {
   $('token').placeholder = connected ? 'Connected — paste a new key to replace' : 'kw_…';
   $('disconnect').hidden = !connected;
   $('includeSearch').checked = s.includeSearch;
+  $('nudges').checked = s.nudges;
+  const snoozed = s.nudges && now < s.nudgeSnoozedUntil;
+  $('nudgeSnoozed').hidden = !snoozed;
+  $('nudgeSnoozed').textContent = snoozed
+    ? `Nudges snoozed until ${new Date(s.nudgeSnoozedUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+    : '';
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   let host = '';
@@ -66,6 +72,7 @@ $('pause1h').onclick = async () => { await chrome.storage.local.set({ pausedUnti
 $('pauseAll').onclick = async () => { await chrome.storage.local.set({ pausedUntil: FOREVER }); render(); };
 $('resume').onclick = async () => { await chrome.storage.local.set({ pausedUntil: 0 }); render(); };
 $('includeSearch').onchange = async (e) => { await chrome.storage.local.set({ includeSearch: e.target.checked }); };
+$('nudges').onchange = async (e) => { await chrome.storage.local.set({ nudges: e.target.checked, nudgeSnoozedUntil: 0 }); render(); };
 
 $('readNow').onclick = async () => {
   $('readNow').textContent = 'Reading...';
