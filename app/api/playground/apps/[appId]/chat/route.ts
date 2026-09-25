@@ -213,8 +213,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
         ...conversation,
         { role: 'user', content: userContent },
       ],
-      { maxTokens: 1200 }
+      // Gemini spends its thinking from this same budget, so 1200 left a reasoning
+      // model a few sentences and cut Kan off mid-thought. The prompt keeps him brief;
+      // the cap is only a backstop.
+      { maxTokens: 8192 }
     )
+    const cutOff = response.truncated ? '\n\n_(Cut off — ask me to continue.)_' : ''
 
     await recordUsage(session.user.id, 'playground-app-chat')
 
@@ -250,7 +254,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
     const aiMessage = {
       id: nanoid(),
       type: 'ai_response' as const,
-      content: response.content + imageNote,
+      content: response.content + cutOff + imageNote,
       imageUrls: generatedImageUrls,
       createdAt: new Date().toISOString(),
     }

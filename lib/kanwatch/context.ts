@@ -10,7 +10,7 @@
  * Admin-only while Kanwatch is, and empty for anyone with no Kanwatch data.
  */
 
-import { and, desc, eq, gte, inArray, isNotNull, like, lt, or } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, like, lt, ne, or } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { cards, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchVisits, playgroundApps } from '@/lib/db/schema';
 import { loadAccess } from '@/lib/voice/resolveReference';
@@ -200,7 +200,7 @@ function clockAt(ms: number, tz: number): string {
 function describeDay(s: DaySummary, label: string, tz: number, detail: boolean): string {
   const lines: string[] = [];
   lines.push(`${label} (${s.date}):`);
-  lines.push(`- What the day is for, in their words: ${s.intention ? `"${s.intention}"` : 'not set'}`);
+  lines.push(`- Today's priority, in their words: ${s.intention ? `"${s.intention}"` : 'not set'}`);
   lines.push(`- Active in the browser: ${spoken(s.activeSeconds)}${s.privateSeconds ? `, of which ${spoken(s.privateSeconds)} private (time only — nothing is known about it)` : ''}${s.notWorkSeconds ? `; ${spoken(s.notWorkSeconds)} was not work` : ''}.`);
   if (s.areas.length) lines.push(`- Where the work time went: ${s.areas.map((a) => `${a.name} (${spoken(a.seconds)})`).join(', ')}.`);
   if (s.modes.length) lines.push(`- Mostly: ${s.modes.map((m) => MODE_WORDS[m.mode] ?? m.mode).join(', ')}.`);
@@ -242,6 +242,11 @@ DO use it:
 - When the conversation is already on a subject one of the flagged pages covers — you may mention that page once, briefly, as something they read.
 - If they ask whether you have anything for them, the open questions on flagged pages are what to offer.
 
+THE DAY'S PRIORITY — what they said today is for:
+- When it is set, it is the yardstick. Weigh "what should I do next", "how's my day going" and plans against it, in their words.
+- When it is NOT set, ask them once in the conversation what today's priority is — early, but after you have dealt with whatever they opened with. One short question, no lecture. If they name one, save it with __SET__ and carry on. If they wave it off, drop it for the rest of the conversation.
+- If they change it ("actually today is about X"), save the new one with __SET__.
+
 ONE EXCEPTION, for app ideas they want to hear about:
 - If a flagged page is marked as an app idea and has not been answered or built, you may offer it once in a conversation, on your own initiative — at a natural pause, or when they are open to ideas. Never as your opening line, and never twice.
 - Offer it as a question: what the app would be, and whether it fits one of their existing apps or would be new. If they say yes, use __BUILD__ (new app, or add to the existing one).`;
@@ -252,7 +257,7 @@ ONE EXCEPTION, for app ideas they want to hear about:
  */
 export async function buildKanwatchContext(
   userId: string,
-  opts: { tzOffsetMinutes?: number | null; lookup: string; build: string },
+  opts: { tzOffsetMinutes?: number | null; lookup: string; build: string; setPriority: string },
 ): Promise<string> {
   const recorded = await recentOffset(userId);
   if (recorded === undefined) return ''; // no Kanwatch activity this week
@@ -260,13 +265,20 @@ export async function buildKanwatchContext(
   const today = localDate(Date.now(), tz);
   const summary = await summarizeDay(userId, today, tz);
 
-  const body = summary
-    ? describeDay(summary, 'Today', tz, false)
-    : 'Today: nothing recorded yet.';
+  // The priority is theirs to set before any browsing happens, so it is read on its own
+  // rather than only riding along with a day that has visits.
+  let body: string;
+  if (summary) {
+    body = describeDay(summary, 'Today', tz, false);
+  } else {
+    const day = await db.query.kanwatchDays.findFirst({ where: eq(kanwatchDays.id, `${userId}:${today}`) });
+    body = `Today (${today}): no browsing recorded yet.
+- Today's priority, in their words: ${day?.intention ? `"${day.intention}"` : 'not set'}`;
+  }
 
   return `\n\n## KANWATCH — the user's day in their browser (private; reference only)
 
-${KANWATCH_RULES.replace('__BUILD__', opts.build)}
+${KANWATCH_RULES.replaceAll('__BUILD__', opts.build).replaceAll('__SET__', opts.setPriority)}
 
 For anything not below — another day, the stretches of a day in detail, or finding a page they read by topic — use ${opts.lookup}.
 
@@ -316,4 +328,32 @@ export async function kanwatchLookup(userId: string, args: { date?: string; quer
   const summary = await summarizeDay(userId, date, tz);
   if (!summary) return `Kanwatch has nothing recorded for ${date}.`;
   return describeDay(summary, date === today ? 'Today' : date, tz, true);
+}
+
+/**
+ * Save today's priority from a conversation — the same thing "This day is for" on the
+ * Kanwatch page sets. Today's already-read stretches are read again against it, since
+ * their focus was scored against the old one.
+ */
+export async function setDayPriority(userId: string, priority: string, tzOffsetMinutes?: number | null): Promise<string> {
+  const text = String(priority ?? '').trim().slice(0, 300);
+  if (!text) return 'No priority given — nothing saved.';
+  const recorded = await recentOffset(userId);
+  const tz = tzOffsetMinutes ?? recorded ?? 0;
+  const date = localDate(Date.now(), tz);
+  const { from, to } = boundsOf(date, tz);
+  const now = new Date();
+  await db.insert(kanwatchDays)
+    .values({ id: `${userId}:${date}`, userId, date, intention: text, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({ target: kanwatchDays.id, set: { intention: text, updatedAt: now } });
+  await db.update(kanwatchEpisodes)
+    .set({ status: 'closed', updatedAt: now })
+    .where(and(
+      eq(kanwatchEpisodes.userId, userId),
+      eq(kanwatchEpisodes.status, 'judged'),
+      ne(kanwatchEpisodes.guessKind, 'private'),
+      gte(kanwatchEpisodes.startedAt, new Date(from)),
+      lt(kanwatchEpisodes.startedAt, new Date(to)),
+    ));
+  return `Saved today's priority (${date}): "${text}". It shows on the Kanwatch page as what the day is for.`;
 }

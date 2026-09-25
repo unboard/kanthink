@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'app-thread-full-replies',
+    date: '2026-09-25',
+    kind: 'fix',
+    title: 'Kan finishes his thoughts in app threads',
+    body: 'Replies in an app\'s thread were being cut off partway through. Kan now answers in full there, and if a reply ever does run out it says so, so you can ask him to continue.',
+  },
+  {
     id: 'shrooms-screen-against-rejections',
     date: '2026-09-24',
     kind: 'automation',

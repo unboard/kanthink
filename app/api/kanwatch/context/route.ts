@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     tzOffsetMinutes: Number.isFinite(tz) ? tz : null,
     lookup: 'the kanwatch_lookup tool',
     build: 'the kanwatch_build_app tool',
+    setPriority: 'the kanwatch_set_priority tool',
   });
   return NextResponse.json({ context });
 }

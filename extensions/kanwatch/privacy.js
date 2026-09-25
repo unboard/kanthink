@@ -70,6 +70,13 @@ const PRIVATE_HOST_LABELS = [
   'vault', 'okta', 'auth0', 'onelogin', 'passport', 'myaccount',
 ];
 
+/**
+ * Work apps whose own hostname trips the sign-in rule above: Help Scout's app lives
+ * at secure.helpscout.net. Exempt from that one rule only — their paths, titles and
+ * masking are judged like any other site's, and their page text is never read.
+ */
+const WORK_APP_HOSTS = ['secure.helpscout.net'];
+
 /** A path containing any of these, as a whole segment or word, is private on any site. */
 const PRIVATE_PATH_WORDS = [
   'login', 'log-in', 'signin', 'sign-in', 'signup', 'sign-up', 'register', 'logout', 'oauth', 'oauth2',
@@ -102,7 +109,7 @@ export function isPrivateUrl(url, extraDomains = []) {
   // Short words must match a whole label ("adp", "tax"); longer ones anywhere in one
   // ("firstbankohio"), which is where over-matching is rare.
   const labels = host.split('.');
-  if (labels.slice(0, -1).some((l) => PRIVATE_HOST_LABELS.includes(l))) return true;
+  if (!WORK_APP_HOSTS.includes(host) && labels.slice(0, -1).some((l) => PRIVATE_HOST_LABELS.includes(l))) return true;
   const hostWords = host.split(/[.\-]/);
   if (PRIVATE_HOST_WORDS.some((w) => hostWords.some((part) => part === w || (w.length >= 4 && part.includes(w))))) return true;
 
@@ -281,7 +288,7 @@ export function readablePageKind(url, ogType = '', extraPrivateDomains = []) {
     return 'docs';
   }
   // Social and work tools whose pages are mostly someone's private space.
-  if (/(^|\.)(facebook|instagram|tiktok|slack|discord|notion|figma|linear|atlassian|github|gitlab|vercel|google|microsoft|office|zoom|dropbox|box|airtable|asana|trello|monday|hubspot|salesforce|intercom|zendesk|shopify|stripe|kanthink|mycreativeshop)\./.test(`.${host}.`)) {
+  if (/(^|\.)(facebook|instagram|tiktok|slack|discord|notion|figma|linear|atlassian|github|gitlab|vercel|google|microsoft|office|zoom|dropbox|box|airtable|asana|trello|monday|hubspot|salesforce|intercom|zendesk|helpscout|shopify|stripe|kanthink|mycreativeshop)\./.test(`.${host}.`)) {
     return null;
   }
   if (seg[0] === 'docs') return 'docs';

@@ -143,6 +143,18 @@ describe('private sites keep nothing but time', () => {
     expect(isPrivateUrl('https://github.com/unboard/kanthink/pull/12')).toBe(false)
     expect(isPrivateUrl('http://localhost:3000/channel/abc')).toBe(false)
   })
+
+  it('records Help Scout as a work app: subjects masked, message text never read', () => {
+    const url = 'https://secure.helpscout.net/conversation/2987654321/48213?folderId=123'
+    expect(isPrivateUrl(url)).toBe(false)
+    expect(readablePageKind(url, 'article')).toBe(null)
+    const v = sanitizeVisit({ url, title: 'Reprint for order 88812345 - jane@acme.com - Help Scout' })
+    expect(v.path).toBe('/conversation/:id/:id')
+    expect(v.title).not.toMatch(/88812345|jane@acme\.com/)
+    // The exemption is for that one host; the sign-in rule still holds elsewhere.
+    expect(isPrivateUrl('https://secure.helpscout.net/members/login/')).toBe(true)
+    expect(isPrivateUrl('https://secure.example.com/dashboard')).toBe(true)
+  })
 })
 
 describe('scrubText masks anything identifying', () => {

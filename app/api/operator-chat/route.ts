@@ -336,6 +336,8 @@ Available actions:
   - Optional: date ("today", "yesterday" or YYYY-MM-DD), query (words to find a page they read). Only when they ask about their day, browsing, or something they read.
 - **kanwatch_build_app**: Build an app from a page they read that Kanwatch flagged as an app idea — only after they say yes.
   - Requires: query (a few words of the page's title or subject). Optional: mode ("new" to build a new app — the default; "extend" to add it to the existing app Kanwatch said it fits), channelId (where the new card goes).
+- **kanwatch_set_priority**: Save what today's priority is, in the user's words, when they tell you it.
+  - Requires: priority (a short phrase, their words).
 
 **Analytics:**
 - **query_mixpanel**: Query Mixpanel analytics data.
@@ -451,7 +453,7 @@ async function executeActions(
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
 
       // New actions routed through voice action API
-      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'app_audience', 'show_app', 'kanwatch_lookup', 'kanwatch_build_app'].includes(action.type)) {
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'app_audience', 'show_app', 'kanwatch_lookup', 'kanwatch_build_app', 'kanwatch_set_priority'].includes(action.type)) {
         // Build args from action fields. Structured values pass through intact —
         // String() flattened columnNames arrays into "Inbox,Validation,...", which
         // failed the handler's Array.isArray check and silently fell back to
@@ -579,7 +581,7 @@ export async function POST(request: Request) {
 
     // Kanwatch is admin-only while it is tried out; empty when there is nothing recorded.
     const kanwatchBlock = session.user.isAdmin
-      ? await buildKanwatchContext(session.user.id, { lookup: 'the kanwatch_lookup action', build: 'the kanwatch_build_app action' }).catch(() => '')
+      ? await buildKanwatchContext(session.user.id, { lookup: 'the kanwatch_lookup action', build: 'the kanwatch_build_app action', setPriority: 'the kanwatch_set_priority action' }).catch(() => '')
       : '';
 
     const messages: LLMMessage[] = [

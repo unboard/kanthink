@@ -173,6 +173,17 @@ const TOOLS = [
         },
       },
       {
+        name: 'kanwatch_set_priority',
+        description: 'Save what today’s priority is, in the user’s words, when they tell you it (or change it). It is what the Kanwatch page shows as "This day is for".',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            priority: { type: 'STRING', description: 'A short phrase in their words, e.g. "ship the template designer fixes"' },
+          },
+          required: ['priority'],
+        },
+      },
+      {
         name: 'kanwatch_build_app',
         description: 'Build an app from a page the user read that Kanwatch flagged as an app idea. Only after they say yes. mode "new" (default) makes a card from the page and starts building a new app; "extend" adds the idea to the existing app Kanwatch said it fits (they press Update app there).',
         parameters: {

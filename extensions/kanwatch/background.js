@@ -96,9 +96,10 @@ function stopClock(visit, now) {
   }
 }
 
+/** Returns the visit's time when it was too short to keep, so a caller can carry it on. */
 async function finishVisit(visit, now) {
   stopClock(visit, now);
-  if (visit.activeMs < MIN_VISIT_MS) return;
+  if (visit.activeMs < MIN_VISIT_MS) return visit.activeMs;
   const settings = await getSettings();
   const clean = sanitizeVisit({
     url: visit.url,
@@ -163,7 +164,12 @@ async function refresh() {
 
   let tab = null;
   if (session.windowFocused && !paused) {
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    // The browser window you were last in. Focus on its DevTools leaves it in place, so
+    // inspecting a page is still time on that page.
+    let [active] = session.windowId
+      ? await chrome.tabs.query({ active: true, windowId: session.windowId }).catch(() => [])
+      : [];
+    if (!active) [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (active && !active.incognito && isWeb(active.url)) tab = active;
   }
 
@@ -174,12 +180,19 @@ async function refresh() {
   let current = session.current;
 
   // A different page (or no page) ends the current visit.
+  let carryMs = 0;
   if (current && (!tab || tab.id !== current.tabId || !sameUrl(tab.url, current.url))) {
-    await finishVisit(current, now);
+    const dropped = await finishVisit(current, now);
+    // An app that rewrites its URL every few seconds would otherwise shed that time in
+    // pieces too short to keep. Within one tab, it carries on to the next page.
+    if (dropped && tab && tab.id === current.tabId) carryMs = dropped;
     current = null;
   }
 
-  if (tab && !current) current = startVisit(tab, now);
+  if (tab && !current) {
+    current = startVisit(tab, now);
+    current.activeMs = carryMs;
+  }
   if (current && tab && tab.title) current.title = tab.title;
 
   if (current) {
@@ -360,12 +373,18 @@ chrome.tabs.onRemoved.addListener(() => serial(refreshAll));
 chrome.tabs.onUpdated.addListener((_id, change) => {
   if (change.url || change.title || change.status === 'complete' || 'audible' in change) serial(refreshAll);
 });
+// DevTools windows are listed too: without them, moving into an undocked DevTools
+// window reads as leaving Chrome, and an afternoon debugging a page counts as nothing.
 chrome.windows.onFocusChanged.addListener((windowId) => serial(async () => {
   const session = await getSession();
   session.windowFocused = windowId !== chrome.windows.WINDOW_ID_NONE;
+  if (session.windowFocused) {
+    const win = await chrome.windows.get(windowId, { windowTypes: ['normal', 'popup', 'devtools'] }).catch(() => null);
+    if (win && win.type !== 'devtools') session.windowId = windowId;
+  }
   await setSession(session);
   await refresh();
-}));
+}), { windowTypes: ['normal', 'popup', 'devtools'] });
 chrome.idle.onStateChanged.addListener((state) => serial(async () => {
   const session = await getSession();
   session.idleState = state; // 'active' | 'idle' | 'locked'

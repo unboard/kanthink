@@ -689,6 +689,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ result: await kanwatchLookup(session.user.id, { date: args.date, query: args.query }) });
       }
 
+      case 'kanwatch_set_priority': {
+        if (!session.user.isAdmin) {
+          return NextResponse.json({ result: 'Kanwatch is not available on this account.' });
+        }
+        const { setDayPriority } = await import('@/lib/kanwatch/context');
+        return NextResponse.json({ result: await setDayPriority(session.user.id, args.priority || '') });
+      }
+
       case 'kanwatch_build_app': {
         if (!session.user.isAdmin) {
           return NextResponse.json({ result: 'Kanwatch is not available on this account.' });

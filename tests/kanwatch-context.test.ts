@@ -38,6 +38,14 @@ describe('Kanwatch context rules', () => {
     expect(KANWATCH_RULES).toMatch(/__BUILD__/)
   })
 
+  it('asks for the day’s priority once when it is unset, never as a lecture', () => {
+    expect(KANWATCH_RULES).toMatch(/THE DAY'S PRIORITY/)
+    expect(KANWATCH_RULES).toMatch(/ask them once in the conversation what today's priority is/)
+    expect(KANWATCH_RULES).toMatch(/after you have dealt with whatever they opened with/)
+    expect(KANWATCH_RULES).toMatch(/If they wave it off, drop it/)
+    expect(KANWATCH_RULES).toMatch(/__SET__/)
+  })
+
   it('still says when to use it, so it is not dead weight', () => {
     expect(KANWATCH_RULES).toMatch(/When they ask about their day/)
     expect(KANWATCH_RULES).toMatch(/what to work on next/)
