@@ -3,9 +3,9 @@ import { ensureSchema } from '@/lib/db/ensure-schema';
 import { afterResponse } from '@/lib/afterResponse';
 import { userFromBearer } from '@/lib/kanwatch/token';
 import { ingestVisits, type IncomingVisit } from '@/lib/kanwatch/ingest';
-import { judgePending } from '@/lib/kanwatch/judge';
+import { inheritFocus, judgeCurrent, judgePending } from '@/lib/kanwatch/judge';
 import { judgePendingReads } from '@/lib/kanwatch/reads';
-import { momentFor } from '@/lib/kanwatch/nudge';
+import { momentsFor } from '@/lib/kanwatch/nudge';
 
 /**
  * POST /api/kanwatch/ingest — visits from the Kanwatch extension.
@@ -35,10 +35,17 @@ export async function POST(request: Request) {
     await Promise.all([judgePending(userId, 5), judgePendingReads(userId, 3)]);
   });
 
-  // Read from the scores already in hand; this batch's are judged after the response
-  // and show up on the next check-in a minute from now.
-  const moment = await momentFor(userId, tz).catch(() => null);
+  // Moments have to be about now. Pages seen earlier today take their read at once;
+  // anything new in the stretch you're in is read before deciding, not after. A
+  // check-in with nothing in it is the extension starting up, not a moment.
+  let moments: Awaited<ReturnType<typeof momentsFor>> = [];
+  if (result.stored > 0) {
+    await inheritFocus(userId, new Date(Date.now() - 24 * 60 * 60 * 1000)).catch(() => 0);
+    await Promise.race([judgeCurrent(userId).catch(() => {}), new Promise((r) => setTimeout(r, 6000))]);
+    moments = await momentsFor(userId, tz).catch(() => []);
+  }
+  const moment = moments[0] ?? null;
 
-  // `nudge` is for extensions from before celebrations, which only knew drift.
-  return NextResponse.json({ ...result, moment, nudge: moment?.kind === 'drift' ? moment : null });
+  // `moment` and `nudge` are for extensions from before the list.
+  return NextResponse.json({ ...result, moments, moment, nudge: moment?.kind === 'drift' ? moment : null });
 }

@@ -17,7 +17,7 @@ import { sanitizeVisit, readablePageKind, publicUrlOf, isPrivateUrl, isPrivateTi
 // cross-origin redirect — so the key would never arrive. Always talk to www.
 const DEFAULT_ENDPOINT = 'https://www.kanthink.com';
 const MIN_VISIT_MS = 3000;            // quicker than this is a flip-through, not a visit
-const CHECKPOINT_MS = 5 * 60 * 1000;  // long visits are split so the day view stays current
+const CHECKPOINT_MS = 2 * 60 * 1000;  // long visits are split so the day view and moments stay current
 const MEDIA_FRESH_MS = 20000;         // a "video playing" report counts for this long
 const MAX_QUEUE = 2000;
 const READ_AFTER_MS = 30 * 1000;       // reading this long on a public page earns a read
@@ -344,7 +344,8 @@ async function upload({ checkIn = false } = {}) {
       await chrome.storage.local.set({ queue: latest.filter((v) => !sent.has(v.id)) });
       lastUpload = { at: Date.now(), ok: true, message: batch.length ? `Sent ${batch.length}` : "Connected" };
       const reply = await res.json().catch(() => null);
-      if (reply?.moment) await maybeMoment(reply.moment);
+      // Starting up is not a moment: nothing was sent, so nothing new happened.
+      if (batch.length && Array.isArray(reply?.moments)) await showNextMoment(reply.moments);
     } else {
       lastUpload = {
         at: Date.now(),
@@ -377,17 +378,28 @@ const BUTTONS = {
   celebrate: [{ title: 'Yep, I’m on it!' }, { title: 'Not accurate' }],
 };
 
-async function maybeMoment(moment) {
+/** Show the most important moment not shown yet — one per check-in, so they never pile up. */
+async function showNextMoment(moments) {
   const settings = await getSettings();
   const now = Date.now();
   if (!settings.nudges || now < settings.nudgeSnoozedUntil || await isPaused()) return;
-  const { shownMoments = [], openMoments = {} } = await chrome.storage.local.get({ shownMoments: [], openMoments: {} });
-  if (shownMoments.includes(moment.key)) return;
+  const { shownMoments = [] } = await chrome.storage.local.get({ shownMoments: [] });
+  for (const moment of moments) {
+    if (!moment?.key || shownMoments.includes(moment.key)) continue;
+    if (moment.kind === 'drift') {
+      if (settings.lastNudge && now - settings.lastNudge.at < NUDGE_GAP_MS) continue;
+      const quiet = settings.quietSites || {};
+      if (!(moment.sites || []).some((s) => !(quiet[s] > now))) continue;
+    }
+    await showMoment(moment);
+    return;
+  }
+}
 
+async function showMoment(moment) {
+  const now = Date.now();
+  const { shownMoments = [], openMoments = {} } = await chrome.storage.local.get({ shownMoments: [], openMoments: {} });
   if (moment.kind === 'drift') {
-    if (settings.lastNudge && now - settings.lastNudge.at < NUDGE_GAP_MS) return;
-    const quiet = settings.quietSites || {};
-    if (!(moment.sites || []).some((s) => !(quiet[s] > now))) return;
     await chrome.storage.local.set({ lastNudge: { key: moment.key, at: now, sites: moment.sites || [] } });
   }
 
@@ -396,16 +408,14 @@ async function maybeMoment(moment) {
   open[moment.key] = { key: moment.key, kind: moment.kind, sites: moment.sites || [], visitIds: moment.visitIds || [], at: now };
   await chrome.storage.local.set({ shownMoments: [...shownMoments, moment.key].slice(-100), openMoments: open });
 
-  const drift = moment.kind === 'drift';
+  // Every moment is worth seeing: good news and bad, both pop up with a sound.
   chrome.notifications.create(`${MOMENT_PREFIX}${moment.key}`, {
     type: 'basic',
     iconUrl: 'icon128.png',
     title: String(moment.title || '').slice(0, 80),
     message: String(moment.message || '').slice(0, 240),
-    buttons: drift ? BUTTONS.drift : BUTTONS.celebrate,
-    // A celebration shouldn't make a sound over whatever you're focused on.
-    priority: drift ? 1 : 0,
-    silent: !drift,
+    buttons: moment.kind === 'drift' ? BUTTONS.drift : BUTTONS.celebrate,
+    priority: 2,
   });
 }
 

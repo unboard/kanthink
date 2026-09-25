@@ -1,20 +1,23 @@
 /**
  * Moments: the nudges and the celebrations.
  *
- * Jev reads every page against the day's priority as it goes — on it, other work, or
- * not work. These walk back from what you're on now through those reads:
+ * Jev reads every page against the day's priority — on it, other work, or not work.
+ * Moments are read off those pages, in sessions rather than unbroken runs, because
+ * real work isn't unbroken: an editor, a dashboard, a support ticket and back again.
  *
- *   - start      you've settled into the priority (a few minutes on it)
- *   - milestone  25, 50, 90 minutes on it; a detour under a minute doesn't break the
- *                run, it's just counted
- *   - drift      ten minutes off it
+ *   A session is time on the priority that hasn't been left for SESSION_BREAK. Short
+ *   detours and gaps stay inside it; only a real stretch away ends it.
  *
- * Every moment carries the visits it was judged from, so "Not accurate" can correct
- * exactly those pages — which is how the reads get better, and how you can see
- * whether Kan understands what you're doing.
+ *   - start      You're on it / Back on it — once per session, a few minutes in
+ *   - deep       25, 50, 90 minutes on the priority this session
+ *   - clean      45 minutes of the session with no distraction (a not-work page
+ *                longer than a glance). Other work isn't a distraction.
+ *   - today      30 minutes, then 1–4 hours on the priority today
+ *   - drift      10 minutes off the priority — the one worth interrupting for
  *
- * The extension decides whether to show one (switched on, not snoozed, not shown
- * before, drifts not too often, not about sites you've said count).
+ * Every moment carries the visits it was judged from, so "Not accurate" corrects
+ * exactly those pages. The server lists what's due, most important first; the
+ * extension shows the first it hasn't shown, one per check-in.
  */
 
 import { and, eq, gte } from 'drizzle-orm';
@@ -24,24 +27,28 @@ import { GAP_MS, localDate } from './episodes';
 
 /** Minutes off the priority before a nudge. */
 export const DRIFT_MINUTES = 10;
-/** Minutes on the priority before it counts as having started. */
+/** Minutes on the priority before a session counts as started. */
 export const START_MINUTES = 3;
-/** Focus milestones, in minutes. */
-export const MILESTONES = [25, 50, 90] as const;
-/** An off-priority page shorter than this is a detour, not the end of a run. */
-const DETOUR_SECONDS = 60;
+/** Minutes on the priority in a session worth marking. */
+export const SESSION_MILESTONES = [25, 50, 90] as const;
+/** Minutes of a session without distraction worth marking. */
+export const CLEAN_MINUTES = 45;
+/** Minutes on the priority across the day worth marking. */
+export const DAY_MILESTONES = [30, 60, 120, 180, 240] as const;
+/** This long without any time on the priority ends a session. */
+export const SESSION_BREAK_MS = 20 * 60 * 1000;
+/** A not-work page shorter than this is a glance, not a distraction. */
+const GLANCE_SECONDS = 60;
 /**
- * The moment has to be happening now. A visit is only recorded when you leave the
- * page or every five minutes on it, so the latest one can be this old while you're
- * still there.
+ * The moment has to be happening now. The page you're on is recorded every two
+ * minutes, so the latest visit can be a few minutes old while you're still there.
  */
 const LIVE_WITHIN_MS = 7 * 60 * 1000;
-const LOOKBACK_MS = 2 * 60 * 60 * 1000;
 
 export type MomentKind = 'start' | 'milestone' | 'drift';
 
 export interface Moment {
-  /** Stable for one run, so the extension never shows the same moment twice. */
+  /** Stable for one occurrence, so the extension never shows the same moment twice. */
   key: string;
   kind: MomentKind;
   title: string;
@@ -55,15 +62,6 @@ export interface Moment {
 type VisitRow = Pick<typeof kanwatchVisits.$inferSelect,
   'id' | 'startedAt' | 'endedAt' | 'activeSeconds' | 'isPrivate' | 'isBackground' | 'domain' | 'focus'>;
 
-/** Newest first, background media left out, and null when nothing is happening now. */
-function recentOf(visits: VisitRow[], now: number): VisitRow[] | null {
-  const recent = visits
-    .filter((v) => !v.isBackground)
-    .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
-  if (recent.length === 0 || now - recent[0].endedAt.getTime() > LIVE_WITHIN_MS) return null;
-  return recent;
-}
-
 /** Pages that count neither way: private, unread, or too little to tell. */
 const neutral = (v: VisitRow) => v.isPrivate || !v.domain || !v.focus || v.focus === 'unclear';
 
@@ -75,16 +73,27 @@ function describeSites(sites: string[]): string {
   return sites.length === 1 ? sites[0] : `${sites[0]} and ${sites[1]}`;
 }
 
+const quote = (priority: string) => `“${priority.trim().slice(0, 80)}”`;
+
+function hours(minutes: number): string {
+  if (minutes < 60) return `${minutes} minutes`;
+  const h = minutes / 60;
+  return h === 1 ? '1 hour' : `${h} hours`;
+}
+
 /**
  * Pure: a drift nudge, if these visits call for one.
  *
- * Time on pages read as other work or not work adds up; a page on the priority ends
- * the run, and so does stepping away. Neutral pages are passed over.
+ * Walks back from now. Time on pages read as other work or not work adds up; a page
+ * on the priority ends the run, and so does stepping away. Neutral pages are passed
+ * over.
  */
 export function pickNudge(visits: VisitRow[], priority: string | null | undefined, now = Date.now()): Moment | null {
   if (!priority?.trim()) return null;
-  const recent = recentOf(visits, now);
-  if (!recent) return null;
+  const recent = visits
+    .filter((v) => !v.isBackground)
+    .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+  if (recent.length === 0 || now - recent[0].endedAt.getTime() > LIVE_WITHIN_MS) return null;
 
   const bySite = new Map<string, number>();
   const ids: string[] = [];
@@ -110,92 +119,143 @@ export function pickNudge(visits: VisitRow[], priority: string | null | undefine
     key: `drift:${first.id}`,
     kind: 'drift',
     title: 'Still on today’s priority?',
-    message: `Today is for “${priority.trim().slice(0, 80)}”. The last ${minutes} minutes have mostly been ${describeSites(sites)}.`,
+    message: `Today is for ${quote(priority)}. The last ${minutes} minutes have mostly been ${describeSites(sites)}.`,
     sites: sites.slice(0, 5),
     minutes,
     visitIds: ids,
   };
+}
+
+interface Session {
+  first: VisitRow;
+  /** Seconds on the priority in this session. */
+  seconds: number;
+  lastPriorityEnd: number;
+  /** When the session was last distracted, or its start. */
+  cleanSince: number;
+  ids: string[];
+  sites: Map<string, number>;
 }
 
 /**
- * Pure: a celebration, if these visits have earned one — the start of work on the
- * priority, or the biggest milestone the current run has reached.
+ * Pure: the celebrations due now, most important first. `visits` is the whole day,
+ * so the day's total can be counted.
  */
-export function pickCelebration(visits: VisitRow[], priority: string | null | undefined, now = Date.now()): Moment | null {
-  if (!priority?.trim()) return null;
-  const recent = recentOf(visits, now);
-  if (!recent) return null;
+export function pickCelebrations(visits: VisitRow[], priority: string | null | undefined, now = Date.now(), date = ''): Moment[] {
+  if (!priority?.trim()) return [];
+  const ordered = visits
+    .filter((v) => !v.isBackground && v.startedAt.getTime() <= now)
+    .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
 
-  const bySite = new Map<string, number>();
-  const ids: string[] = [];
-  let seconds = 0;
-  let detours = 0;
-  let first: VisitRow | null = null;
-  let after = recent[0];
-  for (const v of recent) {
-    if (after.startedAt.getTime() - v.endedAt.getTime() > GAP_MS) break;
-    after = v;
+  let session: Session | null = null;
+  let sessions = 0;
+  let daySeconds = 0;
+  for (const v of ordered) {
     if (neutral(v)) continue;
     if (v.focus === 'priority') {
-      seconds += v.activeSeconds;
-      bySite.set(v.domain!, (bySite.get(v.domain!) ?? 0) + v.activeSeconds);
-      ids.push(v.id);
-      first = v;
-      continue;
+      daySeconds += v.activeSeconds;
+      if (!session || v.startedAt.getTime() - session.lastPriorityEnd > SESSION_BREAK_MS) {
+        session = { first: v, seconds: 0, lastPriorityEnd: 0, cleanSince: v.startedAt.getTime(), ids: [], sites: new Map() };
+        sessions++;
+      }
+      session.seconds += v.activeSeconds;
+      session.lastPriorityEnd = v.endedAt.getTime();
+      session.ids.push(v.id);
+      session.sites.set(v.domain!, (session.sites.get(v.domain!) ?? 0) + v.activeSeconds);
+    } else if (session && v.focus === 'not_work' && v.activeSeconds >= GLANCE_SECONDS) {
+      session.cleanSince = v.endedAt.getTime();
     }
-    // A glance elsewhere is a detour; anything longer is where the run began.
-    if (v.activeSeconds < DETOUR_SECONDS) { detours++; continue; }
-    break;
   }
 
-  const minutes = Math.round(seconds / 60);
-  if (!first || minutes < START_MINUTES) return null;
+  // Only a session you're still in: on the priority within the last few minutes.
+  if (!session || now - session.lastPriorityEnd > LIVE_WITHIN_MS) return [];
 
-  const what = `“${priority.trim().slice(0, 80)}”`;
-  const sites = sitesByTime(bySite);
-  const reached = [...MILESTONES].reverse().find((m) => minutes >= m);
-  if (!reached) {
-    return {
-      key: `start:${first.id}`,
+  const what = quote(priority);
+  const sites = sitesByTime(session.sites);
+  const minutes = Math.round(session.seconds / 60);
+  const base = { sites: sites.slice(0, 5), visitIds: session.ids.slice(-300) };
+  const due: Moment[] = [];
+
+  if (minutes >= START_MINUTES) {
+    due.push({
+      ...base,
+      key: `start:${session.first.id}`,
       kind: 'start',
-      title: 'You’re on it',
-      message: `Started on ${what} — ${describeSites(sites)}. Nice.`,
-      sites: sites.slice(0, 5),
+      title: sessions === 1 ? 'You’re on it' : 'Back on it',
+      message: sessions === 1
+        ? `Started on ${what} — ${describeSites(sites)}. Way to go.`
+        : `Back on ${what} — ${describeSites(sites)}. Nice.`,
       minutes,
-      visitIds: ids,
-    };
+    });
   }
-  const clean = detours === 0 ? 'without drifting' : `with ${detours} quick detour${detours === 1 ? '' : 's'}`;
-  return {
-    key: `deep:${first.id}:${reached}`,
-    kind: 'milestone',
-    title: reached >= 90 ? `${reached} minutes deep` : reached >= 50 ? `Deep session: ${reached} minutes` : `${reached} minutes, focused`,
-    message: reached >= 90
-      ? `${minutes} minutes on ${what}, ${clean}. That’s a long stretch — a short break keeps the next one sharp.`
-      : `${minutes} minutes on ${what}, ${clean}. Keep going.`,
-    sites: sites.slice(0, 5),
-    minutes,
-    visitIds: ids,
-  };
+
+  const deep = [...SESSION_MILESTONES].reverse().find((m) => minutes >= m);
+  if (deep) {
+    due.push({
+      ...base,
+      key: `deep:${session.first.id}:${deep}`,
+      kind: 'milestone',
+      title: deep >= 90 ? `${deep} minutes deep` : deep >= 50 ? `Deep session: ${deep} minutes` : `${deep} minutes in`,
+      message: deep >= 90
+        ? `${minutes} minutes on ${what} this session. That’s a long stretch — a short break keeps the next one sharp.`
+        : `${minutes} minutes on ${what} this session. Keep going.`,
+      minutes,
+    });
+  }
+
+  const clean = Math.floor((now - session.cleanSince) / 60000);
+  if (clean >= CLEAN_MINUTES && minutes >= START_MINUTES) {
+    due.push({
+      ...base,
+      key: `clean:${session.first.id}:${session.cleanSince}`,
+      kind: 'milestone',
+      title: `${CLEAN_MINUTES} minutes, no distractions`,
+      message: `Nothing pulled you off ${what} for ${clean} minutes. That’s focus.`,
+      minutes,
+    });
+  }
+
+  const dayMinutes = Math.round(daySeconds / 60);
+  const day = [...DAY_MILESTONES].reverse().find((m) => dayMinutes >= m);
+  if (day) {
+    due.push({
+      ...base,
+      key: `today:${date || localDate(now, 0)}:${day}`,
+      kind: 'milestone',
+      title: `${hours(day)} on it today`,
+      message: `${hours(day)} on ${what} today. ${day >= 120 ? 'A real day’s work.' : 'Building up.'}`,
+      minutes: dayMinutes,
+    });
+  }
+
+  return due;
 }
 
-/** Drift outranks a celebration: it's the one worth interrupting for. */
-export function pickMoment(visits: VisitRow[], priority: string | null | undefined, now = Date.now()): Moment | null {
-  return pickNudge(visits, priority, now) ?? pickCelebration(visits, priority, now);
+/**
+ * Everything due now, most important first: drift, then the start of a session, then
+ * milestones.
+ */
+export function pickMoments(visits: VisitRow[], priority: string | null | undefined, now = Date.now(), date = ''): Moment[] {
+  const drift = pickNudge(visits, priority, now);
+  return [...(drift ? [drift] : []), ...pickCelebrations(visits, priority, now, date)];
 }
 
-export async function momentFor(userId: string, tzOffsetMinutes: number | null): Promise<Moment | null> {
+export async function momentsFor(userId: string, tzOffsetMinutes: number | null): Promise<Moment[]> {
   const now = Date.now();
+  const date = localDate(now, tzOffsetMinutes);
   const day = await db.query.kanwatchDays.findFirst({
-    where: eq(kanwatchDays.id, `${userId}:${localDate(now, tzOffsetMinutes)}`),
+    where: eq(kanwatchDays.id, `${userId}:${date}`),
     columns: { intention: true },
   });
-  if (!day?.intention?.trim()) return null;
+  if (!day?.intention?.trim()) return [];
+  // The whole local day, for the day's total.
+  const [y, m, d] = date.split('-').map(Number);
+  const dayStart = Date.UTC(y, m - 1, d) + (tzOffsetMinutes ?? 0) * 60000;
   const visits = await db.query.kanwatchVisits.findMany({
-    where: and(eq(kanwatchVisits.userId, userId), gte(kanwatchVisits.startedAt, new Date(now - LOOKBACK_MS))),
+    where: and(eq(kanwatchVisits.userId, userId), gte(kanwatchVisits.startedAt, new Date(dayStart))),
     columns: { id: true, startedAt: true, endedAt: true, activeSeconds: true, isPrivate: true, isBackground: true, domain: true, focus: true },
   });
-  return pickMoment(visits, day.intention, now);
+  return pickMoments(visits, day.intention, now, date);
 }
 
 /**

@@ -15,7 +15,7 @@
  * Only scrubbed, stored fields are sent — the same ones you can see on the page.
  */
 
-import { and, asc, desc, eq, gte, inArray, isNotNull, like, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, like, lt, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { kanwatchDays, kanwatchEpisodes, kanwatchSites, kanwatchVisits } from '@/lib/db/schema';
 import { askJev, isJevConfigured } from '@/lib/jev/client';
@@ -407,6 +407,56 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
 }
 
 const LIVE_READ_EVERY_MS = 2 * 60 * 1000;
+
+/**
+ * Pages you've already been on today, read the moment they arrive: the editor you
+ * keep going back to was judged an hour ago, and nothing about it changed. New pages
+ * wait for Jev. Your own answers win over Jev's reads.
+ */
+export async function inheritFocus(userId: string, since: Date): Promise<number> {
+  const today = await db.query.kanwatchVisits.findMany({
+    where: and(eq(kanwatchVisits.userId, userId), gte(kanwatchVisits.startedAt, since), eq(kanwatchVisits.isPrivate, false)),
+    columns: { id: true, domain: true, path: true, title: true, focus: true, focusVerdict: true, startedAt: true },
+    orderBy: [asc(kanwatchVisits.startedAt)],
+  });
+  const known = new Map<string, { focus: string; yours: boolean }>();
+  const writes = new Map<string, string[]>();
+  for (const v of today) {
+    if (!v.domain) continue;
+    const key = pageKey(v);
+    if (v.focus) {
+      const prev = known.get(key);
+      if (!prev || !prev.yours || v.focusVerdict) known.set(key, { focus: v.focus, yours: !!v.focusVerdict });
+      continue;
+    }
+    const from = known.get(key);
+    if (from) writes.set(from.focus, [...(writes.get(from.focus) ?? []), v.id]);
+  }
+  let n = 0;
+  for (const [focus, ids] of writes) {
+    await db.update(kanwatchVisits).set({ focus: focus as PageFocus }).where(inArray(kanwatchVisits.id, ids));
+    n += ids.length;
+  }
+  return n;
+}
+
+/**
+ * Read the stretch you're in right now, if it has pages no one has read yet. Used
+ * before deciding a moment, so a celebration is about what you're doing rather than
+ * what you were doing a check-in ago.
+ */
+export async function judgeCurrent(userId: string): Promise<void> {
+  if (!isJevConfigured()) return;
+  const open = await db.query.kanwatchEpisodes.findFirst({
+    where: and(eq(kanwatchEpisodes.userId, userId), eq(kanwatchEpisodes.status, 'open')),
+  });
+  if (!open) return;
+  const unread = await db.query.kanwatchVisits.findFirst({
+    where: and(eq(kanwatchVisits.episodeId, open.id), eq(kanwatchVisits.isPrivate, false), isNull(kanwatchVisits.focus)),
+    columns: { id: true },
+  });
+  if (unread) await judgeEpisode(open.id);
+}
 
 /**
  * Read what needs reading: finished episodes not yet judged, and the episode in

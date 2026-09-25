@@ -3,7 +3,7 @@ import { isPrivateUrl } from './privacy.js';
 const $ = (id) => document.getElementById(id);
 
 /** The version this popup was written for. Kept equal to manifest.json by a test. */
-export const POPUP_VERSION = '0.4.0';
+export const POPUP_VERSION = '0.5.0';
 
 /** Which version the background worker is actually running, or null if it can't say. */
 async function workerVersion() {
