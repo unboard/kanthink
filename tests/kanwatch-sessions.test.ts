@@ -10,7 +10,7 @@ import { describe, it, expect, vi } from 'vitest'
 vi.mock('@/lib/db', () => ({ db: {} }))
 vi.mock('@/lib/api/permissions', () => ({ getUserChannels: vi.fn() }))
 
-import { groupSessions, readingOf, SESSION_GAP_MS, type Names } from '@/lib/kanwatch/sessions'
+import { attachBackground, groupSessions, readingOf, SESSION_GAP_MS, type Names } from '@/lib/kanwatch/sessions'
 
 const MIN = 60000
 const T0 = Date.UTC(2026, 8, 24, 14, 0)
@@ -108,5 +108,27 @@ describe('groupSessions', () => {
     const b = episode({ startedAt: new Date(T0 + 6 * MIN), endedAt: new Date(T0 + 9 * MIN), guessProbability: 55 })
     const [s] = groupSessions([a, b], [], names)
     expect(s.answered).toBe(false)
+  })
+})
+
+
+describe('attachBackground', () => {
+  it('attaches what played during a session, by overlap, without adding active time', () => {
+    const a = episode({ startedAt: new Date(T0), endedAt: new Date(T0 + 20 * MIN), activeSeconds: 1200 })
+    const [s] = groupSessions([a], [], names)
+    const bg = visit('', {
+      episodeId: null, isBackground: true, domain: 'youtube.com', title: 'Lofi beats',
+      startedAt: new Date(T0 - 5 * MIN), endedAt: new Date(T0 + 10 * MIN), activeSeconds: 900,
+    })
+    const [withBg] = attachBackground([s], [bg])
+    expect(withBg.alongside).toEqual([{ site: 'youtube.com', title: 'Lofi beats', seconds: 600 }])
+    expect(withBg.activeSeconds).toBe(1200)
+  })
+
+  it('ignores media that barely overlapped', () => {
+    const a = episode({ startedAt: new Date(T0), endedAt: new Date(T0 + 10 * MIN) })
+    const [s] = groupSessions([a], [], names)
+    const bg = visit('', { isBackground: true, domain: 'youtube.com', startedAt: new Date(T0 + 10 * MIN - 10000), endedAt: new Date(T0 + 30 * MIN) })
+    expect(attachBackground([s], [bg])[0].alongside).toEqual([])
   })
 })

@@ -4,8 +4,8 @@ import { db } from '@/lib/db';
 import { cards, channels, folders, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits, playgroundApps, userChannelOrg } from '@/lib/db/schema';
 import { judgePendingReads } from '@/lib/kanwatch/reads';
 import { requeueForBoardChange } from '@/lib/kanwatch/board';
-import { groupSessions, readingOf } from '@/lib/kanwatch/sessions';
-import { namesFor } from '@/lib/kanwatch/story';
+import { attachBackground, groupSessions, readingOf } from '@/lib/kanwatch/sessions';
+import { loadBackground, namesFor } from '@/lib/kanwatch/story';
 import { kanwatchUser } from '@/lib/kanwatch/access';
 import { closeStaleEpisodes } from '@/lib/kanwatch/ingest';
 import { judgePending, summarizePages } from '@/lib/kanwatch/judge';
@@ -104,7 +104,18 @@ export async function GET(request: Request) {
   // Every stretch's "for" in one form (Folder / Channel › Card), and stretches grouped
   // into sessions — the same reading the day story and Kan's context use.
   const names = await namesFor(userId, [...cardTitle.keys()]);
-  const sessions = groupSessions(episodes, visits, names);
+  const background = await loadBackground(userId, from, to);
+  const sessions = attachBackground(groupSessions(episodes, visits, names), background);
+  // Everything that played alongside today, by what it was.
+  const alongside = [...background.reduce((m, b) => {
+    if (!b.domain || b.startedAt.getTime() < from) return m;
+    const key = `${b.domain}|${b.title ?? ''}`;
+    const cur = m.get(key) ?? { site: b.domain, title: b.title ?? '', seconds: 0 };
+    cur.seconds += b.activeSeconds;
+    return m.set(key, cur);
+  }, new Map<string, { site: string; title: string; seconds: number }>()).values()]
+    .sort((a, b) => b.seconds - a.seconds)
+    .slice(0, 6);
   const pageCount = (id: string) => visits.filter((v) => v.episodeId === id && !v.isPrivate && v.domain).length;
 
   // Your folders, so the breakdown can group channels the way your sidebar does.
@@ -198,6 +209,7 @@ export async function GET(request: Request) {
       return [...new Set(rows.map((r) => r.label?.trim()).filter((l): l is string => !!l))].slice(0, 30);
     })(),
     sessions,
+    alongside,
     episodes: episodes.map((e) => ({
       id: e.id,
       reading: readingOf(e, pageCount(e.id), names),

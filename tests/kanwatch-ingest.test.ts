@@ -120,3 +120,15 @@ describe('localDate', () => {
     expect(localDate(Date.UTC(2026, 8, 25, 2, 30), 300)).toBe('2026-09-24')
   })
 })
+
+describe('background media', () => {
+  it('is kept as context: site and title only, flagged as background', () => {
+    const v = cleanVisit(visit({ background: true, domain: 'youtube.com', path: '/watch', title: 'Lofi beats to work to', keystrokes: 50 }), NOW)
+    expect(v).toMatchObject({ isBackground: true, domain: 'youtube.com', title: 'Lofi beats to work to' })
+    expect(v).not.toHaveProperty('keystrokes')
+  })
+
+  it('is dropped entirely on a private page, not even counted as private time', () => {
+    expect(cleanVisit(visit({ background: true, domain: 'mychart.com', path: '/video' }), NOW)).toBeNull()
+  })
+})

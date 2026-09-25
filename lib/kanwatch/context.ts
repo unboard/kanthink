@@ -62,6 +62,7 @@ interface DaySummary {
   stretches: { from: number; to: number; area: string; pages: string[] }[];
   worth: { title: string; site: string; tldr: string; nudge: string | null; answered: boolean; appIdea: boolean; relatedApp: string | null; built: boolean }[];
   wants: { site: string; want: string; seconds: number }[];
+  alongside: { site: string; title: string; seconds: number }[];
 }
 
 async function summarizeDay(userId: string, date: string, tz: number): Promise<DaySummary | null> {
@@ -98,6 +99,23 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
     }),
     db.query.kanwatchSites.findMany({ where: and(eq(kanwatchSites.userId, userId), isNotNull(kanwatchSites.want)) }),
   ]);
+  const background = await db.query.kanwatchVisits.findMany({
+    where: and(
+      eq(kanwatchVisits.userId, userId),
+      eq(kanwatchVisits.isBackground, true),
+      gte(kanwatchVisits.startedAt, new Date(from)),
+      lt(kanwatchVisits.startedAt, new Date(to)),
+    ),
+    columns: { domain: true, title: true, activeSeconds: true },
+  });
+  const alongsideBy = new Map<string, { site: string; title: string; seconds: number }>();
+  for (const b of background) {
+    if (!b.domain) continue;
+    const key = `${b.domain}|${b.title ?? ''}`;
+    const cur = alongsideBy.get(key) ?? { site: b.domain, title: b.title ?? '', seconds: 0 };
+    cur.seconds += b.activeSeconds;
+    alongsideBy.set(key, cur);
+  }
   // "MyCreativeShop / Work": a channel name alone is ambiguous when folders repeat them.
   const channelName = new Map(board.channels.map((c) => [c.id, c.folder ? `${c.folder} / ${c.name}` : c.name]));
   const cardTitle = new Map(cardRows.map((c) => [c.id, c.title]));
@@ -168,6 +186,7 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
     wants: siteRows
       .map((s) => ({ site: s.domain, want: s.want!, seconds: siteSeconds.get(s.domain) ?? 0 }))
       .filter((s) => s.want !== 'right' && s.seconds >= 10 * 60),
+    alongside: [...alongsideBy.values()].filter((a) => a.seconds >= 5 * 60).sort((a, b) => b.seconds - a.seconds).slice(0, 4),
   };
 }
 
@@ -186,6 +205,9 @@ function describeDay(s: DaySummary, label: string, tz: number, detail: boolean):
   if (s.areas.length) lines.push(`- Where the work time went: ${s.areas.map((a) => `${a.name} (${spoken(a.seconds)})`).join(', ')}.`);
   if (s.modes.length) lines.push(`- Mostly: ${s.modes.map((m) => MODE_WORDS[m.mode] ?? m.mode).join(', ')}.`);
   if (s.now) lines.push(`- Right now: ${s.now.area ?? 'unclear'}${s.now.mode ? `, ${MODE_WORDS[s.now.mode] ?? s.now.mode}` : ''}${s.now.pages.length ? ` — ${s.now.pages.join('; ')}` : ''}.`);
+  if (s.alongside.length) {
+    lines.push(`- Playing in another tab while they worked (background, not counted as attention): ${s.alongside.map((a) => `${a.title ? `"${a.title}" ` : ''}on ${a.site} (${spoken(a.seconds)})`).join('; ')}.`);
+  }
   if (s.wants.length) lines.push(`- Sites they said they want ${s.wants.map((w) => `${w.want} of: ${w.site} (${spoken(w.seconds)} today)`).join('; ')}.`);
   if (detail && s.stretches.length) {
     lines.push('- Stretches of the day:');

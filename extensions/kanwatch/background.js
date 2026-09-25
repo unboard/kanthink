@@ -234,6 +234,68 @@ async function maybeReadPage(visit, manual = false) {
   await setSession(session);
 }
 
+// ---- background media ---------------------------------------------------------
+//
+// A tab playing sound that isn't the page you're working on — music or a video on your
+// other screen. Recorded alongside, never as attention: it adds no active time.
+// Same privacy rules; private pages are dropped entirely rather than counted.
+
+async function finishBackground(item, now) {
+  const seconds = Math.round((now - item.startedAt) / 1000);
+  if (seconds < 30) return;
+  const settings = await getSettings();
+  const clean = sanitizeVisit({ url: item.url, title: item.title, includeSearch: false, extraPrivateDomains: settings.extraPrivateDomains });
+  if (clean.private) return;
+  await enqueue({
+    id: item.id,
+    background: true,
+    startedAt: item.startedAt,
+    endedAt: now,
+    activeSeconds: seconds,
+    domain: clean.domain,
+    path: clean.path,
+    title: clean.title,
+  });
+}
+
+async function refreshBackground() {
+  const now = Date.now();
+  const session = await getSession();
+  const tracked = session.background ?? {};
+  const paused = await isPaused();
+
+  let audible = [];
+  if (!paused) {
+    audible = (await chrome.tabs.query({ audible: true }))
+      .filter((t) => !t.incognito && isWeb(t.url) && t.id !== session.current?.tabId);
+  }
+  const live = new Map(audible.map((t) => [String(t.id), t]));
+
+  const next = {};
+  for (const [tabId, item] of Object.entries(tracked)) {
+    const tab = live.get(tabId);
+    // Ended: stopped playing, closed, became the page you're on, or moved to another page.
+    if (!tab || !sameUrl(tab.url, item.url)) {
+      await finishBackground(item, now);
+      continue;
+    }
+    // Long listening is split, like long visits, so it shows up as it happens.
+    if (now - item.startedAt >= CHECKPOINT_MS) {
+      await finishBackground(item, now);
+      next[tabId] = { ...item, id: newId(), startedAt: now, title: tab.title || item.title };
+    } else {
+      next[tabId] = { ...item, title: tab.title || item.title };
+    }
+  }
+  for (const [tabId, tab] of live) {
+    if (!next[tabId]) next[tabId] = { id: newId(), tabId: tab.id, url: tab.url, title: tab.title || '', startedAt: now };
+  }
+
+  const latest = await getSession();
+  latest.background = next;
+  await setSession(latest);
+}
+
 // ---- upload -------------------------------------------------------------------
 
 async function upload() {
@@ -283,14 +345,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== 'tick') return;
   serial(async () => {
     await refresh();
+    await refreshBackground();
     await upload();
   });
 });
 
-chrome.tabs.onActivated.addListener(() => serial(refresh));
-chrome.tabs.onRemoved.addListener(() => serial(refresh));
+const refreshAll = async () => {
+  await refresh();
+  await refreshBackground();
+};
+
+chrome.tabs.onActivated.addListener(() => serial(refreshAll));
+chrome.tabs.onRemoved.addListener(() => serial(refreshAll));
 chrome.tabs.onUpdated.addListener((_id, change) => {
-  if (change.url || change.title || change.status === 'complete') serial(refresh);
+  if (change.url || change.title || change.status === 'complete' || 'audible' in change) serial(refreshAll);
 });
 chrome.windows.onFocusChanged.addListener((windowId) => serial(async () => {
   const session = await getSession();
@@ -330,8 +398,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     serial(async () => {
       const session = await getSession();
       const current = session.current;
-      if (msg.type === 'engagement' && msg.playing) session.mediaAt = Date.now();
-      if (current && current.tabId === tab.id && sameUrl(current.url, tab.url)) {
+      const isCurrent = current && current.tabId === tab.id && sameUrl(current.url, tab.url);
+      // A video keeps you "present" only on the page you're on. One playing on your
+      // other screen is background, tracked separately — it isn't attention here.
+      if (msg.type === 'engagement' && msg.playing && isCurrent) session.mediaAt = Date.now();
+      if (isCurrent) {
         if (msg.type === 'meta') {
           current.heading = String(msg.heading || '').slice(0, 300);
           current.description = String(msg.description || '').slice(0, 500);

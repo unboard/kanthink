@@ -18,7 +18,7 @@ import { getLLMClientForUser } from '@/lib/ai/llm';
 import { recordUsage } from '@/lib/usage';
 import { loadAccess } from '@/lib/voice/resolveReference';
 import { loadBoard } from './board';
-import { groupSessions, type Names, type Session } from './sessions';
+import { attachBackground, groupSessions, type Names, type Session } from './sessions';
 
 const REWRITE_AFTER_MS = 10 * 60 * 1000;
 
@@ -67,8 +67,23 @@ export async function loadDaySessions(userId: string, from: number, to: number) 
     ? await db.query.kanwatchVisits.findMany({ where: inArray(kanwatchVisits.episodeId, episodes.map((e) => e.id)) })
     : [];
   const cardIds = [...new Set(episodes.flatMap((e) => [e.guessCardId, e.verdictCardId]).filter((x): x is string => !!x))];
-  const names = await namesFor(userId, cardIds);
-  return { episodes, visits, names, sessions: groupSessions(episodes, visits, names) };
+  const [names, background] = await Promise.all([
+    namesFor(userId, cardIds),
+    loadBackground(userId, from, to),
+  ]);
+  return { episodes, visits, names, background, sessions: attachBackground(groupSessions(episodes, visits, names), background) };
+}
+
+/** Media that played alongside, in a day's range. */
+export async function loadBackground(userId: string, from: number, to: number) {
+  return db.query.kanwatchVisits.findMany({
+    where: and(
+      eq(kanwatchVisits.userId, userId),
+      eq(kanwatchVisits.isBackground, true),
+      gte(kanwatchVisits.startedAt, new Date(from - 60 * 60 * 1000)),
+      lt(kanwatchVisits.startedAt, new Date(to)),
+    ),
+  });
 }
 
 function clockAt(ms: number, tz: number): string {
@@ -111,7 +126,7 @@ export async function storyFor(
 
   const signature = fnv([
     day?.intention ?? '',
-    ...sessions.map((s) => `${s.id}:${s.endedAt}:${s.reading.key}:${s.answered}`),
+    ...sessions.map((s) => `${s.id}:${s.endedAt}:${s.reading.key}:${s.answered}:${s.alongside.length}`),
     ...reads.map((r) => r.id),
   ].join('|'));
 
@@ -132,6 +147,9 @@ export async function storyFor(
       active: minutes(s.activeSeconds - s.privateSeconds),
       for: s.reading.label,
       doing: s.modes.map((m) => m.mode),
+      playing_alongside: s.alongside.length
+        ? s.alongside.map((a) => ({ site: a.site, title: a.title || undefined, time: minutes(a.seconds) }))
+        : undefined,
       pages: s.pages.slice(0, 6).map((p) => ({
         site: p.site,
         title: p.title || undefined,
@@ -154,6 +172,8 @@ export async function storyFor(
           `You are Kan, writing ${firstName}'s own record of their day from what their browser saw. Second person, plain, specific. ` +
           'Say what the time actually went into — name the real work from page titles (e.g. "print orders in MCS Admin"), not just sites. ' +
           'Rules: no judgment, praise or productivity advice; never speculate about private time; only mention what the day was for as a plain comparison, if it was set. ' +
+          '`playing_alongside` is sound from another tab — usually a second screen — while they worked; it is not attention. ' +
+          'When it is notable, say plainly what it was and whether it relates to the work (a talk on the same subject) or not (music, an unrelated video). Never call it a distraction; that is theirs to judge. ' +
           'Loose ends must be concrete and drawn from the data (a page they kept returning to, a search they did not follow up, a long read that ended abruptly) — or none. ' +
           'Reply with JSON only: {"headline": "one sentence on the day", ' +
           '"threads": [{"title": "2–5 words", "detail": "one sentence with the specifics and time"}] (2–4 of them, largest first), ' +

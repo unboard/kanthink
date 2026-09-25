@@ -1489,6 +1489,9 @@ export const kanwatchVisits = sqliteTable('kanwatch_visits', {
   endedAt: integer('ended_at', { mode: 'timestamp' }).notNull(),
   activeSeconds: integer('active_seconds').notNull().default(0),
   isPrivate: integer('is_private', { mode: 'boolean' }).notNull().default(false),
+  // Playing alongside — sound from a tab that wasn't the page you were on. Context,
+  // never attention: it belongs to no episode and adds no active time.
+  isBackground: integer('is_background', { mode: 'boolean' }).default(false),
   domain: text('domain'),
   path: text('path'),
   title: text('title'),

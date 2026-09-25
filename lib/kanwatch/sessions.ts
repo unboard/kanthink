@@ -96,6 +96,28 @@ export interface Session {
   focusScore: number | null;
   pages: ReturnType<typeof summarizePages>;
   basis: { notes: string[]; pastAnswers: number } | null;
+  /** Media playing in another tab during the session: context, not attention. */
+  alongside: { site: string; title: string; seconds: number }[];
+}
+
+/**
+ * What played alongside each session, by overlap in time. Sessions are ordered; a
+ * background play that spans two sessions counts toward each for the part it overlaps.
+ */
+export function attachBackground(sessions: Session[], background: VisitRow[]): Session[] {
+  return sessions.map((s) => {
+    const by = new Map<string, { site: string; title: string; seconds: number }>();
+    for (const b of background) {
+      if (!b.domain) continue;
+      const overlap = Math.min(s.endedAt, b.endedAt.getTime()) - Math.max(s.startedAt, b.startedAt.getTime());
+      if (overlap < 30000) continue;
+      const key = `${b.domain}|${b.title ?? ''}`;
+      const cur = by.get(key) ?? { site: b.domain, title: b.title ?? '', seconds: 0 };
+      cur.seconds += Math.round(overlap / 1000);
+      by.set(key, cur);
+    }
+    return { ...s, alongside: [...by.values()].sort((a, b) => b.seconds - a.seconds).slice(0, 3) };
+  });
 }
 
 export function groupSessions(episodes: EpisodeRow[], visits: VisitRow[], names: Names): Session[] {
@@ -118,7 +140,7 @@ export function groupSessions(episodes: EpisodeRow[], visits: VisitRow[], names:
       s = {
         id: e.id, episodeIds: [], startedAt: e.startedAt.getTime(), endedAt: e.endedAt.getTime(),
         activeSeconds: 0, privateSeconds: 0, reading, modes: [], live: false, answered: true,
-        focusScore: null, pages: [], basis: null, _visits: [], _focus: [0, 0],
+        focusScore: null, pages: [], basis: null, alongside: [], _visits: [], _focus: [0, 0],
       };
       sessions.push(s);
     }

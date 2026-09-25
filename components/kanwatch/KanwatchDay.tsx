@@ -46,6 +46,8 @@ interface SessionData {
   focusScore: number | null;
   pages: Page[];
   basis: { notes: string[]; pastAnswers: number } | null;
+  /** Media playing in another tab meanwhile — context, not attention. */
+  alongside: { site: string; title: string; seconds: number }[];
 }
 
 interface DayStory {
@@ -110,6 +112,8 @@ interface DayData {
   /** Areas you've named before, in your own words. */
   areas: string[];
   sessions: SessionData[];
+  /** Everything that played alongside today. */
+  alongside?: { site: string; title: string; seconds: number }[];
   episodes: Episode[];
   sites: Site[];
   week: { start: number; activeSeconds: number; notWorkSeconds: number; privateSeconds: number }[];
@@ -344,7 +348,7 @@ export function KanwatchDay() {
             <Intention key={`${date}:${data.intention}`} date={date} value={data.intention} onSaved={() => { load(date); loadStory(date, true); }} />
             <Summary data={data} />
             <Timeline episodes={data.episodes} />
-            <WhereItWent episodes={data.episodes} />
+            <WhereItWent episodes={data.episodes} alongside={data.alongside ?? []} />
             <WorthALook reads={data.reads} channels={data.channels} onChanged={() => load(date)} />
             <Sessions
               sessions={data.sessions ?? []}
@@ -585,7 +589,7 @@ function Timeline({ episodes }: { episodes: Episode[] }) {
   );
 }
 
-function WhereItWent({ episodes }: { episodes: Episode[] }) {
+function WhereItWent({ episodes, alongside }: { episodes: Episode[]; alongside: NonNullable<DayData['alongside']> }) {
   const { groups, modes, total } = useMemo(() => {
     const items = new Map<string, { key: string; label: string; short: string; folder: string | null; color: string; seconds: number }>();
     const m = new Map<string, number>();
@@ -679,7 +683,7 @@ function WhereItWent({ episodes }: { episodes: Episode[] }) {
           })}
         </div>
       </div>
-      {modes.length > 0 && (
+      {(modes.length > 0 || alongside.length > 0) && (
         <div>
           <SectionTitle>What you were doing</SectionTitle>
           <div className="space-y-2">
@@ -693,6 +697,23 @@ function WhereItWent({ episodes }: { episodes: Episode[] }) {
               </div>
             ))}
           </div>
+          {alongside.length > 0 && (
+            <div className="mt-5">
+              <div className="mb-1.5 text-[11px] text-neutral-400" title="Sound from a tab you weren't on — your other screen, usually. Not counted as active time.">
+                ▶ Playing alongside <span className="text-neutral-400/70">· not counted as active time</span>
+              </div>
+              <ul className="space-y-1">
+                {alongside.map((a) => (
+                  <li key={`${a.site}|${a.title}`} className="flex items-baseline justify-between gap-3 text-[13px]">
+                    <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">
+                      <span className="text-neutral-400">{a.site}</span>{a.title ? ` · ${a.title}` : ''}
+                    </span>
+                    <span className="flex-shrink-0 tabular-nums text-neutral-400">{duration(a.seconds)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -817,6 +838,11 @@ function SessionRow({
             <span>· {s.focusScore >= 67 ? 'on plan' : s.focusScore >= 34 ? 'near the plan' : 'off plan'}</span>
           )}
           {s.privateSeconds > 0 && <span>· {duration(s.privateSeconds)} private</span>}
+          {s.alongside?.[0] && (
+            <span className="max-w-[18rem] truncate" title={s.alongside.map((a) => `${a.site}${a.title ? ` · ${a.title}` : ''} (${duration(a.seconds)})`).join('\n')}>
+              · ▶ {s.alongside[0].title || s.alongside[0].site} alongside
+            </span>
+          )}
           <button onClick={() => setShowPages(!showPages)} className="ml-1 text-neutral-500 underline-offset-2 hover:text-neutral-800 hover:underline dark:hover:text-neutral-200">
             {showPages ? 'hide pages' : `${s.pages.length} ${s.pages.length === 1 ? 'page' : 'pages'}`}
           </button>

@@ -24,6 +24,8 @@ export interface IncomingVisit {
   endedAt: number;
   activeSeconds: number;
   private?: boolean;
+  /** Sound from a tab you weren't on: recorded alongside, never as attention. */
+  background?: boolean;
   domain?: string;
   path?: string;
   title?: string;
@@ -69,7 +71,12 @@ export function cleanVisit(v: IncomingVisit, now = Date.now()): CleanVisit | nul
     isPrivateTitle(v.title) ||
     isPrivateTitle(v.heading);
 
-  if (privateVisit) return { ...base, isPrivate: true };
+  // Background media on a private page is dropped, not counted: it was never attention.
+  if (privateVisit) return v.background ? null : { ...base, isPrivate: true };
+
+  if (v.background) {
+    return { ...base, isPrivate: false, isBackground: true, domain: where.domain, path: where.path, title: scrubText(v.title, 200) };
+  }
 
   return {
     ...base,
@@ -99,7 +106,14 @@ export async function ingestVisits(userId: string, incoming: IncomingVisit[], tz
       })
     : [];
   const seen = new Set(existing.map((e) => e.id));
-  const fresh = cleaned.filter((v) => !seen.has(v.id));
+  const all = cleaned.filter((v) => !seen.has(v.id));
+  // Background media belongs to no episode and adds no time; it is linked to the day
+  // by when it played.
+  const background = all.filter((v) => v.isBackground);
+  const fresh = all.filter((v) => !v.isBackground);
+  if (background.length) {
+    await db.insert(kanwatchVisits).values(background.map((v) => ({ ...v, userId, episodeId: null }))).onConflictDoNothing();
+  }
 
   if (fresh.length > 0) {
     const open = await db.query.kanwatchEpisodes.findFirst({
@@ -164,7 +178,7 @@ export async function ingestVisits(userId: string, incoming: IncomingVisit[], tz
 
   await expireReadText(userId);
 
-  return { received: incoming.length, stored: fresh.length };
+  return { received: incoming.length, stored: fresh.length + background.length };
 }
 
 /** An open episode nobody has added to for a while is finished. */
