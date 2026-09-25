@@ -145,8 +145,13 @@ async function summarizeDay(userId: string, date: string, tz: number): Promise<D
   for (const e of episodes) {
     active += e.activeSeconds;
     priv += e.privateSeconds;
-    const pub = e.activeSeconds - e.privateSeconds;
     const area = areaOf(e);
+    // Pages read as not work leave the area they sat in, as on the Kanwatch page.
+    const off = area === 'not work' ? 0 : visits
+      .filter((v) => v.episodeId === e.id && !v.isPrivate && v.focus === 'not_work')
+      .reduce((n, v) => n + v.activeSeconds, 0);
+    const pub = Math.max(0, e.activeSeconds - e.privateSeconds - off);
+    notWork += off;
     if (area === 'not work') notWork += pub;
     else if (area && pub > 0) areas.set(area.split(' › ')[0], (areas.get(area.split(' › ')[0]) ?? 0) + pub);
     const mode = e.verdictMode ?? e.activityMode;

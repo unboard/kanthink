@@ -144,27 +144,31 @@ export async function GET(request: Request) {
   }
   const topSites = [...siteSeconds.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
 
-  // Kan's read on each site, from the episodes it appeared in: your answers first,
-  // then Jev's reads. Shown as a hint where you haven't described the site yourself.
-  const episodeSites = new Map(episodes.map((e) => [e.id, new Set(visits.filter((v) => v.episodeId === e.id && v.domain).map((v) => v.domain!))]));
-  const readOf = (e: (typeof episodes)[number]): string | null => {
-    if (e.verdict === 'not_work') return 'Not work';
-    if (e.verdict) return (e.verdictCardId && cardTitle.get(e.verdictCardId)) || (e.verdictChannelId && channelName.get(e.verdictChannelId)) || e.label || null;
-    if (e.guessKind === 'not_work') return 'Not work';
-    if (e.guessKind === 'area') return e.guessLabel;
-    if (e.guessKind === 'channel' || e.guessKind === 'card') {
-      return (e.guessCardId && cardTitle.get(e.guessCardId)) || (e.guessChannelId && channelName.get(e.guessChannelId)) || null;
-    }
-    return null;
-  };
+  // Kan's read on each site, from how its own pages were read — not from the stretch
+  // they sat in, which is how a feed inside a work session came out as "Work". Just
+  // work or not: "✓ Right" keeps this as your note on the site, so it has to be true
+  // on any day, and "on today's priority" is not.
   const kanThinks = (domain: string): string | null => {
-    const counts = new Map<string, number>();
-    for (const e of episodes) {
-      if (!episodeSites.get(e.id)?.has(domain)) continue;
-      const read = readOf(e);
-      if (read) counts.set(read, (counts.get(read) ?? 0) + (e.verdict ? 3 : 1));
+    let work = 0, notWork = 0;
+    for (const v of visits) {
+      if (v.domain !== domain) continue;
+      if (v.focus === 'priority' || v.focus === 'work') work += v.activeSeconds;
+      if (v.focus === 'not_work') notWork += v.activeSeconds;
     }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    if (work + notWork === 0) return null;
+    return notWork > work ? 'Not work' : 'Work';
+  };
+  // Each stretch split by its pages' reads, so the day's numbers count a feed as a
+  // feed even when the stretch it sat in was work.
+  const splitOf = (episodeId: string) => {
+    const s = { priority: 0, work: 0, notWork: 0 };
+    for (const v of visits) {
+      if (v.episodeId !== episodeId || v.isPrivate) continue;
+      if (v.focus === 'priority') s.priority += v.activeSeconds;
+      else if (v.focus === 'work') s.work += v.activeSeconds;
+      else if (v.focus === 'not_work') s.notWork += v.activeSeconds;
+    }
+    return s.priority + s.work + s.notWork > 0 ? s : null;
   };
   const siteNotes = topSites.length
     ? await db.query.kanwatchSites.findMany({
@@ -232,6 +236,7 @@ export async function GET(request: Request) {
       mode: e.verdictMode ?? e.activityMode,
       modeIsYours: !!e.verdictMode,
       focusScore: e.focusScore,
+      split: splitOf(e.id),
       worthCard: e.worthCardProbability,
       verdict: e.verdict,
       verdictChannelId: e.verdictChannelId,

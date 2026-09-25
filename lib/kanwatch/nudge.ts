@@ -1,25 +1,30 @@
 /**
  * A nudge when the browsing drifts from what you said today is for.
  *
- * Jev already scores the stretch in progress against the day's priority every couple
- * of minutes. This reads those scores back when the extension checks in, and says
- * "nudge" only when the drift is sustained, recent, and not private — the extension
- * decides whether to show it (switched on, not snoozed, not shown too recently).
+ * Jev reads every page against the day's priority as it goes — on it, other work,
+ * or not work. This walks back from what you're on now through those reads and says
+ * "nudge" only when the time off the priority is sustained, recent and not private.
+ * The extension decides whether to show it (switched on, not snoozed, not shown too
+ * recently, not about sites you've said count).
  *
- * Only "unrelated" counts. "Loosely related or supporting" is often how real work
- * looks from outside, and a nudge you learn to ignore is worse than none.
+ * Pages, not stretches: a stretch is a mix, and scoring it as a whole let a social
+ * feed hide inside a work session.
  */
 
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, eq, gte } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { kanwatchDays, kanwatchEpisodes } from '@/lib/db/schema';
-import { localDate } from './episodes';
+import { kanwatchDays, kanwatchVisits } from '@/lib/db/schema';
+import { GAP_MS, localDate } from './episodes';
 
-/** Minutes of unrelated browsing before a nudge. */
+/** Minutes off the priority before a nudge. */
 export const DRIFT_MINUTES = 10;
-/** The drift has to still be happening: its latest stretch ended this recently. */
-const LIVE_WITHIN_MS = 4 * 60 * 1000;
-const LOOKBACK_MS = 45 * 60 * 1000;
+/**
+ * The drift has to still be happening. A visit is only recorded when you leave the
+ * page or every five minutes on it, so the latest one can be this old while you're
+ * still there.
+ */
+const LIVE_WITHIN_MS = 7 * 60 * 1000;
+const LOOKBACK_MS = 60 * 60 * 1000;
 
 export interface Nudge {
   /** Stable for one run of drift, so the extension never shows the same one twice. */
@@ -30,43 +35,45 @@ export interface Nudge {
   minutes: number;
 }
 
-type EpisodeRow = typeof kanwatchEpisodes.$inferSelect;
+type VisitRow = Pick<typeof kanwatchVisits.$inferSelect,
+  'id' | 'startedAt' | 'endedAt' | 'activeSeconds' | 'isPrivate' | 'isBackground' | 'domain' | 'focus'>;
 
 /**
- * Pure: the nudge these episodes call for, if any. Walks back from the latest stretch
- * while each one was read as unrelated, adding up its public (non-private) time.
+ * Pure: the nudge these visits call for, if any.
+ *
+ * Walks back from the latest visit. Time on pages read as other work or not work
+ * adds up; a page on the priority ends the run, and so does stepping away. Private
+ * pages, unread pages and unclear ones are passed over — they count neither way.
  */
-export function pickNudge(episodes: EpisodeRow[], priority: string | null | undefined, now = Date.now()): Nudge | null {
+export function pickNudge(visits: VisitRow[], priority: string | null | undefined, now = Date.now()): Nudge | null {
   if (!priority?.trim()) return null;
-  const recent = [...episodes].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+  const recent = visits
+    .filter((v) => !v.isBackground)
+    .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
   if (recent.length === 0 || now - recent[0].endedAt.getTime() > LIVE_WITHIN_MS) return null;
 
+  const bySite = new Map<string, number>();
   let seconds = 0;
-  const sites: string[] = [];
-  const run: EpisodeRow[] = [];
-  for (const e of recent) {
-    // Not read yet: skip over it only if it is the one still being browsed.
-    if (e.focusScore === null) {
-      if (run.length === 0 && e === recent[0]) continue;
-      break;
-    }
-    // Anything you've answered yourself is yours to judge, not ours.
-    if (e.verdict && e.verdict !== 'not_work') break;
-    if (e.focusScore > 0 || e.guessKind === 'private') break;
-    seconds += Math.max(0, e.activeSeconds - e.privateSeconds);
-    run.push(e);
-    try {
-      for (const s of JSON.parse(e.domains ?? '[]') as string[]) if (!sites.includes(s)) sites.push(s);
-    } catch { /* old rows */ }
+  let first: VisitRow | null = null;
+  let after = recent[0];
+  for (const v of recent) {
+    if (after.startedAt.getTime() - v.endedAt.getTime() > GAP_MS) break;
+    after = v;
+    if (v.focus === 'priority') break;
+    if (v.isPrivate || !v.domain || !v.focus || v.focus === 'unclear') continue;
+    seconds += v.activeSeconds;
+    bySite.set(v.domain, (bySite.get(v.domain) ?? 0) + v.activeSeconds);
+    first = v;
   }
 
   const minutes = Math.round(seconds / 60);
-  if (run.length === 0 || minutes < DRIFT_MINUTES || sites.length === 0) return null;
+  if (!first || minutes < DRIFT_MINUTES) return null;
 
+  const sites = [...bySite.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
   const where = sites.length === 1 ? sites[0] : `${sites[0]} and ${sites[1]}`;
   return {
-    // The run's first stretch: the same drift keeps the same key as it grows.
-    key: run[run.length - 1].id,
+    // The run's oldest counted visit: the same drift keeps the same key as it grows.
+    key: first.id,
     title: 'Still on today’s priority?',
     message: `Today is for “${priority.trim().slice(0, 80)}”. The last ${minutes} minutes have mostly been ${where}.`,
     sites: sites.slice(0, 5),
@@ -81,10 +88,9 @@ export async function nudgeFor(userId: string, tzOffsetMinutes: number | null): 
     columns: { intention: true },
   });
   if (!day?.intention?.trim()) return null;
-  const episodes = await db.query.kanwatchEpisodes.findMany({
-    where: and(eq(kanwatchEpisodes.userId, userId), gte(kanwatchEpisodes.endedAt, new Date(now - LOOKBACK_MS))),
-    orderBy: [desc(kanwatchEpisodes.startedAt)],
-    limit: 6,
+  const visits = await db.query.kanwatchVisits.findMany({
+    where: and(eq(kanwatchVisits.userId, userId), gte(kanwatchVisits.startedAt, new Date(now - LOOKBACK_MS))),
+    columns: { id: true, startedAt: true, endedAt: true, activeSeconds: true, isPrivate: true, isBackground: true, domain: true, focus: true },
   });
-  return pickNudge(episodes, day.intention, now);
+  return pickNudge(visits, day.intention, now);
 }

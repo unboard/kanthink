@@ -82,6 +82,8 @@ interface Episode {
   mode: string | null;
   modeIsYours: boolean;
   focusScore: number | null;
+  /** Its read time by what each page was: today's priority, other work, not work. Null before pages were read one by one. */
+  split: { priority: number; work: number; notWork: number } | null;
   worthCard: number | null;
   verdict: 'confirmed' | 'corrected' | 'not_work' | null;
   verdictChannelId: string | null;
@@ -467,9 +469,21 @@ function Summary({ data }: { data: DayData }) {
     let notWork = 0;
     let focusWeighted = 0;
     let focusSeconds = 0;
+    const hasIntention = !!data.intention?.trim();
     for (const e of data.episodes) {
       active += e.activeSeconds;
       privateTime += e.privateSeconds;
+      if (e.split) {
+        // Page by page: a feed inside a work stretch counts as a feed.
+        const counted = e.split.priority + e.split.work + e.split.notWork;
+        read += counted + e.privateSeconds;
+        notWork += e.split.notWork;
+        if (hasIntention) {
+          focusWeighted += 100 * e.split.priority;
+          focusSeconds += counted;
+        }
+        continue;
+      }
       const r = readEpisode(e);
       if (r.bucket !== 'unread') read += e.activeSeconds;
       if (r.bucket === 'not_work') notWork += e.activeSeconds;
@@ -485,7 +499,7 @@ function Summary({ data }: { data: DayData }) {
       workShare: read > 0 ? Math.round(((read - notWork - privateTime) / read) * 100) : null,
       focus: focusSeconds > 0 ? Math.round(focusWeighted / focusSeconds) : null,
     };
-  }, [data.episodes]);
+  }, [data.episodes, data.intention]);
 
   const tiles = [
     { label: 'Active in the browser', value: duration(stats.active) },
@@ -602,14 +616,22 @@ function WhereItWent({ episodes, alongside }: { episodes: Episode[]; alongside: 
         p.seconds += e.privateSeconds;
         items.set('private', p);
       }
-      if (pub > 0 && r.bucket !== 'private') {
+      // Pages read as not work leave the channel they sat in: nine minutes of support
+      // and three of a feed is nine minutes of support, not twelve.
+      const off = e.split && r.bucket !== 'not_work' ? Math.min(pub, e.split.notWork) : 0;
+      if (off > 0) {
+        const nw = items.get('not_work') ?? { key: 'not_work', label: 'Not work', short: 'Not work', folder: null, color: NOT_WORK, seconds: 0 };
+        nw.seconds += off;
+        items.set('not_work', nw);
+      }
+      if (pub - off > 0 && r.bucket !== 'private') {
         // By channel, not card: the bars read as areas of work.
         const label = r.label.split(' › ')[0];
         const cur = items.get(r.bucket) ?? { key: r.bucket, label, short: r.channelName ?? label, folder: r.folder, color: r.color, seconds: 0 };
-        cur.seconds += pub;
+        cur.seconds += pub - off;
         items.set(r.bucket, cur);
-        if (e.mode) m.set(e.mode, (m.get(e.mode) ?? 0) + pub);
       }
+      if (pub > 0 && r.bucket !== 'private' && e.mode) m.set(e.mode, (m.get(e.mode) ?? 0) + pub);
       t += e.activeSeconds;
     }
     // Channels in a folder roll up under it, as in the sidebar. A folder with a single

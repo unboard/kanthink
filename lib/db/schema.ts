@@ -1510,6 +1510,9 @@ export const kanwatchVisits = sqliteTable('kanwatch_visits', {
   clicks: integer('clicks').default(0),
   scrollDepth: integer('scroll_depth').default(0),     // furthest point reached, 0–100
   mediaSeconds: integer('media_seconds').default(0),   // audio/video playing while active
+  // Jev's read of this page on its own: 'priority' (today's), 'work' (other work),
+  // 'not_work', or 'unclear'. Null until read. What focus and drift are counted from.
+  focus: text('focus').$type<'priority' | 'work' | 'not_work' | 'unclear'>(),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [
   index('kanwatch_visits_user_time_idx').on(table.userId, table.startedAt),

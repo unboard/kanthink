@@ -42,13 +42,14 @@ type VisitRow = typeof kanwatchVisits.$inferSelect;
 /** The pages of an episode, merged and ranked by time — what Jev (and the page) see. */
 export function summarizePages(visits: VisitRow[], limit = 8) {
   const byPage = new Map<string, {
-    site: string; path: string; title: string; heading: string; description: string; search: string;
+    key: string; site: string; path: string; title: string; heading: string; description: string; search: string;
     seconds: number; keystrokes: number; clicks: number; scrollDepth: number; mediaSeconds: number;
   }>();
   for (const v of visits) {
     if (v.isPrivate || !v.domain) continue;
-    const key = `${v.domain}${v.path ?? ''}|${v.title ?? ''}`;
+    const key = pageKey(v);
     const page = byPage.get(key) ?? {
+      key,
       site: v.domain, path: v.path ?? '/', title: v.title ?? '', heading: v.heading ?? '',
       description: v.description ?? '', search: v.searchQuery ?? '',
       seconds: 0, keystrokes: 0, clicks: 0, scrollDepth: 0, mediaSeconds: 0,
@@ -73,6 +74,30 @@ export function summarizePages(visits: VisitRow[], limit = 8) {
       }),
     }));
 }
+
+/** What makes two visits the same page: site, path and title. */
+export function pageKey(v: { domain: string | null; path: string | null; title: string | null }): string {
+  return `${v.domain}${v.path ?? ''}|${v.title ?? ''}`;
+}
+
+export type PageFocus = 'priority' | 'work' | 'not_work' | 'unclear';
+
+/**
+ * A stretch's focus on the day's priority, from its pages: the share of read time
+ * spent on pages that served it. Unclear pages count neither way.
+ */
+export function focusFromPages(pages: { seconds: number; focus: PageFocus | null }[]): number | null {
+  let on = 0, counted = 0;
+  for (const p of pages) {
+    if (!p.focus || p.focus === 'unclear') continue;
+    counted += p.seconds;
+    if (p.focus === 'priority') on += p.seconds;
+  }
+  return counted > 0 ? Math.round((on / counted) * 100) : null;
+}
+
+/** Below this, Jev's pick for a page is shown as unclear rather than as an answer. */
+const PAGE_CONFIDENCE = 0.4;
 
 const minutes = (s: number) => {
   const m = Math.max(1, Math.round(s / 60));
@@ -253,15 +278,24 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
       type: 'noul' as const,
       instructions: 'Is `episode` a distinct, deliberate line of work — something they would want tracked as its own card — rather than a quick lookup, a distraction or part of something ongoing?',
     },
-    ...(day?.intention
-      ? {
-          focus: {
-            type: 'score' as const,
-            instructions: 'How directly did `episode` serve what they said today was for, in `todays_intention`?',
-            criteria: ['Unrelated to it', 'Loosely related or supporting', 'Directly working on it'],
-          },
-        }
-      : {}),
+    // Each page on its own. A stretch mixes things — nine minutes of support tickets
+    // and three of a social feed — and one label for the whole stretch made the feed
+    // "work" by association. What matters is whether each page served the day.
+    ...Object.fromEntries(pages.map((p, i) => [`page_${i + 1}`, {
+      type: 'choice' as const,
+      instructions:
+        `Judge page ${i + 1} of \`episode.pages\` on its own — ${p.site}${p.title ? ` "${p.title.slice(0, 120)}"` : ''} — ` +
+        'not by the pages around it. Use common sense: social feeds, news, video, shopping and personal messages are not ' +
+        'work, unless `their_notes_on_these_sites` or `what_they_said_before_about_these_sites` say this site is work for ' +
+        'them, or the page itself is plainly about their work (a post they are writing, research for a task).' +
+        (day?.intention ? ' Work counts as `priority` only when it serves `todays_intention` directly or supports it.' : ''),
+      criteria: {
+        ...(day?.intention ? { priority: 'Working on, or directly supporting, what they said today is for.' } : {}),
+        work: day?.intention ? 'Work, but not what they said today is for.' : 'Work of any kind.',
+        not_work: 'Not work: feeds, news, entertainment, shopping, personal messages, errands.',
+        unclear: 'Too little to tell.',
+      },
+    }])),
   };
 
   const result = await askJev(state, questions, { label: 'kanwatch episode', timeoutMs: 8000 });
@@ -292,7 +326,25 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   // A weak pick is not a guess worth showing as one.
   if (probability < 35 && guessKind !== 'not_work') guessKind = 'unclear';
 
-  const focus = (result.answers as { focus?: { score: number } }).focus ?? null;
+  // Each page's read, onto every visit that makes up that page.
+  const answers = result.answers as unknown as Record<string, { choice: string; probabilities: Record<string, number> } | undefined>;
+  const pageFocus = pages.map((p, i) => {
+    const a = answers[`page_${i + 1}`];
+    if (!a) return { seconds: p.seconds, focus: null };
+    const sure = (a.probabilities[a.choice] ?? 0) >= PAGE_CONFIDENCE;
+    return { seconds: p.seconds, focus: (sure ? a.choice : 'unclear') as PageFocus };
+  });
+  const byKey = new Map(pages.map((p, i) => [p.key, pageFocus[i].focus]));
+  const writes = new Map<PageFocus, string[]>();
+  for (const v of visits) {
+    if (v.isPrivate || !v.domain) continue;
+    const f = byKey.get(pageKey(v));
+    if (f) writes.set(f, [...(writes.get(f) ?? []), v.id]);
+  }
+  for (const [f, ids] of writes) {
+    await db.update(kanwatchVisits).set({ focus: f }).where(inArray(kanwatchVisits.id, ids));
+  }
+  const focusScore = day?.intention ? focusFromPages(pageFocus) : null;
 
   const basis = {
     notes: sites.filter((s) => s.purpose).map((s) => s.domain),
@@ -310,7 +362,7 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
     guessCardId,
     guessProbability: probability,
     activityMode: result.answers.mode.choice,
-    focusScore: focus ? Math.round((focus.score / 2) * 100) : null,
+    focusScore,
     worthCardProbability: Math.round(result.answers.worth_card.noul * 100),
     jevModel: result.model,
     judgedAt: now,
