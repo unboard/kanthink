@@ -30,7 +30,7 @@ import {
 export const runtime = 'nodejs'
 
 function isProvider(value: unknown): value is ModelProvider {
-  return value === 'openai' || value === 'google'
+  return value === 'openai' || value === 'google' || value === 'anthropic'
 }
 
 /**
@@ -192,6 +192,14 @@ async function validateKey(provider: ModelProvider, apiKey: string): Promise<str
         max_completion_tokens: 8,
         messages: [{ role: 'user', content: 'Hi' }],
       })
+    } else if (provider === 'anthropic') {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk')
+      // The cheapest Claude, so validating costs essentially nothing.
+      await new Anthropic({ apiKey }).messages.create({
+        model: 'claude-haiku-4-5',
+        max_tokens: 8,
+        messages: [{ role: 'user', content: 'Hi' }],
+      })
     } else {
       const client = new GoogleGenAI({ apiKey })
       await client.models.generateContent({
@@ -204,7 +212,7 @@ async function validateKey(provider: ModelProvider, apiKey: string): Promise<str
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
     console.error('[ai-config] key validation failed:', message)
-    if (/401|invalid_api_key|API key not valid|API_KEY_INVALID/i.test(message)) {
+    if (/401|invalid_api_key|invalid x-api-key|authentication_error|API key not valid|API_KEY_INVALID/i.test(message)) {
       return 'That key was rejected by the provider.'
     }
     if (/429|quota|rate/i.test(message)) {

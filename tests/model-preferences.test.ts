@@ -153,7 +153,7 @@ describe('the catalogues agree with themselves', () => {
   it('gives every playground model a provider that matches its id', () => {
     for (const model of PLAYGROUND_MODELS) {
       if (model.isAuto) continue
-      const expected = model.id.startsWith('gpt-') ? 'openai' : 'google'
+      const expected = model.id.startsWith('gpt-') ? 'openai' : model.id.startsWith('claude-') ? 'anthropic' : 'google'
       expect(model.provider, model.id).toBe(expected)
     }
   })

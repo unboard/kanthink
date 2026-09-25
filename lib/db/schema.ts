@@ -45,6 +45,7 @@ export const users = sqliteTable('users', {
   // point: a model choice stops being constrained by which single key you saved.
   openaiApiKey: text('openai_api_key'),
   googleApiKey: text('google_api_key'),
+  anthropicApiKey: text('anthropic_api_key'),
 
   /**
    * The model almost everything runs on, provider-qualified ("google:gemini-3.8-flash").

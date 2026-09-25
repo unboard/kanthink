@@ -155,7 +155,7 @@ export function AISettings() {
         </div>
         <p className="text-xs text-neutral-500">
           Keys are encrypted before they are stored, and never held in your browser. You can
-          connect both — each model runs on its own provider&apos;s key.
+          connect as many as you like — each model runs on its own provider&apos;s key.
         </p>
       </section>
 

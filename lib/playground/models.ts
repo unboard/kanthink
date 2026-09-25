@@ -10,10 +10,11 @@
  *
  * Ids are bare provider ids rather than qualified ones, because that is what is
  * already stored in `playground_apps.model_id` and the two namespaces do not
- * collide — everything Google is `gemini-*`, everything OpenAI is `gpt-*`. The
+ * collide — everything Google is `gemini-*`, everything OpenAI is `gpt-*`, everything
+ * Anthropic is `claude-*`. The
  * `provider` field is what decides which SDK a build actually goes through.
  */
-export type PlaygroundProvider = 'google' | 'openai';
+export type PlaygroundProvider = 'google' | 'openai' | 'anthropic';
 
 export interface PlaygroundModel {
   id: string;
@@ -23,7 +24,7 @@ export interface PlaygroundModel {
   pricing: { input: number; output: number }; // USD per 1M tokens, standard tier
   /** Gemini only: tokens of thinking to allow. Ignored by OpenAI models. */
   thinkingBudget: number;
-  /** OpenAI only: how hard to think. Ignored by Gemini models. */
+  /** OpenAI and Claude: how hard to think. Ignored by Gemini models. */
   reasoningEffort?: 'low' | 'medium' | 'high';
   isPreview?: boolean;
   isDefault?: boolean;
@@ -145,6 +146,45 @@ export const PLAYGROUND_MODELS: PlaygroundModel[] = [
     reasoningEffort: 'low',
   },
 
+  // === Anthropic =======================================================
+  // Thinking is adaptive on all but Haiku; `reasoningEffort` becomes Claude's effort.
+  // Opus 5 is left out: Opus 5.5 replaces it and costs less.
+  {
+    id: 'claude-fable-5-1',
+    provider: 'anthropic',
+    label: 'Claude Fable 5.1',
+    blurb: 'Anthropic’s most capable. For the hardest builds, priced like it.',
+    pricing: { input: 10, output: 50 },
+    thinkingBudget: 0,
+    reasoningEffort: 'high',
+  },
+  {
+    id: 'claude-opus-5-5',
+    provider: 'anthropic',
+    label: 'Claude Opus 5.5',
+    blurb: 'Frontier Opus. Strong on whole-app builds and careful edits.',
+    pricing: { input: 4, output: 20 },
+    thinkingBudget: 0,
+    reasoningEffort: 'high',
+  },
+  {
+    id: 'claude-sonnet-5',
+    provider: 'anthropic',
+    label: 'Claude Sonnet 5',
+    blurb: 'The balanced Claude. Good for most edits.',
+    pricing: { input: 2, output: 10 },
+    thinkingBudget: 0,
+    reasoningEffort: 'high',
+  },
+  {
+    id: 'claude-haiku-4-5',
+    provider: 'anthropic',
+    label: 'Claude Haiku 4.5',
+    blurb: 'Fast and cheap. Small edits only.',
+    pricing: { input: 1, output: 5 },
+    thinkingBudget: 0,
+  },
+
   // === Google: stable 2.5 family — fallback / known quantity ===========
   {
     id: 'gemini-2.5-pro',
@@ -182,6 +222,9 @@ export const FALLBACK_GENERATION_MODEL_ID = 'gemini-3.1-pro-preview';
 /** The same, for an account that only holds an OpenAI key. */
 export const OPENAI_FALLBACK_GENERATION_MODEL_ID = 'gpt-5.6-sol';
 
+/** The same, for an account that only holds an Anthropic key. */
+export const ANTHROPIC_FALLBACK_GENERATION_MODEL_ID = 'claude-opus-5-5';
+
 export function getPlaygroundModel(id: string | undefined | null): PlaygroundModel {
   return PLAYGROUND_MODELS.find((m) => m.id === id) || PLAYGROUND_MODELS.find((m) => m.id === FALLBACK_GENERATION_MODEL_ID)!;
 }
@@ -212,6 +255,9 @@ export function resolveActiveModelId(
     // Terra is the balanced one; Sol for anything that has to reason about the
     // whole file. Astra exists, but at $10/$50 it is not an automatic choice.
     return editType === 'cosmetic' ? 'gpt-5.6-terra' : OPENAI_FALLBACK_GENERATION_MODEL_ID;
+  }
+  if (!canGoogle && providers?.includes('anthropic')) {
+    return editType === 'cosmetic' ? 'claude-sonnet-5' : ANTHROPIC_FALLBACK_GENERATION_MODEL_ID;
   }
 
   // Cosmetic edits are mostly layout and styling, which is what a flash model is

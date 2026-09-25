@@ -13,7 +13,7 @@ import type { ModelProvider } from './modelCatalog'
  * with a Google key saved was not a thing that could work — the model preference
  * silently lost to whatever key happened to be stored.
  *
- * Now a key is held per provider and both can exist at once, so a model choice means
+ * Now a key is held per provider and several can exist at once, so a model choice means
  * what it says. The old columns are still read, because accounts configured before
  * this still hold their key there; whichever provider they picked is folded into
  * that provider's slot. Nothing writes them any more, and an account that saves a
@@ -27,6 +27,15 @@ import type { ModelProvider } from './modelCatalog'
  */
 
 export type KeySource = 'byok' | 'owner' | 'env'
+
+/** The users column holding each provider's own key. */
+const KEY_COLUMN = {
+  openai: 'openaiApiKey',
+  google: 'googleApiKey',
+  anthropic: 'anthropicApiKey',
+} as const satisfies Record<ModelProvider, string>
+
+const PROVIDER_NAME: Record<ModelProvider, string> = { openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic' }
 
 export interface ProviderKey {
   apiKey: string
@@ -61,6 +70,7 @@ export async function resolveProviderKeys(userId: string): Promise<ResolvedKeys>
     columns: {
       openaiApiKey: true,
       googleApiKey: true,
+      anthropicApiKey: true,
       byokProvider: true,
       byokApiKey: true,
     },
@@ -76,12 +86,13 @@ export async function resolveProviderKeys(userId: string): Promise<ResolvedKeys>
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown decryption error'
       console.error('[keys] decrypt failed for', billingUserId, provider, message)
-      error = `Could not read your saved ${provider === 'openai' ? 'OpenAI' : 'Google'} key. Re-enter it in Settings.`
+      error = `Could not read your saved ${PROVIDER_NAME[provider]} key. Re-enter it in Settings.`
     }
   }
 
   take('openai', user?.openaiApiKey)
   take('google', user?.googleApiKey)
+  take('anthropic', user?.anthropicApiKey)
 
   // The single-key era. Only fills a slot the per-provider columns left empty.
   if (user?.byokApiKey && user.byokProvider) {
@@ -91,8 +102,10 @@ export async function resolveProviderKeys(userId: string): Promise<ResolvedKeys>
   const shared: Array<[ModelProvider, string | undefined, KeySource]> = [
     ['openai', process.env.OWNER_OPENAI_API_KEY, 'owner'],
     ['google', process.env.OWNER_GOOGLE_API_KEY, 'owner'],
+    ['anthropic', process.env.OWNER_ANTHROPIC_API_KEY, 'owner'],
     ['openai', process.env.OPENAI_API_KEY, 'env'],
     ['google', process.env.GOOGLE_API_KEY, 'env'],
+    ['anthropic', process.env.ANTHROPIC_API_KEY, 'env'],
   ]
   const wouldAddShared = shared.some(([provider, key]) => key && !keys[provider])
 
@@ -123,13 +136,14 @@ export async function userOwnedProviders(userId: string): Promise<ModelProvider[
   const billingUserId = await resolveBillingUserId(userId)
   const user = await db.query.users.findFirst({
     where: eq(users.id, billingUserId),
-    columns: { openaiApiKey: true, googleApiKey: true, byokProvider: true, byokApiKey: true },
+    columns: { openaiApiKey: true, googleApiKey: true, anthropicApiKey: true, byokProvider: true, byokApiKey: true },
   })
   if (!user) return []
 
   const owned = new Set<ModelProvider>()
   if (user.openaiApiKey) owned.add('openai')
   if (user.googleApiKey) owned.add('google')
+  if (user.anthropicApiKey) owned.add('anthropic')
   if (user.byokApiKey && user.byokProvider) owned.add(user.byokProvider)
   return [...owned]
 }
@@ -147,7 +161,7 @@ export async function setProviderKey(
   apiKey: string,
 ): Promise<void> {
   const updates: Record<string, unknown> = {
-    [provider === 'openai' ? 'openaiApiKey' : 'googleApiKey']: encrypt(apiKey),
+    [KEY_COLUMN[provider]]: encrypt(apiKey),
     updatedAt: new Date(),
   }
 
@@ -166,7 +180,7 @@ export async function setProviderKey(
 /** Remove one provider's key, including a legacy one that belonged to it. */
 export async function clearProviderKey(userId: string, provider: ModelProvider): Promise<void> {
   const updates: Record<string, unknown> = {
-    [provider === 'openai' ? 'openaiApiKey' : 'googleApiKey']: null,
+    [KEY_COLUMN[provider]]: null,
     updatedAt: new Date(),
   }
 

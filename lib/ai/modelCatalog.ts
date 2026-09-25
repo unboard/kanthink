@@ -15,10 +15,11 @@
  * doubles on 2027-01-01; where that applies it is noted on the model.
  *
  * Verified against ai.google.dev/gemini-api/docs/models and
- * developers.openai.com/api/docs/models on 2026-09-11.
+ * developers.openai.com/api/docs/models on 2026-09-11; Claude prices from
+ * Anthropic's published rates on 2026-09-25.
  */
 
-export type ModelProvider = 'openai' | 'google';
+export type ModelProvider = 'openai' | 'google' | 'anthropic';
 
 export interface CatalogModel {
   /** Raw provider model id, as sent to the API. */
@@ -89,6 +90,20 @@ export const MODEL_CATALOG: ProviderGroup[] = [
       { model: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', blurb: 'Cheapest thing here.', pricing: { input: 0.1, output: 0.4 } },
     ],
   },
+  {
+    provider: 'anthropic',
+    label: 'Anthropic',
+    blurb: 'Claude models',
+    defaultModel: 'claude-opus-5-5',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+    // Opus 5 is left out: Opus 5.5 replaces it and costs less.
+    models: [
+      { model: 'claude-fable-5-1', label: 'Claude Fable 5.1', blurb: 'Anthropic’s most capable. The hardest, longest work.', pricing: { input: 10, output: 50 } },
+      { model: 'claude-opus-5-5', label: 'Claude Opus 5.5', blurb: 'Frontier Opus. Strong on code and long builds.', pricing: { input: 4, output: 20 } },
+      { model: 'claude-sonnet-5', label: 'Claude Sonnet 5', blurb: 'Balances intelligence and cost.', pricing: { input: 2, output: 10 } },
+      { model: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', blurb: 'Fast and cheap. Good for chat.', pricing: { input: 1, output: 5 } },
+    ],
+  },
 ];
 
 export interface ModelChoice {
@@ -112,7 +127,7 @@ export function parseModelChoice(value: string | null | undefined): ModelChoice 
   const provider = value.slice(0, separator);
   const model = value.slice(separator + 1);
   if (!model) return null;
-  if (provider !== 'openai' && provider !== 'google') return null;
+  if (provider !== 'openai' && provider !== 'google' && provider !== 'anthropic') return null;
   return { provider, model };
 }
 

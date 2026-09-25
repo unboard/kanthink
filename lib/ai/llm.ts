@@ -1,7 +1,9 @@
 import type { LLMProvider, LLMConfig } from './providers/types';
 import { createOpenAIProvider } from './providers/openai';
 import { createGoogleProvider } from './providers/google';
+import { createAnthropicProvider } from './providers/anthropic';
 import { resolveProviderKeys } from './keys';
+import type { ModelProvider } from './modelCatalog';
 import { getModelPreferences, resolveSurfaceModel, type AiSurface } from './modelPreferences';
 
 export type { LLMProvider, LLMMessage, LLMResponse, LLMConfig, LLMContentPart, LLMCompleteOptions } from './providers/types';
@@ -16,6 +18,8 @@ export function createLLMClient(config: LLMConfig): LLMProvider {
       return createOpenAIProvider(config.apiKey, config.model);
     case 'google':
       return createGoogleProvider(config.apiKey, config.model);
+    case 'anthropic':
+      return createAnthropicProvider(config.apiKey, config.model);
     default:
       throw new Error(`Unknown LLM provider: ${config.provider}`);
   }
@@ -48,7 +52,7 @@ export interface LLMClientResult {
  * to the default beats failing the run.
  */
 export interface PreferredModel {
-  provider: 'openai' | 'google';
+  provider: ModelProvider;
   model: string;
 }
 

@@ -46,6 +46,11 @@ export interface StructuredResponse {
 }
 
 export async function runStructured(request: StructuredRequest): Promise<StructuredResponse> {
+  if (request.model.provider === 'anthropic') {
+    // Its own module: Claude speaks a third SDK, and it lives apart from these two.
+    const { runClaude } = await import('./generateClaude');
+    return runClaude(request);
+  }
   return request.model.provider === 'openai'
     ? runOpenAI(request)
     : runGemini(request);
