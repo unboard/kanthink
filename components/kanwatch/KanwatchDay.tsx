@@ -109,7 +109,7 @@ interface Site {
 interface DayData {
   date: string;
   intention: string;
-  extension: { connected: boolean; lastSeenAt?: number | null; fresh?: boolean };
+  extension: { connected: boolean; lastSeenAt?: number | null; fresh?: boolean; outdated?: boolean };
   channels: { id: string; name: string; folder: string | null }[];
   /** Areas you've named before, in your own words. */
   areas: string[];
@@ -338,6 +338,16 @@ export function KanwatchDay() {
             onChanged={() => load(date)}
             onClose={data?.extension.connected ? () => setShowSetup(false) : undefined}
           />
+        )}
+
+        {data?.extension.outdated && (
+          // Chrome keeps running an unpacked extension's old background code until it
+          // is reloaded, and nothing on its side says so: new features just don't work.
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+            <strong className="font-medium">Your Kanwatch extension is out of date.</strong>{' '}
+            Chrome is still running an older version, so newer things (like &ldquo;Kan, read this page&rdquo;) won&rsquo;t work.
+            Open the extension and press <em>Reload Kanwatch</em>, or reload it at chrome://extensions.
+          </div>
         )}
 
         {state === 'loading' && !data && <p className="text-sm text-neutral-500">Reading your day…</p>}

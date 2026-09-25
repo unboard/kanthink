@@ -34,6 +34,11 @@ const NUDGE_AT = 60;
 /** App ideas this strong get a notification, not just a place on the Kanwatch page. */
 const NOTIFY_AT = 75;
 const NOTIFY_PER_DAY = 2;
+/**
+ * Asking Kan to read a page says you think there's something in it, so a read you
+ * asked for is pitched as an app from a lower bar than one Kan found on its own.
+ */
+const MANUAL_APP_AT = 40;
 /** Above this (0–100), an idea is pitched as extending an existing app rather than a new one. */
 const EXTENDS_AT = 50;
 
@@ -227,7 +232,8 @@ export async function judgeRead(read: ReadRow): Promise<void> {
   // An app idea: is it new, or does it extend an app they already have? Asked only
   // for app ideas, since it means listing their apps.
   let related: { id: string; title: string; fit: number } | null = null;
-  if (scores.appIdea >= NUDGE_AT && access.readable.length) {
+  const appish = scores.appIdea >= NUDGE_AT || (read.manual && scores.appIdea >= MANUAL_APP_AT);
+  if (appish && access.readable.length) {
     const apps = await db.query.playgroundApps.findMany({
       where: and(inArray(playgroundApps.channelId, access.readable), eq(playgroundApps.isArchived, false)),
       columns: { id: true, title: true, tagline: true, summary: true },
@@ -263,7 +269,9 @@ export async function judgeRead(read: ReadRow): Promise<void> {
   }
 
   // Stage two: words. Only for the few pages that earned them.
-  const nudgeKind = nudgeKindFor(scores);
+  const nudgeKind = read.manual && scores.appIdea >= MANUAL_APP_AT && scores.kanthinkFit < NUDGE_AT
+    ? 'app'
+    : nudgeKindFor(scores);
   const guide = nudgeKind === 'app' && related ? NUDGE_GUIDE.app_extends : NUDGE_GUIDE[nudgeKind];
   const firstName = user?.name?.split(/\s+/)[0] || 'them';
   let written: { tldr?: string; why?: string; nudge?: string } = {};
@@ -306,6 +314,21 @@ export async function judgeRead(read: ReadRow): Promise<void> {
     relatedAppId: related?.id ?? null,
     relatedAppFit: related?.fit ?? null,
   }).where(eq(kanwatchReads.id, read.id));
+
+  // You asked Kan to read it: you always hear back, whatever it made of the page.
+  if (read.manual && !read.notifiedAt && (written.tldr || written.nudge)) {
+    const sent = await createNotification({
+      userId: read.userId,
+      type: 'kanwatch_idea',
+      title: nudgeKind === 'app'
+        ? (related ? `Kan read it — an idea for ${related.title}?` : 'Kan read it — want it as an app?')
+        : `Kan read "${(read.title || read.domain || 'the page').slice(0, 60)}"`,
+      body: [written.tldr?.split(/(?<=[.!?])\s/)[0], written.nudge].filter(Boolean).join(' ').slice(0, 400),
+      data: { readId: read.id },
+    });
+    if (sent) await db.update(kanwatchReads).set({ notifiedAt: new Date() }).where(eq(kanwatchReads.id, read.id));
+    return;
+  }
 
   // Strong app ideas are worth a tap on the shoulder — a few a day at most, once each.
   if (scores.appIdea >= NOTIFY_AT && !read.notifiedAt && !read.appId && written.nudge) {

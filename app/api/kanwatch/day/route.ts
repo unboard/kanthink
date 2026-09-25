@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isExtensionOutdated } from '@/lib/kanwatch/extensionVersion';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { cards, channels, folders, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits, playgroundApps, userChannelOrg } from '@/lib/db/schema';
@@ -199,6 +200,8 @@ export async function GET(request: Request) {
           lastSeenAt: token.lastUsedAt?.getTime() ?? null,
           // The extension uploads every minute while you browse; quiet for 5 means it isn't.
           fresh: !!token.lastUsedAt && Date.now() - token.lastUsedAt.getTime() < 5 * 60 * 1000,
+          // Only meaningful once it has uploaded at all.
+          outdated: !!token.lastUsedAt && isExtensionOutdated(token.extensionVersion),
         }
       : { connected: false },
     channels: channelRows.map((c) => ({ ...c, folder: channelFolder.get(c.id) ?? null })),

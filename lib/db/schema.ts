@@ -1481,6 +1481,10 @@ export const kanwatchTokens = sqliteTable('kanwatch_tokens', {
   label: text('label'),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+  // The extension version behind the last upload. Chrome keeps running an unpacked
+  // extension's old background code until it is reloaded, so this is how the page
+  // knows to say "reload it". Null means a version from before it reported one.
+  extensionVersion: text('extension_version'),
   revokedAt: integer('revoked_at', { mode: 'timestamp' }),
 }, (table) => [
   uniqueIndex('kanwatch_tokens_hash_idx').on(table.tokenHash),

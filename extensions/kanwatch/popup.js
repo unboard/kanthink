@@ -1,6 +1,22 @@
 import { isPrivateUrl } from './privacy.js';
 
 const $ = (id) => document.getElementById(id);
+
+/** The version this popup was written for. Kept equal to manifest.json by a test. */
+export const POPUP_VERSION = '0.3.0';
+
+/** Which version the background worker is actually running, or null if it can't say. */
+async function workerVersion() {
+  try {
+    const reply = await Promise.race([
+      chrome.runtime.sendMessage({ type: 'version' }),
+      new Promise((resolve) => setTimeout(() => resolve(null), 800)),
+    ]);
+    return reply?.version ?? null;
+  } catch {
+    return null;
+  }
+}
 const FOREVER = Number.MAX_SAFE_INTEGER;
 
 async function render() {
@@ -37,6 +53,11 @@ async function render() {
     ? `Nudges snoozed until ${new Date(s.nudgeSnoozedUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
     : '';
 
+  // A worker older than this popup ignores what the popup asks of it. Say so.
+  const running = await workerVersion();
+  const stale = running !== POPUP_VERSION;
+  $('staleBox').hidden = !stale;
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   let host = '';
   try { host = new URL(tab?.url || '').hostname.replace(/^www\./, ''); } catch {}
@@ -44,7 +65,7 @@ async function render() {
   $('siteBox').hidden = !host;
   $('siteName').textContent = host + (alreadyPrivate ? ' (private)' : '');
   $('blockSite').hidden = alreadyPrivate;
-  $('readNow').hidden = alreadyPrivate || !connected;
+  $('readNow').hidden = alreadyPrivate || !connected || stale;
   $('blockSite').dataset.domain = host;
 
   $('blockedWrap').hidden = s.extraPrivateDomains.length === 0;
@@ -75,9 +96,12 @@ $('includeSearch').onchange = async (e) => { await chrome.storage.local.set({ in
 $('nudges').onchange = async (e) => { await chrome.storage.local.set({ nudges: e.target.checked, nudgeSnoozedUntil: 0 }); render(); };
 
 $('readNow').onclick = async () => {
-  $('readNow').textContent = 'Reading...';
-  await chrome.runtime.sendMessage({ type: 'readNow' });
-  $('readNow').textContent = 'Sent to Kan';
+  $('readNow').textContent = 'Reading…';
+  const reply = await chrome.runtime.sendMessage({ type: 'readNow' }).catch(() => null);
+  $('readNow').textContent = reply?.ok ? 'Sent to Kan' : 'Couldn’t read this page';
+  $('detail').textContent = reply?.ok
+    ? 'Kan will send you a notification once it has read it.'
+    : 'Reload this tab and try again.';
 };
 
 $('blockSite').onclick = async (e) => {
@@ -112,5 +136,7 @@ $('disconnect').onclick = async () => {
   await chrome.storage.local.set({ token: '', queue: [] });
   render();
 };
+
+$('reloadExt').onclick = () => chrome.runtime.reload();
 
 render();

@@ -19,13 +19,16 @@ export async function issueToken(userId: string, label = 'Chrome'): Promise<stri
 }
 
 /** The user a `Bearer kw_…` header belongs to, or null. */
-export async function userFromBearer(header: string | null): Promise<string | null> {
+export async function userFromBearer(header: string | null, extensionVersion?: string | null): Promise<string | null> {
   const token = header?.match(/^Bearer\s+(kw_[A-Za-z0-9_-]{20,})$/)?.[1];
   if (!token) return null;
   const row = await db.query.kanwatchTokens.findFirst({
     where: and(eq(kanwatchTokens.tokenHash, hashToken(token)), isNull(kanwatchTokens.revokedAt)),
   });
   if (!row) return null;
-  await db.update(kanwatchTokens).set({ lastUsedAt: new Date() }).where(eq(kanwatchTokens.id, row.id));
+  const version = extensionVersion && /^\d+\.\d+\.\d+$/.test(extensionVersion) ? extensionVersion : null;
+  await db.update(kanwatchTokens)
+    .set({ lastUsedAt: new Date(), ...(extensionVersion !== undefined ? { extensionVersion: version } : {}) })
+    .where(eq(kanwatchTokens.id, row.id));
   return row.userId;
 }

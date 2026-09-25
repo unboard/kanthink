@@ -15,7 +15,8 @@ import { nudgeFor } from '@/lib/kanwatch/nudge';
  */
 export async function POST(request: Request) {
   await ensureSchema();
-  const userId = await userFromBearer(request.headers.get('authorization'));
+  // Uploads carry the extension's version; one without it predates the header.
+  const userId = await userFromBearer(request.headers.get('authorization'), request.headers.get('x-kanwatch-version'));
   if (!userId) return NextResponse.json({ error: 'Invalid or revoked Kanwatch key' }, { status: 401 });
 
   let body: { visits?: IncomingVisit[]; tzOffsetMinutes?: number };

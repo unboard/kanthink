@@ -326,7 +326,11 @@ async function upload() {
     const base = settings.endpoint.replace(/\/$/, '').replace(/^https:\/\/kanthink\.com$/, DEFAULT_ENDPOINT);
     const res = await fetch(`${base}/api/kanwatch/ingest`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.token}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${settings.token}`,
+        'X-Kanwatch-Version': chrome.runtime.getManifest().version,
+      },
       body: JSON.stringify({ visits: batch, tzOffsetMinutes: new Date().getTimezoneOffset() }),
     });
     if (res.ok) {
@@ -501,6 +505,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // Popup actions.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // The popup is loaded fresh from disk, this worker is not: an unpacked extension
+  // keeps running its old background code until it is reloaded. The popup asks which
+  // version is running, so it can say "reload" instead of pressing a dead button.
+  if (msg?.type === 'version') {
+    sendResponse({ version: chrome.runtime.getManifest().version });
+    return;
+  }
   if (msg?.type === 'flush') {
     serial(async () => {
       await refresh();
