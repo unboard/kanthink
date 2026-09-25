@@ -5,6 +5,8 @@ import { operatorChatThreads } from '@/lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { nanoid } from 'nanoid';
+import { afterResponse } from '@/lib/afterResponse';
+import { displayTitle, isVoice, titleThreads, untitledThreads } from '@/lib/chat/threadTitles';
 
 export const runtime = 'nodejs';
 
@@ -24,15 +26,28 @@ export async function GET() {
       columns: {
         id: true,
         title: true,
+        kind: true,
+        titleGenerated: true,
         createdAt: true,
         updatedAt: true,
       },
     });
 
+    // Titles still to be written from their conversations; done after the response,
+    // so the list opens instantly and the client re-fetches once.
+    const pending = (await untitledThreads(session.user.id)).length;
+    if (pending > 0) {
+      const userId = session.user.id;
+      afterResponse(async () => { await titleThreads(userId); });
+    }
+
     return NextResponse.json({
+      pending,
       threads: threads.map((t) => ({
         id: t.id,
-        title: t.title,
+        title: displayTitle(t),
+        voice: isVoice(t),
+        titled: !!t.titleGenerated,
         createdAt: t.createdAt?.toISOString(),
         updatedAt: t.updatedAt?.toISOString(),
       })),

@@ -52,11 +52,12 @@ export async function POST(request: Request) {
   if (typeof body?.threadId === 'string') {
     const existing = await db.query.operatorChatThreads.findFirst({
       where: and(eq(operatorChatThreads.id, body.threadId), eq(operatorChatThreads.userId, session.user.id)),
-      columns: { id: true },
+      columns: { id: true, titleGenerated: true },
     });
     if (existing) {
+      // A title Kan already wrote from the conversation outranks its first line.
       await db.update(operatorChatThreads)
-        .set({ title, messages, updatedAt: now })
+        .set({ ...(existing.titleGenerated ? {} : { title }), messages, updatedAt: now })
         .where(eq(operatorChatThreads.id, existing.id));
       return NextResponse.json({ saved: true, threadId: existing.id });
     }
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
     id,
     userId: session.user.id,
     title,
+    kind: 'voice',
     messages,
     createdAt: now,
     updatedAt: now,

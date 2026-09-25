@@ -12,7 +12,8 @@ import type { ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
 import remarkGfm from 'remark-gfm';
 import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
 import { MyceliumWeb } from '@/components/kan/KanThinking';
-import { AudioLines } from 'lucide-react';
+import { AudioLines, Mic } from 'lucide-react';
+import { Drawer } from '@/components/ui/Drawer';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 import { FreshTicker } from '@/components/home/FreshTicker';
@@ -81,8 +82,22 @@ interface ChatMessage {
 interface ThreadSummary {
   id: string;
   title: string;
+  /** A saved voice session rather than a typed chat. */
+  voice?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Today / Yesterday / This week / then by month — how the history list is sectioned. */
+function threadGroup(dateStr: string): string {
+  const d = new Date(dateStr);
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const day = 86400000;
+  if (d.getTime() >= start.getTime()) return 'Today';
+  if (d.getTime() >= start.getTime() - day) return 'Yesterday';
+  if (d.getTime() >= start.getTime() - 6 * day) return 'This week';
+  return d.toLocaleDateString('en-US', { month: 'long', year: d.getFullYear() === start.getFullYear() ? undefined : 'numeric' });
 }
 
 /** Parse a kanthink:// URL */
@@ -158,21 +173,24 @@ export function OperatorHome() {
       .catch(() => {});
   }, [threadId]);
 
-  const loadThreads = useCallback(async () => {
+  const loadThreads = useCallback(async (again = true) => {
     try {
       const res = await fetch('/api/operator-chat/threads');
       if (res.ok) {
         const data = await res.json();
         setThreads(data.threads || []);
         setThreadsLoaded(true);
+        // Kan is writing titles for conversations that only had their first line;
+        // they land a few seconds after the list is first opened.
+        if (again && data.pending > 0) setTimeout(() => loadThreads(false), 6000);
       }
     } catch {}
   }, []);
 
   const openHistory = useCallback(() => {
     setShowHistory(true);
-    if (!threadsLoaded) loadThreads();
-  }, [threadsLoaded, loadThreads]);
+    loadThreads();
+  }, [loadThreads]);
 
   const loadThread = useCallback(async (id: string) => {
     try {
@@ -456,55 +474,70 @@ export function OperatorHome() {
       {/* Hover peek — read-only floating preview for ticker + search results */}
       <PeekPreview target={peek} />
 
-      {/* History drawer */}
-      {showHistory && (
-        <div className="absolute inset-0 z-20 flex justify-end">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowHistory(false)} />
-          <div className="relative w-full max-w-sm h-full bg-neutral-950 border-l border-neutral-800 overflow-y-auto animate-slide-in-right">
-            <div className="flex items-center justify-between px-4 py-4 border-b border-neutral-800 sticky top-0 bg-neutral-950 z-10">
-              <h2 className="text-sm font-medium text-white">Chat History</h2>
-              <button
-                onClick={() => setShowHistory(false)}
-                className="text-neutral-400 hover:text-white transition-colors"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+      {/* History — the same floating drawer card details use. No "new conversation"
+          here: the home screen's composer is that. */}
+      <Drawer isOpen={showHistory} onClose={() => setShowHistory(false)} width="md" floating hideCloseButton>
+        <div className="flex max-h-[calc(100dvh-2rem)] flex-col">
+          <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
+            <div>
+              <h2 className="text-[15px] font-semibold text-neutral-900 dark:text-white">Conversations</h2>
+              <p className="text-xs text-neutral-500">Your chats and voice sessions with Kan</p>
             </div>
-            <div className="p-2">
-              <button
-                onClick={startNewThread}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-violet-400 hover:bg-violet-500/10 transition-colors mb-1"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                New conversation
-              </button>
-              {threads.filter(t => t.title !== 'New conversation' || t.id === threadId).map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => loadThread(t.id)}
-                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                    t.id === threadId
-                      ? 'bg-neutral-800 text-white'
-                      : 'text-neutral-300 hover:bg-neutral-800/60'
-                  }`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate">{t.title || 'New conversation'}</p>
-                    <p className="text-xs text-neutral-500 mt-0.5">{formatThreadDate(t.updatedAt)}</p>
-                  </div>
-                </button>
-              ))}
-              {threadsLoaded && threads.length === 0 && (
-                <p className="text-sm text-neutral-500 text-center py-8">No conversations yet</p>
-              )}
-            </div>
+            <button
+              onClick={() => setShowHistory(false)}
+              className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+              aria-label="Close"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 py-3">
+            {(() => {
+              const visible = threads.filter((t) => t.title !== 'New conversation' || t.id === threadId);
+              const groups: { label: string; items: ThreadSummary[] }[] = [];
+              for (const t of visible) {
+                const label = threadGroup(t.updatedAt);
+                const last = groups[groups.length - 1];
+                if (last?.label === label) last.items.push(t);
+                else groups.push({ label, items: [t] });
+              }
+              return groups.map((g) => (
+                <div key={g.label} className="mb-3">
+                  <div className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500">{g.label}</div>
+                  {g.items.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => loadThread(t.id)}
+                      className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors ${
+                        t.id === threadId
+                          ? 'bg-violet-500/10 text-neutral-900 dark:text-white'
+                          : 'text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800/70'
+                      }`}
+                    >
+                      <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg ${
+                        t.voice ? 'bg-violet-500/10 text-violet-500 dark:text-violet-300' : 'bg-neutral-100 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500'
+                      }`}>
+                        {t.voice ? <Mic className="h-3.5 w-3.5" /> : <KanthinkIcon size={14} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{t.title || 'New conversation'}</span>
+                        <span className="block text-[11px] text-neutral-400">
+                          {t.voice ? 'Voice · ' : ''}{formatThreadDate(t.updatedAt)}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ));
+            })()}
+            {threadsLoaded && threads.length === 0 && (
+              <p className="py-10 text-center text-sm text-neutral-500">No conversations yet</p>
+            )}
           </div>
         </div>
-      )}
+      </Drawer>
 
       <div className={`flex w-full max-w-3xl flex-col ${hasConversation ? 'h-full' : 'flex-1 justify-center'} px-4`}>
 
@@ -734,7 +767,7 @@ export function OperatorHome() {
         {/* Input area */}
         <div className={`relative ${hasConversation ? 'pb-4' : ''}`}>
           <SproutSearch query={input} onSelect={handleSproutSelect} onPeek={setPeek} />
-          <div className="rounded-2xl border border-neutral-700/80 bg-neutral-900 shadow-xl shadow-black/30 transition-colors focus-within:border-violet-500/60">
+          <div className="rounded-2xl border border-white/[0.08] bg-neutral-900/95 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05),0_12px_32px_-16px_rgba(0,0,0,0.55)] ring-1 ring-black/20 transition-[border-color,box-shadow] duration-200 focus-within:border-violet-400/40 focus-within:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_0_0_4px_rgba(139,92,246,0.10),0_12px_32px_-16px_rgba(0,0,0,0.55)]">
             <textarea
               ref={inputRef}
               value={input}

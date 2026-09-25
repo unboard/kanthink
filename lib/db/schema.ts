@@ -1055,6 +1055,12 @@ export const operatorChatThreads = sqliteTable('operator_chat_threads', {
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   title: text('title').default('New conversation'),
   messages: safeJsonText<ChannelChatMessageJson[]>([])('messages').default([]),
+  // 'voice' for saved voice sessions; null for typed chat. Older voice threads are
+  // recognised by their "🎙 " title prefix.
+  kind: text('kind'),
+  // The title was written by Kan from the conversation, not its first line — so later
+  // saves of the same thread must not overwrite it.
+  titleGenerated: integer('title_generated', { mode: 'boolean' }).default(false),
 
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
