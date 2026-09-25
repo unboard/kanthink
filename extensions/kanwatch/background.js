@@ -315,10 +315,15 @@ async function refreshBackground() {
 
 // ---- upload -------------------------------------------------------------------
 
-async function upload() {
+/**
+ * Send what's queued. `checkIn` sends even an empty batch: the upload is also how
+ * Kanthink learns which extension version is running, so right after a reload it
+ * goes at once rather than waiting for the first visit and the next minute's tick.
+ */
+async function upload({ checkIn = false } = {}) {
   const settings = await getSettings();
   const { queue = [] } = await chrome.storage.local.get({ queue: [] });
-  if (!settings.token || queue.length === 0) return;
+  if (!settings.token || (queue.length === 0 && !checkIn)) return;
 
   const batch = queue.slice(0, 200);
   let lastUpload;
@@ -337,7 +342,7 @@ async function upload() {
       const sent = new Set(batch.map((v) => v.id));
       const { queue: latest = [] } = await chrome.storage.local.get({ queue: [] });
       await chrome.storage.local.set({ queue: latest.filter((v) => !sent.has(v.id)) });
-      lastUpload = { at: Date.now(), ok: true, message: `Sent ${batch.length}` };
+      lastUpload = { at: Date.now(), ok: true, message: batch.length ? `Sent ${batch.length}` : "Connected" };
       const reply = await res.json().catch(() => null);
       if (reply?.nudge) await maybeNudge(reply.nudge);
     } else {
@@ -409,13 +414,16 @@ chrome.notifications.onClicked.addListener(async (id) => {
 
 // ---- events -------------------------------------------------------------------
 
+// Installed, updated, reloaded or Chrome started: check in straight away.
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create('tick', { periodInMinutes: 1 });
   chrome.idle.setDetectionInterval(60);
+  serial(() => upload({ checkIn: true }));
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create('tick', { periodInMinutes: 1 });
   chrome.idle.setDetectionInterval(60);
+  serial(() => upload({ checkIn: true }));
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
