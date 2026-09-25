@@ -110,6 +110,8 @@ interface DayData {
   date: string;
   intention: string;
   extension: { connected: boolean; lastSeenAt?: number | null; fresh?: boolean; outdated?: boolean };
+  /** Your answers to Kanwatch's celebrations and nudges this past week. */
+  kanRead?: { right: number; total: number };
   channels: { id: string; name: string; folder: string | null }[];
   /** Areas you've named before, in your own words. */
   areas: string[];
@@ -518,15 +520,26 @@ function Summary({ data }: { data: DayData }) {
     { label: 'Private', value: duration(stats.privateTime), hint: 'Time only — never what' },
   ];
 
+  const kanRead = data.kanRead;
   return (
-    <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {tiles.map((t) => (
-        <div key={t.label} className="rounded-xl border border-neutral-200 bg-white px-3.5 py-3 dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="text-[11px] text-neutral-500">{t.label}</div>
-          <div className="mt-1 text-xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{t.value}</div>
-          {t.hint && <div className="mt-0.5 text-[11px] text-neutral-400">{t.hint}</div>}
-        </div>
-      ))}
+    <section className="space-y-2">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {tiles.map((t) => (
+          <div key={t.label} className="rounded-xl border border-neutral-200 bg-white px-3.5 py-3 dark:border-neutral-800 dark:bg-neutral-900">
+            <div className="text-[11px] text-neutral-500">{t.label}</div>
+            <div className="mt-1 text-xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">{t.value}</div>
+            {t.hint && <div className="mt-0.5 text-[11px] text-neutral-400">{t.hint}</div>}
+          </div>
+        ))}
+      </div>
+      {/* Your answers to the extension's celebrations and nudges: the plainest
+          measure there is of whether Kan understands what you're working on. */}
+      {kanRead && kanRead.total > 0 && (
+        <p className="text-[12px] text-neutral-500" title="From your Yep / Not accurate answers to Kanwatch's celebrations and nudges">
+          Kan&rsquo;s read on your focus: right {kanRead.right} of {kanRead.total} time{kanRead.total === 1 ? '' : 's'} this week.
+          {kanRead.total - kanRead.right > 0 && ' Your corrections are fed back into how pages are read.'}
+        </p>
+      )}
     </section>
   );
 }

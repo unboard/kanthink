@@ -9,7 +9,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({ db: {} }))
 
-import { pickNudge, DRIFT_MINUTES } from '@/lib/kanwatch/nudge'
+import { pickNudge, pickCelebration, pickMoment, correctedFocus, DRIFT_MINUTES } from '@/lib/kanwatch/nudge'
 
 const NOW = Date.UTC(2026, 8, 25, 18, 0, 0)
 let n = 0
@@ -74,10 +74,67 @@ describe('pickNudge', () => {
   it('keeps the same key as the drift grows', () => {
     const start = visit(20, 10, 'x.com', 'not_work')
     const a = pickNudge([start, visit(10, 0, 'x.com', 'not_work')], 'p', NOW)
-    expect(a!.key).toBe((start as { id: string }).id)
+    expect(a!.key).toBe(`drift:${(start as { id: string }).id}`)
   })
 
   it('never counts background media', () => {
     expect(pickNudge([visit(20, 0, 'youtube.com', 'not_work', { isBackground: true })], 'p', NOW)).toBeNull()
+  })
+})
+
+describe('pickCelebration', () => {
+  it('celebrates the start once a few minutes are on the priority', () => {
+    const m = pickCelebration([visit(20, 5, 'x.com', 'not_work'), visit(5, 0, 'editor.mycreativeshop.com', 'priority')], 'template manufacturing', NOW)
+    expect(m?.kind).toBe('start')
+    expect(m!.message).toContain('template manufacturing')
+    expect(m!.message).toContain('editor.mycreativeshop.com')
+  })
+
+  it('stays quiet for a glance at the priority', () => {
+    expect(pickCelebration([visit(1, 0, 'editor.mycreativeshop.com', 'priority')], 'p', NOW)).toBeNull()
+  })
+
+  it('marks the biggest milestone reached, counting quick detours without breaking the run', () => {
+    const m = pickCelebration([
+      visit(55, 30, 'editor.mycreativeshop.com', 'priority'),
+      { ...visit(30, 29.5, 'x.com', 'not_work') },
+      visit(29.5, 0, 'templatedesigner.mycreativeshop.com', 'priority'),
+    ], 'p', NOW)
+    expect(m?.kind).toBe('milestone')
+    expect(m!.key.endsWith(':50')).toBe(true)
+    expect(m!.message).toContain('1 quick detour')
+  })
+
+  it('ends the run at a real detour', () => {
+    const m = pickCelebration([
+      visit(60, 35, 'editor.mycreativeshop.com', 'priority'),
+      visit(35, 30, 'x.com', 'not_work'),
+      visit(30, 0, 'editor.mycreativeshop.com', 'priority'),
+    ], 'p', NOW)
+    expect(m?.key.endsWith(':25')).toBe(true)
+  })
+
+  it('suggests a break at 90 minutes', () => {
+    const m = pickCelebration([visit(95, 0, 'editor.mycreativeshop.com', 'priority')], 'p', NOW)
+    expect(m!.message).toContain('break')
+  })
+
+  it('carries the visits it was judged from, so an answer corrects exactly those', () => {
+    const v = visit(10, 0, 'editor.mycreativeshop.com', 'priority')
+    expect(pickCelebration([v], 'p', NOW)!.visitIds).toEqual([(v as { id: string }).id])
+  })
+})
+
+describe('pickMoment', () => {
+  it('prefers a drift nudge to a celebration', () => {
+    expect(pickMoment([visit(40, 15, 'editor.mycreativeshop.com', 'priority'), visit(15, 0, 'x.com', 'not_work')], 'p', NOW)?.kind).toBe('drift')
+  })
+})
+
+describe('correctedFocus', () => {
+  it('turns a wrong drift into priority time, and a wrong celebration into neither', () => {
+    expect(correctedFocus('drift')).toBe('priority')
+    expect(correctedFocus('start')).toBe('unclear')
+    expect(correctedFocus('milestone')).toBe('unclear')
   })
 })

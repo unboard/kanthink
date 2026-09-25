@@ -5,7 +5,7 @@ import { userFromBearer } from '@/lib/kanwatch/token';
 import { ingestVisits, type IncomingVisit } from '@/lib/kanwatch/ingest';
 import { judgePending } from '@/lib/kanwatch/judge';
 import { judgePendingReads } from '@/lib/kanwatch/reads';
-import { nudgeFor } from '@/lib/kanwatch/nudge';
+import { momentFor } from '@/lib/kanwatch/nudge';
 
 /**
  * POST /api/kanwatch/ingest — visits from the Kanwatch extension.
@@ -37,7 +37,8 @@ export async function POST(request: Request) {
 
   // Read from the scores already in hand; this batch's are judged after the response
   // and show up on the next check-in a minute from now.
-  const nudge = await nudgeFor(userId, tz).catch(() => null);
+  const moment = await momentFor(userId, tz).catch(() => null);
 
-  return NextResponse.json({ ...result, nudge });
+  // `nudge` is for extensions from before celebrations, which only knew drift.
+  return NextResponse.json({ ...result, moment, nudge: moment?.kind === 'drift' ? moment : null });
 }

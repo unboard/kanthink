@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isExtensionOutdated } from '@/lib/kanwatch/extensionVersion';
 import { and, asc, desc, eq, gte, inArray, isNull, lt, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { cards, channels, folders, kanwatchDays, kanwatchEpisodes, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits, playgroundApps, userChannelOrg } from '@/lib/db/schema';
+import { cards, channels, folders, kanwatchDays, kanwatchEpisodes, kanwatchMoments, kanwatchReads, kanwatchSites, kanwatchTokens, kanwatchVisits, playgroundApps, userChannelOrg } from '@/lib/db/schema';
 import { judgePendingReads } from '@/lib/kanwatch/reads';
 import { requeueForBoardChange } from '@/lib/kanwatch/board';
 import { attachBackground, groupSessions, readingOf } from '@/lib/kanwatch/sessions';
@@ -255,6 +255,14 @@ export async function GET(request: Request) {
         seconds: p.seconds, doing: p.doing,
       })),
     })),
+    // Your answers to moments this past week: how often Kan read your focus right.
+    kanRead: await (async () => {
+      const rows = await db.query.kanwatchMoments.findMany({
+        where: and(eq(kanwatchMoments.userId, userId), gte(kanwatchMoments.createdAt, new Date(Date.now() - 7 * DAY_MS))),
+        columns: { verdict: true },
+      });
+      return { right: rows.filter((r) => r.verdict === 'right').length, total: rows.length };
+    })(),
     sites: topSites.map(([domain, seconds]) => {
       const note = siteNotes.find((n) => n.domain === domain);
       return { domain, seconds, want: note?.want ?? null, purpose: note?.purpose ?? '', kanThinks: kanThinks(domain) };

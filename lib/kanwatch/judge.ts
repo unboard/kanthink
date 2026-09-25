@@ -202,6 +202,30 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
       .map(([it_was, times]) => ({ site, it_was, times }));
   });
 
+  // What they told Kanwatch about focus on these sites, from moments they answered.
+  const answeredVisits = await db.query.kanwatchVisits.findMany({
+    where: and(
+      eq(kanwatchVisits.userId, ep.userId),
+      isNotNull(kanwatchVisits.focusVerdict),
+      inArray(kanwatchVisits.domain, siteList),
+      gte(kanwatchVisits.startedAt, new Date(Date.now() - 30 * 86400000)),
+    ),
+    columns: { domain: true, title: true, focus: true },
+    orderBy: [desc(kanwatchVisits.startedAt)],
+    limit: 60,
+  });
+  const focusAnswers = siteList.flatMap((site) => {
+    const rows = answeredVisits.filter((v) => v.domain === site);
+    if (!rows.length) return [];
+    const on = rows.filter((v) => v.focus === 'priority');
+    const off = rows.filter((v) => v.focus !== 'priority');
+    return [{
+      site,
+      pages_they_said_served_their_priority: [...new Set(on.map((v) => v.title).filter(Boolean))].slice(0, 3),
+      pages_they_said_did_not: [...new Set(off.map((v) => v.title).filter(Boolean))].slice(0, 3),
+    }];
+  });
+
   const examples = history.map((h) => ({
     pages: summarizePages(historyVisits.filter((v) => v.episodeId === h.id), 3).map((p) => p.title || p.site),
     it_was: answerLabel(h),
@@ -252,6 +276,9 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
       wants: s.want ? `${s.want} time here` : undefined,
     })),
     what_they_said_before_about_these_sites: bySite,
+    // Their answers to Kanwatch's celebrations and nudges about these sites: whether
+    // pages here served what they said the day was for. The most direct signal there is.
+    their_answers_about_focus_on_these_sites: focusAnswers,
     how_they_labelled_past_browsing: examples,
   };
 
@@ -287,7 +314,8 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
         `Judge page ${i + 1} of \`episode.pages\` on its own — ${p.site}${p.title ? ` "${p.title.slice(0, 120)}"` : ''} — ` +
         'not by the pages around it. Use common sense: social feeds, news, video, shopping and personal messages are not ' +
         'work, unless `their_notes_on_these_sites` or `what_they_said_before_about_these_sites` say this site is work for ' +
-        'them, or the page itself is plainly about their work (a post they are writing, research for a task).' +
+        'them, or the page itself is plainly about their work (a post they are writing, research for a task). ' +
+        '`their_answers_about_focus_on_these_sites` is what they told you directly about pages like this; follow it.' +
         (day?.intention ? ' Work counts as `priority` only when it serves `todays_intention` directly or supports it.' : ''),
       criteria: {
         ...(day?.intention ? { priority: 'Working on, or directly supporting, what they said today is for.' } : {}),
@@ -337,14 +365,18 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   const byKey = new Map(pages.map((p, i) => [p.key, pageFocus[i].focus]));
   const writes = new Map<PageFocus, string[]>();
   for (const v of visits) {
-    if (v.isPrivate || !v.domain) continue;
+    // Your own answer about a page is never read back over.
+    if (v.isPrivate || !v.domain || v.focusVerdict) continue;
     const f = byKey.get(pageKey(v));
     if (f) writes.set(f, [...(writes.get(f) ?? []), v.id]);
   }
   for (const [f, ids] of writes) {
     await db.update(kanwatchVisits).set({ focus: f }).where(inArray(kanwatchVisits.id, ids));
   }
-  const focusScore = day?.intention ? focusFromPages(pageFocus) : null;
+  // Where you answered for a page, your answer is what counts.
+  const answered = new Map(visits.filter((v) => v.focusVerdict && v.focus).map((v) => [pageKey(v), v.focus as PageFocus]));
+  const counted = pages.map((p, i) => ({ seconds: p.seconds, focus: answered.get(p.key) ?? pageFocus[i].focus }));
+  const focusScore = day?.intention ? focusFromPages(counted) : null;
 
   const basis = {
     notes: sites.filter((s) => s.purpose).map((s) => s.domain),

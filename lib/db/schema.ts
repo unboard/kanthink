@@ -1517,6 +1517,9 @@ export const kanwatchVisits = sqliteTable('kanwatch_visits', {
   // Jev's read of this page on its own: 'priority' (today's), 'work' (other work),
   // 'not_work', or 'unclear'. Null until read. What focus and drift are counted from.
   focus: text('focus').$type<'priority' | 'work' | 'not_work' | 'unclear'>(),
+  // Set when you answered a moment about this page: 'confirmed' (Kan was right) or
+  // 'corrected' (focus now holds your answer). Jev never overwrites either.
+  focusVerdict: text('focus_verdict').$type<'confirmed' | 'corrected'>(),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 }, (table) => [
   index('kanwatch_visits_user_time_idx').on(table.userId, table.startedAt),
@@ -1559,6 +1562,16 @@ export const kanwatchEpisodes = sqliteTable('kanwatch_episodes', {
   index('kanwatch_episodes_user_time_idx').on(table.userId, table.startedAt),
   index('kanwatch_episodes_status_idx').on(table.userId, table.status),
 ])
+
+// Your answers to Kanwatch moments — "Yep" or "Not accurate" on a celebration or a
+// drift nudge. How often Kan's read was right is counted from these.
+export const kanwatchMoments = sqliteTable('kanwatch_moments', {
+  id: text('id').primaryKey(),                        // `${userId}:${moment key}`
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').$type<'start' | 'milestone' | 'drift'>().notNull(),
+  verdict: text('verdict').$type<'right' | 'wrong'>().notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
 
 // What a given day was meant to be about. Keyed by the user's local date.
 export const kanwatchDays = sqliteTable('kanwatch_days', {

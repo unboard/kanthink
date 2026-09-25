@@ -3,7 +3,7 @@ import { isPrivateUrl } from './privacy.js';
 const $ = (id) => document.getElementById(id);
 
 /** The version this popup was written for. Kept equal to manifest.json by a test. */
-export const POPUP_VERSION = '0.3.0';
+export const POPUP_VERSION = '0.4.0';
 
 /** Which version the background worker is actually running, or null if it can't say. */
 async function workerVersion() {
@@ -49,6 +49,7 @@ async function render() {
   $('nudges').checked = s.nudges;
   const snoozed = s.nudges && now < s.nudgeSnoozedUntil;
   $('nudgeSnoozed').hidden = !snoozed;
+  $('snoozeNudges').hidden = !s.nudges || snoozed || !connected;
   $('nudgeSnoozed').textContent = snoozed
     ? `Nudges snoozed until ${new Date(s.nudgeSnoozedUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
     : '';
@@ -94,6 +95,7 @@ $('pauseAll').onclick = async () => { await chrome.storage.local.set({ pausedUnt
 $('resume').onclick = async () => { await chrome.storage.local.set({ pausedUntil: 0 }); render(); };
 $('includeSearch').onchange = async (e) => { await chrome.storage.local.set({ includeSearch: e.target.checked }); };
 $('nudges').onchange = async (e) => { await chrome.storage.local.set({ nudges: e.target.checked, nudgeSnoozedUntil: 0 }); render(); };
+$('snoozeNudges').onclick = async () => { await chrome.storage.local.set({ nudgeSnoozedUntil: Date.now() + 3600000 }); render(); };
 
 $('readNow').onclick = async () => {
   $('readNow').textContent = 'Reading…';

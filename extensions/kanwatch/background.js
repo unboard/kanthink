@@ -32,7 +32,7 @@ const SETTINGS_DEFAULTS = {
   includeSearch: true,
   extraPrivateDomains: [],
   lastUpload: null,        // { at, ok, message }
-  nudges: true,            // a notification when browsing drifts from today's priority
+  nudges: true,            // celebrations and drift nudges against today's priority
   nudgeSnoozedUntil: 0,
   lastNudge: null,         // { key, at }
   quietSites: {},          // domain → ms: "it counts" keeps these out of nudges for a while
@@ -344,7 +344,7 @@ async function upload({ checkIn = false } = {}) {
       await chrome.storage.local.set({ queue: latest.filter((v) => !sent.has(v.id)) });
       lastUpload = { at: Date.now(), ok: true, message: batch.length ? `Sent ${batch.length}` : "Connected" };
       const reply = await res.json().catch(() => null);
-      if (reply?.nudge) await maybeNudge(reply.nudge);
+      if (reply?.moment) await maybeMoment(reply.moment);
     } else {
       lastUpload = {
         at: Date.now(),
@@ -358,55 +358,99 @@ async function upload({ checkIn = false } = {}) {
   await chrome.storage.local.set({ lastUpload });
 }
 
-// ---- nudges -------------------------------------------------------------------
+// ---- moments ------------------------------------------------------------------
 //
-// The server says when the last stretch of browsing has drifted from today's priority
-// (it reads the scores Jev already keeps). Whether to actually interrupt is decided
-// here: switched on, not snoozed, not the same drift twice, not more than one every
-// half hour, and not about sites you've said count.
+// The server reads each check-in's pages against today's priority and says when
+// there's a moment: you've started on it, you've hit a focus milestone, or you've
+// drifted. Whether to actually show it is decided here: switched on, not snoozed,
+// never the same moment twice, drifts at most one per half hour and not about sites
+// you've said count. Every moment asks whether it was right, and the answer goes
+// back to Kanthink — that is how the reads improve.
 
 const NUDGE_GAP_MS = 30 * 60 * 1000;
 const SNOOZE_MS = 60 * 60 * 1000;
 const QUIET_SITE_MS = 2 * 60 * 60 * 1000;
+const MOMENT_PREFIX = 'kanwatch-moment:';
 
-async function maybeNudge(nudge) {
+const BUTTONS = {
+  drift: [{ title: 'Yep, back to it' }, { title: 'Not accurate — this counts' }],
+  celebrate: [{ title: 'Yep, I’m on it!' }, { title: 'Not accurate' }],
+};
+
+async function maybeMoment(moment) {
   const settings = await getSettings();
   const now = Date.now();
   if (!settings.nudges || now < settings.nudgeSnoozedUntil || await isPaused()) return;
-  if (settings.lastNudge && (settings.lastNudge.key === nudge.key || now - settings.lastNudge.at < NUDGE_GAP_MS)) return;
-  const quiet = settings.quietSites || {};
-  const sites = (nudge.sites || []).filter((s) => !(quiet[s] > now));
-  if (sites.length === 0) return;
+  const { shownMoments = [], openMoments = {} } = await chrome.storage.local.get({ shownMoments: [], openMoments: {} });
+  if (shownMoments.includes(moment.key)) return;
 
-  await chrome.storage.local.set({ lastNudge: { key: nudge.key, at: now, sites: nudge.sites || [] } });
-  chrome.notifications.create(`kanwatch-nudge:${nudge.key}`, {
+  if (moment.kind === 'drift') {
+    if (settings.lastNudge && now - settings.lastNudge.at < NUDGE_GAP_MS) return;
+    const quiet = settings.quietSites || {};
+    if (!(moment.sites || []).some((s) => !(quiet[s] > now))) return;
+    await chrome.storage.local.set({ lastNudge: { key: moment.key, at: now, sites: moment.sites || [] } });
+  }
+
+  // What the answer buttons need later, kept for a day.
+  const open = Object.fromEntries(Object.entries(openMoments).filter(([, m]) => now - m.at < 24 * 60 * 60 * 1000));
+  open[moment.key] = { key: moment.key, kind: moment.kind, sites: moment.sites || [], visitIds: moment.visitIds || [], at: now };
+  await chrome.storage.local.set({ shownMoments: [...shownMoments, moment.key].slice(-100), openMoments: open });
+
+  const drift = moment.kind === 'drift';
+  chrome.notifications.create(`${MOMENT_PREFIX}${moment.key}`, {
     type: 'basic',
     iconUrl: 'icon128.png',
-    title: String(nudge.title || 'Still on today’s priority?').slice(0, 80),
-    message: String(nudge.message || '').slice(0, 240),
-    buttons: [{ title: 'It counts' }, { title: 'Snooze 1 hour' }],
-    priority: 1,
+    title: String(moment.title || '').slice(0, 80),
+    message: String(moment.message || '').slice(0, 240),
+    buttons: drift ? BUTTONS.drift : BUTTONS.celebrate,
+    // A celebration shouldn't make a sound over whatever you're focused on.
+    priority: drift ? 1 : 0,
+    silent: !drift,
   });
 }
 
-chrome.notifications.onButtonClicked.addListener(async (id, button) => {
-  if (!id.startsWith('kanwatch-nudge:')) return;
+/** Send your answer to Kanthink. Best effort: a lost answer costs a data point, nothing else. */
+async function answerMoment(moment, verdict) {
   const settings = await getSettings();
-  if (button === 0) {
-    // "It counts": these sites are part of the priority today; stop nudging about them.
+  if (!settings.token) return;
+  const base = settings.endpoint.replace(/\/$/, '').replace(/^https:\/\/kanthink\.com$/, DEFAULT_ENDPOINT);
+  try {
+    await fetch(`${base}/api/kanwatch/moments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${settings.token}`,
+        'X-Kanwatch-Version': chrome.runtime.getManifest().version,
+      },
+      body: JSON.stringify({ key: moment.key, kind: moment.kind, verdict, visitIds: moment.visitIds }),
+    });
+  } catch {
+    // Offline: the moment passes unanswered.
+  }
+}
+
+chrome.notifications.onButtonClicked.addListener(async (id, button) => {
+  if (!id.startsWith(MOMENT_PREFIX)) return;
+  const key = id.slice(MOMENT_PREFIX.length);
+  const { openMoments = {} } = await chrome.storage.local.get({ openMoments: {} });
+  const moment = openMoments[key];
+  chrome.notifications.clear(id);
+  if (!moment) return;
+  const verdict = button === 0 ? 'right' : 'wrong';
+  if (moment.kind === 'drift' && verdict === 'wrong') {
+    // "This counts": these sites are part of the priority today; stop nudging about them.
+    const settings = await getSettings();
     const quiet = { ...(settings.quietSites || {}) };
     const until = Date.now() + QUIET_SITE_MS;
-    for (const s of settings.lastNudge?.sites || []) quiet[s] = until;
+    for (const s of moment.sites) quiet[s] = until;
     for (const [s, t] of Object.entries(quiet)) if (t < Date.now()) delete quiet[s];
     await chrome.storage.local.set({ quietSites: quiet });
-  } else {
-    await chrome.storage.local.set({ nudgeSnoozedUntil: Date.now() + SNOOZE_MS });
   }
-  chrome.notifications.clear(id);
+  await answerMoment(moment, verdict);
 });
 
 chrome.notifications.onClicked.addListener(async (id) => {
-  if (!id.startsWith('kanwatch-nudge:')) return;
+  if (!id.startsWith(MOMENT_PREFIX)) return;
   const { endpoint } = await getSettings();
   chrome.tabs.create({ url: `${endpoint.replace(/\/$/, '')}/kanwatch` });
   chrome.notifications.clear(id);
