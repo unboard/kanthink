@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'claude-models',
+    date: '2026-09-25',
+    kind: 'capability',
+    title: 'Claude models, for chat and for building apps',
+    body: 'Add an Anthropic key in Settings to pick Claude Fable 5.1, Opus 5.5, Sonnet 5 or Haiku 4.5 — for Kan in chat, or in the model picker when building an app.',
+  },
+  {
     id: 'app-thread-full-replies',
     date: '2026-09-25',
     kind: 'fix',
