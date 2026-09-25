@@ -94,8 +94,10 @@ export function Drawer({ isOpen, onClose, children, width = 'lg', floating = fal
   return (
     <div className={`fixed inset-0 z-50 flex justify-end ${floating ? 'sm:p-4' : ''}`}>
       {/* Backdrop */}
+      {/* A light dim, not a black sheet: the drawer should float over the board, and
+          a heavy flat overlay read as a hard-edged shadow around it. */}
       <div
-        className={`absolute inset-0 bg-black/40 transition-opacity`}
+        className={`absolute inset-0 bg-black/25 transition-opacity`}
         style={swipeOffset > 0 ? { opacity: Math.max(0, 1 - swipeOffset / 300) } : undefined}
         onClick={onClose}
         aria-hidden="true"
@@ -105,7 +107,9 @@ export function Drawer({ isOpen, onClose, children, width = 'lg', floating = fal
       <div
         ref={panelRef}
         className={`
-          relative w-full ${widthClasses[width]} shadow-2xl overflow-y-auto
+          relative w-full ${widthClasses[width]} overflow-y-auto
+          shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_24px_64px_-16px_rgba(0,0,0,0.35),0_8px_24px_-12px_rgba(0,0,0,0.25)]
+          dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_72px_-16px_rgba(0,0,0,0.7),0_8px_28px_-12px_rgba(0,0,0,0.5)]
           ${swipeOffset > 0 ? '' : 'animate-in slide-in-from-right duration-200'}
           ${floating ? 'h-full sm:h-auto sm:max-h-full sm:rounded-2xl' : 'h-full'}
           bg-white dark:bg-neutral-900

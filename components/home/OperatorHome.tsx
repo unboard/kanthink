@@ -767,7 +767,8 @@ export function OperatorHome() {
         {/* Input area */}
         <div className={`relative ${hasConversation ? 'pb-4' : ''}`}>
           <SproutSearch query={input} onSelect={handleSproutSelect} onPeek={setPeek} />
-          <div className="rounded-2xl border border-white/[0.08] bg-neutral-900/95 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05),0_12px_32px_-16px_rgba(0,0,0,0.55)] ring-1 ring-black/20 transition-[border-color,box-shadow] duration-200 focus-within:border-violet-400/40 focus-within:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_0_0_4px_rgba(139,92,246,0.10),0_12px_32px_-16px_rgba(0,0,0,0.55)]">
+          {/* Flat: a quiet border on a surface a shade off the page. No shadow. */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 transition-colors duration-200 focus-within:border-neutral-700">
             <textarea
               ref={inputRef}
               value={input}
