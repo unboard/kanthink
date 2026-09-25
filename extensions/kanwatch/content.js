@@ -19,7 +19,43 @@
 (() => {
   if (window.top !== window) return;
 
-  chrome.runtime.sendMessage({ type: 'hello' }, (reply) => {
+  // Reloading or updating the extension cuts off the copy of this script already
+  // running in open tabs. Every call to chrome.runtime from then on throws
+  // "Extension context invalidated" — synchronously, so a .catch never sees it — and
+  // it would do that every few seconds until the tab was reloaded. So every call
+  // goes through send(), and the first sign of being cut off stops this copy.
+  const timers = [];
+  const cleanups = [];
+  let stopped = false;
+  const alive = () => {
+    try {
+      return !!chrome.runtime?.id;
+    } catch {
+      return false;
+    }
+  };
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    timers.forEach(clearInterval);
+    cleanups.forEach((fn) => fn());
+  };
+  const send = (msg, callback) => {
+    if (stopped || !alive()) return stop();
+    try {
+      if (callback) chrome.runtime.sendMessage(msg, callback);
+      else chrome.runtime.sendMessage(msg).catch(() => {});
+    } catch {
+      stop();
+    }
+  };
+  const every = (fn, ms) => timers.push(setInterval(() => (alive() ? fn() : stop()), ms));
+  const listen = (target, type, fn, options) => {
+    target.addEventListener(type, fn, options);
+    cleanups.push(() => target.removeEventListener(type, fn, options));
+  };
+
+  send({ type: 'hello' }, (reply) => {
     if (chrome.runtime.lastError || !reply?.track) return;
     start();
   });
@@ -35,12 +71,12 @@
       document.querySelector(`meta[name="${name}"], meta[property="${name}"]`)?.getAttribute('content')?.trim() || '';
 
     const sendMeta = () => {
-      chrome.runtime.sendMessage({
+      send({
         type: 'meta',
         heading: text(document.querySelector('h1')),
         description: (meta('description') || meta('og:description')).slice(0, 300),
         ogType: meta('og:type').slice(0, 40),
-      }).catch?.(() => {});
+      });
     };
 
     const measureScroll = () => {
@@ -54,11 +90,11 @@
       [...document.querySelectorAll('video, audio')].some((m) => !m.paused && !m.ended && m.readyState > 2);
 
     // Counted, never recorded: the event is not inspected beyond "a key was pressed".
-    document.addEventListener('keydown', () => { keystrokes += 1; }, { capture: true, passive: true });
-    document.addEventListener('pointerdown', () => { clicks += 1; }, { capture: true, passive: true });
-    window.addEventListener('scroll', measureScroll, { passive: true });
+    listen(document, 'keydown', () => { keystrokes += 1; }, { capture: true, passive: true });
+    listen(document, 'pointerdown', () => { clicks += 1; }, { capture: true, passive: true });
+    listen(window, 'scroll', measureScroll, { passive: true });
 
-    setInterval(() => {
+    every(() => {
       if (document.visibilityState === 'visible' && playing()) mediaSeconds += 5;
     }, 5000);
 
@@ -66,11 +102,11 @@
       measureScroll();
       const isPlaying = document.visibilityState === 'visible' && playing();
       if (!keystrokes && !clicks && !mediaSeconds && !isPlaying && !scrollDepth) return;
-      chrome.runtime.sendMessage({
+      send({
         type: 'engagement',
         keystrokes, clicks, scrollDepth, mediaSeconds,
         playing: isPlaying,
-      }).catch?.(() => {});
+      });
       keystrokes = 0;
       clicks = 0;
       mediaSeconds = 0;
@@ -95,21 +131,25 @@
         .slice(0, 8000);
     };
 
-    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-      if (msg?.type !== 'extract') return;
-      sendResponse({ text: mainText(), ogType: meta('og:type'), title: document.title });
-    });
+    try {
+      chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+        if (msg?.type !== 'extract') return;
+        sendResponse({ text: mainText(), ogType: meta('og:type'), title: document.title });
+      });
+    } catch {
+      return stop();
+    }
 
     sendMeta();
     measureScroll();
-    setInterval(flush, 15000);
-    document.addEventListener('visibilitychange', () => {
+    every(flush, 15000);
+    listen(document, 'visibilitychange', () => {
       if (document.visibilityState === 'hidden') flush();
     });
 
     // Single-page apps change pages without reloading; re-read the heading when the URL moves.
     let lastUrl = location.href;
-    setInterval(() => {
+    every(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
         flush();
