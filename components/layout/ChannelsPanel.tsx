@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { HoverPrefetchLink } from '@/components/ui/HoverPrefetchLink';
 import { usePathname } from 'next/navigation';
 import {
   DndContext,
@@ -93,7 +93,7 @@ function DraggableChannel({ channel, isActive, isOverlay, onNavigate }: Draggabl
         ${isActive ? 'bg-neutral-200 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}
       `}
     >
-      <Link
+      <HoverPrefetchLink
         href={`/channel/${channel.id}`}
         onClick={(e) => {
           e.stopPropagation();
@@ -105,7 +105,7 @@ function DraggableChannel({ channel, isActive, isOverlay, onNavigate }: Draggabl
         `}
       >
         {channel.name}
-      </Link>
+      </HoverPrefetchLink>
     </div>
   );
 }
@@ -177,7 +177,7 @@ function HelpFolderSection({ folder, channels, pathname, onNavigate }: HelpFolde
                   ${pathname === `/channel/${channel.id}` ? 'bg-neutral-200 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}
                 `}
               >
-                <Link
+                <HoverPrefetchLink
                   href={`/channel/${channel.id}`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -189,7 +189,7 @@ function HelpFolderSection({ folder, channels, pathname, onNavigate }: HelpFolde
                   `}
                 >
                   {channel.name}
-                </Link>
+                </HoverPrefetchLink>
               </div>
             ))
           )}
@@ -275,7 +275,7 @@ function SharedWithMeSection({ channels, pathname, onNavigate }: SharedWithMeSec
                   )}
                 </div>
               )}
-              <Link
+              <HoverPrefetchLink
                 href={`/channel/${channel.id}`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -287,7 +287,7 @@ function SharedWithMeSection({ channels, pathname, onNavigate }: SharedWithMeSec
                 `}
               >
                 {channel.name}
-              </Link>
+              </HoverPrefetchLink>
             </div>
           ))}
         </div>
@@ -388,7 +388,7 @@ function DraggableFolder({
             autoFocus
           />
         ) : (
-          <Link
+          <HoverPrefetchLink
             href={`/folder/${folder.id}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -404,7 +404,7 @@ function DraggableFolder({
             `}
           >
             {folder.name}
-          </Link>
+          </HoverPrefetchLink>
         )}
 
         <div className="relative">
@@ -528,7 +528,7 @@ function SharedFolderItem({ folder, channels, pathname, onNavigate }: SharedFold
           </div>
         )}
 
-        <Link
+        <HoverPrefetchLink
           href={`/folder/${folder.id}`}
           onClick={(e) => {
             e.stopPropagation();
@@ -542,7 +542,7 @@ function SharedFolderItem({ folder, channels, pathname, onNavigate }: SharedFold
           `}
         >
           {folder.name}
-        </Link>
+        </HoverPrefetchLink>
       </div>
 
       {!isCollapsed && (
@@ -558,7 +558,7 @@ function SharedFolderItem({ folder, channels, pathname, onNavigate }: SharedFold
                   ${pathname === `/channel/${channel.id}` ? 'bg-neutral-200 dark:bg-neutral-800' : 'hover:bg-neutral-100 dark:hover:bg-neutral-800'}
                 `}
               >
-                <Link
+                <HoverPrefetchLink
                   href={`/channel/${channel.id}`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -570,7 +570,7 @@ function SharedFolderItem({ folder, channels, pathname, onNavigate }: SharedFold
                   `}
                 >
                   {channel.name}
-                </Link>
+                </HoverPrefetchLink>
               </div>
             ))
           )}
