@@ -843,9 +843,6 @@ function SessionRow({
               · ▶ {s.alongside[0].title || s.alongside[0].site} alongside
             </span>
           )}
-          <button onClick={() => setShowPages(!showPages)} className="ml-1 text-neutral-500 underline-offset-2 hover:text-neutral-800 hover:underline dark:hover:text-neutral-200">
-            {showPages ? 'hide pages' : `${s.pages.length} ${s.pages.length === 1 ? 'page' : 'pages'}`}
-          </button>
           {!s.answered && s.reading.probability !== null && (
             <span className="ml-auto flex gap-1.5">
               {!r.decided && r.bucket !== 'unclear' && r.bucket !== 'new_work' && r.bucket !== 'unread' && (
@@ -864,9 +861,11 @@ function SessionRow({
         </div>
       )}
 
-      {showPages && (
+      {/* The pages are what the session is made of, so the first two always show; the
+          rest are one clear click away. */}
+      {s.pages.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-neutral-100 pl-5 pt-2 dark:border-neutral-800">
-          {s.pages.map((p, i) => (
+          {(showPages ? s.pages : s.pages.slice(0, 2)).map((p, i) => (
             <li key={i} className="flex items-baseline gap-2 text-[13px]">
               <span className="min-w-0 flex-1 truncate text-neutral-700 dark:text-neutral-300">
                 <span className="text-neutral-400">{p.site}</span>
@@ -876,7 +875,17 @@ function SessionRow({
               <span className="flex-shrink-0 text-[11px] text-neutral-400">{p.doing} · {duration(p.seconds)}</span>
             </li>
           ))}
-          {s.basis && (s.basis.notes.length > 0 || s.basis.pastAnswers > 0) && !s.answered && (
+          {s.pages.length > 2 && (
+            <li>
+              <button
+                onClick={() => setShowPages(!showPages)}
+                className="mt-0.5 rounded-md px-1.5 py-0.5 text-[12px] text-violet-700 hover:bg-violet-500/10 dark:text-violet-300"
+              >
+                {showPages ? 'Show fewer ▴' : `+ ${s.pages.length - 2} more ${s.pages.length - 2 === 1 ? 'page' : 'pages'} ▾`}
+              </button>
+            </li>
+          )}
+          {showPages && s.basis && (s.basis.notes.length > 0 || s.basis.pastAnswers > 0) && !s.answered && (
             <li className="pt-1 text-[11px] text-neutral-400">
               Kan read this using {[
                 s.basis.notes.length > 0 ? `your note on ${s.basis.notes.join(', ')}` : '',
