@@ -151,6 +151,14 @@ describe('private sites keep nothing but time', () => {
     const v = sanitizeVisit({ url, title: 'Reprint for order 88812345 - jane@acme.com - Help Scout' })
     expect(v.path).toBe('/conversation/:id/:id')
     expect(v.title).not.toMatch(/88812345|jane@acme\.com/)
+    // The customer's name at the end of a Help Scout title never survives.
+    const named = sanitizeVisit({ url, title: '#31789 Re: Campaign Mailers - Dan Evans', heading: 'Dan Evans', description: 'Dan at Acme' })
+    expect(named.title).toBe('#31789 Re: Campaign Mailers')
+    expect(named.heading).toBe('')
+    expect(named.description).toBe('')
+    expect(sanitizeVisit({ url, title: 'Refund request - Jane Roe - Help Scout' }).title).toBe('Refund request')
+    // Other sites keep their titles as they are.
+    expect(sanitizeVisit({ url: 'https://github.com/a/b', title: 'Fix - part two' }).title).toBe('Fix - part two')
     // The exemption is for that one host; the sign-in rule still holds elsewhere.
     expect(isPrivateUrl('https://secure.helpscout.net/members/login/')).toBe(true)
     expect(isPrivateUrl('https://secure.example.com/dashboard')).toBe(true)

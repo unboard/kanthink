@@ -77,6 +77,20 @@ const PRIVATE_HOST_LABELS = [
  */
 const WORK_APP_HOSTS = ['secure.helpscout.net'];
 
+/**
+ * A work app's page reduced to what it may keep. Help Scout ends each conversation's
+ * tab title with the customer's name ("#31789 Re: Campaign Mailers - Dan Evans"), and
+ * its heading and description can carry the name too. The subject is the useful part,
+ * so that is all that survives. Anywhere else, the text is returned unchanged.
+ */
+export function workAppText(host, { title = '', heading = '', description = '' }) {
+  if (!/(^|\.)helpscout\.net$/.test(String(host || '').toLowerCase())) return { title, heading, description };
+  const subject = String(title || '')
+    .replace(/\s+[-–—|]\s+Help Scout\s*$/i, '')
+    .replace(/\s+[-–—]\s+[^-–—]*$/, '');
+  return { title: subject, heading: '', description: '' };
+}
+
 /** A path containing any of these, as a whole segment or word, is private on any site. */
 const PRIVATE_PATH_WORDS = [
   'login', 'log-in', 'signin', 'sign-in', 'signup', 'sign-up', 'register', 'logout', 'oauth', 'oauth2',
@@ -238,13 +252,14 @@ export function sanitizeVisit(raw) {
   }
   const where = scrubUrl(raw.url);
   if (!where) return { private: true };
+  const text = workAppText(where.domain, raw);
   return {
     private: false,
     domain: where.domain,
     path: where.path,
-    title: scrubText(raw.title, 200),
-    heading: scrubText(raw.heading, 200),
-    description: scrubText(raw.description, 300),
+    title: scrubText(text.title, 200),
+    heading: scrubText(text.heading, 200),
+    description: scrubText(text.description, 300),
     searchQuery: raw.includeSearch === false ? '' : searchQueryOf(raw.url),
   };
 }

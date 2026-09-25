@@ -28,7 +28,7 @@ export function PreviewPlaygroundFrame({
 }: Props) {
   // A draft's own bucket, separate from the published app's, so trying a save in
   // preview cannot overwrite what customers have stored.
-  const { withSeed } = useAppStorage(appId ? 'draft_' + appId : 'draft');
+  const { withSeed, frameRef } = useAppStorage(appId ? 'draft_' + appId : 'draft');
   // Remounting the iframe is the only reliable way to re-run a srcDoc document —
   // the app keeps no state outside it, so a key bump is a clean restart.
   const [runId, setRunId] = useState(0);
@@ -72,6 +72,7 @@ export function PreviewPlaygroundFrame({
         </button>
       </div>
       <iframe
+        ref={frameRef}
         key={runId}
         srcDoc={withSeed(srcDoc)}
         sandbox="allow-scripts allow-modals allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads"

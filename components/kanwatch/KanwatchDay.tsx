@@ -639,8 +639,10 @@ function WhereItWent({ episodes, alongside }: { episodes: Episode[]; alongside: 
   );
 
   return (
-    <section className="grid gap-8 sm:grid-cols-[1.5fr_1fr]">
-      <div>
+    // minmax(0, …) and min-w-0: a grid column otherwise grows to fit its longest
+    // unbreakable line, and one long tab title pushed this whole section off screen.
+    <section className="grid gap-8 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+      <div className="min-w-0">
         <SectionTitle>What it was for</SectionTitle>
         <div className="space-y-3">
           {groups.map((g) => {
@@ -684,7 +686,7 @@ function WhereItWent({ episodes, alongside }: { episodes: Episode[]; alongside: 
         </div>
       </div>
       {(modes.length > 0 || alongside.length > 0) && (
-        <div>
+        <div className="min-w-0">
           <SectionTitle>What you were doing</SectionTitle>
           <div className="space-y-2">
             {modes.map(([mode, seconds]) => (
@@ -705,7 +707,7 @@ function WhereItWent({ episodes, alongside }: { episodes: Episode[]; alongside: 
               <ul className="space-y-1">
                 {alongside.map((a) => (
                   <li key={`${a.site}|${a.title}`} className="flex items-baseline justify-between gap-3 text-[13px]">
-                    <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">
+                    <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400" title={a.title ? `${a.site} · ${a.title}` : a.site}>
                       <span className="text-neutral-400">{a.site}</span>{a.title ? ` · ${a.title}` : ''}
                     </span>
                     <span className="flex-shrink-0 tabular-nums text-neutral-400">{duration(a.seconds)}</span>

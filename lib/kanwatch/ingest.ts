@@ -10,7 +10,7 @@ import { and, eq, inArray, lt } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from '@/lib/db';
 import { kanwatchEpisodes, kanwatchVisits } from '@/lib/db/schema';
-import { isPrivateUrl, isPrivateTitle, scrubText, scrubUrl } from '@/extensions/kanwatch/privacy.js';
+import { isPrivateUrl, isPrivateTitle, scrubText, scrubUrl, workAppText } from '@/extensions/kanwatch/privacy.js';
 import { assignEpisodes, GAP_MS, RETENTION_DAYS } from './episodes';
 import { expireReadText, recordRead, type IncomingRead } from './reads';
 
@@ -74,8 +74,11 @@ export function cleanVisit(v: IncomingVisit, now = Date.now()): CleanVisit | nul
   // Background media on a private page is dropped, not counted: it was never attention.
   if (privateVisit) return v.background ? null : { ...base, isPrivate: true };
 
+  // Applied again here, so an older extension cannot send what it no longer should.
+  const text = workAppText(where.domain, { title: v.title, heading: v.heading, description: v.description });
+
   if (v.background) {
-    return { ...base, isPrivate: false, isBackground: true, domain: where.domain, path: where.path, title: scrubText(v.title, 200) };
+    return { ...base, isPrivate: false, isBackground: true, domain: where.domain, path: where.path, title: scrubText(text.title, 200) };
   }
 
   return {
@@ -83,9 +86,9 @@ export function cleanVisit(v: IncomingVisit, now = Date.now()): CleanVisit | nul
     isPrivate: false,
     domain: where.domain,
     path: where.path,
-    title: scrubText(v.title, 200),
-    heading: scrubText(v.heading, 200),
-    description: scrubText(v.description, 300),
+    title: scrubText(text.title, 200),
+    heading: scrubText(text.heading, 200),
+    description: scrubText(text.description, 300),
     searchQuery: scrubText(v.searchQuery, 120),
     keystrokes: clampInt(v.keystrokes, 100000),
     clicks: clampInt(v.clicks, 100000),

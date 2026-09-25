@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * The real storage behind a generated app's localStorage.
@@ -17,6 +17,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
  */
 export function useAppStorage(appKey: string) {
   const storageKey = `kpg_host_${appKey}`;
+  // The app's iframe. Only messages from it are the app's: a site the app opened in
+  // a new tab can still reach this page through window.opener, and must not be able
+  // to write into the app's storage.
+  const frameRef = useRef<HTMLIFrameElement>(null);
   const [seed] = useState<Record<string, Record<string, string>>>(() => {
     if (typeof window === 'undefined') return {};
     try {
@@ -32,6 +36,7 @@ export function useAppStorage(appKey: string) {
   // sessionStorage do not overwrite one another.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      if (!isFromFrame(event, frameRef.current)) return;
       const payload = event.data as { type?: string; area?: string; data?: Record<string, string> };
       if (payload?.type !== 'kpg_storage' || !payload.area) return;
       try {
@@ -54,9 +59,15 @@ export function useAppStorage(appKey: string) {
    * its first render and a message would arrive too late to be there.
    */
   const withSeed = useCallback(
-    (doc: string) => doc.replace('/*__KPG_SEED__*/', `window.__kpg_seed = ${JSON.stringify(seed)};`),
+    // '<' is escaped so a stored </script> cannot close the tag it is written into.
+    (doc: string) => doc.replace('/*__KPG_SEED__*/', `window.__kpg_seed = ${JSON.stringify(seed).replace(/</g, '\\u003c')};`),
     [seed],
   );
 
-  return useMemo(() => ({ withSeed }), [withSeed]);
+  return useMemo(() => ({ withSeed, frameRef }), [withSeed]);
+}
+
+/** True when a message came from this app's own iframe, not another window. */
+export function isFromFrame(event: MessageEvent, frame: HTMLIFrameElement | null): boolean {
+  return !!frame?.contentWindow && event.source === frame.contentWindow;
 }

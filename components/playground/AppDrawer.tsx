@@ -8,6 +8,7 @@ import { ChatInput } from '@/components/board/ChatInput';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { useStore } from '@/lib/store';
 import { buildPlaygroundDoc } from './buildPlaygroundDoc';
+import { isFromFrame } from '@/lib/playground/useAppStorage';
 import { AppAudiencePane } from './AppAudiencePane';
 import { AppThumbnailDialog } from './AppThumbnailDialog';
 import { AppPricingSection } from './AppPricingSection';
@@ -101,6 +102,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   const [optimistic, setOptimistic] = useState<CardMessage[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
   const { members } = useChannelMembers(card.channelId);
 
   const modelId = app?.modelId || DEFAULT_PLAYGROUND_MODEL_ID;
@@ -227,6 +229,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   // Runtime errors reported by the sandboxed iframe.
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
+      if (!isFromFrame(e, frameRef.current)) return;
       if (!e.data || typeof e.data !== 'object') return;
       if (e.data.type === 'kpg_error') {
         setIframeError({ message: String(e.data.message || 'Unknown error'), stack: e.data.stack });
@@ -551,6 +554,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
               )}
               {srcDoc ? (
                 <iframe
+                  ref={frameRef}
                   key={generationCount}
                   srcDoc={srcDoc}
                   title={appTitle}
@@ -960,6 +964,7 @@ function ModelPicker({
     { name: '', models: PLAYGROUND_MODELS.filter((m) => m.isAuto) },
     { name: 'Google', models: PLAYGROUND_MODELS.filter((m) => !m.isAuto && m.provider === 'google') },
     { name: 'OpenAI', models: PLAYGROUND_MODELS.filter((m) => !m.isAuto && m.provider === 'openai') },
+    { name: 'Anthropic', models: PLAYGROUND_MODELS.filter((m) => !m.isAuto && m.provider === 'anthropic') },
   ].filter((g) => g.models.length > 0);
 
   return (

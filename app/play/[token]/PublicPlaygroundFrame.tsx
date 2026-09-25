@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { AppFeedbackPanel } from './AppFeedbackPanel';
-import { useAppStorage } from '@/lib/playground/useAppStorage';
+import { useAppStorage, isFromFrame } from '@/lib/playground/useAppStorage';
 import { X, UserRound } from 'lucide-react';
 import { AppSignIn, type SignInPurpose } from './AppSignIn';
 
@@ -48,7 +48,7 @@ export function PublicPlaygroundFrame({
 }: Props) {
   // The app's own saved data, held by this page because the sandboxed iframe has
   // no storage of its own. Without it a saved score lasts until the next refresh.
-  const { withSeed } = useAppStorage(token);
+  const { withSeed, frameRef } = useAppStorage(token);
   const [hideFooter, setHideFooter] = useState(false);
   const [showPurchased, setShowPurchased] = useState(!!justPurchased);
   const [showSignIn, setShowSignIn] = useState(false);
@@ -67,6 +67,7 @@ export function PublicPlaygroundFrame({
   // money. The iframe cannot open a dialog on this page, so it asks.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      if (!isFromFrame(event, frameRef.current)) return;
       const type = (event.data as { type?: string })?.type;
       if (type === 'kpg_signin') { setPurpose('signin'); setShowSignIn(true); }
       if (type === 'kpg_unlock') { setPurpose('unlock'); setShowSignIn(true); }
@@ -90,6 +91,7 @@ export function PublicPlaygroundFrame({
       )}
 
       <iframe
+        ref={frameRef}
         srcDoc={withSeed(srcDoc)}
         sandbox="allow-scripts allow-modals allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads"
         allow="autoplay; clipboard-write"
