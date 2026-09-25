@@ -8,6 +8,7 @@ import { requirePermission, PermissionError } from '@/lib/api/permissions';
 import { createNotification } from '@/lib/notifications/createNotification';
 import { resolveProviderKeys } from '@/lib/ai/keys';
 import { recordUsage } from '@/lib/usage';
+import { pinDeps } from './pinDeps';
 import { nanoid } from 'nanoid';
 import {
   PLAYGROUND_MODELS,
@@ -814,13 +815,17 @@ export async function generatePlaygroundApp(
   //    most worth catching before spending a build — "keep my progress across my
   //    devices" — usually arrives on the first one, and finding out after the fact
   //    means an app that looks like it saves and does not.
-  // Preflight is its own small Gemini call, made before the build model is chosen.
-  // An OpenAI-only account simply skips it: the cost of not classifying an edit is
-  // that 'auto' routes to the better model, which is the safe direction to be wrong.
-  const preflightKey = keys.google?.apiKey;
+  // Preflight is its own small call, made before the build model is chosen: Gemini
+  // Flash where there's a Google key, otherwise the cheapest model of whichever
+  // provider the account has. It used to be Google-only, so an account without a
+  // Google key had every edit routed to the most expensive model.
+  const preflightProvider: PlaygroundProvider | undefined =
+    keys.google ? 'google' : keys.openai ? 'openai' : keys.anthropic ? 'anthropic' : undefined;
+  const preflightKey = preflightProvider ? keys[preflightProvider]?.apiKey : undefined;
   const preflight: PreflightResult = !options.skipPreflight && preflightKey
     ? await runPreflight({
         apiKey: preflightKey,
+        provider: preflightProvider,
         prompt: body.prompt,
         cardTitle: card.title,
         cardSummary: card.summary || undefined,
@@ -1290,7 +1295,9 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   //    The model declares what it imported, so the import map is built in the same
   //    turn as the code that needs it — no second round trip, no "install then use".
   const declaredByModel = Array.isArray(parsed.dependencies) ? parsed.dependencies : [];
-  const merged = resolveDeps(declaredByModel);
+  // Recorded at the versions this build previewed with, so the app keeps working
+  // when a library publishes a breaking release. See pinDeps.
+  const merged = resolveDeps(await pinDeps(declaredByModel, app.dependencies ?? []));
 
   // Invalid declarations cost that library, not the generation. Surface them so the
   // UI can say why an import is missing instead of leaving a silent runtime error.

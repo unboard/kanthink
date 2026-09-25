@@ -1,4 +1,28 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { runStructured } from './generateClient';
+import { getPlaygroundModel, type PlaygroundProvider } from './models';
+
+/**
+ * The model that sizes up an edit, per provider: the cheapest that classifies well.
+ * Google's is called directly below, as it always was; the others go through the
+ * builder's shared call, so an account without a Google key still gets its edits
+ * classified instead of every one being routed to the most expensive model.
+ */
+const PREFLIGHT_MODEL: Record<Exclude<PlaygroundProvider, 'google'>, { id: string; maxTokens: number }> = {
+  // Luna reasons before answering, and that spends from the same ceiling.
+  openai: { id: 'gpt-5.6-luna', maxTokens: 4000 },
+  anthropic: { id: 'claude-haiku-4-5', maxTokens: 1500 },
+};
+
+/** The Gemini-typed schema as plain JSON Schema: Type.OBJECT is "OBJECT", JSON Schema wants "object". */
+function toJsonSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(toJsonSchema);
+  if (!node || typeof node !== 'object') return node;
+  return Object.fromEntries(Object.entries(node).map(([k, v]) => [
+    k,
+    k === 'type' && typeof v === 'string' ? v.toLowerCase() : k === 'properties' || k === 'items' || typeof v === 'object' ? toJsonSchema(v) : v,
+  ]));
+}
 import type { EditType } from './models';
 
 export interface PreflightResult {
@@ -207,6 +231,8 @@ export function asksForAttachedImages(question: string): boolean {
 
 export async function runPreflight(opts: {
   apiKey: string;
+  /** Whose key `apiKey` is. Google unless the account has no Google key. */
+  provider?: PlaygroundProvider;
   prompt: string;
   cardTitle: string;
   cardSummary?: string;
@@ -248,19 +274,37 @@ export async function runPreflight(opts: {
     `USER REQUEST: ${opts.prompt}`,
   ].filter(Boolean).join('\n\n');
 
-  const client = new GoogleGenAI({ apiKey: opts.apiKey });
   try {
-    const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts: [{ text: userMsg }] }],
-      config: {
+    let text = '';
+    const provider = opts.provider ?? 'google';
+    if (provider === 'google') {
+      const client = new GoogleGenAI({ apiKey: opts.apiKey });
+      const response = await client.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: userMsg }] }],
+        config: {
+          systemInstruction: PREFLIGHT_SYSTEM + firstBuildRider,
+          responseMimeType: 'application/json',
+          responseSchema: PREFLIGHT_SCHEMA,
+          maxOutputTokens: 600,
+        },
+      });
+      text = response.text || '';
+    } else {
+      const pick = PREFLIGHT_MODEL[provider];
+      const response = await runStructured({
+        model: getPlaygroundModel(pick.id),
+        apiKey: opts.apiKey,
         systemInstruction: PREFLIGHT_SYSTEM + firstBuildRider,
-        responseMimeType: 'application/json',
-        responseSchema: PREFLIGHT_SCHEMA,
-        maxOutputTokens: 600,
-      },
-    });
-    const text = response.text || '';
+        userText: userMsg,
+        images: [],
+        schema: toJsonSchema(PREFLIGHT_SCHEMA) as Record<string, unknown>,
+        schemaName: 'preflight',
+        maxOutputTokens: pick.maxTokens,
+        signal: AbortSignal.timeout(60_000),
+      });
+      text = response.text || '';
+    }
     // Loosely typed on purpose: this is model output, and the fields it actually
     // returns are not always the fields that were asked for.
     const parsed = JSON.parse(text) as Partial<PreflightResult> & {
