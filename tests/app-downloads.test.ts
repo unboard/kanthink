@@ -180,6 +180,10 @@ describe('every frame that runs a generated app allows downloads', () => {
       expect(sandboxes.length).toBeGreaterThan(0)
       for (const sandbox of sandboxes) {
         expect(sandbox, frame).toContain('allow-downloads')
+        // Without it, a tab the app opens (an "Order prints" link to another site)
+        // inherits this sandbox: no cookies, no storage, a null origin — and that
+        // site's uploads and sign-ins break in ways that look like its own bug.
+        expect(sandbox, frame).toContain('allow-popups-to-escape-sandbox')
       }
     })
   }

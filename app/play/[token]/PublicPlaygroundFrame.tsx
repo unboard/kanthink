@@ -91,7 +91,7 @@ export function PublicPlaygroundFrame({
 
       <iframe
         srcDoc={withSeed(srcDoc)}
-        sandbox="allow-scripts allow-modals allow-popups allow-forms allow-downloads"
+        sandbox="allow-scripts allow-modals allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads"
         allow="autoplay; clipboard-write"
         className="flex-1 w-full border-0"
         title={title}
