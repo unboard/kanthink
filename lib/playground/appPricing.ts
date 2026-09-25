@@ -234,6 +234,7 @@ async function createAppCheckoutSessionInner(input: AppCheckoutInput): Promise<s
     metadata: {
       kanthinkAppId: input.appId,
       kanthinkAppUserId: input.appUserId,
+      kanthinkInterval: input.interval,
     },
     // Subscriptions carry their own metadata bag; the webhook for a renewal never
     // sees the checkout session, so the ids have to ride on the subscription too.

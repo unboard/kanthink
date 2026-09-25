@@ -4,7 +4,7 @@ import { stripe, handleSubscriptionUpdate, handleSubscriptionDeleted } from '@/l
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { recordAppPurchase } from '@/lib/playground/appPurchase'
+import { recordAppPurchase, checkoutIsPaid, checkoutInterval } from '@/lib/playground/appPurchase'
 import {
   endPurchase,
   findPurchaseByPaymentIntent,
@@ -57,13 +57,17 @@ export async function POST(request: Request) {
 
   try {
     switch (event.type) {
-      case 'checkout.session.completed': {
+      case 'checkout.session.completed':
+      case 'checkout.session.async_payment_succeeded': {
         const session = event.data.object as Stripe.Checkout.Session
 
         // A published app being bought. These sessions carry the app and the buyer
         // in their metadata, and have nothing to do with Kanthink subscriptions —
         // handle them and stop, so an app purchase can never upgrade someone's tier.
         if (session.metadata?.kanthinkAppUserId) {
+          // Completed but not yet paid is a bank payment still settling. Access
+          // waits for async_payment_succeeded, which arrives through this same case.
+          if (!checkoutIsPaid(session)) break
           await recordAppPurchase({
             appUserId: session.metadata.kanthinkAppUserId,
             // The idempotency key. Stripe delivers at least once, and the redirect
@@ -74,13 +78,16 @@ export async function POST(request: Request) {
             stripeCustomerId: typeof session.customer === 'string' ? session.customer : null,
             stripeSubscriptionId: typeof session.subscription === 'string' ? session.subscription : null,
             stripePaymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : null,
-            interval: session.mode === 'subscription' ? 'month' : 'one_time',
+            interval: checkoutInterval(session),
             accessExpiresAt: typeof session.subscription === 'string'
               ? await subscriptionPeriodEnd(session.subscription)
               : null,
           })
           break
         }
+
+        // Kanthink's own plans are handled on completion only, as before.
+        if (event.type !== 'checkout.session.completed') break
 
         if (session.subscription) {
           const subscription = await stripe.subscriptions.retrieve(session.subscription as string)
@@ -184,7 +191,9 @@ export async function POST(request: Request) {
         // — a publisher asking "who used this" wants to see the refund, not a gap.
         const charge = event.data.object as Stripe.Charge
         const intentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null
-        if (intentId) {
+        // This event fires for partial refunds too. A goodwill partial refund is not
+        // a cancellation; access ends only when the whole charge has been returned.
+        if (intentId && charge.refunded) {
           // The one purchase that payment bought. A sibling purchase under the same
           // address is a different transaction and keeps its access.
           const refunded = await findPurchaseByPaymentIntent(intentId)

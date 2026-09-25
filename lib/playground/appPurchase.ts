@@ -109,6 +109,27 @@ export async function recordAppPurchase(event: AppPurchaseEvent) {
   return purchase
 }
 
+/**
+ * Has this checkout actually been paid for?
+ *
+ * `status: 'complete'` is not the same thing. For payment methods that settle later
+ * (bank debits and transfers) Stripe completes the checkout while the money is still
+ * pending, and grants access on that alone meant access for a payment that could
+ * still fail. Such a checkout is granted by `checkout.session.async_payment_succeeded`
+ * instead, once it clears. A 100%-off coupon or a free trial needs no payment.
+ */
+export function checkoutIsPaid(session: { payment_status?: string | null }): boolean {
+  return session.payment_status === 'paid' || session.payment_status === 'no_payment_required'
+}
+
+/** The billing interval a checkout was for, from the metadata set when it was created. */
+export function checkoutInterval(session: { mode?: string | null; metadata?: Record<string, string> | null }): 'one_time' | 'month' | 'year' {
+  if (session.mode !== 'subscription') return 'one_time'
+  // Sessions created before the interval rode along are monthly: that was the only
+  // recurring option at the time.
+  return session.metadata?.kanthinkInterval === 'year' ? 'year' : 'month'
+}
+
 /*
  * There is deliberately no "revoke this customer's access" helper.
  *

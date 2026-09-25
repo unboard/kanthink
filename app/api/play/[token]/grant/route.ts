@@ -7,7 +7,7 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 import { signAccessToken } from '@/lib/playground/appAccess'
 import { accessCookie } from '@/lib/playground/appSession'
 import { findPublishedApp } from '@/lib/playground/publicApp'
-import { recordAppPurchase } from '@/lib/playground/appPurchase'
+import { recordAppPurchase, checkoutIsPaid, checkoutInterval } from '@/lib/playground/appPurchase'
 
 export const runtime = 'nodejs'
 
@@ -37,7 +37,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
     const checkout = await stripe.checkout.sessions.retrieve(sessionId)
     const memberId = checkout.metadata?.kanthinkAppUserId
-    const paid = checkout.payment_status === 'paid' || checkout.status === 'complete'
+    // A bank payment still settling lands here as 'unconfirmed'; the webhook grants
+    // access once it clears.
+    const paid = checkoutIsPaid(checkout)
 
     if (!memberId || !paid) {
       appUrl.searchParams.set('purchase', 'unconfirmed')
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       stripeCustomerId: typeof checkout.customer === 'string' ? checkout.customer : null,
       stripeSubscriptionId: typeof checkout.subscription === 'string' ? checkout.subscription : null,
       stripePaymentIntentId: typeof checkout.payment_intent === 'string' ? checkout.payment_intent : null,
-      interval: checkout.mode === 'subscription' ? 'month' : 'one_time',
+      interval: checkoutInterval(checkout),
     })
     if (!purchase) {
       appUrl.searchParams.set('purchase', 'unconfirmed')

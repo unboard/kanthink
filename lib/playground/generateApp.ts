@@ -7,6 +7,7 @@ import { ensureSchema } from '@/lib/db/ensure-schema';
 import { requirePermission, PermissionError } from '@/lib/api/permissions';
 import { createNotification } from '@/lib/notifications/createNotification';
 import { resolveProviderKeys } from '@/lib/ai/keys';
+import { recordUsage } from '@/lib/usage';
 import { nanoid } from 'nanoid';
 import {
   PLAYGROUND_MODELS,
@@ -674,15 +675,21 @@ export async function generatePlaygroundApp(
   // Every provider this account can call. A build is no longer Gemini-only, so the
   // question is not "is there a Google key" but "which models are actually
   // reachable" — the model the user picked decides which key gets used.
-  const { keys, error: keyError } = await resolveProviderKeys(session.user.id);
+  const { keys, error: keyError, quotaExhausted, quotaMessage } = await resolveProviderKeys(session.user.id);
   if (keyError) {
     return NextResponse.json({ error: keyError }, { status: 400 });
   }
   const providers = (Object.keys(keys) as PlaygroundProvider[]).filter((p) => !!keys[p]);
   if (providers.length === 0) {
     return NextResponse.json(
-      { error: 'No API key. Add a Gemini or OpenAI key in Settings → AI.' },
-      { status: 400 }
+      {
+        // Out of quota is not the same as having no key; saying "add a key" to
+        // someone who has used their month is the wrong instruction.
+        error: quotaExhausted
+          ? (quotaMessage || 'You have used this month’s AI allowance. Add your own key in Settings → AI to keep building.')
+          : 'No API key. Add a Gemini, OpenAI or Anthropic key in Settings → AI.',
+      },
+      { status: quotaExhausted ? 429 : 400 }
     );
   }
 
@@ -1044,6 +1051,21 @@ ${body.prompt}${imageNote}${iterationReminder}`;
 
   const runtimeSection = buildRuntimeSection(seeded.deps);
 
+  // Claude's adaptive thinking has no separate budget: it spends from max_tokens, so
+  // the ceiling that suits Gemini (whose thinking is capped) would truncate a Claude
+  // rewrite that thought hard. Claude builds stream, so a larger ceiling is safe.
+  const rewriteCeiling = model.provider === 'anthropic' ? 64000 : 32000;
+
+  // A build on Kanthink's key counts against the account's allowance, like every
+  // other AI call — it used to count nothing, which left the most expensive call in
+  // the product unmetered. Counted once per build that reached the model, success or
+  // not: a failed build still spent the tokens.
+  const meterBuild = async () => {
+    if (keys[model.provider]?.source !== 'byok' && sawUsage) {
+      await recordUsage(session.user.id, 'playground-build').catch(() => {});
+    }
+  };
+
   // Small edits ask for the changed lines instead of the whole file. When that
   // doesn't work out — the model declines, or an edit doesn't apply cleanly — we
   // fall through to a normal rewrite, so a patch attempt can never leave the user
@@ -1138,7 +1160,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
         // A whole single-file app plus design notes. Every model in the picker
         // tops out well above this, so it is a ceiling for runaway generations,
         // not a budget an ordinary app should ever reach.
-        maxOutputTokens: 32000,
+        maxOutputTokens: rewriteCeiling,
         signal: deadline,
       });
       addUsage(response);
@@ -1148,6 +1170,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
       // would otherwise fail with "Unexpected end of JSON input", which explains
       // nothing to the person whose app was simply too long.
       if (response.truncated) {
+        await meterBuild();
         return NextResponse.json(
           {
             error:
@@ -1175,7 +1198,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
             images: imageParts.map((p) => p.inlineData),
             schema: RESPONSE_SCHEMA,
             schemaName: 'generated_app',
-            maxOutputTokens: 32000,
+            maxOutputTokens: rewriteCeiling,
             signal: deadline,
           });
           addUsage(retry);
@@ -1201,6 +1224,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
       }
     }
   } catch (err) {
+    await meterBuild();
     if (deadline.aborted) {
       return NextResponse.json(
         {
@@ -1212,6 +1236,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: `${model.label} error: ${msg}` }, { status: 502 });
   }
+
+  await meterBuild();
 
   if (!parsed?.code) {
     return NextResponse.json({ error: `${model.label} returned no code` }, { status: 502 });
