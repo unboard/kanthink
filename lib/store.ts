@@ -305,7 +305,21 @@ export const useStore = create<KanthinkState>()(
                   const localChannel = currentState.channels[channelId];
                   const localCol = localChannel?.columns.find((c) => c.cardIds.includes(cardId));
                   if (localCol && localCol.id === col.id) {
-                    return { ...col, cardIds: [...col.cardIds, cardId] };
+                    // Back where it was on screen, in BOTH lists. The column renders
+                    // itemOrder, which the server builds for every column — restoring
+                    // cardIds alone left a "preserved" card invisible.
+                    const at = (list: ID[], local: ID[]) => {
+                      const next = [...list];
+                      const i = local.indexOf(cardId);
+                      next.splice(i < 0 ? next.length : Math.min(i, next.length), 0, cardId);
+                      return next;
+                    };
+                    const localOrder = localCol.itemOrder ?? localCol.cardIds;
+                    return {
+                      ...col,
+                      cardIds: at(col.cardIds, localCol.cardIds),
+                      itemOrder: at(col.itemOrder ?? col.cardIds, localOrder),
+                    };
                   }
                   return col;
                 });

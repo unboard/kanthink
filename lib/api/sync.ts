@@ -18,6 +18,24 @@ const pendingCardIds = new Set<string>()
 // Track card IDs that have pending moves (moved locally but not yet confirmed by server)
 const pendingMoveCardIds = new Set<string>()
 
+/**
+ * Cards whose create the server confirmed recently, with when.
+ *
+ * Being pending is not enough protection. A refetch that started just BEFORE a card
+ * was created returns a board without it; if the create finishes first and clears
+ * its pending flag, that stale board then lands and wipes the card from the screen,
+ * while it exists on the server. On mobile that was the "tap +, it vanishes, it turns
+ * up later as a blank Untitled card" bug. A confirmed card is kept safe for a while
+ * longer, which outlasts any refetch that was already in flight.
+ */
+const recentlyCreatedCardIds = new Map<string, number>()
+const RECENT_CREATE_GRACE_MS = 60_000
+
+function confirmCardCreated(cardId: string) {
+  pendingCardIds.delete(cardId)
+  recentlyCreatedCardIds.set(cardId, Date.now())
+}
+
 export function enableServerMode() {
   serverModeEnabled = true
 }
@@ -34,9 +52,18 @@ export function hasPendingSyncs() {
   return pendingSyncCount > 0
 }
 
-/** Get IDs of cards that were created locally but not yet confirmed by the server */
+/**
+ * IDs of cards created locally that a refetch must not drop: those not yet confirmed
+ * by the server, and those confirmed within the last minute (see recentlyCreatedCardIds).
+ * Preserving is only ever applied to a card the server's data lacks, so keeping one
+ * here after the server has it costs nothing.
+ */
 export function getPendingCardIds(): Set<string> {
-  return new Set(pendingCardIds)
+  const now = Date.now()
+  for (const [id, at] of recentlyCreatedCardIds) {
+    if (now - at > RECENT_CREATE_GRACE_MS) recentlyCreatedCardIds.delete(id)
+  }
+  return new Set([...pendingCardIds, ...recentlyCreatedCardIds.keys()])
 }
 
 /** Get IDs of cards that have pending moves not yet confirmed by the server */
@@ -125,7 +152,7 @@ export function syncCardCreate(
   syncInBackground(async () => {
     // Pass the client-generated ID so server uses the same ID
     await api.createCard(channelId, { ...data, id: cardId })
-    pendingCardIds.delete(cardId)
+    confirmCardCreated(cardId)
   }, 'save card', () => { pendingCardIds.delete(cardId) })
 }
 
@@ -155,7 +182,7 @@ export function syncCardDuplicate(
   pendingCardIds.add(cardId)
   syncInBackground(async () => {
     await api.createCard(channelId, { ...create, id: cardId })
-    pendingCardIds.delete(cardId)
+    confirmCardCreated(cardId)
     await api.updateCard(channelId, cardId, updates)
     for (const task of tasks) {
       await api.createTask(channelId, { ...task.create, id: task.id })
