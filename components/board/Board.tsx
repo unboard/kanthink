@@ -41,9 +41,7 @@ import { AIDebugModal } from './AIDebugModal';
 // import { QuestionsDrawer } from './QuestionsDrawer';
 import { InstructionDetailDrawerV2 } from './InstructionDetailDrawerV2';
 import { ShroomChatDrawer } from './ShroomChatDrawer';
-import { TaskListView } from './TaskListView';
 import { FocusColumnView } from './FocusColumnView';
-import { CardListView } from './CardListView';
 import { ChannelSettingsDrawer } from './ChannelSettingsDrawer';
 import { ChannelActionsDrawer } from './ChannelActionsDrawer';
 import { ShareDrawer } from '@/components/sharing/ShareDrawer';
@@ -73,15 +71,15 @@ interface PreflightResult {
   unprocessed: string[];       // Card IDs
 }
 
-type ViewMode = 'board' | 'tasks' | 'list' | 'focus';
+// Just the board. Tasks and List views were removed: nobody used them, and they
+// cluttered the header. A focused column (?focus=) is the one other mode.
+type ViewMode = 'board' | 'focus';
 
 interface BoardProps {
   channel: Channel;
 }
 
 export function Board({ channel }: BoardProps) {
-  const [manualViewMode, setManualViewMode] = useState<ViewMode>('board');
-  const [focusSubView, setFocusSubView] = useState<'cards' | 'tasks'>('cards');
   const [activeId, setActiveId] = useState<ID | null>(null);
   const [activeType, setActiveType] = useState<'card' | 'column' | 'task' | null>(null);
   const [dragSourceColumnId, setDragSourceColumnId] = useState<ID | null>(null);
@@ -109,15 +107,7 @@ export function Board({ channel }: BoardProps) {
   // Focus column mode: read ?focus= param
   const focusParam = searchParams.get('focus');
   const focusColumn = focusParam ? channel.columns.find((c) => c.id === focusParam) ?? null : null;
-  const viewMode: ViewMode = focusColumn ? 'focus' : manualViewMode;
-
-  const setViewMode = (mode: ViewMode) => {
-    if (mode !== 'focus' && focusColumn) {
-      // Exiting focus mode - clear the param
-      router.push(`/channel/${channel.id}`, { scroll: false });
-    }
-    setManualViewMode(mode);
-  };
+  const viewMode: ViewMode = focusColumn ? 'focus' : 'board';
 
   const handleExitFocus = () => {
     router.push(`/channel/${channel.id}`, { scroll: false });
@@ -1055,50 +1045,6 @@ export function Board({ channel }: BoardProps) {
               </h2>
             </div>
           )}
-          {/* View toggle */}
-          <div className="flex items-center bg-neutral-100 dark:bg-neutral-800 rounded-lg p-0.5 sm:p-1 flex-shrink-0">
-            <button
-              onClick={() => viewMode === 'focus' ? setFocusSubView('cards') : setViewMode('board')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-colors ${
-                (viewMode === 'focus' ? focusSubView === 'cards' : viewMode === 'board')
-                  ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-              </svg>
-              <span className="hidden xs:inline">{viewMode === 'focus' ? 'Cards' : 'Board'}</span>
-            </button>
-            <button
-              onClick={() => viewMode === 'focus' ? setFocusSubView('tasks') : setViewMode('tasks')}
-              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-colors ${
-                (viewMode === 'focus' ? focusSubView === 'tasks' : viewMode === 'tasks')
-                  ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-              <span className="hidden xs:inline">Tasks</span>
-            </button>
-            {viewMode !== 'focus' && (
-              <button
-                onClick={() => setViewMode('list')}
-                className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm rounded-md transition-colors ${
-                  viewMode === 'list'
-                    ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-                }`}
-              >
-                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                </svg>
-                <span className="hidden xs:inline">List</span>
-              </button>
-            )}
-          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Channel members with online/offline status */}
@@ -1166,16 +1112,8 @@ export function Board({ channel }: BoardProps) {
         </p>
       )}
 
-      {viewMode === 'list' ? (
-        <CardListView channelId={channel.id} />
-      ) : viewMode === 'tasks' ? (
-        <TaskListView channelId={channel.id} />
-      ) : viewMode === 'focus' && focusColumn ? (
-        focusSubView === 'tasks' ? (
-          <TaskListView channelId={channel.id} filterCardIds={focusColumn.cardIds} />
-        ) : (
-          <FocusColumnView column={focusColumn} channelId={channel.id} onExitFocus={handleExitFocus} />
-        )
+      {viewMode === 'focus' && focusColumn ? (
+        <FocusColumnView column={focusColumn} channelId={channel.id} onExitFocus={handleExitFocus} />
       ) : (
         <>
           <DndContext
