@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'ask-kan-after-sending',
+    date: '2026-09-30',
+    kind: 'workflow',
+    title: 'Forgot to @kan? Tap Ask Kan',
+    body: 'If your latest message in a card, task or app thread wasn’t addressed to Kan, an Ask Kan button appears under it — one tap and he replies, no retyping.',
+  },
+  {
     id: 'channels-designed-from-your-brief',
     date: '2026-09-30',
     kind: 'workflow',
