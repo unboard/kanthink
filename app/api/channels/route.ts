@@ -123,6 +123,7 @@ export async function POST(req: NextRequest) {
       id: string
       channelId: string
       name: string
+      instructions?: string | null
       position: number
       isAiTarget: boolean
       createdAt: Date
@@ -131,10 +132,11 @@ export async function POST(req: NextRequest) {
 
     if (clientColumns && Array.isArray(clientColumns) && clientColumns.length > 0) {
       // Use client-provided column IDs for optimistic sync consistency
-      columnInserts = clientColumns.map((col: { id: string; name: string; isAiTarget?: boolean }, index: number) => ({
+      columnInserts = clientColumns.map((col: { id: string; name: string; isAiTarget?: boolean; instructions?: string }, index: number) => ({
         id: col.id,
         channelId,
         name: col.name,
+        instructions: typeof col.instructions === 'string' && col.instructions.trim() ? col.instructions.trim() : null,
         position: index,
         isAiTarget: col.isAiTarget ?? index === 0,
         createdAt: now,

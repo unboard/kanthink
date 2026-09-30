@@ -4,26 +4,22 @@ import { runEventTriggers } from '@/lib/shrooms/runEventTriggers';
 import { afterResponse } from '@/lib/afterResponse';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { appMessages, appUsers, cards, channels, columns, playgroundApps, tasks, userChannelOrg } from '@/lib/db/schema';
+import { appMessages, appUsers, cards, channels, columns, playgroundApps, tasks } from '@/lib/db/schema';
 import { eq, and, desc, asc, gt, like, sql, inArray } from 'drizzle-orm';
 import { ensureSchema } from '@/lib/db/ensure-schema';
 import { bucketOf, inBucket, inColumnBucket } from '@/lib/db/cardBuckets';
 import { generatePlaygroundApp } from '@/lib/playground/generateApp';
 import { resolveAppForAutomatedBuild } from '@/lib/playground/appRecord';
-import { DEFAULT_COLUMN_NAMES } from '@/lib/constants';
 import { findDuplicateCard, DUPLICATE_WINDOW_MS, type RecentCard } from '@/lib/voice/duplicateCard';
 import { loadAccess, resolveReference, clarifyingInstruction, type Access, type ReferenceKind, type ResolveContext } from '@/lib/voice/resolveReference';
 import { formatAppPrice } from '@/lib/playground/appAccess';
 import { appStatus, getPublishedVersion } from '@/lib/playground/appRelease';
 import { describeApp } from '@/lib/playground/describeApp';
-import { instructionCards } from '@/lib/db/schema';
-import { inferIntent } from '@/lib/channelCreation/inferIntent';
-import {
-  getWorkflowSuggestions,
-  getShroomsForIntent,
-  suggestChannelDescription,
-  getChannelInstructions,
-} from '@/lib/channelCreation/generateShrooms';
+import { designChannel, fallbackChannelConfig } from '@/lib/channelCreation/designChannel';
+import { writeChannelFromConfig } from '@/lib/channelCreation/writeChannel';
+import type { ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
+import { getLLMClientForUser } from '@/lib/ai/llm';
+import { recordUsage } from '@/lib/usage';
 
 /**
  * Every lookup below is confined to `access.readable`. The live model hands us ids
@@ -915,124 +911,106 @@ export async function POST(request: Request) {
       }
 
       case 'create_channel': {
-        // Runs the same channel-creation intelligence the app's own flow uses —
-        // intent inference, workflow columns, and the starter shrooms for that
-        // intent — rather than making the voice model guess at structure. A voice
-        // channel and a hand-made one should come out the same.
+        // Home chat and voice both land here, and Ask Kan designs against the same
+        // rules (lib/channelCreation/designRules.ts), so a channel comes out the same
+        // whichever way it was asked for. The model reads the whole brief; the keyword
+        // templates are only the fallback when no model answers.
         const name = (args.name || '').trim();
         if (!name) {
           return NextResponse.json({ result: 'What should the channel be called?' });
         }
 
-        // Infer what this channel is FOR from everything the caller said about it.
-        const intentInput = [name, args.description, args.purpose].filter(Boolean).join('. ');
-        const { intent } = inferIntent(intentInput);
+        // `brief` is everything the person said they want. Older callers send `purpose`
+        // and `aiInstructions`, which are folded in rather than dropped.
+        const brief = [args.brief, args.purpose, args.description, args.aiInstructions]
+          .map((s) => (s || '').trim())
+          .filter((s, i, all) => s && all.indexOf(s) === i)
+          .join('\n\n') || name;
 
-        // Columns: explicit request wins, then the intent's primary workflow,
-        // then the standard set.
-        const requested: string[] = Array.isArray(args.columnNames)
-          ? args.columnNames.map((c: unknown) => String(c).trim()).filter(Boolean).slice(0, 8)
-          : [];
-        const workflow = getWorkflowSuggestions(intent)[0];
-        const colNames: string[] =
-          requested.length > 0 ? requested
-          : workflow ? [...workflow.columns]
-          : [...DEFAULT_COLUMN_NAMES];
+        // Arguments were flattened to strings above, which turns ["A","B"] into "A,B".
+        const rawColumns = (rawArgs as Record<string, unknown> | undefined)?.columnNames;
+        const columnNames = (Array.isArray(rawColumns) ? rawColumns.map(String) : String(rawColumns ?? '').split(','))
+          .map((c) => c.trim())
+          .filter(Boolean)
+          .slice(0, 8);
 
-        const channelId = nanoid();
-        const createdAt = new Date();
-        const topic = args.purpose?.trim() || args.description?.trim() || undefined;
-
-        await db.insert(channels).values({
-          id: channelId,
-          ownerId: session.user.id,
-          name,
-          description: args.description?.trim() || suggestChannelDescription(intent, topic),
-          aiInstructions: args.aiInstructions?.trim() || getChannelInstructions(intent, topic),
-          status: 'active',
-          createdAt,
-          updatedAt: createdAt,
+        const owned = await db.query.channels.findMany({
+          where: eq(channels.ownerId, session.user.id),
+          columns: { name: true },
         });
+        const request = {
+          brief,
+          name,
+          columnNames: columnNames.length ? columnNames : undefined,
+          existingChannelNames: owned.map((c) => c.name),
+        };
 
-        const columnRows = colNames.map((colName, index) => ({
-          id: nanoid(),
+        let config: ChannelConfig | null = null;
+        const llm = await getLLMClientForUser(session.user.id, undefined, 'automations');
+        if (llm.client) {
+          try {
+            config = await designChannel(llm.client, request);
+            if (config) await recordUsage(session.user.id, 'channel-design').catch(() => {});
+          } catch (error) {
+            console.warn('[create_channel] design failed, using templates:', error);
+          }
+        }
+        config ??= fallbackChannelConfig(request);
+
+        const { channelId } = await writeChannelFromConfig(session.user.id, config);
+
+        // Read back what was actually stored, so Kan can't describe a channel it didn't make.
+        const shroomLines = config.shrooms.map((s) =>
+          `- ${s.title} (${s.action}${s.cardCount ? ` ${s.cardCount} cards` : ''} → ${s.targetColumnName}${s.triggerOnArrival ? ', runs when a card arrives' : ''})`
+        );
+        return NextResponse.json({
+          result: `Created "${config.name}" with columns ${config.columns.map((c) => c.name).join(', ')}.` +
+            (config.shrooms.length
+              ? ` Shrooms (switched off until you enable them): ${config.shrooms.map((s) => s.title).join(', ')}.`
+              : ''),
+          modelResult: [
+            `Created "${config.name}" (channelId: ${channelId}).`,
+            `Columns: ${config.columns.map((c) => c.name).join(' → ')}`,
+            `Channel instructions, as stored:\n${config.instructions}`,
+            shroomLines.length ? `Shrooms, all switched off until the user enables them:\n${shroomLines.join('\n')}` : 'No shrooms.',
+            'Describe only what is listed here.',
+          ].join('\n\n'),
           channelId,
-          name: colName,
-          position: index,
-          isAiTarget: index === 0,
-          createdAt,
-          updatedAt: createdAt,
-        }));
-        await db.insert(columns).values(columnRows);
+          // Rendered by the voice overlay and home chat as the standard channel card.
+          channelPreview: { channelId, config },
+        });
+      }
 
-        // Starter shrooms for this intent, wired to the real column ids. An
-        // assembly-line layout gets the full pipeline; a plain channel gets its
-        // one starter. Everything lands manual/disabled — voice should never
-        // leave automations running that nobody has looked at.
-        const generated = getShroomsForIntent(intent, colNames, topic);
-        const columnIdByName = new Map(columnRows.map((c) => [c.name, c.id]));
-        const shroomTitles: string[] = [];
-        let position = 0;
-        for (const g of generated) {
-          const targetColumnId = columnIdByName.get(g.targetColumnName);
-          if (!targetColumnId && g.targetColumnName !== 'board') continue;
-          await db.insert(instructionCards).values({
-            id: nanoid(),
-            channelId,
-            title: g.title,
-            instructions: g.instructions,
-            action: g.action,
-            target: targetColumnId
-              ? { type: 'column', columnId: targetColumnId }
-              : { type: 'board' },
-            runMode: 'manual',
-            isEnabled: false,
-            cardCount: g.cardCount ?? null,
-            triggers: g.triggerOnArrival && targetColumnId
-              ? [{ type: 'event', eventType: 'card_moved_to_column', columnId: targetColumnId }]
-              : null,
-            position: position++,
-            createdAt,
-            updatedAt: createdAt,
-          });
-          shroomTitles.push(g.title);
+      case 'update_channel': {
+        // Refining a channel after it exists — "also consider X". Without this Kan could
+        // only claim to have updated the instructions.
+        const channel = await findChannel(args.channelId || '', access, ctx);
+        if (!channel) return NextResponse.json({ result: `Channel not found: "${args.channelId}"` });
+        if (!access.writable.has(channel.id)) return NextResponse.json({ result: READ_ONLY(channel.name) });
+
+        const updates: Partial<typeof channels.$inferInsert> = {};
+        const append = (args.appendInstructions || '').trim();
+        const replace = (args.instructions || '').trim();
+        if (replace) updates.aiInstructions = replace;
+        else if (append) updates.aiInstructions = [channel.aiInstructions?.trim(), append].filter(Boolean).join('\n\n');
+        if (args.description?.trim()) updates.description = args.description.trim();
+        if (args.name?.trim()) updates.name = args.name.trim();
+        if (Object.keys(updates).length === 0) {
+          return NextResponse.json({ result: 'Nothing to change — say what to add to the instructions, or a new name or description.' });
         }
 
-        const existingOrg = await db.query.userChannelOrg.findMany({
-          where: eq(userChannelOrg.userId, session.user.id),
-          orderBy: [desc(userChannelOrg.position)],
-        });
-        await db.insert(userChannelOrg).values({
-          userId: session.user.id,
-          channelId,
-          position: (existingOrg[0]?.position ?? -1) + 1,
-        });
-
-        const shroomNote = shroomTitles.length > 0
-          ? ` I also set up ${shroomTitles.length === 1 ? 'a starter shroom' : `${shroomTitles.length} starter shrooms`} — ${shroomTitles.join(', ')} — switched off until you enable them.`
-          : '';
+        await db.update(channels).set({ ...updates, updatedAt: new Date() }).where(eq(channels.id, channel.id));
+        const changed = [
+          updates.aiInstructions !== undefined && (replace ? 'replaced its instructions' : 'added to its instructions'),
+          updates.description !== undefined && 'updated its description',
+          updates.name !== undefined && `renamed it to "${updates.name}"`,
+        ].filter(Boolean).join(', ');
         return NextResponse.json({
-          result: `Created "${name}" with columns ${colNames.join(', ')}.${shroomNote}`,
-          channelId,
-          // Rendered by the voice overlay as the same channel card the normal
-          // creation flow shows.
-          channelPreview: {
-            channelId,
-            config: {
-              name,
-              description: args.description?.trim() || suggestChannelDescription(intent, topic),
-              instructions: args.aiInstructions?.trim() || getChannelInstructions(intent, topic),
-              columns: columnRows.map((c) => ({ name: c.name, isAiTarget: c.isAiTarget })),
-              shrooms: generated
-                .filter((g) => shroomTitles.includes(g.title))
-                .map((g) => ({
-                  title: g.title,
-                  action: g.action,
-                  targetColumnName: g.targetColumnName,
-                  instructions: g.instructions,
-                })),
-            },
-          },
+          result: `Updated "${channel.name}": ${changed}.`,
+          modelResult: updates.aiInstructions !== undefined
+            ? `Updated "${channel.name}": ${changed}. Instructions now read:\n${updates.aiInstructions}`
+            : undefined,
+          channelId: channel.id,
         });
       }
 

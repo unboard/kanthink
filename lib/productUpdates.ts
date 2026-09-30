@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'channels-designed-from-your-brief',
+    date: '2026-09-30',
+    kind: 'workflow',
+    title: 'Channels made in chat or voice follow your whole brief',
+    body: "Describe a channel to Kan and it's designed from everything you said — instructions, columns and shrooms — instead of a template. Shrooms now also follow the channel's instructions, and you can ask Kan to add to a channel's instructions later.",
+  },
+  {
     id: 'claude-models',
     date: '2026-09-25',
     kind: 'capability',

@@ -15,8 +15,9 @@ import { buildProductUpdateContext } from '@/lib/productUpdates';
 
 export const runtime = 'nodejs';
 // Actions here fan out to /api/voice/action, which can wait on a slow Mixpanel
-// export. Without headroom the whole chat turn is cut off and returns nothing.
-export const maxDuration = 60;
+// export or design a channel with a model call. Without headroom the whole chat turn
+// is cut off and returns nothing.
+export const maxDuration = 300;
 
 interface ChannelSummary {
   id: string;
@@ -285,9 +286,12 @@ When the user asks you to DO something, include actions in your response. Action
 Available actions:
 
 **Channels:**
-- **create_channel**: Create a new channel (board).
-  - Requires: name. Optional: purpose (what it's for, in the user's words), description, columnNames, aiInstructions
-  - ALWAYS pass purpose and let the server derive columns and starter shrooms from it. Only pass columnNames when the user explicitly named columns. Read back what was created.
+- **create_channel**: Create a new channel (board), designed from the user's request: instructions, columns and shrooms.
+  - Requires: name, brief. Optional: columnNames
+  - brief carries EVERYTHING the user said they want — every field, rubric, grade, audience, source rule and shroom — in their words, not condensed. Only pass columnNames when the user named columns. Describe only what the result says was created.
+- **update_channel**: Change an existing channel's standing instructions, description or name.
+  - Requires: channelId. Optional: appendInstructions (a requirement to add, in full), instructions (full rewrite, only when asked), description, name
+  - Doesn't change shrooms. Never say a channel was updated unless this succeeded.
 
 **Cards:**
 - **create_card**: Create a new card in a channel.
@@ -453,7 +457,7 @@ async function executeActions(
         results.push({ type: 'update_summary', success: true, description: `Updated card summary`, cardId: action.cardId, channelId: card.channelId });
 
       // New actions routed through voice action API
-      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'app_audience', 'show_app', 'kanwatch_lookup', 'kanwatch_build_app', 'kanwatch_set_priority'].includes(action.type)) {
+      } else if (['create_card', 'create_task', 'complete_task', 'update_task_status', 'search_cards', 'show_card', 'archive_card', 'unarchive_card', 'move_card', 'send_email', 'query_mixpanel', 'build_app', 'create_channel', 'update_channel', 'app_audience', 'show_app', 'kanwatch_lookup', 'kanwatch_build_app', 'kanwatch_set_priority'].includes(action.type)) {
         // Build args from action fields. Structured values pass through intact —
         // String() flattened columnNames arrays into "Inbox,Validation,...", which
         // failed the handler's Array.isArray check and silently fell back to

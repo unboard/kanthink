@@ -3,6 +3,7 @@ import { getLLMClientForUser, type LLMMessage } from '@/lib/ai/llm';
 import { auth } from '@/lib/auth';
 import { recordUsage } from '@/lib/usage';
 import { extractChannelConfig, cleanDisplayResponse, type ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
+import { CHANNEL_DESIGN_RULES, CHANNEL_CONFIG_EXAMPLE } from '@/lib/channelCreation/designRules';
 
 interface ChannelCreationChatRequest {
   userMessage: string;
@@ -31,21 +32,9 @@ function buildPrompt(
 
   const systemPrompt = `You are Kan, a helpful AI assistant for Kanthink — a Kanban app where each channel is an AI-assisted, goal-driven workspace.
 
-You're helping the user create a new channel. A channel has:
-- **name**: Short, descriptive (e.g., "Competitor Research", "Product Ideas", "Weekly Planning")
-- **description**: One sentence explaining the channel's purpose
-- **instructions**: Guidance for the AI when working in this channel (what to focus on, tone, domain knowledge)
-- **columns**: 3-5 Kanban columns for organizing cards. The first column marked isAiTarget is where AI-generated cards land. Common patterns:
-  - Research: Inbox → Interesting → Deep Dive → Archive
-  - Ideas: New Ideas → Promising → In Progress → Done
-  - Planning: Backlog → This Week → In Progress → Done
-  - Tracking: Feed → Watching → Acting On → Archive
-- **shrooms**: AI-powered automations. Each shroom has:
-  - title: Short name (e.g., "Generate article ideas")
-  - instructions: What the AI should do when this shroom runs
-  - action: "generate" (create new cards), "modify" (update existing cards), or "move" (move cards between columns)
-  - targetColumnName: The source column — where AI looks for/adds cards
-  - cardCount: Number of cards to generate (only for "generate" action, typically 3-5)
+You're helping the user create a new channel.
+
+${CHANNEL_DESIGN_RULES}
 
 Existing channels: ${existingList}
 
@@ -57,20 +46,7 @@ Your approach:
 When ready, include the config in your response using this exact format:
 
 [CHANNEL_CONFIG]
-{
-  "name": "Channel Name",
-  "description": "One sentence describing the channel",
-  "instructions": "Detailed instructions for AI behavior in this channel",
-  "columns": [
-    {"name": "Inbox", "description": "New items land here", "isAiTarget": true},
-    {"name": "Interesting", "description": "Items worth exploring"},
-    {"name": "Deep Dive", "description": "Items being researched in depth"},
-    {"name": "Archive", "description": "Completed or dismissed items"}
-  ],
-  "shrooms": [
-    {"title": "Generate ideas", "instructions": "Generate fresh, specific ideas related to...", "action": "generate", "targetColumnName": "Inbox", "cardCount": 5}
-  ]
-}
+${CHANNEL_CONFIG_EXAMPLE}
 [/CHANNEL_CONFIG]
 
 Important guidelines:
@@ -78,12 +54,8 @@ Important guidelines:
 - Don't ask more than 2 questions per message
 - 1-3 exchanges should be enough before proposing a config
 - If the user gives a clear, specific description, propose the config right away (even on the first message)
-- Don't duplicate existing channel names — suggest variations if similar ones exist
-- Always propose 3-5 columns with the first one marked as isAiTarget
-- Always propose 1-2 relevant shrooms (at least one "generate" action)
-- Keep instructions specific and actionable, tailored to the user's topic
 - When proposing, include a brief conversational message explaining what you've set up and why
-- Column names should be short (1-3 words) and reflect the user's domain`;
+- If they ask for changes after a proposal, propose the whole config again with the changes in`;
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -157,7 +129,10 @@ export async function POST(request: Request) {
     const messages = buildPrompt(userMessage || '', isInitialGreeting ?? false, isWelcome, context);
 
     try {
-      const response = await llm.complete(messages);
+      // A full config — a rubric in the instructions, complete shroom briefs — outgrew
+      // the provider default of 4096 tokens and was cut off mid-JSON, which reads as
+      // no config at all.
+      const response = await llm.complete(messages, { maxTokens: 16000 });
       const responseText = response.content;
 
       if (userId && usingOwnerKey) {

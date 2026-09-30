@@ -228,21 +228,34 @@ const TOOLS = [
       },
       {
         name: 'create_channel',
-        description: "Create a new channel (board). Use when the user says \"make me a channel for X\", \"create a board for Y\", or \"start a new channel\". ALWAYS pass purpose — a sentence on what the channel is for, in the user's own words — and let the server pick columns and starter shrooms from it. Only pass columnNames when the user explicitly named columns. Read back the columns and shrooms that were created.",
+        description: "Create a new channel (board), designed from what the user asked for: its instructions, columns and shrooms. Use when they say \"make me a channel for X\" or \"create a board for Y\". Wait until they have finished describing it. Pass brief with EVERYTHING they said they want — every field, rubric, grade, audience, source rule and shroom they asked for — in their words, not condensed. Only pass columnNames when they named columns. Takes several seconds; say you're setting it up. Afterwards describe only what the result says was created.",
         parameters: {
           type: 'OBJECT',
           properties: {
             name: { type: 'STRING', description: 'Channel name, short and specific' },
-            description: { type: 'STRING', description: 'One line on what the channel is for' },
-            purpose: { type: 'STRING', description: "What the channel is for, in the user's own words. The server derives columns and starter shrooms from this." },
+            brief: { type: 'STRING', description: "Everything the user said they want this channel and its shrooms to do, as fully as they said it. Do not summarise — a long brief makes a better channel." },
             columnNames: {
               type: 'ARRAY',
               items: { type: 'STRING' },
-              description: 'ONLY when the user explicitly named columns. Otherwise omit and let the server choose.',
+              description: 'ONLY when the user explicitly named columns. Otherwise omit.',
             },
-            aiInstructions: { type: 'STRING', description: 'Optional standing instructions for Kan on this channel' },
           },
-          required: ['name'],
+          required: ['name', 'brief'],
+        },
+      },
+      {
+        name: 'update_channel',
+        description: "Change an existing channel's standing instructions, description or name — e.g. \"also have it consider X\". Use appendInstructions to add a requirement; use instructions only to rewrite them entirely. This does not change shrooms. Never say you updated a channel unless this succeeded.",
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            channelId: { type: 'STRING', description: 'Channel ID or name' },
+            appendInstructions: { type: 'STRING', description: "A requirement to add to the channel's instructions, in full" },
+            instructions: { type: 'STRING', description: 'Replacement instructions — only when the user wants them rewritten' },
+            description: { type: 'STRING', description: 'New one-line description' },
+            name: { type: 'STRING', description: 'New channel name' },
+          },
+          required: ['channelId'],
         },
       },
       {

@@ -16,6 +16,7 @@ import {
   suggestChannelDescription,
   getChannelInstructions,
 } from '@/lib/channelCreation/generateShrooms';
+import { CHANNEL_DESIGN_RULES } from '@/lib/channelCreation/designRules';
 
 const ANON_COOKIE_NAME = 'kanthink_anon_id';
 
@@ -424,30 +425,28 @@ async function generateChannelStructure(
   llm: LLMProvider
 ): Promise<GuideResult> {
 
+  // Same design rules as every other way of making a channel (lib/channelCreation/
+  // designRules.ts). This prompt used to cap instructions at "2-4 sentences" and each
+  // shroom at "2-3", which is where detailed channels lost their detail. Only the
+  // field names below differ — they're this route's existing contract.
   const systemPrompt = `You are helping create an AI-powered Kanban channel. Based on the user's choices, generate a complete channel configuration.
 
-The channel will have:
-- A name and description
-- Columns (3-4) that represent stages/categories for cards
-- AI instructions that guide what content to generate
-- 1-2 instruction cards (pre-built AI actions users can run)
+${CHANNEL_DESIGN_RULES}
 
-IMPORTANT: The first column should typically be where AI generates new cards (isAiTarget: true).
-
-Respond with valid JSON only (no markdown):
+Respond with valid JSON only (no markdown), using these field names:
 {
   "channelName": "Name (2-4 words)",
   "channelDescription": "One sentence describing the channel's purpose",
   "columns": [
     { "name": "Column Name", "description": "What goes here", "isAiTarget": true/false }
   ],
-  "instructions": "2-4 sentences telling the AI what kind of cards to generate, what topics to focus on, and what style to use. Be specific and actionable.",
+  "instructions": "The channel's standing brief",
   "instructionCards": [
     {
-      "title": "Action Name (e.g., 'Generate Ideas', 'Find Resources')",
-      "instructions": "REQUIRED: 2-3 sentences describing what this action does. Tell the AI what to generate, what angle to take, and what makes a good result. Example: 'Generate product feature ideas focused on user pain points. Each idea should include a problem statement and proposed solution. Prioritize ideas that improve user workflow efficiency.'",
+      "title": "Action Name",
+      "instructions": "What this shroom must produce, complete on its own",
       "action": "generate",
-      "targetColumnName": "Which column to put results",
+      "targetColumnName": "One of the column names",
       "cardCount": 5
     }
   ]
@@ -489,7 +488,7 @@ Make every field specific to what the user actually chose: "${fullContext}".`;
     { role: 'user', content: userPrompt },
   ];
 
-  const response = await llm.complete(messages);
+  const response = await llm.complete(messages, { maxTokens: 16000 });
 
   try {
     // Extract JSON from response

@@ -147,6 +147,22 @@ function buildMembersContext(members: MemberInfo[]): string {
   return `## Channel Members\n${lines.join('\n')}`;
 }
 
+/**
+ * The channel a shroom runs in: its name, what it's for, and its standing brief.
+ *
+ * Every prompt builder opens with this. The channel's instructions used to reach none
+ * of them, so a rubric written into a channel shaped its chat and nothing its shrooms
+ * produced, which is most of what a channel's instructions are for.
+ */
+function channelContextHeader(channel: Channel): string {
+  let header = `## Context\nChannel: ${channel.name}`;
+  if (channel.description?.trim()) header += `\n${channel.description.trim()}`;
+  if (channel.aiInstructions?.trim()) {
+    header += `\n\nChannel instructions (apply to everything this shroom writes here):\n${channel.aiInstructions.trim()}`;
+  }
+  return header;
+}
+
 function buildGeneratePrompt(
   instructionCard: InstructionCard,
   channel: Channel,
@@ -204,10 +220,7 @@ Respond with ONLY the JSON array:
   const userParts: string[] = [];
 
   // Context
-  let contextSection = `## Context\nChannel: ${channel.name}`;
-  if (channel.description) {
-    contextSection += `\n${channel.description}`;
-  }
+  let contextSection = channelContextHeader(channel);
   if (systemInstructions?.trim()) {
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
   }
@@ -391,7 +404,7 @@ ${capabilityExplanations.length > 0 ? capabilityExplanations.join('\n\n') + '\n\
   const userParts: string[] = [];
 
   // Context
-  let contextSection = `## Context\nChannel: ${channel.name}`;
+  let contextSection = channelContextHeader(channel);
   if (systemInstructions?.trim()) {
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
   }
@@ -639,7 +652,7 @@ If no cards should be moved, return an empty array: []`;
   const userParts: string[] = [];
 
   // Context
-  let contextSection = `## Context\nChannel: ${channel.name}`;
+  let contextSection = channelContextHeader(channel);
   if (systemInstructions?.trim()) {
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
   }
@@ -721,8 +734,7 @@ Rules:
 
   const userParts: string[] = [];
 
-  let contextSection = `## Context\nChannel: ${channel.name}`;
-  if (channel.description) contextSection += `\nDescription: ${channel.description}`;
+  let contextSection = channelContextHeader(channel);
   contextSection += `\nToday: ${new Date().toISOString().slice(0, 10)}`;
   if (systemInstructions?.trim()) {
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
@@ -924,10 +936,7 @@ Respond with ONLY the JSON object, no other text.`;
   const userParts: string[] = [];
 
   // Context
-  let contextSection = `## Context\nChannel: ${channel.name}`;
-  if (channel.description) {
-    contextSection += `\n${channel.description}`;
-  }
+  let contextSection = channelContextHeader(channel);
   if (systemInstructions?.trim()) {
     contextSection += `\n\nGeneral guidance:\n${systemInstructions.trim()}`;
   }
@@ -1983,8 +1992,14 @@ export async function POST(request: Request) {
               {
                 appId: app.id,
                 // The shroom's instructions are the standing brief; the card's thread
-                // supplies everything else.
-                prompt: instructionCard.instructions || 'Build an app from this card.',
+                // supplies everything else. The channel's instructions ride along as
+                // context, as they do for every other shroom action.
+                prompt: [
+                  instructionCard.instructions || 'Build an app from this card.',
+                  channel.aiInstructions?.trim()
+                    ? `Context — this channel's instructions:\n${channel.aiInstructions.trim()}`
+                    : '',
+                ].filter(Boolean).join('\n\n'),
               },
               { user: { id: userId } },
               // Nobody is watching an automated run, so it must never stop to ask.

@@ -25,6 +25,7 @@ interface ChannelStructure {
     action: 'generate' | 'modify' | 'move' | 'build';
     targetColumnName: string;
     cardCount?: number;
+    triggerOnArrival?: boolean;
   }>;
 }
 

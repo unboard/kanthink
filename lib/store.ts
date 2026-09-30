@@ -77,6 +77,8 @@ interface KanthinkState {
       action: 'generate' | 'modify' | 'move' | 'build';
       targetColumnName: string;
       cardCount?: number;
+      /** Run whenever a card lands in the target column — a pipeline stage. */
+      triggerOnArrival?: boolean;
     }>;
   }) => Channel;
   updateChannel: (id: ID, updates: Partial<Omit<Channel, 'id' | 'createdAt'>>) => void;
@@ -640,11 +642,15 @@ export const useStore = create<KanthinkState>()(
         const timestamp = now();
 
         // Create columns with IDs
+        // A column's description is what belongs in it, which is what its instructions
+        // are. It used to be dropped here, so every template and Ask Kan column came out
+        // with none.
         const columns: Column[] = input.columns.map((col) => ({
           id: nanoid(),
           name: col.name,
           cardIds: [],
           isAiTarget: col.isAiTarget ?? false,
+          ...(col.description?.trim() ? { instructions: col.description.trim() } : {}),
         }));
 
         // Create instruction cards
@@ -666,6 +672,9 @@ export const useStore = create<KanthinkState>()(
               : { type: 'board' },
             runMode: 'manual',
             cardCount: ic.cardCount,
+            ...(ic.triggerOnArrival && targetColumn
+              ? { triggers: [{ type: 'event' as const, eventType: 'card_moved_to' as const, columnId: targetColumn.id }] }
+              : {}),
             createdAt: timestamp,
             updatedAt: timestamp,
           };
@@ -697,7 +706,7 @@ export const useStore = create<KanthinkState>()(
           name: input.name,
           description: input.description,
           aiInstructions: input.aiInstructions,
-          columns: columns.map((c, i) => ({ id: c.id, name: c.name, isAiTarget: c.isAiTarget ?? i === 0 })),
+          columns: columns.map((c, i) => ({ id: c.id, name: c.name, isAiTarget: c.isAiTarget ?? i === 0, instructions: c.instructions })),
         });
 
         // Sync instruction cards
@@ -709,6 +718,7 @@ export const useStore = create<KanthinkState>()(
             target: ic.target,
             runMode: ic.runMode,
             cardCount: ic.cardCount,
+            triggers: ic.triggers,
           });
         }
 
