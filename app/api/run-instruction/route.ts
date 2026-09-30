@@ -25,6 +25,7 @@ import { stripEchoedContent, cardContentStrings } from '@/lib/shrooms/stripEchoe
 import { loadRejectionsForShroom } from '@/lib/shrooms/rejections';
 import { screenGeneratedCards, shouldScreen, draftCountFor } from '@/lib/shrooms/tasteGate';
 import { sendShroomRunEmail, type ShroomRunOutcome } from '@/lib/shrooms/sendRunEmail';
+import { afterResponse } from '@/lib/afterResponse';
 
 // Configure marked for safe HTML output
 marked.setOptions({
@@ -88,20 +89,6 @@ async function completeWithEscalation<T>(
   }
 
   return { response: retry, parsed: retryParsed, escalatedTo: roomier.model };
-}
-
-// Stub ideas for fallback when no LLM is configured
-const STUB_IDEAS = [
-  'Try a new approach to this',
-  'Consider the opposite perspective',
-  'What if we simplified this?',
-  'Explore related concepts',
-  'Break this into smaller parts',
-];
-
-function getRandomIdeas(count: number): string[] {
-  const shuffled = [...STUB_IDEAS].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
 }
 
 
@@ -1199,17 +1186,13 @@ export async function POST(request: Request) {
     // Rejection history lives on the server so a shroom learns from every device, not
     // just the one it happened to run on. Loaded once per request and shared by every
     // prompt this run builds.
-    let cachedRejections: CardRejection[] | null = null;
-    const resolveRejections = async (): Promise<CardRejection[]> => {
-      if (cachedRejections) return cachedRejections;
-      try {
-        cachedRejections = await loadRejectionsForShroom(channel.id, instructionCard.id);
-      } catch {
-        // A shroom that can't read its history should still run. It just runs naive.
-        cachedRejections = [];
-      }
-      return cachedRejections;
-    };
+    // Started now rather than on first use, so the query overlaps resolving the LLM client.
+    // A shroom that can't read its history should still run. It just runs naive.
+    const rejectionsPromise: Promise<CardRejection[]> = loadRejectionsForShroom(
+      channel.id,
+      instructionCard.id
+    ).catch(() => []);
+    const resolveRejections = (): Promise<CardRejection[]> => rejectionsPromise;
 
     const appendRejectionContext = (messages: LLMMessage[], entries: CardRejection[]) => {
       if (entries.length === 0) return;
@@ -1222,20 +1205,22 @@ export async function POST(request: Request) {
     /**
      * Email the channel owner about this run, if the shroom asks for it.
      *
-     * Awaited rather than fired-and-forgotten: composing the email is another LLM call,
-     * and on serverless the function can be frozen the moment the response is returned,
-     * which would drop the send. Runs are already slow enough that a few more seconds
-     * is the right trade for actually delivering.
+     * Composing the email is another LLM call, so it runs after the response has gone
+     * out — through `after()`, which keeps the function alive until it finishes rather
+     * than letting serverless freeze it and drop the send. Whoever pressed Run no longer
+     * waits on an email to see their cards.
      *
      * Only fires on `apply` runs — previews and dry runs shouldn't mail anyone.
      */
     const maybeSendRunEmail = async (outcome: ShroomRunOutcome): Promise<void> => {
       if (!apply) return;
       if (!instructionCard.emailConfig?.enabled) return;
-      const result = await sendShroomRunEmail(instructionCard, channel.id, outcome, userId ?? undefined);
-      if (!result.sent && result.reason !== 'not enabled' && result.reason !== 'nothing happened') {
-        console.warn(`[run-instruction] Shroom email not sent: ${result.reason}`);
-      }
+      afterResponse(async () => {
+        const result = await sendShroomRunEmail(instructionCard, channel.id, outcome, userId ?? undefined);
+        if (!result.sent && result.reason !== 'not enabled' && result.reason !== 'nothing happened') {
+          console.warn(`[run-instruction] Shroom email not sent: ${result.reason}`);
+        }
+      });
     };
 
     /**
@@ -1285,22 +1270,10 @@ export async function POST(request: Request) {
       };
     } else {
       const authResult = await getAuthenticatedLLM('run-instruction', preferredModel);
-      if (authResult.error) {
-        // Check if we should return stub data for unauthenticated users
-        if (instructionCard.action === 'generate') {
-          const ideas = getRandomIdeas(instructionCard.cardCount ?? 5);
-          return NextResponse.json({
-            action: 'generate',
-            targetColumnIds,
-            generatedCards: ideas.map((idea) => ({
-              title: idea,
-              content: '<p>Sign in or configure an API key for real AI suggestions.</p>',
-            })),
-          });
-        } else {
-          return authResult.error;
-        }
-      }
+      // Every action surfaces the real reason (signed out, over the limit, no key). A
+      // generate run used to answer with placeholder cards here, which the board
+      // reported as "Created 5 cards" while writing nothing.
+      if (authResult.error) return authResult.error;
       llm = authResult.context.llm;
       recordUsageAfterSuccess = authResult.context.recordUsageAfterSuccess;
     }
@@ -1516,7 +1489,7 @@ export async function POST(request: Request) {
           const searchQueries: string[] = [];
           if (topicTitles.length > 0 && contentType) {
             for (const topic of topicTitles.slice(0, 4)) {
-              searchQueries.push(`best ${contentType} ${topic} 2025`);
+              searchQueries.push(`best ${contentType} ${topic} ${new Date().getFullYear()}`);
             }
           } else {
             searchQueries.push(baseSearchQuery(instructionCard));
@@ -1597,16 +1570,12 @@ export async function POST(request: Request) {
           });
         }
 
+        // An answer that parsed to nothing is a failed run, not placeholder cards —
+        // those were reported as created while nothing was written.
         if (generatedCards.length === 0) {
-          return NextResponse.json({
-            action: 'generate',
-            targetColumnIds,
-            generatedCards: getRandomIdeas(instructionCard.cardCount ?? 5).map((idea) => ({
-              title: idea,
-              content: '<p>AI generation failed. Please try again.</p>',
-            })),
-            debug,
-          });
+          const error = "The AI's answer couldn't be read as cards. Try running it again.";
+          notifyRunFailed(error);
+          return NextResponse.json({ action: 'generate', targetColumnIds, generatedCards: [], error, debug });
         }
 
         // Record usage after successful generation
@@ -1689,15 +1658,9 @@ export async function POST(request: Request) {
         console.error('LLM error:', llmError);
         debug.rawResponse = `Error: ${llmError instanceof Error ? llmError.message : 'Unknown error'}`;
 
-        return NextResponse.json({
-          action: 'generate',
-          targetColumnIds,
-          generatedCards: getRandomIdeas(instructionCard.cardCount ?? 5).map((idea) => ({
-            title: idea,
-            content: '<p>AI generation encountered an error. Please try again.</p>',
-          })),
-          debug,
-        });
+        const error = `AI error: ${llmError instanceof Error ? llmError.message : 'Unknown error'}`;
+        notifyRunFailed(error);
+        return NextResponse.json({ action: 'generate', targetColumnIds, generatedCards: [], error, debug });
       }
     } else if (instructionCard.action === 'modify') {
       // MODIFY action
@@ -1783,7 +1746,7 @@ export async function POST(request: Request) {
           const topics = topicTitles.slice(0, 5);
           if (topics.length > 0 && contentType) {
             for (const topic of topics) {
-              searchQueries.push(`best ${contentType} ${topic} 2025`);
+              searchQueries.push(`best ${contentType} ${topic} ${new Date().getFullYear()}`);
             }
           } else if (topics.length > 0) {
             // Batch topics into 1-2 searches

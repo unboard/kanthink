@@ -124,13 +124,15 @@ export function InstructionDetailDrawer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instructionCardId, channel.columns]);
 
-  // Auto-save when selections change
+  // Auto-save when selections change. Action and count save from here too: saving them
+  // from the click handler read the previous render's state, so the stepper showed 6
+  // and stored 5.
   useEffect(() => {
     if (!isSyncingRef.current && instructionCard) {
       handleSave();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextEnabled, contextColumnIds, selectedColumnIds]);
+  }, [contextEnabled, contextColumnIds, selectedColumnIds, action, cardCount]);
 
   const handleSave = (overrides?: {
     triggers?: AutomaticTrigger[];
@@ -369,7 +371,7 @@ export function InstructionDetailDrawer({
                   {(['generate', 'modify', 'move'] as const).map((a) => (
                     <button
                       key={a}
-                      onClick={() => { setAction(a); setTimeout(handleSave, 0); }}
+                      onClick={() => setAction(a)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         action === a
                           ? 'bg-violet-600 text-white'
@@ -399,14 +401,14 @@ export function InstructionDetailDrawer({
                     <span className="text-sm text-neutral-500 dark:text-neutral-400">Create</span>
                     <div className="flex items-center bg-neutral-100 dark:bg-neutral-800 rounded-lg overflow-hidden">
                       <button
-                        onClick={() => { setCardCount(Math.max(1, cardCount - 1)); setTimeout(handleSave, 0); }}
+                        onClick={() => setCardCount(Math.max(1, cardCount - 1))}
                         className="w-8 h-8 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-700 dark:hover:text-white transition-colors flex items-center justify-center"
                       >
                         −
                       </button>
                       <span className="w-8 text-center text-neutral-900 dark:text-white font-medium">{cardCount}</span>
                       <button
-                        onClick={() => { setCardCount(Math.min(20, cardCount + 1)); setTimeout(handleSave, 0); }}
+                        onClick={() => setCardCount(Math.min(20, cardCount + 1))}
                         className="w-8 h-8 text-neutral-500 hover:bg-neutral-200 dark:hover:bg-neutral-700 hover:text-neutral-700 dark:hover:text-white transition-colors flex items-center justify-center"
                       >
                         +

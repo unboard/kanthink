@@ -16,7 +16,13 @@ interface ShroomDetailProps {
   onClose: () => void;
   onRun: () => void;
   onEdit: () => void;
+  /** Change how many cards a generate shroom makes. Saved on the shroom, not per run. */
+  onCardCountChange?: (count: number) => void;
 }
+
+/** Same bounds as the edit drawer. */
+const MIN_CARDS = 1;
+const MAX_CARDS = 20;
 
 /**
  * What a shroom is, before you set it going.
@@ -38,6 +44,7 @@ export function ShroomDetail({
   onClose,
   onRun,
   onEdit,
+  onCardCountChange,
 }: ShroomDetailProps) {
   const onKey = useCallback(
     (e: KeyboardEvent) => {
@@ -56,6 +63,11 @@ export function ShroomDetail({
   const ink = textOn(palette.bg);
   const facts = describeShroom(shroom, channel, allShrooms);
   const trail = buildShroomTrail(shroom, channel);
+
+  // Only a plain generate shroom has one count to show. A multi-step shroom keeps its
+  // count per step, and that belongs in the editor.
+  const showCount = shroom.action === 'generate' && !shroom.steps?.length && !!onCardCountChange;
+  const count = shroom.cardCount ?? 5;
 
   const readsAlso = trail.readsColumnIds
     .map((id) => channel?.columns.find((c) => c.id === id)?.name)
@@ -145,6 +157,32 @@ export function ShroomDetail({
           <dl className="divide-y divide-neutral-100 rounded-lg border border-neutral-200 text-[12px] dark:divide-neutral-800 dark:border-neutral-800">
             {/* No "Runs" row: the header already said when, and repeating it two
                 inches lower reads as two different facts. */}
+            {showCount && (
+              <div className="flex items-center gap-3 px-3 py-1.5">
+                <dt className="flex-shrink-0 text-neutral-500">Cards per run</dt>
+                <dd className="ml-auto flex items-center overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-700">
+                  <button
+                    aria-label="Fewer cards"
+                    onClick={() => onCardCountChange!(Math.max(MIN_CARDS, count - 1))}
+                    disabled={isRunning || count <= MIN_CARDS}
+                    className="flex h-7 w-7 items-center justify-center text-neutral-500 transition-colors hover:bg-neutral-100 disabled:opacity-40 dark:hover:bg-neutral-800"
+                  >
+                    −
+                  </button>
+                  <span className="w-7 text-center font-medium tabular-nums text-neutral-800 dark:text-neutral-200">
+                    {count}
+                  </span>
+                  <button
+                    aria-label="More cards"
+                    onClick={() => onCardCountChange!(Math.min(MAX_CARDS, count + 1))}
+                    disabled={isRunning || count >= MAX_CARDS}
+                    className="flex h-7 w-7 items-center justify-center text-neutral-500 transition-colors hover:bg-neutral-100 disabled:opacity-40 dark:hover:bg-neutral-800"
+                  >
+                    +
+                  </button>
+                </dd>
+              </div>
+            )}
             {facts.totalRuns > 0 && (
               <Row
                 label="Times run"

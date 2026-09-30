@@ -264,7 +264,7 @@ async function executeAutomaticInstruction(
     let cardsAffected = 0;
 
     // Process results based on action type
-    if (result.action === 'generate' && result.generatedCards) {
+    if (result.action === 'generate' && result.generatedCards && !result.error) {
       // Created server-side, already in the right bucket. Automatic runs used to write
       // cards straight to the board regardless of autoApprove — the exact clutter the
       // review queue was meant to prevent. They now respect it like manual runs do.

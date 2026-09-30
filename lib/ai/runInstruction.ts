@@ -72,6 +72,28 @@ export async function runInstruction(
   // Get system instructions from settings store (no API key)
   const { ai } = useSettingsStore.getState();
 
+  // The store holds every loaded channel's cards, threads included, and the route only
+  // ever reads this channel's. Sending the lot made each run's upload grow with the
+  // whole workspace.
+  const cards: Record<string, Card> = {};
+  for (const [id, card] of Object.entries(allCards)) {
+    if (card.channelId === channel.id) cards[id] = card;
+  }
+  for (const column of channel.columns) {
+    for (const id of column.cardIds) {
+      if (allCards[id]) cards[id] = allCards[id];
+    }
+  }
+  const tasks: Record<string, Task> = {};
+  for (const [id, task] of Object.entries(allTasks)) {
+    if (task.channelId === channel.id) tasks[id] = task;
+  }
+  for (const card of Object.values(cards)) {
+    for (const id of card.taskIds ?? []) {
+      if (allTasks[id]) tasks[id] = allTasks[id];
+    }
+  }
+
   try {
     const response = await fetch('/api/run-instruction', {
       method: 'POST',
@@ -79,8 +101,8 @@ export async function runInstruction(
       body: JSON.stringify({
         instructionCard,
         channel,
-        cards: allCards,
-        tasks: allTasks,
+        cards,
+        tasks,
         triggeringCardId,
         cardIds,
         apply,

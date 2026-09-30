@@ -13,6 +13,7 @@ interface ShroomRowProps {
   runningIds: string[];
   onRun: (shroom: InstructionCard) => void;
   onEdit: (shroomId: ID) => void;
+  onCardCountChange: (shroomId: ID, count: number) => void;
   /** Open the full shroom panel — view, create, edit. */
   onOpenAll: () => void;
   /** Which shroom the pointer is over, lifted so the board can light its columns. */
@@ -41,6 +42,7 @@ export function ShroomRow({
   runningIds,
   onRun,
   onEdit,
+  onCardCountChange,
   onOpenAll,
   onHover,
   hoveredId,
@@ -107,6 +109,7 @@ export function ShroomRow({
             onEdit(openShroom.id);
             setOpenId(null);
           }}
+          onCardCountChange={(count) => onCardCountChange(openShroom.id, count)}
         />
       )}
     </div>

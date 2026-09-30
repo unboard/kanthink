@@ -664,7 +664,7 @@ export function Board({ channel }: BoardProps) {
         setDebugInfo(result.debug);
       }
 
-      if (result.action === 'generate' && result.generatedCards) {
+      if (result.action === 'generate' && result.generatedCards && !result.error) {
         const targetCol = channel.columns.find(c => c.id === result.applied?.columnId);
         // The server created these cards (see lib/shrooms/apply.ts) so they're already
         // in the right bucket — pull them down rather than writing them again here.
@@ -699,8 +699,8 @@ export function Board({ channel }: BoardProps) {
         addToast(`Shroom failed: ${result.error}`, 'warning', 5000);
       } else if (result.error === 'cancelled') {
         // No toast for user-initiated cancel
-      } else if (result.action === 'generate' && result.generatedCards) {
-        addToast(`Generated ${result.generatedCards.length} card(s) for review`, 'success');
+      } else if (result.action === 'generate') {
+        // Already toasted above, from what the server actually wrote.
       } else if (result.action === 'modify') {
         const modCount = result.modifiedCards?.length ?? 0;
         if (modCount > 0) {
@@ -1130,6 +1130,7 @@ export function Board({ channel }: BoardProps) {
           runningIds={aiOperation.runningInstructionIds ?? []}
           onRun={(shroom) => void executeInstruction(shroom)}
           onEdit={(id) => setEditingShroomId(id)}
+          onCardCountChange={(id, count) => updateInstructionCard(id, { cardCount: count })}
           onOpenAll={() => openPanel('shrooms')}
           onHover={setHoveredShroomId}
           hoveredId={hoveredShroomId}
