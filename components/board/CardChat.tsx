@@ -14,6 +14,8 @@ import { ChatInput, useKeyboardOffset, useComposerHeight, type ChatInputHandle }
 import { nanoid } from 'nanoid';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 import { THREAD_TRANSPORT_CAP } from '@/lib/ai/threadWindow';
+import { messageToAskKanAbout, USAGE_LIMIT_CODE } from '@/lib/chat/askKan';
+import { AskKanChip, UsageLimitNotice } from './AskKanChip';
 
 const WhiteboardEditor = dynamic(
   () => import('./WhiteboardEditor').then(mod => ({ default: mod.WhiteboardEditor })),
@@ -50,6 +52,8 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   const stopBuildWatchRef = useRef<(() => void) | null>(null);
   useEffect(() => () => stopBuildWatchRef.current?.(), []);
   const [aiError, setAIError] = useState<string | null>(null);
+  /** The reply failed because this month's AI requests are used up. */
+  const [aiLimitReached, setAILimitReached] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isSummaryLoading, setIsSummaryLoading] = useState(false);
   const [members, setMembers] = useState<ChannelMember[]>([]);
@@ -198,62 +202,85 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
 
     // If it's a question, send to AI
     if (type === 'question') {
-      setIsAILoading(true);
-      setAIError(null);
-
-      try {
-        const response = await fetch('/api/card-chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cardId: card.id,
-            channelId: card.channelId,
-            questionContent: content,
-            imageUrls,
-            imageSettings,
-            context: {
-              cardTitle: card.title,
-              // The card's own summary, regenerated every few messages below. On a long
-              // thread it is the only thing carrying the earliest part of the
-              // conversation past the window, so it goes up on every turn.
-              cardSummary: card.summary ?? undefined,
-              cardType: card.cardType ?? undefined,
-              // Whether this card already carries a built app. Passed down by the
-              // drawer, which is what actually loads them.
-              hasBuild: hasApps,
-              channelName,
-              channelDescription,
-              tasks: cardTasks.map((t) => ({ title: t.title, status: t.status })),
-              // The route decides how much of the thread it can actually use. This cap
-              // is only about the size of the POST, and is deliberately well above the
-              // route's window — when both ends trimmed, the limits multiplied silently
-              // and a card could display an instruction Kan was never given.
-              previousMessages: messages.slice(-THREAD_TRANSPORT_CAP),
-              cardTags: cardTags,
-              availableTags: tagDefinitions,
-            },
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to get AI response');
-        }
-
-        const data = await response.json();
-        // Pass actions to addAIResponse — guard against undefined content
-        addAIResponse(card.id, message.id, data.response || 'Sorry, I couldn\'t generate a response.', data.actions, data.imageUrls);
-
-        // Optionally trigger summary update
-        if (messages.length >= 3 && (messages.length % 3 === 0 || !card.summary)) {
-          generateSummary();
-        }
-      } catch (error) {
-        setAIError(error instanceof Error ? error.message : 'Failed to get AI response');
-      } finally {
-        setIsAILoading(false);
-      }
+      await requestKanReply(message.id, content, messages, imageUrls, imageSettings);
     }
+  };
+
+  /**
+   * Have Kan answer a message in this thread. `earlier` is the thread before it, which
+   * is what the route reads as the conversation so far.
+   */
+  const requestKanReply = async (
+    messageId: string,
+    content: string,
+    earlier: typeof messages,
+    imageUrls?: string[],
+    imageSettings?: { aspectRatio: string; quality: string; model?: string; background?: string },
+  ) => {
+    setIsAILoading(true);
+    setAIError(null);
+    setAILimitReached(false);
+
+    try {
+      const response = await fetch('/api/card-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardId: card.id,
+          channelId: card.channelId,
+          questionContent: content,
+          imageUrls,
+          imageSettings,
+          context: {
+            cardTitle: card.title,
+            // The card's own summary, regenerated every few messages below. On a long
+            // thread it is the only thing carrying the earliest part of the
+            // conversation past the window, so it goes up on every turn.
+            cardSummary: card.summary ?? undefined,
+            cardType: card.cardType ?? undefined,
+            // Whether this card already carries a built app. Passed down by the
+            // drawer, which is what actually loads them.
+            hasBuild: hasApps,
+            channelName,
+            channelDescription,
+            tasks: cardTasks.map((t) => ({ title: t.title, status: t.status })),
+            // The route decides how much of the thread it can actually use. This cap
+            // is only about the size of the POST, and is deliberately well above the
+            // route's window — when both ends trimmed, the limits multiplied silently
+            // and a card could display an instruction Kan was never given.
+            previousMessages: earlier.slice(-THREAD_TRANSPORT_CAP),
+            cardTags: cardTags,
+            availableTags: tagDefinitions,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (errorData.code === USAGE_LIMIT_CODE) setAILimitReached(true);
+        throw new Error(errorData.error || 'Failed to get AI response');
+      }
+
+      const data = await response.json();
+      // Pass actions to addAIResponse — guard against undefined content
+      addAIResponse(card.id, messageId, data.response || 'Sorry, I couldn\'t generate a response.', data.actions, data.imageUrls);
+
+      // Optionally trigger summary update
+      if (earlier.length >= 3 && (earlier.length % 3 === 0 || !card.summary)) {
+        generateSummary();
+      }
+    } catch (error) {
+      setAIError(error instanceof Error ? error.message : 'Failed to get AI response');
+    } finally {
+      setIsAILoading(false);
+    }
+  };
+
+  // Your latest message, if you forgot to address it to Kan.
+  const askable = isAILoading ? null : messageToAskKanAbout(messages, session?.user?.id);
+  const askKanAbout = () => {
+    if (!askable || !requireSignInForAI()) return;
+    void requestKanReply(askable.id, askable.content, messages.slice(0, -1), askable.imageUrls);
   };
 
   const generateSummary = async () => {
@@ -587,8 +614,19 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           </div>
         )}
 
+        {askable && !aiError && <AskKanChip onAsk={askKanAbout} />}
+
+        {/* Out of included requests: the upgrade is offered where the reply would be. */}
+        {aiError && aiLimitReached && (
+          <UsageLimitNotice
+            message={aiError}
+            tier={(session?.user as { tier?: 'free' | 'premium' } | undefined)?.tier}
+            onDismiss={() => { setAIError(null); setAILimitReached(false); }}
+          />
+        )}
+
         {/* AI Error */}
-        {aiError && (
+        {aiError && !aiLimitReached && (
           <div className="rounded-lg px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
             <div className="flex items-start gap-2">
               <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

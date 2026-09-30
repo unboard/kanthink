@@ -36,6 +36,8 @@ export interface LLMClientResult {
   client: LLMProvider | null;
   source: 'byok' | 'owner' | 'env' | 'none';
   error?: string;
+  /** No client because this month's included AI requests are used up. */
+  quotaExhausted?: boolean;
   /**
    * A specific model was asked for and could not be used — there is no key for its
    * provider. The client returned is the account default; callers that care can say so
@@ -87,7 +89,7 @@ export async function getLLMClientForUser(
   const held = Object.keys(keys) as PreferredModel['provider'][];
   if (held.length === 0) {
     if (quotaExhausted) {
-      return { client: null, source: 'none', error: quotaMessage };
+      return { client: null, source: 'none', error: quotaMessage, quotaExhausted: true };
     }
     return {
       client: null,

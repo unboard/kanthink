@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { releaseView } from '@/lib/playground/appRelease';
 import { runStructured } from './generateClient';
 import { db } from '@/lib/db';
 import { cards, tasks, playgroundApps } from '@/lib/db/schema';
@@ -915,7 +916,11 @@ export async function generatePlaygroundApp(
       .where(eq(playgroundApps.id, app.id));
 
     const after = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, app.id) });
-    return NextResponse.json({ app: after, unsupported: preflight.unsupported, asked: true });
+    return NextResponse.json({
+      app: after ? { ...after, ...(await releaseView(after)) } : after,
+      unsupported: preflight.unsupported,
+      asked: true,
+    });
   }
 
   // Short-circuit: when preflight asks for clarification, append the questions as a Kan
@@ -1399,6 +1404,7 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
     }).catch(() => {});
   }
 
+  const builtRow = { ...app, ...updated } as typeof app;
   return NextResponse.json({
     success: true,
     snapshot: {
@@ -1411,7 +1417,12 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
     // iframe, and an iframe without one cannot call the AI, save, or upload at all —
     // so a response that omits it can leave a working app looking broken. The client
     // also merges rather than replaces, but the payload should be right on its own.
-    app: { ...app, ...updated, draftToken: signDraftAppToken(app.id) },
+    //
+    // The release state too, recomputed. The drawer keeps any key a response omits,
+    // so returning the bare row left `hasUnpublishedChanges` as it was before this
+    // build — on a published app the Publish button stayed hidden until the drawer
+    // was reopened. See releaseView in lib/playground/appRelease.ts.
+    app: { ...builtRow, ...(await releaseView(builtRow)), draftToken: signDraftAppToken(app.id) },
     messages: newMessages,
     usage: sawUsage ? usage : null,
     // How this turn was produced, so the effect of patch mode is observable rather

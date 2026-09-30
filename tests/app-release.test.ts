@@ -130,7 +130,10 @@ describe('every route that moves the draft re-sends the release state', () => {
     'app/api/playground/apps/[appId]/route.ts',        // load and patch
     'app/api/playground/apps/[appId]/release/route.ts', // publish, roll back, take down
     'app/api/playground/apps/[appId]/undo/route.ts',    // one step back
-    'app/api/playground/status/[appId]/route.ts',       // a finished build
+    'app/api/playground/status/[appId]/route.ts',       // a finished build, polled
+    // A finished build, answered directly. The drawer applies this response the
+    // moment Update returns, so it has to carry the release state too.
+    'lib/playground/generateApp.ts',
   ]
 
   for (const route of ROUTES) {

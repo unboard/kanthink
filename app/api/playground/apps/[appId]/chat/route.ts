@@ -23,6 +23,7 @@ const MAX_HISTORY_IMAGES = 6
 interface ThreadMessage {
   id?: unknown
   type?: string
+  authorId?: string
   content?: string
   imageUrls?: string[]
   whiteboards?: { snapshotImageUrl?: string }[]
@@ -61,19 +62,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
     imageUrls?: string[]
     type?: 'note' | 'question'
     whiteboards?: Array<{ id: string; snapshot: string; snapshotImageUrl?: string }>
+    /**
+     * Answer a message already in the thread instead of posting a new one — "Ask Kan"
+     * under a note you forgot to address to him. Only your own last message.
+     */
+    askAboutId?: string
   }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
-  const message = (body.message || '').trim()
-  const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.filter(u => typeof u === 'string') : []
-  const whiteboards = Array.isArray(body.whiteboards) ? body.whiteboards.filter(w => w?.snapshot) : []
+  let message = (body.message || '').trim()
+  let imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.filter(u => typeof u === 'string') : []
+  let whiteboards = Array.isArray(body.whiteboards) ? body.whiteboards.filter(w => w?.snapshot) : []
+  const askAboutId = typeof body.askAboutId === 'string' ? body.askAboutId : null
   // A note is recorded and nothing more; a question is answered. Same split as a
   // card thread, so the composer behaves identically in both places.
-  const isNote = body.type === 'note'
-  if (!message && imageUrls.length === 0 && whiteboards.length === 0) {
+  const isNote = body.type === 'note' && !askAboutId
+  if (!askAboutId && !message && imageUrls.length === 0 && whiteboards.length === 0) {
     return NextResponse.json({ error: 'message, imageUrls or whiteboards is required' }, { status: 400 })
   }
 
@@ -85,9 +92,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
     }
     await requirePermission(app.channelId, session.user.id, 'edit')
 
-    const history = stripOptimistic<ThreadMessage>(app.messages)
+    let history = stripOptimistic<ThreadMessage>(app.messages)
 
-    const userMessage = {
+    let userMessage: Record<string, unknown> = {
       id: nanoid(),
       type: (isNote ? 'note' : 'question') as 'note' | 'question',
       content: message,
@@ -95,6 +102,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
       whiteboards: whiteboards.length > 0 ? whiteboards : undefined,
       authorId: session.user.id,
       createdAt: new Date().toISOString(),
+    }
+
+    if (askAboutId) {
+      // The message is already in the thread. It becomes the question, answered as
+      // if it had been addressed to Kan when it was sent.
+      const target = history[history.length - 1]
+      if (!target || target.id !== askAboutId || target.type === 'ai_response' || (target.authorId && target.authorId !== session.user.id)) {
+        return NextResponse.json({ error: 'Only your latest message can be sent to Kan' }, { status: 400 })
+      }
+      history = history.slice(0, -1)
+      message = (target.content || '').trim()
+      imageUrls = Array.isArray(target.imageUrls) ? target.imageUrls : []
+      whiteboards = Array.isArray(target.whiteboards)
+        ? (target.whiteboards as Array<{ id: string; snapshot: string; snapshotImageUrl?: string }>)
+        : []
+      userMessage = { ...target, type: 'question' }
     }
 
     // A note costs nothing and asks nothing. It still lands in the thread, so the
@@ -114,9 +137,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
 
     const card = await db.query.cards.findFirst({ where: eq(cards.id, app.cardId) })
 
-    const { client, error } = await getLLMClientForUser(session.user.id, undefined, 'chat')
+    const { client, error, quotaExhausted } = await getLLMClientForUser(session.user.id, undefined, 'chat')
     if (!client) {
-      return NextResponse.json({ error: error || 'No AI provider configured' }, { status: 400 })
+      return NextResponse.json(
+        { error: error || 'No AI provider configured', code: quotaExhausted ? 'USAGE_LIMIT_REACHED' : undefined },
+        { status: quotaExhausted ? 403 : 400 }
+      )
     }
 
     const systemPrompt = [

@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useSession } from 'next-auth/react';
 import { Drawer } from '@/components/ui/Drawer';
 import { ChatMessage } from '@/components/board/ChatMessage';
 import { ChatInput } from '@/components/board/ChatInput';
+import { AskKanChip, UsageLimitNotice } from '@/components/board/AskKanChip';
+import { messageToAskKanAbout, USAGE_LIMIT_CODE } from '@/lib/chat/askKan';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { useStore } from '@/lib/store';
 import { buildPlaygroundDoc } from './buildPlaygroundDoc';
@@ -89,6 +92,9 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   const [isBuilding, setIsBuilding] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The last reply failed because this month's AI requests are used up. */
+  const [limitReached, setLimitReached] = useState(false);
+  const { data: session } = useSession();
   const [iframeError, setIframeError] = useState<IframeError | null>(null);
   const [pane, setPane] = useState<Pane>('thread');
   const [copied, setCopied] = useState(false);
@@ -373,6 +379,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       const data = await res.json();
       if (!res.ok) {
         setError(data?.error || 'Message failed');
+        setLimitReached(data?.code === USAGE_LIMIT_CODE);
         setOptimistic([]);
         return;
       }
@@ -383,6 +390,32 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       setOptimistic([]);
     } finally {
       if (asks) setIsChatting(false);
+    }
+  }, [app, busy, applyApp]);
+
+  /** Send your latest message to Kan, when you forgot to address it to him. */
+  const askKanAbout = useCallback(async (messageId: string) => {
+    if (busy || !app) return;
+    setError(null);
+    setLimitReached(false);
+    setIsChatting(true);
+    try {
+      const res = await fetch(`/api/playground/apps/${app.id}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ askAboutId: messageId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error || 'Message failed');
+        setLimitReached(data?.code === USAGE_LIMIT_CODE);
+        return;
+      }
+      applyApp({ ...app, messages: data.messages as CardMessage[] });
+    } catch {
+      setError('Message failed — check your connection.');
+    } finally {
+      setIsChatting(false);
     }
   }, [app, busy, applyApp]);
 
@@ -623,6 +656,10 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
                 {messages.map((message) => (
                   <ChatMessage key={message.id} message={message} cardId={card.id} />
                 ))}
+                {(() => {
+                  const askable = busy || limitReached || optimistic.length ? null : messageToAskKanAbout(messages, session?.user?.id);
+                  return askable ? <AskKanChip onAsk={() => void askKanAbout(askable.id)} /> : null;
+                })()}
               </div>
 
               {busy && (
@@ -640,7 +677,16 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
 
         {/* Bottom bar: nav tiles + Update, then the composer — same shape as a card. */}
         <div className="flex-shrink-0 bg-white dark:bg-neutral-900 pt-2">
-          {error && (
+          {error && limitReached && (
+            <div className="mx-3 mb-2">
+              <UsageLimitNotice
+                message={error}
+                tier={(session?.user as { tier?: 'free' | 'premium' } | undefined)?.tier}
+                onDismiss={() => { setError(null); setLimitReached(false); }}
+              />
+            </div>
+          )}
+          {error && !limitReached && (
             <div className="mx-3 mb-2 flex items-start gap-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20">
               <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-red-600 dark:text-red-400 flex-1">{error}</p>

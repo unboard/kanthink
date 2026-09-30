@@ -10,6 +10,8 @@ import { requireSignInForAI } from '@/lib/settingsStore';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
 import { ChatInput, useKeyboardOffset, useComposerHeight } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
+import { AskKanChip, UsageLimitNotice } from './AskKanChip';
+import { messageToAskKanAbout, USAGE_LIMIT_CODE } from '@/lib/chat/askKan';
 import { Drawer } from '@/components/ui';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
@@ -87,6 +89,8 @@ export function TaskDrawer({
   const [isAILoading, setIsAILoading] = useState(false);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   const [aiError, setAIError] = useState<string | null>(null);
+  /** The reply failed because this month's AI requests are used up. */
+  const [aiLimitReached, setAILimitReached] = useState(false);
 
   const { data: session } = useSession();
   const { keyboardOffset, onFocus: handleKeyboardFocus, onBlur: handleKeyboardBlur } = useKeyboardOffset();
@@ -194,6 +198,60 @@ export function TaskDrawer({
     });
   };
 
+  /** Have Kan answer the latest note, which is already on the task. */
+  const requestKanReply = useCallback(async (content: string, imageUrls?: string[]) => {
+    if (!task) return;
+    setIsAILoading(true);
+    setAIError(null);
+    setAILimitReached(false);
+
+    try {
+      const channel = channels[task.channelId];
+      const parentCard = task.cardId ? cards[task.cardId] : null;
+
+      // Read latest notes from store (not stale prop) so the AI sees full conversation
+      const liveNotes = useStore.getState().tasks[task.id]?.notes ?? [];
+
+      const response = await fetch('/api/task-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: task.id,
+          questionContent: content,
+          imageUrls,
+          context: {
+            taskTitle: task.title,
+            taskStatus: task.status,
+            parentCardTitle: parentCard?.title,
+            channelName: channel?.name ?? '',
+            channelDescription: channel?.description ?? '',
+            previousNotes: liveNotes.slice(-10),
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (errorData.code === USAGE_LIMIT_CODE) setAILimitReached(true);
+        throw new Error(errorData.error || 'Failed to get AI response');
+      }
+
+      const data = await response.json();
+
+      // Add AI response as a note from "Kan" (with generated images if any)
+      addTaskNote(task.id, data.response, {
+        id: 'kan',
+        name: 'Kan',
+        image: 'https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg',
+      }, data.imageUrls);
+      setTimeout(() => notesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    } catch (error) {
+      setAIError(error instanceof Error ? error.message : 'Failed to get AI response');
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [task, addTaskNote, channels, cards]);
+
   const handleAddNote = useCallback(async (content: string, type: CardMessageType, imageUrls?: string[]) => {
     if (!task) return;
     const author = session?.user
@@ -210,56 +268,9 @@ export function TaskDrawer({
     setTimeout(() => notesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
 
     // If it's a question, send to AI
-    if (type === 'question') {
-      setIsAILoading(true);
-      setAIError(null);
+    if (type === 'question') await requestKanReply(content, imageUrls);
+  }, [task, session, addTaskNote, requestKanReply]);
 
-      try {
-        const channel = channels[task.channelId];
-        const parentCard = task.cardId ? cards[task.cardId] : null;
-
-        // Read latest notes from store (not stale prop) so the AI sees full conversation
-        const liveNotes = useStore.getState().tasks[task.id]?.notes ?? [];
-
-        const response = await fetch('/api/task-chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            taskId: task.id,
-            questionContent: content,
-            imageUrls,
-            context: {
-              taskTitle: task.title,
-              taskStatus: task.status,
-              parentCardTitle: parentCard?.title,
-              channelName: channel?.name ?? '',
-              channelDescription: channel?.description ?? '',
-              previousNotes: liveNotes.slice(-10),
-            },
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to get AI response');
-        }
-
-        const data = await response.json();
-
-        // Add AI response as a note from "Kan" (with generated images if any)
-        addTaskNote(task.id, data.response, {
-          id: 'kan',
-          name: 'Kan',
-          image: 'https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg',
-        }, data.imageUrls);
-        setTimeout(() => notesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-      } catch (error) {
-        setAIError(error instanceof Error ? error.message : 'Failed to get AI response');
-      } finally {
-        setIsAILoading(false);
-      }
-    }
-  }, [task, session, addTaskNote, channels, cards]);
 
   const handleTitleDrawerSave = () => {
     if (task && title.trim()) {
@@ -733,8 +744,31 @@ export function TaskDrawer({
               </div>
             )}
 
+            {/* Your latest note, if you forgot to address it to Kan. Task notes carry no
+                type — Kan's replies are notes authored by "kan" — so each reads as a note. */}
+            {(() => {
+              if (isAILoading || aiError) return null;
+              const askable = messageToAskKanAbout(currentNotes.map((n) => ({ ...n, type: 'note' })), session?.user?.id);
+              return askable ? (
+                <AskKanChip
+                  onAsk={() => {
+                    if (requireSignInForAI()) void requestKanReply(askable.content, askable.imageUrls);
+                  }}
+                />
+              ) : null;
+            })()}
+
+            {/* Out of included requests: the upgrade is offered where the reply would be. */}
+            {aiError && aiLimitReached && (
+              <UsageLimitNotice
+                message={aiError}
+                tier={(session?.user as { tier?: 'free' | 'premium' } | undefined)?.tier}
+                onDismiss={() => { setAIError(null); setAILimitReached(false); }}
+              />
+            )}
+
             {/* AI Error */}
-            {aiError && (
+            {aiError && !aiLimitReached && (
               <div className="rounded-lg px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
                 <div className="flex items-start gap-2">
                   <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
