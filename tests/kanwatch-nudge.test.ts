@@ -9,7 +9,7 @@ import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({ db: {} }))
 
-import { pickNudge, pickCelebrations, pickMoments, correctedFocus, DRIFT_MINUTES } from '@/lib/kanwatch/nudge'
+import { pickNudge, pickStart, pickMoments, correctedFocus, DRIFT_MINUTES } from '@/lib/kanwatch/nudge'
 
 const NOW = Date.UTC(2026, 8, 25, 18, 0, 0)
 let n = 0
@@ -84,79 +84,88 @@ describe('pickNudge', () => {
 
 const E = 'editor.mycreativeshop.com'
 const T = 'templatedesigner.mycreativeshop.com'
-const kinds = (ms: { key: string }[]) => ms.map((m) => m.key.split(':')[0])
+const id = (v: unknown) => (v as { id: string }).id
 
-describe('pickCelebrations', () => {
-  it('says you’re on it a few minutes into the first session of the day', () => {
-    const [m] = pickCelebrations([visit(5, 0, E, 'priority')], 'template manufacturing', NOW)
-    expect(m.title).toBe('You’re on it')
+describe('pickStart', () => {
+  it('asks whether you’re on it a few minutes into the first session of the day', () => {
+    const m = pickStart([visit(5, 0, E, 'priority')], 'template manufacturing', NOW)!
+    expect(m.title).toBe('On your priority?')
     expect(m.message).toContain('template manufacturing')
     expect(m.message).toContain(E)
   })
 
   it('stays quiet for a glance at the priority', () => {
-    expect(pickCelebrations([visit(1, 0, E, 'priority')], 'p', NOW)).toEqual([])
+    expect(pickStart([visit(1, 0, E, 'priority')], 'p', NOW)).toBeNull()
   })
 
-  it('says back on it after a real stretch away, and not after a short detour', () => {
-    const back = pickCelebrations([visit(90, 60, E, 'priority'), visit(60, 30, 'secure.helpscout.net', 'work'), visit(5, 0, E, 'priority')], 'p', NOW)
-    expect(back[0].title).toBe('Back on it')
+  it('asks again after a real stretch away, and not after a short detour', () => {
+    const back = pickStart([visit(90, 60, E, 'priority'), visit(60, 30, 'secure.helpscout.net', 'work'), visit(5, 0, E, 'priority')], 'p', NOW)
+    expect(back!.title).toBe('Back on your priority?')
     // Detours and gaps under twenty minutes keep the same session: its start is the old one.
     const first = visit(40, 30, E, 'priority')
-    const same = pickCelebrations([first, visit(30, 25, 'x.com', 'not_work'), visit(25, 0, T, 'priority')], 'p', NOW)
-    const start = same.find((m) => m.kind === 'start')!
-    expect(start.key).toBe(`start:${(first as { id: string }).id}`)
-    expect(start.title).toBe('You’re on it')
-  })
-
-  it('counts session milestones across detours instead of resetting', () => {
-    const ms = pickCelebrations([
-      visit(60, 40, E, 'priority'),
-      visit(40, 35, 'secure.helpscout.net', 'work'),
-      visit(35, 25, T, 'priority'),
-      visit(25, 20, 'dashboard.mycreativeshop.com', 'work'),
-      visit(20, 0, E, 'priority'),
-    ], 'p', NOW)
-    expect(ms.find((m) => m.key.startsWith('deep:'))!.key.endsWith(':50')).toBe(true)
-  })
-
-  it('marks 45 minutes without a distraction, where other work is not one', () => {
-    const clean = pickCelebrations([visit(50, 30, E, 'priority'), visit(30, 25, 'secure.helpscout.net', 'work'), visit(25, 0, E, 'priority')], 'p', NOW)
-    expect(kinds(clean)).toContain('clean')
-    const distracted = pickCelebrations([visit(50, 30, E, 'priority'), visit(30, 25, 'x.com', 'not_work'), visit(25, 0, E, 'priority')], 'p', NOW)
-    expect(kinds(distracted)).not.toContain('clean')
-  })
-
-  it('counts the day’s total across sessions', () => {
-    const ms = pickCelebrations([visit(300, 260, E, 'priority'), visit(30, 0, T, 'priority')], 'p', NOW, '2026-09-25')
-    expect(ms.find((m) => m.key.startsWith('today:'))!.key).toBe('today:2026-09-25:60')
-  })
-
-  it('suggests a break at 90 minutes', () => {
-    const ms = pickCelebrations([visit(95, 0, E, 'priority')], 'p', NOW)
-    expect(ms.find((m) => m.key.startsWith('deep:'))!.message).toContain('break')
+    const same = pickStart([first, visit(30, 25, 'x.com', 'not_work'), visit(25, 0, T, 'priority')], 'p', NOW)
+    expect(same!.key).toBe(`start:${id(first)}`)
   })
 
   it('says nothing once you’ve left the session', () => {
-    expect(pickCelebrations([visit(60, 30, E, 'priority')], 'p', NOW)).toEqual([])
+    expect(pickStart([visit(60, 30, E, 'priority')], 'p', NOW)).toBeNull()
   })
 
   it('carries the visits it was judged from, so an answer corrects exactly those', () => {
     const v = visit(10, 0, E, 'priority')
-    expect(pickCelebrations([v], 'p', NOW)[0].visitIds).toEqual([(v as { id: string }).id])
+    expect(pickStart([v], 'p', NOW)!.visitIds).toEqual([id(v)])
   })
 })
 
-describe('pickMoments', () => {
-  it('puts a drift nudge first', () => {
+describe('moments are yes/no questions about a change', () => {
+  it('pairs every question with a plain yes and no', () => {
+    const drift = pickNudge([visit(15, 0, 'x.com', 'not_work')], 'p', NOW)!
+    expect(drift.buttons).toEqual(['Yes, I’m off it', 'No, I’m on it'])
+    const start = pickStart([visit(5, 0, E, 'priority')], 'p', NOW)!
+    expect(start.buttons).toEqual(['Yes, I’m on it', 'No, I’m not'])
+  })
+
+  it('no longer pops up milestones', () => {
+    const ms = pickMoments([visit(200, 0, E, 'priority')], 'p', NOW)
+    expect(ms.map((m) => m.kind)).toEqual(['start'])
+  })
+
+  it('does not celebrate the pages you just said were the priority', () => {
+    // A drift, answered "No, I'm on it": those pages become the priority, marked as
+    // yours. That is not you moving onto the priority, so it isn't asked about.
+    const answered = [
+      visit(14, 8, 'kanthink.com', 'priority', { focusVerdict: 'corrected' }),
+      visit(8, 2, 'mixpanel.com', 'priority', { focusVerdict: 'corrected' }),
+      visit(2, 0, 'kanthink.com', 'priority'),
+    ]
+    expect(pickMoments(answered, 'p', NOW)).toEqual([])
+  })
+
+  it('does not nudge about pages you just said weren’t the priority', () => {
+    const answered = [
+      visit(14, 4, E, 'work', { focusVerdict: 'corrected' }),
+      visit(4, 0, 'x.com', 'not_work'),
+    ]
+    expect(pickNudge(answered, 'p', NOW)).toBeNull()
+  })
+
+  it('still asks when you really do come back after saying you were off it', () => {
+    const ms = pickMoments([
+      visit(90, 60, 'x.com', 'not_work', { focusVerdict: 'confirmed' }),
+      visit(6, 0, E, 'priority'),
+    ], 'p', NOW)
+    expect(ms.map((m) => m.kind)).toEqual(['start'])
+  })
+
+  it('puts moving away first', () => {
     expect(pickMoments([visit(40, 15, E, 'priority'), visit(15, 0, 'x.com', 'not_work')], 'p', NOW)[0]?.kind).toBe('drift')
   })
 })
 
 describe('correctedFocus', () => {
-  it('turns a wrong drift into priority time, and a wrong celebration into neither', () => {
+  it('turns "No, I’m on it" into priority time, and "No, I’m not" into other work', () => {
     expect(correctedFocus('drift')).toBe('priority')
-    expect(correctedFocus('start')).toBe('unclear')
-    expect(correctedFocus('milestone')).toBe('unclear')
+    expect(correctedFocus('start')).toBe('work')
+    expect(correctedFocus('milestone')).toBe('work')
   })
 })

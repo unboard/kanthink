@@ -11,9 +11,10 @@ import { correctedFocus, type MomentKind } from '@/lib/kanwatch/nudge';
  *
  * { key, kind, verdict: 'right' | 'wrong', visitIds }
  *
- * "Right" confirms the pages it was judged from. "Wrong" corrects them — on a
- * celebration they stop counting as the priority, on a drift nudge they start — and
- * marks them so Jev never reads them back. Both are counted, which is how the
+ * "Right" is the yes button: it confirms the pages it was judged from. "Wrong" is the
+ * no: it corrects them — "No, I'm not" on moving onto the priority makes them other
+ * work, "No, I'm on it" on moving away makes them the priority — and marks them so
+ * Jev never reads them back, and so the correction isn't itself taken as a change. Both are counted, which is how the
  * Kanwatch page can say how often Kan's read was right.
  */
 const KINDS: MomentKind[] = ['start', 'milestone', 'drift'];

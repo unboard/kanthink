@@ -535,7 +535,7 @@ function Summary({ data }: { data: DayData }) {
       {/* Your answers to the extension's celebrations and nudges: the plainest
           measure there is of whether Kan understands what you're working on. */}
       {kanRead && kanRead.total > 0 && (
-        <p className="text-[12px] text-neutral-500" title="From your Yep / Not accurate answers to Kanwatch's celebrations and nudges">
+        <p className="text-[12px] text-neutral-500" title="From your yes / no answers when Kanwatch asks whether you're on your priority">
           Kan&rsquo;s read on your focus: right {kanRead.right} of {kanRead.total} time{kanRead.total === 1 ? '' : 's'} this week.
           {kanRead.total - kanRead.right > 0 && ' Your corrections are fed back into how pages are read.'}
         </p>

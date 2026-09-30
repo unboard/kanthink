@@ -362,21 +362,29 @@ async function upload({ checkIn = false } = {}) {
 // ---- moments ------------------------------------------------------------------
 //
 // The server reads each check-in's pages against today's priority and says when
-// there's a moment: you've started on it, you've hit a focus milestone, or you've
-// drifted. Whether to actually show it is decided here: switched on, not snoozed,
-// never the same moment twice, drifts at most one per half hour and not about sites
-// you've said count. Every moment asks whether it was right, and the answer goes
-// back to Kanthink — that is how the reads improve.
+// what you're doing changes: you've moved onto it, or away from it. Whether to
+// actually show it is decided here: switched on, not snoozed, never the same moment
+// twice, drifts at most one per half hour and not about sites you've said count.
+// Every moment is a yes/no question — the first button is yes, the read was right —
+// and the answer goes back to Kanthink. That is how the reads improve.
 
 const NUDGE_GAP_MS = 30 * 60 * 1000;
 const SNOOZE_MS = 60 * 60 * 1000;
 const QUIET_SITE_MS = 2 * 60 * 60 * 1000;
 const MOMENT_PREFIX = 'kanwatch-moment:';
 
+// The server words the question and its answers; these are for one that doesn't.
 const BUTTONS = {
-  drift: [{ title: 'Yep, back to it' }, { title: 'Not accurate — this counts' }],
-  celebrate: [{ title: 'Yep, I’m on it!' }, { title: 'Not accurate' }],
+  drift: ['Yes, I’m off it', 'No, I’m on it'],
+  start: ['Yes, I’m on it', 'No, I’m not'],
 };
+
+function buttonsFor(moment) {
+  const titles = Array.isArray(moment.buttons) && moment.buttons.length === 2
+    ? moment.buttons
+    : moment.kind === 'drift' ? BUTTONS.drift : BUTTONS.start;
+  return titles.map((t) => ({ title: String(t).slice(0, 40) }));
+}
 
 /** Show the most important moment not shown yet — one per check-in, so they never pile up. */
 async function showNextMoment(moments) {
@@ -414,7 +422,7 @@ async function showMoment(moment) {
     iconUrl: 'icon128.png',
     title: String(moment.title || '').slice(0, 80),
     message: String(moment.message || '').slice(0, 240),
-    buttons: moment.kind === 'drift' ? BUTTONS.drift : BUTTONS.celebrate,
+    buttons: buttonsFor(moment),
     priority: 2,
   });
 }
@@ -448,7 +456,7 @@ chrome.notifications.onButtonClicked.addListener(async (id, button) => {
   if (!moment) return;
   const verdict = button === 0 ? 'right' : 'wrong';
   if (moment.kind === 'drift' && verdict === 'wrong') {
-    // "This counts": these sites are part of the priority today; stop nudging about them.
+    // "No, I’m on it": these sites are part of the priority today; stop nudging about them.
     const settings = await getSettings();
     const quiet = { ...(settings.quietSites || {}) };
     const until = Date.now() + QUIET_SITE_MS;
