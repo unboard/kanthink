@@ -36,7 +36,7 @@ export interface TakeState {
   waiting: boolean;
   liveSince?: number;
   closedDay?: number;
-  series: { day: number; net: number; rate: number }[];
+  series: { day: number; net: number; rate: number; earned: number; taps: number }[];
   result?: { rate: number; visits: number; taps: number; cleared: boolean };
   shadowDue?: number;
   shadow?: { visits: number; taps: number; cleared: boolean };
@@ -140,8 +140,11 @@ function count(n: number, p: number, seed: string) {
 // ── Helpers the UI uses too ──
 
 export const chipValue = (s: Sim) => s.mandate.budget / TOTAL_CHIPS;
+/** Anything still moving down the line. */
 export const holdsChips = (st: TakeState) => ['practice', 'building', 'checking', 'live'].includes(st.stage);
-export const spareChips = (s: Sim) => TOTAL_CHIPS - Object.values(s.takes).filter(holdsChips).reduce((n, t) => n + t.chips, 0);
+/** Only tests and selling apps spend ad money; builds don't. */
+export const funded = (st: TakeState) => st.stage === 'practice' || st.stage === 'live';
+export const spareChips = (s: Sim) => TOTAL_CHIPS - Object.values(s.takes).filter(funded).reduce((n, t) => n + t.chips, 0);
 export const net = (t: TakeState) => t.earned - t.spent;
 export const rate = (t: TakeState) => (t.testVisits ? t.taps / t.testVisits : 0);
 
@@ -214,11 +217,11 @@ function morning(s: Sim) {
   const dir = DIRECTIONS.find((d) => d.day === s.day);
   if (dir) push(s, { day: s.day, kind: 'direction', dirId: dir.id });
 
-  if (isMonday(s.day) && s.day > 1 && Object.values(s.takes).some(holdsChips)) {
+  if (isMonday(s.day) && s.day > 1 && Object.values(s.takes).some(funded)) {
     const week = Math.floor((s.day - 1) / 7);
     const last = s.events.filter((e) => e.day > s.day - 8 && e.day < s.day);
     const earned = last.reduce((n, e) => n + (e.earn ?? 0), 0);
-    log(s, { agent: 'ledger', morning: true, text: `Week ${week} closed: earned $${earned.toFixed(0)} across ${Object.values(s.takes).filter((t) => t.stage === 'live').length} live bets. Chips are yours to move.` });
+    log(s, { agent: 'ledger', morning: true, text: `Week ${week} closed: earned $${earned.toFixed(0)} across ${Object.values(s.takes).filter((t) => t.stage === 'live').length} live apps. Time to split this week’s budget.` });
     push(s, { day: s.day, kind: 'allocate' });
   }
 }
@@ -259,9 +262,9 @@ function scout(s: Sim) {
   s.takes[pick.id] = st;
   s.agentMinutes += 50;
   const quotes = pick.evidence.length;
-  log(s, { agent: pick.scout, takeId: pick.id, text: `Found ${quotes} ${quotes === 1 ? 'voice' : 'voices'} asking for the same thing: ${lc(pick.title)}.` });
+  log(s, { agent: pick.scout, takeId: pick.id, text: `Found ${quotes} ${quotes === 1 ? 'person' : 'people'} asking for the same thing.` });
   if (pick.shelf && s.mandate.shelf) log(s, { agent: 'shelf', takeId: pick.id, text: `Closest thing you own: ${pick.shelf}. Noted as a tiebreaker.` });
-  log(s, { agent: 'analyst', takeId: pick.id, text: `Wrote it up as a take. Jev’s read before any test: ${Math.round(pick.jev * 100)}%.` });
+  log(s, { agent: 'analyst', takeId: pick.id, text: `Wrote it up as a take. ${pick.jev >= 0.65 ? 'Kan thinks it will sell.' : pick.jev >= 0.5 ? 'Kan thinks it could go either way.' : 'Kan doubts it.'}` });
   push(s, { day: s.day, kind: 'conviction', takeId: pick.id });
 }
 
@@ -292,7 +295,7 @@ function overnight(s: Sim) {
       st.visits += visits; st.testVisits += visits; st.taps += taps; st.reserved += taps;
       st.spent += (st.chips * cv) / 7 + 0.15;
       s.agentMinutes += 12;
-      st.series.push({ day: d, net: net(st), rate: rate(st) });
+      st.series.push({ day: d, net: net(st), rate: rate(st), earned: st.earned, taps: st.taps });
       if (taps) log(s, { agent: 'testpage', takeId: st.id, text: `${taps} ${taps === 1 ? 'person' : 'people'} reserved ${t.app} at ${t.priceLabel} (${visits} visits today).` });
       if (st.daysIn >= PRACTICE_DAYS) {
         const rr = rate(st);
@@ -304,7 +307,7 @@ function overnight(s: Sim) {
         }
         log(s, {
           agent: 'analyst', takeId: st.id, tone: cleared ? 'good' : 'bad',
-          text: `Practice round for ${t.app} is in: ${st.testVisits} visits, ${st.taps} reserved — ${(rr * 100).toFixed(1)}% against your ${s.mandate.bar}% bar. Ads paused until you decide.`,
+          text: `The ${t.app} test is done: ${st.taps} of ${st.testVisits} visitors reserved it (${(rr * 100).toFixed(1)}%, your bar is ${s.mandate.bar}%). Ads are paused until you decide.`,
         });
         push(s, { day: d + 1, kind: 'build', takeId: st.id });
       }
@@ -340,7 +343,7 @@ function overnight(s: Sim) {
       st.earned += earn;
       st.spent += (st.chips * cv) / 7 + 0.05;
       s.agentMinutes += 15;
-      st.series.push({ day: d, net: net(st), rate: rate(st) });
+      st.series.push({ day: d, net: net(st), rate: rate(st), earned: st.earned, taps: st.taps });
       if (sales) {
         log(s, {
           agent: 'pricer', takeId: st.id, earn, tone: 'good',
@@ -406,13 +409,13 @@ export function answer(prev: Sim, itemId: string, a: Answer, by: 'you' | 'kan' =
     }
   } else if (item.kind === 'allocate' && a.kind === 'allocate') {
     for (const [id, n] of Object.entries(a.chips)) if (s.takes[id]) s.takes[id].chips = n;
-    log(s, { agent: 'ledger', tone: by === 'you' ? 'you' : undefined, text: `Chips moved${by === 'kan' ? ' on Kan’s call' : ''}: ${Object.entries(a.chips).filter(([, n]) => n).map(([id, n]) => `${takeById(id).app} ${n}`).join(', ') || 'none'}.` });
+    log(s, { agent: 'ledger', tone: by === 'you' ? 'you' : undefined, text: `This week’s budget${by === 'kan' ? ', split by Kan' : ''}: ${Object.entries(a.chips).filter(([, n]) => n).map(([id, n]) => `${takeById(id).app} $${(n * chipValue(s)).toFixed(0)}`).join(', ') || 'nothing spent'}.` });
   } else if (item.kind === 'direction' && a.kind === 'direction') {
     const dir = DIRECTIONS.find((d) => d.id === item.dirId)!;
     const opt = dir.options.find((o) => o.id === a.option)!;
     s.answers[dir.id] = opt.id;
     if (dir.id === 'dig') s.focus = opt.id;
-    s.rules.push({ day: s.day, text: dir.id === 'dig' ? `Scouts dig first in: ${lc(opt.label)}.` : dir.id === 'monthly' ? `Pricing: ${lc(opt.label)}.` : `New practice chips come from: ${lc(opt.label)}.` });
+    s.rules.push({ day: s.day, text: dir.id === 'dig' ? `Scouts look first at ${lc(opt.label)}.` : dir.id === 'monthly' ? `Pricing: ${lc(opt.label)}.` : `Money for new tests comes from ${lc(opt.label)}.` });
     log(s, { agent: dir.id === 'dig' ? 'demand' : dir.id === 'monthly' ? 'pricer' : 'ledger', tone: by === 'you' ? 'you' : undefined, text: `Direction${by === 'kan' ? ' (Kan’s call)' : ''}: ${opt.label}.` });
   }
   return s;
@@ -434,15 +437,15 @@ function conviction(s: Sim, takeId: string, a: Extract<Answer, { kind: 'convicti
       if (weakest) {
         const take = Math.min(want - got, weakest.chips);
         weakest.chips -= take; got += take;
-        log(s, { agent: 'ledger', text: `Moved ${take} chip${take === 1 ? '' : 's'} from ${takeById(weakest.id).app} to ${t.app}, as you asked.` });
+        log(s, { agent: 'ledger', text: `Moved $${(take * chipValue(s)).toFixed(0)} a week from ${takeById(weakest.id).app} to ${t.app}, as you asked.` });
       }
     }
     st.chips = got;
     st.spent += 0.5;
     s.agentMinutes += 60;
-    log(s, { agent: 'testpage', takeId, text: `Test page is up for ${t.app}: ${t.priceLabel}, a Reserve button, nobody charged. ${got} chip${got === 1 ? '' : 's'} of ads behind it.` });
+    log(s, { agent: 'testpage', takeId, text: `Test page is up for ${t.app}: ${t.priceLabel}, a Reserve button, nobody charged. ${got ? `$${(got * chipValue(s)).toFixed(0)} a week of ads behind it.` : 'No ad money free, so it relies on posts.'}` });
     if (s.mandate.traffic !== 'ads') push(s, { day: s.day, kind: 'outward', takeId, out: 'testpost', draft: t.testPost });
-    else if (got === 0) log(s, { agent: 'reach', takeId, tone: 'bad', text: `No chips free and posts are off in your mandate — the ${t.app} test will be very quiet.` });
+    else if (got === 0) log(s, { agent: 'reach', takeId, tone: 'bad', text: `No ad money is free and posts are off in your settings, so the ${t.app} test will be very quiet.` });
     return;
   }
 
@@ -476,7 +479,7 @@ function build(s: Sim, takeId: string, a: Extract<Answer, { kind: 'build' }>, by
   const t = takeById(takeId);
   const who = by === 'kan' ? ' (Kan’s call)' : '';
   if (a.choice === 'build') {
-    st.stage = 'building'; st.daysIn = 0; st.waiting = false;
+    st.stage = 'building'; st.daysIn = 0; st.waiting = false; st.chips = 0;
     log(s, { agent: 'spec', takeId, tone: by === 'you' ? 'you' : undefined, text: `Build approved${who}. Brief written: the take, ${t.evidence.length} quotes, and what ${st.reserved} people asked when they reserved.` });
   } else if (a.choice === 'again') {
     st.stage = 'practice'; st.daysIn = 0; st.waiting = false; st.weeks += 1;
@@ -491,6 +494,7 @@ function ship(s: Sim, takeId: string, a: Extract<Answer, { kind: 'ship' }>, by: 
   const t = takeById(takeId);
   if (a.choice === 'ship') {
     st.stage = 'live'; st.liveSince = s.day; st.waiting = false;
+    st.chips = Math.min(2, Math.max(0, spareChips(s)));
     log(s, { agent: 'pricer', takeId, tone: by === 'you' ? 'you' : undefined, text: `${t.app} is live at ${t.priceLabel}${by === 'kan' ? ' (Kan’s call)' : ''}. Checkout is wired.` });
     log(s, { agent: 'lister', takeId, text: `${t.app} is in the directory with a thumbnail and a tagline.` });
     if (st.reserved > 0) {
@@ -510,7 +514,7 @@ function ship(s: Sim, takeId: string, a: Extract<Answer, { kind: 'ship' }>, by: 
 function kill(s: Sim, st: TakeState, reason: string, by: 'you' | 'kan') {
   st.stage = 'killed'; st.chips = 0; st.closedReason = reason; st.closedDay = s.day; st.waiting = false;
   s.items = s.items.filter((i) => !('takeId' in i) || i.takeId !== st.id);
-  log(s, { agent: 'ledger', takeId: st.id, tone: by === 'you' ? 'you' : undefined, text: `Killed ${takeById(st.id).app}${by === 'kan' ? ' on Kan’s call' : ''}: ${lc(reason)}. Its chips are free.` });
+  log(s, { agent: 'ledger', takeId: st.id, tone: by === 'you' ? 'you' : undefined, text: `Dropped ${takeById(st.id).app}${by === 'kan' ? ' on Kan’s call' : ''}: ${lc(reason)}. Its ad money is free again.` });
 }
 
 export function killTake(prev: Sim, takeId: string, reason: string): Sim {
@@ -581,7 +585,7 @@ export function recommend(s: Sim, item: Item): Answer {
 
 /** The ledger's suggested chips: back what earns, keep tests fed, bench what loses. */
 export function ledgerPlan(s: Sim): Record<string, number> {
-  const held = Object.values(s.takes).filter(holdsChips);
+  const held = Object.values(s.takes).filter(funded);
   const weight = (st: TakeState) => {
     if (st.stage === 'live') {
       const days = s.day - (st.liveSince ?? s.day);

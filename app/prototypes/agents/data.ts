@@ -110,7 +110,7 @@ export const TAKES: Take[] = [
     app: 'Fair Rotations', does: 'Enter the roster and positions, get a game-day rotation where every kid plays equal time, and share it to parents.',
     price: 9, priceLabel: '$9 a season',
     evidence: [
-      { source: 'A rec-league coaching forum · 60 upvotes', quote: '“I spend an hour every Friday night doing rotations on paper so no parent yells at me.”' },
+      { source: 'A rec-league coaching forum, 60 upvotes', quote: '“I spend an hour every Friday night doing rotations on paper so no parent yells at me.”' },
       { source: '1-star reviews of a big team app', quote: '“Does everything except the one thing I need — fair minutes.”' },
       { source: 'Search interest', quote: '“Equal playing time lineup” climbs every March and August.' },
     ],
@@ -130,7 +130,7 @@ export const TAKES: Take[] = [
     app: 'Seat Plan', does: 'Drag guests to tables, mark pairs to keep apart, let it solve the rest, print place cards.',
     price: 15, priceLabel: '$15 once',
     evidence: [
-      { source: 'A wedding-planning community · 200 comments', quote: '“Seating my divorced parents’ families is giving me hives.”' },
+      { source: 'A wedding-planning community, 200 comments', quote: '“Seating my divorced parents’ families is giving me hives.”' },
       { source: 'Search interest', quote: '“Wedding seating chart” peaks January to April.' },
     ],
     clock: 'Peak season starts in January',
@@ -150,7 +150,7 @@ export const TAKES: Take[] = [
     app: 'Move-in Report', does: 'Walk room by room, snap photos, get a timestamped PDF both sides sign.',
     price: 12, priceLabel: '$12 a property',
     evidence: [
-      { source: 'A small-landlord forum · 45 replies', quote: '“Lost $900 in small claims because my move-in photos were on an old phone.”' },
+      { source: 'A small-landlord forum, 45 replies', quote: '“Lost $900 in small claims because my move-in photos were on an old phone.”' },
       { source: 'A tenants’ community', quote: '“Always ask for a signed move-in checklist. Most small landlords don’t have one.”' },
     ],
     testPost: 'A few people here lost deposit disputes for lack of move-in photos, so I’m building a room-by-room report both sides sign. Reserve at $12 a property — no charge until it’s ready.',
@@ -169,7 +169,7 @@ export const TAKES: Take[] = [
     price: 6, priceLabel: '$6 a pack',
     evidence: [
       { source: 'Reviews of paid worksheet packs', quote: '“Great sheets, but I have to make my own easier version for half the class.”' },
-      { source: 'A teachers’ community · 80 upvotes', quote: '“Differentiating every worksheet is my whole Sunday.”' },
+      { source: 'A teachers’ community, 80 upvotes', quote: '“Differentiating every worksheet is my whole Sunday.”' },
     ],
     shelf: 'Cat Math already levels maths by age',
     testPost: 'Teachers here keep saying differentiating worksheets eats their Sunday. I’m making a generator that gives you the same sheet at three levels with answer keys. Reserve a pack at $6.',
@@ -241,7 +241,7 @@ export const TAKES: Take[] = [
     app: 'Quilt Math', does: 'Pick a block and a size, get yardage per fabric and a cutting plan.',
     price: 7, priceLabel: '$7 once',
     evidence: [
-      { source: 'A quilting forum · 30 replies', quote: '“Bought a whole extra yard because I did the maths wrong. Again.”' },
+      { source: 'A quilting forum, 30 replies', quote: '“Bought a whole extra yard because I did the maths wrong. Again.”' },
       { source: 'Reviews of a quilting design app', quote: '“Too complicated. I just want the yardage.”' },
     ],
     testPost: 'Making a tiny tool that does quilt yardage and cutting plans so nobody buys an extra yard again. Reserve at $7.',
@@ -362,11 +362,11 @@ export const DIRECTIONS: Direction[] = [
   },
   {
     day: 17, id: 'spare',
-    question: 'When a new take starts practice, where should its chips come from?',
-    why: 'You allocate on Mondays. Between Mondays, the ledger needs a rule.',
+    question: 'When a new test starts midweek, where should its ad money come from?',
+    why: 'You split the budget on Mondays. Between Mondays, Kan needs a rule.',
     options: [
-      { id: 'weakest', label: 'The weakest live bet', note: 'Keeps testing new things' },
-      { id: 'spare', label: 'Only unspent chips', note: 'Protects what’s earning' },
+      { id: 'weakest', label: 'The app that’s selling least', note: 'Keeps new tests fed' },
+      { id: 'spare', label: 'Only money nobody is using', note: 'Protects what’s earning' },
     ],
   },
 ];

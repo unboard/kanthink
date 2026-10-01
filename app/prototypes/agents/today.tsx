@@ -1,546 +1,445 @@
 'use client';
 
 import { useState } from 'react';
-import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { DIRECTIONS, PASS_REASONS, KILL_REASONS, DECLINE_REASONS, crewById, takeById, type Call } from './data';
 import {
-  AUDIENCES, CALLS, DIRECTIONS, PASS_REASONS, KILL_REASONS, DECLINE_REASONS, crewById, takeById, dayLabel,
-  type Call,
-} from './data';
-import {
-  answer, recommend, kanTakesToday, ledgerPlan, sortItems, rate, holdsChips,
-  OUTWARD_AGENT, OUTWARD_LABEL, TOTAL_CHIPS,
+  answer, recommend, kanTakesToday, ledgerPlan, sortItems, holdsChips, funded,
+  OUTWARD_LABEL, TOTAL_CHIPS,
   type Answer, type Item, type Sim,
 } from './sim';
-import { AgentTag, Btn, Chips, Spark, StagePill, Why, duration, money } from './ui';
+import { Button, Reasons, duration, money } from './ui';
 
 type SetSim = (fn: (s: Sim) => Sim) => void;
 
-const ITEM_SECONDS: Record<Item['kind'], number> = { conviction: 15, build: 25, ship: 60, outward: 10, trust: 4, allocate: 40, direction: 8 };
-const KIND_LABEL: Record<Item['kind'], string> = {
-  conviction: 'Your call', build: 'Build it?', ship: 'Ship it?', outward: 'Goes outside', trust: 'Trust', allocate: 'Monday chips', direction: 'Direction',
-};
+/** Rough seconds each kind of call takes, for the "about 2 minutes" line. */
+const ITEM_SECONDS: Record<Item['kind'], number> = { conviction: 15, build: 25, ship: 60, outward: 10, trust: 5, allocate: 40, direction: 8 };
 
-export function Today({ sim, setSim, onOpenTake, onNextDay }: { sim: Sim; setSim: SetSim; onOpenTake: (id: string) => void; onNextDay: () => void }) {
+/** The conviction scale. Colour deepens with certainty; cobalt only ever marks your decision. */
+const SCALE: { id: Call; label: string; cls: string }[] = [
+  { id: 'pass', label: 'Pass', cls: 'bg-(--card) text-(--ink)' },
+  { id: 'leanNo', label: 'Not sure', cls: 'bg-(--card) text-(--ink)' },
+  { id: 'leanYes', label: 'Yes', cls: 'bg-(--wash) text-(--cobalt)' },
+  { id: 'strong', label: 'Strong yes', cls: 'bg-(--cobalt) text-white' },
+];
+
+export function Today({ sim, setSim, onNextDay, onApps }: { sim: Sim; setSim: SetSim; onNextDay: () => void; onApps: () => void }) {
   const items = sortItems(sim.items);
   const current = items[0];
+  const total = items.length;
   const estimate = items.reduce((n, i) => n + ITEM_SECONDS[i.kind], 0);
-  const send = (a: Answer) => current && setSim((s) => answer(s, current.id, a));
+  const [spentAtOpen] = useState(sim.seconds);
 
   return (
-    <div className="mx-auto max-w-xl px-3 py-5 sm:px-0">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <p className="text-[12px] text-neutral-500">{dayLabel(sim.day, true)}</p>
-          <h2 className="mt-0.5 text-[20px] font-semibold tracking-tight text-neutral-100">
-            {items.length ? `Kan has ${items.length} ${items.length === 1 ? 'thing' : 'things'} for you` : 'Nothing waiting on you'}
-          </h2>
-          <p className="mt-0.5 text-[12.5px] text-neutral-500">
-            {items.length ? `About ${duration(estimate)} · your mandate allows ${sim.mandate.minutes} min a day` : 'The crew has everything it needs until tomorrow.'}
-          </p>
-        </div>
-        {items.length > 0 && (
-          <button onClick={() => setSim(kanTakesToday)} className="flex-shrink-0 text-[12px] text-neutral-500 hover:text-violet-300">
-            Kan’s calls for the rest →
-          </button>
-        )}
-      </div>
+    <div>
+      <Since sim={sim} />
 
-      <Overnight sim={sim} onOpenTake={onOpenTake} />
-
-      {items.length > 1 && (
-        <div className="mt-5 flex items-center gap-1">
-          {items.map((it, n) => (
-            <span key={it.id} className={`h-1 flex-1 rounded-full ${n === 0 ? 'bg-violet-400' : 'bg-neutral-800'}`} />
-          ))}
-        </div>
+      {current ? (
+        <>
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[15px] text-(--soft)">
+            <span>{total === 1 ? 'Last one' : `${total} calls left`}, about {duration(Math.max(10, Math.round(estimate / 5) * 5))}</span>
+            <button type="button" onClick={() => setSim(kanTakesToday)} className="underline-offset-4 hover:text-(--ink) hover:underline">
+              Let Kan decide these
+            </button>
+          </div>
+          <div className="mt-6">
+            <Card key={current.id} sim={sim} item={current} onAnswer={(a) => setSim((s) => answer(s, current.id, a))} />
+          </div>
+        </>
+      ) : (
+        <Done sim={sim} spent={sim.seconds - spentAtOpen} onNextDay={onNextDay} onApps={onApps} />
       )}
-
-      <div className="mt-3">
-        {current ? (
-          <Card key={current.id} sim={sim} item={current} onAnswer={send} onOpenTake={onOpenTake} />
-        ) : (
-          <AllClear sim={sim} onNextDay={onNextDay} />
-        )}
-      </div>
-
-      {items.length > 1 && (
-        <div className="mt-5">
-          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-600">Up next</p>
-          <ul className="space-y-1">
-            {items.slice(1).map((it) => (
-              <li key={it.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[12.5px] text-neutral-400">
-                <span className="w-24 flex-shrink-0 text-[11px] text-neutral-600">{KIND_LABEL[it.kind]}</span>
-                <span className="truncate">{itemTitle(it)}</span>
-                {it.day < sim.day && <span className="ml-auto flex-shrink-0 text-[10.5px] text-amber-300/80">waiting since {dayLabel(it.day).split(',')[0]}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <p className="mt-6 text-center text-[11px] text-neutral-600">Time you’ve given the studio so far: {duration(sim.seconds)}</p>
     </div>
   );
 }
 
-function itemTitle(it: Item) {
-  switch (it.kind) {
-    case 'conviction': return takeById(it.takeId).title;
-    case 'build': return `${takeById(it.takeId).app} — practice results`;
-    case 'ship': return `${takeById(it.takeId).app} is built and checked`;
-    case 'outward': return `${OUTWARD_LABEL[it.out]} — ${takeById(it.takeId).app}`;
-    case 'trust': return `Stop asking before: ${OUTWARD_LABEL[it.out].toLowerCase()}?`;
-    case 'allocate': return 'Spread this week’s 10 chips';
-    case 'direction': return DIRECTIONS.find((d) => d.id === it.dirId)!.question;
-  }
-}
-
-function Overnight({ sim, onOpenTake }: { sim: Sim; onOpenTake: (id: string) => void }) {
+/** What changed since yesterday, as one sentence, with the rest a tap away. */
+function Since({ sim }: { sim: Sim }) {
+  const [open, setOpen] = useState(false);
   const last = sim.events.filter((e) => e.day === sim.day - 1 && e.tone !== 'you' && !e.morning);
   if (sim.day === 1 || !last.length) return null;
   const earned = last.reduce((n, e) => n + (e.earn ?? 0), 0);
-  const pick = [...last].sort((a, b) => Number(!!b.earn) - Number(!!a.earn) || Number(!!b.tone) - Number(!!a.tone)).slice(0, 4);
-  return (
-    <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900/30 px-4 py-3">
-      <div className="flex items-center gap-2 text-[11px] text-neutral-500">
-        <KanthinkIcon size={14} className="text-violet-400" />
-        <span>Overnight</span>
-        <span className="ml-auto tabular-nums">{last.length} things happened{earned ? <> · <span className="text-emerald-300">{money(earned)} earned</span></> : ''}</span>
-      </div>
-      <ul className="mt-2 space-y-1.5">
-        {pick.map((e, n) => (
-          <li key={n} className="text-[12.5px] leading-snug text-neutral-300">
-            <AgentTag id={e.agent} /> <span className={e.earn ? 'text-emerald-200' : ''}>{e.text}</span>
-            {e.takeId && <button onClick={() => onOpenTake(e.takeId!)} className="ml-1 text-[11px] text-neutral-600 hover:text-neutral-300">open</button>}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
+  const reserved = Object.values(sim.takes).reduce((n, t) => {
+    const today = t.series.find((p) => p.day === sim.day - 1);
+    const before = t.series.find((p) => p.day === sim.day - 2);
+    return n + (today ? today.taps - (before?.taps ?? 0) : 0);
+  }, 0);
+  const selling = Object.values(sim.takes).some((t) => t.stage === 'live');
+  const lead = earned
+    ? `Since yesterday your apps made ${money(earned)}.`
+    : reserved
+      ? `Overnight, ${reserved} ${reserved === 1 ? 'person' : 'people'} reserved an app that doesn’t exist yet.`
+      : selling ? 'Nothing sold since yesterday.' : 'A quiet night. The crew kept working.';
+  const notable = last.find((e) => !e.earn && e.tone);
 
-function AllClear({ sim, onNextDay }: { sim: Sim; onNextDay: () => void }) {
-  const tonight = Object.values(sim.takes).filter((t) => ['practice', 'building', 'checking', 'live'].includes(t.stage) && !t.waiting);
   return (
-    <div className="rounded-2xl border border-dashed border-neutral-800 px-5 py-8 text-center">
-      <p className="text-[15px] font-medium text-neutral-200">That’s today.</p>
-      <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-neutral-500">
-        {tonight.length
-          ? `Tonight the crew works ${tonight.length} ${tonight.length === 1 ? 'take' : 'takes'}: ${tonight.map((t) => takeById(t.id).app).join(', ')}. Anything that needs you comes back here tomorrow.`
-          : 'Scouts keep reading. Anything that needs you comes back here tomorrow.'}
+    <div className="rounded-[20px] bg-(--card) px-5 py-4 ring-1 ring-(--line)">
+      <p className="text-[17px] leading-[1.5] text-(--ink)">
+        {lead} {notable && <span className="text-(--soft)">{notable.text}</span>}
       </p>
-      <div className="mt-4"><Btn kind="violet" onClick={onNextDay}>Go to tomorrow →</Btn></div>
+      <button type="button" onClick={() => setOpen(!open)} className="mt-2 text-[15px] text-(--soft) underline-offset-4 hover:text-(--ink) hover:underline">
+        {open ? 'Hide' : `Everything the crew did (${last.length})`}
+      </button>
+      {open && (
+        <ul className="mt-3 space-y-2.5 border-t border-(--line) pt-3">
+          {last.map((e, n) => (
+            <li key={n} className="text-[15px] leading-[1.45] text-(--soft)">
+              <span className="text-(--ink)">{crewById(e.agent).name}.</span> {e.text}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-// ── Cards ──
+function Done({ sim, spent, onNextDay, onApps }: { sim: Sim; spent: number; onNextDay: () => void; onApps: () => void }) {
+  const working = Object.values(sim.takes).filter((t) => holdsChips(t) && !t.waiting);
+  const names = (stages: string[]) => working.filter((t) => stages.includes(t.stage)).map((t) => takeById(t.id).app);
+  const list = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0]);
+  const testing = names(['practice']);
+  const building = names(['building', 'checking']);
+  const selling = names(['live']);
+  const lines = [
+    testing.length && `testing ${list(testing)}`,
+    building.length && `building ${list(building)}`,
+    selling.length && `selling ${list(selling)}`,
+  ].filter(Boolean) as string[];
 
-function Shell({ kind, agent, children, ring = 'ring-violet-500/25', right }: { kind: string; agent?: string; children: React.ReactNode; ring?: string; right?: React.ReactNode }) {
   return (
-    <article className={`rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 ring-1 sm:p-5 ${ring}`}>
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="rounded-full bg-violet-500/15 px-2 py-0.5 font-medium text-violet-200">{kind}</span>
-        {agent && <AgentTag id={agent} />}
-        <span className="ml-auto">{right}</span>
+    <div className="pt-14">
+      <h2 className="text-[40px] font-semibold leading-[1.05] tracking-[-0.025em] text-(--ink) sm:text-[48px]">You’re done for today.</h2>
+      <p className="mt-5 max-w-[36ch] text-[19px] leading-[1.5] text-(--soft)">
+        {spent > 0 ? `That took ${duration(spent)}. ` : ''}
+        {lines.length ? `While you’re away, the crew is ${lines.join(', ')}.` : 'The scouts keep reading. New takes arrive in the morning.'}
+      </p>
+      <div className="mt-8 flex flex-wrap gap-3">
+        <Button onClick={onApps}>See your apps</Button>
+        <Button kind="quiet" onClick={onNextDay}>Skip to tomorrow</Button>
       </div>
-      {children}
-    </article>
+    </div>
   );
 }
 
-function Card({ sim, item, onAnswer, onOpenTake }: { sim: Sim; item: Item; onAnswer: (a: Answer) => void; onOpenTake: (id: string) => void }) {
+// ── The cards ──
+
+function Kicker({ children }: { children: React.ReactNode }) {
+  return <p className="text-[15px] font-medium text-(--cobalt)">{children}</p>;
+}
+
+function Headline({ children }: { children: React.ReactNode }) {
+  return <h2 className="mt-3 text-[32px] font-semibold leading-[1.1] tracking-[-0.022em] text-(--ink) [text-wrap:balance] sm:text-[40px]">{children}</h2>;
+}
+
+function Body({ children }: { children: React.ReactNode }) {
+  return <p className="mt-4 max-w-[60ch] text-[17px] leading-[1.55] text-(--soft)">{children}</p>;
+}
+
+function KanLine({ children }: { children: React.ReactNode }) {
+  return <p className="mt-6 max-w-[60ch] text-[17px] leading-[1.55] text-(--ink)"><span className="font-semibold">Kan says</span> {children}</p>;
+}
+
+function Card({ sim, item, onAnswer }: { sim: Sim; item: Item; onAnswer: (a: Answer) => void }) {
   switch (item.kind) {
-    case 'conviction': return <ConvictionCard sim={sim} item={item} onAnswer={onAnswer} />;
-    case 'build': return <BuildCard sim={sim} item={item} onAnswer={onAnswer} onOpenTake={onOpenTake} />;
-    case 'ship': return <ShipCard sim={sim} item={item} onAnswer={onAnswer} />;
-    case 'outward': return <OutwardCard sim={sim} item={item} onAnswer={onAnswer} />;
-    case 'trust': return <TrustCard item={item} onAnswer={onAnswer} />;
-    case 'allocate': return <AllocateCard sim={sim} onAnswer={onAnswer} />;
-    case 'direction': return <DirectionCard item={item} onAnswer={onAnswer} />;
+    case 'conviction': return <Take sim={sim} item={item} onAnswer={onAnswer} />;
+    case 'build': return <Build sim={sim} item={item} onAnswer={onAnswer} />;
+    case 'ship': return <Ship sim={sim} item={item} onAnswer={onAnswer} />;
+    case 'outward': return <Outward item={item} onAnswer={onAnswer} />;
+    case 'trust': return <Trust item={item} onAnswer={onAnswer} />;
+    case 'allocate': return <Allocate sim={sim} onAnswer={onAnswer} />;
+    case 'direction': return <Direction item={item} onAnswer={onAnswer} />;
   }
 }
 
-function ConvictionCard({ sim, item, onAnswer }: { sim: Sim; item: Extract<Item, { kind: 'conviction' }>; onAnswer: (a: Answer) => void }) {
+const kanRead = (j: number) => (j >= 0.65 ? 'Kan thinks this will sell.' : j >= 0.5 ? 'Kan thinks it could go either way.' : 'Kan doubts this one.');
+
+function Take({ sim, item, onAnswer }: { sim: Sim; item: Extract<Item, { kind: 'conviction' }>; onAnswer: (a: Answer) => void }) {
   const t = takeById(item.takeId);
   const st = sim.takes[item.takeId];
   const [call, setCall] = useState<Call | null>(null);
-  const aud = AUDIENCES.find((a) => a.id === t.audience)!;
+  const [more, setMore] = useState(false);
+  const [first, ...rest] = t.evidence;
 
   return (
-    <Shell
-      kind={item.second ? 'Second look' : 'Your call'}
-      agent={item.second ? 'calibrator' : t.scout}
-      right={<span className="text-neutral-500">{aud.label}{st.outside && <span className="text-amber-300/80"> · outside your mandate</span>}</span>}
-    >
+    <article>
+      <Kicker>{item.second ? 'Worth a second look' : 'A take from the scouts'}</Kicker>
+      <Headline>{t.title}</Headline>
+
       {item.second && st.shadow && (
-        <div className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2 text-[12.5px] leading-snug text-amber-100">
-          You {st.call === 'pass' ? 'passed' : 'leaned no'} on this. A $3 shadow test showed it to 40 people: {st.shadow.taps} reserved — that clears your {sim.mandate.bar}% bar.
+        <Body>You {st.call === 'pass' ? 'passed' : 'weren’t sure'}, so Kan showed a $3 test page to 40 people. {st.shadow.taps} reserved, which clears your {sim.mandate.bar}% bar.</Body>
+      )}
+
+      <figure className="mt-7 border-l-[3px] border-(--cobalt) pl-5">
+        <blockquote className="text-[20px] leading-[1.45] text-(--ink)">{first.quote}</blockquote>
+        <figcaption className="mt-2 text-[15px] text-(--soft)">{first.source}</figcaption>
+      </figure>
+
+      <div className="mt-7 rounded-[20px] bg-(--card) p-5 ring-1 ring-(--line)">
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="text-[19px] font-semibold text-(--ink)">{t.app}</p>
+          <p className="whitespace-nowrap text-[17px] text-(--ink)">{t.priceLabel}</p>
+        </div>
+        <p className="mt-1.5 text-[16px] leading-[1.5] text-(--soft)">{t.does}</p>
+      </div>
+
+      <p className="mt-5 text-[16px] leading-[1.5] text-(--soft)">
+        {kanRead(t.jev)}{t.clock ? ` ${t.clock}.` : ''}{t.competition === 'crowded' ? ' Free tools already do something like it.' : ''}
+      </p>
+
+      {more && (
+        <div className="mt-5 space-y-5">
+          <p className="max-w-[60ch] text-[17px] leading-[1.55] text-(--soft)">{t.thesis}</p>
+          {rest.map((e) => (
+            <figure key={e.source} className="border-l-[3px] border-(--line) pl-5">
+              <blockquote className="text-[17px] leading-[1.5] text-(--ink)">{e.quote}</blockquote>
+              <figcaption className="mt-1 text-[15px] text-(--soft)">{e.source}</figcaption>
+            </figure>
+          ))}
+          {t.shelf && sim.mandate.shelf && <p className="text-[15px] text-(--soft)">Closest thing you already have: {t.shelf}.</p>}
         </div>
       )}
-      <h3 className="text-[19px] font-semibold leading-snug tracking-tight text-neutral-50">{t.title}</h3>
-      <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">{t.thesis}</p>
+      <button type="button" onClick={() => setMore(!more)} className="mt-4 text-[15px] text-(--soft) underline-offset-4 hover:text-(--ink) hover:underline">
+        {more ? 'Less' : 'Why this take'}
+      </button>
 
-      <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950/60 p-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className="text-[11px] uppercase tracking-wide text-neutral-500">The bet</p>
-          <p className="text-[13px] font-medium text-neutral-100">{t.priceLabel}</p>
-        </div>
-        <p className="mt-1 text-[14px] font-medium text-neutral-100">{t.app}</p>
-        <p className="mt-0.5 text-[12.5px] leading-snug text-neutral-400">{t.does}</p>
-      </div>
-
-      <ul className="mt-4 space-y-2.5">
-        {t.evidence.map((e) => (
-          <li key={e.source} className="border-l-2 border-neutral-700 pl-3">
-            <p className="text-[13px] leading-snug text-neutral-200">{e.quote}</p>
-            <p className="mt-0.5 text-[11px] text-neutral-500">{e.source}</p>
-          </li>
-        ))}
-      </ul>
-
-      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-[11.5px] sm:grid-cols-3">
-        <div>
-          <p className="text-neutral-500">Jev’s read</p>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="h-1 w-14 overflow-hidden rounded-full bg-neutral-800"><span className="block h-full bg-neutral-300" style={{ width: `${t.jev * 100}%` }} /></span>
-            <span className="tabular-nums text-neutral-300">{Math.round(t.jev * 100)}%</span>
-          </div>
-        </div>
-        <div>
-          <p className="text-neutral-500">Competition</p>
-          <p className={`mt-0.5 ${t.competition === 'crowded' ? 'text-amber-300' : 'text-neutral-300'}`}>{t.competition === 'open' ? 'Nobody does this well' : t.competition === 'some' ? 'Some, none focused' : 'Crowded, some free'}</p>
-        </div>
-        {t.clock && <div><p className="text-neutral-500">Clock</p><p className="mt-0.5 text-neutral-300">{t.clock}</p></div>}
-        {t.shelf && sim.mandate.shelf && (
-          <div className="col-span-2 sm:col-span-3"><p className="text-neutral-500">Tiebreaker from your shelf</p><p className="mt-0.5 text-neutral-400">{t.shelf}</p></div>
-        )}
-      </div>
-
-      <div className="mt-5">
-        <p className="mb-2 text-[11.5px] text-neutral-500">{item.second ? 'Practice it now?' : 'How sure are you? A yes starts a five-day practice round — a test page, no app built, nobody charged.'}</p>
-        <div className="grid grid-cols-4 overflow-hidden rounded-xl border border-neutral-700">
-          {CALLS.map((c, n) => (
+      <div className="mt-9">
+        <p className="text-[17px] font-medium text-(--ink)">{item.second ? 'Test it now?' : 'How sure are you?'}</p>
+        <div role="group" aria-label="How sure are you?" className="mt-3 grid grid-cols-4 gap-1.5 rounded-[22px] bg-(--line) p-1.5">
+          {SCALE.map((c) => (
             <button
               key={c.id}
+              type="button"
+              aria-pressed={call === c.id}
               onClick={() => (c.id === 'leanYes' || c.id === 'strong' ? onAnswer({ kind: 'conviction', call: c.id }) : setCall(c.id))}
-              className={`px-1 py-2.5 text-[12.5px] transition-colors ${n ? 'border-l border-neutral-700' : ''} ${
-                call === c.id ? 'bg-neutral-800 text-neutral-100'
-                  : c.id === 'strong' ? 'text-violet-200 hover:bg-violet-500/20'
-                  : c.id === 'leanYes' ? 'text-violet-200/80 hover:bg-violet-500/10'
-                  : 'text-neutral-400 hover:bg-neutral-800'
-              }`}
+              className={`min-h-[56px] rounded-[16px] px-1 text-[15px] font-medium leading-tight transition hover:brightness-95 focus-visible:outline-2 focus-visible:outline-(--cobalt) sm:text-[16px] ${c.cls} ${call === c.id ? 'ring-2 ring-(--ink)' : ''}`}
             >
               {c.label}
             </button>
           ))}
         </div>
-        {call && (
-          <div className="mt-3">
-            <p className="mb-1.5 text-[11.5px] text-neutral-500">
-              {call === 'pass' ? 'Why not? A no needs a reason — some become rules the scouts follow.' : 'Any reason? Optional.'}
-            </p>
-            <Chips options={PASS_REASONS} onPick={(r) => onAnswer({ kind: 'conviction', call, reason: r })} />
-            {call === 'leanNo' && <button onClick={() => onAnswer({ kind: 'conviction', call })} className="mt-2 text-[12px] text-neutral-500 hover:text-neutral-300">No reason, just lean no</button>}
+        <p className="mt-3 text-[15px] leading-[1.5] text-(--soft)">A yes puts up a test page for five days. Nothing gets built, and nobody is charged.</p>
+        {call === 'pass' && <Reasons prompt="What’s wrong with it? Kan will remember." options={PASS_REASONS} onPick={(r) => onAnswer({ kind: 'conviction', call: 'pass', reason: r })} onCancel={() => setCall(null)} />}
+        {call === 'leanNo' && (
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <Button onClick={() => onAnswer({ kind: 'conviction', call: 'leanNo' })}>Park it</Button>
+            <Button kind="quiet" onClick={() => setCall(null)}>Cancel</Button>
           </div>
         )}
       </div>
-      <Why>
-        Your conviction is the only thing that decides what gets tested. Strong yes backs it with 3 chips, lean yes with 2. A no costs nothing{sim.mandate.shadow ? ', and the calibrator shadow-tests it for $3 so your no gets scored too' : ''}. Every call is scored against what happens, and the score decides how much Kan leans on your gut when it ranks takes.
-      </Why>
-    </Shell>
+    </article>
   );
 }
 
-function Bar({ value, bar }: { value: number; bar: number }) {
-  const max = Math.max(bar * 2.5, value * 1.15, 1);
+function Meter({ value, bar }: { value: number; bar: number }) {
+  const max = Math.max(bar * 2.5, value * 1.2);
+  const at = (v: number) => `${Math.min(100, (v / max) * 100)}%`;
   return (
-    <div className="relative mt-2 h-2 rounded-full bg-neutral-800">
-      <div className={`h-full rounded-full ${value >= bar ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${Math.min(100, (value / max) * 100)}%` }} />
-      <div className="absolute -top-1 h-4 w-px bg-neutral-300" style={{ left: `${(bar / max) * 100}%` }} />
-      <span className="absolute top-3 -translate-x-1/2 text-[10px] text-neutral-400" style={{ left: `${(bar / max) * 100}%` }}>your bar {bar}%</span>
+    <div className="relative mt-8 h-3 rounded-full bg-(--line)">
+      <div className={`h-full rounded-full ${value >= bar ? 'bg-(--money)' : 'bg-(--warn)'}`} style={{ width: at(value) }} />
+      <div className="absolute -top-2 h-7 w-[2px] rounded bg-(--ink)" style={{ left: at(bar) }} />
+      <p className="absolute top-6 -translate-x-1/2 whitespace-nowrap text-[14px] text-(--ink)" style={{ left: at(bar) }}>your bar, {bar}%</p>
     </div>
   );
 }
 
-function KillPicker({ onPick, onCancel }: { onPick: (r: string) => void; onCancel: () => void }) {
-  return (
-    <div className="mt-3">
-      <p className="mb-1.5 text-[11.5px] text-neutral-500">Why kill it? The reason is kept.</p>
-      <Chips options={KILL_REASONS.map((r) => ({ id: r, label: r }))} onPick={onPick} />
-      <button onClick={onCancel} className="mt-2 text-[12px] text-neutral-500 hover:text-neutral-300">Cancel</button>
-    </div>
-  );
-}
-
-function KanSays({ text }: { text: string }) {
-  return (
-    <p className="mt-3 flex items-start gap-2 rounded-lg bg-neutral-950/60 px-3 py-2 text-[12px] leading-snug text-neutral-400">
-      <KanthinkIcon size={14} className="mt-px flex-shrink-0 text-violet-400" />
-      <span>{text}</span>
-    </p>
-  );
-}
-
-function BuildCard({ sim, item, onAnswer, onOpenTake }: { sim: Sim; item: Extract<Item, { kind: 'build' }>; onAnswer: (a: Answer) => void; onOpenTake: (id: string) => void }) {
+function Build({ sim, item, onAnswer }: { sim: Sim; item: Extract<Item, { kind: 'build' }>; onAnswer: (a: Answer) => void }) {
   const t = takeById(item.takeId);
   const st = sim.takes[item.takeId];
   const r = st.result!;
-  const [killing, setKilling] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const rec = recommend(sim, item) as Extract<Answer, { kind: 'build' }>;
-  const small = r.visits < 80;
-  const recText = rec.choice === 'build'
-    ? `Build it. ${r.taps} people reserved without an app existing — that’s ${r.taps} launch-day customers at ${t.priceLabel}.`
+  const pctText = `${(r.rate * 100).toFixed(1)}%`;
+  const advice = rec.choice === 'build'
+    ? `build it. ${r.taps} people asked for it before it existed, and they’re your first customers.`
     : rec.choice === 'again'
-      ? `Another week. ${small ? `${r.visits} visits is too few to read.` : 'It’s close to your bar.'} One more round costs about ${money((st.chips * sim.mandate.budget) / 10 + 1)}.`
-      : `Kill it. ${(r.rate * 100).toFixed(1)}% is well under your bar${st.weeks ? ' after two rounds' : ''}. The ${st.reserved} who reserved get a kind note.`;
+      ? (r.visits < 80 ? `test another week. ${r.visits} visits is too few to tell.` : 'test another week. It’s close.')
+      : `drop it. ${pctText} is well under your bar.`;
 
   return (
-    <Shell kind="Build it?" agent="analyst" ring="ring-amber-500/25" right={<button onClick={() => onOpenTake(t.id)} className="text-neutral-500 hover:text-neutral-300">open take</button>}>
-      <h3 className="text-[17px] font-semibold leading-snug text-neutral-50">{t.app}: the practice round is in</h3>
-      <p className="mt-1 text-[12.5px] text-neutral-500">{t.title}</p>
-
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-lg bg-neutral-950/60 py-2"><p className="text-[18px] font-semibold tabular-nums text-neutral-100">{r.visits}</p><p className="text-[10.5px] text-neutral-500">visits</p></div>
-        <div className="rounded-lg bg-neutral-950/60 py-2"><p className="text-[18px] font-semibold tabular-nums text-neutral-100">{r.taps}</p><p className="text-[10.5px] text-neutral-500">reserved at {t.priceLabel}</p></div>
-        <div className="rounded-lg bg-neutral-950/60 py-2"><p className={`text-[18px] font-semibold tabular-nums ${r.cleared ? 'text-emerald-300' : 'text-amber-300'}`}>{(r.rate * 100).toFixed(1)}%</p><p className="text-[10.5px] text-neutral-500">reserve rate</p></div>
-      </div>
-      <div className="mb-5 mt-3 px-1"><Bar value={r.rate * 100} bar={sim.mandate.bar} /></div>
-
-      <div className="flex items-center justify-between gap-3 text-[11.5px] text-neutral-500">
-        <span>Reserve rate by day</span>
-        <Spark values={st.series.map((p) => p.rate * 100)} tone="amber" width={120} />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-neutral-500">
-        <span>Spent so far {money(st.spent)}</span>
-        {st.call && <span>Your call: {CALLS.find((c) => c.id === st.call)!.label.toLowerCase()}</span>}
-        {small && <span className="text-amber-300/80">Small sample</span>}
-      </div>
-
-      <KanSays text={recText} />
-
-      {killing ? (
-        <KillPicker onPick={(reason) => onAnswer({ kind: 'build', choice: 'kill', reason })} onCancel={() => setKilling(false)} />
+    <article>
+      <Kicker>Test results</Kicker>
+      <Headline>{r.taps} of {r.visits} people reserved {t.app}.</Headline>
+      <Body>That’s {pctText}. You build anything that reaches {sim.mandate.bar}%.</Body>
+      <div className="mb-14"><Meter value={r.rate * 100} bar={sim.mandate.bar} /></div>
+      <KanLine>{advice}</KanLine>
+      {dropping ? (
+        <Reasons prompt="Why drop it?" options={KILL_REASONS.map((x) => ({ id: x, label: x }))} onPick={(reason) => onAnswer({ kind: 'build', choice: 'kill', reason })} onCancel={() => setDropping(false)} />
       ) : (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Btn kind="primary" onClick={() => onAnswer({ kind: 'build', choice: 'build' })}>Build it</Btn>
-          <Btn onClick={() => onAnswer({ kind: 'build', choice: 'again' })}>Another week</Btn>
-          <Btn kind="quiet" onClick={() => setKilling(true)}>Kill</Btn>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <Button kind="decide" onClick={() => onAnswer({ kind: 'build', choice: 'build' })}>Build it</Button>
+          <Button onClick={() => onAnswer({ kind: 'build', choice: 'again' })}>Test another week</Button>
+          <Button kind="quiet" onClick={() => setDropping(true)}>Drop it</Button>
         </div>
       )}
-      <Why>
-        Building is where the real spend starts — about $8 of model time and the builder’s queue. The test told you whether people reach for their wallet when the app doesn’t exist yet. You set the bar at {sim.mandate.bar}% in your mandate; this is the first of two times a take needs you.
-      </Why>
-    </Shell>
+    </article>
   );
 }
 
-function ShipCard({ sim, item, onAnswer }: { sim: Sim; item: Extract<Item, { kind: 'ship' }>; onAnswer: (a: Answer) => void }) {
+function Phone({ app, preview }: { app: string; preview: { header: string; rows: string[]; cta: string } }) {
+  return (
+    <div className="w-[230px] rounded-[34px] bg-(--ink) p-2.5 shadow-[0_24px_48px_-20px_rgba(17,26,46,0.45)]">
+      <div className="rounded-[26px] bg-(--card) px-4 pb-5 pt-6">
+        <p className="text-[13px] font-medium text-(--faint)">{app}</p>
+        <p className="mt-1 text-[18px] font-semibold leading-tight text-(--ink)">{preview.header}</p>
+        <div className="mt-4 space-y-2">
+          {preview.rows.map((row) => <p key={row} className="rounded-xl bg-(--paper) px-3 py-2.5 text-[13px] leading-snug text-(--ink)">{row}</p>)}
+        </div>
+        <p className="mt-4 rounded-full bg-(--ink) py-2.5 text-center text-[14px] font-medium text-white">{preview.cta}</p>
+      </div>
+    </div>
+  );
+}
+
+function Ship({ sim, item, onAnswer }: { sim: Sim; item: Extract<Item, { kind: 'ship' }>; onAnswer: (a: Answer) => void }) {
   const t = takeById(item.takeId);
   const st = sim.takes[item.takeId];
-  const [mode, setMode] = useState<'idle' | 'back' | 'kill'>('idle');
+  const [mode, setMode] = useState<'idle' | 'back' | 'drop'>('idle');
   const [note, setNote] = useState(t.qa.open);
-  const [tried, setTried] = useState(false);
+  const fixed = t.qa.fixed.length;
 
   return (
-    <Shell kind="Ship it?" agent="judge" ring="ring-cyan-500/25" right={<span className="text-neutral-500">built in {t.truth.buildDays} days</span>}>
-      <h3 className="text-[17px] font-semibold leading-snug text-neutral-50">{t.app} is built and checked</h3>
-      <p className="mt-1 text-[12.5px] text-neutral-500">{t.does}</p>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-[170px_1fr]">
-        <button onClick={() => setTried(true)} className="group mx-auto w-[170px] text-left">
-          <div className="rounded-[22px] border border-neutral-700 bg-neutral-950 p-2 shadow-xl shadow-black/50">
-            <div className="rounded-[16px] bg-gradient-to-b from-neutral-100 to-neutral-200 p-3 text-neutral-900">
-              <p className="text-[9px] font-semibold uppercase tracking-wide text-neutral-500">{t.app}</p>
-              <p className="mt-1 text-[12px] font-semibold leading-tight">{t.preview.header}</p>
-              <div className="mt-2 space-y-1.5">
-                {t.preview.rows.map((row) => <p key={row} className="rounded-md bg-white px-1.5 py-1 text-[9.5px] leading-tight text-neutral-700 shadow-sm">{row}</p>)}
-              </div>
-              <p className="mt-2.5 rounded-md bg-neutral-900 py-1.5 text-center text-[10px] font-medium text-white">{t.preview.cta}</p>
-            </div>
-          </div>
-          <p className="mt-1.5 text-center text-[11px] text-neutral-500 group-hover:text-neutral-300">{tried ? 'You tried it ✓' : 'Tap to try it (1 min)'}</p>
-        </button>
-
-        <div className="space-y-3 text-[12.5px]">
-          <div>
-            <p className="text-[11px] text-neutral-500">Play tester fixed</p>
-            <ul className="mt-1 space-y-1">{t.qa.fixed.map((f) => <li key={f} className="text-neutral-300"><span className="text-emerald-400">✓</span> {f}</li>)}</ul>
-          </div>
-          <div>
-            <p className="text-[11px] text-neutral-500">Still open</p>
-            <p className="mt-1 text-amber-200/90">{t.qa.open}</p>
-          </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2">
-            <div>
-              <p className="text-[11px] text-neutral-500">Judge: keeps the take’s promise</p>
-              <p className="mt-0.5 text-[15px] font-semibold tabular-nums text-neutral-100">{Math.round(t.promise * 100)}%</p>
-            </div>
-            <div>
-              <p className="text-[11px] text-neutral-500">Launch price</p>
-              <p className="mt-0.5 text-[15px] font-semibold text-neutral-100">{t.priceLabel}</p>
-            </div>
-            <div>
-              <p className="text-[11px] text-neutral-500">Waiting for it</p>
-              <p className="mt-0.5 text-[15px] font-semibold tabular-nums text-neutral-100">{st.reserved}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <KanSays text={`Ship it. The open note is real but small, and ${st.reserved} ${st.reserved === 1 ? 'person is' : 'people are'} waiting at ${t.priceLabel}. Checkout, the directory listing and the launch note are ready to go the moment you say so.`} />
-
-      {mode === 'kill' ? (
-        <KillPicker onPick={(reason) => onAnswer({ kind: 'ship', choice: 'kill', reason })} onCancel={() => setMode('idle')} />
+    <article>
+      <Kicker>Ready to ship</Kicker>
+      <Headline>{t.app} is built and tested.</Headline>
+      <div className="mt-8 flex justify-center sm:justify-start"><Phone app={t.app} preview={t.preview} /></div>
+      <Body>
+        The tester fixed {fixed === 1 ? 'one thing' : `${fixed} things`}. One small thing is left: {t.qa.open.charAt(0).toLowerCase() + t.qa.open.slice(1)}{' '}
+        {st.reserved > 0 && <>{st.reserved} {st.reserved === 1 ? 'person is' : 'people are'} waiting to buy it at {t.priceLabel}.</>}
+      </Body>
+      {mode === 'drop' ? (
+        <Reasons prompt="Why drop it?" options={KILL_REASONS.map((x) => ({ id: x, label: x }))} onPick={(reason) => onAnswer({ kind: 'ship', choice: 'kill', reason })} onCancel={() => setMode('idle')} />
       ) : mode === 'back' ? (
-        <div className="mt-4">
-          <p className="mb-1.5 text-[11.5px] text-neutral-500">What should change? The builder reads this as the brief.</p>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="w-full resize-none rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-[13px] text-neutral-200 focus:border-neutral-600 focus:outline-none" />
-          <div className="mt-2 flex gap-2">
-            <Btn kind="primary" onClick={() => onAnswer({ kind: 'ship', choice: 'back', note })}>Send it back</Btn>
-            <Btn kind="quiet" onClick={() => setMode('idle')}>Cancel</Btn>
+        <div className="mt-6">
+          <label htmlFor="sendback" className="text-[16px] text-(--ink)">What should change?</label>
+          <textarea id="sendback" value={note} onChange={(e) => setNote(e.target.value)} rows={3} className="mt-2 w-full resize-none rounded-[16px] bg-(--card) px-4 py-3 text-[17px] leading-[1.5] text-(--ink) ring-1 ring-(--line) focus:outline-none focus:ring-2 focus:ring-(--cobalt)" />
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button kind="decide" onClick={() => onAnswer({ kind: 'ship', choice: 'back', note })}>Send it back</Button>
+            <Button kind="quiet" onClick={() => setMode('idle')}>Cancel</Button>
           </div>
         </div>
       ) : (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Btn kind="primary" onClick={() => onAnswer({ kind: 'ship', choice: 'ship' })}>Ship at {t.priceLabel}</Btn>
-          <Btn onClick={() => setMode('back')}>Send back</Btn>
-          <Btn kind="quiet" onClick={() => setMode('kill')}>Kill</Btn>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <Button kind="decide" onClick={() => onAnswer({ kind: 'ship', choice: 'ship' })}>Ship it at {t.priceLabel}</Button>
+          <Button onClick={() => setMode('back')}>Send it back</Button>
+          <Button kind="quiet" onClick={() => setMode('drop')}>Drop it</Button>
         </div>
       )}
-      <Why>
-        This is the second and last time a take needs you. Agents tested it and judged it; only you can say whether it’s something you’d put your name on. Shipping publishes it with checkout and a directory page — nothing goes to a person until the launch note, which asks separately until you trust it.
-      </Why>
-    </Shell>
+    </article>
   );
 }
 
-function OutwardCard({ sim, item, onAnswer }: { sim: Sim; item: Extract<Item, { kind: 'outward' }>; onAnswer: (a: Answer) => void }) {
+function outwardAsk(item: Extract<Item, { kind: 'outward' }>) {
   const t = takeById(item.takeId);
+  if (item.out === 'testpost') return `Ok to share the ${t.app} test page in ${t.where}?`;
+  if (item.out === 'launchmail') return `Ok to tell the ${item.count} ${item.count === 1 ? 'person' : 'people'} who reserved ${t.app} that it’s ready?`;
+  return `Ok to post the ${t.app} launch in ${t.where}?`;
+}
+
+function Outward({ item, onAnswer }: { item: Extract<Item, { kind: 'outward' }>; onAnswer: (a: Answer) => void }) {
   const [draft, setDraft] = useState(item.draft);
   const [declining, setDeclining] = useState(false);
-  const agent = OUTWARD_AGENT[item.out];
-  const edited = draft.trim() !== item.draft.trim();
-  const where = item.out === 'launchmail' ? `${item.count} ${item.count === 1 ? 'person' : 'people'} who reserved` : t.where;
 
   return (
-    <Shell kind="Goes outside" agent={agent} ring="ring-fuchsia-500/25" right={<span className="text-neutral-500">to {where}</span>}>
-      <h3 className="text-[16px] font-semibold leading-snug text-neutral-50">{OUTWARD_LABEL[item.out]}</h3>
-      <p className="mt-1 text-[12.5px] text-neutral-500">{t.app} · {t.title}</p>
+    <article>
+      <Kicker>Before anything goes out</Kicker>
+      <Headline>{outwardAsk(item)}</Headline>
+      <label htmlFor="draft" className="mt-7 block text-[15px] text-(--soft)">Kan’s draft. Change anything.</label>
       <textarea
+        id="draft"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        rows={4}
-        className="mt-3 w-full resize-none rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-[13px] leading-relaxed text-neutral-200 focus:border-neutral-600 focus:outline-none"
+        rows={5}
+        className="mt-2 w-full resize-none rounded-[20px] bg-(--card) px-5 py-4 text-[18px] leading-[1.55] text-(--ink) ring-1 ring-(--line) focus:outline-none focus:ring-2 focus:ring-(--cobalt)"
       />
-      <div className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-neutral-500">
-        {item.out === 'testpost' && <span>Test pages get most of their visits from this post.</span>}
-        {item.out === 'launchmail' && <span>The people most likely to buy are the ones who already reserved.</span>}
-        {item.out === 'launchpost' && <span>Back where the take came from.</span>}
-        {edited && <span className="text-amber-300">edited — next drafts start from yours</span>}
-      </div>
       {declining ? (
-        <div className="mt-3">
-          <p className="mb-1.5 text-[11.5px] text-neutral-500">Why not? It becomes a rule.</p>
-          <Chips options={DECLINE_REASONS.map((r) => ({ id: r, label: r }))} onPick={(reason) => onAnswer({ kind: 'outward', choice: 'decline', reason })} />
-          <button onClick={() => setDeclining(false)} className="mt-2 text-[12px] text-neutral-500 hover:text-neutral-300">Cancel</button>
-        </div>
+        <Reasons prompt="What’s wrong with it? Kan will remember." options={DECLINE_REASONS.map((x) => ({ id: x, label: x }))} onPick={(reason) => onAnswer({ kind: 'outward', choice: 'decline', reason })} onCancel={() => setDeclining(false)} />
       ) : (
-        <div className="mt-3 flex gap-2">
-          <Btn kind="primary" onClick={() => onAnswer({ kind: 'outward', choice: 'send', draft })}>{item.out === 'launchmail' ? `Send to ${item.count}` : 'Post it'}</Btn>
-          <Btn onClick={() => setDeclining(true)}>Not this</Btn>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <Button kind="decide" onClick={() => onAnswer({ kind: 'outward', choice: 'send', draft })}>{item.out === 'launchmail' ? 'Send it' : 'Post it'}</Button>
+          <Button onClick={() => setDeclining(true)}>Don’t</Button>
         </div>
       )}
-      <Why>
-        Anything that reaches a person waits for you until you trust {crewById(agent).name.toLowerCase()} with this kind of thing. Two approvals you don’t change, and it offers to stop asking — for this kind only. {sim.trust[item.out] ? '' : 'One decline puts it back.'}
-      </Why>
-    </Shell>
+    </article>
   );
 }
 
-function TrustCard({ item, onAnswer }: { item: Extract<Item, { kind: 'trust' }>; onAnswer: (a: Answer) => void }) {
-  const agent = OUTWARD_AGENT[item.out];
+function Trust({ item, onAnswer }: { item: Extract<Item, { kind: 'trust' }>; onAnswer: (a: Answer) => void }) {
+  const what = OUTWARD_LABEL[item.out].charAt(0).toLowerCase() + OUTWARD_LABEL[item.out].slice(1);
   return (
-    <Shell kind="Trust" agent={agent}>
-      <h3 className="text-[16px] font-semibold leading-snug text-neutral-50">{crewById(agent).name} is two for two, unchanged.</h3>
-      <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">
-        Let it {OUTWARD_LABEL[item.out].toLowerCase()} without asking? It follows every rule you’ve given it, it tells you each time in the overnight note, and one decline puts it back to asking.
-      </p>
-      <div className="mt-4 flex gap-2">
-        <Btn kind="violet" onClick={() => onAnswer({ kind: 'trust', yes: true })}>Yes, for this kind</Btn>
-        <Btn onClick={() => onAnswer({ kind: 'trust', yes: false })}>Keep asking</Btn>
+    <article>
+      <Kicker>You’ve said yes twice without changing a word</Kicker>
+      <Headline>Let Kan {what} without asking?</Headline>
+      <Body>It would still tell you the next morning. One “don’t” and it goes back to asking.</Body>
+      <div className="mt-8 flex flex-wrap items-center gap-3">
+        <Button kind="decide" onClick={() => onAnswer({ kind: 'trust', yes: true })}>Stop asking</Button>
+        <Button onClick={() => onAnswer({ kind: 'trust', yes: false })}>Keep asking</Button>
       </div>
-    </Shell>
+    </article>
   );
 }
 
-function AllocateCard({ sim, onAnswer }: { sim: Sim; onAnswer: (a: Answer) => void }) {
-  const held = Object.values(sim.takes).filter(holdsChips);
+function Allocate({ sim, onAnswer }: { sim: Sim; onAnswer: (a: Answer) => void }) {
+  const held = Object.values(sim.takes).filter(funded);
   const [chips, setChips] = useState<Record<string, number>>(() => Object.fromEntries(held.map((t) => [t.id, t.chips])));
+  const unit = sim.mandate.budget / TOTAL_CHIPS;
   const used = Object.values(chips).reduce((a, b) => a + b, 0);
-  const spare = TOTAL_CHIPS - used;
-  const plan = ledgerPlan(sim);
-  const cv = sim.mandate.budget / TOTAL_CHIPS;
-  const losing = held.filter((t) => t.stage === 'live' && sim.day - (t.liveSince ?? sim.day) >= 7 && t.earned < t.spent);
+  const left = TOTAL_CHIPS - used;
 
   return (
-    <Shell kind="Monday chips" agent="ledger" ring="ring-neutral-500/30" right={<span className="text-neutral-500">1 chip = {money(cv)} a week</span>}>
-      <h3 className="text-[16px] font-semibold leading-snug text-neutral-50">Spread this week’s {TOTAL_CHIPS} chips</h3>
-      <p className="mt-1 text-[12.5px] leading-snug text-neutral-500">Chips are reach: ads behind a test page or a live app. Builds don’t need them.</p>
-      <ul className="mt-4 divide-y divide-neutral-800/70">
+    <article>
+      <Kicker>Monday</Kicker>
+      <Headline>Where should this week’s {money(sim.mandate.budget)} go?</Headline>
+      <Body>It pays for ads behind tests and apps that are selling. Apps being built don’t need any.</Body>
+      <ul className="mt-6 divide-y divide-(--line) rounded-[20px] bg-(--card) ring-1 ring-(--line)">
         {held.map((st) => {
           const t = takeById(st.id);
           const n = chips[st.id] ?? 0;
-          const series = st.stage === 'practice' ? st.series.map((p) => p.rate * 100) : st.series.map((p) => p.net);
+          const status = st.stage === 'live'
+            ? `Made ${money(st.earned)}, cost ${money(st.spent)}`
+            : `Testing, ${st.taps} reserved so far`;
           return (
-            <li key={st.id} className="flex items-center gap-3 py-2.5">
+            <li key={st.id} className="flex items-center gap-4 px-5 py-4">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2"><span className="truncate text-[13px] text-neutral-200">{t.app}</span><StagePill stage={st.stage} /></div>
-                <p className="mt-0.5 text-[11px] text-neutral-500">
-                  {st.stage === 'live' ? `${money(st.earned)} earned · ${money(st.spent)} spent` : st.stage === 'practice' ? `${(rate(st) * 100).toFixed(1)}% reserving so far` : 'Holding chips for launch'}
-                  {plan[st.id] !== undefined && plan[st.id] !== n && <span className="text-neutral-600"> · ledger says {plan[st.id]}</span>}
-                </p>
+                <p className="text-[17px] font-medium text-(--ink)">{t.app}</p>
+                <p className="mt-0.5 text-[15px] text-(--soft)">{status}</p>
               </div>
-              <Spark values={series} tone={st.stage === 'practice' ? 'amber' : 'auto'} width={60} />
-              <div className="flex items-center gap-1">
-                <button onClick={() => setChips((c) => ({ ...c, [st.id]: Math.max(0, n - 1) }))} className="h-7 w-7 rounded-full border border-neutral-700 text-neutral-400 hover:border-neutral-500">−</button>
-                <span className="w-6 text-center text-[14px] font-semibold tabular-nums text-neutral-100">{n}</span>
-                <button disabled={spare <= 0} onClick={() => setChips((c) => ({ ...c, [st.id]: n + 1 }))} className="h-7 w-7 rounded-full border border-neutral-700 text-neutral-400 hover:border-neutral-500 disabled:opacity-30">+</button>
+              <div className="flex items-center gap-2">
+                <button type="button" aria-label={`Less for ${t.app}`} onClick={() => setChips((c) => ({ ...c, [st.id]: Math.max(0, n - 1) }))} className="h-10 w-10 rounded-full text-[20px] text-(--ink) ring-1 ring-(--line) hover:ring-(--faint)">−</button>
+                <span className="w-12 text-center text-[17px] font-semibold tabular-nums text-(--ink)">{money(n * unit)}</span>
+                <button type="button" aria-label={`More for ${t.app}`} disabled={left <= 0} onClick={() => setChips((c) => ({ ...c, [st.id]: n + 1 }))} className="h-10 w-10 rounded-full text-[20px] text-(--ink) ring-1 ring-(--line) hover:ring-(--faint) disabled:opacity-30">+</button>
               </div>
             </li>
           );
         })}
       </ul>
-      <div className="mt-2 flex gap-1">
-        {Array.from({ length: TOTAL_CHIPS }).map((_, i) => <span key={i} className={`h-1.5 flex-1 rounded-full ${i < used ? 'bg-violet-400' : 'bg-neutral-800'}`} />)}
+      <p className="mt-3 text-[15px] text-(--soft)">{left ? `${money(left * unit)} left unspent.` : 'All of it is spoken for.'}</p>
+      <div className="mt-6 flex flex-wrap items-center gap-3">
+        <Button kind="decide" onClick={() => onAnswer({ kind: 'allocate', chips })}>Use this split</Button>
+        <Button onClick={() => setChips(ledgerPlan(sim))}>Show Kan’s split</Button>
       </div>
-      <p className="mt-1.5 text-[11px] text-neutral-500">{spare} spare {spare === 1 ? 'chip' : 'chips'} — spare chips sit in the bank, unspent.</p>
-      {losing.length > 0 && <KanSays text={`Bench ${losing.map((t) => takeById(t.id).app).join(' and ')}: a week live, spending more than it earns. It stays up, just without ads.`} />}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Btn kind="primary" onClick={() => onAnswer({ kind: 'allocate', chips })}>Lock in</Btn>
-        <Btn onClick={() => setChips(plan)}>Use the ledger’s plan</Btn>
-      </div>
-      <Why>
-        This is your resource allocation, once a week. The ledger shows what each chip has earned and suggests a split, but where the money goes is a CEO call. You also decide your budget — it’s ${sim.mandate.budget} a week in your mandate.
-      </Why>
-    </Shell>
+    </article>
   );
 }
 
-function DirectionCard({ item, onAnswer }: { item: Extract<Item, { kind: 'direction' }>; onAnswer: (a: Answer) => void }) {
+function Direction({ item, onAnswer }: { item: Extract<Item, { kind: 'direction' }>; onAnswer: (a: Answer) => void }) {
   const dir = DIRECTIONS.find((d) => d.id === item.dirId)!;
   return (
-    <Shell kind="Direction" agent={dir.id === 'dig' ? 'demand' : dir.id === 'monthly' ? 'pricer' : 'ledger'}>
-      <h3 className="text-[17px] font-semibold leading-snug text-neutral-50">{dir.question}</h3>
-      <div className="mt-4 space-y-2">
+    <article>
+      <Kicker>A question about direction</Kicker>
+      <Headline>{dir.question}</Headline>
+      <Body>{dir.why}</Body>
+      <div className="mt-7 space-y-3">
         {dir.options.map((o) => (
-          <button key={o.id} onClick={() => onAnswer({ kind: 'direction', option: o.id })} className="block w-full rounded-xl border border-neutral-800 bg-neutral-950/50 px-4 py-3 text-left transition-colors hover:border-violet-500/60 hover:bg-violet-500/5">
-            <p className="text-[14px] font-medium text-neutral-100">{o.label}</p>
-            <p className="mt-0.5 text-[12px] text-neutral-500">{o.note}</p>
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onAnswer({ kind: 'direction', option: o.id })}
+            className="block w-full rounded-[20px] bg-(--card) px-5 py-4 text-left ring-1 ring-(--line) transition hover:ring-2 hover:ring-(--cobalt) focus-visible:outline-2 focus-visible:outline-(--cobalt)"
+          >
+            <p className="text-[18px] font-medium text-(--ink)">{o.label}</p>
+            <p className="mt-1 text-[15px] text-(--soft)">{o.note}</p>
           </button>
         ))}
       </div>
-      <Why>{dir.why}</Why>
-    </Shell>
+    </article>
   );
 }
-

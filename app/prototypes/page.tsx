@@ -10,9 +10,9 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
     slug: 'agents',
-    name: 'Takes — an app studio run like a fund',
+    name: 'Studio',
     blurb:
-      'Agents run the whole line: scouts find public demand, a five-day practice round tests it with a Reserve button before anything is built, then build, play-test, judge, price, launch to the people who reserved, and keep the books. You set a mandate once, answer a two-minute check-in a day, and decide twice per app (build? ship?). Borrowed from Supertake: every take is a position with a return, chips are allocated on Mondays, and your calls are scored, including the noes, which get a $3 shadow test.',
+      'A daily tool for running a crew of app-making agents. Each morning, a few calls, one per screen: how sure you are about an idea the scouts found, whether a test did well enough to build, whether a finished app ships, and where this week’s budget goes. Agents do the rest: test pages with a Reserve button, building, testing, launch notes. The Apps screen shows what’s selling and scores your calls.',
     status: 'newest',
   },
   {
