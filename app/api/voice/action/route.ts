@@ -120,7 +120,8 @@ export async function POST(request: Request) {
   }
 
   await ensureSchema();
-  const { action, args: rawArgs, sessionCardIds, recentTurns }: ActionRequest = await request.json();
+  const { action: requestedAction, args: rawArgs, sessionCardIds, recentTurns }: ActionRequest = await request.json();
+  let action = requestedAction;
 
   // Live-model tool arguments are not schema-enforced — a non-string here reaches
   // string methods downstream and throws, which used to surface as "no data found".
@@ -137,6 +138,28 @@ export async function POST(request: Request) {
   };
 
   try {
+    /**
+     * A task lives on a card. "Make a note and add it to Do these" came through as a
+     * task with the column named and a loose card reference; the reference was matched
+     * to an unrelated card in another column, and the task disappeared onto it. So a
+     * task is only made when it clearly belongs to a card — the card's exact id, or a
+     * card name with no column named. Anything else is a card in the column asked for.
+     */
+    let taskCard: Awaited<ReturnType<typeof findCard>> | undefined;
+    if (action === 'create_task') {
+      const ref = args.cardId?.trim();
+      if (ref) {
+        const exact = await db.query.cards.findFirst({
+          where: and(eq(cards.id, ref), inArray(cards.channelId, access.readable)),
+        });
+        taskCard = exact ?? (args.columnName?.trim() ? undefined : await findCard(ref, access, ctx));
+      }
+      if (!taskCard) {
+        action = 'create_card';
+        args.content = args.content || args.description || '';
+      }
+    }
+
     switch (action) {
       case 'complete_task': {
         const task = await findTask(args.taskId, access, ctx);
@@ -147,57 +170,20 @@ export async function POST(request: Request) {
       }
 
       case 'create_task': {
+        // Only reached with a card — see the routing above the switch.
+        const card = taskCard!;
+        if (!access.writable.has(card.channelId)) {
+          return NextResponse.json({ result: READ_ONLY(card.title) });
+        }
         const id = nanoid();
         const nowDate = new Date();
-
-        // Resolve cardId — might be an ID or a card name
-        let resolvedCardId: string | null = null;
-        let cardChannelId: string | null = null;
-        if (args.cardId) {
-          const card = await findCard(args.cardId, access, ctx);
-          resolvedCardId = card?.id || null;
-          cardChannelId = card?.channelId || null;
-        }
-
-        // Resolve channelId — might be an ID or channel name. A task on a card
-        // lives in that card's channel, whatever channel the model named.
-        const channel = cardChannelId ? null : await findChannel(args.channelId, access, ctx);
-        const resolvedChannelId = cardChannelId ?? channel?.id;
-        if (!resolvedChannelId) {
-          return NextResponse.json({ result: `Channel not found: "${args.channelId}"` });
-        }
-        if (!access.writable.has(resolvedChannelId)) {
-          return NextResponse.json({ result: READ_ONLY(channel?.name ?? 'that card') });
-        }
-
-        // For standalone tasks (no parent card), resolve columnName so the task
-        // shows up in a visible column on the board. Fall back to the first column
-        // if the model didn't pass one — never create an orphaned standalone task.
-        let resolvedColumnId: string | null = null;
-        if (!resolvedCardId) {
-          const channelCols = await db.query.columns.findMany({
-            where: eq(columns.channelId, resolvedChannelId),
-            orderBy: [asc(columns.position)],
-          });
-          if (channelCols.length > 0) {
-            const requested = args.columnName?.trim().toLowerCase();
-            const match = requested
-              ? channelCols.find(c => c.name.toLowerCase() === requested)
-                  ?? channelCols.find(c => c.name.toLowerCase().includes(requested))
-              : undefined;
-            resolvedColumnId = (match ?? channelCols[0]).id;
-          }
-        }
-
-        // Description is strongly expected — fall back to the title so the task is
-        // never blank, but log when the model omits it so we can keep tightening the prompt.
-        const description = args.description?.trim() || `Created from voice mode: ${args.title}`;
+        const description = args.description?.trim() || '';
 
         await db.insert(tasks).values({
           id,
-          channelId: resolvedChannelId,
-          cardId: resolvedCardId,
-          columnId: resolvedColumnId,
+          channelId: card.channelId,
+          cardId: card.id,
+          columnId: null,
           title: args.title,
           description,
           status: 'not_started',
@@ -205,16 +191,20 @@ export async function POST(request: Request) {
           createdAt: nowDate,
           updatedAt: nowDate,
         });
+        const column = card.columnId
+          ? await db.query.columns.findFirst({ where: eq(columns.id, card.columnId), columns: { name: true } })
+          : null;
         return NextResponse.json({
-          result: `Created task "${args.title}"${resolvedCardId ? '' : ' (standalone)'}`,
+          // Say where it went, so Kan can't tell the user it's somewhere it isn't.
+          result: `Created task "${args.title}" on the card "${card.title}"${column ? ` (in ${column.name})` : ''}.`,
           taskId: id,
           taskPreview: {
             id,
             title: args.title,
             status: 'not_started',
             description,
-            cardId: resolvedCardId,
-            channelId: resolvedChannelId,
+            cardId: card.id,
+            channelId: card.channelId,
           },
         });
       }

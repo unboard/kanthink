@@ -2,8 +2,9 @@
  * Kanwatch background worker.
  *
  * Keeps one "current visit" — the active tab in the focused window — and counts
- * time on it only while you are actually there: Chrome focused, you not idle (or a
- * video playing), and recording not paused. When the page changes, the visit is
+ * time on it only while you are actually there: Chrome focused (or only just left —
+ * see UNFOCUSED_GRACE_MS), you not idle (or a video playing), and recording not
+ * paused. When the page changes, the visit is
  * finished, run through privacy.js, and queued. The queue uploads every minute.
  *
  * The full URL, the page, and anything you type never leave this worker. What is
@@ -19,6 +20,14 @@ const DEFAULT_ENDPOINT = 'https://www.kanthink.com';
 const MIN_VISIT_MS = 3000;            // quicker than this is a flip-through, not a visit
 const CHECKPOINT_MS = 2 * 60 * 1000;  // long visits are split so the day view and moments stay current
 const MEDIA_FRESH_MS = 20000;         // a "video playing" report counts for this long
+// Reading is input-free. At 60 seconds, a minute spent reading a page without touching
+// anything was recorded as you being away, and a workday came out as a couple of hours.
+const IDLE_SECONDS = 180;
+// Work happens beside Chrome as much as in it: docs on one screen, an editor or terminal
+// focused on the other. The tab you were on keeps counting this long after another app
+// takes focus — while you're active and the window isn't minimised. Capped, so a tab
+// left on a second screen can't collect an afternoon.
+const UNFOCUSED_GRACE_MS = 10 * 60 * 1000;
 const MAX_QUEUE = 2000;
 const READ_AFTER_MS = 30 * 1000;       // reading this long on a public page earns a read
 const REREAD_AFTER_MS = 3 * 60 * 1000; // ...and a fuller one for long threads that kept loading
@@ -167,7 +176,10 @@ async function refresh() {
   const paused = await isPaused();
 
   let tab = null;
-  if (session.windowFocused && !paused) {
+  const inGrace = !session.windowFocused && session.blurredAt && now - session.blurredAt < UNFOCUSED_GRACE_MS
+    && session.windowId && await chrome.windows.get(session.windowId)
+      .then((w) => w.state !== 'minimized').catch(() => false);
+  if ((session.windowFocused || inGrace) && !paused) {
     // The browser window you were last in. Focus on its DevTools leaves it in place, so
     // inspecting a page is still time on that page.
     let [active] = session.windowId
@@ -182,6 +194,12 @@ async function refresh() {
     (session.idleState === 'idle' && now - (session.mediaAt || 0) < MEDIA_FRESH_MS);
 
   let current = session.current;
+
+  // Grace ran out between ticks: stop the clock at the moment it did, before the
+  // visit is finished below — finishing would otherwise count up to this tick.
+  if (current && !session.windowFocused && !inGrace && session.blurredAt) {
+    stopClock(current, Math.min(now, session.blurredAt + UNFOCUSED_GRACE_MS));
+  }
 
   // A different page (or no page) ends the current visit.
   let carryMs = 0;
@@ -479,12 +497,12 @@ chrome.notifications.onClicked.addListener(async (id) => {
 // Installed, updated, reloaded or Chrome started: check in straight away.
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create('tick', { periodInMinutes: 1 });
-  chrome.idle.setDetectionInterval(60);
+  chrome.idle.setDetectionInterval(IDLE_SECONDS);
   serial(() => upload({ checkIn: true }));
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create('tick', { periodInMinutes: 1 });
-  chrome.idle.setDetectionInterval(60);
+  chrome.idle.setDetectionInterval(IDLE_SECONDS);
   serial(() => upload({ checkIn: true }));
 });
 
@@ -511,8 +529,12 @@ chrome.tabs.onUpdated.addListener((_id, change) => {
 // window reads as leaving Chrome, and an afternoon debugging a page counts as nothing.
 chrome.windows.onFocusChanged.addListener((windowId) => serial(async () => {
   const session = await getSession();
+  const wasFocused = session.windowFocused;
   session.windowFocused = windowId !== chrome.windows.WINDOW_ID_NONE;
+  // When Chrome lost focus, so the tab you were on can keep counting for a while.
+  if (wasFocused && !session.windowFocused) session.blurredAt = Date.now();
   if (session.windowFocused) {
+    session.blurredAt = 0;
     const win = await chrome.windows.get(windowId, { windowTypes: ['normal', 'popup', 'devtools'] }).catch(() => null);
     if (win && win.type !== 'devtools') session.windowId = windowId;
   }

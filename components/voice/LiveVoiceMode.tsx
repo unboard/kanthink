@@ -35,17 +35,16 @@ const TOOLS = [
       },
       {
         name: 'create_task',
-        description: 'Create a new task. PREFER create_card for most user requests — only use create_task when the user explicitly says "task", "to-do", "todo", or "checklist item", or when adding a sub-task under an existing card. Tasks are short, status-tracked checklist items; cards are first-class kanban units with a thread, properties, and richer content. ALWAYS provide a description (the user has complained about empty tasks). For standalone tasks (no cardId), ALWAYS provide columnName so the task lands in a visible column on the board.',
+        description: 'Add a checklist item to an EXISTING card — only when the user names the card it belongs on. Everything else is a card: "make a note", "add it to <column>", "remind me", a to-do, a bug, an idea — use create_card. Without a real card, this makes a card instead. Always give a description.',
         parameters: {
           type: 'OBJECT',
           properties: {
             channelId: { type: 'STRING', description: 'Channel ID' },
-            cardId: { type: 'STRING', description: 'Parent card ID. Omit for a standalone task — but if omitted you MUST pass columnName.' },
-            columnName: { type: 'STRING', description: 'Column to place a standalone task in (e.g. "Inbox", "This Week"). Required when cardId is omitted; ignored when cardId is set. If you are not sure which column, ask the user.' },
+            cardId: { type: 'STRING', description: 'The card this task goes on — its ID if you have it.' },
             title: { type: 'STRING', description: 'Short, action-oriented task title.' },
-            description: { type: 'STRING', description: 'REQUIRED in practice — write a 1-3 sentence description in markdown explaining what the task involves and why. Use **bold**, bullet lists, or links if helpful. Never leave this empty.' },
+            description: { type: 'STRING', description: '1-3 sentences in markdown on what the task involves and why. Never empty.' },
           },
-          required: ['channelId', 'title', 'description'],
+          required: ['channelId', 'cardId', 'title', 'description'],
         },
       },
       {

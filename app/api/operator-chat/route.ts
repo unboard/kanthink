@@ -323,8 +323,9 @@ Available actions:
   - Takes a minute or two. Say you're starting it, don't wait silently.
 
 **Tasks:**
-- **create_task**: Create a new task, optionally linked to a card.
-  - Requires: channelId, title. Optional: cardId, description (markdown)
+- **create_task**: Add a checklist item to an EXISTING card the user named.
+  - Requires: channelId, cardId, title, description (markdown)
+  - "Make a note", "add it to <column>", a reminder, to-do, bug or idea is a card — use create_card with columnName. Without a real card, this makes a card instead.
 - **complete_task**: Mark a task as done.
   - Requires: taskId
 - **update_task_status**: Change a task's status (not_started, in_progress, on_hold, done).
@@ -357,7 +358,7 @@ Respond with valid JSON:
   "actions": [
     { "type": "create_card", "channelId": "ID", "title": "Title", "content": "First message" },
     { "type": "send_email", "to": "user@example.com", "subject": "Subject", "body": "Email body text" },
-    { "type": "create_task", "channelId": "ID", "title": "Task title" }
+    { "type": "create_task", "channelId": "ID", "cardId": "ID", "title": "Task title", "description": "What and why" }
   ]
 }
 
