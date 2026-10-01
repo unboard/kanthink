@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'people',
+    name: 'People: one person, two conversations',
+    blurb:
+      'Everyone who reserved, used or bought one of your apps, marked as a prospect, user or customer. Open someone to see their conversation (in-app messages, the emails you sent, and whether each was opened or clicked) and, beside it, a private conversation with Kan they never see. Kan and the shrooms draft there, every email is a preview with Send, and nothing reaches the customer until you press it.',
+    status: 'newest',
+  },
+  {
     slug: 'studio',
     name: 'The studio, inside Kanthink as it is',
     blurb:
       'No new section of the app. The crew reaches you in three places you already use. On the home screen, the morning spark is waiting as Kan’s first message and you answer in the same box or by voice. A Studio channel is an ordinary board the shrooms work through, with one new line under the header. The morning email is the same spark, in the shell every Kanthink email uses.',
-    status: 'newest',
   },
   {
     slug: 'sparks',
