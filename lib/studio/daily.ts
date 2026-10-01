@@ -6,7 +6,7 @@ import { and, eq, gte } from 'drizzle-orm'
 import { sendTransactionalEmail } from '@/lib/customerio'
 import { SparkEmail } from '@/lib/emails/SparkEmail'
 import { getStudio, type StudioRow } from './setup'
-import { pickSpark, sparkBody, sparkMessage } from './spark'
+import { pickSpark, plainForEmail, sparkBody, sparkMessage } from './spark'
 import { runFollowUps } from './people'
 import { baseUrl } from './pipeline'
 import { focusFor, groupForDay, lookInList } from './scoutFocus'
@@ -78,7 +78,7 @@ export async function runStudioMorning(studio: StudioRow, now = new Date()) {
       ].filter(Boolean).join(', and ')
       const html = await render(React.createElement(SparkEmail, {
         title: card.title,
-        body: sparkBody(card),
+        body: plainForEmail(sparkBody(card)),
         overnight: overnight ? `${overnight}.` : undefined,
         homeUrl: `${baseUrl()}/`,
         settingsUrl: `${baseUrl()}/people?settings=1`,

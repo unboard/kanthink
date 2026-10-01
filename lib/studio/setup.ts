@@ -55,8 +55,8 @@ Follow the Studio brief in the channel instructions: who to look for, the price 
 
 For each spark, create one card.
 Title: the tool's name in 2–4 plain words (for example "Sub Plan Writer").
-Content, in this order:
-1. One sentence: who has the problem and what it costs them.
+Content: plain paragraphs and bullet points only — no headings, because the board shows the first line as the card's preview. In this order:
+1. Open with one plain sentence: who has the problem and what it costs them.
 2. Two or three short quotes from real posts you found, each followed by where it was posted and the link.
 3. Whether anything already solves it, and how well.
 4. The tool, in one sentence.

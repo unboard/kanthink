@@ -33,6 +33,14 @@ export function appPriceLabel(app: AppRow) {
   return app.reservePage?.priceLabel || null
 }
 
+/**
+ * Your own row on your own app. Trying an app you made gives you a row like anyone
+ * else's, which is how saving gets tested — but you aren't one of your people.
+ */
+export function isOwnRow(m: Pick<MemberRow, 'userId' | 'email'>, ownerId: string, ownerEmail?: string | null) {
+  return m.userId === ownerId || (!!ownerEmail && m.email.toLowerCase() === ownerEmail.toLowerCase())
+}
+
 // ── Unsubscribe links ──
 
 const secret = () => process.env.NEXTAUTH_SECRET || process.env.INTERNAL_API_SECRET || 'kanthink-dev'
@@ -63,11 +71,12 @@ export interface PersonSummary {
 const iso = (d?: Date | null) => (d ? d.toISOString() : null)
 
 export async function listPeople(ownerId: string): Promise<PersonSummary[]> {
-  const members = await db.query.appUsers.findMany({
+  const me = await publisherName(ownerId)
+  const members = (await db.query.appUsers.findMany({
     where: eq(appUsers.ownerId, ownerId),
     orderBy: [desc(appUsers.updatedAt)],
     limit: 500,
-  })
+  })).filter((m) => !isOwnRow(m, ownerId, me.email))
   if (!members.length) return []
   const appIds = [...new Set(members.map((m) => m.appId))]
   const apps = await db.query.playgroundApps.findMany({
@@ -299,7 +308,7 @@ export async function runFollowUps(ownerId: string, opts: { mode: 'ask' | 'auto'
   let sent = 0
   for (const member of members) {
     // Your own row on your own app is how you test it, not a customer.
-    if (member.userId === ownerId) continue
+    if (isOwnRow(member, ownerId, me.email)) continue
     const app = apps.get(member.appId)
     if (!app || !app.shareToken) continue
     const mine = emails.filter((e) => e.appUserId === member.id).map((e) => ({ ...e, kind: e.kind || 'manual' }))

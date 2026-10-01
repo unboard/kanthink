@@ -34,6 +34,31 @@ export function sparkBody(card: SparkCandidate): string {
   return ((first?.content || card.summary || '').trim())
 }
 
+/**
+ * Bare URLs become short "source" links. Search grounding hands back redirect URLs
+ * hundreds of characters long, which read as noise and push the bubble sideways.
+ * Markdown links already written as [text](url) are left as they are.
+ */
+export function linkifySources(text: string): string {
+  return text.replace(/(\]\()?(https?:\/\/[^\s)<>]+)/g, (match, inLink: string | undefined, url: string) => (inLink ? match : `[source](${url})`))
+}
+
+/** The write-up as plain text for email: no markdown, no URLs (the button goes to Home). */
+export function plainForEmail(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1')
+    .replace(/\(?https?:\/\/[^\s)]+\)?/g, '')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    // Bullets before italics, or a bullet's asterisk pairs with the next italic one.
+    .replace(/^[ \t]*[*-][ \t]+/gm, '• ')
+    .replace(/(^|\s)\*([^*\n]+)\*/g, '$1$2')
+    .replace(/\s*\(\s*(source|link)\s*\)/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function clip(text: string, max: number) {
   if (text.length <= max) return text
   const cut = text.slice(0, max)
@@ -49,7 +74,7 @@ export function sparkMessage(card: SparkCandidate): string {
   const body = sparkBody(card)
   return [
     `Morning. Something the scouts found: **${card.title}**`,
-    body ? clip(body, 900) : '',
+    body ? linkifySources(clip(body, 1400)) : '',
     'Want me to put up a test page for it? Or tell me what you’d change, or pass.',
   ].filter(Boolean).join('\n\n')
 }

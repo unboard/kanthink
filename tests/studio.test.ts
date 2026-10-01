@@ -138,3 +138,18 @@ describe('scout focus', () => {
     expect(focusFor('teachers')).toMatch(/^teachers /)
   })
 })
+
+describe('spark links', () => {
+  it('turns bare source URLs into short links and leaves markdown links alone', async () => {
+    const { linkifySources } = await import('../lib/studio/spark')
+    const long = 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQ' + 'x'.repeat(200)
+    expect(linkifySources(`— *Forum* (${long})`)).toBe(`— *Forum* ([source](${long}))`)
+    expect(linkifySources(`see [Link](${long})`)).toBe(`see [Link](${long})`)
+  })
+
+  it('strips markdown and links for the email', async () => {
+    const { plainForEmail } = await import('../lib/studio/spark')
+    const text = '### The Problem\nLandlords **waste** hours.\n\n* "Is there an app?" — *Forum* ([Link](https://x.y/z))\n* "Too pricey." (https://a.b/c)'
+    expect(plainForEmail(text)).toBe('The Problem\nLandlords waste hours.\n\n• "Is there an app?" — Forum\n• "Too pricey."')
+  })
+})
