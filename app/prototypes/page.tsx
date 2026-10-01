@@ -9,11 +9,23 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'agents',
+    name: 'A crew that earns',
+    blurb:
+      'Agents built around one question: how does this make money? Listeners hear who wants to pay, learners turn outcomes and your declines into rules, doers draft and build, promoters take work to where people are. One desk where you approve in seconds, trust earned per kind of action, a budget and ledger per agent. Run a simulated Thursday against the real account: $0 in app sales, two people who asked to pay.',
+    status: 'newest',
+  },
+  {
+    slug: 'reimagine',
+    name: 'Kanthink, reimagined',
+    blurb:
+      'Built from the account, not the pitch. Kanthink as the place you think out loud: Kan catches what you say without acting, files it when you say keep, and never loses a word. Home is only what comes back — people in your apps, work Claude Code finished, what your saves add up to, the numbers you keep asking for. With the evidence and a five-step path from today.',
+  },
+  {
     slug: 'shroom-row',
     name: 'The shroom row',
     blurb:
       'The bar that got removed for adding height, rebuilt as one 44px strip that scrolls sideways and never wraps, with All pinned outside the scroll. Hover lights the columns a shroom touches; on a phone, where there is no hover, tapping opens the same trail as a sheet with Run inside. Plus what a hover can honestly say (ordered stops, not two colours), the cap holding its own job state, the drawer you edit and create from, and twelve caps in twelve colours.',
-    status: 'newest',
   },
   {
     slug: 'shrooms-alive',
