@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'shrooms-learn-from-reasons-only',
+    date: '2026-09-30',
+    kind: 'automation',
+    title: 'Shrooms only learn from rejections that say why',
+    body: 'Rejecting a card with no reason — including Reject all — no longer teaches the shroom to avoid it. Give a reason or a note to teach it, and clear a shroom’s learned log from its settings after you rework it.',
+  },
+  {
     id: 'ask-kan-after-sending',
     date: '2026-09-30',
     kind: 'workflow',
