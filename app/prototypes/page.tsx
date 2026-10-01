@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'sparks',
+    name: 'What the crew can do without you',
+    blurb:
+      'The plain answer to “what’s actually possible”: which jobs agents can run inside Kanthink today (scouting the web, test pages, building, checkout, launch email, the books) and which are new, the few things that genuinely need you, and an example morning where you steer the crew by talking instead of filling in a form.',
+    status: 'newest',
+  },
+  {
     slug: 'agents',
     name: 'Studio',
     blurb:
       'A daily tool for running a crew of app-making agents. Each morning, a few calls, one per screen: how sure you are about an idea the scouts found, whether a test did well enough to build, whether a finished app ships, and where this week’s budget goes. Agents do the rest: test pages with a Reserve button, building, testing, launch notes. The Apps screen shows what’s selling and scores your calls.',
-    status: 'newest',
   },
   {
     slug: 'reimagine',
