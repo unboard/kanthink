@@ -101,6 +101,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           .where(eq(playgroundApps.id, appId))
       }
 
+      // Publishing a Studio test page from here is shipping it: the Reserve page
+      // comes down, the card moves to Live and the people who reserved get their
+      // launch email drafted — the same as saying "ship it" to Kan.
+      if (app.reserveMode) {
+        const { onTestPagePublished } = await import('@/lib/studio/pipeline')
+        await onTestPagePublished(appId, session.user.id).catch((e) => console.error('[release] studio ship failed:', e))
+      }
+
       return respond(appId, result.reused)
     }
 

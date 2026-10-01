@@ -74,6 +74,7 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
         pitch={page?.pitch || app.summary || ''}
         priceLabel={page?.priceLabel || ''}
         bullets={page?.bullets ?? []}
+        thumbnailUrl={app.thumbnailUrl ?? null}
       />
     );
   }

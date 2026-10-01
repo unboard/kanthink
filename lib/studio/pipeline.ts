@@ -173,3 +173,24 @@ export async function publisherName(userId: string) {
   const u = await db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true, email: true } })
   return { name: u?.name || '', email: u?.email || '' }
 }
+
+/**
+ * A test page's app was published some other way — the Publish button in the app
+ * drawer rather than "ship it". Finish the ship: take the Reserve page down, move a
+ * Studio card to Live, and let the follow-up crew pick up everyone who reserved.
+ * Pricing is left to the drawer's Price tab, which is where this path sets it.
+ */
+export async function onTestPagePublished(appId: string, userId: string) {
+  const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) })
+  if (!app || !app.reserveMode) return
+  await db.update(playgroundApps).set({ reserveMode: false, listedInDirectory: true, updatedAt: new Date() }).where(eq(playgroundApps.id, appId))
+
+  const studio = await getStudio(userId)
+  const card = studio ? await db.query.cards.findFirst({ where: eq(cards.id, app.cardId) }) : null
+  if (studio && card && card.channelId === studio.channelId) {
+    const url = app.shareToken ? playUrl(app.shareToken) : ''
+    await moveToStage(studio, card, 'live', `Shipped from the app drawer${url ? `: ${url}` : ''}.`)
+  }
+  const { runFollowUps } = await import('./people')
+  await runFollowUps(userId, { mode: studio?.followUpMode === 'auto' ? 'auto' : 'ask', appId })
+}

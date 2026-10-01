@@ -11,6 +11,8 @@ interface Props {
   pitch: string;
   priceLabel: string;
   bullets: string[];
+  /** The app's directory image, when one has been made. */
+  thumbnailUrl: string | null;
 }
 
 /**
@@ -20,7 +22,7 @@ interface Props {
  * The only promise it makes is the true one: nobody is charged, and you'll hear when
  * it's ready.
  */
-export function AppReserve({ token, title, headline, pitch, priceLabel, bullets }: Props) {
+export function AppReserve({ token, title, headline, pitch, priceLabel, bullets, thumbnailUrl }: Props) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [website, setWebsite] = useState('');
@@ -53,8 +55,15 @@ export function AppReserve({ token, title, headline, pitch, priceLabel, bullets 
     <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-950 px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
-          <div className="relative flex aspect-[5/2] items-center justify-center bg-gradient-to-br from-violet-500/15 to-fuchsia-500/15">
-            <KanthinkIcon size={32} className="text-violet-400" />
+          <div className={`relative flex items-center justify-center bg-gradient-to-br from-violet-500/15 to-fuchsia-500/15 ${thumbnailUrl ? 'aspect-[5/3]' : 'aspect-[5/2]'}`}>
+            {thumbnailUrl ? (
+              // Same treatment as the paywall's image, so a test page and the app it
+              // becomes look like the same thing.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            ) : (
+              <KanthinkIcon size={32} className="text-violet-400" />
+            )}
             {priceLabel && (
               <span className="absolute top-3 right-3 px-2 py-1 rounded-lg bg-neutral-900/85 text-white text-xs font-semibold backdrop-blur-sm">
                 {priceLabel}
