@@ -2,13 +2,16 @@
 
 import Link from 'next/link';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { Desk } from './desk';
+import { Studio } from './studio';
 
 /**
- * Agents that make money — the desk, plus the reasoning behind it.
+ * Takes — a studio of agents that runs the whole line from "someone wants
+ * this" to "they paid", run by you like a fund.
  *
- * Starts from one question, "how does this help Dustin make money?", and
- * answers it from the account rather than from what agents are fashionable for.
+ * Replaces "A crew that earns", which only sold what already existed. The
+ * brief: agents identify, vet, build, vet, publish with payment and
+ * distribute; you set direction and decide at a few key points. Direction
+ * is borrowed from Supertake: a conviction becomes a portfolio with a return.
  */
 
 function Note({ title, children }: { title: string; children: React.ReactNode }) {
@@ -20,153 +23,152 @@ function Note({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
-function Rows({ rows, width = 92 }: { rows: [string, string][]; width?: number }) {
+function Table({ head, rows }: { head: [string, string, string?]; rows: [string, string, string?][] }) {
+  const three = head.length === 3;
   return (
-    <div className="space-y-3">
-      {rows.map(([k, v]) => (
-        <div key={k} className="grid gap-3" style={{ gridTemplateColumns: `${width}px 1fr` }}>
-          <span className="text-[16px] font-semibold tabular-nums leading-snug text-neutral-100">{k}</span>
-          <span>{v}</span>
+    <div className="overflow-hidden rounded-xl border border-neutral-800 text-[13px]">
+      {head.some(Boolean) && (
+        <div className={`grid gap-3 border-b border-neutral-800 bg-neutral-900/60 px-4 py-2 text-[11px] uppercase tracking-wide text-neutral-500 ${three ? 'grid-cols-[28%_1fr_22%]' : 'grid-cols-[34%_1fr]'}`}>
+          {head.map((h, n) => <span key={n}>{h}</span>)}
+        </div>
+      )}
+      {rows.map((r, n) => (
+        <div key={r[0]} className={`grid gap-3 px-4 py-2.5 ${three ? 'grid-cols-[28%_1fr_22%]' : 'grid-cols-[34%_1fr]'} ${n % 2 ? 'bg-neutral-900/30' : ''}`}>
+          <span className="text-neutral-200">{r[0]}</span>
+          <span className="text-neutral-400">{r[1]}</span>
+          {three && <span className="text-neutral-500">{r[2]}</span>}
         </div>
       ))}
     </div>
   );
 }
 
-const EVIDENCE: [string, string][] = [
-  ['$0', 'in app sales, ever. The till exists — app prices, Stripe checkout, a purchases ledger, refunds — and has never rung.'],
-  ['2', 'people wrote that they wanted to pay. One in Cat Math (“It’s free and I want to pay”), one in Logo Maker. Neither got a payment link.'],
-  ['98', 'views across 8 public apps. Super Selfie has the most (25) and is free. Logo Maker ($10) has 16, Cat Math ($5) has 15.'],
-  ['37', 'apps started in September. Building is not the bottleneck — you make more than one a day.'],
-  ['4', 'MyCreativeShop motion videos published. The best has 13 views, all from links you sent by hand.'],
-  ['7×', 'you asked Kan how print orders did. MCS is the business that already has customers, and there isn’t an agent in it.'],
-  ['Aug 18', 'the last time anything landed in MCS Affiliate Strategy or MCS White Label Pipeline.'],
-  ['7', 'Kanthink accounts, all free. Kanthink subscriptions aren’t where this month’s money is.'],
+const LINE: { who: 'agents' | 'you'; name: string; body: string }[] = [
+  { who: 'agents', name: 'Identify', body: 'Scouts read public demand: people describing a chore they’d pay to lose, bad reviews of paid tools, seasonal search. The analyst writes each find up as a take.' },
+  { who: 'you', name: 'Your call', body: 'Pass, lean no, lean yes, strong yes. About 15 seconds a take, in the daily check-in.' },
+  { who: 'agents', name: 'Vet: practice round', body: 'A test page with the price and a Reserve button, ads from the take’s chips, and a post where the demand was found. Five days. No app, nobody charged.' },
+  { who: 'you', name: 'Build it?', body: 'The reserve rate against your bar. Build, another week, or kill.' },
+  { who: 'agents', name: 'Build, then check', body: 'The spec writer turns the take into a brief, the builder builds it, the play tester plays it as the customer and sends back what breaks, and the judge scores it against the take’s promise.' },
+  { who: 'you', name: 'Ship it?', body: 'You try it for a minute. Ship, send back with a note, or kill.' },
+  { who: 'agents', name: 'Publish & sell', body: 'Price and checkout, directory listing, a launch note to everyone who reserved, a launch post back where it started. Anything outward asks until you trust it.' },
+  { who: 'agents', name: 'Account', body: 'The ledger keeps spend against earnings per take. The calibrator scores your calls. On Mondays the chips are yours to move.' },
 ];
 
-const FUNNEL: [string, string][] = [
-  ['Make', 'Strong. An app a day, a motion video in an afternoon, Claude Code clearing the Work queue.'],
-  ['Be seen', 'Weak. 98 views total, nearly all from links you shared yourself. Nothing goes where people already scroll.'],
-  ['Be wanted', 'Proven, barely. Two people asked to pay without being asked.'],
-  ['Get paid', 'Missing. Nobody answered either of them with a price.'],
-  ['Learn', 'Impossible so far — there is no sale to learn from.'],
+const SUPERTAKE: [string, string, string][] = [
+  ['A take', 'A claim someone could be wrong about: “Volunteer coaches will pay to stop doing playing time by hand.”', 'thesis'],
+  ['Conviction', 'Your call on it, from pass to strong yes. Strong backs it with more chips.', 'position size'],
+  ['Practice take', 'Test page and reserve rate. Simulated return, clearly marked. Nobody is charged.', 'paper trade'],
+  ['Live position', 'A shipped app with checkout. Real spend, real sales, a return since inception.', 'holding'],
+  ['Chips', 'Ten a week. Reach for tests and live apps, moved by you on Mondays.', 'allocation'],
+  ['Track record', 'Every call scored: yeses by their practice round, noes by a $3 shadow test.', 'performance'],
 ];
 
-const ROLES: { name: string; dot: string; makes: string; body: string }[] = [
-  {
-    name: 'Listeners', dot: 'bg-sky-400', makes: 'signals',
-    body: 'Hear money moving and say so, never act. A person in an app who says “pay”. A day of print orders that drifts. A thread you read that has a buyer in it. Jev does the hearing — it’s a judgement, fast and cheap — and nothing else happens until a doer picks it up.',
-  },
-  {
-    name: 'Learners', dot: 'bg-amber-400', makes: 'beliefs',
-    body: 'Turn outcomes into notes with a count behind them: what sold, at what price, after which reply. And your taste — every decline that had a reason, every rewrite of a draft. Every other agent reads these before it drafts, so you correct a thing once.',
-  },
-  {
-    name: 'Doers', dot: 'bg-emerald-400', makes: 'drafts and builds',
-    body: 'Act freely inside Kanthink — build a draft version, queue a card for Claude Code, write the reply. The moment something would reach a person or change what the public sees, it stops and waits for you.',
-  },
-  {
-    name: 'Promoters', dot: 'bg-fuchsia-400', makes: 'reach',
-    body: 'Take what you made to where people are: cuts of the MCS videos, directory listings, a note to the five people who use Cat Math when the thing they asked for exists. Everything they do is outward, so every promoter starts at “ask”.',
-  },
+const YOU: [string, string, string][] = [
+  ['Mandate', 'Who to sell to, budget, your time, test traffic, the build bar, off limits.', 'Once · 3 min'],
+  ['Daily check-in', 'New takes to call, and the occasional direction question. Kan orders it so the big calls come first.', 'Daily · ~2 min'],
+  ['Build it?', 'Practice results against your bar.', 'Per take · 25s'],
+  ['Ship it?', 'Try the app, read the tester’s and judge’s notes.', 'Per app · 1 min'],
+  ['Monday chips', 'Spread ten chips across tests and live apps. The ledger suggests a split.', 'Weekly · 40s'],
+  ['Outward', 'Posts and launch notes, until you trust each kind.', 'Fades out'],
 ];
 
-const RULES: [string, string][] = [
-  ['Outward waits.', 'Anything that reaches a person or the public needs your yes until you’ve trusted that agent with that kind of thing. Inside Kanthink, agents just work.'],
-  ['Trust is earned per kind.', 'A run of approvals you didn’t change and the agent offers to stop asking — for that kind of action only, and it still tells you. One decline puts it back. Two in a row in the demo; more in real life.'],
-  ['A no needs a reason.', 'A decline is one tap on a reason, and the reason becomes a rule everyone follows. This is how shrooms already learn: only from rejections with a reason.'],
-  ['Every agent has a budget and a ledger.', 'Weekly model spend, stopped at the cap. Spent against earned, so an agent that costs money and makes none is visible, and gets benched.'],
-  ['Kan never acts mid-sentence.', 'September’s worst moments were Kan acting too early. Agents propose; the desk is where you decide, in seconds, when you choose to look.'],
+const HARD: [string, string][] = [
+  ['Traffic', '$50 a week of ads buys around a hundred visits across every test. Five days needs about a hundred visits per take to tell 3% from 1%. What makes tests readable is a post in the thread where the demand was found. That post is outward, so it needs your yes until you trust it. Turn posts off in the mandate and most tests come back “too few to read”. The studio shows you that rather than hiding it.'],
+  ['Honest tests', 'Practice pages never take money. “Reserve at the launch price” saves an email, and the launch mailer honours the price. A fake checkout that fails at the last step would be faster to read and is off the table.'],
+  ['What agents can build', 'Single-file apps cover tools, generators, calculators and printables, and scouts favour takes in that shape. Anything that needs accounts, sync or a server goes to Claude Code, which is slower, and the mandate can rule it out.'],
+  ['Quality', 'The tester catches broken; the judge catches off-promise. Neither catches “fine but forgettable”. That’s why shipping is your call, and why you try it first.'],
+  ['Small numbers', 'In the simulation a good app earns tens of dollars a month. The bet is many cheap tests and a portfolio of long-tail earners that keep paying after you’ve moved on, not one hit. If that’s the wrong shape of money, say so before step 2.'],
 ];
 
 const PARTS: [string, string][] = [
-  ['An agent', 'A shroom with a role, a budget, a trust level and a ledger line. Triggers, steps, safeguards and loop prevention already exist.'],
-  ['Listeners', 'Event triggers on app_messages and app views, the Mixpanel data source, kanwatch_reads. Jev Noul for “is this a buyer?”'],
-  ['Learners', 'The shroom rejection log, app_purchases, view_count. One new event: paywall seen.'],
-  ['Doers', 'The build shroom, appPricing and appRelease, the Work channel and /kan.'],
-  ['Promoters', 'scripts/motion and Cloudinary, the app directory and thumbnails, Customer.IO.'],
-  ['The desk', 'New. A table of proposed actions (agent, draft, outward, value, decision, reason) and attribution: a sale credits the action just before it.'],
+  ['Already ships', 'Shrooms (schedules, event triggers, safeguards, loop prevention, learning only from reasons). The build shroom and playground generator. /play publishing. appPricing, Stripe checkout, app_purchases. App directory and thumbnails. Customer.IO. Jev. Card threads as briefs. /kan with Claude Code.'],
+  ['New', 'A takes table (thesis, evidence, call, stage, chips, ledger). Reserve mode on app pricing. A capped ad account and a posting identity for test traffic. A Playwright play tester. The calibrator and shadow tests. The check-in itself, as Kan’s home screen.'],
 ];
 
 const STEPS: { title: string; body: string }[] = [
-  { title: 'Answer the two buyers', body: 'Pay signals + Closer, and nothing else. Jev reads every app message for “wants to pay”; Closer drafts a reply with the payment link; you tap send from a notification. Two people are already waiting, so this can make the first sale the week it ships.' },
-  { title: 'Print orders every morning', body: 'A scheduled listener on the Mixpanel source you already connected. Seven asks in September become zero, and it’s the first agent inside the business that earns today.' },
-  { title: 'The desk', body: 'Proposals, decisions, reasons and the ledger in one place, so every new agent plugs into the same yes / no instead of growing its own notifications.' },
-  { title: 'Clips for MCS', body: 'A weekly vertical cut of each motion video with a caption that follows the MCS rules, held for your yes. MCS has the customers; this is reach for the thing that already sells.' },
-  { title: 'What sells, then the trust ladder', body: 'Paywall-seen events so the learner has a funnel, then trust offers once there are enough approvals to mean something.' },
+  { title: 'Takes and the daily check-in', body: 'Scouts and the analyst write takes from public demand; you call them in the app every morning. Useful on its own: a steady stream of argued ideas, and a record of your calls.' },
+  { title: 'Practice rounds', body: 'A test page with Reserve, capped ads, a post held for your yes, and results into the build gate. This is the first real read on demand before any app code exists.' },
+  { title: 'Build and check', body: 'The build shroom works from the take’s thread, the Playwright tester plays the result, the judge scores it, and the ship gate comes to you.' },
+  { title: 'Sell', body: 'Pricer, lister, a launch note to people who reserved, and the poster on the trust ladder. This is where the first sale should land.' },
+  { title: 'Close the loop', body: 'The ledger, Monday chips, calibration and shadow tests. From here the studio gets better at picking, and so do you.' },
 ];
 
-const NOT: [string, string][] = [
-  ['More apps', 'You don’t need a faster factory. You need the next person who says “pay” to be answered the same day.'],
-  ['Agents that post as you on day one', 'Every promoter starts at ask. The prototype shows how one earns its way out of that.'],
-  ['An agent marketplace or a builder for agents', 'A fixed crew of twelve with plain jobs. Adding a thirteenth is a shroom, not a product.'],
-  ['Chasing Kanthink subscriptions now', 'Seven accounts. Use agents to sell what MCS and your apps already offer; Kanthink revenue follows if the desk works for you first.'],
+const ASK: [string, string][] = [
+  ['Test traffic', 'An ad account with a hard weekly cap, and a posting identity. Do agents post as you, as Kan, or as a studio name? This decides whether practice rounds can be read at all.'],
+  ['Whose name is on the apps', 'Kanthink, a new studio brand, or each app standing alone. It changes the directory, the launch posts and what a refund email says.'],
+  ['Budget', 'The simulation runs on $50 a week. Whatever the real number is, it’s the one cap every agent is held to.'],
 ];
 
-export default function AgentsPage() {
+export default function TakesPage() {
   return (
     <div className="min-h-screen bg-[#0b0b0b] text-neutral-100">
       <div className="mx-auto max-w-6xl px-4 pb-24 pt-8 md:px-8">
         <Link href="/prototypes" className="text-xs text-neutral-500 hover:text-neutral-300">← Prototypes</Link>
         <div className="mt-4 flex items-center gap-3">
           <KanthinkIcon size={26} className="text-violet-400" />
-          <h1 className="text-2xl font-semibold tracking-tight">A crew that earns</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Takes</h1>
+          <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-[11px] text-neutral-400">app studio, run like a fund</span>
         </div>
         <p className="mt-4 max-w-3xl text-[20px] leading-snug text-neutral-100">
-          You already make things faster than anyone sees them. The crew’s job is the rest: hear who wants to pay, answer them, take your work to where people are, and learn from every sale. You decide in seconds, from one desk.
+          A crew of agents finds what people would pay for, tests it before anything is built, builds it, checks it, prices it and sells it. You run it like a fund: set a mandate once, spend two minutes a day on calls, and make two decisions per app.
         </p>
         <p className="mt-3 max-w-3xl text-[13px] text-neutral-500">
-          Run the day below. Items marked “from your account” are real as of Oct 1; “example” items show what an agent would plausibly find. Approve, rewrite or decline — the day changes with you.
+          Start it below and play a few days. Every take is an example of what scouts would plausibly find. How people respond is simulated with deliberately modest numbers, and your calls can be wrong. “Hand Kan a week” lets the agents answer for you, so you can compare their calls with yours.
         </p>
 
         <div className="mt-8">
-          <Desk />
+          <Studio />
         </div>
 
         <div className="mx-auto mt-16 max-w-2xl">
-          <Note title="The question">
-            <p><b>How does this help Dustin make money?</b> From first principles, money arrives when something you made is <b>seen</b> by someone who <b>wants</b> it, and they’re <b>asked to pay</b> — minus the hours it took you. Agents are only worth having if they move one of those without costing you the hours back.</p>
-            <Rows rows={FUNNEL} />
-            <p>So the crew is built for the bottom of that list. Making is already handled.</p>
+          <Note title="What changed from the last version">
+            <p>The last version answered a different question. It sold what you already had, built every agent on your account’s data, and argued against making more apps. <b>This one runs the whole line, from finding an idea to the sale.</b> Your account plays a small part, and your time is treated as the scarcest resource on the books, so agents bring you decisions rather than work.</p>
           </Note>
 
-          <Note title="What the account shows">
-            <Rows rows={EVIDENCE} />
-          </Note>
-
-          <Note title="Four jobs, defined by what they produce">
-            <div className="space-y-4">
-              {ROLES.map((r) => (
-                <div key={r.name}>
-                  <p className="flex items-center gap-2 text-[15px] font-medium text-neutral-100">
-                    <span className={`h-2 w-2 rounded-full ${r.dot}`} />{r.name}
-                    <span className="text-[12px] font-normal text-neutral-500">produce {r.makes}</span>
-                  </p>
-                  <p className="mt-1">{r.body}</p>
-                </div>
+          <Note title="The line">
+            <ol className="space-y-0">
+              {LINE.map((s, n) => (
+                <li key={s.name} className="grid grid-cols-[22px_1fr] gap-3">
+                  <div className="flex flex-col items-center">
+                    <span className={`mt-1.5 h-3 w-3 flex-shrink-0 rounded-full ${s.who === 'you' ? 'bg-violet-400 ring-4 ring-violet-500/20' : 'border border-neutral-600 bg-neutral-900'}`} />
+                    {n < LINE.length - 1 && <span className="w-px flex-1 bg-neutral-800" />}
+                  </div>
+                  <div className="pb-4">
+                    <p className="text-[14px] font-medium text-neutral-100">{s.name} <span className={`ml-1 text-[11px] font-normal ${s.who === 'you' ? 'text-violet-300' : 'text-neutral-500'}`}>{s.who === 'you' ? 'you' : 'agents'}</span></p>
+                    <p className="mt-0.5 text-[13px]">{s.body}</p>
+                  </div>
+                </li>
               ))}
-            </div>
-            <p>Only doers and promoters can change anything, and only promoters face outward by default. That split is what lets listeners and learners run all day for pennies without any risk.</p>
+            </ol>
           </Note>
 
-          <Note title="The rules">
-            {RULES.map(([h, body]) => <p key={h}><b>{h}</b> {body}</p>)}
+          <Note title="Borrowed from Supertake">
+            <p>Supertake turns a conviction into a portfolio, tracks its return, and labels practice takes as simulated. Swap stocks for small apps and dollars for chips and your time, and it maps one-for-one:</p>
+            <Table head={['Here', 'What it is', 'Investing']} rows={SUPERTAKE} />
+            <p>What this adds is a scored gut. Every call is scored, <b>including the noes</b>: a pass gets a $3 shadow test, and if that test says you were wrong, the take comes back once for a second look. Your record decides how much Kan weighs your call against Jev’s read. It starts at 50/50 and moves with you.</p>
+          </Note>
+
+          <Note title="Where you come in">
+            <Table head={['Touchpoint', 'What you decide', 'How often']} rows={YOU} />
+            <p>In the simulation a month comes to <b>under twenty minutes of your time</b>. Nothing at a gate moves without you, and agents never guess: leave a take waiting and it waits, costing nothing.</p>
+          </Note>
+
+          <Note title="Your account’s place">
+            <p>Scouts read <b>public demand</b>. Your account comes in at three points, all small. “Your shelf” notes the closest thing you already own as a tiebreaker. Your reasons for saying no become rules that filter what scouts bring. Rewrites of drafts become the house style. <b>Kanwatch is not an input</b>, and none of this changes what privacy.js allows.</p>
+          </Note>
+
+          <Note title="The hard parts">
+            <div className="space-y-3">
+              {HARD.map(([h, b]) => <p key={h}><b>{h}.</b> {b}</p>)}
+            </div>
           </Note>
 
           <Note title="What it’s made of">
-            <div className="overflow-hidden rounded-xl border border-neutral-800">
-              {PARTS.map(([from, to], n) => (
-                <div key={from} className={`grid grid-cols-[30%_1fr] gap-3 px-4 py-2.5 text-[13px] ${n % 2 ? 'bg-neutral-900/40' : ''}`}>
-                  <span className="text-neutral-200">{from}</span>
-                  <span className="text-neutral-400">{to}</span>
-                </div>
-              ))}
-            </div>
-            <p>Most of the crew is parts that ship today, given a job and a budget. The new pieces are the desk and attribution.</p>
+            <Table head={['', '']} rows={PARTS} />
           </Note>
 
           <Note title="How we get there">
-            <p>Five steps, each useful alone, ordered by how soon they can earn.</p>
+            <p>Five steps, each useful on its own.</p>
             <ol className="mt-2 space-y-5">
               {STEPS.map((s, n) => (
                 <li key={s.title} className="grid grid-cols-[28px_1fr] gap-2">
@@ -180,8 +182,8 @@ export default function AgentsPage() {
             </ol>
           </Note>
 
-          <Note title="What I wouldn’t build">
-            <Rows rows={NOT} width={150} />
+          <Note title="Three calls only you can make">
+            <Table head={['', '']} rows={ASK} />
           </Note>
         </div>
       </div>
