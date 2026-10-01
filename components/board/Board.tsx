@@ -54,6 +54,7 @@ import { buildShroomTrail } from '@/lib/shrooms/trail';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { AnonymousUpgradeBanner } from '@/components/ui/AnonymousUpgradeBanner';
 import { AgentStatusBar } from './AgentStatusBar';
+import { StudioStrip } from './StudioStrip';
 import { CursorPresence, PresenceIndicator } from '@/components/presence/CursorPresence';
 import { ChannelMembersBar } from './ChannelMembersBar';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
@@ -1104,6 +1105,9 @@ export function Board({ channel }: BoardProps) {
       </button>
 
       <AgentStatusBar channelId={channel.id} />
+
+      {/* Only renders on your Studio: the week in a line. */}
+      <StudioStrip channelId={channel.id} />
 
       {/* Channel description — shown as simple text below header when enabled in settings */}
       {channel.description && showDescriptionBanner && (

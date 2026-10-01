@@ -88,3 +88,45 @@ export async function sendTransactionalEmail({
     return false
   }
 }
+
+/**
+ * Send one transactional email and hand back Customer.IO's delivery id.
+ *
+ * The same send as sendTransactionalEmail, except it keeps the id the API returns.
+ * People emails need it: Customer.IO's reporting webhook reports delivered, opened
+ * and clicked against that id, and it's the only thing that ties an event back to
+ * the email in someone's thread.
+ */
+export async function sendTrackedEmail({
+  to,
+  subject,
+  html,
+  replyTo,
+}: {
+  to: string
+  subject: string
+  html: string
+  /** Where their reply goes: the person who made the app, not Kan's sending address. */
+  replyTo?: string | null
+}): Promise<{ ok: boolean; deliveryId: string | null; error?: string }> {
+  if (!cioApi) return { ok: false, deliveryId: null, error: 'Email is not configured' }
+  const messageId = process.env.CUSTOMERIO_TRANSACTIONAL_MESSAGE_ID || 'kanthink_email'
+  try {
+    const request = new SendEmailRequest({
+      transactional_message_id: messageId,
+      to,
+      from: process.env.CUSTOMERIO_FROM_EMAIL || 'kan@kanthink.com',
+      subject,
+      body: html,
+      identifiers: { email: to },
+      message_data: { subject, body: html },
+      disable_message_retention: false,
+      ...(replyTo ? { reply_to: replyTo } : {}),
+    })
+    const response = (await cioApi.sendEmail(request)) as { delivery_id?: string } | undefined
+    return { ok: true, deliveryId: response?.delivery_id ?? null }
+  } catch (error) {
+    console.error('[CIO] Failed to send tracked email:', error)
+    return { ok: false, deliveryId: null, error: error instanceof Error ? error.message : 'Send failed' }
+  }
+}

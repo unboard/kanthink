@@ -421,6 +421,15 @@ export const playgroundApps = sqliteTable('playground_apps', {
   /** Opens of the public /play link. Cheap counter, not analytics. */
   viewCount: integer('view_count').notNull().default(0),
 
+  // --- Studio test page ---
+  //
+  // Before an app exists, its /play link can be a test page: the pitch, the price,
+  // and a Reserve button that saves an email. Nobody is charged and no app code is
+  // served. People who reserve become this app's users, so when the build lands in
+  // this same row they are already its first customers-in-waiting.
+  reserveMode: integer('reserve_mode', { mode: 'boolean' }).default(false),
+  reservePage: text('reserve_page', { mode: 'json' }).$type<{ headline: string; pitch: string; priceLabel: string; bullets?: string[] } | null>(),
+
   // --- AI spending ---
   //
   // A published app's AI calls are billed to whoever published it, and until this
@@ -577,6 +586,10 @@ export const appUsers = sqliteTable('app_users', {
   lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
   /** Unread messages from this person, for the publisher's badge. */
   unreadForOwner: integer('unread_for_owner').notNull().default(0),
+  /** When they reserved this app on its test page, before it existed. */
+  reservedAt: integer('reserved_at', { mode: 'timestamp' }),
+  /** They asked not to be emailed about this app again. Every people email checks it. */
+  unsubscribedAt: integer('unsubscribed_at', { mode: 'timestamp' }),
 
   // --- Proof that this email belongs to whoever is holding the cookie ---
   //
@@ -1644,4 +1657,89 @@ export const kanwatchReads = sqliteTable('kanwatch_reads', {
 }, (table) => [
   uniqueIndex('kanwatch_reads_user_url_idx').on(table.userId, table.url),
   index('kanwatch_reads_user_seen_idx').on(table.userId, table.lastSeenAt),
+])
+
+/**
+ * The Studio: one per person. Which channel is theirs, which of its columns mean
+ * which stage, and the few preferences the crew needs.
+ *
+ * Columns are held by id rather than by name, so renaming "Sparks" to "Ideas" on the
+ * board changes nothing about how the crew finds it.
+ */
+export const studioSettings = sqliteTable('studio_settings', {
+  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  sparksColumnId: text('sparks_column_id').notNull(),
+  testingColumnId: text('testing_column_id').notNull(),
+  buildingColumnId: text('building_column_id').notNull(),
+  readyColumnId: text('ready_column_id').notNull(),
+  liveColumnId: text('live_column_id').notNull(),
+  droppedColumnId: text('dropped_column_id').notNull(),
+  scoutShroomId: text('scout_shroom_id'),
+  /** Email the morning spark as well as leaving it on Home. */
+  sparkEmail: integer('spark_email', { mode: 'boolean' }).default(true),
+  /** 'ask' — follow-up emails wait as drafts. 'auto' — they send, and you're told. */
+  followUpMode: text('follow_up_mode').$type<'ask' | 'auto'>().default('ask'),
+  /** Sparks already raised with you, so the same one never opens Home twice. */
+  handledSparkIds: safeJsonText<string[]>([])('handled_spark_ids').default([]),
+  lastSparkEmailAt: integer('last_spark_email_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+/**
+ * Every email to a person who uses one of your apps, from draft to opened.
+ *
+ * Drafts live here too: a draft is an email that has not been allowed out yet, and
+ * keeping it in the same row means approving it is a status change rather than a
+ * copy. Delivery events come back from Customer.IO's reporting webhook, matched on
+ * the delivery id the send returned.
+ */
+export const appEmails = sqliteTable('app_emails', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
+  appUserId: text('app_user_id').notNull().references(() => appUsers.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id').notNull(),
+  subject: text('subject').notNull(),
+  body: text('body').notNull(),
+  /** 'draft' waits for you; 'sent' went out; 'dropped' you said no; 'failed' the send broke. */
+  status: text('status').$type<'draft' | 'sent' | 'dropped' | 'failed'>().notNull().default('draft'),
+  /** Who wrote it: you, Kan in the private side conversation, or the follow-up crew. */
+  source: text('source').$type<'you' | 'kan' | 'crew'>().notNull().default('you'),
+  /** For crew drafts: which rule produced it, so the same one is never drafted twice. */
+  kind: text('kind'),
+  /** For crew drafts: why, in a sentence, shown beside the draft. */
+  reason: text('reason'),
+  cioDeliveryId: text('cio_delivery_id'),
+  sentAt: integer('sent_at', { mode: 'timestamp' }),
+  deliveredAt: integer('delivered_at', { mode: 'timestamp' }),
+  openedAt: integer('opened_at', { mode: 'timestamp' }),
+  clickedAt: integer('clicked_at', { mode: 'timestamp' }),
+  bouncedAt: integer('bounced_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('app_emails_user_idx').on(table.appUserId, table.createdAt),
+  index('app_emails_owner_status_idx').on(table.ownerId, table.status),
+  index('app_emails_delivery_idx').on(table.cioDeliveryId),
+])
+
+/**
+ * The private side conversation about one person: you and Kan, never them.
+ *
+ * Kept in its own table, not in app_messages, on purpose. app_messages is the
+ * customer's thread and is read by the app they use; nothing written here can reach
+ * it by accident, because nothing that serves a customer ever queries this table.
+ */
+export const personNotes = sqliteTable('person_notes', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appUserId: text('app_user_id').notNull().references(() => appUsers.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id').notNull(),
+  role: text('role').$type<'you' | 'kan'>().notNull(),
+  content: text('content').notNull(),
+  /** A draft Kan wrote in this turn, shown as a preview with Send. */
+  emailId: text('email_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  index('person_notes_user_idx').on(table.appUserId, table.createdAt),
 ])

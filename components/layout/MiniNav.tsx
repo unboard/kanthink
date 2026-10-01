@@ -221,6 +221,22 @@ function DesktopNav() {
           />
         )}
 
+        {/* People — everyone who reserved, used or bought one of your apps. Admin-only, like Kanwatch. */}
+        {session?.user?.isAdmin && (
+          <NavIconButton
+            isActive={pathname.startsWith('/people')}
+            onPointerDown={handleNavigate('/people')}
+            label="People"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="9" cy="8" r="3.25" strokeWidth={1.5} />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.5 19c.6-3 2.8-4.75 5.5-4.75S13.9 16 14.5 19" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.5 5.25a3 3 0 010 5.5M17.5 14.6c1.6.6 2.6 2.1 3 4.4" />
+              </svg>
+            }
+          />
+        )}
+
       </div>
 
       {/* Bottom icons */}

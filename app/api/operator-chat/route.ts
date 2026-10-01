@@ -96,6 +96,12 @@ interface OperatorAction {
   property?: string;
   value?: string;
   dateRange?: string;
+  // Studio
+  headline?: string;
+  pitch?: string;
+  priceLabel?: string;
+  bullets?: string[];
+  reason?: string;
 }
 
 interface ActionResult {
@@ -430,6 +436,8 @@ async function executeActions(
   access: Access,
   cookie: string,
   recentTurns: { role: 'user' | 'kan'; text: string }[],
+  /** Set for someone with Studio access: the Studio actions run as them. */
+  studioUserId: string | null = null,
 ): Promise<ActionResult[]> {
   const results: ActionResult[] = [];
 
@@ -442,6 +450,21 @@ async function executeActions(
 
   for (const action of actions) {
     try {
+      // Studio actions run in-process: they move Studio cards and app rows the
+      // caller owns, which lib/studio checks itself.
+      if (studioUserId && ['setup_studio', 'start_test_page', 'drop_spark', 'ship_app'].includes(action.type)) {
+        results.push(await runStudioAction(action, studioUserId));
+        continue;
+      }
+      // Building a Studio card moves it through the stages around the build.
+      const studioBuild = studioUserId && action.type === 'build_app' && action.cardId
+        ? await studioCardFor(studioUserId, action.cardId)
+        : null;
+      if (studioBuild) {
+        const { moveToStage } = await import('@/lib/studio/pipeline');
+        await moveToStage(studioBuild.studio, studioBuild.card, 'building', 'Building the app from this thread. People who reserved it carry over.');
+      }
+
       // Legacy actions handled directly (original 3)
       if (action.type === 'add_note' && action.cardId && action.content) {
         const card = await editableCard(action.cardId);
@@ -471,6 +494,13 @@ async function executeActions(
         }
         const data = await executeVoiceAction(action.type, args, cookie, recentTurns);
         const success = !data.result.startsWith('Failed') && !data.result.includes('not found') && !data.result.includes('not configured');
+        if (studioBuild) {
+          const fresh = await studioCardFor(studioUserId!, action.cardId!);
+          if (fresh) {
+            const { moveToStage } = await import('@/lib/studio/pipeline');
+            await moveToStage(fresh.studio, fresh.card, success ? 'ready' : 'testing', success ? 'Built. Try it from the Apps tab, then say “ship it”.' : `The build didn’t finish: ${data.result}`);
+          }
+        }
 
         const result: ActionResult = {
           type: action.type,
@@ -505,6 +535,65 @@ async function executeActions(
   }
 
   return results;
+}
+
+/** The Studio and card, when this card is in the caller's Studio. */
+async function studioCardFor(userId: string, cardId: string) {
+  const { getStudio } = await import('@/lib/studio/setup');
+  const studio = await getStudio(userId);
+  if (!studio) return null;
+  const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId) });
+  return card && card.channelId === studio.channelId ? { studio, card } : null;
+}
+
+async function runStudioAction(action: OperatorAction, userId: string): Promise<ActionResult> {
+  const pipeline = await import('@/lib/studio/pipeline');
+  try {
+    if (action.type === 'setup_studio') {
+      const { ensureStudio } = await import('@/lib/studio/setup');
+      const { studio, created } = await ensureStudio(userId);
+      if (created && studio.scoutShroomId) {
+        const { after } = await import('next/server');
+        const { rowToInstructionCard, runShroomServerSide } = await import('@/lib/shrooms/runServerSide');
+        const { instructionCards } = await import('@/lib/db/schema');
+        const scoutId = studio.scoutShroomId;
+        after(async () => {
+          const row = await db.query.instructionCards.findFirst({ where: eq(instructionCards.id, scoutId) });
+          if (row) await runShroomServerSide({ instruction: rowToInstructionCard(row), triggerType: 'manual' }).catch(() => {});
+        });
+      }
+      return {
+        type: action.type, success: true, channelId: studio.channelId,
+        description: created ? 'Studio is set up. The scout is out looking for the first sparks now.' : 'You already have a Studio.',
+      };
+    }
+    if (!action.cardId) return { type: action.type, success: false, description: 'Which card?' };
+    if (action.type === 'start_test_page') {
+      const r = await pipeline.startTestPage({
+        userId, cardId: action.cardId, headline: action.headline, pitch: action.pitch, priceLabel: action.priceLabel,
+        bullets: Array.isArray(action.bullets) ? action.bullets.map(String) : undefined,
+      });
+      return { type: action.type, success: true, cardId: action.cardId, description: `Test page is up: ${r.url}`, modelDescription: `Test page is up at ${r.url} with headline "${r.page.headline}"${r.page.priceLabel ? ` and price "${r.page.priceLabel}"` : ''}. The card moved to Testing.` };
+    }
+    if (action.type === 'drop_spark') {
+      const r = await pipeline.dropSpark(userId, action.cardId, action.reason);
+      return { type: action.type, success: true, cardId: action.cardId, description: `Dropped ${r.title}` };
+    }
+    if (action.type === 'ship_app') {
+      const r = await pipeline.shipApp(userId, action.cardId, action.priceLabel);
+      const { runFollowUps } = await import('@/lib/studio/people');
+      const { getStudio } = await import('@/lib/studio/setup');
+      const studio = await getStudio(userId);
+      const f = await runFollowUps(userId, { mode: studio?.followUpMode === 'auto' ? 'auto' : 'ask', appId: r.appId });
+      const people = f.sent
+        ? `Launch email sent to ${f.sent} ${f.sent === 1 ? 'person' : 'people'} who reserved it.`
+        : f.drafted ? `${f.drafted} launch ${f.drafted === 1 ? 'email is' : 'emails are'} waiting for you in People.` : 'Nobody had reserved it, so there’s no launch email to send.';
+      return { type: action.type, success: true, cardId: action.cardId, description: `Live at ${r.url}${r.priced ? ` with checkout at ${r.priceLabel}` : ''}. ${people}` };
+    }
+    return { type: action.type, success: false, description: 'Unknown Studio action' };
+  } catch (error) {
+    return { type: action.type, success: false, description: `Failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+  }
 }
 
 export async function POST(request: Request) {
@@ -585,6 +674,9 @@ export async function POST(request: Request) {
     const usingOwnerKey = result.source === 'owner';
 
     // Kanwatch is admin-only while it is tried out; empty when there is nothing recorded.
+    const studioBlock = session.user.isAdmin
+      ? await import('@/lib/studio/context').then((m) => m.buildStudioContext(session.user.id)).catch(() => '')
+      : '';
     const kanwatchBlock = session.user.isAdmin
       ? await buildKanwatchContext(session.user.id, { lookup: 'the kanwatch_lookup action', build: 'the kanwatch_build_app action', setPriority: 'the kanwatch_set_priority action' }).catch(() => '')
       : '';
@@ -596,7 +688,7 @@ export async function POST(request: Request) {
         { ...userData, id: session.user.id },
         membershipMap,
         shroomData,
-      ) + kanwatchBlock },
+      ) + kanwatchBlock + studioBlock },
     ];
 
     // Add conversation history (last 20 messages)
@@ -656,7 +748,7 @@ export async function POST(request: Request) {
       const otherActions = parsed.actions.filter(a => a.type !== 'generate_image');
       const recentTurns = [...recentHistory.slice(-3), { role: 'user' as const, content: message }]
         .map((t) => ({ role: t.role === 'assistant' ? 'kan' as const : 'user' as const, text: t.content.slice(0, 500) }));
-      actionResults = otherActions.length > 0 ? await executeActions(otherActions, access, cookie, recentTurns) : [];
+      actionResults = otherActions.length > 0 ? await executeActions(otherActions, access, cookie, recentTurns, session.user.isAdmin ? session.user.id : null) : [];
 
       for (const imgAction of imageActions) {
         try {

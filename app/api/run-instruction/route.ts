@@ -1506,7 +1506,11 @@ export async function POST(request: Request) {
 
           const searchSystemPrompt = contentType.includes('YouTube')
             ? `Find real ${contentType}s about this topic. Return ONLY actual YouTube video URLs (youtube.com/watch?v=...) with exact video titles. Focus on highly-rated, recent, educational content.`
-            : `Search the web and return detailed, factual information including real URLs. The user needs real links and data for a Kanban board called "${channel.name}". Return specific URLs, titles, and descriptions.`;
+            : instructionCard.webAccess?.focus
+              // A shroom told what to look for gets searched for exactly that. Calling it
+              // "a Kanban board" pulled results toward productivity tools whatever the topic.
+              ? `Search the web for: ${instructionCard.webAccess.focus}. Return what you find with real URLs, titles, and short direct quotes from the posts.`
+              : `Search the web and return detailed, factual information including real URLs. The user needs real links and data for a Kanban board called "${channel.name}". Return specific URLs, titles, and descriptions.`;
 
           // Run searches in parallel
           const searchPromises = searchQueries.map(query =>

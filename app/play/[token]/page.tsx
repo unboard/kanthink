@@ -22,6 +22,7 @@ import { getPublishedVersion } from '@/lib/playground/appRelease';
 import { readAll, signDataToken } from '@/lib/playground/customerData';
 import { PublicPlaygroundFrame } from './PublicPlaygroundFrame';
 import { AppPaywall } from './AppPaywall';
+import { AppReserve } from './AppReserve';
 import type { Metadata } from 'next';
 
 interface PageProps {
@@ -54,6 +55,28 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
 
   const app = await findPublishedApp(token);
   if (!app) notFound();
+
+  // A Studio test page: the app doesn't exist yet, so there is no release to serve —
+  // only the pitch and a Reserve button. Opens are counted, since visits against
+  // reservations is the whole point of a test.
+  if (app.reserveMode) {
+    void db
+      .update(playgroundApps)
+      .set({ viewCount: sql`${playgroundApps.viewCount} + 1` })
+      .where(eq(playgroundApps.id, app.id))
+      .catch(() => {});
+    const page = app.reservePage;
+    return (
+      <AppReserve
+        token={token}
+        title={app.title}
+        headline={page?.headline || app.tagline || app.title}
+        pitch={page?.pitch || app.summary || ''}
+        priceLabel={page?.priceLabel || ''}
+        bullets={page?.bullets ?? []}
+      />
+    );
+  }
 
   // The release, not the draft. A build in progress — or a broken one — cannot
   // reach anybody here, because this never reads app.code at all.
