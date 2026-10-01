@@ -1,9 +1,27 @@
 import { db } from '@/lib/db'
 import { cardRejections } from '@/lib/db/schema'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, ne, or } from 'drizzle-orm'
 import type { CardRejection } from '@/lib/types'
 
 type RejectionRow = typeof cardRejections.$inferSelect
+
+/**
+ * Only a rejection that says why teaches a shroom anything.
+ *
+ * A card rejected with no reason and no feedback might be wrong, or might just be
+ * clearing the column — "Reject all" while you rework the shroom is the common case.
+ * Counting those as lessons taught a shroom to avoid cards nobody had objected to.
+ * They are still recorded; they are just not learned from.
+ */
+export function teachesShroom(r: { reason?: string | null; feedback?: string | null }): boolean {
+  return !!r.reason || !!r.feedback?.trim()
+}
+
+/** teachesShroom, as a query condition. */
+const TEACHES = or(
+  isNotNull(cardRejections.reason),
+  and(isNotNull(cardRejections.feedback), ne(cardRejections.feedback, ''))
+)
 
 function toRejection(row: RejectionRow): CardRejection {
   return {
@@ -28,7 +46,7 @@ export async function loadChannelRejections(
   limit = 20
 ): Promise<CardRejection[]> {
   const rows = await db.query.cardRejections.findMany({
-    where: eq(cardRejections.channelId, channelId),
+    where: and(eq(cardRejections.channelId, channelId), TEACHES),
     orderBy: [desc(cardRejections.createdAt)],
     limit,
   })
@@ -59,13 +77,14 @@ export async function loadRejectionsForShroom(
     db.query.cardRejections.findMany({
       where: and(
         eq(cardRejections.channelId, channelId),
-        eq(cardRejections.instructionCardId, instructionCardId)
+        eq(cardRejections.instructionCardId, instructionCardId),
+        TEACHES
       ),
       orderBy: [desc(cardRejections.createdAt)],
       limit: ownLimit,
     }),
     db.query.cardRejections.findMany({
-      where: eq(cardRejections.channelId, channelId),
+      where: and(eq(cardRejections.channelId, channelId), TEACHES),
       orderBy: [desc(cardRejections.createdAt)],
       limit: channelLimit,
     }),

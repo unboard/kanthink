@@ -42,6 +42,8 @@ const SKIP_LABELS: Record<string, string> = {
 
 interface ShroomLearnings {
   total: number;
+  /** Rejected with no reason or feedback: kept, but not learned from. */
+  unweighted?: number;
   byReason: Record<string, number>;
   rejections: { id: string; cardTitle: string; reason?: string | null; feedback?: string | null; createdAt?: string }[];
 }
@@ -1500,7 +1502,7 @@ export function InstructionDetailDrawerV2({
 
           {/* What this shroom has learned from rejections — the same rows that get
               injected into its prompts, so the feedback loop is visible. */}
-          {learnings && learnings.total > 0 && (
+          {learnings && (learnings.total > 0 || (learnings.unweighted ?? 0) > 0) && (
             <div className="border-t border-neutral-100 dark:border-neutral-800">
               <button
                 onClick={() => setShowLearnings(!showLearnings)}
@@ -1521,9 +1523,15 @@ export function InstructionDetailDrawerV2({
               {showLearnings && (
                 <div className="px-6 pb-5 space-y-3">
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Cards you rejected. This history goes into the shroom&apos;s prompt so it
-                    stops producing more like them.
+                    Cards you rejected with a reason or a note. They go into the shroom&apos;s
+                    prompt so it stops producing more like them.
                   </p>
+                  {(learnings.unweighted ?? 0) > 0 && (
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500">
+                      {learnings.unweighted} rejected without a reason {learnings.unweighted === 1 ? 'isn’t' : 'aren’t'} counted.
+                      Give a reason when rejecting to teach it.
+                    </p>
+                  )}
 
                   <div className="flex flex-wrap gap-1.5">
                     {Object.entries(learnings.byReason).map(([reason, count]) => (
@@ -1531,7 +1539,7 @@ export function InstructionDetailDrawerV2({
                         key={reason}
                         className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300"
                       >
-                        {REJECTION_REASONS.find((r) => r.key === reason)?.label ?? 'No reason given'} · {count}
+                        {REJECTION_REASONS.find((r) => r.key === reason)?.label ?? 'Feedback only'} · {count}
                       </span>
                     ))}
                   </div>
@@ -1548,6 +1556,22 @@ export function InstructionDetailDrawerV2({
                       </li>
                     ))}
                   </ul>
+
+                  {/* Reworked the shroom? Then it's a different shroom, and what the old
+                      one was told no about shouldn't steer it. */}
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Clear everything this shroom has learned from rejections?')) return;
+                      const res = await fetch(
+                        `/api/channels/${channel.id}/instructions/${instructionCard.id}/learnings`,
+                        { method: 'DELETE' }
+                      );
+                      if (res.ok) setLearnings(null);
+                    }}
+                    className="text-xs text-neutral-500 underline hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400"
+                  >
+                    Clear what it&apos;s learned
+                  </button>
                 </div>
               )}
             </div>

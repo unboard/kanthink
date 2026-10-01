@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { cardRejections } from '@/lib/db/schema'
+import { teachesShroom } from '@/lib/shrooms/rejections'
 import { and, desc, eq } from 'drizzle-orm'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { ensureSchema } from '@/lib/db/ensure-schema'
@@ -45,17 +46,23 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       limit: 50,
     })
 
+    // Rejections without a reason are kept but not learned from — see teachesShroom.
+    // Counted separately so the panel can say they were seen and set aside.
+    const learned = rows.filter(teachesShroom)
+    const unweighted = rows.length - learned.length
+
     // Group by reason so the shape of the feedback is legible at a glance
     const byReason: Record<string, number> = {}
-    for (const row of rows) {
-      const key = row.reason ?? 'unspecified'
+    for (const row of learned) {
+      const key = row.reason ?? 'feedback'
       byReason[key] = (byReason[key] ?? 0) + 1
     }
 
     return NextResponse.json({
-      total: rows.length,
+      total: learned.length,
+      unweighted,
       byReason,
-      rejections: rows.map((r) => ({
+      rejections: learned.map((r) => ({
         id: r.id,
         cardTitle: r.cardTitle,
         reason: r.reason,
@@ -69,5 +76,40 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     }
     console.error('Error loading shroom learnings:', error)
     return NextResponse.json({ error: 'Failed to load learnings' }, { status: 500 })
+  }
+}
+
+/**
+ * DELETE /api/channels/:id/instructions/:instructionId/learnings
+ *
+ * Forget what this shroom was told no about. Rework a shroom's instructions and it is
+ * a different shroom: rejections of the old one's cards would steer the new one away
+ * from things nobody has objected to yet.
+ */
+export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  }
+
+  const { id: channelId, instructionId } = await params
+
+  try {
+    await ensureSchema()
+    await requirePermission(channelId, session.user.id, 'edit')
+
+    await db.delete(cardRejections).where(
+      and(
+        eq(cardRejections.channelId, channelId),
+        eq(cardRejections.instructionCardId, instructionId)
+      )
+    )
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    if (error instanceof PermissionError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
+    console.error('Error clearing shroom learnings:', error)
+    return NextResponse.json({ error: 'Failed to clear learnings' }, { status: 500 })
   }
 }
