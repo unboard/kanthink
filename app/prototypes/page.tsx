@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'studio',
+    name: 'The studio, inside Kanthink as it is',
+    blurb:
+      'No new section of the app. The crew reaches you in three places you already use. On the home screen, the morning spark is waiting as Kan’s first message and you answer in the same box or by voice. A Studio channel is an ordinary board the shrooms work through, with one new line under the header. The morning email is the same spark, in the shell every Kanthink email uses.',
+    status: 'newest',
+  },
+  {
     slug: 'sparks',
     name: 'What the crew can do without you',
     blurb:
       'The plain answer to “what’s actually possible”: which jobs agents can run inside Kanthink today (scouting the web, test pages, building, checkout, launch email, the books) and which are new, the few things that genuinely need you, and an example morning where you steer the crew by talking instead of filling in a form.',
-    status: 'newest',
   },
   {
     slug: 'agents',
