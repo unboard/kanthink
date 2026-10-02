@@ -67,7 +67,7 @@ Title: the tool's name in 2–4 plain words (for example "Roofing Quote Builder"
 Content: plain paragraphs and bullet points only — no headings, because the board shows the first line as the card's preview. In this order:
 1. Open with one plain sentence: which businesses have the problem and what it costs them in money or billable time.
 2. A line starting "Size:" then Mid or Big, a dash, and why in a few words.
-3. A line starting "Paid today:" — what they spend on this now, with amounts, and where that comes from with the link (a tool's pricing and its complaints, a freelancer rate, a template's price and sales).
+3. A line starting "Paid today:" — what they spend on this now as a specific figure ("$245 a month per tech", "$20 an hour on Upwork", "$39 template, 1,200 sales"), and where that comes from with the link. "A lot" or "high fees" isn't a figure; without one, drop the spark.
 4. Two or three short quotes from real sources, each followed by where it was posted, the month and year, and the link — like: "quote" — G2 review of ToolName, March 2026 (link).
 5. Who already sells into this, and why they fall short for these businesses.
 6. The tool, in one sentence.

@@ -60,7 +60,7 @@ export interface SourceLine {
 const URL_RE = /https?:\/\/[^\s)\]<>"]+/g
 
 /** Each line of the write-up that cites a post: its link and whether it counts. */
-export function readSources(content: string, now: Date, citedElsewhere: Set<string> = new Set()): SourceLine[] {
+export function readSources(content: string, now: Date, citedElsewhere: Set<string> = new Set(), pageDates: Map<string, Date> = new Map()): SourceLine[] {
   const cutoff = new Date(now)
   cutoff.setUTCMonth(cutoff.getUTCMonth() - FRESH_MONTHS)
   const seen = new Set<string>()
@@ -68,10 +68,11 @@ export function readSources(content: string, now: Date, citedElsewhere: Set<stri
   for (const line of content.split('\n')) {
     const url = line.match(URL_RE)?.[0]
     if (!url) continue
+    if (PAID_LABEL.test(line.replace(/^[\s*\-•]+/, '').replace(/\*\*|__/g, ''))) continue
     const key = normaliseUrl(url)
     if (seen.has(key)) continue
     seen.add(key)
-    const date = statedDate(line)
+    const date = statedDate(line) ?? pageDates.get(key) ?? null
     let why = ''
     if (isPre2023Reddit(url)) why = 'a Reddit post from before 2023'
     else if (!date) why = 'no date given'
@@ -80,6 +81,31 @@ export function readSources(content: string, now: Date, citedElsewhere: Set<stri
     out.push({ url, date, fresh: !why, why })
   }
   return out
+}
+
+/**
+ * The date a page says it was published, from the markup sites put there for
+ * search engines and feeds. Earliest plausible one wins: a review page also carries
+ * its "last updated" date, and the post is as old as its first one.
+ */
+export function pageDate(html: string): Date | null {
+  const found: Date[] = []
+  const patterns = [
+    /"datePublished"\s*:\s*"([^"]+)"/gi,
+    /"dateCreated"\s*:\s*"([^"]+)"/gi,
+    /"uploadDate"\s*:\s*"([^"]+)"/gi,
+    /property="article:published_time"\s+content="([^"]+)"/gi,
+    /content="([^"]+)"\s+property="article:published_time"/gi,
+    /<time[^>]+datetime="([^"]+)"/gi,
+    /created-timestamp="([^"]+)"/gi,
+  ]
+  for (const re of patterns) {
+    for (const m of html.matchAll(re)) {
+      const d = new Date(m[1])
+      if (!Number.isNaN(d.getTime()) && d.getFullYear() >= 2005 && d.getTime() <= Date.now() + 86400000) found.push(d)
+    }
+  }
+  return found.length ? new Date(Math.min(...found.map((d) => d.getTime()))) : null
 }
 
 export interface SparkVerdict {
@@ -94,10 +120,13 @@ export interface SparkVerdict {
  * an amount on it. Without one, it's a complaint, not a market.
  */
 export function paidToday(content: string): string | null {
-  const line = content.split('\n').map((l) => l.replace(/^[\s*\-]+/, '').replace(/\*\*/g, '')).find((l) => /^paid today\s*:/i.test(l))
+  const line = content.split('\n').map((l) => l.replace(/^[\s*\-•]+/, '').replace(/\*\*|__/g, '')).find((l) => PAID_LABEL.test(l))
   if (!line) return null
-  return /(\$|€|£)\s?\d/.test(line) ? line : null
+  return AMOUNT.test(line) ? line : null
 }
+
+const PAID_LABEL = /^paid today\b/i
+const AMOUNT = /(\$|€|£)\s?\d|\d[\d,.]*\s?(k\b|usd|dollars|\/\s?(mo|month|yr|year|hr|hour)|(a|per)\s+(month|year|hour|seat|user|tech|location))/i
 
 export function sparkVerdict(sources: SourceLine[], content?: string): SparkVerdict {
   if (content !== undefined && !paidToday(content)) {
@@ -120,6 +149,22 @@ export function sparkVerdict(sources: SourceLine[], content?: string): SparkVerd
 }
 
 // ── Database ──
+
+/** A source's publish date from the page itself. Reddit blocks servers, so it's skipped. */
+async function fetchPageDate(url: string): Promise<Date | null> {
+  if (/reddit\.com/.test(url)) return null
+  try {
+    const res = await fetch(url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(7000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KanthinkStudio/1.0; +https://www.kanthink.com)' },
+    })
+    if (!res.ok) return null
+    return pageDate((await res.text()).slice(0, 600_000))
+  } catch {
+    return null
+  }
+}
 
 /** Follow a search-grounding redirect to the post it points at. */
 async function resolveRedirect(url: string): Promise<string> {
@@ -167,7 +212,16 @@ export async function auditStudioSparks(studio: { channelId: string; sparksColum
       for (const u of contentOf(other).match(URL_RE) ?? []) elsewhere.add(normaliseUrl(u))
     }
 
-    const verdict = sparkVerdict(readSources(content, now, elsewhere), content)
+    // Undated sources get their date from the page, where the page publishes one.
+    const pageDates = new Map<string, Date>()
+    for (const line of content.split('\n')) {
+      const url = line.match(URL_RE)?.[0]
+      if (!url || statedDate(line) || isPre2023Reddit(url)) continue
+      const d = await fetchPageDate(url)
+      if (d) pageDates.set(normaliseUrl(url), d)
+    }
+
+    const verdict = sparkVerdict(readSources(content, now, elsewhere, pageDates), content)
     if (!verdict.keep) {
       await db.insert(cardRejections).values({
         id: nanoid(),
@@ -183,6 +237,7 @@ export async function auditStudioSparks(studio: { channelId: string; sparksColum
       await db.delete(tasks).where(eq(tasks.cardId, card.id))
       await db.delete(cards).where(and(eq(cards.id, card.id), eq(cards.channelId, card.channelId)))
       results.push({ title: card.title, kept: false, reason: verdict.reason })
+      console.info(`[studio] rejected "${card.title}": ${verdict.reason}. Paid line: ${paidToday(content) ?? content.split('\n').find((l) => /paid/i.test(l)) ?? 'none'}`)
       continue
     }
 

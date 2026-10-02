@@ -247,3 +247,30 @@ describe('the money test', () => {
     expect(focusFor('auto repair shops')).toMatch(/Upwork|G2|Capterra/)
   })
 })
+
+describe('audit leniency where it is earned', () => {
+  it('accepts the ways a Paid today line gets written', async () => {
+    const { paidToday } = await import('../lib/studio/audit')
+    expect(paidToday('Paid today — about $50 a month for Buildium')).toBeTruthy()
+    expect(paidToday('* **Paid Today:** 300 dollars per location')).toBeTruthy()
+    expect(paidToday('Paid today: VAs at 8/hr on Upwork')).toBeTruthy()
+    expect(paidToday('Paid today: a lot')).toBeNull()
+  })
+
+  it('does not count the price link as a buyer, and dates undated sources from the page', async () => {
+    const { readSources, sparkVerdict, pageDate, normaliseUrl } = await import('../lib/studio/audit')
+    const now = new Date('2026-10-02T12:00:00Z')
+    const content = [
+      'Paid today: $300 a month (https://vendor.example.com/pricing)',
+      '* "a" — G2 review, May 2026 (https://www.g2.com/x/1)',
+      '* "b" — a contractor forum (https://forum.example.com/t/9)',
+    ].join('\n')
+    expect(readSources(content, now).map((s) => s.url)).not.toContain('https://vendor.example.com/pricing')
+    expect(sparkVerdict(readSources(content, now), content).keep).toBe(false)
+    const dates = new Map([[normaliseUrl('https://forum.example.com/t/9'), new Date('2026-04-01')]])
+    expect(sparkVerdict(readSources(content, now, new Set(), dates), content).keep).toBe(true)
+    expect(pageDate('<script>{"datePublished":"2026-03-04T10:00:00Z","dateModified":"2026-09-01"}</script>')?.toISOString().slice(0, 10)).toBe('2026-03-04')
+    expect(pageDate('<time datetime="2025-12-01">Dec 1</time><time datetime="2026-02-01">')?.toISOString().slice(0, 10)).toBe('2025-12-01')
+    expect(pageDate('<p>no dates</p>')).toBeNull()
+  })
+})
