@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useStudioInfo } from '@/lib/hooks/useStudioInfo';
 
 /**
  * A cross-channel summary of what the shrooms have left for you.
@@ -14,11 +15,13 @@ export function KanDesk() {
   const router = useRouter();
   const channels = useStore((s) => s.channels);
   const cards = useStore((s) => s.cards);
+  // Studio sparks have their own cards on Home, right above this.
+  const studio = useStudioInfo();
 
   // Columns holding shroom output awaiting a decision
   const pending = Object.values(channels).flatMap((channel) =>
     channel.columns
-      .filter((col) => (col.reviewCardIds?.length ?? 0) > 0)
+      .filter((col) => (col.reviewCardIds?.length ?? 0) > 0 && col.id !== studio?.sparksColumnId)
       .map((col) => ({
         channelId: channel.id,
         channelName: channel.name,

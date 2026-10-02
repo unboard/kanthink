@@ -206,7 +206,8 @@ export async function onTestPagePublished(appId: string, userId: string) {
  */
 export async function composeTestPage(userId: string, card: Pick<CardRow, 'title' | 'summary' | 'messages'>) {
   const thread = ((card.messages || []) as { type?: string; content?: string }[])
-    .map((m) => `${m.type === 'question' ? 'Owner' : 'Kan'}: ${(m.content || '').trim()}`)
+    // Kan's replies are ai_response; notes and questions are the owner's own words.
+    .map((m) => `${m.type === 'ai_response' ? 'Kan' : 'Owner'}: ${(m.content || '').trim()}`)
     .filter((l) => l.length > 6)
     .join('\n\n')
     .slice(-6000)
