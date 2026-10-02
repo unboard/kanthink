@@ -17,9 +17,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 import { FreshTicker } from '@/components/home/FreshTicker';
-import { KanDesk } from '@/components/home/KanDesk';
-import { StudioDesk } from '@/components/home/StudioDesk';
-import { SparkCards } from '@/components/home/SparkCards';
+import { HomeOrbs } from '@/components/home/HomeOrbs';
 import { SproutSearch, type SproutResult } from '@/components/home/SproutSearch';
 import { ChannelPreviewDrawer } from '@/components/home/ChannelPreviewDrawer';
 import { PeekPreview, type PeekTarget } from '@/components/home/PeekPreview';
@@ -165,9 +163,6 @@ export function OperatorHome() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
-
-  // The Studio is admin-only for now, like Kanwatch.
-  const studioAdmin = !!session?.user?.isAdmin;
 
   // Create a new thread on mount
   useEffect(() => {
@@ -427,6 +422,9 @@ export function OperatorHome() {
 
   return (
     <div className="flex h-full flex-col items-center relative">
+      {/* What's waiting on you — shroom cards and Studio sparks — floats as orbs at the
+          edges instead of sitting between the greeting and the composer. */}
+      {!hasConversation && <HomeOrbs onOpenCard={setPreviewCardId} />}
       {/* Top bar — new chat + history */}
       <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
         {hasConversation && (
@@ -766,12 +764,6 @@ export function OperatorHome() {
           </div>
         )}
 
-        {/* Kan's desk — what the shrooms have left for you, across every channel */}
-        {/* Sparks waiting for your yes — each opens in the card drawer. */}
-        {!hasConversation && !input.trim() && studioAdmin && <SparkCards onOpen={setPreviewCardId} />}
-        {!hasConversation && !input.trim() && <KanDesk />}
-        {/* The Studio's crew — drafts and builds waiting on you. Admin-only for now. */}
-        {!hasConversation && !input.trim() && studioAdmin && <StudioDesk />}
 
         {/* Input area */}
         <div className={`relative ${hasConversation ? 'pb-4' : ''}`}>

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { cards, cardRejections, tasks } from '@/lib/db/schema'
@@ -88,6 +88,19 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         logChannelActivity(channelId, userId, 'card_created', 'card', card.id, {
           title: card.title,
         }).catch(() => {})
+      }
+
+      // Approving a Studio's sparks in one go puts up each one's test page, the same
+      // as approving them one at a time.
+      const { getStudioByChannel } = await import('@/lib/studio/setup')
+      const studio = await getStudioByChannel(channelId)
+      if (studio && columnId === studio.sparksColumnId && pending.length > 0) {
+        after(async () => {
+          const { approveSpark } = await import('@/lib/studio/pipeline')
+          for (const card of pending) {
+            await approveSpark(studio.userId, card.id).catch((e) => console.error('[review] spark test page failed:', e))
+          }
+        })
       }
 
       return NextResponse.json({ success: true, decision, count: pending.length })
