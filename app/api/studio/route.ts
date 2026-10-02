@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     studio: {
       channelId: studio.channelId,
+      sparksColumnId: studio.sparksColumnId,
       followUpMode: studio.followUpMode,
       sparkEmail: !!studio.sparkEmail,
       week: {

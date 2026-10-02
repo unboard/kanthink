@@ -9,6 +9,8 @@ interface CardApprovalBarProps {
   cardId: ID;
   /** Called after a decision lands, so an open drawer can close itself. */
   onDecided?: () => void;
+  /** A Studio spark: approving puts up its test page, so the words say so. */
+  variant?: 'spark';
 }
 
 /**
@@ -20,7 +22,7 @@ interface CardApprovalBarProps {
  * that might be about to be rejected has nowhere to go. So the composer is
  * replaced by the decision rather than sitting alongside it.
  */
-export function CardApprovalBar({ cardId, onDecided }: CardApprovalBarProps) {
+export function CardApprovalBar({ cardId, onDecided, variant }: CardApprovalBarProps) {
   const approveReviewCard = useStore((s) => s.approveReviewCard);
   const rejectReviewCard = useStore((s) => s.rejectReviewCard);
 
@@ -43,7 +45,7 @@ export function CardApprovalBar({ cardId, onDecided }: CardApprovalBarProps) {
       <div className="flex items-center gap-2 mb-2.5">
         <span className="text-sm leading-none" aria-hidden>🍄</span>
         <p className="text-xs font-medium text-violet-800 dark:text-violet-300">
-          Kan made this card — keep it?
+          {variant === 'spark' ? 'A spark from your Studio — test it?' : 'Kan made this card — keep it?'}
         </p>
       </div>
 
@@ -53,7 +55,7 @@ export function CardApprovalBar({ cardId, onDecided }: CardApprovalBarProps) {
             onClick={handleApprove}
             className="flex-1 text-sm font-medium px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors"
           >
-            Approve
+            {variant === 'spark' ? 'Approve, put up a test page' : 'Approve'}
           </button>
           <button
             onClick={() => setIsRejecting(true)}

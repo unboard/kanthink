@@ -31,6 +31,7 @@ import { TaskCheckbox } from './TaskCheckbox';
 import { TaskDrawer } from './TaskDrawer';
 import { CardChat } from './CardChat';
 import { CardApprovalBar } from './CardApprovalBar';
+import { useStudioInfo } from '@/lib/hooks/useStudioInfo';
 import { AppsPanel } from '@/components/playground/AppsPanel';
 import { AppDrawer } from '@/components/playground/AppDrawer';
 import { useCardApps } from '@/components/playground/usePlaygroundApps';
@@ -169,6 +170,12 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   const archiveCard = useStore((s) => s.archiveCard);
   const promoteCardToChannel = useStore((s) => s.promoteCardToChannel);
   const channels = useStore((s) => s.channels);
+  // A Studio spark waiting for review keeps its composer; see the thread tab.
+  const studioInfo = useStudioInfo();
+  const sparksColumn = studioInfo && card && card.channelId === studioInfo.channelId
+    ? channels[card.channelId]?.columns.find((col) => col.id === studioInfo.sparksColumnId)
+    : undefined;
+  const isSpark = !!sparksColumn && !!card && (sparksColumn.reviewCardIds?.includes(card.id) || sparksColumn.cardIds.includes(card.id));
   // Pending-review lives in the column's reviewCardIds, not on the card — that's
   // the same place approveReviewCard/rejectReviewCard look it up.
   const isPendingReview = !!channels[card?.channelId ?? '']?.columns.some(
@@ -1124,10 +1131,17 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
                 hasApps={apps.some((a) => a.generationCount > 0)}
                 onShowApps={() => setActiveTab('apps')}
                 composerSlot={
-                  isPendingReview ? (
+                  isPendingReview && !isSpark ? (
                     // Deciding the card removes it from review, so the drawer would
                     // otherwise be left open on a card in a state it no longer has.
                     <CardApprovalBar cardId={card.id} onDecided={handleClose} />
+                  ) : undefined
+                }
+                // A Studio spark is something to talk through before deciding, so it
+                // keeps the composer and puts the decision above it.
+                aboveComposer={
+                  isPendingReview && isSpark ? (
+                    <CardApprovalBar cardId={card.id} onDecided={handleClose} variant="spark" />
                   ) : undefined
                 }
               />

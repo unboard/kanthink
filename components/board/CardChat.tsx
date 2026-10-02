@@ -34,13 +34,15 @@ interface CardChatProps {
    * approval — so the thread stays readable while the input is swapped out.
    */
   composerSlot?: React.ReactNode;
+  /** Shown above the composer, keeping it — a decision you can also talk through. */
+  aboveComposer?: React.ReactNode;
   /** Whether this card already carries a built app — shapes what Kan may propose. */
   hasApps?: boolean;
   /** Open the card's Apps tab. Used after Kan's build proposal is accepted. */
   onShowApps?: () => void;
 }
 
-export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar, composerSlot, hasApps = false, onShowApps }: CardChatProps) {
+export function CardChat({ card, channelName, channelDescription, tagDefinitions = [], tabBar, composerSlot, aboveComposer, hasApps = false, onShowApps }: CardChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<ChatInputHandle>(null);
   // The composer floats over the thread, so the scroll area pads by its measured height.
@@ -721,6 +723,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           </div>
         )}
         {tabBar}
+        {!composerSlot && aboveComposer}
         {composerSlot ?? (
           <ChatInput
             ref={chatInputRef}

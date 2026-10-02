@@ -108,9 +108,10 @@ describe('morning spark', () => {
     expect(pickSpark(cards, ['handled'], now)?.id).toBe('new')
   })
 
-  it('skips stale, archived and still-in-review cards', () => {
+  it('skips stale and archived cards, and counts ones waiting for review', () => {
     expect(pickSpark([card('stale', SPARK_MAX_AGE_DAYS + 1)], [], now)).toBeNull()
-    expect(pickSpark([card('a', 0, { isArchived: true }), card('b', 0, { isPendingReview: true })], [], now)).toBeNull()
+    expect(pickSpark([card('a', 0, { isArchived: true })], [], now)).toBeNull()
+    expect(pickSpark([card('b', 0, { isPendingReview: true })], [], now)?.id).toBe('b')
   })
 
   it('opens with the spark and asks what to do with it', () => {

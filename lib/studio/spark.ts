@@ -22,7 +22,8 @@ export function pickSpark(cards: SparkCandidate[], handled: string[], now: Date)
   const seen = new Set(handled)
   const oldest = now.getTime() - SPARK_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
   const fresh = cards
-    .filter((c) => !c.isArchived && !c.isPendingReview && !seen.has(c.id))
+    // Sparks wait for review now, so pending is the normal state, not a reason to skip.
+    .filter((c) => !c.isArchived && !seen.has(c.id))
     .filter((c) => (c.createdAt ? c.createdAt.getTime() >= oldest : false))
     .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))
   return fresh[0] ?? null

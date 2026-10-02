@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { cards, cardRejections, tasks } from '@/lib/db/schema'
@@ -90,6 +90,17 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       logChannelActivity(channelId, userId, 'card_created', 'card', cardId, {
         title: card.title,
       }).catch(() => {})
+
+      // Approving a Studio spark is the yes: its test page goes up. Done after the
+      // response, since Kan writes the page and the approval shouldn't wait on that.
+      const { getStudioByChannel } = await import('@/lib/studio/setup')
+      const studio = await getStudioByChannel(channelId)
+      if (studio && card.columnId === studio.sparksColumnId) {
+        after(async () => {
+          const { approveSpark } = await import('@/lib/studio/pipeline')
+          await approveSpark(studio.userId, cardId).catch((e) => console.error('[review] spark test page failed:', e))
+        })
+      }
 
       return NextResponse.json({ success: true, decision, position: nextPosition })
     }

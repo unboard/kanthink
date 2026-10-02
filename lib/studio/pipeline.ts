@@ -41,6 +41,9 @@ export async function moveToStage(studio: StudioRow, card: CardRow, stage: Studi
   if (note) messages.push({ id: nanoid(), type: 'ai_response', content: note, createdAt: new Date().toISOString() })
   await db.update(cards).set({
     columnId,
+    // A spark still waiting for review that Kan acts on from chat is decided by
+    // that, so it leaves the review queue with the move.
+    isPendingReview: false,
     position: (first?.position ?? 1) - 1,
     messages: messages as CardRow['messages'],
     updatedAt: new Date(),
@@ -193,4 +196,70 @@ export async function onTestPagePublished(appId: string, userId: string) {
   }
   const { runFollowUps } = await import('./people')
   await runFollowUps(userId, { mode: studio?.followUpMode === 'auto' ? 'auto' : 'ask', appId })
+}
+
+/**
+ * The words for a spark's test page, read off the card: the scout's write-up and
+ * anything said in the thread since ("make the first one free"). Kan writes them
+ * when it can; a plain read of the card is the fallback, so approving never fails
+ * for want of a model.
+ */
+export async function composeTestPage(userId: string, card: Pick<CardRow, 'title' | 'summary' | 'messages'>) {
+  const thread = ((card.messages || []) as { type?: string; content?: string }[])
+    .map((m) => `${m.type === 'question' ? 'Owner' : 'Kan'}: ${(m.content || '').trim()}`)
+    .filter((l) => l.length > 6)
+    .join('\n\n')
+    .slice(-6000)
+
+  const fallback = () => {
+    const text = thread.replace(/^(Owner|Kan):\s*/gm, '')
+    const priceLine = text.split('\n').find((l) => /\$\s?\d/.test(l) && /price|test|once|month|plan|each/i.test(l))
+    const price = priceLine?.match(/(first[^$\n]*free[^$\n]*)?\$\s?\d+(?:\.\d{2})?(?:\s*(?:once|a month|\/mo|per \w+|a \w+))?/i)?.[0]
+    const pitch = card.summary || text.split('\n').map((l) => l.replace(/^[#*\-\s]+/, '').trim()).find((l) => l.length > 40) || ''
+    return { headline: card.title, pitch: pitch.slice(0, 400), priceLabel: price ? price.trim() : '', bullets: [] as string[] }
+  }
+
+  const { getLLMClientForUser } = await import('@/lib/ai/llm')
+  const llm = await getLLMClientForUser(userId, undefined, 'chat').catch(() => null)
+  if (!llm?.client) return fallback()
+  // Two tries: a reply that isn't clean JSON now and then shouldn't cost the page Kan's words.
+  for (let attempt = 0; attempt < 2; attempt++) try {
+    const res = await llm.client.complete([
+      {
+        role: 'system',
+        content: `Write a one-screen test page for a small web tool that doesn't exist yet. People can reserve it; nobody is charged.
+Use the card below. If the owner said anything in the thread about price, wording or who it's for, that wins over the original write-up.
+Respond with JSON only: {"headline": "the promise in one line, under 70 characters", "pitch": "2-3 plain sentences: who it's for and what it does for them", "priceLabel": "the price as people should see it, e.g. \\"$5 once\\" or \\"First one free, then $5\\"", "bullets": ["up to 3 short concrete benefits"]}
+No hype, no exclamation marks, no invented features.`,
+      },
+      { role: 'user', content: `Card: ${card.title}\n\n${thread}` },
+    ])
+    const raw = res.content.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '')
+    const obj = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { headline?: string; pitch?: string; priceLabel?: string; bullets?: string[] }
+    const base = fallback()
+    return {
+      headline: (obj.headline || base.headline).toString(),
+      pitch: (obj.pitch || base.pitch).toString(),
+      priceLabel: (obj.priceLabel ?? base.priceLabel).toString(),
+      bullets: Array.isArray(obj.bullets) ? obj.bullets.map(String).slice(0, 3) : [],
+    }
+  } catch (error) {
+    if (attempt === 1) console.error('[studio] composing the test page fell back:', error)
+  }
+  return fallback()
+}
+
+/**
+ * Approving a spark: write its test page from the card and put it up. Boards that
+ * have the Studio open are told to refetch, since the card moved on the server.
+ */
+export async function approveSpark(userId: string, cardId: string) {
+  const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId) })
+  if (!card) return null
+  const page = await composeTestPage(userId, card)
+  const result = await startTestPage({ userId, cardId, ...page })
+  const { publishToChannel } = await import('@/lib/sync/pusherServer')
+  const { generateEventId } = await import('@/lib/sync/broadcastSync')
+  await publishToChannel(card.channelId, { type: 'sync:refetch', channelId: card.channelId, reason: 'studio-test-page' } as never, 'studio', generateEventId()).catch(() => {})
+  return result
 }

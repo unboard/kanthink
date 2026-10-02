@@ -134,7 +134,9 @@ export async function ensureStudio(userId: string): Promise<{ studio: StudioRow;
     safeguards: { cooldownMinutes: 10, dailyCap: 3, preventLoops: true },
     // Due now, so the next cron tick runs it rather than tomorrow's.
     nextScheduledRun: now,
-    autoApprove: 1,
+    // Sparks wait for your yes: each lands for review, shows on Home as a card, and
+    // approving it puts up the test page.
+    autoApprove: 0,
     // Rotated each morning by the Studio cron; see scoutFocus.ts.
     webAccess: { mode: 'always', focus: focusFor(groupForDay(DEFAULT_LOOK_IN, now)) },
     summary: 'Reads the web each morning for problems people would pay a few dollars to lose, and writes each one up as a spark.',

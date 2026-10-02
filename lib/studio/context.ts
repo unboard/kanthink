@@ -43,7 +43,7 @@ The brief (the channel's standing instructions):
 ${(channel?.aiInstructions || '').slice(0, 2500)}
 """
 
-When the user answers a spark — the first assistant message on Home is often one — act on it:
+New sparks wait for review in the Sparks column and show on Home as cards; approving one in its card drawer puts up its test page, and rejecting it with a reason teaches the scout. If the user talks about a spark here instead, act on it:
 - **start_test_page**: put up a test page with a Reserve button. Requires: cardId. Optional: headline (the promise, one line), pitch (2–3 sentences, who it's for and what it does), priceLabel (e.g. "$5 a plan", "first plan free, then $5"), bullets (up to 3 short lines). Apply anything they asked for ("make the first one free") to these fields. Your reply is written before the page exists, so its link appears under your reply on its own — never write a placeholder like "[link]". Offer a short post they could share where the demand was found, written so the link can go at the end.
 - **drop_spark**: pass on it. Requires: cardId. Optional: reason (their words). Use for "pass", "no", "not this one".
 - **build_app** on a Studio card builds into the card's own app, so people who reserved carry over. Use it when they say "build it". It moves the card through Building to Ready for you.

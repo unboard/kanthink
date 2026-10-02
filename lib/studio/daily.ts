@@ -86,6 +86,8 @@ export async function runStudioMorning(studio: StudioRow, now = new Date()) {
       const ok = await sendTransactionalEmail({ to: owner.email, subject: `A spark: ${card.title}`, html })
       if (ok) {
         await db.update(studioSettings).set({ lastSparkEmailAt: now, updatedAt: now }).where(eq(studioSettings.userId, studio.userId))
+        // Emailed once; tomorrow's email is about a different spark.
+        await markSparkHandled(studio.userId, card.id)
         result.sparkEmailed = true
       }
     }

@@ -19,6 +19,7 @@ import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
 import { FreshTicker } from '@/components/home/FreshTicker';
 import { KanDesk } from '@/components/home/KanDesk';
 import { StudioDesk } from '@/components/home/StudioDesk';
+import { SparkCards } from '@/components/home/SparkCards';
 import { SproutSearch, type SproutResult } from '@/components/home/SproutSearch';
 import { ChannelPreviewDrawer } from '@/components/home/ChannelPreviewDrawer';
 import { PeekPreview, type PeekTarget } from '@/components/home/PeekPreview';
@@ -78,8 +79,6 @@ interface ChatMessage {
   actionResults?: ActionResult[];
   imageUrls?: string[];
   timestamp: Date;
-  /** Set on the Studio's morning spark, which opens Home as Kan's first message. */
-  sparkCardId?: string;
 }
 
 interface ThreadSummary {
@@ -167,42 +166,8 @@ export function OperatorHome() {
     inputRef.current?.focus();
   }, []);
 
-  // The Studio's morning spark: when one is waiting, Home opens with it as Kan's
-  // first message, so answering it is just replying. Only on a fresh Home — never
-  // pushed into a conversation already under way.
-  const sparkLoaded = useRef(false);
+  // The Studio is admin-only for now, like Kanwatch.
   const studioAdmin = !!session?.user?.isAdmin;
-  useEffect(() => {
-    if (!studioAdmin || sparkLoaded.current) return;
-    sparkLoaded.current = true;
-    fetch('/api/studio/spark')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        const spark = data?.spark as { cardId: string; message: string } | null | undefined;
-        if (!spark) return;
-        setMessages((prev) => (prev.length > 0 ? prev : [{
-          id: `spark-${spark.cardId}`,
-          role: 'assistant',
-          content: spark.message,
-          timestamp: new Date(),
-          sparkCardId: spark.cardId,
-        }]));
-      })
-      .catch(() => {});
-  }, [studioAdmin]);
-
-  const settleSpark = useCallback((cardId: string) => {
-    fetch('/api/studio/spark', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cardId }),
-    }).catch(() => {});
-  }, []);
-
-  const dismissSpark = useCallback((cardId: string) => {
-    settleSpark(cardId);
-    setMessages((prev) => prev.filter((m) => m.sparkCardId !== cardId));
-  }, [settleSpark]);
 
   // Create a new thread on mount
   useEffect(() => {
@@ -322,10 +287,6 @@ export function OperatorHome() {
       timestamp: new Date(),
     };
 
-    // Answering the spark is what raises it; it won't open Home again.
-    const pendingSpark = messages.length === 1 ? messages[0].sparkCardId : undefined;
-    if (pendingSpark) settleSpark(pendingSpark);
-
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
@@ -401,7 +362,7 @@ export function OperatorHome() {
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, messages, buildChannelContext, threadId, settleSpark]);
+  }, [isLoading, messages, buildChannelContext, threadId]);
 
   /** Open search results in place — drawers instead of navigation */
   const handleSproutSelect = useCallback((r: SproutResult) => {
@@ -630,12 +591,6 @@ export function OperatorHome() {
                     ) : (
                       <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                     )}
-                    {msg.sparkCardId && messages.length === 1 && (
-                      <div className="mt-3 flex items-center gap-3 border-t border-neutral-700/50 pt-3 text-xs">
-                        <span className="text-neutral-500">A spark from your Studio</span>
-                        <button onClick={() => dismissSpark(msg.sparkCardId!)} className="ml-auto text-neutral-400 hover:text-white">Not now</button>
-                      </div>
-                    )}
                     {/* Generated images */}
                     {msg.imageUrls && msg.imageUrls.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -812,6 +767,8 @@ export function OperatorHome() {
         )}
 
         {/* Kan's desk — what the shrooms have left for you, across every channel */}
+        {/* Sparks waiting for your yes — each opens in the card drawer. */}
+        {!hasConversation && !input.trim() && studioAdmin && <SparkCards onOpen={setPreviewCardId} />}
         {!hasConversation && !input.trim() && <KanDesk />}
         {/* The Studio's crew — drafts and builds waiting on you. Admin-only for now. */}
         {!hasConversation && !input.trim() && studioAdmin && <StudioDesk />}
