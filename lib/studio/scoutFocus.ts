@@ -1,26 +1,40 @@
 /**
- * Where the scout looks each morning.
+ * Where the scout looks each morning, and what it looks for.
  *
- * A single generic search ("people asking for a tool") comes back with whatever the
- * web says most about tools, which is productivity software. So the brief carries a
- * "Look in:" line, the scout takes one group from it each morning in turn, and the
- * search names that group and the phrases people use when they want something that
- * doesn't exist. Change the line (or ask Kan to) and the rotation follows.
+ * The question isn't "what do people complain about" — complaints are free. It's
+ * "what do people already pay to get done, and where does what they pay for fall
+ * short". So the groups are businesses and professionals who spend money on the
+ * work, and each search goes after evidence of spending: what they pay for software
+ * and what its reviews say, who they hire to do it by hand, which templates they
+ * buy. Forums are one source among several, not the only one.
+ *
+ * The brief carries the "Look in:" line; change it (or ask Kan to) and the rotation
+ * follows.
  */
 
 export const DEFAULT_LOOK_IN = [
-  'teachers',
-  'homeschool parents',
-  'youth sports coaches',
-  'small landlords',
-  'pet sitters and dog walkers',
-  'food truck owners',
-  'resellers and Etsy sellers',
-  'wedding planning',
-  'quilters and crafters',
-  'house cleaners and cleaning businesses',
-  'tutors',
-  'event and party planners',
+  'HVAC and plumbing contractors',
+  'roofing and home improvement contractors',
+  'cleaning companies',
+  'landscaping and lawn care companies',
+  'salons, barbers and med spas',
+  'real estate agents and teams',
+  'property managers',
+  'bookkeepers and small accounting firms',
+  'independent insurance agents',
+  'wedding and event photographers',
+  'event venues and caterers',
+  'restaurants and food trucks',
+  'Shopify and e-commerce stores',
+  'Etsy and print-on-demand sellers',
+  'coaches and consultants',
+  'small marketing agencies',
+  'auto repair shops',
+  'print shops and sign makers',
+  'gyms and fitness studios',
+  'daycares and preschools',
+  'law firms and solo attorneys (admin work only)',
+  'recruiters and staffing agencies',
 ]
 
 /** The groups named on the brief's "Look in:" line, or the defaults. */
@@ -31,10 +45,14 @@ export function lookInList(brief: string | null | undefined): string[] {
   return groups.length ? groups : DEFAULT_LOOK_IN
 }
 
-/** The search for one group: their words for a missing tool or a tedious chore, this year. */
+/**
+ * The search for one group: where their money goes today. Paid software and its
+ * reviews, freelancers they hire for the job, templates they buy, and the threads
+ * where they ask for something better — recent ones only.
+ */
 export function focusFor(group: string, now = new Date()): string {
   const year = now.getFullYear()
-  return `${group} asking "is there an app" OR "I wish there was a tool" OR "anyone know a simple way" OR complaining about a tedious task — forum threads, Reddit posts and app reviews from ${year - 1} or ${year}`
+  return `${group}: what they pay for today to run the business and still complain about — software they pay for and its 1–3 star reviews (G2, Capterra, Shopify App Store, Chrome Web Store), tasks they hire freelancers or virtual assistants to do by hand (Upwork, Fiverr), templates and tools they buy (Etsy, Gumroad), and threads where they ask for something better, from ${year - 1} or ${year}`
 }
 
 /**

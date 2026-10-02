@@ -136,7 +136,7 @@ describe('scout focus', () => {
     const d0 = new Date('2026-10-14T00:00:00Z')
     const d1 = new Date('2026-10-15T00:00:00Z')
     expect(groupForDay(list, d0)).not.toBe(groupForDay(list, d1))
-    expect(focusFor('teachers')).toMatch(/^teachers /)
+    expect(focusFor('roofers')).toMatch(/^roofers:/)
   })
 })
 
@@ -220,5 +220,30 @@ describe('spark audit', () => {
     expect(today).not.toEqual(tomorrow)
     expect(scoutFocus(list, now).split(' || ')).toHaveLength(3)
     expect(scoutFocus(list, now)).toMatch(/2025 or 2026/)
+  })
+})
+
+describe('the money test', () => {
+  it('needs a Paid today line with an amount', async () => {
+    const { paidToday, sparkVerdict, readSources } = await import('../lib/studio/audit')
+    const now = new Date('2026-10-02T12:00:00Z')
+    const quotes = [
+      '* "a" — G2 review of ServiceTitan, May 2026 (https://www.g2.com/products/x/reviews/1)',
+      '* "b" — r/HVAC, June 2026 (https://www.reddit.com/r/HVAC/comments/1abcdef/x/)',
+    ].join('\n')
+    const paid = `Paid today: $245 a month per tech for ServiceTitan (https://example.com/pricing)\n${quotes}`
+    expect(paidToday(paid)).toMatch(/\$245/)
+    expect(paidToday('**Paid today:** they pay a VA £12/hour')).toMatch(/£12/)
+    expect(paidToday('Paid today: lots of money')).toBeNull()
+    expect(sparkVerdict(readSources(paid, now), paid).keep).toBe(true)
+    const v = sparkVerdict(readSources(quotes, now), quotes)
+    expect(v.keep).toBe(false)
+    expect(v.reason).toMatch(/pays for this today/)
+  })
+
+  it('aims the scout at businesses, and at where their money goes', async () => {
+    const { DEFAULT_LOOK_IN, focusFor } = await import('../lib/studio/scoutFocus')
+    expect(DEFAULT_LOOK_IN.some((g) => /homeschool|quilters|teachers/.test(g))).toBe(false)
+    expect(focusFor('auto repair shops')).toMatch(/Upwork|G2|Capterra/)
   })
 })

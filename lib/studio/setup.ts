@@ -39,45 +39,46 @@ export function columnFor(studio: StudioRow, stage: StudioStage): string {
 /** The brief, as the channel's standing instructions. Kan appends what it learns. */
 export const DEFAULT_BRIEF = `Studio brief
 
-This channel finds, tests and sells web tools. Each card is one idea: who has the problem, what they said in public, how big it is, the tool, and a price to test.
+The goal is money. This channel finds web tools that businesses will pay for, tests them, builds them and sells them. Each card is one idea: who pays, what they pay for today, what they said, how big it is, the tool, and a price.
 
-Who we make things for: parents and families, teachers, and one-person businesses (landlords, sitters, food trucks, resellers).
+Who we make things for: small businesses and independent professionals who already spend money to run their business — on software, on freelancers, on templates, on staff time.
 Look in: ${DEFAULT_LOOK_IN.join(', ')}
-Never: health, legal or money advice; copies of a named product; kids' apps that collect data.
+Never: tools for hobbies, kids or household chores; health, legal or financial advice; copies of a named product.
 A test page comes before any build. Nobody is charged until the app exists.
 
 How sparks are judged:
-Size — Small: one task for one kind of person, a one-time price ($3–15), a single page we could build in a day. Mid: a weekly job for a defined group, a monthly price ($5–30), remembers their data. Big: a problem lots of people already pay real money to solve, worth growing into a product; may need accounts and a server.
-Evidence — at least two different people describing it, posted in the last 12 months. Older posts don't count.
-Pay signal — they already pay for something clumsy, or say they would.
-Competition — what exists, and why it falls short for these people.
-Each morning: three sparks from three different groups, aiming for one Small, one Mid and one Big.
+Money — the buyer earns money from the work this saves or wins, or already pays for it today. Every spark names who pays what today, with a source: the price of the tool they use and its complaints, what they pay a freelancer to do it by hand, or what a template for it sells for. No proof of spending, no spark.
+Price — at least $19 a month, or $49 one-time. Higher is better if the evidence supports it.
+Size — Mid: a recurring job for one kind of business, $19–99 a month, a focused tool we could build in a week. Big: a problem a whole industry pays for, $100+ a month or a high-ticket sale, worth growing into a product.
+Evidence — at least two different businesses or professionals describing it, posted in the last 12 months.
+Reach — say where the buyers gather, so a test page can find them.
+Each morning: three sparks from three different groups — at least one Big.
 
 Learned from conversations:`
 
-export const SCOUT_INSTRUCTIONS = `You are the Studio's scout. Find new sparks: specific problems that real people describe in public — forum and Reddit threads, Q&A sites, 1–3 star reviews of paid tools — that a web tool could solve and that someone would pay for.
+export const SCOUT_INSTRUCTIONS = `You are the Studio's scout. Your job is to find web tools that businesses will pay for. Not interesting problems — paid ones.
 
-The web research covers a few different groups. Make one spark per group: never two from the same group, and never two built on the same post.
+The web research covers a few different groups of businesses, from several kinds of source: paid software and its reviews, freelancer and virtual-assistant jobs, template marketplaces, and forums. Make one spark per group: never two from the same group, and never two built on the same source.
 
-Judge every spark with "How sparks are judged" in the Studio brief, and follow the rest of the brief: who to look for and what to avoid.
-
-Make one Small, one Mid and one Big. For each group, pick the problem in its research that best fits a size you still need. Size honestly — if nothing in a group's research is truly Big, make the best Small or Mid you can and say so, rather than inflating it.
+Judge every spark with "How sparks are judged" in the Studio brief, and follow the rest of the brief. The money test comes first: if you can't show who pays what for this today, it isn't a spark. Make at least one Big.
 
 For each spark, create one card.
-Title: the tool's name in 2–4 plain words (for example "Sub Plan Writer").
+Title: the tool's name in 2–4 plain words (for example "Roofing Quote Builder").
 Content: plain paragraphs and bullet points only — no headings, because the board shows the first line as the card's preview. In this order:
-1. Open with one plain sentence: who has the problem and what it costs them.
-2. A line starting "Size:" then Small, Mid or Big, a dash, and why in a few words (who pays, how often, roughly how much).
-3. Two or three short quotes from real posts, each followed by where it was posted, the month and year it was posted, and the link — like: "quote" — r/petsitting, March 2026 (link).
-4. Whether anything already solves it, and how well.
-5. The tool, in one sentence.
-6. A price to test, like "$5 once" or "$12 a month".
+1. Open with one plain sentence: which businesses have the problem and what it costs them in money or billable time.
+2. A line starting "Size:" then Mid or Big, a dash, and why in a few words.
+3. A line starting "Paid today:" — what they spend on this now, with amounts, and where that comes from with the link (a tool's pricing and its complaints, a freelancer rate, a template's price and sales).
+4. Two or three short quotes from real sources, each followed by where it was posted, the month and year, and the link — like: "quote" — G2 review of ToolName, March 2026 (link).
+5. Who already sells into this, and why they fall short for these businesses.
+6. The tool, in one sentence.
+7. A line starting "Reach:" — where these buyers gather.
+8. A price to test, like "$29 a month".
 
 Rules:
-- Only use posts that appear in the web research. Never invent a quote, a date, a number or a link. If the research doesn't support a spark, don't make it.
-- Only posts from the last 12 months count as evidence. If you can't tell when a post is from, leave it out.
-- Every quote must describe this exact problem in the person's own words, not a neighbouring one.
-- Skip anything already on this board, in any column, including Dropped, and don't reuse a post another card already cites.
+- Only use sources that appear in the web research. Never invent a quote, a price, a date, a number or a link. If the research doesn't support a spark, don't make it.
+- Only sources from the last 12 months count as evidence. If you can't tell when something is from, leave it out.
+- Every quote must describe this exact problem, from someone who would be the buyer.
+- Skip anything already on this board, in any column, including Dropped, and don't reuse a source another card already cites.
 - Skip anything the brief rules out.`
 
 export async function getStudio(userId: string): Promise<StudioRow | null> {
@@ -106,7 +107,7 @@ export async function ensureStudio(userId: string): Promise<{ studio: StudioRow;
     id: channelId,
     ownerId: userId,
     name: 'Studio',
-    description: 'The crew that finds, tests and sells small apps.',
+    description: 'The crew that finds, tests and sells tools businesses pay for.',
     aiInstructions: DEFAULT_BRIEF,
     status: 'active',
     createdAt: now,
@@ -151,7 +152,7 @@ export async function ensureStudio(userId: string): Promise<{ studio: StudioRow;
     autoApprove: 0,
     // Rotated each morning by the Studio cron; see scoutFocus.ts.
     webAccess: { mode: 'always', focus: scoutFocus(DEFAULT_LOOK_IN, now) },
-    summary: 'Reads the web each morning across three groups for recent problems people would pay to solve, sizes each one, and writes it up as a spark.',
+    summary: 'Each morning, looks at three kinds of business for things they already pay for and still complain about — reviews, freelancer jobs, templates, forums — and writes up the ones with money behind them.',
     createdAt: now,
     updatedAt: now,
   } as typeof instructionCards.$inferInsert)

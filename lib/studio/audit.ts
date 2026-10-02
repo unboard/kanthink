@@ -89,7 +89,20 @@ export interface SparkVerdict {
   reason: string
 }
 
-export function sparkVerdict(sources: SourceLine[]): SparkVerdict {
+/**
+ * Whether the write-up shows anyone paying for this today: a "Paid today:" line with
+ * an amount on it. Without one, it's a complaint, not a market.
+ */
+export function paidToday(content: string): string | null {
+  const line = content.split('\n').map((l) => l.replace(/^[\s*\-]+/, '').replace(/\*\*/g, '')).find((l) => /^paid today\s*:/i.test(l))
+  if (!line) return null
+  return /(\$|€|£)\s?\d/.test(line) ? line : null
+}
+
+export function sparkVerdict(sources: SourceLine[], content?: string): SparkVerdict {
+  if (content !== undefined && !paidToday(content)) {
+    return { keep: false, fresh: sources.filter((s) => s.fresh).length, total: sources.length, reason: 'no evidence anyone pays for this today (no "Paid today:" line with an amount)' }
+  }
   const fresh = sources.filter((s) => s.fresh).length
   if (fresh >= MIN_FRESH_SOURCES) {
     return { keep: true, fresh, total: sources.length, reason: `${fresh} ${fresh === 1 ? 'post' : 'posts'} from the last ${FRESH_MONTHS} months` }
@@ -154,7 +167,7 @@ export async function auditStudioSparks(studio: { channelId: string; sparksColum
       for (const u of contentOf(other).match(URL_RE) ?? []) elsewhere.add(normaliseUrl(u))
     }
 
-    const verdict = sparkVerdict(readSources(content, now, elsewhere))
+    const verdict = sparkVerdict(readSources(content, now, elsewhere), content)
     if (!verdict.keep) {
       await db.insert(cardRejections).values({
         id: nanoid(),
@@ -163,7 +176,7 @@ export async function auditStudioSparks(studio: { channelId: string; sparksColum
         cardId: card.id,
         cardTitle: card.title,
         reason: 'not_relevant',
-        feedback: `Rejected automatically: ${verdict.reason}. A spark needs at least ${MIN_FRESH_SOURCES} different people posting in the last ${FRESH_MONTHS} months, each quote dated.`,
+        feedback: `Rejected automatically: ${verdict.reason}. A spark needs proof of who pays what today, and at least ${MIN_FRESH_SOURCES} different buyers posting in the last ${FRESH_MONTHS} months, each source dated.`,
         createdBy: null,
         createdAt: new Date(),
       })
