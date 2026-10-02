@@ -39,45 +39,49 @@ export function columnFor(studio: StudioRow, stage: StudioStage): string {
 /** The brief, as the channel's standing instructions. Kan appends what it learns. */
 export const DEFAULT_BRIEF = `Studio brief
 
-The goal is money. This channel finds web tools that businesses will pay for, tests them, builds them and sells them. Each card is one idea: who pays, what they pay for today, what they said, how big it is, the tool, and a price.
+The goal is money. This channel finds tools that the kinds of customers MyCreativeShop serves will pay for, tests them, builds them in Kanthink's app builder and sells them. Each card is one idea: who pays, what they pay for today, what they said, how it would be built, the tool, and a price.
 
-Who we make things for: small businesses and independent professionals who already spend money to run their business — on software, on freelancers, on templates, on staff time.
+Who we make things for: the customers MyCreativeShop already serves — local small businesses, churches, schools and PTOs, political campaigns, nonprofits — because they can be reached through MyCreativeShop. It doesn't have to be design; anything close to the work they do.
 Look in: ${DEFAULT_LOOK_IN.join(', ')}
-Never: tools for hobbies, kids or household chores; health, legal or financial advice; copies of a named product.
+Never: health, legal or financial advice; copies of a named product; anything that collects data about children.
 A test page comes before any build. Nobody is charged until the app exists.
 
 How sparks are judged:
-Money — the buyer earns money from the work this saves or wins, or already pays for it today. Every spark names who pays what today, with a source: the price of the tool they use and its complaints, what they pay a freelancer to do it by hand, or what a template for it sells for. No proof of spending, no spark.
-Price — at least $19 a month, or $49 one-time. Higher is better if the evidence supports it.
-Size — Mid: a recurring job for one kind of business, $19–99 a month, a focused tool we could build in a week. Big: a problem a whole industry pays for, $100+ a month or a high-ticket sale, worth growing into a product.
-Evidence — at least two different businesses or professionals describing it, posted in the last 12 months.
-Reach — say where the buyers gather, so a test page can find them.
-Each morning: three sparks from three different groups — at least one Big.
+Build — it must be something the app builder can make: a single web page that runs in the browser, with forms, calculators, planners and checklists, AI writing and AI images, documents and print-ready files to download, file uploads, saving each customer's own work, and payment. It can't connect to other software, send texts or emails on someone's behalf, run on a schedule, or pull data from other sites. If it needs an integration, it isn't a spark.
+Money — they pay to get this job done today: a tool's subscription, a freelancer, a template, or a lot of staff time. Every spark names who pays what today, with a figure and a source.
+Price — at least $19 a month, or $49 one-time.
+Size — Mid: a recurring job for one kind of customer, $19–49 a month. Big: a job many of these kinds of customer share, or a high-value one, $50+ a month.
+Evidence — at least two different people from these groups describing it, posted in the last 12 months.
+Reach — MyCreativeShop's customers in this group, plus wherever else they gather.
+Each morning: three sparks from three different groups.
 
 Learned from conversations:`
 
-export const SCOUT_INSTRUCTIONS = `You are the Studio's scout. Your job is to find web tools that businesses will pay for. Not interesting problems — paid ones.
+export const SCOUT_INSTRUCTIONS = `You are the Studio's scout. Find tools that MyCreativeShop's kinds of customers will pay for and that Kanthink's app builder can actually make.
 
-The web research covers a few different groups of businesses, from several kinds of source: paid software and its reviews, freelancer and virtual-assistant jobs, template marketplaces, and forums. Make one spark per group: never two from the same group, and never two built on the same source.
+The web research covers a few different groups, from several kinds of source: paid tools and their reviews, freelancer jobs, template marketplaces, and their own communities. Make one spark per group: never two from the same group, and never two built on the same source.
 
-Judge every spark with "How sparks are judged" in the Studio brief, and follow the rest of the brief. The money test comes first: if you can't show who pays what for this today, it isn't a spark. Make at least one Big.
+Judge every spark with "How sparks are judged" in the Studio brief. Two tests come first:
+- Build: could the app builder make it as a single browser page — forms, calculators, planners, AI writing, AI images, print-ready documents, uploads, saving each customer's own work, payment? If it needs to connect to other software, send texts or emails for them, run on a schedule or pull data from other sites, drop it and find another.
+- Money: can you show who pays what for this job today, with a figure?
 
 For each spark, create one card.
-Title: the tool's name in 2–4 plain words (for example "Roofing Quote Builder").
+Title: the tool's name in 2–4 plain words (for example "Sermon Series Planner").
 Content: plain paragraphs and bullet points only — no headings, because the board shows the first line as the card's preview. In this order:
-1. Open with one plain sentence: which businesses have the problem and what it costs them in money or billable time.
+1. Open with one plain sentence: who has the job and what it costs them in money or hours.
 2. A line starting "Size:" then Mid or Big, a dash, and why in a few words.
-3. A line starting "Paid today:" — what they spend on this now as a specific figure ("$245 a month per tech", "$20 an hour on Upwork", "$39 template, 1,200 sales"), and where that comes from with the link. "A lot" or "high fees" isn't a figure; without one, drop the spark.
-4. Two or three short quotes from real sources, each followed by where it was posted, the month and year, and the link — like: "quote" — G2 review of ToolName, March 2026 (link).
-5. Who already sells into this, and why they fall short for these businesses.
+3. A line starting "Paid today:" — what they spend on this now as a specific figure ("$29 a month for ToolName", "$60 per bulletin on Fiverr", "$15 template, 900 sales"), and where that comes from with the link. "A lot" isn't a figure; without one, drop the spark.
+4. Two or three short quotes from real sources, each followed by where it was posted, the month and year, and the link — like: "quote" — r/Pastors, March 2026 (link).
+5. Who already sells into this, and why they fall short for these customers.
 6. The tool, in one sentence.
-7. A line starting "Reach:" — where these buyers gather.
-8. A price to test, like "$29 a month".
+7. A line starting "Build:" — how the app builder would make it, in its terms (for example "a form, AI writing and a print-ready PDF; saves each customer's past issues").
+8. A line starting "Reach:" — MyCreativeShop's customers in this group, and where else they gather.
+9. A price to test, like "$29 a month".
 
 Rules:
 - Only use sources that appear in the web research. Never invent a quote, a price, a date, a number or a link. If the research doesn't support a spark, don't make it.
 - Only sources from the last 12 months count as evidence. If you can't tell when something is from, leave it out.
-- Every quote must describe this exact problem, from someone who would be the buyer.
+- Every quote must describe this exact job, from someone who would be the buyer.
 - Skip anything already on this board, in any column, including Dropped, and don't reuse a source another card already cites.
 - Skip anything the brief rules out.`
 
@@ -107,7 +111,7 @@ export async function ensureStudio(userId: string): Promise<{ studio: StudioRow;
     id: channelId,
     ownerId: userId,
     name: 'Studio',
-    description: 'The crew that finds, tests and sells tools businesses pay for.',
+    description: "The crew that finds, tests and sells tools MyCreativeShop's kinds of customers pay for.",
     aiInstructions: DEFAULT_BRIEF,
     status: 'active',
     createdAt: now,
@@ -152,7 +156,7 @@ export async function ensureStudio(userId: string): Promise<{ studio: StudioRow;
     autoApprove: 0,
     // Rotated each morning by the Studio cron; see scoutFocus.ts.
     webAccess: { mode: 'always', focus: scoutFocus(DEFAULT_LOOK_IN, now) },
-    summary: 'Each morning, looks at three kinds of business for things they already pay for and still complain about — reviews, freelancer jobs, templates, forums — and writes up the ones with money behind them.',
+    summary: 'Each morning, looks at three kinds of MyCreativeShop customer for jobs they already pay for that the app builder could do better, and writes up the ones with money behind them.',
     createdAt: now,
     updatedAt: now,
   } as typeof instructionCards.$inferInsert)

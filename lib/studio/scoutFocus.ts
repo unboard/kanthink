@@ -1,40 +1,34 @@
 /**
  * Where the scout looks each morning, and what it looks for.
  *
- * The question isn't "what do people complain about" — complaints are free. It's
- * "what do people already pay to get done, and where does what they pay for fall
- * short". So the groups are businesses and professionals who spend money on the
- * work, and each search goes after evidence of spending: what they pay for software
- * and what its reviews say, who they hire to do it by hand, which templates they
- * buy. Forums are one source among several, not the only one.
+ * The groups are the kinds of customer MyCreativeShop already serves — local small
+ * businesses, churches, schools, campaigns, nonprofits — because those are people
+ * the owner can actually reach. The question each search asks is where their money
+ * goes today on the jobs around what they print and publish: the software they pay
+ * for and its reviews, the freelancers they hire, the templates they buy, and what
+ * they ask for in their own forums.
  *
  * The brief carries the "Look in:" line; change it (or ask Kan to) and the rotation
  * follows.
  */
 
 export const DEFAULT_LOOK_IN = [
-  'HVAC and plumbing contractors',
-  'roofing and home improvement contractors',
-  'cleaning companies',
-  'landscaping and lawn care companies',
-  'salons, barbers and med spas',
-  'real estate agents and teams',
-  'property managers',
-  'bookkeepers and small accounting firms',
+  'churches and ministries',
+  'schools, PTOs and PTAs',
+  'political campaigns and candidates',
+  'nonprofits and charities',
+  'real estate agents',
+  'restaurants and cafes',
+  'salons, barbers and spas',
+  'contractors and home service businesses',
   'independent insurance agents',
-  'wedding and event photographers',
-  'event venues and caterers',
-  'restaurants and food trucks',
-  'Shopify and e-commerce stores',
-  'Etsy and print-on-demand sellers',
-  'coaches and consultants',
-  'small marketing agencies',
-  'auto repair shops',
-  'print shops and sign makers',
-  'gyms and fitness studios',
+  'small retail shops and boutiques',
+  'youth sports leagues and clubs',
+  'event planners and venues',
+  'chambers of commerce and local associations',
   'daycares and preschools',
-  'law firms and solo attorneys (admin work only)',
-  'recruiters and staffing agencies',
+  'fitness studios and gyms',
+  'dental and medical office managers (admin work only)',
 ]
 
 /** The groups named on the brief's "Look in:" line, or the defaults. */
@@ -46,13 +40,12 @@ export function lookInList(brief: string | null | undefined): string[] {
 }
 
 /**
- * The search for one group: where their money goes today. Paid software and its
- * reviews, freelancers they hire for the job, templates they buy, and the threads
- * where they ask for something better — recent ones only.
+ * The search for one group: where their money goes today on the work around what
+ * they print, publish and send out — and the paperwork and planning behind it.
  */
 export function focusFor(group: string, now = new Date()): string {
   const year = now.getFullYear()
-  return `${group}: what they pay for today to run the business and still complain about — software they pay for and its 1–3 star reviews (G2, Capterra, Shopify App Store, Chrome Web Store), tasks they hire freelancers or virtual assistants to do by hand (Upwork, Fiverr), templates and tools they buy (Etsy, Gumroad), and threads where they ask for something better, from ${year - 1} or ${year}`
+  return `${group}: recurring paperwork, planning, writing and publishing jobs they pay to get done today and still complain about — tools they pay for and their 1–3 star reviews (G2, Capterra, Chrome Web Store), jobs they hire freelancers for (Upwork, Fiverr), templates they buy (Etsy, Creative Market), and threads in their own communities asking for something better, from ${year - 1} or ${year}`
 }
 
 /**

@@ -231,20 +231,23 @@ describe('the money test', () => {
       '* "a" — G2 review of ServiceTitan, May 2026 (https://www.g2.com/products/x/reviews/1)',
       '* "b" — r/HVAC, June 2026 (https://www.reddit.com/r/HVAC/comments/1abcdef/x/)',
     ].join('\n')
-    const paid = `Paid today: $245 a month per tech for ServiceTitan (https://example.com/pricing)\n${quotes}`
+    const build = 'A quote builder.\nBuild: a form, AI writing and a PDF download.'
+    const paid = `Paid today: $245 a month per tech for ServiceTitan (https://example.com/pricing)\n${quotes}\n${build}`
     expect(paidToday(paid)).toMatch(/\$245/)
     expect(paidToday('**Paid today:** they pay a VA £12/hour')).toMatch(/£12/)
     expect(paidToday('Paid today: lots of money')).toBeNull()
     expect(sparkVerdict(readSources(paid, now), paid).keep).toBe(true)
-    const v = sparkVerdict(readSources(quotes, now), quotes)
+    const unpaid = `${quotes}\n${build}`
+    const v = sparkVerdict(readSources(unpaid, now), unpaid)
     expect(v.keep).toBe(false)
     expect(v.reason).toMatch(/pays for this today/)
   })
 
-  it('aims the scout at businesses, and at where their money goes', async () => {
+  it("aims the scout at MyCreativeShop's kinds of customer, and at where their money goes", async () => {
     const { DEFAULT_LOOK_IN, focusFor } = await import('../lib/studio/scoutFocus')
-    expect(DEFAULT_LOOK_IN.some((g) => /homeschool|quilters|teachers/.test(g))).toBe(false)
-    expect(focusFor('auto repair shops')).toMatch(/Upwork|G2|Capterra/)
+    expect(DEFAULT_LOOK_IN.some((g) => /homeschool|quilters/.test(g))).toBe(false)
+    expect(DEFAULT_LOOK_IN.some((g) => /church/.test(g))).toBe(true)
+    expect(focusFor('churches')).toMatch(/Upwork|G2|Capterra/)
   })
 })
 
@@ -264,6 +267,7 @@ describe('audit leniency where it is earned', () => {
       'Paid today: $300 a month (https://vendor.example.com/pricing)',
       '* "a" — G2 review, May 2026 (https://www.g2.com/x/1)',
       '* "b" — a contractor forum (https://forum.example.com/t/9)',
+      "Build: a checklist that saves each customer's work.",
     ].join('\n')
     expect(readSources(content, now).map((s) => s.url)).not.toContain('https://vendor.example.com/pricing')
     expect(sparkVerdict(readSources(content, now), content).keep).toBe(false)
@@ -272,5 +276,17 @@ describe('audit leniency where it is earned', () => {
     expect(pageDate('<script>{"datePublished":"2026-03-04T10:00:00Z","dateModified":"2026-09-01"}</script>')?.toISOString().slice(0, 10)).toBe('2026-03-04')
     expect(pageDate('<time datetime="2025-12-01">Dec 1</time><time datetime="2026-02-01">')?.toISOString().slice(0, 10)).toBe('2025-12-01')
     expect(pageDate('<p>no dates</p>')).toBeNull()
+  })
+})
+
+describe('the build test', () => {
+  it('needs a Build line, and rejects tools that need integrations', async () => {
+    const { buildProblem } = await import('../lib/studio/audit')
+    expect(buildProblem('A bulletin writer.\nBuild: a form, AI writing and a print-ready PDF; saves past issues.')).toBeNull()
+    expect(buildProblem('A bulletin writer.')).toMatch(/no "Build:" line/)
+    expect(buildProblem('An inbox that auto-replies to tracking questions.\nBuild: connects to Shopify and Gmail to send emails.')).toMatch(/can't do/)
+    expect(buildProblem('A reminder tool that sends texts to parents.\nBuild: a form and a schedule.')).toMatch(/can't do/)
+    // Quotes can name any software without failing the spark.
+    expect(buildProblem('* "We pay for Planning Center and it never syncs" — r/church, May 2026\nA volunteer schedule maker.\nBuild: a planner that saves each church\'s roster and prints a schedule.')).toBeNull()
   })
 })

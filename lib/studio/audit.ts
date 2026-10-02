@@ -128,7 +128,32 @@ export function paidToday(content: string): string | null {
 const PAID_LABEL = /^paid today\b/i
 const AMOUNT = /(\$|€|£)\s?\d|\d[\d,.]*\s?(k\b|usd|dollars|\/\s?(mo|month|yr|year|hr|hour)|(a|per)\s+(month|year|hour|seat|user|tech|location))/i
 
+/**
+ * What the app builder can't do, as it tends to be written. Checked against the
+ * spark's tool and build lines only — the quotes may mention any software they like.
+ */
+const NEEDS_INTEGRATION = /\bintegrat|\bsyncs?\b|\bsyncing\b|\bapi\b|connects? (to|with)|plugs? into|\bsms\b|text messag|sends? (an? )?(texts?|emails?|reminders?|messages?)|automatically (emails|texts|posts|sends|publishes)|\bscrap(e|es|ing)\b|webhook|\bzapier\b|\bshopify\b|quickbooks|\bcrm\b|\bpos\b|google calendar|outlook|on a schedule|every (day|week|month) automatically/i
+
+/**
+ * Whether the spark says how the app builder would make it, and doesn't lean on
+ * something it can't do. Returns the problem, or null when it passes.
+ */
+export function buildProblem(content: string): string | null {
+  const lines = content.split('\n').map((l) => l.replace(/^[\s*\-•]+/, '').replace(/\*\*|__/g, ''))
+  const build = lines.find((l) => /^build\b\s*[:—\-]/i.test(l))
+  if (!build) return 'it doesn\'t say how the app builder would make it (no "Build:" line)'
+  // The tool is the plain sentence just before the Build line.
+  const at = lines.indexOf(build)
+  const tool = lines.slice(Math.max(0, at - 2), at).filter((l) => l && !/^(paid today|size|reach)\b/i.test(l) && !/^"/.test(l)).join(' ')
+  const hit = `${tool} ${build}`.match(NEEDS_INTEGRATION)
+  return hit ? `it needs something the app builder can't do ("${hit[0].trim()}")` : null
+}
+
 export function sparkVerdict(sources: SourceLine[], content?: string): SparkVerdict {
+  if (content !== undefined) {
+    const build = buildProblem(content)
+    if (build) return { keep: false, fresh: sources.filter((s) => s.fresh).length, total: sources.length, reason: build }
+  }
   if (content !== undefined && !paidToday(content)) {
     return { keep: false, fresh: sources.filter((s) => s.fresh).length, total: sources.length, reason: 'no evidence anyone pays for this today (no "Paid today:" line with an amount)' }
   }
@@ -230,7 +255,7 @@ export async function auditStudioSparks(studio: { channelId: string; sparksColum
         cardId: card.id,
         cardTitle: card.title,
         reason: 'not_relevant',
-        feedback: `Rejected automatically: ${verdict.reason}. A spark needs proof of who pays what today, and at least ${MIN_FRESH_SOURCES} different buyers posting in the last ${FRESH_MONTHS} months, each source dated.`,
+        feedback: `Rejected automatically: ${verdict.reason}. A spark must be something the app builder can make, show who pays what today with a figure, and have at least ${MIN_FRESH_SOURCES} different buyers posting in the last ${FRESH_MONTHS} months.`,
         createdBy: null,
         createdAt: new Date(),
       })
