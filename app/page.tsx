@@ -1,25 +1,36 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
-import { NewChannelOverlay } from '@/components/home/NewChannelOverlay';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
 import { OperatorHome } from '@/components/home/OperatorHome';
+import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { signInWithGoogle } from '@/lib/actions/auth';
+import { useStableSessionStatus } from '@/lib/hooks/useStableSessionStatus';
 import { useRouter } from 'next/navigation';
 
 const WELCOME_SEEN_KEY = 'kanthink-welcome-seen';
 
+function welcomeSeen() {
+  try { return !!localStorage.getItem(WELCOME_SEEN_KEY); } catch { return true; }
+}
+
+/**
+ * Home is the conversation with Kan. Always.
+ *
+ * There used to be a "No channels yet" screen for signed-out visitors, and it showed
+ * to signed-in people whenever one session check failed — next-auth reports
+ * "unauthenticated" on any failed refetch, including the one it does every time you
+ * come back to the tab. The status here comes from useStableSessionStatus, which
+ * re-checks before believing a sign-out, and the only thing a confirmed sign-out
+ * gets is a way to sign in.
+ */
 export default function Home() {
   const router = useRouter();
-  const { data: session, status: sessionStatus } = useSession();
+  const status = useStableSessionStatus();
   const { isLoading: isServerLoading } = useServerSync();
-  const [showNewChannelOverlay, setShowNewChannelOverlay] = useState(false);
-  const [showKanHelp, setShowKanHelp] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
-  const [hasCheckedWelcome, setHasCheckedWelcome] = useState(false);
+  const [welcomeDone, setWelcomeDone] = useState(false);
 
   const createChannel = useStore((s) => s.createChannel);
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
@@ -27,74 +38,41 @@ export default function Home() {
   const hasHydrated = useStore((s) => s._hasHydrated);
 
   const hasData = Object.keys(channels).length > 0;
-  // Data is ready when we know the final channel state:
-  // - channels exist locally (fast path from localStorage)
-  // - user is unauthenticated (no server data to wait for)
-  // - server fetch completed for authenticated users
-  const isDataReady = hasHydrated && (
-    hasData ||
-    sessionStatus === 'unauthenticated' ||
-    (sessionStatus === 'authenticated' && !isServerLoading)
-  );
+  // Ready once we know the real channel list: local channels exist, or the server
+  // fetch for a signed-in user has finished.
+  const isDataReady = hasHydrated && status === 'authenticated' && (hasData || !isServerLoading);
 
-  // Check welcome flow for new users with no channels
-  useEffect(() => {
-    if (!isDataReady || hasCheckedWelcome) return;
-
-    const channelList = Object.values(channels)
-      .filter(c => !c.isGlobalHelp && !c.isQuickSave);
-
-    if (channelList.length === 0) {
-      const hasSeenWelcome = localStorage.getItem(WELCOME_SEEN_KEY);
-      if (!hasSeenWelcome) {
-        setShowWelcome(true);
-      }
-    }
-    setHasCheckedWelcome(true);
-  }, [isDataReady, channels, hasCheckedWelcome]);
+  // The welcome flow, for a signed-in person with no channels of their own yet.
+  // Derived rather than set from an effect; this branch only renders after hydration,
+  // so reading localStorage here can't mismatch the server render.
+  const ownChannels = Object.values(channels).filter((c) => !c.isGlobalHelp && !c.isQuickSave)
+  const showWelcome = isDataReady && !welcomeDone && ownChannels.length === 0 && !welcomeSeen()
 
   const handleWelcomeClose = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
-    setShowWelcome(false);
+    setWelcomeDone(true);
   };
 
   const handleConversationalCreate = (result: ConversationalWelcomeResultData) => {
     localStorage.setItem(WELCOME_SEEN_KEY, 'true');
-    setShowWelcome(false);
-    setShowKanHelp(false);
-
-    let channel;
-    if (result.structure && result.structure.columns.length > 0) {
-      channel = createChannelWithStructure({
-        name: result.channelName,
-        description: result.channelDescription,
-        aiInstructions: result.instructions,
-        columns: result.structure.columns,
-        instructionCards: result.structure.instructionCards || [],
-      });
-    } else {
-      channel = createChannel({
-        name: result.channelName,
-        description: result.channelDescription,
-        aiInstructions: result.instructions,
-      });
-    }
-
+    setWelcomeDone(true);
+    const channel = result.structure && result.structure.columns.length > 0
+      ? createChannelWithStructure({
+          name: result.channelName,
+          description: result.channelDescription,
+          aiInstructions: result.instructions,
+          columns: result.structure.columns,
+          instructionCards: result.structure.instructionCards || [],
+        })
+      : createChannel({
+          name: result.channelName,
+          description: result.channelDescription,
+          aiInstructions: result.instructions,
+        });
     router.push(`/channel/${channel.id}`);
   };
 
-  // Loading state — show skeleton while hydrating or waiting for auth
-  if (!hasHydrated || sessionStatus === 'loading') {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500"></div>
-      </div>
-    );
-  }
-
-  // Authenticated user: always show OperatorHome (it works fine while channels load)
-  // This prevents a flash of the old "No channels" empty state during server fetch
-  if (sessionStatus === 'authenticated') {
+  if (status === 'authenticated') {
     return (
       <>
         <OperatorHome />
@@ -105,62 +83,34 @@ export default function Home() {
           isSignedIn={true}
           signInAction={signInWithGoogle}
           signInRedirectTo="/"
-          existingChannelNames={Object.values(channels).map(c => c.name)}
+          existingChannelNames={Object.values(channels).map((c) => c.name)}
         />
       </>
     );
   }
 
-  // Unauthenticated — show empty state with create option
-  return (
-    <div className="h-full">
-      <div className="relative flex h-full items-center justify-center">
-        <div className="relative z-10 text-center">
-          <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500/20 to-violet-500/20 backdrop-blur-sm">
-            <svg className="h-8 w-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-white">No channels yet</h2>
-          <p className="mt-2 text-white/50">Create your first channel to get started</p>
-          <button
-            onClick={() => setShowNewChannelOverlay(true)}
-            className="mt-6 rounded-lg bg-violet-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-violet-700"
-          >
-            Create channel
-          </button>
-        </div>
+  if (status === 'loading' || !hasHydrated) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-violet-500" />
       </div>
+    );
+  }
 
-      <NewChannelOverlay
-        isOpen={showNewChannelOverlay}
-        onClose={() => setShowNewChannelOverlay(false)}
-        onKanHelp={() => {
-          setShowNewChannelOverlay(false);
-          setShowKanHelp(true);
-        }}
-      />
-
-      <ConversationalWelcome
-        isOpen={showKanHelp}
-        onClose={() => setShowKanHelp(false)}
-        onCreate={handleConversationalCreate}
-        isSignedIn={false}
-        signInAction={signInWithGoogle}
-        signInRedirectTo="/"
-        isWelcome={false}
-        existingChannelNames={Object.values(channels).map(c => c.name)}
-      />
-
-      <ConversationalWelcome
-        isOpen={showWelcome}
-        onClose={handleWelcomeClose}
-        onCreate={handleConversationalCreate}
-        isSignedIn={false}
-        signInAction={signInWithGoogle}
-        signInRedirectTo="/"
-        existingChannelNames={Object.values(channels).map(c => c.name)}
-      />
+  // Confirmed signed out: the way in, and nothing else.
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+      <div className="mb-4 inline-flex" style={{ animation: 'kan-float 5s ease-in-out infinite' }}>
+        <KanthinkIcon size={48} className="text-white" />
+      </div>
+      <h1 className="mb-2 text-2xl font-semibold text-white">Sign in to talk to Kan</h1>
+      <p className="text-sm text-neutral-500">Your channels, shrooms and conversations are waiting.</p>
+      <form action={signInWithGoogle} className="mt-6">
+        <input type="hidden" name="redirectTo" value="/" />
+        <button type="submit" className="rounded-full bg-violet-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500">
+          Continue with Google
+        </button>
+      </form>
     </div>
   );
 }
