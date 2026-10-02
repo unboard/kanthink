@@ -1500,6 +1500,12 @@ export async function POST(request: Request) {
             for (const topic of topicTitles.slice(0, 4)) {
               searchQueries.push(`best ${contentType} ${topic} ${new Date().getFullYear()}`);
             }
+          } else if (instructionCard.webAccess?.focus?.includes('||')) {
+            // A focus written as "a || b || c" is several searches, run side by side —
+            // how the Studio scout looks at a few different groups in one run.
+            for (const part of instructionCard.webAccess.focus.split('||').map((p) => p.trim()).filter(Boolean).slice(0, 4)) {
+              searchQueries.push(part);
+            }
           } else {
             searchQueries.push(baseSearchQuery(instructionCard));
           }
@@ -1509,7 +1515,7 @@ export async function POST(request: Request) {
             : instructionCard.webAccess?.focus
               // A shroom told what to look for gets searched for exactly that. Calling it
               // "a Kanban board" pulled results toward productivity tools whatever the topic.
-              ? `Search the web for: ${instructionCard.webAccess.focus}. Return what you find with real URLs, titles, and short direct quotes from the posts.`
+              ? `Search the web for what's described below. Prefer posts from the last 12 months — today is ${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} — and skip anything older than that. For every post give its URL, its title, the month and year it was posted, and a short direct quote.`
               : `Search the web and return detailed, factual information including real URLs. The user needs real links and data for a Kanban board called "${channel.name}". Return specific URLs, titles, and descriptions.`;
 
           // Run searches in parallel

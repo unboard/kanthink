@@ -2,6 +2,7 @@
 
 import { useStore } from '@/lib/store';
 import { useStudioInfo } from '@/lib/hooks/useStudioInfo';
+import { sparkSize } from '@/lib/studio/spark';
 
 /**
  * Sparks waiting for your yes, as cards on Home.
@@ -11,6 +12,12 @@ import { useStudioInfo } from '@/lib/hooks/useStudioInfo';
  * the thread, then approve (its test page goes up) or reject with a reason (the
  * scout learns from it). Nothing shows when nothing is waiting.
  */
+const SIZE_CLS = {
+  Small: 'bg-sky-500/15 text-sky-300',
+  Mid: 'bg-violet-500/15 text-violet-300',
+  Big: 'bg-emerald-500/15 text-emerald-300',
+} as const;
+
 export function SparkCards({ onOpen }: { onOpen: (cardId: string) => void }) {
   const info = useStudioInfo();
   const channel = useStore((s) => (info ? s.channels[info.channelId] : undefined));
@@ -31,7 +38,8 @@ export function SparkCards({ onOpen }: { onOpen: (cardId: string) => void }) {
       <div className="grid gap-2 sm:grid-cols-2">
         {waiting.slice(0, 4).map((card) => {
           const first = (card.messages ?? []).find((m) => m.content?.trim())?.content ?? '';
-          const preview = card.summary || first.split('\n').map((l) => l.replace(/^[#*\->\s]+/, '').trim()).find((l) => l.length > 20) || '';
+          const size = sparkSize(first);
+          const preview = card.summary || first.split('\n').map((l) => l.replace(/^[#*\->\s]+/, '').trim()).find((l) => l.length > 20 && !/^size\s*:/i.test(l)) || '';
           return (
             <button
               key={card.id}
@@ -40,6 +48,7 @@ export function SparkCards({ onOpen }: { onOpen: (cardId: string) => void }) {
             >
               <div className="mb-1.5 flex flex-wrap gap-1">
                 <span className="inline-flex items-center rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-300">Spark</span>
+                {size && <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${SIZE_CLS[size]}`}>{size}</span>}
               </div>
               <h4 className="text-sm font-medium text-white">{card.title}</h4>
               {preview && <p className="mt-1 line-clamp-2 text-xs text-neutral-500">{preview}</p>}

@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import { channels, columns, instructionCards, studioSettings, userChannelOrg } from '@/lib/db/schema'
 import { desc, eq } from 'drizzle-orm'
-import { DEFAULT_LOOK_IN, focusFor, groupForDay } from './scoutFocus'
+import { DEFAULT_LOOK_IN, scoutFocus } from './scoutFocus'
 
 /**
  * Making, and finding, someone's Studio.
@@ -39,34 +39,43 @@ export function columnFor(studio: StudioRow, stage: StudioStage): string {
 /** The brief, as the channel's standing instructions. Kan appends what it learns. */
 export const DEFAULT_BRIEF = `Studio brief
 
-This channel finds, tests and sells small web tools. Each card is one idea: who has the problem, what they said in public, the tool, and a price to test.
+This channel finds, tests and sells web tools. Each card is one idea: who has the problem, what they said in public, how big it is, the tool, and a price to test.
 
 Who we make things for: parents and families, teachers, and one-person businesses (landlords, sitters, food trucks, resellers).
 Look in: ${DEFAULT_LOOK_IN.join(', ')}
-Price: $3 to $15, one-time unless it's used every week.
-Never: health, legal or money advice; copies of a named product; kids' apps that collect data; anything that needs accounts, sync or a server.
+Never: health, legal or money advice; copies of a named product; kids' apps that collect data.
 A test page comes before any build. Nobody is charged until the app exists.
+
+How sparks are judged:
+Size — Small: one task for one kind of person, a one-time price ($3–15), a single page we could build in a day. Mid: a weekly job for a defined group, a monthly price ($5–30), remembers their data. Big: a problem lots of people already pay real money to solve, worth growing into a product; may need accounts and a server.
+Evidence — at least two different people describing it, posted in the last 12 months. Older posts don't count.
+Pay signal — they already pay for something clumsy, or say they would.
+Competition — what exists, and why it falls short for these people.
+Each morning: three sparks from three different groups, aiming for one Small, one Mid and one Big.
 
 Learned from conversations:`
 
-export const SCOUT_INSTRUCTIONS = `You are the Studio's scout. Find new sparks: specific problems that real people describe in public — forum and Reddit threads, Q&A sites, 1–3 star reviews of paid tools — that a small single-page web tool could solve, and that someone would plausibly pay a few dollars for.
+export const SCOUT_INSTRUCTIONS = `You are the Studio's scout. Find new sparks: specific problems that real people describe in public — forum and Reddit threads, Q&A sites, 1–3 star reviews of paid tools — that a web tool could solve and that someone would pay for.
 
-Follow the Studio brief in the channel instructions: who to look for, the price range, and what to avoid.
+The web research covers a few different groups. Make one spark per group: never two from the same group, and never two built on the same post.
+
+Judge every spark with "How sparks are judged" in the Studio brief, and follow the rest of the brief: who to look for and what to avoid. Aim for a mix of sizes across the run.
 
 For each spark, create one card.
 Title: the tool's name in 2–4 plain words (for example "Sub Plan Writer").
 Content: plain paragraphs and bullet points only — no headings, because the board shows the first line as the card's preview. In this order:
 1. Open with one plain sentence: who has the problem and what it costs them.
-2. Two or three short quotes from real posts you found, each followed by where it was posted and the link.
-3. Whether anything already solves it, and how well.
-4. The tool, in one sentence.
-5. A price to test, like "$5 once" or "$4 a month".
+2. A line starting "Size:" then Small, Mid or Big, a dash, and why in a few words (who pays, how often, roughly how much).
+3. Two or three short quotes from real posts, each followed by where it was posted, the month and year it was posted, and the link — like: "quote" — r/petsitting, March 2026 (link).
+4. Whether anything already solves it, and how well.
+5. The tool, in one sentence.
+6. A price to test, like "$5 once" or "$12 a month".
 
 Rules:
-- Only use posts that appear in the web research. Never invent a quote, a number or a link. If the research doesn't support a spark, don't make it.
-- Skip anything already on this board, in any column, including Dropped.
-- Skip anything that needs accounts, sync or a server, and anything the brief rules out.
-- Prefer problems several different people describe.`
+- Only use posts that appear in the web research. Never invent a quote, a date, a number or a link. If the research doesn't support a spark, don't make it.
+- Only posts from the last 12 months count as evidence. If you can't tell when a post is from, leave it out.
+- Skip anything already on this board, in any column, including Dropped, and don't reuse a post another card already cites.
+- Skip anything the brief rules out.`
 
 export async function getStudio(userId: string): Promise<StudioRow | null> {
   const row = await db.query.studioSettings.findFirst({ where: eq(studioSettings.userId, userId) })
@@ -138,8 +147,8 @@ export async function ensureStudio(userId: string): Promise<{ studio: StudioRow;
     // approving it puts up the test page.
     autoApprove: 0,
     // Rotated each morning by the Studio cron; see scoutFocus.ts.
-    webAccess: { mode: 'always', focus: focusFor(groupForDay(DEFAULT_LOOK_IN, now)) },
-    summary: 'Reads the web each morning for problems people would pay a few dollars to lose, and writes each one up as a spark.',
+    webAccess: { mode: 'always', focus: scoutFocus(DEFAULT_LOOK_IN, now) },
+    summary: 'Reads the web each morning across three groups for recent problems people would pay to solve, sizes each one, and writes it up as a spark.',
     createdAt: now,
     updatedAt: now,
   } as typeof instructionCards.$inferInsert)

@@ -9,7 +9,7 @@ import { getStudio, type StudioRow } from './setup'
 import { pickSpark, plainForEmail, sparkBody, sparkMessage } from './spark'
 import { runFollowUps } from './people'
 import { baseUrl } from './pipeline'
-import { focusFor, groupForDay, lookInList } from './scoutFocus'
+import { lookInList, scoutFocus } from './scoutFocus'
 
 /**
  * The morning: which spark is waiting, and the once-a-day pass that drafts
@@ -52,13 +52,17 @@ function sameUtcDay(a: Date, b: Date) {
 export async function runStudioMorning(studio: StudioRow, now = new Date()) {
   const result = { userId: studio.userId, drafted: 0, sent: 0, sparkEmailed: false }
 
-  // Point tomorrow's scout at the next group on the brief's "Look in:" line.
+  // Point tomorrow's scout at the next three groups on the brief's "Look in:" line.
   if (studio.scoutShroomId) {
     const channel = await db.query.channels.findFirst({ where: eq(channels.id, studio.channelId), columns: { aiInstructions: true } })
     const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000)
-    const focus = focusFor(groupForDay(lookInList(channel?.aiInstructions), tomorrow))
+    const focus = scoutFocus(lookInList(channel?.aiInstructions), tomorrow)
     await db.update(instructionCards).set({ webAccess: { mode: 'always', focus }, updatedAt: now }).where(eq(instructionCards.id, studio.scoutShroomId))
   }
+
+  // Anything the scout wrote that hasn't been checked yet is checked before it's emailed.
+  const { auditStudioSparks } = await import('./audit')
+  await auditStudioSparks(studio, now).catch((e) => console.error('[studio] audit failed:', e))
 
   const followUps = await runFollowUps(studio.userId, { mode: studio.followUpMode === 'auto' ? 'auto' : 'ask', now })
   result.drafted = followUps.drafted

@@ -79,3 +79,11 @@ export function sparkMessage(card: SparkCandidate): string {
     'Want me to put up a test page for it? Or tell me what you’d change, or pass.',
   ].filter(Boolean).join('\n\n')
 }
+
+/** "Size: Mid — …" off the write-up, for the card on Home. */
+export function sparkSize(content: string): 'Small' | 'Mid' | 'Big' | null {
+  const m = content.match(/^\s*[*\-]?\s*\**size\**\s*:\s*\**\s*(small|mid|medium|big|large)\b/im)
+  if (!m) return null
+  const v = m[1].toLowerCase()
+  return v === 'small' ? 'Small' : v === 'big' || v === 'large' ? 'Big' : 'Mid'
+}

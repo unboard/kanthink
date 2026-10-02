@@ -132,6 +132,21 @@ export async function runShroomServerSide(options: {
       })
     }
 
+    // A Studio scout's sparks are checked before anyone sees them: links resolved,
+    // dates read, and the ones without recent evidence rejected with a reason.
+    if (cardsChanged > 0) {
+      try {
+        const { getStudioByChannel } = await import('@/lib/studio/setup')
+        const studio = await getStudioByChannel(instruction.channelId)
+        if (studio?.scoutShroomId === instruction.id) {
+          const { auditStudioSparks } = await import('@/lib/studio/audit')
+          await auditStudioSparks(studio)
+        }
+      } catch (error) {
+        console.error('[shrooms] studio spark audit failed:', error)
+      }
+    }
+
     // The run wrote its edits straight to the database, so an open board has no idea they
     // happened until its 60s safety poll. That delay is what made an auto-triggered shroom
     // look like it did nothing: the card sat there unchanged long after the work was done.

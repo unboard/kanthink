@@ -154,3 +154,71 @@ describe('spark links', () => {
     expect(plainForEmail(text)).toBe('The Problem\nLandlords waste hours.\n\n• "Is there an app?" — Forum\n• "Too pricey."')
   })
 })
+
+describe('spark audit', () => {
+  const now = new Date('2026-10-02T12:00:00Z')
+
+  it('reads the month a quote says it is from', async () => {
+    const { statedDate } = await import('../lib/studio/audit')
+    expect(statedDate('"quote" — r/petsitting, March 2026 (https://x.y)')?.toISOString().slice(0, 7)).toBe('2026-03')
+    expect(statedDate('posted Sept. 2025')?.toISOString().slice(0, 7)).toBe('2025-09')
+    expect(statedDate('on 2025-11 someone said')?.toISOString().slice(0, 7)).toBe('2025-11')
+    expect(statedDate('no date here')).toBeNull()
+  })
+
+  it('knows a six-character Reddit id is from before 2023', async () => {
+    const { isPre2023Reddit } = await import('../lib/studio/audit')
+    expect(isPre2023Reddit('https://www.reddit.com/r/RoverPetSitting/comments/xldgjm/full_timers/')).toBe(true)
+    expect(isPre2023Reddit('https://www.reddit.com/r/petsitting/comments/1ooahyy/just_another/')).toBe(false)
+    expect(isPre2023Reddit('https://example.com/comments/abc')).toBe(false)
+  })
+
+  it('keeps a spark with two recent, dated posts and rejects the rest, saying why', async () => {
+    const { readSources, sparkVerdict } = await import('../lib/studio/audit')
+    const good = [
+      '* "a" — r/petsitting, May 2026 (https://www.reddit.com/r/petsitting/comments/1abcdef/x/)',
+      '* "b" — a forum, January 2026 (https://forum.example.com/t/1)',
+    ].join('\n')
+    expect(sparkVerdict(readSources(good, now)).keep).toBe(true)
+
+    const stale = [
+      '* "a" — r/RoverPetSitting, June 2026 (https://www.reddit.com/r/RoverPetSitting/comments/xldgjm/x/)',
+      '* "b" — a forum, March 2023 (https://forum.example.com/t/2)',
+      '* "c" — undated (https://forum.example.com/t/3)',
+    ].join('\n')
+    const v = sparkVerdict(readSources(stale, now))
+    expect(v.keep).toBe(false)
+    expect(v.reason).toMatch(/before 2023/)
+    expect(v.reason).toMatch(/March 2023/)
+    expect(v.reason).toMatch(/no date/)
+  })
+
+  it('does not count a post another spark already stands on', async () => {
+    const { readSources, sparkVerdict, normaliseUrl } = await import('../lib/studio/audit')
+    const text = [
+      '* "a" — May 2026 (https://forum.example.com/t/1?utm=x)',
+      '* "b" — June 2026 (https://forum.example.com/t/9)',
+    ].join('\n')
+    const elsewhere = new Set([normaliseUrl('https://www.forum.example.com/t/1/')])
+    expect(sparkVerdict(readSources(text, now, elsewhere)).keep).toBe(false)
+  })
+
+  it('reads the size line', async () => {
+    const { sparkSize } = await import('../lib/studio/spark')
+    expect(sparkSize('Landlords lose time.\nSize: Mid — monthly for small landlords')).toBe('Mid')
+    expect(sparkSize('**Size:** Big — lots of payers')).toBe('Big')
+    expect(sparkSize('* Size: small — one task')).toBe('Small')
+    expect(sparkSize('no size')).toBeNull()
+  })
+
+  it('looks at three different groups a day, and different ones tomorrow', async () => {
+    const { groupsForDay, scoutFocus } = await import('../lib/studio/scoutFocus')
+    const list = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+    const today = groupsForDay(list, now)
+    const tomorrow = groupsForDay(list, new Date(now.getTime() + 86400000))
+    expect(new Set(today).size).toBe(3)
+    expect(today).not.toEqual(tomorrow)
+    expect(scoutFocus(list, now).split(' || ')).toHaveLength(3)
+    expect(scoutFocus(list, now)).toMatch(/2025 or 2026/)
+  })
+})
