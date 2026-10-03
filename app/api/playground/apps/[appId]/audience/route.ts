@@ -75,7 +75,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       const orders = await ordersForMember(memberId)
       const counted = orders.filter((o) => o.status === 'paid' || o.status === 'fulfilled')
       return NextResponse.json({
-        member: { ...toMember(member, messages.length, messages.at(-1)?.createdAt), orderCount: counted.length, orderTotal: counted.reduce((n, o) => n + o.amount, 0) },
+        member: { ...toMember(member, messages.length, messages.at(-1)?.createdAt), orderCount: counted.length, orderTotal: counted.reduce((n, o) => n + o.amount, 0), toFulfil: counted.filter((o) => o.status === 'paid').length },
         messages,
         orders,
       })
@@ -103,12 +103,14 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     const orders = await orderTotalsForApp(appId)
     const rank: Record<AppUserStatus, number> = { paid: 0, free: 1, canceled: 2, refunded: 3 }
     // A buyer is someone who paid: for access, or for an order.
-    const buyerRank = (m: AppAudienceMember) => (m.status === 'paid' || (m.orderCount ?? 0) > 0 ? 0 : rank[m.status] + 1)
+    // Someone with an order waiting comes first, then anyone who wrote and hasn't been read, then buyers.
+    const buyerRank = (m: AppAudienceMember) =>
+      (m.toFulfil ?? 0) > 0 ? -2 : m.unreadForOwner > 0 ? -1 : m.status === 'paid' || (m.orderCount ?? 0) > 0 ? 0 : rank[m.status] + 1
     const audience = members
       .map((m) => {
         const c = counts.get(m.id)
         const o = orders.byMember.get(m.id)
-        return { ...toMember(m, c?.count ?? 0, c?.last), orderCount: o?.count ?? 0, orderTotal: o?.total ?? 0 }
+        return { ...toMember(m, c?.count ?? 0, c?.last), orderCount: o?.count ?? 0, orderTotal: o?.total ?? 0, toFulfil: o?.toFulfil ?? 0 }
       })
       .sort((a, b) => {
         const byStatus = buyerRank(a) - buyerRank(b)

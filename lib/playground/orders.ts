@@ -272,19 +272,20 @@ export async function setOrderStatus(appId: string, orderId: string, status: 'fu
 export const COUNTED: OrderRow['status'][] = ['paid', 'fulfilled']
 
 /** Per-person order totals for one app, keyed by app user, plus the app's order revenue. */
-export async function orderTotalsForApp(appId: string): Promise<{ byMember: Map<string, { count: number; total: number }>; revenue: number; currency: string | null }> {
+export async function orderTotalsForApp(appId: string): Promise<{ byMember: Map<string, { count: number; total: number; toFulfil: number }>; revenue: number; currency: string | null }> {
   const rows = await db.query.appOrders.findMany({
     where: and(eq(appOrders.appId, appId), inArray(appOrders.status, COUNTED)),
-    columns: { appUserId: true, amount: true, currency: true },
+    columns: { appUserId: true, amount: true, currency: true, status: true },
   })
-  const byMember = new Map<string, { count: number; total: number }>()
+  const byMember = new Map<string, { count: number; total: number; toFulfil: number }>()
   let revenue = 0
   for (const r of rows) {
     revenue += r.amount
     if (!r.appUserId) continue
-    const e = byMember.get(r.appUserId) ?? { count: 0, total: 0 }
+    const e = byMember.get(r.appUserId) ?? { count: 0, total: 0, toFulfil: 0 }
     e.count += 1
     e.total += r.amount
+    if (r.status === 'paid') e.toFulfil += 1
     byMember.set(r.appUserId, e)
   }
   return { byMember, revenue, currency: rows[0]?.currency ?? null }

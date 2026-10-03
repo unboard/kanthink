@@ -647,6 +647,8 @@ export interface AppAudienceMember {
   orderCount?: number;
   /** Their order spend, minor units. */
   orderTotal?: number;
+  /** Paid orders not yet handed over. */
+  toFulfil?: number;
 }
 
 /** One order, as the owner sees it. */
@@ -665,6 +667,8 @@ export interface AppOrderView {
   buyerNote: string | null;
   shipping: Record<string, string> | null;
   appUserId?: string | null;
+  stripePaymentIntentId?: string | null;
+  fulfilledAt?: string | null;
   createdAt: string;
   paidAt: string | null;
 }
