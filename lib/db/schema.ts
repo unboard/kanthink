@@ -1587,6 +1587,21 @@ export const catlifePlayers = sqliteTable('catlife_players', {
 
 export type DbCatlifePlayer = typeof catlifePlayers.$inferSelect
 
+// ===== /mow — Clean Cut leaderboard =====
+export const mowScores = sqliteTable('mow_scores', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text('name').notNull(),
+  day: text('day').notNull(),                         // YYYY-MM-DD (daily) or 'free'
+  mode: text('mode').notNull(),                       // 'daily' | 'free'
+  money: integer('money').notNull(),
+  jobs: integer('jobs').notNull(),
+  style: integer('style').default(0),
+  quality: integer('quality').default(0),             // average success %, 0..100
+  createdAt: integer('created_at'),                   // epoch seconds
+}, (table) => [
+  index('mow_scores_day_idx').on(table.mode, table.day, table.money),
+])
+
 // ---- Kanwatch -----------------------------------------------------------------
 // Browser activity, reduced by extensions/kanwatch/privacy.js before it is stored:
 // sensitive sites keep timing only, and every text field is scrubbed. Raw visits
