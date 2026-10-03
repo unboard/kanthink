@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'app-orders-and-payment-check',
+    date: '2026-10-03',
+    kind: 'capability',
+    title: 'Apps can sell items, and Kan checks every payment flow',
+    body: 'Choose Items under Access and an app becomes a shop. Each Buy goes straight to Stripe checkout, buyers come back to a real confirmation, and orders land in Settings for you to fulfil. Kan checks that each app takes payment the way its settings say, and fixes it in one click.',
+  },
+  {
     id: 'app-styles',
     date: '2026-10-02',
     kind: 'capability',

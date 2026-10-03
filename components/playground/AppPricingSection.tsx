@@ -55,6 +55,8 @@ export function AppPricingSection({ app, onUpdated, onFixPayments, busy }: Props
   const [error, setError] = useState<string | null>(null);
   const [choosingPrice, setChoosingPrice] = useState(false);
   const [checking, setChecking] = useState(false);
+  /** True while answers the owner just gave are being saved and re-read. */
+  const [savingSetup, setSavingSetup] = useState(false);
 
   const charging = !!app.paywallEnabled;
   const hasCode = Boolean(app.code);
@@ -114,6 +116,7 @@ export function AppPricingSection({ app, onUpdated, onFixPayments, busy }: Props
 
   const askKan = async (setup?: PaymentSetup) => {
     setChecking(true);
+    if (setup) setSavingSetup(true);
     try {
       const res = await fetch(`/api/playground/apps/${app.id}/payments`, {
         method: 'POST',
@@ -124,6 +127,7 @@ export function AppPricingSection({ app, onUpdated, onFixPayments, busy }: Props
       if (res.ok && data?.app) onUpdated(data.app as PlaygroundApp);
     } catch { /* stays as it was */ } finally {
       setChecking(false);
+      setSavingSetup(false);
     }
   };
 
@@ -244,7 +248,7 @@ export function AppPricingSection({ app, onUpdated, onFixPayments, busy }: Props
 
         {/* The questions that decide how the app should take money. */}
         {charging && hasCode && (status.settings.mode === 'order' || status.settings.mode === 'action') && (
-          <SetupQuestions app={app} mode={status.settings.mode} onSave={(setup) => void askKan(setup)} saving={checking} />
+          <SetupQuestions app={app} mode={status.settings.mode} onSave={(setup) => void askKan(setup)} saving={savingSetup} />
         )}
 
         {/* The overseer: does the app actually take money the way the settings say? */}
