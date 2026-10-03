@@ -437,7 +437,7 @@ function OrderSheet({ order, onClose, onStatus, onMessage }: {
     : [];
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:justify-end sm:px-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
       <div role="dialog" aria-label={`Order #${order.number}`} className="relative max-h-[80dvh] w-full max-w-[560px] overflow-y-auto rounded-t-2xl border border-neutral-200 bg-white shadow-2xl dark:border-neutral-800 dark:bg-neutral-900">
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-neutral-300 dark:bg-neutral-700" aria-hidden />
