@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { appMessages, appUsers, playgroundApps, users } from '@/lib/db/schema'
+import { appMessages, appUsers, playgroundApps } from '@/lib/db/schema'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import type { AppAudienceMember, AppThreadMessage, AppUserStatus } from '@/lib/types'
 import { orderTotalsForApp, ordersForMember } from '@/lib/playground/orders'
+import { postFromPublisher } from '@/lib/playground/appThread'
 import { appPurchases } from '@/lib/db/schema'
 import { inArray } from 'drizzle-orm'
 
@@ -239,55 +240,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const text = (body.body || '').trim()
     if (!text) return NextResponse.json({ error: 'Write something first' }, { status: 400 })
 
-    const id = crypto.randomUUID()
-    const now = new Date()
-    await db.insert(appMessages).values({
-      id,
-      appId,
-      appUserId: member.id,
-      sender: 'publisher',
-      body: text.slice(0, 4000),
-      isRead: false,
-      createdAt: now,
-    })
-    await db.update(appUsers).set({ updatedAt: now }).where(eq(appUsers.id, member.id))
-
-    // Email regardless of whether they have a Kanthink account: most people who
-    // leave feedback on a web app never return to the page, so a reply that only
-    // lives inside the app is a reply nobody reads. The thread is still the record.
-    if (app.shareToken) {
-      const { sendAppReplyEmail } = await import('@/lib/emails/send')
-      const publisher = await db.query.users.findFirst({
-        where: eq(users.id, session.user.id),
-        columns: { name: true },
-      })
-      void sendAppReplyEmail(member.email, {
-        appTitle: app.title,
-        publisherName: publisher?.name || '',
-        message: text.slice(0, 1000),
-        appUrl: `${process.env.NEXTAUTH_URL || 'https://kanthink.com'}/play/${app.shareToken}`,
-      }).catch(() => {})
-    }
-
-    // A Kanthink account also gets it in the normal notification path.
-    if (member.userId) {
-      const { createNotification } = await import('@/lib/notifications/createNotification')
-      await createNotification({
-        userId: member.userId,
-        type: 'app_reply',
-        title: `Reply about ${app.title}`,
-        body: text.slice(0, 200),
-        data: { appId, shareToken: app.shareToken, kind: 'app_reply' },
-      })
-    }
-
-    const message: AppThreadMessage = {
-      id,
-      sender: 'publisher',
-      body: text,
-      isRead: false,
-      createdAt: now.toISOString(),
-    }
+    const message = await postFromPublisher({ app, member, publisherUserId: session.user.id, body: text })
     return NextResponse.json({ message })
   } catch (error) {
     if (error instanceof PermissionError) {

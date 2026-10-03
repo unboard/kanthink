@@ -33,7 +33,7 @@ export function notificationUrl(input: { type: string; data?: Record<string, unk
   const d = input.data ?? {}
   const channelId = d.channelId as string | undefined
   if (channelId && d.cardId && d.appId) {
-    return `/channel/${channelId}/card/${d.cardId}?app=${d.appId}${input.type === 'app_order' ? '&pane=people' : ''}`
+    return `/channel/${channelId}/card/${d.cardId}?app=${d.appId}${input.type === 'app_order' || input.type === 'app_feedback' ? '&pane=people' : ''}`
   }
   return channelId ? `/channel/${channelId}` : '/'
 }

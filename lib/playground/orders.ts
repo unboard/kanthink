@@ -1,7 +1,8 @@
 import type Stripe from 'stripe'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { appOrders, playgroundApps } from '@/lib/db/schema'
+import { appOrders, playgroundApps, users } from '@/lib/db/schema'
+import { replyAddress } from '@/lib/email/replyRouting'
 import { stripe } from '@/lib/stripe'
 import { createNotification } from '@/lib/notifications/createNotification'
 import { formatAppPrice, takesOrders } from './appAccess'
@@ -172,6 +173,8 @@ async function emailBuyer(order: OrderRow) {
   })
   if (!app) return
   const origin = process.env.NEXTAUTH_URL?.startsWith('https://') ? process.env.NEXTAUTH_URL : 'https://www.kanthink.com'
+  const owner = await db.query.users.findFirst({ where: eq(users.id, order.ownerId), columns: { email: true } })
+  const replyTo = order.appUserId ? replyAddress({ appUserId: order.appUserId, as: 'user' }, owner?.email) : owner?.email
   await sendAppOrderConfirmedEmail(order.buyerEmail, {
     buyerName: order.buyerName || '',
     shopName: app.title,
@@ -181,7 +184,7 @@ async function emailBuyer(order: OrderRow) {
     amount: formatAppPrice(order.amount, order.currency, null),
     fulfilmentNote: app.paymentSetup?.fulfilmentNote || '',
     shopUrl: `${origin}${order.returnPath || `/play/${app.shareToken}`}`,
-  }).catch((error) => console.warn('[orders] receipt email failed:', error))
+  }, replyTo).catch((error) => console.warn('[orders] receipt email failed:', error))
 }
 
 async function notifyOwner(order: OrderRow) {

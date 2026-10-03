@@ -7,6 +7,8 @@ interface AppReplyProps {
   publisherName: string
   message: string
   appUrl: string
+  /** True when replying to this email lands in the conversation. */
+  replyLands?: boolean
 }
 
 /**
@@ -16,7 +18,7 @@ interface AppReplyProps {
  * page, so a reply that only lives inside the app is a reply nobody reads. The
  * conversation still lives in the app — this just points at it.
  */
-export function AppReply({ appTitle, publisherName, message, appUrl }: AppReplyProps) {
+export function AppReply({ appTitle, publisherName, message, appUrl, replyLands }: AppReplyProps) {
   return (
     <BaseLayout previewText={`Reply about ${appTitle}`}>
       <Text style={heading}>Reply about {appTitle}</Text>
@@ -28,8 +30,9 @@ export function AppReply({ appTitle, publisherName, message, appUrl }: AppReplyP
         Open {appTitle}
       </Button>
       <Text style={muted}>
-        Reply from the Feedback button inside the app — that is where the whole
-        conversation lives.
+        {replyLands
+          ? `Just reply to this email to answer ${publisherName || 'them'}.`
+          : `Reply to this email to answer ${publisherName || 'them'} directly, or use the Feedback button inside the app.`}
       </Text>
     </BaseLayout>
   )

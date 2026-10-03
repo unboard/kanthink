@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { appMessages, appUsers } from '@/lib/db/schema'
+import { appMessages } from '@/lib/db/schema'
 import { and, asc, eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { accessCookieName, canReadPrivateData } from '@/lib/playground/appAccess'
 import { resolveAppSession } from '@/lib/playground/appSession'
-import { createNotification } from '@/lib/notifications/createNotification'
+import { postFromUser } from '@/lib/playground/appThread'
 import {
   ensureAppUser,
   findAppOwnerId,
@@ -119,36 +119,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       member = await ensureAppUser({ appId: app.id, ownerId, email, name: body.name })
     }
 
-    const id = crypto.randomUUID()
-    const now = new Date()
-    await db.insert(appMessages).values({
-      id,
-      appId: app.id,
-      appUserId: member.id,
-      sender: 'user',
-      body: text,
-      isRead: false,
-      createdAt: now,
-    })
-    await db.update(appUsers)
-      .set({ unreadForOwner: member.unreadForOwner + 1, lastSeenAt: now, updatedAt: now })
-      .where(eq(appUsers.id, member.id))
-
-    await createNotification({
-      userId: member.ownerId,
-      type: 'app_feedback',
-      title: `${member.name || member.email} on ${app.title}`,
-      body: text.slice(0, 200),
-      data: { appId: app.id, appUserId: member.id, kind: 'app_feedback' },
-    })
-
-    const message: AppThreadMessage = {
-      id,
-      sender: 'user',
-      body: text,
-      isRead: false,
-      createdAt: now.toISOString(),
-    }
+    // The same path an emailed reply takes: thread, notification, and an email to
+    // the maker they can answer by replying.
+    const message = await postFromUser({ app, member, body: text, via: 'app' })
 
     // No cookie is ever minted here. Writing is open to anyone, so issuing a
     // session on a write would hand an account to whoever typed the address — which

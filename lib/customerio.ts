@@ -50,11 +50,14 @@ export async function sendTransactionalEmail({
   subject,
   html,
   attachments,
+  replyTo,
 }: {
   to: string
   subject: string
   html: string
   attachments?: Array<{ filename: string; data: Buffer }>
+  /** Where a reply goes, when it shouldn't be Kan's sending address. */
+  replyTo?: string | null
 }): Promise<boolean> {
   if (!cioApi) {
     console.warn('[CIO] API client not configured, skipping email')
@@ -65,6 +68,7 @@ export async function sendTransactionalEmail({
 
   try {
     const request = new SendEmailRequest({
+      ...(replyTo ? { reply_to: replyTo } : {}),
       transactional_message_id: messageId,
       to,
       from: process.env.CUSTOMERIO_FROM_EMAIL || 'kan@kanthink.com',
