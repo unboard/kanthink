@@ -1,3 +1,4 @@
+import { isValidTimeZone, nextWallClock } from './time/zone';
 import type { InstructionCard, AutomaticSafeguards, TriggerType, CardEvent } from './types';
 
 export interface SafeguardCheck {
@@ -135,9 +136,18 @@ export function getExecutionUpdate(instruction: InstructionCard, success: boolea
 export function calculateNextScheduledRun(
   interval: 'hourly' | 'every4hours' | 'daily' | 'weekly',
   specificTime?: string,
-  dayOfWeek?: number
+  dayOfWeek?: number,
+  /**
+   * Whose clock "06:00" is on. In a browser the local clock is the person's, so
+   * leave it out. On the server (UTC) always pass it, or "06:00" means 1 AM in
+   * Chicago. See scheduleNextRun for the server's version.
+   */
+  timeZone?: string | null
 ): Date {
   const now = new Date();
+  if (timeZone && isValidTimeZone(timeZone) && (interval === 'daily' || interval === 'weekly')) {
+    return nextWallClock(specificTime || '06:00', timeZone, now, interval === 'weekly' ? (dayOfWeek ?? 1) : undefined);
+  }
 
   switch (interval) {
     case 'hourly': {
@@ -200,4 +210,33 @@ export function isScheduledTriggerDue(nextScheduledRun: string | undefined): boo
   if (!nextScheduledRun) return false;
   const scheduledTime = new Date(nextScheduledRun);
   return scheduledTime <= new Date();
+}
+
+
+/**
+ * The next run for a scheduled shroom, computed on the server.
+ *
+ * With the owner's timezone, the schedule is exact, DST included. Without one, it
+ * keeps whatever wall-clock time the schedule was set to in their browser by
+ * stepping the previous run forward a day (or a week) at a time; recomputing it
+ * with the server's UTC clock is what moved a 6 AM shroom to 1 AM.
+ */
+export function scheduleNextRun(
+  trigger: { interval: 'hourly' | 'every4hours' | 'daily' | 'weekly'; specificTime?: string; dayOfWeek?: number },
+  previous: string | Date | null | undefined,
+  timeZone?: string | null,
+  now: Date = new Date()
+): Date {
+  const { interval } = trigger;
+  if ((interval === 'daily' || interval === 'weekly') && timeZone && isValidTimeZone(timeZone)) {
+    return nextWallClock(trigger.specificTime || '06:00', timeZone, now, interval === 'weekly' ? (trigger.dayOfWeek ?? 1) : undefined);
+  }
+  const step = interval === 'hourly' ? 3600e3 : interval === 'every4hours' ? 4 * 3600e3 : interval === 'weekly' ? 7 * 86400e3 : 86400e3;
+  const prev = previous ? new Date(previous) : null;
+  if (prev && !Number.isNaN(prev.getTime())) {
+    let next = prev.getTime();
+    while (next <= now.getTime()) next += step;
+    return new Date(next);
+  }
+  return calculateNextScheduledRun(interval, trigger.specificTime, trigger.dayOfWeek);
 }

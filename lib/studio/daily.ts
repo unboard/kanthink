@@ -2,6 +2,9 @@ import { render } from '@react-email/render'
 import React from 'react'
 import { db } from '@/lib/db'
 import { appEmails, cards, channels, instructionCards, studioSettings, users } from '@/lib/db/schema'
+import { isValidTimeZone, zoneDay, zoneParts } from '@/lib/time/zone'
+import { scheduleNextRun } from '@/lib/automationSafeguards'
+import type { ScheduledTrigger } from '@/lib/types'
 import { and, eq, gte } from 'drizzle-orm'
 import { sendTransactionalEmail } from '@/lib/customerio'
 import { SparkEmail } from '@/lib/emails/SparkEmail'
@@ -48,9 +51,67 @@ function sameUtcDay(a: Date, b: Date) {
   return a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10)
 }
 
+/** Hour of the owner's day the morning happens: after a 6 AM scout has had time to finish. */
+const MORNING_HOUR = 7
+
+async function ownerZone(userId: string): Promise<string | null> {
+  const owner = await db.query.users.findFirst({ where: eq(users.id, userId), columns: { timezone: true } })
+  return owner?.timezone && isValidTimeZone(owner.timezone) ? owner.timezone : null
+}
+
+/**
+ * Is it this Studio's morning, and hasn't it happened yet today?
+ *
+ * In the owner's timezone when we know it. Without one, the morning follows the
+ * scout's own schedule: an hour after its slot, once a day.
+ */
+export async function morningDue(studio: StudioRow, now = new Date()): Promise<boolean> {
+  const tz = await ownerZone(studio.userId)
+  if (tz) {
+    if (zoneParts(now, tz).hour < MORNING_HOUR) return false
+    return !studio.lastMorningAt || zoneDay(studio.lastMorningAt, tz) !== zoneDay(now, tz)
+  }
+  if (studio.lastMorningAt && now.getTime() - studio.lastMorningAt.getTime() < 20 * 3600e3) return false
+  const scout = studio.scoutShroomId
+    ? await db.query.instructionCards.findFirst({ where: eq(instructionCards.id, studio.scoutShroomId), columns: { nextScheduledRun: true } })
+    : null
+  // The scout's slot today is its next run less a day, once that run has moved on.
+  const next = scout?.nextScheduledRun ? new Date(scout.nextScheduledRun).getTime() : null
+  if (!next) return true
+  const slotToday = next > now.getTime() ? next - 24 * 3600e3 : next
+  return now.getTime() >= slotToday + 3600e3
+}
+
+/**
+ * Make sure the scout has run today, and run it now if it hasn't. The scout's own
+ * schedule should have taken care of it; this is the guarantee that a missed or
+ * failed scheduled run never means a morning with nothing in it.
+ */
+async function ensureScoutRan(studio: StudioRow, now: Date): Promise<string> {
+  if (!studio.scoutShroomId) return 'no scout'
+  const row = await db.query.instructionCards.findFirst({ where: eq(instructionCards.id, studio.scoutShroomId) })
+  if (!row || !row.isEnabled) return 'scout off'
+  if (row.lastExecutedAt && now.getTime() - row.lastExecutedAt.getTime() < 20 * 3600e3) return 'already ran'
+  const { rowToInstructionCard, runShroomServerSide } = await import('@/lib/shrooms/runServerSide')
+  const instruction = rowToInstructionCard(row)
+  const scheduled = (instruction.triggers ?? []).find((t) => t.type === 'scheduled') as ScheduledTrigger | undefined
+  const result = await runShroomServerSide({
+    instruction,
+    triggerType: 'scheduled',
+    nextScheduledRun: scheduled ? scheduleNextRun(scheduled, instruction.nextScheduledRun, await ownerZone(studio.userId), now) : undefined,
+  })
+  return `ran: ${result.status}${result.detail ? ` (${result.detail})` : ''}`
+}
+
 /** The once-a-day pass for one person. Returns what happened, for the cron's log. */
 export async function runStudioMorning(studio: StudioRow, now = new Date()) {
-  const result = { userId: studio.userId, drafted: 0, sent: 0, sparkEmailed: false }
+  const result = { userId: studio.userId, scout: '', drafted: 0, sent: 0, sparkEmailed: false }
+
+  // Marked first, so an hourly cron can't start a second morning while this one
+  // is still waiting on the scout.
+  await db.update(studioSettings).set({ lastMorningAt: now, updatedAt: now }).where(eq(studioSettings.userId, studio.userId))
+
+  result.scout = await ensureScoutRan(studio, now).catch((e) => `failed: ${e instanceof Error ? e.message : e}`)
 
   // Point tomorrow's scout at the next three groups on the brief's "Look in:" line.
   if (studio.scoutShroomId) {

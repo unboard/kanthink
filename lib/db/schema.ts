@@ -25,6 +25,8 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   emailVerified: integer('email_verified', { mode: 'timestamp' }),
   image: text('image'),
+  /** IANA timezone from their browser, so schedules run at their 06:00, not the server's. */
+  timezone: text('timezone'),
 
   // Subscription fields
   stripeCustomerId: text('stripe_customer_id'),
@@ -1787,6 +1789,8 @@ export const studioSettings = sqliteTable('studio_settings', {
   /** Sparks already raised with you, so the same one never opens Home twice. */
   handledSparkIds: safeJsonText<string[]>([])('handled_spark_ids').default([]),
   lastSparkEmailAt: integer('last_spark_email_at', { mode: 'timestamp' }),
+  /** When the Studio morning last ran (scout checked, sparks audited, email sent). Once a day, at the owner's 7 AM. */
+  lastMorningAt: integer('last_morning_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })

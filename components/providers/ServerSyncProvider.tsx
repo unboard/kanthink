@@ -614,6 +614,18 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
         subscribeToChannels(loadedChannelIdsRef.current)
       }
 
+      // Tell the server this person's timezone, so their schedules run on their
+      // clock. Only when it changes: travel, or the first time.
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+        const key = `kanthink-tz:${session.user.id}`
+        if (tz && localStorage.getItem(key) !== tz) {
+          fetch('/api/user/timezone', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ timeZone: tz }) })
+            .then((r) => { if (r.ok) localStorage.setItem(key, tz) })
+            .catch(() => {})
+        }
+      } catch { /* no storage or no Intl: schedules keep their stored times */ }
+
       // Register service worker for browser notifications, and keep this browser's
       // Web Push subscription current when permission was already given.
       registerServiceWorker().then(() => { void subscribeToPush() })

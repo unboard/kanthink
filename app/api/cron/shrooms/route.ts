@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { instructionCards } from '@/lib/db/schema'
+import { channels, instructionCards, users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { isScheduledTriggerDue, calculateNextScheduledRun } from '@/lib/automationSafeguards'
+import { isScheduledTriggerDue, scheduleNextRun } from '@/lib/automationSafeguards'
 import { runShroomServerSide, rowToInstructionCard } from '@/lib/shrooms/runServerSide'
 import type { AutomaticTrigger, ScheduledTrigger } from '@/lib/types'
 
@@ -22,8 +22,27 @@ import type { AutomaticTrigger, ScheduledTrigger } from '@/lib/types'
  * The actual running lives in lib/shrooms/runServerSide.ts, shared with the event-trigger
  * path so a scheduled run and a card-triggered one behave identically.
  *
+ * Runs hourly. It used to run once a day at 07:00 UTC, which meant a shroom set for
+ * 6 AM Chicago (11:00 UTC) was never due when the cron looked, and nothing looked
+ * again until the next day, so scheduled shrooms silently skipped days.
+ *
  * Protected by CRON_SECRET (Vercel sends it automatically).
  */
+export const runtime = 'nodejs'
+// A scout searches the web and writes several cards; a few of them in one tick can
+// take minutes.
+export const maxDuration = 800
+
+/** Each channel owner's timezone, so "06:00" is their 6 AM. */
+async function ownerTimeZone(channelId: string, cache: Map<string, string | null>): Promise<string | null> {
+  if (cache.has(channelId)) return cache.get(channelId)!
+  const channel = await db.query.channels.findFirst({ where: eq(channels.id, channelId), columns: { ownerId: true } })
+  const owner = channel ? await db.query.users.findFirst({ where: eq(users.id, channel.ownerId), columns: { timezone: true } }) : null
+  const tz = owner?.timezone ?? null
+  cache.set(channelId, tz)
+  return tz
+}
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   const cronSecret = process.env.CRON_SECRET
@@ -51,6 +70,7 @@ export async function GET(req: NextRequest) {
   await ensureSchema()
 
   const results: { id: string; title: string; status: string; detail?: string }[] = []
+  const zones = new Map<string, string | null>()
 
   // Only enabled shrooms can be scheduled; everything else is manual-only.
   const candidates = await db.query.instructionCards.findMany({
@@ -70,11 +90,7 @@ export async function GET(req: NextRequest) {
     const result = await runShroomServerSide({
       instruction,
       triggerType: 'scheduled',
-      nextScheduledRun: calculateNextScheduledRun(
-        scheduled.interval,
-        scheduled.specificTime,
-        scheduled.dayOfWeek
-      ),
+      nextScheduledRun: scheduleNextRun(scheduled, instruction.nextScheduledRun, await ownerTimeZone(row.channelId, zones)),
     })
 
     results.push({

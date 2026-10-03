@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { runStudioMorning } from '@/lib/studio/daily'
+import { morningDue, runStudioMorning } from '@/lib/studio/daily'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 800
 
 /**
  * GET /api/cron/studio
  *
- * Once a day, after the shroom cron has sent the scouts out: draft (or send) the
- * follow-ups, and email each Studio owner the morning spark.
+ * Runs hourly; each Studio's morning happens once a day, at 7 AM in its owner's
+ * timezone (runStudioMorning decides). The morning makes sure the scout has run
+ * today, running it itself if the schedule missed, then audits the sparks, drafts
+ * follow-ups and sends the spark email. It doesn't rely on the shroom cron having
+ * happened to run first.
  *
  * Fails closed on CRON_SECRET, like the shroom cron — it sends email.
  */
@@ -24,6 +27,7 @@ export async function GET(req: NextRequest) {
   const results = []
   for (const studio of studios) {
     try {
+      if (!(await morningDue(studio))) { results.push({ userId: studio.userId, skipped: 'not this hour' }); continue }
       results.push(await runStudioMorning(studio))
     } catch (error) {
       console.error('[cron/studio] failed for', studio.userId, error)
