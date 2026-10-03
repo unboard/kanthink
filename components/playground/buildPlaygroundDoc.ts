@@ -63,9 +63,17 @@ export function buildPlaygroundDoc(
      * there is nothing inside to buy, and kanthinkPay reflects that.
      */
     pay?: {
+      /**
+       * 'action' sells access to something inside (unlock); 'order' is a shop, where
+       * every purchase is its own order (order). Absent means 'action', which is all
+       * there was before shops existed.
+       */
+      mode?: 'action' | 'order';
       entitled: boolean;
       price: string;
       recurring: boolean;
+      /** A shop: the order the buyer just paid for, when they have come back from checkout. */
+      lastOrder?: Record<string, unknown> | null;
       /** Only present when entitled. */
       token?: string | null;
       /**
@@ -505,13 +513,16 @@ ${styleHead.css}
     pay
       ? {
           enabled: true,
-          entitled: !!pay.entitled,
+          mode: pay.mode === 'order' ? 'order' : 'action',
+          entitled: pay.mode === 'order' ? false : !!pay.entitled,
           price: pay.price,
-          recurring: !!pay.recurring,
+          recurring: pay.mode === 'order' ? false : !!pay.recurring,
           preview: !!pay.preview,
+          lastOrder: pay.mode === 'order' ? pay.lastOrder ?? null : null,
+          appTitle: title,
         }
       : null,
-  )};
+  ).replace(/</g, '\\u003c')};
   var __KPG_PAY_TOKEN = ${JSON.stringify(payToken)};
 
   window.kanthinkPay = {
@@ -529,6 +540,38 @@ ${styleHead.css}
     price: (__KPG_PAY && __KPG_PAY.price) || '',
     /** True for a subscription, false for a one-off. */
     recurring: !!(__KPG_PAY && __KPG_PAY.recurring),
+    /** 'action' when the app sells access to something inside, 'order' when it is a shop, null when free. */
+    mode: (__KPG_PAY && __KPG_PAY.mode) || null,
+    /**
+     * A shop only: the order the buyer just paid for, set when they come back from
+     * checkout. Show the confirmation from this and nothing else.
+     */
+    lastOrder: (__KPG_PAY && __KPG_PAY.lastOrder) || null,
+    /**
+     * A shop only: start checkout for one order. { item, quantity?, details? }.
+     * The price is the server's. Returns false when the app isn't taking orders.
+     */
+    order: function(opts) {
+      if (!__KPG_PAY || __KPG_PAY.mode !== 'order') return false;
+      opts = opts || {};
+      var item = String(opts.item || '').trim();
+      if (!item) { console.error('kanthinkPay.order needs { item }'); return false; }
+      var quantity = Math.max(1, Math.floor(Number(opts.quantity || 1)) || 1);
+      var details = opts.details && typeof opts.details === 'object' ? opts.details : null;
+      if (__KPG_PAY.preview) {
+        // The owner's draft: nothing is charged. Show the paid side at once, marked as a preview.
+        var fake = { id: 'preview', number: 0, item: item, quantity: quantity, amount: __KPG_PAY.price, status: 'paid', details: details, fulfilmentNote: null, preview: true };
+        __KPG_PAY.lastOrder = fake;
+        window.kanthinkPay.lastOrder = fake;
+        try {
+          window.dispatchEvent(new CustomEvent("kanthink:order", { detail: fake }));
+          parent.postMessage({ type: "kpg_order_preview", order: { item: item, quantity: quantity } }, "*");
+        } catch(_) {}
+        return true;
+      }
+      try { parent.postMessage({ type: "kpg_order", order: { item: item, quantity: quantity, details: details } }, "*"); } catch(_) {}
+      return true;
+    },
     /**
      * Open the host's purchase sheet. Call it from the button the person pressed.
      *
@@ -537,6 +580,9 @@ ${styleHead.css}
      */
     unlock: function() {
       if (!__KPG_PAY || !__KPG_PAY.enabled) return false;
+      // A shop has nothing to unlock. An app built against the wrong flow still
+      // charges per purchase rather than giving everything away after one payment.
+      if (__KPG_PAY.mode === 'order') return window.kanthinkPay.order({ item: __KPG_PAY.appTitle || 'Order' });
       if (__KPG_PAY.entitled) return false;
       if (__KPG_PAY.preview) {
         // A draft preview has no buyer. Flip it here and tell anyone listening,

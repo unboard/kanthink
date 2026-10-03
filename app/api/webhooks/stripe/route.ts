@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { recordAppPurchase, checkoutIsPaid, checkoutInterval } from '@/lib/playground/appPurchase'
+import { markOrderPaid, refundOrderByIntent } from '@/lib/playground/orders'
 import {
   endPurchase,
   findPurchaseByPaymentIntent,
@@ -60,6 +61,13 @@ export async function POST(request: Request) {
       case 'checkout.session.completed':
       case 'checkout.session.async_payment_succeeded': {
         const session = event.data.object as Stripe.Checkout.Session
+
+        // An order in a shop built in the app builder. Its own thing: it buys an
+        // item, not access, and never touches a Kanthink plan.
+        if (session.metadata?.kanthinkOrderId) {
+          await markOrderPaid(session)
+          break
+        }
 
         // A published app being bought. These sessions carry the app and the buyer
         // in their metadata, and have nothing to do with Kanthink subscriptions —
@@ -193,6 +201,8 @@ export async function POST(request: Request) {
         const intentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null
         // This event fires for partial refunds too. A goodwill partial refund is not
         // a cancellation; access ends only when the whole charge has been returned.
+        // An order refunded in full is marked refunded for the shop's owner.
+        if (intentId && charge.refunded && (await refundOrderByIntent(intentId))) break
         if (intentId && charge.refunded) {
           // The one purchase that payment bought. A sibling purchase under the same
           // address is a different transaction and keeps its access.

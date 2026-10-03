@@ -178,7 +178,7 @@ export function isPurchaseActive(purchase: PurchaseRef, now: Date = new Date()):
  * is re-checked on the server against a token this file mints. Gate the UI here;
  * gate the capability there.
  */
-export type PaywallMode = 'app' | 'action';
+export type PaywallMode = 'app' | 'action' | 'order';
 
 export interface PaywallState {
   paywallEnabled?: boolean | null;
@@ -187,9 +187,24 @@ export interface PaywallState {
   stripePriceId?: string | null;
 }
 
-/** Null and anything unrecognised mean 'app' — the safer of the two. */
+/** Null and anything unrecognised mean 'app' — the safest of the three. */
 export function paywallMode(app: PaywallState): PaywallMode {
-  return app.paywallMode === 'action' ? 'action' : 'app';
+  return app.paywallMode === 'action' ? 'action' : app.paywallMode === 'order' ? 'order' : 'app';
+}
+
+/** Is a price configured and switched on, whatever it buys? */
+function charging(app: PaywallState): boolean {
+  return Boolean(app.paywallEnabled && app.priceAmount && app.priceAmount > 0 && app.stripePriceId);
+}
+
+/**
+ * Is this app a shop — selling items one order at a time?
+ *
+ * Deliberately not isPaywalled: a shop sells things, not access, so everything that
+ * guards access (the door, sign-in for saved work, AI entitlement) treats it as free.
+ */
+export function takesOrders(app: PaywallState): boolean {
+  return charging(app) && paywallMode(app) === 'order';
 }
 
 /**
@@ -214,7 +229,9 @@ export function gatesAction(app: PaywallState): boolean {
  * configured would otherwise lock everyone out of something nobody can buy.
  */
 export function isPaywalled(app: PaywallState): boolean {
-  return Boolean(app.paywallEnabled && app.priceAmount && app.priceAmount > 0 && app.stripePriceId);
+  // A shop sells items, not access. Treating it as paywalled would send someone
+  // signing in to see their saved work to a checkout instead.
+  return charging(app) && paywallMode(app) !== 'order';
 }
 
 /**

@@ -9,14 +9,17 @@ import { checkDesign, findingsBrief } from './slopCheck'
  * which pass, never what it says.
  */
 
-export type StylePass = 'restyle' | 'polish' | 'bolder' | 'quieter' | 'fix'
+export type StylePass = 'restyle' | 'polish' | 'bolder' | 'quieter' | 'fix' | 'payments'
 
 export const STYLE_PASSES: StylePass[] = ['restyle', 'polish', 'bolder', 'quieter', 'fix']
+
+/** Every pass a build accepts, including the payment fix, whose brief is written in generateApp. */
+export const BUILD_PASSES: StylePass[] = [...STYLE_PASSES, 'payments']
 
 const VISUAL_ONLY = `This is a VISUAL pass. You may change classes, spacing, typography, layout and component markup anywhere in the app. You must NOT change behaviour: same features, same state shape, same window.kanthinkData keys, same calculations, same flows, and copy that means the same thing. Every feature that works now must still work.`
 
 export function isStylePass(value: unknown): value is StylePass {
-  return typeof value === 'string' && (STYLE_PASSES as string[]).includes(value)
+  return typeof value === 'string' && (BUILD_PASSES as string[]).includes(value)
 }
 
 /** The message that appears in the thread, in the owner's voice. */
@@ -26,6 +29,7 @@ export const PASS_LABEL: Record<StylePass, string> = {
   bolder: 'Make the design bolder',
   quieter: 'Make the design quieter',
   fix: 'Fix what the design check found',
+  payments: 'Fix how the app takes payment',
 }
 
 export function passPrompt(pass: StylePass, code: string | null | undefined, look?: string | null): string {
@@ -60,6 +64,9 @@ Increase the confidence, not the decoration: a bigger, heavier font-heading scal
 ${VISUAL_ONLY}
 
 Turn the volume down: colour only for the primary action and real state; lighter weights; more whitespace; fewer borders, badges, icons and dividers; secondary text in text-muted-foreground. Remove decoration that isn't helping someone use the app.`
+    case 'payments':
+      // Written in generateApp, which has the app's settings and Kan's review.
+      return PASS_LABEL.payments
     case 'fix': {
       const { findings } = checkDesign(code, { hasStyle: true, look })
       const brief = findings.length ? findingsBrief(findings) : '- Nothing flagged. Make no changes.'

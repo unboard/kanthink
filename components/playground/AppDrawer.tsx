@@ -15,13 +15,16 @@ import { isFromFrame } from '@/lib/playground/useAppStorage';
 import { AppAudiencePane } from './AppAudiencePane';
 import { AppThumbnailDialog } from './AppThumbnailDialog';
 import { AppPricingSection } from './AppPricingSection';
+import { AppOrdersSection } from './AppOrdersSection';
+import { takesOrders } from '@/lib/playground/appAccess';
+import { paymentStatus } from '@/lib/playground/payments/status';
 import { AppReleaseSection } from './AppReleaseSection';
 import { AppSpendSection } from './AppSpendSection';
 import { AppStylePane } from './AppStylePane';
 import { PASS_LABEL, type StylePass } from '@/lib/playground/style/passes';
 import type { AppStyle } from '@/lib/playground/style/tokens';
 import { resolveDeps } from '@/lib/playground/runtime';
-import { formatAppPrice } from '@/lib/playground/appAccess';
+import { previewPay as previewPayFor } from '@/lib/playground/payments/settings';
 import type { Card, CardMessage, CardMessageType, ID, PlaygroundApp, WhiteboardAttachment } from '@/lib/types';
 import {
   PLAYGROUND_MODELS,
@@ -207,15 +210,8 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   // An action-gated app shows the author its locked state, with unlock() flipping
   // it in place. Nothing is charged here — the server lets a draft token through
   // regardless, so the paid path can actually be exercised.
-  const previewPay = app?.paywallEnabled && app?.paywallMode === 'action'
-    ? {
-        entitled: false,
-        price: formatAppPrice(app.priceAmount, app.priceCurrency, app.priceInterval),
-        recurring: app.priceInterval === 'month' || app.priceInterval === 'year',
-        preview: true,
-      }
-    : null;
-  const previewPayKey = previewPay ? `${previewPay.price}:${previewPay.recurring}` : '';
+  const previewPay = app ? previewPayFor(app) : null;
+  const previewPayKey = previewPay ? `${previewPay.mode}:${previewPay.price}:${previewPay.recurring}` : '';
   // By value, like the dependencies: a style change restyles the preview at once,
   // with no rebuild, which is the whole point of the tokens.
   const styleKey = JSON.stringify(app?.style ?? null);
@@ -640,6 +636,8 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
               onSetModel={(id) => void patch({ modelId: id })}
               onConfirmDelete={setConfirmDelete}
               onDelete={destroy}
+              busy={busy}
+              onFixPayments={() => void build('', false, 'payments')}
             />
           ) : (
             <div className="px-3 py-2">
@@ -838,6 +836,8 @@ function SettingsPane({
   onSetModel,
   onConfirmDelete,
   onDelete,
+  busy,
+  onFixPayments,
 }: {
   app: PlaygroundApp;
   modelId: string;
@@ -852,9 +852,19 @@ function SettingsPane({
   onSetModel: (id: string) => void;
   onConfirmDelete: (v: boolean) => void;
   onDelete: () => void;
+  busy: boolean;
+  onFixPayments: () => void;
 }) {
+  const payment = paymentStatus(app);
+  const paymentProblems = payment.settings.mode !== 'free' ? payment.findings.filter((f) => f.severity === 'high') : [];
   return (
     <div className="px-4 py-4 space-y-6">
+      {takesOrders(app) && <AppOrdersSection appId={app.id} />}
+      {paymentProblems.length > 0 && (
+        <p className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2.5 text-xs text-red-600 dark:text-red-400">
+          {paymentProblems[0].title}{paymentProblems.length > 1 ? ` (+${paymentProblems.length - 1} more)` : ''}. Buyers won&apos;t be charged correctly until it&apos;s fixed. See Access and payments below.
+        </p>
+      )}
       {/* How this app shows up in the directory and on the public page. */}
       <section>
         <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400 mb-2">
@@ -929,7 +939,7 @@ function SettingsPane({
 
       <AppSpendSection appId={app.id} />
 
-      <AppPricingSection app={app} onUpdated={onApplyApp} />
+      <AppPricingSection app={app} onUpdated={onApplyApp} onFixPayments={onFixPayments} busy={busy} />
 
       {/* Model */}
       <ModelPicker modelId={modelId} onSetModel={onSetModel} />

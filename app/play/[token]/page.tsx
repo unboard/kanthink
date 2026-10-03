@@ -13,8 +13,10 @@ import {
   gatesAction,
   hasActiveAccess,
   isPaywalled,
+  takesOrders,
 } from '@/lib/playground/appAccess';
 import { signPayToken } from '@/lib/playground/payToken';
+import { returnedOrder } from '@/lib/playground/orders';
 import { resolveAppSession } from '@/lib/playground/appSession';
 import { purchasesForMember, toRef } from '@/lib/playground/appPurchases';
 import { findPublishedApp } from '@/lib/playground/publicApp';
@@ -27,7 +29,7 @@ import type { Metadata } from 'next';
 
 interface PageProps {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ purchase?: string }>;
+  searchParams: Promise<{ purchase?: string; order?: string }>;
 }
 
 export const dynamic = 'force-dynamic';
@@ -51,7 +53,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function PlayPage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const { purchase } = await searchParams;
+  const { purchase, order } = await searchParams;
 
   const app = await findPublishedApp(token);
   if (!app) notFound();
@@ -184,7 +186,15 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
                 })
               : null,
         }
-      : null,
+      : takesOrders(app)
+        ? {
+            mode: 'order' as const,
+            entitled: false,
+            price: formatAppPrice(app.priceAmount, app.priceCurrency, 'one_time'),
+            recurring: false,
+            lastOrder: await returnedOrder(app, order),
+          }
+        : null,
     deps: resolveDeps(release.dependencies || []).deps,
   });
 

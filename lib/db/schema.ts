@@ -1,4 +1,5 @@
 import type { AppStyle } from '../playground/style/tokens'
+import type { PaymentReview, PaymentSetup } from '../playground/payments/types'
 import { sqliteTable, text, integer, primaryKey, index, uniqueIndex, customType } from 'drizzle-orm/sqlite-core'
 
 /**
@@ -469,7 +470,12 @@ export const playgroundApps = sqliteTable('playground_apps', {
    * as the server behind it: entitlement is re-checked on /api/playground/ai, which
    * is the one capability an unpaid visitor could otherwise spend real money on.
    */
-  paywallMode: text('paywall_mode').$type<'app' | 'action'>().default('app'),
+  paywallMode: text('paywall_mode').$type<'app' | 'action' | 'order'>().default('app'),
+  /**
+   * 'order' — a shop. Each purchase is its own order, paid for separately through
+   * window.kanthinkPay.order(), and nothing is "unlocked": the app stays free to
+   * open, and sign-in for saved work never routes through checkout. See app_orders.
+   */
   /** Minor units (cents). Null until a price is set. */
   priceAmount: integer('price_amount'),
   priceCurrency: text('price_currency').default('usd'),
@@ -477,6 +483,19 @@ export const playgroundApps = sqliteTable('playground_apps', {
   priceInterval: text('price_interval').$type<'one_time' | 'month' | 'year'>(),
   stripeProductId: text('stripe_product_id'),
   stripePriceId: text('stripe_price_id'),
+  /**
+   * What the owner told us about selling: how buyers get what they paid for, what
+   * to collect at checkout, and (for action paywalls) what costs money. Asked for in
+   * the Access section, in plain questions, and handed to every build. See
+   * lib/playground/payments.
+   */
+  paymentSetup: text('payment_setup', { mode: 'json' }).$type<PaymentSetup | null>(),
+  /**
+   * Kan's read of the app against its payment settings: what it sells, the mode it
+   * should use, and whether the code takes money the way the settings say. Keyed by
+   * a hash of the code it read, so a stale review is recognisable.
+   */
+  paymentReview: text('payment_review', { mode: 'json' }).$type<PaymentReview | null>(),
 
   // --- Draft and published ---
   //
@@ -702,6 +721,53 @@ export const appMessages = sqliteTable('app_messages', {
 }, (table) => [
   index('app_messages_app_idx').on(table.appId, table.createdAt),
   index('app_messages_thread_idx').on(table.appUserId, table.createdAt),
+])
+
+/**
+ * One order in an app that sells things.
+ *
+ * Not a purchase: a purchase buys access, and an order buys an item. The rock shop
+ * that started this sold access by mistake, which meant one payment unlocked every
+ * rock after it and no order ever reached the seller. Here each order is its own
+ * Stripe Checkout, carries what was bought and who bought it, and lands in front of
+ * the owner to fulfil.
+ *
+ * The amount is always the server's: the app names the item, never the price.
+ */
+export const appOrders = sqliteTable('app_orders', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
+  /** The publisher, denormalised so "orders across my apps" is one query. */
+  ownerId: text('owner_id').notNull(),
+  /** 1, 2, 3… per app. What the buyer and the owner call it. */
+  number: integer('number').notNull(),
+  item: text('item').notNull(),
+  quantity: integer('quantity').notNull().default(1),
+  /** What the app attached: which variant, a personalisation, its own ids. */
+  details: text('details', { mode: 'json' }).$type<Record<string, string> | null>(),
+  /** Minor units, total for the order. */
+  amount: integer('amount').notNull(),
+  currency: text('currency').notNull(),
+  status: text('status').$type<'pending' | 'paid' | 'fulfilled' | 'canceled' | 'refunded'>().notNull().default('pending'),
+  buyerEmail: text('buyer_email'),
+  buyerName: text('buyer_name'),
+  buyerPhone: text('buyer_phone'),
+  shipping: text('shipping', { mode: 'json' }).$type<Record<string, string> | null>(),
+  buyerNote: text('buyer_note'),
+  stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+  /** The page the buyer ordered from, so they come back to it. */
+  returnPath: text('return_path'),
+  /** Placed from the owner's own draft preview: never charged. */
+  isTest: integer('is_test', { mode: 'boolean' }).default(false),
+  paidAt: integer('paid_at', { mode: 'timestamp' }),
+  fulfilledAt: integer('fulfilled_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('app_orders_checkout_idx').on(table.stripeCheckoutSessionId),
+  index('app_orders_app_idx').on(table.appId, table.createdAt),
+  index('app_orders_intent_idx').on(table.stripePaymentIntentId),
 ])
 
 /**

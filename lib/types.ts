@@ -565,7 +565,7 @@ export type AppStatus = 'draft' | 'published' | 'unpublished';
  * Where a paid app's gate sits: at the door, or on something inside it.
  * See lib/playground/appAccess for what each one actually enforces.
  */
-export type AppPaywallMode = 'app' | 'action';
+export type AppPaywallMode = 'app' | 'action' | 'order';
 
 export interface AppPricing {
   paywallEnabled?: boolean;
@@ -667,6 +667,8 @@ export interface PlaygroundApp {
   designNotes?: string | null;
   /** How the app looks. Kan picks it on the first build; the Style tab changes it. */
   style?: import('./playground/style/tokens').AppStyle | null;
+  paymentSetup?: import('./playground/payments/types').PaymentSetup | null;
+  paymentReview?: import('./playground/payments/types').PaymentReview | null;
   /** Kan's note from the most recent build. */
   lastNotes?: string | null;
   /** Runtime library declarations — see lib/playground/runtime. Never resolved URLs. */

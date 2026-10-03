@@ -42,6 +42,11 @@ import { normalizeStyle, resolveStyle, stylePrompt, type AppStyle } from '@/lib/
 import { pickStyle } from '@/lib/playground/style/autoPick';
 import { isStylePass, passPrompt, PASS_LABEL, type StylePass } from '@/lib/playground/style/passes';
 import { checkDesign, findingsBrief } from '@/lib/playground/style/slopCheck';
+import { paymentContract, paymentPassPrompt } from '@/lib/playground/payments/contract';
+import { paymentStatus } from '@/lib/playground/payments/status';
+import { codeSignals } from '@/lib/playground/payments/check';
+import { reviewPayments } from '@/lib/playground/payments/review';
+import { after } from 'next/server';
 
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
 // cleanly exceed 60s. 800s is the Vercel Pro ceiling (300s is only the default),
@@ -292,6 +297,7 @@ RULES for customer storage — these are judged:
   an entry committed, a debounce of a second or two.
 
 CHARGING FOR AN ACTION — a paywall inside the app (already wired up):
+(This is for selling ACCESS to a feature. An app that sells items, bookings or anything bought more than once is a shop: when PAYMENT SETTINGS FOR THIS APP says so, follow TAKING ORDERS there and never use unlock(). PAYMENT SETTINGS FOR THIS APP, at the end of this prompt, always wins.)
 
 window.kanthinkPay exists when the publisher has chosen to charge for something INSIDE
 this app rather than for opening it. Whoever is reading this is free to use the app; your
@@ -1042,7 +1048,17 @@ export async function generatePlaygroundApp(
     console.log('[playground] user asked to remove:', authorisedRemovals.join(' | '));
   }
 
-  const requestBlock = pass
+  // Payments: what this app's settings are, and on an edit, what the payment check
+  // finds in the current code. A shop whose checkout was a timer got that way
+  // because no build was ever told what the settings were.
+  const payments = paymentStatus(app);
+  const paymentCheckBlock = isIteration && pass !== 'payments' && payments.findings.some((f) => f.severity === 'high')
+    ? `PAYMENT CHECK on the current code (if this request touches buying or paying, fix these as part of it; otherwise leave them):\n${payments.findings.filter((f) => f.severity !== 'low').map((f) => `- ${f.title}: ${f.fix}`).join('\n')}`
+    : '';
+
+  const requestBlock = pass === 'payments'
+    ? `USER REQUEST:\n${paymentPassPrompt(payments.findings, payments.missing)}`
+    : pass
     ? `USER REQUEST:\n${passPrompt(pass, currentCode, resolvedStyle?.look.id)}${imageNote}`
     : `USER REQUEST:
 ${body.prompt}${imageNote}${iterationReminder}`;
@@ -1058,6 +1074,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     `THIS APP'S THREAD:\n${threadContext}`,
     body.lastError ? `PREVIOUS ERROR:\n${body.lastError}` : '',
     designCheckBlock,
+    paymentCheckBlock,
     requestBlock,
   ].filter(Boolean).join('\n\n');
 
@@ -1122,7 +1139,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   // The style rides with the runtime section, so every call path (patch, rewrite,
   // the capability retry) is briefed the same way.
   const runtimeSection = buildRuntimeSection(seeded.deps)
-    + (resolvedStyle ? `\n\n${stylePrompt(resolvedStyle)}` : '');
+    + (resolvedStyle ? `\n\n${stylePrompt(resolvedStyle)}` : '')
+    + `\n\n${paymentContract(payments.settings)}`;
 
   // Claude's adaptive thinking has no separate budget: it spends from max_tokens, so
   // the ceiling that suits Gemini (whose thinking is capped) would truncate a Claude
@@ -1469,6 +1487,10 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
   }
 
   const builtRow = { ...app, ...updated } as typeof app;
+  if (payments.settings.mode !== 'free' || codeSignals(parsed.code).looksLikeSelling) {
+    const review = () => reviewPayments(app.id, session.user.id).catch(() => null);
+    try { after(review); } catch { void review(); }
+  }
   return NextResponse.json({
     success: true,
     snapshot: {

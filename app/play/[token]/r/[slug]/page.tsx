@@ -8,11 +8,13 @@ import {
   gatesAction,
   hasActiveAccess,
   isPaywalled,
+  takesOrders,
 } from '@/lib/playground/appAccess';
 import { resolveAppSession } from '@/lib/playground/appSession';
 import { purchasesForMember, toRef } from '@/lib/playground/appPurchases';
 import { AppPaywall } from '../../AppPaywall';
 import { signPayToken } from '@/lib/playground/payToken';
+import { returnedOrder } from '@/lib/playground/orders';
 import { getPublishedVersion } from '@/lib/playground/appRelease';
 import { notFound } from 'next/navigation';
 import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
@@ -23,6 +25,7 @@ import type { Metadata } from 'next';
 
 interface PageProps {
   params: Promise<{ token: string; slug: string }>;
+  searchParams?: Promise<{ order?: string }>;
 }
 
 export const dynamic = 'force-dynamic';
@@ -49,8 +52,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
  * record, so the app can mount in a specific saved state (e.g. an idea the
  * sender wants the recipient to see first).
  */
-export default async function PlayRecordPage({ params }: PageProps) {
+export default async function PlayRecordPage({ params, searchParams }: PageProps) {
   const { token, slug } = await params;
+  const { order } = (await searchParams) ?? {};
 
   const app = await db.query.playgroundApps.findFirst({
     where: and(eq(playgroundApps.shareToken, token), eq(playgroundApps.isPublic, true)),
@@ -124,7 +128,15 @@ export default async function PlayRecordPage({ params }: PageProps) {
                 })
               : null,
         }
-      : null,
+      : takesOrders(app)
+        ? {
+            mode: 'order' as const,
+            entitled: false,
+            price: formatAppPrice(app.priceAmount, app.priceCurrency, 'one_time'),
+            recurring: false,
+            lastOrder: await returnedOrder(app, order),
+          }
+        : null,
     deps: resolveDeps(release.dependencies || []).deps,
     initialRecord: {
       slug: record.slug,

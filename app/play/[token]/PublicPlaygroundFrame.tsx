@@ -56,6 +56,28 @@ export function PublicPlaygroundFrame({
   // unlock is a sign-in that ends at checkout instead of at somebody's saved work.
   const [purpose, setPurpose] = useState<SignInPurpose>('signin');
 
+  // A shop's buy button. Straight to Stripe checkout, which collects who is buying,
+  // and back to this same page once they have paid. No sheet of ours in between.
+  const [ordering, setOrdering] = useState<'idle' | 'opening' | string>('idle');
+  const startOrder = async (order: unknown) => {
+    setOrdering('opening');
+    try {
+      const res = await fetch(`/api/play/${token}/order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...(order && typeof order === 'object' ? order : {}), returnPath: window.location.pathname }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+      setOrdering(data?.error || 'Could not start checkout. Try again.');
+    } catch {
+      setOrdering('Could not reach the server. Check your connection and try again.');
+    }
+  };
+
   // Count the visit for whoever holds the access cookie. Best-effort and silent:
   // the app is already on screen, and a failed counter is not worth an error.
   useEffect(() => {
@@ -71,6 +93,7 @@ export function PublicPlaygroundFrame({
       const type = (event.data as { type?: string })?.type;
       if (type === 'kpg_signin') { setPurpose('signin'); setShowSignIn(true); }
       if (type === 'kpg_unlock') { setPurpose('unlock'); setShowSignIn(true); }
+      if (type === 'kpg_order') void startOrder((event.data as { order?: unknown }).order);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -133,6 +156,23 @@ export function PublicPlaygroundFrame({
             >
               <X className="w-3.5 h-3.5" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {ordering !== 'idle' && (
+        <div className="fixed inset-x-0 bottom-14 z-50 flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
+            {ordering === 'opening' ? (
+              <span>Opening checkout…</span>
+            ) : (
+              <>
+                <span>{ordering}</span>
+                <button onClick={() => setOrdering('idle')} aria-label="Dismiss" className="text-neutral-400 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

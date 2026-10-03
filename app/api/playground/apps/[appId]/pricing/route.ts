@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
+import { reviewPayments } from '@/lib/playground/payments/review'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { playgroundApps } from '@/lib/db/schema'
@@ -42,8 +43,8 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     amount?: number
     currency?: string
     interval?: 'one_time' | 'month' | 'year'
-    /** 'app' (at the door) | 'action' (inside). Anything else is read as 'app'. */
-    mode?: 'app' | 'action'
+    /** 'app' (at the door) | 'action' (inside) | 'order' (a shop). Anything else is read as 'app'. */
+    mode?: 'app' | 'action' | 'order'
   }
   try {
     body = await req.json()
@@ -65,10 +66,12 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ app: off })
     }
 
+    const mode = body.mode === 'action' ? 'action' : body.mode === 'order' ? 'order' : 'app'
     const price = validatePriceInput({
       amount: body.amount,
       currency: body.currency,
-      interval: body.interval,
+      // An order is paid once, every time. A subscription to a rock is not a thing.
+      interval: mode === 'order' ? 'one_time' : body.interval,
     })
 
     const { productId, priceId } = await syncAppPrice(app, price)
@@ -77,7 +80,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
       paywallEnabled: true,
       // Only ever the two, and an unrecognised value falls to the stricter one —
       // a typo here would otherwise quietly publish a paid app to everybody.
-      paywallMode: body.mode === 'action' ? 'action' : 'app',
+      paywallMode: mode,
       priceAmount: price.amount,
       priceCurrency: price.currency,
       priceInterval: price.interval,
@@ -87,6 +90,9 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     }).where(eq(playgroundApps.id, appId))
 
     const updated = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) })
+    // Kan reads the app against the new settings in the background, so the Access
+    // section can say whether the app actually takes money this way.
+    if (updated?.code) after(() => reviewPayments(updated.id, session.user!.id).catch(() => {}))
     return NextResponse.json({ app: updated })
   } catch (error) {
     if (error instanceof PermissionError) {

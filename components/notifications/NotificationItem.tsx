@@ -100,7 +100,7 @@ export function getNavigationUrl(notification: NotificationData, tasks: Record<s
   // A finished build → straight into that app's drawer, which is the thing the
   // notification is about. Landing on the card and making someone hunt for it
   // would waste the one click the notification exists to save.
-  if (notification.type === 'ai_generation_completed' && data.cardId && data.appId) {
+  if ((notification.type === 'ai_generation_completed' || notification.type === 'app_order') && data.cardId && data.appId) {
     return `/channel/${channelId}/card/${data.cardId}?app=${data.appId}`
   }
 
@@ -130,6 +130,7 @@ function getTypeLabel(notification: NotificationData): string | null {
     case 'shroom_report': return 'Report'
     case 'app_feedback': return 'Feedback'
     case 'app_purchase': return 'Sale'
+    case 'app_order': return 'Order'
     case 'app_reply': return 'Reply'
     case 'ai_generation_completed': return 'AI'
     case 'ai_instruction_refinement': return 'AI'
