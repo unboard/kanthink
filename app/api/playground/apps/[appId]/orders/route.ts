@@ -27,8 +27,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ app
   try {
     await ensureSchema()
     if (!(await load(appId, session.user.id, 'view'))) return NextResponse.json({ error: 'App not found' }, { status: 404 })
-    // Abandoned checkouts are noise for someone fulfilling orders.
-    const orders = (await listOrders(appId)).filter((o) => o.status !== 'pending' || Date.now() - (o.createdAt?.getTime() ?? 0) < 60 * 60 * 1000)
+    // Abandoned and canceled checkouts are noise for someone fulfilling orders.
+    const orders = (await listOrders(appId)).filter((o) => o.status !== 'canceled' && (o.status !== 'pending' || Date.now() - (o.createdAt?.getTime() ?? 0) < 60 * 60 * 1000))
     return NextResponse.json({ orders })
   } catch (error) {
     if (error instanceof PermissionError) return NextResponse.json({ error: error.message }, { status: 403 })
