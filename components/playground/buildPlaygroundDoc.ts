@@ -551,6 +551,18 @@ ${styleHead.css}
      * A shop only: start checkout for one order. { item, quantity?, details? }.
      * The price is the server's. Returns false when the app isn't taking orders.
      */
+    /**
+     * A shop only: done showing the confirmation. Clears lastOrder and takes the
+     * order off the page address, so going back to the shop doesn't bring it back.
+     */
+    dismissOrder: function() {
+      if (__KPG_PAY) __KPG_PAY.lastOrder = null;
+      window.kanthinkPay.lastOrder = null;
+      try {
+        window.dispatchEvent(new CustomEvent("kanthink:order", { detail: null }));
+        parent.postMessage({ type: "kpg_order_dismiss" }, "*");
+      } catch(_) {}
+    },
     order: function(opts) {
       if (!__KPG_PAY || __KPG_PAY.mode !== 'order') return false;
       opts = opts || {};

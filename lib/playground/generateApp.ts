@@ -44,6 +44,7 @@ import { isStylePass, passPrompt, PASS_LABEL, type StylePass } from '@/lib/playg
 import { checkDesign, findingsBrief } from '@/lib/playground/style/slopCheck';
 import { paymentContract, paymentPassPrompt } from '@/lib/playground/payments/contract';
 import { paymentStatus } from '@/lib/playground/payments/status';
+import { activeMode as activePaymentMode } from '@/lib/playground/payments/settings';
 import { codeSignals } from '@/lib/playground/payments/check';
 import { reviewPayments } from '@/lib/playground/payments/review';
 import { after } from 'next/server';
@@ -1043,7 +1044,15 @@ export async function generatePlaygroundApp(
   // re-derived from text anywhere downstream — reading intent out of a transcript
   // after the fact is what let "do not remove the AI comments" authorise removing
   // the AI comments.
-  const authorisedRemovals = preflight.requestedRemovals ?? [];
+  const authorisedRemovals = [...(preflight.requestedRemovals ?? [])];
+  // A payment fix may remove the flow the owner's settings rule out: unlock() in a
+  // shop, order() in an app that sells access. The authority is the settings the
+  // owner chose, never the model's own account of what it meant to remove.
+  if (pass === 'payments') {
+    const mode = activePaymentMode(app);
+    if (mode !== 'action') authorisedRemovals.push('pay.unlock');
+    if (mode !== 'order') authorisedRemovals.push('pay.order');
+  }
   if (authorisedRemovals.length > 0) {
     console.log('[playground] user asked to remove:', authorisedRemovals.join(' | '));
   }

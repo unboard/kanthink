@@ -174,6 +174,15 @@ export function checkPayments(code: string | null | undefined, settings: Payment
           fix: 'When window.kanthinkPay.lastOrder is set, show its confirmation (order number, item, what happens next) on first render.',
         })
       }
+      if (s.callsOrder && /location\.reload\s*\(/.test(code)) {
+        add({
+          id: 'reload-after-order',
+          severity: 'medium',
+          title: 'Going back reloads into the confirmation',
+          detail: 'After ordering, "back to the shop" reloads the page, which shows the same confirmation again.',
+          fix: 'Replace window.location.reload() with window.kanthinkPay.dismissOrder() and then set the view back to the shop.',
+        })
+      }
       if (s.asksContact) {
         add({
           id: 'duplicate-contact-form',

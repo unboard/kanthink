@@ -70,8 +70,9 @@ export async function startOrder(opts: { app: AppRow; token: string; origin: str
     })
   }
 
-  const describe = [order.details ? Object.entries(order.details).map(([k, v]) => `${k}: ${v}`).join(' · ') : '', setup?.fulfilmentNote || '']
-    .filter(Boolean).join(' — ').slice(0, 500)
+  // What the buyer reads under the item. Details are the app's own ids and choices,
+  // kept on the order for the owner, and are no business of the checkout page.
+  const describe = (setup?.fulfilmentNote || '').slice(0, 500)
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',

@@ -13,6 +13,18 @@ type App = Parameters<typeof paymentSettings>[0] & {
   paymentReview?: PaymentReview | null
 }
 
+/** What each automatic finding already covers, for spotting Kan saying the same thing. */
+const OVERLAP: Record<string, RegExp[]> = {
+  'fake-checkout': [/mock|simulat|settimeout|fake|pretend/i],
+  'unlock-in-shop': [/unlock/i],
+  'buying-takes-no-payment': [/order\(|kanthinkPay\.order|payment method|no payment|doesn.t (take|charge)/i],
+  'duplicate-contact-form': [/contact|e-?mail field|phone field|name field|form/i],
+  'price-mismatch': [/price|\$\d/i],
+  'no-confirmation': [/confirm/i],
+  'nothing-charges': [/unlock|paywall|gate/i],
+  'selling-without-payments': [/payment|checkout|order/i],
+}
+
 export type PaymentStatus = {
   settings: PaymentSettings
   findings: PaymentFinding[]
@@ -37,8 +49,11 @@ export function paymentStatus(app: App): PaymentStatus {
   }
   if (settings.mode === 'action' && !setup.paidAction) missing.push('What costs money?')
 
-  const seen = new Set(findings.map((f) => f.title))
-  const all = current ? [...findings, ...(r!.issues ?? []).filter((i) => !seen.has(i.title))] : findings
+  // Kan's issues add what the code check can't see. One that restates a finding
+  // already listed (in its own words) is dropped rather than shown twice.
+  const covered = findings.flatMap((f) => OVERLAP[f.id] ?? [])
+  const extra = current ? (r!.issues ?? []).filter((i) => !covered.some((re) => re.test(`${i.title} ${i.detail} ${i.fix}`))) : []
+  const all = [...findings, ...extra]
   return { settings, findings: all, review: current ? r : null, stale: !!r && !current, missing }
 }
 

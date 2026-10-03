@@ -40,7 +40,8 @@ window.kanthinkPay.lastOrder   // set when the buyer has just returned from payi
 
 THE PATTERN:
 const confirmed = window.kanthinkPay?.lastOrder;
-if (confirmed) -> render the confirmation first: "Order #{number}: {item}", what happens next (the fulfilment note), and a way back to browsing.
+window.kanthinkPay.dismissOrder() // the "Back to the shop" button on the confirmation: clears lastOrder. Then re-render (e.g. set your view state). NEVER reload the page.
+if (confirmed) -> render the confirmation first: "Order #{number}: {item}", what happens next (the fulfilment note), and a way back to browsing that calls dismissOrder().
 <Button onClick={() => window.kanthinkPay.order({ item: rock.title, details: { rockId: rock.id } })}>
   Buy · {window.kanthinkPay.price}
 </Button>
@@ -50,7 +51,8 @@ RULES for orders. These are judged:
 - NEVER show "Order confirmed", "Thank you for your order" or similar except from kanthinkPay.lastOrder. No timers, no optimistic success.
 - NEVER call kanthinkPay.unlock() or check kanthinkPay.entitled in a shop: there is nothing to unlock, and one payment must never unlock later orders.
 - The price is the server's. Never compute or write a price; quantity × kanthinkPay.price is shown by checkout itself.
-- Out-of-stock or unavailable items must not offer the buy button.`
+- Out-of-stock or unavailable items must not offer the buy button.
+- Never call window.location.reload(): the page would come back showing the same confirmation.`
 
 export function paymentContract(input: ContractInput): string {
   const setup = input.setup ?? {}

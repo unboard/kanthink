@@ -94,6 +94,12 @@ export function PublicPlaygroundFrame({
       if (type === 'kpg_signin') { setPurpose('signin'); setShowSignIn(true); }
       if (type === 'kpg_unlock') { setPurpose('unlock'); setShowSignIn(true); }
       if (type === 'kpg_order') void startOrder((event.data as { order?: unknown }).order);
+      if (type === 'kpg_order_dismiss') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('order');
+        url.searchParams.delete('order_status');
+        window.history.replaceState(null, '', url.toString());
+      }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);

@@ -79,6 +79,11 @@ describe('payment check', () => {
     expect(mismatch.title).toContain('$2.00')
   })
 
+  it('flags a confirmation that reloads into itself', () => {
+    const code = GOOD_SHOP.replace('</Card>;', '<Button onClick={() => window.location.reload()}>Back</Button></Card>;')
+    expect(checkPayments(code, paymentSettings(shop)).map((f) => f.id)).toContain('reload-after-order')
+  })
+
   it('passes a shop built the right way', () => {
     expect(checkPayments(GOOD_SHOP, paymentSettings(shop))).toEqual([])
   })
