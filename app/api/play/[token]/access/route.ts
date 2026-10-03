@@ -191,3 +191,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ to
     return NextResponse.json({ ok: false })
   }
 }
+
+/**
+ * Sign out of this app on this device: drop the access cookie. Their saved work
+ * and purchases stay with their address, for the next time they sign in.
+ */
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params
+  const app = await findPublishedApp(token)
+  const res = NextResponse.json({ ok: true })
+  if (app) res.cookies.set({ name: accessCookieName(app.id), value: '', path: '/', maxAge: 0 })
+  return res
+}

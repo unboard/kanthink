@@ -9,6 +9,7 @@ import {
   hasActiveAccess,
   isPaywalled,
   takesOrders,
+  canReadPrivateData,
 } from '@/lib/playground/appAccess';
 import { resolveAppSession } from '@/lib/playground/appSession';
 import { purchasesForMember, toRef } from '@/lib/playground/appPurchases';
@@ -21,6 +22,7 @@ import { buildPlaygroundDoc } from '@/components/playground/buildPlaygroundDoc';
 import { signAppToken } from '@/lib/playground/appToken';
 import { resolveDeps } from '@/lib/playground/runtime';
 import { PublicPlaygroundFrame } from '../../PublicPlaygroundFrame';
+import { hostChrome } from '@/lib/playground/hostChrome';
 import type { Metadata } from 'next';
 
 interface PageProps {
@@ -105,6 +107,10 @@ export default async function PlayRecordPage({ params, searchParams }: PageProps
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const origin = host ? `${proto}://${host}` : '';
 
+  const chrome = await hostChrome(app, release.style);
+  // Who is signed in, for the account button. Resolved for every app, paid or not.
+  const session = resolved ?? (await resolveAppSession((await cookies()).get(accessCookieName(app.id))?.value, app.id));
+  const signedInEmail = session && canReadPrivateData(session.session) ? session.member.email : null;
   const srcDoc = buildPlaygroundDoc(release.code, {
     title,
     style: release.style ?? null,
@@ -156,6 +162,8 @@ export default async function PlayRecordPage({ params, searchParams }: PageProps
           : null
       }
       unlockRecurring={app.priceInterval === 'month' || app.priceInterval === 'year'}
+      customerEmail={signedInEmail}
+      chrome={chrome}
     />
   );
 }

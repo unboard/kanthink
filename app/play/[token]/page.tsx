@@ -23,6 +23,7 @@ import { findPublishedApp } from '@/lib/playground/publicApp';
 import { getPublishedVersion } from '@/lib/playground/appRelease';
 import { readAll, signDataToken } from '@/lib/playground/customerData';
 import { PublicPlaygroundFrame } from './PublicPlaygroundFrame';
+import { hostChrome } from '@/lib/playground/hostChrome';
 import { AppPaywall } from './AppPaywall';
 import { AppReserve } from './AppReserve';
 import type { Metadata } from 'next';
@@ -146,6 +147,8 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   // payment, not the inbox, and someone's saved work is inbox-private.
   const member = resolved && canReadPrivateData(resolved.session) ? resolved.member : null;
   const saved = member ? await readAll(app.id, member.id, 'live') : [];
+  // The bar, chat and sign-in take the app's own colours, and the chat shows its maker.
+  const chrome = await hostChrome(app, release.style);
   const srcDoc = buildPlaygroundDoc(release.code, {
     title,
     style: release.style ?? null,
@@ -213,6 +216,7 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
       }
       unlockRecurring={app.priceInterval === 'month' || app.priceInterval === 'year'}
       openMessages={messages === '1'}
+      chrome={chrome}
     />
   );
 }

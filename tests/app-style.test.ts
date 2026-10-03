@@ -299,3 +299,20 @@ describe('component kit', async () => {
     expect(kit.cn('hover:bg-accent bg-card', 'bg-muted')).toBe('hover:bg-accent bg-muted')
   })
 })
+
+describe('the page around a published app', async () => {
+  const { hostTheme } = await import('@/lib/playground/hostChrome')
+
+  it('takes the app style colours, so a dark app gets a dark bar', () => {
+    const t = hostTheme(styleForLook('arcade'))
+    expect(t.mode).toBe('dark')
+    expect(t.vars['--kp-primary']).toMatch(/^\d+ \d+ \d+$/)
+    expect(t.vars['--kp-bar']).toBeTruthy()
+  })
+
+  it('falls back to a quiet neutral for an app without a style', () => {
+    const t = hostTheme(null)
+    expect(t.mode).toBe('light')
+    expect(t.vars['--kp-bg']).toBe('255 255 255')
+  })
+})

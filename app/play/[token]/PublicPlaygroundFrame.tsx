@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { useEffect, useRef, useState } from 'react';
 import { AppFeedbackPanel } from './AppFeedbackPanel';
 import { useAppStorage, isFromFrame } from '@/lib/playground/useAppStorage';
-import { X, UserRound } from 'lucide-react';
+import { X, UserRound, LogOut, CreditCard } from 'lucide-react';
 import { AppSignIn, type SignInPurpose } from './AppSignIn';
+import type { HostChrome } from '@/lib/playground/hostChrome';
 
 interface Props {
   srcDoc: string;
@@ -28,15 +27,17 @@ interface Props {
   unlockRecurring?: boolean;
   /** Open the conversation with the maker on load (from a reply email). */
   openMessages?: boolean;
+  /** Colours from the app's own style, and who made it. See lib/playground/hostChrome. */
+  chrome?: HostChrome;
 }
 
 /**
  * Full-viewport public playground render.
  *
- * The iframe gets the whole screen; a thin strip above it carries the Kanthink mark
- * and the one thing a published app has always been missing — a way to tell the
- * person who made it that something is wrong. The strip can be dismissed per visit,
- * which also hides the feedback button, so it is not dismissible by accident.
+ * The app gets the screen. Under it, one slim bar that belongs to the app rather
+ * than to Kanthink: who you're signed in as, and Chat, the conversation with the
+ * person who made it. The bar, the chat and the sign-in sheet all take their
+ * colours from the app's style, so they fit a dark game and a paper puzzle alike.
  */
 export function PublicPlaygroundFrame({
   srcDoc,
@@ -48,11 +49,12 @@ export function PublicPlaygroundFrame({
   unlockPrice,
   unlockRecurring,
   openMessages,
+  chrome,
 }: Props) {
   // The app's own saved data, held by this page because the sandboxed iframe has
   // no storage of its own. Without it a saved score lasts until the next refresh.
   const { withSeed, frameRef } = useAppStorage(token);
-  const [hideFooter, setHideFooter] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [showPurchased, setShowPurchased] = useState(!!justPurchased);
   const [showSignIn, setShowSignIn] = useState(false);
   // Which sheet the last request asked for. Same component, same steps — an
@@ -118,9 +120,12 @@ export function PublicPlaygroundFrame({
   }, [showPurchased]);
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-white">
+    <div
+      className="fixed inset-0 flex flex-col bg-[rgb(var(--kp-bg))]"
+      style={{ ...(chrome?.theme.vars ?? {}), colorScheme: chrome?.theme.mode ?? 'light' } as React.CSSProperties}
+    >
       {showPurchased && (
-        <div className="flex-shrink-0 px-3 py-2 bg-emerald-500 text-white text-xs font-medium text-center">
+        <div className="flex-shrink-0 px-3 py-2 bg-[rgb(var(--kp-primary))] text-[rgb(var(--kp-primary-fg))] text-xs font-medium text-center">
           You&apos;re in. This link will open straight into the app from now on.
         </div>
       )}
@@ -134,46 +139,29 @@ export function PublicPlaygroundFrame({
         title={title}
       />
 
-      {!hideFooter && (
-        <div className="flex-shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-t border-neutral-200 bg-white text-xs">
-          <Link href="/" className="flex items-center gap-1.5 text-neutral-600 hover:text-violet-600 transition-colors">
-            <KanthinkIcon size={14} className="text-violet-500" />
-            <span className="font-medium hidden sm:inline">Made with Kanthink</span>
-          </Link>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => { setPurpose('signin'); setShowSignIn(true); }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-neutral-500 hover:text-violet-600 hover:bg-violet-50 font-medium transition-colors"
-              title={customerEmail ? `Signed in as ${customerEmail}` : 'Sign in to save your work'}
-            >
-              <UserRound className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">
-                {customerEmail ? customerEmail : 'Sign in'}
-              </span>
-            </button>
-            {canManageBilling && (
-              <a
-                href={`/api/play/${token}/billing`}
-                className="px-2.5 py-1 rounded-lg text-neutral-500 hover:text-violet-600 hover:bg-violet-50 font-medium transition-colors"
-              >
-                Billing
-              </a>
-            )}
-            <AppFeedbackPanel token={token} appTitle={title} initiallyOpen={openMessages} />
-            <button
-              onClick={() => setHideFooter(true)}
-              aria-label="Hide footer"
-              className="p-1 rounded text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
+      <footer className="relative flex h-14 flex-shrink-0 items-center gap-2 border-t border-[rgb(var(--kp-border))] bg-[rgb(var(--kp-bar))] px-3 pb-[env(safe-area-inset-bottom)] text-[rgb(var(--kp-fg))]">
+        <AccountButton
+          token={token}
+          email={customerEmail ?? null}
+          canManageBilling={!!canManageBilling}
+          open={accountOpen}
+          onToggle={() => setAccountOpen((v) => !v)}
+          onClose={() => setAccountOpen(false)}
+          onSignIn={() => { setPurpose('signin'); setShowSignIn(true); }}
+        />
+        <div className="ml-auto">
+          <AppFeedbackPanel
+            token={token}
+            appTitle={title}
+            maker={chrome?.maker}
+            initiallyOpen={openMessages}
+            onRequestSignIn={() => { setPurpose('signin'); setShowSignIn(true); }}
+          />
         </div>
-      )}
+      </footer>
 
       {ordering !== 'idle' && (
-        <div className="fixed inset-x-0 bottom-14 z-50 flex justify-center px-4">
+        <div className="fixed inset-x-0 bottom-20 z-50 flex justify-center px-4">
           <div className="flex items-center gap-3 rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white shadow-lg">
             {ordering === 'opening' ? (
               <span>Opening checkout…</span>
@@ -198,6 +186,72 @@ export function PublicPlaygroundFrame({
           recurring={!!unlockRecurring}
           onClose={() => setShowSignIn(false)}
         />
+      )}
+    </div>
+  );
+}
+
+/** Who's signed in, with sign-out and billing behind it; or Sign in. */
+function AccountButton({ token, email, canManageBilling, open, onToggle, onClose, onSignIn }: {
+  token: string;
+  email: string | null;
+  canManageBilling: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onSignIn: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('mousedown', away);
+    window.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); window.removeEventListener('keydown', esc); };
+  }, [open, onClose]);
+
+  if (!email) {
+    return (
+      <button
+        onClick={onSignIn}
+        className="flex h-9 items-center gap-2 rounded-full px-3 text-[13px] font-medium text-[rgb(var(--kp-fg))] transition-colors hover:bg-[rgb(var(--kp-muted))]"
+      >
+        <UserRound className="h-4 w-4 text-[rgb(var(--kp-muted-fg))]" />
+        Sign in
+      </button>
+    );
+  }
+
+  const initial = email.charAt(0).toUpperCase();
+  return (
+    <div ref={ref} className="relative min-w-0">
+      <button
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex h-9 min-w-0 max-w-[60vw] items-center gap-2 rounded-full pl-1 pr-3 text-[13px] transition-colors hover:bg-[rgb(var(--kp-muted))]"
+      >
+        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[rgb(var(--kp-muted))] text-[12px] font-semibold text-[rgb(var(--kp-fg))]">{initial}</span>
+        <span className="truncate text-[rgb(var(--kp-muted-fg))]">{email}</span>
+      </button>
+      {open && (
+        <div className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-64 overflow-hidden rounded-xl border border-[rgb(var(--kp-border))] bg-[rgb(var(--kp-card))] py-1 text-[rgb(var(--kp-fg))] shadow-xl">
+          <p className="truncate px-3 py-2 text-xs text-[rgb(var(--kp-muted-fg))]">Signed in as {email}</p>
+          {canManageBilling && (
+            <a href={`/api/play/${token}/billing`} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-[rgb(var(--kp-muted))]">
+              <CreditCard className="h-4 w-4 text-[rgb(var(--kp-muted-fg))]" /> Billing
+            </a>
+          )}
+          <button
+            onClick={async () => {
+              await fetch(`/api/play/${token}/access`, { method: 'DELETE' }).catch(() => {});
+              window.location.reload();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[rgb(var(--kp-muted))]"
+          >
+            <LogOut className="h-4 w-4 text-[rgb(var(--kp-muted-fg))]" /> Sign out
+          </button>
+        </div>
       )}
     </div>
   );

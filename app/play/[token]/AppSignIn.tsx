@@ -127,30 +127,30 @@ export function AppSignIn({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-neutral-950/70 backdrop-blur-[3px] p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={unlocking ? `Unlock ${appTitle}` : `Sign in to ${appTitle}`}
-        className="w-full sm:max-w-[22rem] bg-white rounded-t-2xl sm:rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.4)] ring-1 ring-black/5"
+        className="w-full sm:max-w-[22rem] bg-[rgb(var(--kp-card,255_255_255))] text-[rgb(var(--kp-fg,24_24_27))] rounded-t-2xl sm:rounded-2xl shadow-2xl border border-[rgb(var(--kp-border,228_228_231))] pb-[env(safe-area-inset-bottom)]"
       >
         <div className="flex items-center justify-between px-5 pt-4 pb-1">
-          <div className="flex items-center gap-2 text-[15px] font-semibold text-neutral-900">
+          <div className="flex items-center gap-2 text-[15px] font-semibold">
             {stage === 'code' ? (
               <button
                 type="button"
                 onClick={() => { setStage('email'); setCode(''); setError(null); }}
                 aria-label="Back"
-                className="-ml-1 p-1 rounded-md text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+                className="-ml-1 p-1 rounded-md text-[rgb(var(--kp-muted-fg,113_113_122))] hover:bg-[rgb(var(--kp-muted,244_244_245))] transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
             ) : unlocking ? (
-              <Lock className="w-4 h-4 text-violet-500" />
+              <Lock className="w-4 h-4 text-[rgb(var(--kp-primary,124_58_237))]" />
             ) : (
-              <Mail className="w-4 h-4 text-violet-500" />
+              <Mail className="w-4 h-4 text-[rgb(var(--kp-primary,124_58_237))]" />
             )}
             {stage === 'code'
               ? 'Check your email'
@@ -161,7 +161,7 @@ export function AppSignIn({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="-mr-1 p-1 rounded-md text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+            className="-mr-1 p-1 rounded-md text-[rgb(var(--kp-muted-fg,113_113_122))] hover:bg-[rgb(var(--kp-muted,244_244_245))] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -170,10 +170,10 @@ export function AppSignIn({
         <form onSubmit={onSubmit} className="px-5 pb-5 pt-2">
           {stage === 'email' ? (
             <>
-              <p className="text-[13px] text-neutral-500 leading-relaxed mb-3">
+              <p className="text-[13px] text-[rgb(var(--kp-muted-fg,113_113_122))] leading-relaxed mb-3">
                 {unlocking ? (
                   <>
-                    {price ? <span className="text-neutral-900 font-medium">{price}</span> : null}
+                    {price ? <span className="text-[rgb(var(--kp-fg,24_24_27))] font-medium">{price}</span> : null}
                     {price ? (recurring ? ' — ' : ' once — ') : null}
                     payment is handled by Stripe. Already bought it? Use the same address and
                     we&apos;ll send a code instead of charging you again.
@@ -193,14 +193,14 @@ export function AppSignIn({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full px-3 py-2.5 rounded-lg border border-neutral-300 text-[15px] text-neutral-900 placeholder:text-neutral-400 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-shadow"
+                className="w-full px-3 py-2.5 rounded-lg border border-[rgb(var(--kp-border,212_212_216))] bg-[rgb(var(--kp-bg,255_255_255))] text-[15px] text-[rgb(var(--kp-fg,24_24_27))] placeholder:text-[rgb(var(--kp-muted-fg,161_161_170))] outline-none focus:border-[rgb(var(--kp-primary,124_58_237))] transition-colors"
               />
             </>
           ) : (
             <>
-              <p className="text-[13px] text-neutral-500 leading-relaxed mb-3">
+              <p className="text-[13px] text-[rgb(var(--kp-muted-fg,113_113_122))] leading-relaxed mb-3">
                 {notice} Sent to{' '}
-                <span className="text-neutral-900 font-medium break-all">{email}</span>.
+                <span className="text-[rgb(var(--kp-fg,24_24_27))] font-medium break-all">{email}</span>.
               </p>
               <input
                 ref={codeRef}
@@ -213,7 +213,7 @@ export function AppSignIn({
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="······"
                 aria-label="Six-digit code"
-                className="w-full px-3 py-3 rounded-lg border border-neutral-300 text-[26px] font-semibold tracking-[0.4em] indent-[0.4em] text-center tabular-nums text-neutral-900 placeholder:text-neutral-300 placeholder:font-normal outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/15 transition-shadow"
+                className="w-full px-3 py-3 rounded-lg border border-[rgb(var(--kp-border,212_212_216))] bg-[rgb(var(--kp-bg,255_255_255))] text-[26px] font-semibold tracking-[0.4em] indent-[0.4em] text-center tabular-nums text-[rgb(var(--kp-fg,24_24_27))] placeholder:text-[rgb(var(--kp-muted-fg,161_161_170))] placeholder:font-normal outline-none focus:border-[rgb(var(--kp-primary,124_58_237))] transition-colors"
               />
             </>
           )}
@@ -225,7 +225,7 @@ export function AppSignIn({
           <button
             type="submit"
             disabled={busy || (stage === 'code' && code.length < 6)}
-            className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-violet-600 text-white text-[15px] font-medium hover:bg-violet-700 active:bg-violet-800 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors"
+            className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-[rgb(var(--kp-primary,124_58_237))] text-[rgb(var(--kp-primary-fg,255_255_255))] text-[15px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             {busy && <Loader2 className="w-4 h-4 animate-spin" />}
             {busy
@@ -241,7 +241,7 @@ export function AppSignIn({
             <button
               type="button"
               onClick={() => { setStage('email'); setCode(''); setError(null); }}
-              className="mt-2.5 w-full text-[13px] text-neutral-500 hover:text-neutral-900 transition-colors"
+              className="mt-2.5 w-full text-[13px] text-[rgb(var(--kp-muted-fg,113_113_122))] hover:text-[rgb(var(--kp-fg,24_24_27))] transition-colors"
             >
               Use a different address
             </button>
