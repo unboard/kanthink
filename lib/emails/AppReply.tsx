@@ -6,9 +6,8 @@ interface AppReplyProps {
   appTitle: string
   publisherName: string
   message: string
-  appUrl: string
-  /** True when replying to this email lands in the conversation. */
-  replyLands?: boolean
+  /** Opens the conversation in the app, signed in. */
+  conversationUrl: string
 }
 
 /**
@@ -18,7 +17,7 @@ interface AppReplyProps {
  * page, so a reply that only lives inside the app is a reply nobody reads. The
  * conversation still lives in the app — this just points at it.
  */
-export function AppReply({ appTitle, publisherName, message, appUrl, replyLands }: AppReplyProps) {
+export function AppReply({ appTitle, publisherName, message, conversationUrl }: AppReplyProps) {
   return (
     <BaseLayout previewText={`Reply about ${appTitle}`}>
       <Text style={heading}>Reply about {appTitle}</Text>
@@ -26,13 +25,12 @@ export function AppReply({ appTitle, publisherName, message, appUrl, replyLands 
         {publisherName || 'The person who made it'} answered what you said:
       </Text>
       <Text style={quote}>{message}</Text>
-      <Button href={appUrl} style={button}>
-        Open {appTitle}
+      <Button href={conversationUrl} style={button}>
+        Reply in {appTitle}
       </Button>
       <Text style={muted}>
-        {replyLands
-          ? `Just reply to this email to answer ${publisherName || 'them'}.`
-          : `Reply to this email to answer ${publisherName || 'them'} directly, or use the Feedback button inside the app.`}
+        This email is a copy. Your conversation with {publisherName || 'them'} lives in {appTitle}: the button
+        opens it, and your answer goes straight to them.
       </Text>
     </BaseLayout>
   )
@@ -42,7 +40,7 @@ AppReply.PreviewProps = {
   appTitle: 'Cat Math Adventure',
   publisherName: 'Dan',
   message: 'Good catch — the timer was starting at zero. Fixed in the latest version.',
-  appUrl: 'https://kanthink.com/play/abc123',
+  conversationUrl: 'https://kanthink.com/api/play/abc123/conversation?k=…',
 } satisfies AppReplyProps
 
 export default AppReply

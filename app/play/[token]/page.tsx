@@ -29,7 +29,7 @@ import type { Metadata } from 'next';
 
 interface PageProps {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ purchase?: string; order?: string }>;
+  searchParams: Promise<{ purchase?: string; order?: string; messages?: string }>;
 }
 
 export const dynamic = 'force-dynamic';
@@ -53,7 +53,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function PlayPage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const { purchase, order } = await searchParams;
+  const { purchase, order, messages } = await searchParams;
 
   const app = await findPublishedApp(token);
   if (!app) notFound();
@@ -212,6 +212,7 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
           : null
       }
       unlockRecurring={app.priceInterval === 'month' || app.priceInterval === 'year'}
+      openMessages={messages === '1'}
     />
   );
 }

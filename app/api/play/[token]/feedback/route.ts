@@ -119,9 +119,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
       member = await ensureAppUser({ appId: app.id, ownerId, email, name: body.name })
     }
 
-    // The same path an emailed reply takes: thread, notification, and an email to
-    // the maker they can answer by replying.
-    const message = await postFromUser({ app, member, body: text, via: 'app' })
+    // Into the thread, with a notification (and phone push) for the maker.
+    const message = await postFromUser({ app, member, body: text })
 
     // No cookie is ever minted here. Writing is open to anyone, so issuing a
     // session on a write would hand an account to whoever typed the address — which

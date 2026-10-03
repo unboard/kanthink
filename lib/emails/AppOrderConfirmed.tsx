@@ -14,6 +14,8 @@ interface AppOrderConfirmedProps {
   /** How they get it, in the seller's words. Empty when the seller hasn't said. */
   fulfilmentNote: string
   shopUrl: string
+  /** Opens their conversation with the seller in the app, signed in. */
+  conversationUrl?: string
 }
 
 /**
@@ -22,7 +24,7 @@ interface AppOrderConfirmedProps {
  * What they bought, what they paid, the order number to quote, and what happens
  * next, which for a local shop is the part they actually need.
  */
-export function AppOrderConfirmed({ buyerName, shopName, orderNumber, item, quantity, amount, fulfilmentNote, shopUrl }: AppOrderConfirmedProps) {
+export function AppOrderConfirmed({ buyerName, shopName, orderNumber, item, quantity, amount, fulfilmentNote, shopUrl, conversationUrl }: AppOrderConfirmedProps) {
   const name = buyerName || 'there'
   return (
     <BaseLayout previewText={`Order #${orderNumber} from ${shopName} is confirmed`}>
@@ -44,8 +46,9 @@ export function AppOrderConfirmed({ buyerName, shopName, orderNumber, item, quan
         Back to {shopName}
       </Button>
       <Text style={muted}>
-        Questions about your order? Open the shop and use the Feedback button. It goes straight
-        to the seller. Quote order #{orderNumber}.
+        Questions about your order?{' '}
+        {conversationUrl ? <a href={conversationUrl} style={link}>Message {shopName}</a> : 'Use the Feedback button in the shop'}
+        . It goes straight to the seller, and their answer shows up in the same place.
       </Text>
     </BaseLayout>
   )
@@ -68,6 +71,7 @@ const heading = { fontSize: '20px', fontWeight: '600' as const, color: '#18181b'
 const paragraph = { fontSize: '14px', lineHeight: '24px', color: '#3f3f46', margin: '0 0 16px' }
 const line = { fontSize: '15px', lineHeight: '24px', color: '#18181b', margin: '0 0 16px', padding: '12px 14px', border: '1px solid #e4e4e7', borderRadius: '10px' }
 const mutedInline = { fontSize: '13px', color: '#71717a' }
+const link = { color: '#7c3aed', textDecoration: 'underline' }
 const muted = { fontSize: '12px', lineHeight: '20px', color: '#a1a1aa', margin: '20px 0 0' }
 const button = {
   backgroundColor: '#7c3aed',

@@ -7,6 +7,8 @@ import type { AppThreadMessage } from '@/lib/types';
 interface Props {
   token: string;
   appTitle: string;
+  /** Open on load: someone followed the link in a reply email. */
+  initiallyOpen?: boolean;
 }
 
 /** While the drawer is open, a reply should just turn up. */
@@ -28,8 +30,8 @@ const IDLE_POLL_MS = 60_000;
  * reply, and the conversation that follows. Full height on the right, a near-full
  * sheet on a phone, and the thread gets the room.
  */
-export function AppFeedbackPanel({ token, appTitle }: Props) {
-  const [open, setOpen] = useState(false);
+export function AppFeedbackPanel({ token, appTitle, initiallyOpen }: Props) {
+  const [open, setOpen] = useState(!!initiallyOpen);
   const [messages, setMessages] = useState<AppThreadMessage[]>([]);
   const [identified, setIdentified] = useState(false);
   const [loaded, setLoaded] = useState(false);

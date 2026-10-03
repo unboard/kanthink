@@ -64,7 +64,6 @@ import { ChannelDigest } from './ChannelDigest'
 import { AppAccessCode } from './AppAccessCode'
 import { AppPurchased } from './AppPurchased'
 import { AppOrderConfirmed } from './AppOrderConfirmed'
-import { AppMessage } from './AppMessage'
 import { AppReply } from './AppReply'
 import { DynamicEmail, type EmailConfig } from './dynamicRenderer'
 import { db } from '@/lib/db'
@@ -150,37 +149,25 @@ export async function sendAppAccessCodeEmail(
  */
 export async function sendAppPurchasedEmail(
   to: string,
-  props: { buyerName: string; appTitle: string; amount: string; appUrl: string; manageBillingUrl?: string },
-  replyTo?: string | null
+  props: { buyerName: string; appTitle: string; amount: string; appUrl: string; manageBillingUrl?: string }
 ): Promise<boolean> {
-  return renderAndSend(to, `You're in — ${props.appTitle}`, React.createElement(AppPurchased, props), replyTo)
+  return renderAndSend(to, `You're in — ${props.appTitle}`, React.createElement(AppPurchased, props))
 }
 
 /** The buyer's receipt for an order in a shop built on Kanthink. */
 export async function sendAppOrderConfirmedEmail(
   to: string,
-  props: { buyerName: string; shopName: string; orderNumber: string; item: string; quantity: number; amount: string; fulfilmentNote: string; shopUrl: string },
-  replyTo?: string | null
+  props: { buyerName: string; shopName: string; orderNumber: string; item: string; quantity: number; amount: string; fulfilmentNote: string; shopUrl: string; conversationUrl?: string }
 ): Promise<boolean> {
-  return renderAndSend(to, `Order #${props.orderNumber} confirmed — ${props.shopName}`, React.createElement(AppOrderConfirmed, props), replyTo)
+  return renderAndSend(to, `Order #${props.orderNumber} confirmed — ${props.shopName}`, React.createElement(AppOrderConfirmed, props))
 }
 
 /** A publisher answering someone who left feedback inside their app. */
 export async function sendAppReplyEmail(
   to: string,
-  props: { appTitle: string; publisherName: string; message: string; appUrl: string; replyLands?: boolean },
-  replyTo?: string | null
+  props: { appTitle: string; publisherName: string; message: string; conversationUrl: string }
 ): Promise<boolean> {
-  return renderAndSend(to, `Reply about ${props.appTitle}`, React.createElement(AppReply, props), replyTo)
-}
-
-/** Someone using one of your apps wrote to you. Reply to the email to answer. */
-export async function sendAppMessageEmail(
-  to: string,
-  props: { fromName: string; appTitle: string; message: string; threadUrl: string; replyLands: boolean },
-  replyTo?: string | null
-): Promise<boolean> {
-  return renderAndSend(to, `${props.fromName} on ${props.appTitle}`, React.createElement(AppMessage, props), replyTo)
+  return renderAndSend(to, `Reply about ${props.appTitle}`, React.createElement(AppReply, props))
 }
 
 export async function sendChannelInviteEmail(

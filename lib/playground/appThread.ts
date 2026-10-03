@@ -2,8 +2,8 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { appMessages, appUsers, playgroundApps, users } from '@/lib/db/schema'
 import { createNotification } from '@/lib/notifications/createNotification'
-import { sendAppMessageEmail, sendAppReplyEmail } from '@/lib/emails/send'
-import { inboundConfigured, replyAddress } from '@/lib/email/replyRouting'
+import { sendAppReplyEmail } from '@/lib/emails/send'
+import { signAccessToken } from '@/lib/playground/appAccess'
 import type { AppThreadMessage } from '@/lib/types'
 
 /**
@@ -12,9 +12,10 @@ import type { AppThreadMessage } from '@/lib/types'
  * to one of the emails. Every path ends here, so a reply by email does exactly
  * what the same words typed in Kanthink would.
  *
- * Every email carries a Reply-To that brings the answer back into this thread
- * (see lib/email/replyRouting), so either person can keep the conversation going
- * from their inbox.
+ * The conversation lives in the app, and only there. The maker hears about a new
+ * message through notifications (and push on their phone); the person using the
+ * app gets an email that records the reply and opens the conversation, signed in,
+ * with one click. Nobody replies by email.
  */
 
 type AppRow = typeof playgroundApps.$inferSelect
@@ -23,6 +24,15 @@ type MemberRow = typeof appUsers.$inferSelect
 function origin(): string {
   const url = process.env.NEXTAUTH_URL || ''
   return url.startsWith('https://') ? url.replace(/\/$/, '') : 'https://www.kanthink.com'
+}
+
+/**
+ * The link that opens someone's conversation in the app, signed in. It carries a
+ * verified-scope key, which is safe only because it goes to their own inbox.
+ */
+export function conversationUrl(member: Pick<MemberRow, 'id' | 'sessionEpoch'>, shareToken: string): string {
+  const k = signAccessToken(member.id, member.sessionEpoch ?? 0, 'verified')
+  return `${origin()}/api/play/${shareToken}/conversation?k=${encodeURIComponent(k)}`
 }
 
 /** The app's People tab, open on this conversation's app. */
@@ -39,7 +49,7 @@ function toMessage(row: { id: string; sender: 'user' | 'publisher'; body: string
 }
 
 /** Someone using the app wrote to its maker. */
-export async function postFromUser(opts: { app: AppRow; member: MemberRow; body: string; via?: 'app' | 'email' }): Promise<AppThreadMessage> {
+export async function postFromUser(opts: { app: AppRow; member: MemberRow; body: string }): Promise<AppThreadMessage> {
   const { app, member } = opts
   const body = opts.body.trim().slice(0, 4000)
   const id = crypto.randomUUID()
@@ -58,18 +68,6 @@ export async function postFromUser(opts: { app: AppRow; member: MemberRow; body:
     data: { appId: app.id, appUserId: member.id, cardId: app.cardId, channelId: app.channelId, kind: 'app_feedback' },
   })
 
-  // The maker hears by email too, and can answer by replying to it.
-  const owner = await ownerOf(member)
-  if (owner?.email) {
-    void sendAppMessageEmail(owner.email, {
-      fromName: who,
-      appTitle: app.title,
-      message: body.slice(0, 2000),
-      threadUrl: threadUrl(app),
-      replyLands: inboundConfigured(),
-    }, replyAddress({ appUserId: member.id, as: 'publisher' }, member.email)).catch(() => {})
-  }
-
   return toMessage({ id, sender: 'user', body, createdAt: now })
 }
 
@@ -86,17 +84,16 @@ export async function postFromPublisher(opts: { app: AppRow; member: MemberRow; 
     ? await db.query.users.findFirst({ where: eq(users.id, opts.publisherUserId), columns: { name: true, email: true } })
     : await ownerOf(member)
 
-  // Email regardless of whether they have a Kanthink account: most people who leave
-  // feedback on a web app never return to the page, so a reply that only lives in
-  // the app is a reply nobody reads. Replying to the email continues the thread.
+  // A record of the reply, by email, with one button back into the conversation:
+  // most people who leave feedback on a web app never return to the page on their
+  // own, so the email is what brings them back. The answer happens in the app.
   if (app.shareToken) {
     void sendAppReplyEmail(member.email, {
       appTitle: app.title,
       publisherName: publisher?.name || '',
       message: body.slice(0, 2000),
-      appUrl: `${origin()}/play/${app.shareToken}`,
-      replyLands: inboundConfigured(),
-    }, replyAddress({ appUserId: member.id, as: 'user' }, publisher?.email)).catch(() => {})
+      conversationUrl: conversationUrl(member, app.shareToken),
+    }).catch(() => {})
   }
 
   if (member.userId) {

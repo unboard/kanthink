@@ -26,6 +26,8 @@ interface Props {
    */
   unlockPrice?: string | null;
   unlockRecurring?: boolean;
+  /** Open the conversation with the maker on load (from a reply email). */
+  openMessages?: boolean;
 }
 
 /**
@@ -45,6 +47,7 @@ export function PublicPlaygroundFrame({
   customerEmail,
   unlockPrice,
   unlockRecurring,
+  openMessages,
 }: Props) {
   // The app's own saved data, held by this page because the sandboxed iframe has
   // no storage of its own. Without it a saved score lasts until the next refresh.
@@ -157,7 +160,7 @@ export function PublicPlaygroundFrame({
                 Billing
               </a>
             )}
-            <AppFeedbackPanel token={token} appTitle={title} />
+            <AppFeedbackPanel token={token} appTitle={title} initiallyOpen={openMessages} />
             <button
               onClick={() => setHideFooter(true)}
               aria-label="Hide footer"
