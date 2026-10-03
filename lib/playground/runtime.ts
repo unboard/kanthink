@@ -20,6 +20,26 @@
 /** Base modules always present in the iframe. Declarations may not shadow these. */
 export const BASE_SPECIFIERS = ['react', 'react-dom', 'react-dom/client', 'lucide-react'] as const;
 
+/**
+ * The component kit, served by Kanthink itself (public/kit). Not a declaration: it
+ * is fixed, versioned by filename, and mapped only when the host passes its own
+ * origin, so nothing the model writes can point 'kit' anywhere else.
+ */
+export const KIT_SPECIFIER = 'kit';
+export const KIT_PATH = '/kit/v1.js';
+
+/** The kit's URL on this deployment, or null for an origin that is not plain http(s). */
+export function kitModuleUrl(origin: string | null | undefined): string | null {
+  if (!origin) return null;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return `${url.origin}${KIT_PATH}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Hard cap. Import maps are cheap, but an unbounded list is a footgun, not a feature. */
 export const MAX_RUNTIME_DEPS = 12;
 
@@ -128,7 +148,7 @@ export function resolveDeps(declarations: string[]): {
 } {
   const deps: ResolvedDep[] = [];
   const rejected: Array<{ raw: string; reason: string }> = [];
-  const seen = new Set<string>(BASE_SPECIFIERS);
+  const seen = new Set<string>([...BASE_SPECIFIERS, KIT_SPECIFIER]);
 
   for (const declaration of declarations) {
     if (deps.length >= MAX_RUNTIME_DEPS) {
@@ -159,7 +179,7 @@ export function resolveDeps(declarations: string[]): {
  * Build the iframe's import map, base modules plus resolved extras.
  * Returned pretty-printed because it lands in a document people read while debugging.
  */
-export function buildImportMap(deps: ResolvedDep[]): string {
+export function buildImportMap(deps: ResolvedDep[], options?: { kitOrigin?: string | null }): string {
   const imports: Record<string, string> = {
     react: 'https://esm.sh/react@19.0.0',
     'react/': 'https://esm.sh/react@19.0.0/',
@@ -174,6 +194,11 @@ export function buildImportMap(deps: ResolvedDep[]): string {
     // three.js actually gets used, and it's dead without the trailing-slash mapping.
     imports[`${dep.specifier}/`] = `${dep.url.split('?')[0]}/`;
   }
+
+  // Last, so nothing above can shadow it. Re-derived from the origin rather than
+  // trusted as passed.
+  const kit = kitModuleUrl(options?.kitOrigin);
+  if (kit) imports[KIT_SPECIFIER] = kit;
 
   return JSON.stringify({ imports }, null, 2);
 }

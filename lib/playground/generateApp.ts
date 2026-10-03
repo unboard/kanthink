@@ -38,6 +38,10 @@ import {
   type ResolvedDep,
 } from '@/lib/playground/runtime';
 import { stripOptimistic } from '@/lib/playground/thread';
+import { normalizeStyle, resolveStyle, stylePrompt, type AppStyle } from '@/lib/playground/style/tokens';
+import { pickStyle } from '@/lib/playground/style/autoPick';
+import { isStylePass, passPrompt, PASS_LABEL, type StylePass } from '@/lib/playground/style/passes';
+import { checkDesign, findingsBrief } from '@/lib/playground/style/slopCheck';
 
 // Long generations on Gemini 2.5 Pro / 3.x Pro with high thinking budgets can
 // cleanly exceed 60s. 800s is the Vercel Pro ceiling (300s is only the default),
@@ -589,6 +593,11 @@ export interface GenerateRequest {
   modelId?: string;
   // Optional: image URLs (Cloudinary) attached to this prompt for visual context.
   imageUrls?: string[];
+  /**
+   * A design pass from the Style tab. The brief is written here, on the server;
+   * the thread shows only its one-line label.
+   */
+  pass?: StylePass;
 }
 
 /**
@@ -638,6 +647,13 @@ export async function generatePlaygroundApp(
   } = {}
 ): Promise<NextResponse> {
   await ensureSchema();
+  const pass = isStylePass(body.pass) ? body.pass : null;
+  if (pass) {
+    // A pass is a deliberate, whole-app visual change: nothing to clarify, and too
+    // broad for a patch.
+    body = { ...body, prompt: PASS_LABEL[pass] };
+    options = { ...options, skipPreflight: true, skipPatch: true };
+  }
   if (!body.appId || !body.prompt) {
     return NextResponse.json({ error: 'appId and prompt are required' }, { status: 400 });
   }
@@ -720,6 +736,9 @@ export async function generatePlaygroundApp(
   const currentCode = app.code || undefined;
   const generationCount = app.generationCount ?? 0;
   const isIteration = !!currentCode;
+  if (pass && !isIteration) {
+    return NextResponse.json({ error: 'Build the app first, then restyle it.' }, { status: 400 });
+  }
 
   // Dependencies available for THIS generation: whatever the app already had. The
   // model can add more via its response, applied to the same turn's code — see the
@@ -823,6 +842,28 @@ export async function generatePlaygroundApp(
   const preflightProvider: PlaygroundProvider | undefined =
     keys.google ? 'google' : keys.openai ? 'openai' : keys.anthropic ? 'anthropic' : undefined;
   const preflightKey = preflightProvider ? keys[preflightProvider]?.apiKey : undefined;
+
+  // The app's style. Kan picks one on the first build, so nobody has to, running
+  // alongside preflight so it adds no wait. Apps from before styles existed keep
+  // building exactly as they did until their owner chooses one, because a style
+  // arriving uninvited mid-iteration would be the drift EDIT PRESERVATION forbids.
+  const storedStyle = normalizeStyle(app.style);
+  const stylePick: Promise<AppStyle | null> = storedStyle
+    ? Promise.resolve(storedStyle)
+    : !isIteration || pass
+      ? pickStyle({
+          brief: [
+            `APP: ${app.title}`,
+            `SOURCE CARD: ${card.title}`,
+            card.summary ? `SUMMARY: ${card.summary}` : '',
+            cardMessages.slice(-12).map((m) => (m.content || '').slice(0, 800)).join('\n'),
+            appMessages.slice(-12).map((m) => (m.content || '').slice(0, 800)).join('\n'),
+            pass ? '' : body.prompt,
+          ].filter(Boolean).join('\n'),
+          provider: preflightProvider,
+          apiKey: preflightKey,
+        })
+      : Promise.resolve(null);
   const preflight: PreflightResult = !options.skipPreflight && preflightKey
     ? await runPreflight({
         apiKey: preflightKey,
@@ -958,6 +999,22 @@ export async function generatePlaygroundApp(
     });
   }
 
+  const style = await stylePick;
+  if (style && !storedStyle) {
+    await db.update(playgroundApps).set({ style, updatedAt: new Date() }).where(eq(playgroundApps.id, app.id));
+  }
+  const resolvedStyle = style ? resolveStyle(style) : null;
+
+  // On a normal edit to a styled app, what the design check finds in the current
+  // code rides along, to be fixed where this change touches it — so an app gets
+  // cleaner as it is worked on, without a separate pass or a wider diff.
+  const designCheck = resolvedStyle && isIteration && !pass
+    ? checkDesign(currentCode, { hasStyle: true, look: resolvedStyle.look.id }).findings.filter((f) => f.severity !== 'low')
+    : [];
+  const designCheckBlock = designCheck.length
+    ? `DESIGN CHECK on the current code (fix these only where this request already has you editing; do not widen the change for them):\n${findingsBrief(designCheck)}`
+    : '';
+
   // Build the prompt for full generation. Inject designNotes verbatim so the
   // model treats prior decisions as locked unless this turn's request changes them.
   const designNotesBlock = app.designNotes
@@ -985,7 +1042,9 @@ export async function generatePlaygroundApp(
     console.log('[playground] user asked to remove:', authorisedRemovals.join(' | '));
   }
 
-  const requestBlock = `USER REQUEST:
+  const requestBlock = pass
+    ? `USER REQUEST:\n${passPrompt(pass, currentCode, resolvedStyle?.look.id)}${imageNote}`
+    : `USER REQUEST:
 ${body.prompt}${imageNote}${iterationReminder}`;
 
   const userMessage = [
@@ -998,6 +1057,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     sourceContext,
     `THIS APP'S THREAD:\n${threadContext}`,
     body.lastError ? `PREVIOUS ERROR:\n${body.lastError}` : '',
+    designCheckBlock,
     requestBlock,
   ].filter(Boolean).join('\n\n');
 
@@ -1059,7 +1119,10 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     usage.candidatesTokenCount += u.outputTokens ?? 0;
   };
 
-  const runtimeSection = buildRuntimeSection(seeded.deps);
+  // The style rides with the runtime section, so every call path (patch, rewrite,
+  // the capability retry) is briefed the same way.
+  const runtimeSection = buildRuntimeSection(seeded.deps)
+    + (resolvedStyle ? `\n\n${stylePrompt(resolvedStyle)}` : '');
 
   // Claude's adaptive thinking has no separate budget: it spends from max_tokens, so
   // the ceiling that suits Gemini (whose thinking is capped) would truncate a Claude
@@ -1383,6 +1446,7 @@ _Built with ${model.label} — there is no API key for ${switchedProvider}. Add 
     messages: newMessages,
     // The model names the app on its first build; after that the user's own title wins.
     title: generationCount === 0 ? parsed.title : app.title,
+    style: style ?? app.style ?? null,
     updatedAt: new Date(),
   };
 

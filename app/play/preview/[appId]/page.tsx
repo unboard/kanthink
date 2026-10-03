@@ -109,6 +109,7 @@ export default async function PlaygroundPreviewPage({ params, searchParams }: Pa
 
   const srcDoc = buildPlaygroundDoc(code, {
     title,
+    style: version ? version.style ?? null : app.style ?? null,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,

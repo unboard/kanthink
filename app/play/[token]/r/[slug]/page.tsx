@@ -103,6 +103,7 @@ export default async function PlayRecordPage({ params }: PageProps) {
 
   const srcDoc = buildPlaygroundDoc(release.code, {
     title,
+    style: release.style ?? null,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,

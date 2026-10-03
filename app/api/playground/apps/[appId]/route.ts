@@ -10,6 +10,7 @@ import { signDraftAppToken } from '@/lib/playground/appToken'
 import { ownerDraftDataToken } from '@/lib/playground/publicApp'
 import { readAll } from '@/lib/playground/customerData'
 import { releaseView } from '@/lib/playground/appRelease'
+import { normalizeStyle } from '@/lib/playground/style/tokens'
 
 export const runtime = 'nodejs'
 
@@ -24,7 +25,7 @@ interface RouteParams {
  *          a generate request dies mid-flight (screen-off, tab suspension, blip):
  *          the server-side write completes regardless of whether anyone is listening.
  * PATCH  — rename, publish/unpublish, set the sticky model, write the directory
- *          tagline and listing, append thread messages. Pricing is its own route:
+ *          tagline and listing, change the style, append thread messages. Pricing is its own route:
  *          it talks to Stripe and fails in ways worth reporting separately.
  * DELETE — remove it. The source card is untouched.
  */
@@ -82,6 +83,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     position?: number
     tagline?: string | null
     listedInDirectory?: boolean
+    style?: unknown
   }
   try {
     body = await req.json()
@@ -123,6 +125,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
     if (typeof body.listedInDirectory === 'boolean') {
       updates.listedInDirectory = body.listedInDirectory
+    }
+    if (body.style !== undefined) {
+      // Validated into known catalogue ids and a safe logo URL: the style is
+      // interpolated into the app's page. Anything changed here is the owner's
+      // choice, so Kan's reason for its own pick no longer applies.
+      const style = normalizeStyle(body.style)
+      if (!style) return NextResponse.json({ error: 'That style is not valid.' }, { status: 400 })
+      updates.style = { ...style, chosenBy: 'owner', why: null }
     }
 
     await db.update(playgroundApps).set(updates).where(eq(playgroundApps.id, appId))

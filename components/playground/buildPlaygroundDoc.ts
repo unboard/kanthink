@@ -1,4 +1,12 @@
 import { buildImportMap, type ResolvedDep } from '@/lib/playground/runtime';
+import {
+  googleFontsHref,
+  resolveStyle,
+  runtimeStyleInfo,
+  styleCss,
+  tailwindConfig,
+  type AppStyle,
+} from '@/lib/playground/style/tokens';
 
 /**
  * Build the full HTML document we inject into the playground iframe via `srcdoc`.
@@ -81,6 +89,17 @@ export function buildPlaygroundDoc(
      * in — these values are interpolated straight into the document.
      */
     deps?: ResolvedDep[];
+    /**
+     * The app's style. Injected as CSS variables, a Tailwind config and the fonts,
+     * and exposed as window.kanthinkStyle. Absent for apps from before styles
+     * existed, which then render exactly as they always have.
+     */
+    style?: AppStyle | null;
+    /**
+     * This deployment's origin, for the component kit's import-map entry. Taken
+     * from uploadUrl when that is absolute, which every real caller passes.
+     */
+    origin?: string;
   }
 ): string {
   const title = (options?.title || 'Kanthink Playground').replace(/[<>]/g, '');
@@ -98,6 +117,11 @@ export function buildPlaygroundDoc(
   const customer = options?.customer ?? null;
   const customerData = options?.customerData ?? null;
   const initialRecord = options?.initialRecord ?? null;
+  let origin = options?.origin || '';
+  if (!origin && /^https?:\/\//.test(uploadUrl)) {
+    try { origin = new URL(uploadUrl).origin; } catch { origin = ''; }
+  }
+  const styleHead = buildStyleHead(options?.style ?? null, title);
   // Strip an accidental opening markdown fence if Gemini ever leaks one.
   // Also strip any `import React ...` lines: the iframe's wrapper already does
   // `import * as React from 'react'` so user code that re-imports React would
@@ -119,10 +143,12 @@ export function buildPlaygroundDoc(
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <title>${title}</title>
 <script src="https://cdn.tailwindcss.com"></script>
+${styleHead.config}
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script type="importmap">
-${buildImportMap(options?.deps || [])}
+${buildImportMap(options?.deps || [], { kitOrigin: origin })}
 </script>
+${styleHead.links}
 <style>
   html, body, #root { height: 100%; margin: 0; padding: 0; }
   body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
@@ -130,6 +156,7 @@ ${buildImportMap(options?.deps || [])}
   #__kpg_error.visible { display: block; }
   #__kpg_error .label { color: #fca5a5; font-weight: 600; margin-bottom: 4px; display: block; }
 </style>
+${styleHead.css}
 </head>
 <body>
 <div id="root"></div>
@@ -678,4 +705,34 @@ __kpg_root.render(
 </script>
 </body>
 </html>`;
+}
+
+/** JSON that is safe inside a <script> element. */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Everything a style adds to the document head. Empty strings when there is no
+ * style, so an unstyled app's document is byte-for-byte what it always was.
+ */
+function buildStyleHead(style: AppStyle | null, title: string): { config: string; links: string; css: string } {
+  if (!style) return { config: '', links: '', css: '' };
+  const resolved = resolveStyle(style);
+  const fonts = googleFontsHref(resolved.fonts).replace(/&/g, '&amp;');
+  // safeImageUrl already ruled out quotes and angle brackets when the style was stored.
+  const logo = resolved.style.logoUrl;
+  return {
+    config: `<script>tailwind.config = ${scriptJson(tailwindConfig(resolved))};window.kanthinkStyle = ${scriptJson(runtimeStyleInfo(resolved, title))};</script>`,
+    links: [
+      '<link rel="preconnect" href="https://fonts.googleapis.com" />',
+      '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />',
+      `<link rel="stylesheet" href="${fonts}" />`,
+      logo ? `<link rel="icon" href="${logo}" />` : '',
+    ].filter(Boolean).join('\n'),
+    css: `<style>\n${styleCss(resolved)}\n</style>`,
+  };
 }

@@ -1,3 +1,4 @@
+import type { AppStyle } from '../playground/style/tokens'
 import { sqliteTable, text, integer, primaryKey, index, uniqueIndex, customType } from 'drizzle-orm/sqlite-core'
 
 /**
@@ -430,6 +431,15 @@ export const playgroundApps = sqliteTable('playground_apps', {
   reserveMode: integer('reserve_mode', { mode: 'boolean' }).default(false),
   reservePage: text('reserve_page', { mode: 'json' }).$type<{ headline: string; pitch: string; priceLabel: string; bullets?: string[] } | null>(),
 
+  /**
+   * How the app looks: a look, palette, fonts, corners, density, logo and the
+   * owner's own direction. Kan picks one on the first build; the Style tab changes
+   * it. Injected into the page at runtime as CSS variables and a Tailwind config,
+   * so recolouring an app built on the tokens needs no rebuild. See
+   * lib/playground/style. Null for apps from before styles existed.
+   */
+  style: text('style', { mode: 'json' }).$type<AppStyle | null>(),
+
   // --- AI spending ---
   //
   // A published app's AI calls are billed to whoever published it, and until this
@@ -529,6 +539,8 @@ export const playgroundAppVersions = sqliteTable('playground_app_versions', {
   title: text('title').notNull(),
   summary: text('summary'),
   designNotes: text('design_notes'),
+  /** The style this release was cut with, so restyling the draft never changes what customers see. */
+  style: text('style', { mode: 'json' }).$type<AppStyle | null>(),
   /** What changed in this release, for the history list. */
   notes: text('notes'),
   /** The build this was cut from, so a release can be traced to its generation. */

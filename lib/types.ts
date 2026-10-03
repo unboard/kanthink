@@ -665,6 +665,8 @@ export interface PlaygroundApp {
   generationCount: number;
   /** Terse running list of established design decisions, re-injected on each build. */
   designNotes?: string | null;
+  /** How the app looks. Kan picks it on the first build; the Style tab changes it. */
+  style?: import('./playground/style/tokens').AppStyle | null;
   /** Kan's note from the most recent build. */
   lastNotes?: string | null;
   /** Runtime library declarations — see lib/playground/runtime. Never resolved URLs. */

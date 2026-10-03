@@ -146,6 +146,7 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   const saved = member ? await readAll(app.id, member.id, 'live') : [];
   const srcDoc = buildPlaygroundDoc(release.code, {
     title,
+    style: release.style ?? null,
     uploadUrl: `${origin}/api/playground/upload`,
     aiUrl: `${origin}/api/playground/ai`,
     saveUrl: `${origin}/api/playground/save`,

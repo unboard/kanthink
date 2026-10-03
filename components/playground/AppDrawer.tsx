@@ -17,6 +17,9 @@ import { AppThumbnailDialog } from './AppThumbnailDialog';
 import { AppPricingSection } from './AppPricingSection';
 import { AppReleaseSection } from './AppReleaseSection';
 import { AppSpendSection } from './AppSpendSection';
+import { AppStylePane } from './AppStylePane';
+import { PASS_LABEL, type StylePass } from '@/lib/playground/style/passes';
+import type { AppStyle } from '@/lib/playground/style/tokens';
 import { resolveDeps } from '@/lib/playground/runtime';
 import { formatAppPrice } from '@/lib/playground/appAccess';
 import type { Card, CardMessage, CardMessageType, ID, PlaygroundApp, WhiteboardAttachment } from '@/lib/types';
@@ -34,6 +37,7 @@ import {
   Loader2,
   Image as ImageIcon,
   MessageSquareText,
+  Palette,
   ChevronDown,
   Settings2,
   Trash2,
@@ -75,7 +79,7 @@ interface IframeError {
   stack?: string;
 }
 
-type Pane = 'thread' | 'preview' | 'settings' | 'audience';
+type Pane = 'thread' | 'preview' | 'style' | 'settings' | 'audience';
 
 const OPTIMISTIC_PREFIX = '__optimistic_';
 
@@ -212,6 +216,9 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       }
     : null;
   const previewPayKey = previewPay ? `${previewPay.price}:${previewPay.recurring}` : '';
+  // By value, like the dependencies: a style change restyles the preview at once,
+  // with no rebuild, which is the whole point of the tokens.
+  const styleKey = JSON.stringify(app?.style ?? null);
   const srcDoc = useMemo(() => {
     if (!appCode) return null;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -227,10 +234,11 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
       customerData: draftData,
       pay: previewPay,
       deps: resolveDeps(depsKey ? depsKey.split(',') : []).deps,
+      style: JSON.parse(styleKey) as AppStyle | null,
     });
     // previewPay is rebuilt each render; previewPayKey is what actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appCode, appTitle, appToken, dataToken, draftCustomer, draftData, depsKey, previewPayKey]);
+  }, [appCode, appTitle, appToken, dataToken, draftCustomer, draftData, depsKey, previewPayKey, styleKey]);
 
   // Runtime errors reported by the sandboxed iframe.
   useEffect(() => {
@@ -305,7 +313,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   // --- Persistence ---------------------------------------------------------
 
   const patch = useCallback(async (
-    updates: Partial<Pick<PlaygroundApp, 'title' | 'isPublic' | 'modelId' | 'tagline' | 'listedInDirectory'>>
+    updates: Partial<Pick<PlaygroundApp, 'title' | 'isPublic' | 'modelId' | 'tagline' | 'listedInDirectory' | 'style'>>
   ) => {
     if (!app) return;
     // Optimistic: renaming, publishing and switching model should feel instant.
@@ -451,9 +459,9 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
    * thread as context — which is why a conversation that never mentioned building
    * still shapes what comes out.
    */
-  const build = useCallback(async (promptText: string, includeError: boolean) => {
+  const build = useCallback(async (promptText: string, includeError: boolean, pass?: StylePass) => {
     if (busy || !app) return;
-    const trimmed = promptText.trim() || (hasCode
+    const trimmed = pass ? PASS_LABEL[pass] : promptText.trim() || (hasCode
       ? 'Update the app based on everything discussed in this thread.'
       : 'Build the app described in this thread and on the source card.');
     setError(null);
@@ -470,6 +478,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
           prompt: trimmed,
           lastError: includeError ? iframeError?.message : undefined,
           modelId,
+          pass,
         }),
       });
 
@@ -598,6 +607,15 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
                 <EmptyPreview />
               )}
             </div>
+          ) : pane === 'style' && app ? (
+            <AppStylePane
+              app={app}
+              srcDoc={srcDoc}
+              busy={busy}
+              cardId={card.id}
+              onChange={(style) => void patch({ style })}
+              onPass={(pass) => void build('', false, pass)}
+            />
           ) : pane === 'audience' && app ? (
             <AppAudiencePane
               appId={app.id}
@@ -698,6 +716,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
               {([
                 { key: 'thread' as const, label: 'Thread', icon: <MessageSquareText className="w-3.5 h-3.5" />, disabled: false },
                 { key: 'preview' as const, label: hasCode ? `Preview v${generationCount}` : 'Preview', icon: <Eye className="w-3.5 h-3.5" />, disabled: !hasCode },
+                { key: 'style' as const, label: 'Style', icon: <Palette className="w-3.5 h-3.5" />, disabled: !app },
                 { key: 'audience' as const, label: unread > 0 ? `People · ${unread}` : 'People', icon: <Users className="w-3.5 h-3.5" />, disabled: !app },
                 { key: 'settings' as const, label: 'Settings', icon: <Settings2 className="w-3.5 h-3.5" />, disabled: !app },
               ]).map((tab) => (

@@ -133,13 +133,15 @@ export async function publishDraft(app: AppRow, userId: string): Promise<Publish
 
   const latest = (await listVersions(app.id))[0] ?? null
 
-  if (latest && latest.code === app.code && app.publishedVersionId === latest.id) {
+  const same = latest ? sameRelease(latest, app) : false
+
+  if (latest && same && app.publishedVersionId === latest.id) {
     return { ok: true, version: latest, reused: true }
   }
 
   // An identical release already exists further back — someone published, kept
   // working, then undid it. Point at that rather than minting a duplicate.
-  if (latest && latest.code === app.code) {
+  if (latest && same) {
     await db.update(playgroundApps)
       .set({ publishedVersionId: latest.id, updatedAt: new Date() })
       .where(eq(playgroundApps.id, app.id))
@@ -157,6 +159,7 @@ export async function publishDraft(app: AppRow, userId: string): Promise<Publish
     title: app.title,
     summary: app.summary,
     designNotes: app.designNotes,
+    style: app.style ?? null,
     notes: app.lastNotes,
     sourceGeneration: app.generationCount,
     modelId: app.lastModelId,
@@ -211,5 +214,13 @@ export async function rollbackTo(app: AppRow, versionId: string): Promise<Rollba
 export function hasUnpublishedChanges(app: AppRow, published: AppVersion | null): boolean {
   if (!app.code?.trim()) return false
   if (!published) return true
-  return published.code !== app.code
+  return !sameRelease(published, app)
+}
+
+/**
+ * Would publishing the draft change what customers get? The code, or the style it
+ * is painted with — a recolour is a real change to the app people see.
+ */
+function sameRelease(version: AppVersion, app: AppRow): boolean {
+  return version.code === app.code && JSON.stringify(version.style ?? null) === JSON.stringify(app.style ?? null)
 }

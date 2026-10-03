@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'app-styles',
+    date: '2026-10-02',
+    kind: 'capability',
+    title: 'Every app gets its own look',
+    body: 'Kan picks a look for each new app (Ledger for bills, Newsprint for puzzles, and so on) and builds it with a proper component kit. The Style tab lets you change colours, type, corners and logo instantly, and run Polish, Bolder or Quieter passes.',
+  },
+  {
     id: 'shrooms-learn-from-reasons-only',
     date: '2026-09-30',
     kind: 'automation',
