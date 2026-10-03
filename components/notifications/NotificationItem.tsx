@@ -101,7 +101,7 @@ export function getNavigationUrl(notification: NotificationData, tasks: Record<s
   // notification is about. Landing on the card and making someone hunt for it
   // would waste the one click the notification exists to save.
   if ((notification.type === 'ai_generation_completed' || notification.type === 'app_order') && data.cardId && data.appId) {
-    return `/channel/${channelId}/card/${data.cardId}?app=${data.appId}`
+    return `/channel/${channelId}/card/${data.cardId}?app=${data.appId}${notification.type === 'app_order' ? '&pane=people' : ''}`
   }
 
   // Shroom notifications → open review drawer

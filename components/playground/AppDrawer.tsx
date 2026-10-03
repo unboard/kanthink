@@ -15,8 +15,6 @@ import { isFromFrame } from '@/lib/playground/useAppStorage';
 import { AppAudiencePane } from './AppAudiencePane';
 import { AppThumbnailDialog } from './AppThumbnailDialog';
 import { AppPricingSection } from './AppPricingSection';
-import { AppOrdersSection } from './AppOrdersSection';
-import { takesOrders } from '@/lib/playground/appAccess';
 import { paymentStatus } from '@/lib/playground/payments/status';
 import { AppReleaseSection } from './AppReleaseSection';
 import { AppSpendSection } from './AppSpendSection';
@@ -75,6 +73,8 @@ interface AppDrawerProps {
   onClose: () => void;
   /** Jump to the source card. */
   onOpenSourceCard?: (cardId: ID) => void;
+  /** Open on this tab instead of the thread: 'people', 'preview', 'style', 'settings'. */
+  initialPane?: string;
 }
 
 interface IframeError {
@@ -86,7 +86,7 @@ type Pane = 'thread' | 'preview' | 'style' | 'settings' | 'audience';
 
 const OPTIMISTIC_PREFIX = '__optimistic_';
 
-export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: AppDrawerProps) {
+export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, initialPane }: AppDrawerProps) {
   const upsertPlaygroundApp = useStore((s) => s.upsertPlaygroundApp);
   const removePlaygroundApp = useStore((s) => s.removePlaygroundApp);
 
@@ -103,7 +103,9 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard }: Ap
   const [limitReached, setLimitReached] = useState(false);
   const { data: session } = useSession();
   const [iframeError, setIframeError] = useState<IframeError | null>(null);
-  const [pane, setPane] = useState<Pane>('thread');
+  const [pane, setPane] = useState<Pane>(
+    initialPane === 'people' ? 'audience' : initialPane === 'preview' || initialPane === 'style' || initialPane === 'settings' ? initialPane : 'thread'
+  );
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
@@ -859,7 +861,6 @@ function SettingsPane({
   const paymentProblems = payment.settings.mode !== 'free' ? payment.findings.filter((f) => f.severity === 'high') : [];
   return (
     <div className="px-4 py-4 space-y-6">
-      {takesOrders(app) && <AppOrdersSection appId={app.id} />}
       {paymentProblems.length > 0 && (
         <p className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-2.5 text-xs text-red-600 dark:text-red-400">
           {paymentProblems[0].title}{paymentProblems.length > 1 ? ` (+${paymentProblems.length - 1} more)` : ''}. Buyers won&apos;t be charged correctly until it&apos;s fixed. See Access and payments below.

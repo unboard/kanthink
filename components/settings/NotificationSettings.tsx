@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useNotificationStore } from '@/lib/notificationStore'
-import { requestNotificationPermission } from '@/lib/notifications/serviceWorker'
+import { requestNotificationPermission, subscribeToPush } from '@/lib/notifications/serviceWorker'
 import { NOTIFICATION_CATEGORIES, type NotificationCategory, type NotificationType } from '@/lib/notifications/types'
 
 interface Preferences {
@@ -66,8 +66,10 @@ export function NotificationSettings() {
       setHasPermission(result === 'granted')
       if (result === 'granted' && prefs) {
         savePrefs({ ...prefs, browserNotificationsEnabled: true })
+        void subscribeToPush({ test: true })
       }
     } else if (prefs) {
+      if (!prefs.browserNotificationsEnabled) void subscribeToPush({ test: true })
       savePrefs({ ...prefs, browserNotificationsEnabled: !prefs.browserNotificationsEnabled })
     }
   }

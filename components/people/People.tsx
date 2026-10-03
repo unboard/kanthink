@@ -1,5 +1,7 @@
 'use client';
 
+import { formatAppPrice } from '@/lib/playground/appAccess';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -27,6 +29,7 @@ const STAGE: Record<Stage, { label: string; cls: string; note: string }> = {
 interface PersonSummary {
   id: string; name: string | null; email: string; appId: string; appTitle: string; stage: Stage;
   unsubscribed: boolean; draftWaiting: boolean; unread: number; lastActivity: string;
+  orders?: { count: number; total: number; currency: string; toFulfil: number } | null;
   lastEmail: { subject: string; status: string; openedAt: string | null; clickedAt: string | null; sentAt: string | null } | null;
 }
 interface Email {
@@ -40,7 +43,7 @@ type ThreadItem =
   | { kind: 'email'; at: string; email: Email };
 interface SideItem { id: string; role: 'you' | 'kan'; at: string; content: string; email: Email | null }
 interface Detail {
-  person: { id: string; name: string | null; email: string; stage: Stage; unsubscribed: boolean; appId: string; appTitle: string; appUrl: string | null; live: boolean; priceLabel: string | null };
+  person: { id: string; name: string | null; email: string; stage: Stage; unsubscribed: boolean; appId: string; appTitle: string; appUrl: string | null; live: boolean; priceLabel: string | null; orders?: { id: string; number: number; item: string; quantity: number; amount: string; status: string; paidAt: string | null }[] };
   thread: ThreadItem[];
   side: SideItem[];
 }
@@ -136,6 +139,7 @@ export function People() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-white group-hover:text-violet-400">{p.name || p.email} <span className="text-neutral-500">· {p.appTitle}</span></p>
                   <p className="truncate text-xs text-neutral-400">
+                    {p.orders ? `${p.orders.count} order${p.orders.count === 1 ? '' : 's'} · ${formatAppPrice(p.orders.total, p.orders.currency, null)}${p.orders.toFulfil ? ` · ${p.orders.toFulfil} to fulfil` : ''} · ` : ''}
                     {p.unsubscribed ? 'Unsubscribed' : p.lastEmail ? `${p.lastEmail.subject}: ${p.lastEmail.clickedAt ? 'clicked' : p.lastEmail.openedAt ? 'opened' : 'sent'} ${when(p.lastEmail.clickedAt || p.lastEmail.openedAt || p.lastEmail.sentAt)}` : p.email}
                   </p>
                 </div>
@@ -310,6 +314,19 @@ function PersonView({ id, onBack }: { id: string; onBack: () => void }) {
         </div>
         <p className="text-xs text-neutral-400">{p.email}, {p.appUrl ? <a href={p.appUrl} target="_blank" rel="noreferrer" className="hover:text-violet-400">{p.appTitle}</a> : p.appTitle}{p.live ? '' : ' (test page)'}{p.priceLabel ? `, ${p.priceLabel}` : ''}</p>
         <p className="mt-1 text-xs text-neutral-500">{STAGE[p.stage].note}</p>
+        {p.orders && p.orders.length > 0 && (
+          <ul className="mt-2 space-y-1 border-t border-neutral-800 pt-2">
+            {p.orders.map((o) => (
+              <li key={o.id} className="flex items-center gap-2 text-xs">
+                <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${o.status === 'paid' ? 'bg-amber-400' : o.status === 'fulfilled' ? 'bg-emerald-500' : 'bg-neutral-500'}`} />
+                <span className="tabular-nums text-neutral-500">#{o.number}</span>
+                <span className="min-w-0 flex-1 truncate text-neutral-200">{o.quantity > 1 ? `${o.quantity} × ` : ''}{o.item}</span>
+                <span className="tabular-nums text-neutral-400">{o.amount}</span>
+                <span className="text-neutral-500">{o.status === 'paid' ? 'To fulfil' : o.status === 'fulfilled' ? 'Fulfilled' : 'Refunded'}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       {error && <p className="mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>}
 

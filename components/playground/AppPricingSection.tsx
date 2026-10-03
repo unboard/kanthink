@@ -5,6 +5,8 @@ import { Check, CreditCard, DoorClosed, Globe, Loader2, Lock, MousePointerClick,
 import { formatAppPrice, paywallMode } from '@/lib/playground/appAccess';
 import { FULFILMENTS, paymentStatus } from '@/lib/playground/payments/status';
 import type { PaymentSetup } from '@/lib/playground/payments/types';
+import { enablePushNotifications } from '@/lib/notifications/serviceWorker';
+import { Bell } from 'lucide-react';
 import type { AppPaywallMode, AppPriceInterval, PlaygroundApp } from '@/lib/types';
 
 interface Props {
@@ -349,6 +351,35 @@ function SetupQuestions({ app, mode, onSave, saving }: { app: PlaygroundApp; mod
         </div>
       </div>
       {saving && <p className="flex items-center gap-1.5 text-[10.5px] text-neutral-400"><Loader2 className="h-3 w-3 animate-spin" /> Saved. Kan is re-reading the app…</p>}
+      <OrderAlerts />
+    </div>
+  );
+}
+
+/** Order alerts on this device: a push the moment someone pays, even with Kanthink closed. */
+function OrderAlerts() {
+  // Only ever rendered in the browser (inside the app drawer), so it reads the permission directly.
+  const [state, setState] = useState<'unknown' | 'on' | 'off' | 'blocked' | 'unsupported' | 'asking'>(() => {
+    if (typeof window === 'undefined') return 'unknown';
+    if (!('Notification' in window) || !('PushManager' in window)) return 'unsupported';
+    return Notification.permission === 'granted' ? 'on' : Notification.permission === 'denied' ? 'blocked' : 'off';
+  });
+  if (state === 'unknown' || state === 'unsupported') return null;
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-neutral-50 px-2.5 py-2 dark:bg-neutral-800/50">
+      <Bell className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" />
+      <span className="min-w-0 flex-1 text-[11px] text-neutral-600 dark:text-neutral-300">
+        {state === 'on' ? 'Order alerts are on for this device.' : state === 'blocked' ? 'Notifications are blocked for Kanthink in this browser. Allow them in site settings to get order alerts.' : 'Get an alert on this device the moment someone orders.'}
+      </span>
+      {(state === 'off' || state === 'asking') && (
+        <button
+          onClick={async () => { setState('asking'); const r = await enablePushNotifications(); setState(r === 'granted' ? 'on' : r === 'denied' ? 'blocked' : 'unsupported'); }}
+          disabled={state === 'asking'}
+          className="flex-shrink-0 rounded-md bg-violet-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+        >
+          Turn on
+        </button>
+      )}
     </div>
   );
 }

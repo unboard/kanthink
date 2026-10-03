@@ -1,12 +1,13 @@
 import type Stripe from 'stripe'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { appOrders, playgroundApps } from '@/lib/db/schema'
 import { stripe } from '@/lib/stripe'
 import { createNotification } from '@/lib/notifications/createNotification'
 import { formatAppPrice, takesOrders } from './appAccess'
 import { PricingUnavailableError } from './appPricing'
-import { findAppOwnerId } from './publicApp'
+import { ensureAppUser, findAppOwnerId } from './publicApp'
+import { sendAppOrderConfirmedEmail } from '@/lib/emails/send'
 
 /**
  * Orders: a shop built in the app builder selling items one checkout at a time.
@@ -23,9 +24,15 @@ export type OrderRow = typeof appOrders.$inferSelect
 export { OrderError, cleanOrderRequest, type OrderRequest, type CleanOrder } from './payments/orderRequest'
 import { OrderError, cleanOrderRequest, type OrderRequest } from './payments/orderRequest'
 
-async function nextNumber(appId: string): Promise<number> {
-  const row = await db.select({ n: sql<number>`coalesce(max(${appOrders.number}), 0)` }).from(appOrders).where(eq(appOrders.appId, appId))
-  return (row[0]?.n ?? 0) + 1
+/** Five random digits, not yet used by this app. */
+export async function nextNumber(appId: string): Promise<number> {
+  for (let i = 0; i < 20; i++) {
+    const n = 10000 + Math.floor(Math.random() * 90000)
+    const taken = await db.query.appOrders.findFirst({ where: and(eq(appOrders.appId, appId), eq(appOrders.number, n)), columns: { id: true } })
+    if (!taken) return n
+  }
+  // 90,000 numbers and twenty misses: a shop this busy can have six digits.
+  return 100000 + Math.floor(Math.random() * 900000)
 }
 
 /** Make the order and its checkout. Returns where to send the buyer. */
@@ -137,9 +144,44 @@ export async function markOrderPaid(session: Stripe.Checkout.Session): Promise<O
     updatedAt: new Date(),
   }).where(and(eq(appOrders.id, order.id), eq(appOrders.status, 'pending'))).returning({ id: appOrders.id })
 
-  const updated = await db.query.appOrders.findFirst({ where: eq(appOrders.id, order.id) })
-  if (result.length > 0 && updated) await notifyOwner(updated)
+  let updated = await db.query.appOrders.findFirst({ where: eq(appOrders.id, order.id) })
+  if (result.length > 0 && updated) {
+    // The buyer becomes one of the app's people, so the order shows on the People
+    // tab next to anything else they've said or bought.
+    if (updated.buyerEmail) {
+      try {
+        const member = await ensureAppUser({ appId: updated.appId, ownerId: updated.ownerId, email: updated.buyerEmail, name: updated.buyerName })
+        await db.update(appOrders).set({ appUserId: member.id }).where(eq(appOrders.id, updated.id))
+        updated = { ...updated, appUserId: member.id }
+      } catch (error) {
+        console.warn('[orders] could not link the buyer:', error)
+      }
+    }
+    await notifyOwner(updated)
+    await emailBuyer(updated)
+  }
   return updated ?? null
+}
+
+/** The buyer's receipt. Best-effort: a failed email never undoes a paid order. */
+async function emailBuyer(order: OrderRow) {
+  if (!order.buyerEmail) return
+  const app = await db.query.playgroundApps.findFirst({
+    where: eq(playgroundApps.id, order.appId),
+    columns: { title: true, shareToken: true, paymentSetup: true },
+  })
+  if (!app) return
+  const origin = process.env.NEXTAUTH_URL?.startsWith('https://') ? process.env.NEXTAUTH_URL : 'https://www.kanthink.com'
+  await sendAppOrderConfirmedEmail(order.buyerEmail, {
+    buyerName: order.buyerName || '',
+    shopName: app.title,
+    orderNumber: String(order.number),
+    item: order.item,
+    quantity: order.quantity,
+    amount: formatAppPrice(order.amount, order.currency, null),
+    fulfilmentNote: app.paymentSetup?.fulfilmentNote || '',
+    shopUrl: `${origin}${order.returnPath || `/play/${app.shareToken}`}`,
+  }).catch((error) => console.warn('[orders] receipt email failed:', error))
 }
 
 async function notifyOwner(order: OrderRow) {
@@ -221,4 +263,43 @@ export async function setOrderStatus(appId: string, orderId: string, status: 'fu
     updatedAt: new Date(),
   }).where(eq(appOrders.id, order.id))
   return (await db.query.appOrders.findFirst({ where: eq(appOrders.id, order.id) })) ?? null
+}
+
+/** Orders that count as money in: paid and still standing. */
+export const COUNTED: OrderRow['status'][] = ['paid', 'fulfilled']
+
+/** Per-person order totals for one app, keyed by app user, plus the app's order revenue. */
+export async function orderTotalsForApp(appId: string): Promise<{ byMember: Map<string, { count: number; total: number }>; revenue: number; currency: string | null }> {
+  const rows = await db.query.appOrders.findMany({
+    where: and(eq(appOrders.appId, appId), inArray(appOrders.status, COUNTED)),
+    columns: { appUserId: true, amount: true, currency: true },
+  })
+  const byMember = new Map<string, { count: number; total: number }>()
+  let revenue = 0
+  for (const r of rows) {
+    revenue += r.amount
+    if (!r.appUserId) continue
+    const e = byMember.get(r.appUserId) ?? { count: 0, total: 0 }
+    e.count += 1
+    e.total += r.amount
+    byMember.set(r.appUserId, e)
+  }
+  return { byMember, revenue, currency: rows[0]?.currency ?? null }
+}
+
+/** One person's orders in one app, newest first. */
+export async function ordersForMember(appUserId: string): Promise<OrderRow[]> {
+  return db.query.appOrders.findMany({
+    where: and(eq(appOrders.appUserId, appUserId), inArray(appOrders.status, [...COUNTED, 'refunded', 'canceled'])),
+    orderBy: [desc(appOrders.paidAt)],
+  })
+}
+
+/** Everything an owner has sold recently, across their apps, for Home. */
+export async function ordersForOwner(ownerId: string, limit = 100): Promise<OrderRow[]> {
+  return db.query.appOrders.findMany({
+    where: and(eq(appOrders.ownerId, ownerId), inArray(appOrders.status, COUNTED)),
+    orderBy: [desc(appOrders.paidAt)],
+    limit,
+  })
 }

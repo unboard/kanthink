@@ -724,6 +724,25 @@ export const appMessages = sqliteTable('app_messages', {
 ])
 
 /**
+ * A browser that agreed to receive Kanthink notifications through Web Push, so an
+ * order or a sale reaches the owner's phone even when no Kanthink tab is open.
+ * One row per browser; a subscription the push service says is gone is deleted.
+ */
+export const pushSubscriptions = sqliteTable('push_subscriptions', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull(),
+  endpoint: text('endpoint').notNull(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  userAgent: text('user_agent'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  lastUsedAt: integer('last_used_at', { mode: 'timestamp' }),
+}, (table) => [
+  uniqueIndex('push_subscriptions_endpoint_idx').on(table.endpoint),
+  index('push_subscriptions_user_idx').on(table.userId),
+])
+
+/**
  * One order in an app that sells things.
  *
  * Not a purchase: a purchase buys access, and an order buys an item. The rock shop
@@ -739,8 +758,13 @@ export const appOrders = sqliteTable('app_orders', {
   appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
   /** The publisher, denormalised so "orders across my apps" is one query. */
   ownerId: text('owner_id').notNull(),
-  /** 1, 2, 3… per app. What the buyer and the owner call it. */
+  /**
+   * What the buyer and the owner call it: five random digits, unique within the app.
+   * Random so it doesn't tell a buyer how few orders came before theirs.
+   */
   number: integer('number').notNull(),
+  /** The buyer as one of the app's people, once they've paid. Links the order to the People tab. */
+  appUserId: text('app_user_id'),
   item: text('item').notNull(),
   quantity: integer('quantity').notNull().default(1),
   /** What the app attached: which variant, a personalisation, its own ids. */
@@ -768,6 +792,8 @@ export const appOrders = sqliteTable('app_orders', {
   uniqueIndex('app_orders_checkout_idx').on(table.stripeCheckoutSessionId),
   index('app_orders_app_idx').on(table.appId, table.createdAt),
   index('app_orders_intent_idx').on(table.stripePaymentIntentId),
+  index('app_orders_owner_idx').on(table.ownerId, table.status),
+  index('app_orders_user_idx').on(table.appUserId),
 ])
 
 /**

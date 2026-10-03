@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useStudioInfo } from '@/lib/hooks/useStudioInfo';
 import { ReviewDrawer, usePendingGroups, type ReviewScope } from './ReviewDrawer';
+import { OrdersDrawer, type OrderGroup } from './OrdersDrawer';
 
 /**
  * What's waiting on you, as orbs drifting above the spore field.
@@ -54,17 +55,35 @@ function Orb({ label, count, fresh, onClick, icon, className }: { label: string;
 const ORB_CSS = `
 @keyframes kan-orb-drift-a { 0%,100% { transform: translate(0,0) } 25% { transform: translate(14px,-18px) } 50% { transform: translate(-8px,-30px) } 75% { transform: translate(-16px,-10px) } }
 @keyframes kan-orb-drift-b { 0%,100% { transform: translate(0,0) } 30% { transform: translate(-18px,12px) } 60% { transform: translate(10px,24px) } 80% { transform: translate(16px,6px) } }
+@keyframes kan-orb-drift-c { 0%,100% { transform: translate(0,0) } 35% { transform: translate(12px,16px) } 65% { transform: translate(-14px,8px) } }
 @keyframes kan-orb-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(167,139,250,0.5) } 50% { box-shadow: 0 0 0 12px rgba(167,139,250,0) } }
 .kan-orb-a { animation: kan-orb-drift-a 22s ease-in-out infinite }
 .kan-orb-b { animation: kan-orb-drift-b 27s ease-in-out infinite }
+.kan-orb-c { animation: kan-orb-drift-c 31s ease-in-out infinite }
 .kan-orb-fresh::before { content: ''; position: absolute; inset: -1px; border-radius: 9999px; animation: kan-orb-glow 2.6s ease-in-out infinite; pointer-events: none }
-@media (prefers-reduced-motion: reduce) { .kan-orb-a, .kan-orb-b, .kan-orb-fresh::before { animation: none } }
+@media (prefers-reduced-motion: reduce) { .kan-orb-a, .kan-orb-b, .kan-orb-c, .kan-orb-fresh::before { animation: none } }
 `;
 
 export function HomeOrbs({ onOpenCard }: { onOpenCard: (cardId: string) => void }) {
   const { data: session } = useSession();
   const studio = useStudioInfo();
-  const [open, setOpen] = useState<'shrooms' | 'sparks' | null>(null);
+  const [open, setOpen] = useState<'shrooms' | 'sparks' | 'orders' | null>(null);
+  // Orders across your apps. Refreshed when an order notification arrives, so the
+  // orb appears without a reload.
+  const [orderGroups, setOrderGroups] = useState<OrderGroup[]>([]);
+  const signedIn = !!session?.user?.id;
+  useEffect(() => {
+    if (!signedIn) return;
+    let live = true;
+    const load = () => fetch('/api/orders', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (live && d?.groups) setOrderGroups(d.groups as OrderGroup[]); })
+      .catch(() => {});
+    void load();
+    const timer = setInterval(load, 60_000);
+    return () => { live = false; clearInterval(timer); };
+  }, [signedIn]);
+  const toFulfilIds = orderGroups.flatMap((g) => g.orders.filter((o) => o.status === 'paid').map((o) => o.id));
   const seenRaw = useSyncExternalStore(subscribe, readSeen, () => '{}');
   const seen = useMemo(() => {
     try { return JSON.parse(seenRaw) as Record<string, string[]>; } catch { return {} as Record<string, string[]>; }
@@ -105,7 +124,7 @@ export function HomeOrbs({ onOpenCard }: { onOpenCard: (cardId: string) => void 
     return () => { live = false; };
   }, [admin, open]);
 
-  const openOrb = useCallback((orb: 'shrooms' | 'sparks', ids: string[]) => {
+  const openOrb = useCallback((orb: 'shrooms' | 'sparks' | 'orders', ids: string[]) => {
     markSeen(orb, ids);
     setOpen(orb);
   }, []);
@@ -140,8 +159,23 @@ export function HomeOrbs({ onOpenCard }: { onOpenCard: (cardId: string) => void 
             }
           />
         )}
+        {toFulfilIds.length > 0 && (
+          <Orb
+            label="Orders to fulfil"
+            count={toFulfilIds.length}
+            fresh={isFresh('orders', toFulfilIds)}
+            onClick={() => openOrb('orders', toFulfilIds)}
+            className="kan-orb-c left-[8%] top-[52%] md:left-[18%]"
+            icon={
+              <svg className="h-5 w-5 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007z" />
+              </svg>
+            }
+          />
+        )}
       </div>
 
+      <OrdersDrawer isOpen={open === 'orders'} onClose={() => setOpen(null)} groups={orderGroups} />
       <ReviewDrawer isOpen={open === 'shrooms'} onClose={() => setOpen(null)} scope={shroomScope} onOpenCard={onOpenCard} />
       <ReviewDrawer
         isOpen={open === 'sparks'}

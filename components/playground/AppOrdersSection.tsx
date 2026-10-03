@@ -20,6 +20,7 @@ type Order = {
   shipping: Record<string, string> | null;
   createdAt: string;
   paidAt: string | null;
+  appUserId?: string | null;
 };
 
 const STATUS: Record<Order['status'], { label: string; cls: string }> = {
@@ -34,7 +35,14 @@ const STATUS: Record<Order['status'], { label: string; cls: string }> = {
  * A shop's orders: who bought what, how to reach them, and a tick when it's handed
  * over. Paid orders waiting on you come first.
  */
-export function AppOrdersSection({ appId }: { appId: string }) {
+export function AppOrdersSection({ appId, appUserId, hideWhenEmpty, title = 'Orders' }: {
+  appId: string;
+  /** Only this person's orders. */
+  appUserId?: string;
+  /** Render nothing until there is an order to show. */
+  hideWhenEmpty?: boolean;
+  title?: string;
+}) {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
@@ -44,11 +52,12 @@ export function AppOrdersSection({ appId }: { appId: string }) {
       const res = await fetch(`/api/playground/apps/${appId}/orders`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) { setError(data?.error || 'Could not load orders'); return; }
-      setOrders(data.orders as Order[]);
+      const all = data.orders as Order[];
+      setOrders(appUserId ? all.filter((o) => o.appUserId === appUserId) : all);
     } catch {
       setError('Could not load orders');
     }
-  }, [appId]);
+  }, [appId, appUserId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -72,10 +81,12 @@ export function AppOrdersSection({ appId }: { appId: string }) {
   const sorted = [...(orders ?? [])].sort((a, b) => rank(a) - rank(b));
   const waiting = sorted.filter((o) => o.status === 'paid').length;
 
+  if (hideWhenEmpty && (orders === null || orders.length === 0) && !error) return null;
+
   return (
     <section>
       <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-        Orders{waiting ? ` · ${waiting} to fulfil` : ''}
+        {title}{waiting ? ` · ${waiting} to fulfil` : ''}
       </h3>
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-800">
         {orders === null && !error && (

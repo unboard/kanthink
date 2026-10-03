@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { render } from '@react-email/render'
 import React from 'react'
 import { db } from '@/lib/db'
-import { appEmails, appMessages, appUsers, personNotes, playgroundApps } from '@/lib/db/schema'
+import { appEmails, appMessages, appOrders, appUsers, personNotes, playgroundApps } from '@/lib/db/schema'
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { sendTrackedEmail } from '@/lib/customerio'
 import { PersonEmail } from '@/lib/emails/PersonEmail'
@@ -66,7 +66,21 @@ export interface PersonSummary {
   lastEmail: { subject: string; status: string; openedAt: string | null; clickedAt: string | null; sentAt: string | null } | null
   unread: number
   lastActivity: string
+  /** Paid orders in this app's shop. */
+  orders: { count: number; total: number; currency: string; toFulfil: number } | null
 }
+
+export interface PersonOrder {
+  id: string
+  number: number
+  item: string
+  quantity: number
+  amount: string
+  status: string
+  paidAt: string | null
+}
+
+const money = (minor: number, currency: string) => formatAppPrice(minor, currency, null)
 
 const iso = (d?: Date | null) => (d ? d.toISOString() : null)
 
@@ -90,21 +104,38 @@ export async function listPeople(ownerId: string): Promise<PersonSummary[]> {
   })
   const byMember = new Map<string, EmailRow[]>()
   for (const e of emails) byMember.set(e.appUserId, [...(byMember.get(e.appUserId) ?? []), e])
+  const orderRows = await db.query.appOrders.findMany({
+    where: and(eq(appOrders.ownerId, ownerId), inArray(appOrders.status, ['paid', 'fulfilled'])),
+    columns: { appUserId: true, amount: true, currency: true, status: true, paidAt: true },
+  })
+  const ordersBy = new Map<string, { count: number; total: number; currency: string; toFulfil: number; last: Date | null }>()
+  for (const o of orderRows) {
+    if (!o.appUserId) continue
+    const e = ordersBy.get(o.appUserId) ?? { count: 0, total: 0, currency: o.currency, toFulfil: 0, last: null }
+    e.count += 1
+    e.total += o.amount
+    if (o.status === 'paid') e.toFulfil += 1
+    if (o.paidAt && (!e.last || o.paidAt > e.last)) e.last = o.paidAt
+    ordersBy.set(o.appUserId, e)
+  }
 
   return members.map((m) => {
     const mine = byMember.get(m.id) ?? []
     const sent = mine.filter((e) => e.status === 'sent')
     const last = sent.at(-1)
-    const activity = [m.updatedAt, m.lastSeenAt, ...mine.map((e) => e.updatedAt)].filter(Boolean) as Date[]
+    const ord = ordersBy.get(m.id)
+    const activity = [m.updatedAt, m.lastSeenAt, ord?.last, ...mine.map((e) => e.updatedAt)].filter(Boolean) as Date[]
     return {
       id: m.id,
       name: m.name,
       email: m.email,
       appId: m.appId,
       appTitle: title.get(m.appId) || 'App',
-      stage: personStage(m),
+      // Someone who has paid for an order is a customer, whatever the access status says.
+      stage: ord ? 'customer' : personStage(m),
       unsubscribed: !!m.unsubscribedAt,
       draftWaiting: mine.some((e) => e.status === 'draft'),
+      orders: ord ? { count: ord.count, total: ord.total, currency: ord.currency, toFulfil: ord.toFulfil } : null,
       lastEmail: last ? { subject: last.subject, status: last.status, openedAt: iso(last.openedAt), clickedAt: iso(last.clickedAt), sentAt: iso(last.sentAt) } : null,
       unread: m.unreadForOwner,
       lastActivity: new Date(Math.max(...activity.map((d) => d.getTime()), 0)).toISOString(),
@@ -150,14 +181,20 @@ export async function personDetail(ownerId: string, appUserId: string) {
   const found = await loadMember(ownerId, appUserId)
   if (!found) return null
   const { member, app } = found
-  const [messages, emails, notes] = await Promise.all([
+  const [messages, emails, notes, orders] = await Promise.all([
     db.query.appMessages.findMany({ where: eq(appMessages.appUserId, member.id), orderBy: [asc(appMessages.createdAt)] }),
     db.query.appEmails.findMany({ where: eq(appEmails.appUserId, member.id), orderBy: [asc(appEmails.createdAt)] }),
     db.query.personNotes.findMany({ where: and(eq(personNotes.appUserId, member.id), eq(personNotes.ownerId, ownerId)), orderBy: [asc(personNotes.createdAt)] }),
+    db.query.appOrders.findMany({ where: and(eq(appOrders.appUserId, member.id), inArray(appOrders.status, ['paid', 'fulfilled', 'refunded'])), orderBy: [asc(appOrders.paidAt)] }),
   ])
 
   const thread: ThreadItem[] = [
     ...stageEvents(member, app.title).map((e) => ({ kind: 'event' as const, at: e.at.toISOString(), text: e.text })),
+    ...orders.filter((o) => o.paidAt).map((o) => ({
+      kind: 'event' as const,
+      at: o.paidAt!.toISOString(),
+      text: `Ordered #${o.number}: ${o.quantity > 1 ? `${o.quantity} × ` : ''}${o.item}, ${money(o.amount, o.currency)}. ${o.status === 'fulfilled' ? 'Fulfilled' : o.status === 'refunded' ? 'Refunded' : 'To fulfil'}`,
+    })),
     ...messages.map((m) => ({
       kind: m.sender === 'user' ? 'theirs' as const : 'reply' as const,
       at: (m.createdAt ?? new Date()).toISOString(),
@@ -188,8 +225,9 @@ export async function personDetail(ownerId: string, appUserId: string) {
       id: member.id,
       name: member.name,
       email: member.email,
-      stage: personStage(member),
+      stage: orders.some((o) => o.status !== 'refunded') ? 'customer' as const : personStage(member),
       unsubscribed: !!member.unsubscribedAt,
+      orders: orders.map((o): PersonOrder => ({ id: o.id, number: o.number, item: o.item, quantity: o.quantity, amount: money(o.amount, o.currency), status: o.status, paidAt: iso(o.paidAt) })),
       appId: app.id,
       appTitle: app.title,
       appUrl: app.shareToken ? playUrl(app.shareToken) : null,

@@ -115,6 +115,8 @@ interface CardDetailDrawerProps {
   initialTaskId?: string;
   /** Open straight into one app's drawer. Used by the build-finished notification. */
   initialAppId?: string;
+  /** The app drawer tab to open on, with initialAppId. */
+  initialAppPane?: string;
   /** Which tab to land on when the drawer opens. Defaults to the thread. */
   initialTab?: ActiveTab;
 }
@@ -132,7 +134,7 @@ function formatDate(dateString: string): string {
 
 type ActiveTab = 'thread' | 'tasks' | 'info' | 'apps';
 
-export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack, initialTaskId, initialAppId, initialTab }: CardDetailDrawerProps) {
+export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPage, onNavigateBack, initialTaskId, initialAppId, initialAppPane, initialTab }: CardDetailDrawerProps) {
   const router = useRouter();
   const { data: session } = useSession();
   const [title, setTitle] = useState('');
@@ -1779,6 +1781,7 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
           appId={openAppId}
           card={card}
           isOpen
+          initialPane={openAppId === initialAppId ? initialAppPane : undefined}
           onClose={() => setOpenAppId(null)}
           onOpenSourceCard={() => setOpenAppId(null)}
         />

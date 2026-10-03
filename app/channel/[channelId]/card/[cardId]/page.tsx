@@ -26,6 +26,8 @@ function CardContent() {
   const cardId = params.cardId as string;
   const taskId = searchParams.get('task') || undefined;
   const appId = searchParams.get('app') || undefined;
+  // Which tab of the app drawer to open on: an order notification lands on People.
+  const appPane = searchParams.get('pane') || undefined;
   const card = useStore((s) => s.cards[cardId]);
   const channel = useStore((s) => s.channels[channelId]);
   const hasHydrated = useStore((s) => s._hasHydrated);
@@ -65,6 +67,7 @@ function CardContent() {
         onNavigateBack={navigateBack}
         initialTaskId={taskId}
         initialAppId={appId}
+        initialAppPane={appPane}
       />
     );
   }

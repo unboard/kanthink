@@ -41,7 +41,7 @@ window.kanthinkPay.lastOrder   // set when the buyer has just returned from payi
 THE PATTERN:
 const confirmed = window.kanthinkPay?.lastOrder;
 window.kanthinkPay.dismissOrder() // the "Back to the shop" button on the confirmation: clears lastOrder. Then re-render (e.g. set your view state). NEVER reload the page.
-if (confirmed) -> render the confirmation first: "Order #{number}: {item}", what happens next (the fulfilment note), and a way back to browsing that calls dismissOrder().
+if (confirmed) -> render the confirmation first: "Order #{number}: {item}", the amount paid, what happens next (show confirmed.fulfilmentNote once; never also hard-code the same words), "A receipt is on its way to your email", and a way back to browsing that calls dismissOrder().
 <Button onClick={() => window.kanthinkPay.order({ item: rock.title, details: { rockId: rock.id } })}>
   Buy · {window.kanthinkPay.price}
 </Button>

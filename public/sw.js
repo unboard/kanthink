@@ -14,6 +14,22 @@ self.addEventListener('message', (event) => {
   }
 })
 
+// Web Push from the server: arrives even with no Kanthink tab open.
+self.addEventListener('push', (event) => {
+  let payload = {}
+  try { payload = event.data ? event.data.json() : {} } catch (_) { payload = { title: 'Kanthink', body: event.data ? event.data.text() : '' } }
+  const title = payload.title || 'Kanthink'
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: payload.body || '',
+      icon: '/icon-192x192.png',
+      badge: '/icon-192x192.png',
+      tag: payload.notificationId || undefined,
+      data: { url: payload.url || '/', notificationId: payload.notificationId },
+    })
+  )
+})
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
 

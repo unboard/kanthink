@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { sendPushToUser, PUSH_TYPES, notificationUrl } from './push'
 import { notifications, notificationPreferences, channelShares, channels, users } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { publishNotificationToUser } from '@/lib/sync/pusherServer'
@@ -56,6 +57,17 @@ export async function createNotification(input: CreateNotificationInput): Promis
       createdAt: now.toISOString(),
       readAt: null,
     })
+
+    // Web Push: reaches a phone or a closed browser. For the things worth an
+    // interruption, and only for someone who turned browser notifications on.
+    if (PUSH_TYPES.has(input.type) && prefs?.browserNotificationsEnabled) {
+      sendPushToUser(input.userId, {
+        title: input.title,
+        body: input.body,
+        notificationId: id,
+        url: notificationUrl(input),
+      }).catch(() => {})
+    }
 
     // Dispatch email for assignment and mention notifications (respects email preference)
     if (input.type === 'task_assigned' || input.type === 'card_assigned' || input.type === 'mentioned_in_card') {

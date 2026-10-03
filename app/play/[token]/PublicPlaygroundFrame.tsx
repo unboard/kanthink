@@ -98,7 +98,10 @@ export function PublicPlaygroundFrame({
         const url = new URL(window.location.href);
         url.searchParams.delete('order');
         url.searchParams.delete('order_status');
-        window.history.replaceState(null, '', url.toString());
+        // Reload without the order, so the app starts fresh on the shop. Relying on
+        // the app to re-render itself is how "Back to store" first did nothing: its
+        // view was already the shop, so React had nothing to change.
+        window.location.replace(url.toString());
       }
     };
     window.addEventListener('message', onMessage);

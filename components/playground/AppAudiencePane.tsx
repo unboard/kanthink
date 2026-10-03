@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { formatAppPrice } from '@/lib/playground/appAccess';
+import { AppOrdersSection } from './AppOrdersSection';
 import type { AppAudienceMember, AppThreadMessage, ID, PlaygroundApp } from '@/lib/types';
 
 interface Props {
@@ -43,6 +44,7 @@ export function AppAudiencePane({ appId, onUnreadChange, onAppUpdated, onOpenThr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openMember, setOpenMember] = useState<AppAudienceMember | null>(null);
+  const [totals, setTotals] = useState<{ revenue: number; currency: string; buyers: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +53,7 @@ export function AppAudiencePane({ appId, onUnreadChange, onAppUpdated, onOpenThr
       if (!res.ok) { setError(data?.error || 'Could not load the audience'); return; }
       const list: AppAudienceMember[] = data.audience || [];
       setAudience(list);
+      setTotals({ revenue: data.revenue ?? 0, currency: data.currency ?? 'usd', buyers: data.buyers ?? 0 });
       onUnreadChange?.(list.reduce((sum, m) => sum + m.unreadForOwner, 0));
       setError(null);
     } catch {
@@ -102,18 +105,21 @@ export function AppAudiencePane({ appId, onUnreadChange, onAppUpdated, onOpenThr
     );
   }
 
-  const paid = audience.filter((m) => m.status === 'paid');
-  const revenue = paid.reduce((sum, m) => sum + (m.amountPaid || 0), 0);
+  const revenue = totals?.revenue ?? 0;
 
   return (
     <div className="px-4 py-4">
       <div className="grid grid-cols-3 gap-2 mb-4">
         <Stat label="People" value={String(audience.length)} />
-        <Stat label="Paid" value={String(paid.length)} />
+        <Stat label="Buyers" value={String(totals?.buyers ?? 0)} />
         <Stat
           label="Collected"
-          value={revenue > 0 ? formatAppPrice(revenue, paid[0]?.currency ?? 'usd', null) : '—'}
+          value={revenue > 0 ? formatAppPrice(revenue, totals?.currency ?? 'usd', null) : '—'}
         />
+      </div>
+
+      <div className="mb-4">
+        <AppOrdersSection appId={appId} hideWhenEmpty />
       </div>
 
       <div className="space-y-1.5">
@@ -261,6 +267,10 @@ function MemberThread({
         <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{describe(member)}</p>
       </div>
 
+      <div className="mb-4">
+        <AppOrdersSection appId={appId} appUserId={member.id} hideWhenEmpty title="Their orders" />
+      </div>
+
       {loading ? (
         <div className="py-8 flex items-center justify-center gap-2 text-sm text-neutral-400">
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -364,6 +374,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 /** One line that answers "who is this and do they pay me". */
 function describe(member: AppAudienceMember): string {
   const bits: string[] = [];
+  if ((member.orderCount ?? 0) > 0) {
+    bits.push(`${member.orderCount} order${member.orderCount === 1 ? '' : 's'} · ${formatAppPrice(member.orderTotal ?? 0, member.currency ?? 'usd', null)}`);
+  }
   if (member.status === 'paid') {
     bits.push(member.amountPaid
       ? `Paid ${formatAppPrice(member.amountPaid, member.currency, null)}`
@@ -372,7 +385,7 @@ function describe(member: AppAudienceMember): string {
     bits.push('Refunded');
   } else if (member.status === 'canceled') {
     bits.push('Access ended');
-  } else {
+  } else if (!member.orderCount) {
     bits.push('Free');
   }
 

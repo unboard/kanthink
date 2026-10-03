@@ -63,6 +63,7 @@ import { UsageLimitReached } from './UsageLimitReached'
 import { ChannelDigest } from './ChannelDigest'
 import { AppAccessCode } from './AppAccessCode'
 import { AppPurchased } from './AppPurchased'
+import { AppOrderConfirmed } from './AppOrderConfirmed'
 import { AppReply } from './AppReply'
 import { DynamicEmail, type EmailConfig } from './dynamicRenderer'
 import { db } from '@/lib/db'
@@ -151,6 +152,14 @@ export async function sendAppPurchasedEmail(
   props: { buyerName: string; appTitle: string; amount: string; appUrl: string; manageBillingUrl?: string }
 ): Promise<boolean> {
   return renderAndSend(to, `You're in — ${props.appTitle}`, React.createElement(AppPurchased, props))
+}
+
+/** The buyer's receipt for an order in a shop built on Kanthink. */
+export async function sendAppOrderConfirmedEmail(
+  to: string,
+  props: { buyerName: string; shopName: string; orderNumber: string; item: string; quantity: number; amount: string; fulfilmentNote: string; shopUrl: string }
+): Promise<boolean> {
+  return renderAndSend(to, `Order #${props.orderNumber} confirmed — ${props.shopName}`, React.createElement(AppOrderConfirmed, props))
 }
 
 /** A publisher answering someone who left feedback inside their app. */

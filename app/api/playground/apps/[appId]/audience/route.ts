@@ -6,6 +6,9 @@ import { and, asc, desc, eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import type { AppAudienceMember, AppThreadMessage, AppUserStatus } from '@/lib/types'
+import { orderTotalsForApp, ordersForMember } from '@/lib/playground/orders'
+import { appPurchases } from '@/lib/db/schema'
+import { inArray } from 'drizzle-orm'
 
 export const runtime = 'nodejs'
 
@@ -68,7 +71,13 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         createdAt: (m.createdAt ?? new Date()).toISOString(),
       }))
 
-      return NextResponse.json({ member: toMember(member, messages.length, messages.at(-1)?.createdAt), messages })
+      const orders = await ordersForMember(memberId)
+      const counted = orders.filter((o) => o.status === 'paid' || o.status === 'fulfilled')
+      return NextResponse.json({
+        member: { ...toMember(member, messages.length, messages.at(-1)?.createdAt), orderCount: counted.length, orderTotal: counted.reduce((n, o) => n + o.amount, 0) },
+        messages,
+        orders,
+      })
     }
 
     const members = await db.query.appUsers.findMany({
@@ -90,19 +99,32 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       counts.set(m.appUserId, entry)
     }
 
+    const orders = await orderTotalsForApp(appId)
     const rank: Record<AppUserStatus, number> = { paid: 0, free: 1, canceled: 2, refunded: 3 }
+    // A buyer is someone who paid: for access, or for an order.
+    const buyerRank = (m: AppAudienceMember) => (m.status === 'paid' || (m.orderCount ?? 0) > 0 ? 0 : rank[m.status] + 1)
     const audience = members
       .map((m) => {
         const c = counts.get(m.id)
-        return toMember(m, c?.count ?? 0, c?.last)
+        const o = orders.byMember.get(m.id)
+        return { ...toMember(m, c?.count ?? 0, c?.last), orderCount: o?.count ?? 0, orderTotal: o?.total ?? 0 }
       })
       .sort((a, b) => {
-        const byStatus = rank[a.status] - rank[b.status]
+        const byStatus = buyerRank(a) - buyerRank(b)
         if (byStatus !== 0) return byStatus
         return (b.lastSeenAt ?? b.createdAt).localeCompare(a.lastSeenAt ?? a.createdAt)
       })
 
-    return NextResponse.json({ audience })
+    // What the app has actually taken: access purchases still standing, plus paid orders.
+    const purchases = await db.query.appPurchases.findMany({
+      where: and(eq(appPurchases.appId, appId), inArray(appPurchases.status, ['active', 'expired', 'canceled'])),
+      columns: { amount: true, currency: true },
+    })
+    const revenue = orders.revenue + purchases.reduce((n, p) => n + (p.amount ?? 0), 0)
+    const currency = orders.currency ?? purchases[0]?.currency ?? app.priceCurrency ?? 'usd'
+    const buyers = audience.filter((m) => m.status === 'paid' || (m.orderCount ?? 0) > 0).length
+
+    return NextResponse.json({ audience, revenue, currency, buyers })
   } catch (error) {
     if (error instanceof PermissionError) {
       return NextResponse.json({ error: error.message }, { status: 403 })

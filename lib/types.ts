@@ -643,6 +643,30 @@ export interface AppAudienceMember {
   messageCount: number;
   lastMessageAt?: string | null;
   createdAt: string;
+  /** Orders this person has paid for, in a shop. */
+  orderCount?: number;
+  /** Their order spend, minor units. */
+  orderTotal?: number;
+}
+
+/** One order, as the owner sees it. */
+export interface AppOrderView {
+  id: ID;
+  number: number;
+  item: string;
+  quantity: number;
+  details: Record<string, string> | null;
+  amount: number;
+  currency: string;
+  status: 'pending' | 'paid' | 'fulfilled' | 'canceled' | 'refunded';
+  buyerEmail: string | null;
+  buyerName: string | null;
+  buyerPhone: string | null;
+  buyerNote: string | null;
+  shipping: Record<string, string> | null;
+  appUserId?: string | null;
+  createdAt: string;
+  paidAt: string | null;
 }
 
 /** One turn in the thread between an app user and the publisher. */

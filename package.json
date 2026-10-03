@@ -52,6 +52,7 @@
     "remark-gfm": "^4.0.1",
     "stripe": "^20.2.0",
     "three": "^0.185.1",
+    "web-push": "^3.6.7",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -62,6 +63,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "drizzle-kit": "^0.31.8",
     "eslint": "^9",
     "eslint-config-next": "^16.2.4",

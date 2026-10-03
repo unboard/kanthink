@@ -21,7 +21,7 @@ import {
 } from '@/lib/sync/pusherClient'
 import { useNotificationStore } from '@/lib/notificationStore'
 import { useToastStore } from '@/lib/toastStore'
-import { registerServiceWorker, requestNotificationPermission, showBrowserNotification } from '@/lib/notifications/serviceWorker'
+import { registerServiceWorker, requestNotificationPermission, showBrowserNotification, subscribeToPush } from '@/lib/notifications/serviceWorker'
 import type { NotificationData } from '@/lib/notifications/types'
 import { MigrationModal } from '@/components/MigrationModal'
 import { STORAGE_KEY } from '@/lib/constants'
@@ -614,8 +614,9 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
         subscribeToChannels(loadedChannelIdsRef.current)
       }
 
-      // Register service worker for browser notifications
-      registerServiceWorker()
+      // Register service worker for browser notifications, and keep this browser's
+      // Web Push subscription current when permission was already given.
+      registerServiceWorker().then(() => { void subscribeToPush() })
 
       // Track whether we've already prompted for notification permission this session
       let hasPromptedPermission = false
@@ -657,6 +658,7 @@ export function ServerSyncProvider({ children }: ServerSyncProviderProps) {
                   const result = await requestNotificationPermission()
                   useNotificationStore.getState().setHasPermission(result === 'granted')
                   if (result === 'granted') {
+                    void subscribeToPush({ test: true })
                     fetch('/api/notifications/preferences', {
                       method: 'PUT',
                       headers: { 'Content-Type': 'application/json' },
