@@ -74,7 +74,9 @@ export function AppFeedbackPanel({ token, appTitle, maker, initiallyOpen, onRequ
       if (cancelled || document.hidden) return;
       void load({ countUnread: !open });
     };
-    tick();
+    // The first load always runs: a tab opened from an email link can start out
+    // hidden, and skipping it left the chat on a spinner. Only the repeats pause.
+    void load({ countUnread: !open });
     const timer = setInterval(tick, open ? OPEN_POLL_MS : IDLE_POLL_MS);
     document.addEventListener('visibilitychange', tick);
     return () => {
