@@ -221,6 +221,21 @@ function DesktopNav() {
           />
         )}
 
+        {/* Print studio — admin-only in the nav while it is being proven out */}
+        {session?.user?.isAdmin && (
+          <NavIconButton
+            isActive={pathname.startsWith('/print')}
+            onPointerDown={handleNavigate('/print')}
+            label="Print studio"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.5 3.5v3M3.5 6.5h3M17.5 20.5v-3M20.5 17.5h-3" />
+                <rect x="7.5" y="7.5" width="9" height="9" rx="0.5" strokeWidth={1.5} />
+              </svg>
+            }
+          />
+        )}
+
         {/* People — everyone who reserved, used or bought one of your apps. Admin-only, like Kanwatch. */}
         {session?.user?.isAdmin && (
           <NavIconButton
@@ -411,6 +426,7 @@ export function MiniNav() {
     pathname.startsWith('/watch') ||  // the recording watch page owns the full viewport
     pathname.startsWith('/wildwood') ||  // the Wildwood game owns the full viewport
     pathname.startsWith('/rescue') ||  // Paws & Found game owns the full viewport
+    pathname.startsWith('/print') ||  // the print studio owns the full viewport
     pathname.startsWith('/catlife')  // Whisker Wilds game owns the full viewport
   ) return null;
 

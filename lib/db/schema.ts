@@ -1602,6 +1602,49 @@ export const mowScores = sqliteTable('mow_scores', {
   index('mow_scores_day_idx').on(table.mode, table.day, table.money),
 ])
 
+// ===== /print — print studio =====
+// A design is a print product (its size, bleed, safe area, pages and optional die-cut
+// guide, snapshotted so editing a preset never reshapes existing work) plus the pages
+// generated for it. Pages carry their own version history, so the JSON is the record.
+export const printDesigns = sqliteTable('print_designs', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  spec: text('spec').notNull(),                       // JSON PrintSpec
+  brandId: text('brand_id'),
+  brief: text('brief'),                               // JSON PrintBrief
+  pages: text('pages'),                               // JSON PrintPage[]
+  renders: integer('renders').default(0),
+  spendCents: integer('spend_cents').default(0),      // approximate model spend
+  createdAt: integer('created_at'),                   // epoch seconds
+  updatedAt: integer('updated_at'),
+}, (table) => [
+  index('print_designs_user_idx').on(table.userId, table.updatedAt),
+])
+
+// A reusable brand kit: logo, colours, business details, photos and inspiration.
+export const printBrands = sqliteTable('print_brands', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  data: text('data'),                                 // JSON BrandKit
+  createdAt: integer('created_at'),
+  updatedAt: integer('updated_at'),
+}, (table) => [
+  index('print_brands_user_idx').on(table.userId),
+])
+
+// A named custom canvas size someone saved. Catalog products will land here too.
+export const printPresets = sqliteTable('print_presets', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  spec: text('spec').notNull(),                       // JSON PrintSpec
+  createdAt: integer('created_at'),
+}, (table) => [
+  index('print_presets_user_idx').on(table.userId),
+])
+
 // ---- Kanwatch -----------------------------------------------------------------
 // Browser activity, reduced by extensions/kanwatch/privacy.js before it is stored:
 // sensitive sites keep timing only, and every text field is scrubbed. Raw visits

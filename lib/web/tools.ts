@@ -84,7 +84,7 @@ function isBlockedHost(hostname: string): boolean {
   return BLOCKED_PATTERNS.some(pattern => pattern.test(hostname));
 }
 
-function isBlockedUrl(url: string): { blocked: boolean; reason?: string } {
+export function isBlockedUrl(url: string): { blocked: boolean; reason?: string } {
   try {
     const parsed = new URL(url);
 

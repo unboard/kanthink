@@ -28,6 +28,7 @@ export function MainContent({ children }: MainContentProps) {
     pathname.startsWith('/play') ||
     pathname.startsWith('/wildwood') ||
     pathname.startsWith('/rescue') ||
+    pathname.startsWith('/print') ||
     pathname.startsWith('/catlife');
   const needsBottomPadding = isMobile && !isCardPage && !isFullViewport;
 
