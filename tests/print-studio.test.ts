@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { findPrintModel, formatCents } from '../lib/print/models'
 import { buildPrintPdf, jpegComponents } from '../lib/print/pdf'
 import { extractPalette, normalizeHex } from '../lib/print/palette'
 import { checkPlacement, checkSpelling, detectFrame, detectWhiteBorders, distanceField, rasterSampler, samplerFor } from '../lib/print/preflight'
@@ -252,5 +253,26 @@ describe('palette', () => {
   it('normalizes hex', () => {
     expect(normalizeHex('#abc')).toBe('#AABBCC')
     expect(normalizeHex('nope')).toBeNull()
+  })
+})
+
+describe('cost', () => {
+  it('prices renders from token rates, not guesses', () => {
+    const nb2 = findPrintModel('google:gemini-3.1-flash-image-preview')!
+    const pro = findPrintModel('google:gemini-3-pro-image-preview')!
+    const sunburst = findPrintModel('openai:gpt-image-2.5-sunburst')!
+    // Published: 2,520 tokens at $60/1M for a 4K Nano Banana 2 image.
+    expect(nb2.cents(planFrame(flyer, 'google', 'print'), 'print')).toBeCloseTo(15.27, 1)
+    expect(pro.cents(planFrame(flyer, 'google', 'print'), 'print')).toBeCloseTo(24.6, 1)
+    // Measured: a print-quality letter flyer from Sunburst is ~4,550 output tokens at $30/1M.
+    const s = sunburst.cents(planFrame(flyer, 'openai', 'print'), 'print')
+    expect(s).toBeGreaterThan(13)
+    expect(s).toBeLessThan(18)
+  })
+
+  it('formats small amounts without rounding them away', () => {
+    expect(formatCents(0.4)).toBe('0.4¢')
+    expect(formatCents(14.2)).toBe('14¢')
+    expect(formatCents(140)).toBe('$1.40')
   })
 })

@@ -253,9 +253,9 @@ async function create(
 
   const prompt = buildCreatePrompt({ spec, pageIndex, frame, refs, kit, brief: design.brief, userPrompt, copy })
   const images = await loadImages(refs, canvas)
-  const raw = await draw({ model, apiKey, prompt, images, frame, quality })
-  const stored = await keep(userId, design, raw)
-  const cents = model.cents(frame)
+  const drawn = await draw({ model, apiKey, prompt, images, frame, quality })
+  const stored = await keep(userId, design, drawn.image)
+  const cents = drawn.cents ?? model.cents(frame, quality)
   return {
     cents,
     version: { id: nanoid(10), ...stored, model: model.id, mode: 'create', prompt: userPrompt || undefined, copy, costCents: cents, at: Math.floor(Date.now() / 1000) },
@@ -331,14 +331,16 @@ async function edit(
   }
   if (extras.length) images = images.concat(await loadImages(extras))
 
-  const out = await draw({ model, apiKey, prompt, images, frame: prep.frame, quality: mode === 'upscale' ? 'print' : quality, openaiMask })
+  const drawQuality: RenderQuality = mode === 'upscale' ? 'print' : quality
+  const drawn = await draw({ model, apiKey, prompt, images, frame: prep.frame, quality: drawQuality, openaiMask })
+  const out = drawn.image
   // An upscale is kept at the size the model drew; everything else goes back to the
   // original's exact frame so versions stay interchangeable.
   let restored = await restoreEdit(out, prep, mode === 'upscale' ? await upscaledDims(out, prep) : rawDims)
   if (mode === 'area' && maskRaw) restored = await compositeArea(raw, restored, maskRaw)
 
   const stored = await keep(userId, design, restored, { enforceBleed: mode !== 'area' })
-  const cents = model.cents(prep.frame)
+  const cents = drawn.cents ?? model.cents(prep.frame, drawQuality)
   const copy = mode === 'retext' ? req.copy : source.copy
   return {
     cents,

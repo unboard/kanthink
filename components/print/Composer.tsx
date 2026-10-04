@@ -105,7 +105,7 @@ export function Composer(props: ComposerProps) {
   const model = findPrintModel(modelId)
   const quality: RenderQuality = brief.quality ?? 'print'
   const frame = model ? planFrame(spec, model.provider, quality) : null
-  const each = model && frame ? model.cents(frame) : 0
+  const each = model && frame ? model.cents(frame, quality) : 0
   const count = mode === 'create' ? takes : 1
 
   const canSubmit = !busy && (mode === 'create' ? isFirstPage ? text.trim().length > 0 : true : text.trim().length > 0)

@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality } from '@google/genai'
 import OpenAI, { toFile } from 'openai'
 import sharp from 'sharp'
-import type { PrintModel } from '../models'
+import { tokenCents, type PrintModel } from '../models'
 import { nearestGeminiRatio, type Frame, type ImageTier } from '../spec'
 import { forModel } from './images'
 
@@ -35,11 +35,18 @@ export class DrawError extends Error {
   }
 }
 
-export async function draw(req: DrawRequest): Promise<Buffer> {
+/** An image, and what drawing it actually cost per the provider's usage report. */
+export interface Drawn {
+  image: Buffer
+  /** Null when the provider sent no usage; the estimate stands in. */
+  cents: number | null
+}
+
+export async function draw(req: DrawRequest): Promise<Drawn> {
   return req.model.provider === 'google' ? drawGemini(req) : drawOpenAI(req)
 }
 
-async function drawGemini(req: DrawRequest): Promise<Buffer> {
+async function drawGemini(req: DrawRequest): Promise<Drawn> {
   const client = new GoogleGenAI({ apiKey: req.apiKey })
   const parts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[] = []
   for (let i = 0; i < req.images.length; i++) {
@@ -77,7 +84,13 @@ async function drawGemini(req: DrawRequest): Promise<Buffer> {
   const candidate = response.candidates?.[0]
   for (const part of candidate?.content?.parts ?? []) {
     if (part.inlineData?.data && part.inlineData.mimeType?.startsWith('image/')) {
-      return Buffer.from(part.inlineData.data, 'base64')
+      const usage = response.usageMetadata
+      const cents = usage
+        ? tokenCents(req.model.rates, usage.promptTokenCount ?? 0, usage.candidatesTokenCount ?? 0) +
+          // Thinking is billed as text output, a tenth of the image-output rate.
+          ((usage.thoughtsTokenCount ?? 0) * req.model.rates.output) / 10 / 1e4
+        : null
+      return { image: Buffer.from(part.inlineData.data, 'base64'), cents }
     }
   }
   const said = (candidate?.content?.parts ?? []).map((p) => p.text).filter(Boolean).join(' ').trim()
@@ -88,15 +101,17 @@ async function drawGemini(req: DrawRequest): Promise<Buffer> {
   throw new DrawError(said ? `The model didn’t draw anything: ${said.slice(0, 200)}` : 'The model returned no image. Try again.')
 }
 
-async function drawOpenAI(req: DrawRequest): Promise<Buffer> {
+async function drawOpenAI(req: DrawRequest): Promise<Drawn> {
   const client = new OpenAI({ apiKey: req.apiKey })
   const size = `${req.frame.width}x${req.frame.height}` as '1024x1024'
   const quality = req.quality === 'print' ? 'high' : 'medium'
   try {
     let b64: string | undefined
+    let usage: OpenAI.Images.ImagesResponse['usage'] | undefined
     if (req.images.length === 0) {
       const r = await client.images.generate({ model: req.model.model, prompt: req.prompt, size, quality, n: 1 })
       b64 = r.data?.[0]?.b64_json
+      usage = r.usage
     } else {
       const files = await Promise.all(
         req.images.slice(0, 16).map(async (img, i) => {
@@ -120,9 +135,16 @@ async function drawOpenAI(req: DrawRequest): Promise<Buffer> {
         ...(mask ? { mask } : {}),
       })
       b64 = r.data?.[0]?.b64_json
+      usage = r.usage
     }
     if (!b64) throw new DrawError('The model returned no image. Try again.')
-    return Buffer.from(b64, 'base64')
+    // Text input is billed at $5/1M and image input at the model's input rate.
+    const textIn = usage?.input_tokens_details?.text_tokens ?? 0
+    const imageIn = usage ? (usage.input_tokens ?? 0) - textIn : 0
+    const cents = usage
+      ? (textIn * 5) / 1e4 + tokenCents(req.model.rates, imageIn, usage.output_tokens ?? 0)
+      : null
+    return { image: Buffer.from(b64, 'base64'), cents }
   } catch (err) {
     if (err instanceof DrawError) throw err
     throw new DrawError(friendly(err instanceof Error ? err.message : String(err)))

@@ -74,7 +74,7 @@ export async function chargeRender(userId: string, designId: string, cents: numb
     .update(printDesigns)
     .set({
       renders: sql`coalesce(${printDesigns.renders}, 0) + 1`,
-      spendCents: sql`coalesce(${printDesigns.spendCents}, 0) + ${Math.round(cents)}`,
+      spendCents: sql`coalesce(${printDesigns.spendCents}, 0) + ${Math.round(cents * 100) / 100}`,
       updatedAt: now(),
     })
     .where(and(eq(printDesigns.id, designId), eq(printDesigns.userId, userId)))
