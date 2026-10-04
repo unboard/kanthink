@@ -33,6 +33,21 @@ export const saveName = (n: string) => write(NAME_KEY, n);
 export const loadMuted = () => read<boolean>(MUTE_KEY) ?? false;
 export const saveMuted = (m: boolean) => write(MUTE_KEY, m);
 
+export interface RescuedCat {
+  name: string;
+  coat: string;
+  owner: string;
+  reward: number;
+  day: string;
+  at: number;
+}
+
+const CATS_KEY = 'cleancut-cats';
+export const loadCats = () => read<RescuedCat[]>(CATS_KEY) ?? [];
+export function addRescuedCat(c: RescuedCat) {
+  write(CATS_KEY, [...loadCats(), c].slice(-200));
+}
+
 export function loadQuality(): Quality {
   const q = read<Quality>(QUALITY_KEY);
   if (q) return q;

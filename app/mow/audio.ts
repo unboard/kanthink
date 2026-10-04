@@ -282,6 +282,90 @@ export class Audio {
     s.stop(t + 0.4);
   }
 
+  /** A cat's meow: a voiced glide up and down through two mouth formants. vol 0..1 (distance). */
+  meow(vol = 1, pitch = 1) {
+    const ctx = this.ctx;
+    if (!ctx || vol <= 0.01) return;
+    const t = ctx.currentTime;
+    const dur = 0.55 + Math.random() * 0.25;
+    const f0 = (520 + Math.random() * 120) * pitch;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f0 * 0.8, t);
+    o.frequency.linearRampToValueAtTime(f0 * 1.25, t + dur * 0.35);
+    o.frequency.linearRampToValueAtTime(f0 * 0.7, t + dur);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 6;
+    const vibG = ctx.createGain();
+    vibG.gain.value = f0 * 0.02;
+    vib.connect(vibG).connect(o.frequency);
+    // "mee-ow": the first formant opens as the mouth does
+    const f1 = ctx.createBiquadFilter();
+    f1.type = 'bandpass';
+    f1.Q.value = 5;
+    f1.frequency.setValueAtTime(700, t);
+    f1.frequency.linearRampToValueAtTime(1300, t + dur * 0.4);
+    f1.frequency.linearRampToValueAtTime(800, t + dur);
+    const f2 = ctx.createBiquadFilter();
+    f2.type = 'bandpass';
+    f2.Q.value = 7;
+    f2.frequency.value = 2700;
+    const mix = ctx.createGain();
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.32 * vol, t + 0.06);
+    g.gain.setValueAtTime(0.32 * vol, t + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(f1).connect(mix);
+    o.connect(f2).connect(mix);
+    mix.connect(g).connect(this.master);
+    o.start(t);
+    vib.start(t);
+    o.stop(t + dur + 0.05);
+    vib.stop(t + dur + 0.05);
+  }
+
+  /** A contented purr: filtered rumble pulsing about 25 times a second. */
+  purr(seconds = 2.5) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const s = ctx.createBufferSource();
+    s.buffer = this.noise;
+    s.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 260;
+    const am = ctx.createGain();
+    am.gain.value = 0;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 24;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 0.5;
+    lfo.connect(lfoG).connect(am.gain);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9, t + 0.3);
+    g.gain.setValueAtTime(0.9, t + seconds - 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
+    s.connect(f).connect(am).connect(g).connect(this.master);
+    s.start(t);
+    lfo.start(t);
+    s.stop(t + seconds + 0.1);
+    lfo.stop(t + seconds + 0.1);
+  }
+
+  /** Cat and owner back together. */
+  reunite() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+    notes.forEach((f, i) => this.tone(f, t + i * 0.09, 0.5, 'triangle', 0.08));
+    this.tone(1567.98, t + 0.5, 0.9, 'sine', 0.06);
+    this.tone(2093, t + 0.62, 0.9, 'sine', 0.04);
+  }
+
   bladesToggle(on: boolean) {
     const ctx = this.ctx;
     if (!ctx) return;

@@ -173,6 +173,8 @@ export interface HudState {
   camMode: number;
   stripeRun: number;
   overlapFlash: number;
+  cat: { name: string; coat: string; owner: string; reward: number; state: 'lost' | 'carried' | 'home' } | null;
+  nearCat: boolean;
 }
 
 export interface Toast {

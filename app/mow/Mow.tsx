@@ -8,12 +8,15 @@ import { DAY_END, DAY_START, DECK_HEIGHTS, makeBoard, SHOP, travelMinutes } from
 import type { Payout } from './field';
 import { hashString, todayKey } from './rng';
 import {
-  addLocalScore, fetchBoard, loadDay, loadMuted, loadName, loadQuality, localScores, postScore,
-  saveDay, saveMuted, saveName, saveQuality, type ScoreRow,
+  addLocalScore, addRescuedCat, fetchBoard, loadCats, loadDay, loadMuted, loadName, loadQuality, localScores, postScore,
+  saveDay, saveMuted, saveName, saveQuality, type RescuedCat, type ScoreRow,
 } from './save';
+import { COATS, hasLostCat, type CoatId, type LostCat } from './cats';
 import type { DayState, HudState, JobDef, JobResult, Quality, Toast } from './types';
 
-type Screen = 'title' | 'board' | 'loading' | 'play' | 'results' | 'dayEnd' | 'leaders' | 'help';
+type Screen = 'title' | 'board' | 'loading' | 'play' | 'results' | 'dayEnd' | 'leaders' | 'help' | 'cats';
+
+type ResultState = { job: JobDef; payout: Payout; timeUp: boolean; style: number; minutes: number; cat: LostCat | null };
 
 const LIME = '#c6f432';
 const ORANGE = '#ff6a1f';
@@ -56,7 +59,8 @@ export default function Mow() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [loadPct, setLoadPct] = useState(0);
   const [loadClock, setLoadClock] = useState(0);
-  const [result, setResult] = useState<{ job: JobDef; payout: Payout; timeUp: boolean; style: number; minutes: number } | null>(null);
+  const [result, setResult] = useState<ResultState | null>(null);
+  const [cats, setCats] = useState<RescuedCat[]>([]);
   const [paused, setPaused] = useState(false);
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [gameKey, setGameKey] = useState(0);
@@ -71,9 +75,10 @@ export default function Mow() {
     setQuality(loadQuality());
     setMuted(loadMuted());
     setName(loadName());
+    setCats(loadCats());
     const d = loadDay();
     if (d && !d.ended && d.minute < DAY_END - 10) setSaved(d);
-    setTouch(window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+    setTouch(window.matchMedia('(hover: none) and (pointer: coarse)').matches || new URLSearchParams(location.search).has('touch'));
   }, []);
 
   const pushToast = useCallback((text: string, tone: Toast['tone']) => {
@@ -92,6 +97,10 @@ export default function Mow() {
       hud: setHud,
       toast: pushToast,
       timeUp: () => timeUpRef.current(),
+      catHome: (c) => {
+        addRescuedCat({ name: c.name, coat: c.coat, owner: c.owner, reward: c.reward, day: todayKey(), at: Math.floor(Date.now() / 1000) });
+        setCats(loadCats());
+      },
     });
     game.audio.setMuted(loadMuted());
     gameRef.current = game;
@@ -141,6 +150,7 @@ export default function Mow() {
     const arrive = day.minute + travel;
     setScreen('loading');
     setLoadPct(0);
+    setHud(null); // the last job's HUD must not flash up on this one
     const from = day.minute;
     const t0 = performance.now();
     const tick = () => {
@@ -149,6 +159,8 @@ export default function Mow() {
       if (k < 1) requestAnimationFrame(tick);
     };
     tick();
+    // set the clock first: load leaves the game paused, and the old day's clock must never run
+    game.minute = arrive;
     await game.load(job, 'play', setLoadPct);
     await new Promise((r) => setTimeout(r, Math.max(0, 1400 - (performance.now() - t0))));
     game.minute = arrive;
@@ -165,11 +177,12 @@ export default function Mow() {
 
   const finish = useCallback((timeUp = false) => {
     const game = gameRef.current;
-    if (!game || !game.job) return;
+    if (!game || !game.job || game.mode !== 'play') return;
+    const cat = game.catHome;
     const payout = game.finishJob();
     if (!payout) return;
     const style = Math.round(payout.pattern.score * 100 + game.styleEarned);
-    setResult({ job: game.job, payout, timeUp, style, minutes: Math.round(game.minute - jobStart.current) });
+    setResult({ job: game.job, payout, timeUp, style, minutes: Math.round(game.minute - jobStart.current), cat });
     setPaused(false);
     setConfirmFinish(false);
     setScreen('results');
@@ -290,7 +303,7 @@ export default function Mow() {
   const showBg = screen !== 'play';
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0b0f0d', overflow: 'hidden', fontFamily: 'var(--font-inter), system-ui, sans-serif', color: '#f3f5ef', userSelect: 'none' }}>
+    <div className={touch ? 'cc-touchui' : undefined} style={{ position: 'fixed', inset: 0, background: '#0b0f0d', overflow: 'hidden', fontFamily: 'var(--font-inter), system-ui, sans-serif', color: '#f3f5ef', userSelect: 'none' }}>
       <style>{CSS}</style>
       <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
       {showBg && screen !== 'results' && <div className="cc-scrim" />}
@@ -310,6 +323,8 @@ export default function Mow() {
           onResume={resumeDay}
           onLeaders={() => setScreen('leaders')}
           onHelp={() => setScreen('help')}
+          cats={cats.length}
+          onCats={() => setScreen('cats')}
           quality={quality}
           onQuality={changeQuality}
           muted={muted}
@@ -318,6 +333,8 @@ export default function Mow() {
       )}
 
       {screen === 'help' && <Help onBack={() => setScreen('title')} />}
+
+      {screen === 'cats' && <CatGallery cats={cats} onBack={() => setScreen('title')} />}
 
       {screen === 'board' && day && board && (
         <BoardScreen
@@ -428,6 +445,8 @@ function Title(props: {
   onResume: () => void;
   onLeaders: () => void;
   onHelp: () => void;
+  cats: number;
+  onCats: () => void;
   quality: Quality;
   onQuality: (q: Quality) => void;
   muted: boolean;
@@ -452,6 +471,11 @@ function Title(props: {
         </button>
         <button className="cc-btn" onClick={props.onFree}>Free play <span className="cc-dim">— a random day</span></button>
         <button className="cc-btn" onClick={props.onLeaders}>Leaderboards</button>
+        {props.cats > 0 && (
+          <button className="cc-btn cc-catbtn" onClick={props.onCats}>
+            🐾 Cats rescued <span className="cc-catcount">{props.cats}</span>
+          </button>
+        )}
         <button className="cc-btn" onClick={props.onHelp}>How to play</button>
         <div className="cc-row" style={{ marginTop: 6 }}>
           <span className="cc-dim" style={{ fontSize: 12 }}>Graphics</span>
@@ -471,6 +495,7 @@ function Controls({ compact }: { compact?: boolean }) {
     ['Space', 'Blades on/off · hold to trim on foot'],
     ['R / F', 'Deck up / down'],
     ['E', 'Hop off with the trimmer / climb back on'],
+    ['Walk up to a cat', 'Pick it up (on foot)'],
     ['Mouse', 'Look around (click to capture)'],
     ['C · wheel', 'Camera distance (4th is overhead)'],
     ['Enter', 'Finish job'],
@@ -495,6 +520,7 @@ function Help({ onBack }: { onBack: () => void }) {
         <p className="cc-p"><b>Stripes are real.</b> Grass bends the way you drive. Mow alternating lanes and the lawn shows light and dark bands. Lay a couple of laps around the edge first, keep your runs straight, and match the client&apos;s request — stripes, diagonals or a checkerboard (mow it twice, crossways; the second pass is free when they ask for it). Style earns tips.</p>
         <p className="cc-p"><b>Trim last.</b> The deck can&apos;t reach right up to fences, trunks and walls. Hop off (E) and run the string trimmer along them — each edge you finish rings a bell. Long grass glows while you&apos;re on foot.</p>
         <p className="cc-p">Set the deck to the height they asked for, stay off the flower beds, and don&apos;t ram the shed.</p>
+        <p className="cc-p"><b>🐾 Lost cats.</b> Some yards have a neighbour&apos;s cat hiding in them. Listen for meows. The mower scares cats, so hop off and walk up softly to pick it up, then carry it back to its owner for a reward. Every cat you bring home goes in your collection.</p>
         <Controls />
         <button className="cc-btn cc-primary" style={{ marginTop: 14 }} onClick={onBack}>Got it</button>
       </div>
@@ -530,7 +556,7 @@ function BoardScreen(props: { day: DayState; jobs: JobDef[]; selected: string | 
               <button key={j.id} className={`cc-job ${props.selected === j.id ? 'on' : ''} ${done ? 'done' : ''}`} onClick={() => !done && props.onSelect(j.id)} disabled={done}>
                 <div className="cc-job-icon">{TEMPLATE_ICON[j.template]}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="cc-job-title">{j.title}</div>
+                  <div className="cc-job-title">{j.title}{!done && hasLostCat(j) && <span title="A lost cat is around here" style={{ marginLeft: 6 }}>🐾</span>}</div>
                   <div className="cc-job-meta">{j.client} · {j.area.toLocaleString()} m² · {'●'.repeat(j.difficulty)}<span style={{ opacity: 0.3 }}>{'●'.repeat(5 - j.difficulty)}</span></div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
@@ -560,6 +586,7 @@ function BoardScreen(props: { day: DayState; jobs: JobDef[]; selected: string | 
               <span className="cc-tagchip">{PATTERN_LABEL[sel.pattern]}</span>
               <span className="cc-tagchip">Cut at {sel.heightIn}&quot;</span>
               <span className="cc-tagchip">{sel.obstacles} things in the way</span>
+              {hasLostCat(sel) && <span className="cc-tagchip cc-catchip">🐾 A neighbour lost their cat here</span>}
             </div>
             <DetailGo day={day} job={sel} onGo={props.onGo} />
           </div>
@@ -642,11 +669,15 @@ function TownMap({ day, jobs, selected, onSelect }: { day: DayState; jobs: JobDe
 function Hud(props: { hud: HudState; game: Game; job: JobDef; dayMoney: number; toasts: Toast[]; touch: boolean; onPause: () => void; onFinish: () => void }) {
   const { hud, job } = props;
   const wantedIdx = DECK_HEIGHTS.indexOf(job.heightIn);
-  const hint = hud.mode === 'foot'
-    ? hud.nearMower ? 'E — climb back on' : 'Hold Space / click — trim · E near the mower to ride'
-    : hud.blades ? (hud.coverage > 0.9 && hud.edges < 0.9 ? 'E — hop off and trim the edges' : 'Space — lift the blades for turns') : 'Space — blades down';
+  const carrying = hud.cat?.state === 'carried';
+  const hint = hud.nearCat
+    ? `E — hop off and pick up ${hud.cat!.name}`
+    : hud.mode === 'foot'
+      ? hud.nearMower ? 'E — climb back on' : carrying ? `Carry ${hud.cat!.name} to ${hud.cat!.owner}` : 'Hold Space / click — trim · E near the mower to ride'
+      : hud.blades ? (hud.coverage > 0.9 && hud.edges < 0.9 ? 'E — hop off and trim the edges' : 'Space — lift the blades for turns') : 'Space — blades down';
   return (
     <>
+      {props.touch && <TouchSurface game={props.game} />}
       {hud.overlapFlash > 0.05 && <div className="cc-overlap" style={{ opacity: hud.overlapFlash * 0.8 }} />}
       <div className="cc-hud-tl">
         <div className="cc-jobcard">
@@ -666,6 +697,7 @@ function Hud(props: { hud: HudState; game: Game; job: JobDef; dayMoney: number; 
           <Meter label="Edges" v={hud.edges} color="#ffd166" />
           <button className="cc-btn cc-small" style={{ marginTop: 8, width: '100%' }} onClick={props.onFinish}>Finish job ⏎</button>
         </div>
+        {hud.cat && <CatPoster cat={hud.cat} />}
       </div>
       <div className="cc-hud-tr">
         <div className="cc-clock">{clockStr(hud.clock)}</div>
@@ -697,16 +729,28 @@ function Hud(props: { hud: HudState; game: Game; job: JobDef; dayMoney: number; 
           <div className={`cc-blades ${hud.trimming ? 'on' : ''}`}>TRIMMER {hud.trimming ? 'ON' : 'READY'}</div>
         )}
       </div>
-      {!props.touch && <div className="cc-hint">{hint}</div>}
+      {!props.touch && (
+        <div className="cc-hud-bc">
+          <button
+            className={`cc-btn cc-small cc-mount ${hud.mode === 'foot' ? '' : 'go'}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => props.game.toggleMount()}
+          >
+            {hud.mode === 'mower' ? (hud.nearCat ? `🐾 Hop off · get ${hud.cat!.name}` : '✂ Hop off & trim') : '🚜 Climb back on'} <span className="cc-key cc-key-sm">E</span>
+          </button>
+          <div className="cc-hint">{hint}</div>
+        </div>
+      )}
       {hud.stripeRun > 3 && <div className="cc-stripe">STRAIGHT · {Math.round(hud.stripeRun)} m</div>}
-      {props.touch && <TouchControls game={props.game} hud={hud} />}
+      {props.touch && <TouchButtons game={props.game} hud={hud} />}
+      {props.touch && <div className="cc-rotate">↻ Turn your phone sideways for a bigger view</div>}
     </>
   );
 }
 
 function Meter({ label, v, color }: { label: string; v: number; color: string }) {
   return (
-    <div style={{ marginTop: 7 }}>
+    <div className="cc-meter" style={{ marginTop: 7 }}>
       <div className="cc-row" style={{ justifyContent: 'space-between', fontSize: 11, fontWeight: 600, opacity: 0.85 }}>
         <span>{label}</span>
         <span>{pct(v)}</span>
@@ -770,6 +814,24 @@ function Radar({ game }: { game: Game }) {
       ctx.stroke();
       ctx.fill();
       ctx.restore();
+      // the cat's owner: a pink heart, pinned to the rim when they're off the map
+      if (m.owner) {
+        const dx = m.owner.x - m.x;
+        const dz = m.owner.z - m.z;
+        let sx = (dx * Math.cos(rot) - dz * Math.sin(rot)) * scale;
+        let sy = (dx * Math.sin(rot) + dz * Math.cos(rot)) * scale;
+        const lim = r - 12;
+        const l = Math.hypot(sx, sy);
+        if (l > lim) {
+          sx = (sx / l) * lim;
+          sy = (sy / l) * lim;
+        }
+        const pulse = m.owner.urgent ? 1 + Math.sin(performance.now() / 150) * 0.25 : 0.8;
+        ctx.font = `${Math.round(16 * pulse)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💗', r + sx, r + sy);
+      }
       // north marker
       const nAng = rot - Math.PI / 2;
       ctx.fillStyle = '#fff';
@@ -784,7 +846,8 @@ function Radar({ game }: { game: Game }) {
   return <canvas ref={ref} width={190} height={190} className="cc-radar" />;
 }
 
-function TouchControls({ game, hud }: { game: Game; hud: HudState }) {
+/** The drive/look surface. It sits *under* the rest of the HUD so Pause and Finish stay tappable. */
+function TouchSurface({ game }: { game: Game }) {
   const move = useRef({ x: 0, y: 0 });
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const stickId = useRef<number | null>(null);
@@ -793,6 +856,7 @@ function TouchControls({ game, hud }: { game: Game; hud: HudState }) {
   const origin = useRef({ x: 0, y: 0 });
   const R = 52;
   const onStart = (e: React.TouchEvent) => {
+    game.audio.start();
     for (const t of Array.from(e.changedTouches)) {
       if (t.clientX < window.innerWidth * 0.45 && stickId.current === null) {
         stickId.current = t.identifier;
@@ -834,24 +898,130 @@ function TouchControls({ game, hud }: { game: Game; hud: HudState }) {
       } else if (t.identifier === lookId.current) lookId.current = null;
     }
   };
+  // a finger lifted mid-drive must never leave the mower stuck at full throttle
+  useEffect(() => () => game.setTouch({ x: 0, y: 0 }, { x: 0, y: 0 }), [game]);
   return (
     <>
       <div className="cc-touch" onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd} onTouchCancel={onEnd} />
       <div className="cc-stick"><div style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }} /></div>
-      <div className="cc-tbtns">
-        {hud.mode === 'mower' ? (
-          <>
-            <button className={`cc-tbtn ${hud.blades ? 'on' : ''}`} onTouchStart={(e) => { e.stopPropagation(); game.toggleBlades(); }}>Blades</button>
-            <button className="cc-tbtn" onTouchStart={(e) => { e.stopPropagation(); game.deck(1); }}>Deck ▲</button>
-            <button className="cc-tbtn" onTouchStart={(e) => { e.stopPropagation(); game.deck(-1); }}>Deck ▼</button>
-          </>
-        ) : (
-          <button className={`cc-tbtn big ${hud.trimming ? 'on' : ''}`} onTouchStart={(e) => { e.stopPropagation(); game.setTrigger(true); }} onTouchEnd={(e) => { e.stopPropagation(); game.setTrigger(false); }}>Trim</button>
-        )}
-        <button className="cc-tbtn" onTouchStart={(e) => { e.stopPropagation(); game.toggleMount(); }}>{hud.mode === 'mower' ? 'Hop off' : 'Ride'}</button>
-        <button className="cc-tbtn" onTouchStart={(e) => { e.stopPropagation(); game.cycleCam(); }}>Cam</button>
-      </div>
     </>
+  );
+}
+
+function TouchButtons({ game, hud }: { game: Game; hud: HudState }) {
+  const tap = (fn: () => void) => (e: React.TouchEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    fn();
+  };
+  return (
+    <div className="cc-tbtns">
+      {hud.mode === 'mower' ? (
+        <>
+          <button className={`cc-tbtn ${hud.blades ? 'on' : ''}`} onTouchStart={tap(() => game.toggleBlades())}>Blades</button>
+          <button className="cc-tbtn" onTouchStart={tap(() => game.deck(1))}>Deck ▲ <small>{hud.heightIn}&quot;</small></button>
+          <button className="cc-tbtn" onTouchStart={tap(() => game.deck(-1))}>Deck ▼</button>
+        </>
+      ) : (
+        <button
+          className={`cc-tbtn big ${hud.trimming ? 'on' : ''}`}
+          onTouchStart={tap(() => game.setTrigger(true))}
+          onTouchEnd={tap(() => game.setTrigger(false))}
+          onTouchCancel={tap(() => game.setTrigger(false))}
+        >
+          Trim
+        </button>
+      )}
+      <button className={`cc-tbtn ${hud.nearCat ? 'cat' : ''}`} onTouchStart={tap(() => game.toggleMount())}>
+        {hud.mode === 'mower' ? (hud.nearCat ? '🐾 Hop off' : 'Hop off') : 'Ride'}
+      </button>
+      <button className="cc-tbtn" onTouchStart={tap(() => game.cycleCam())}>Cam</button>
+    </div>
+  );
+}
+
+// ———————————————————————————————————————— cats
+
+/** A little cat face in the coat's colours, for the poster and the collection. */
+function CatFace({ coat, size = 56 }: { coat: string; size?: number }) {
+  const c = COATS[coat as CoatId] ?? COATS.ginger;
+  const ear = c.pattern === 'points' && c.marks ? c.marks : c.base;
+  const muzzle = c.bib || coat === 'calico' || coat === 'snow' ? '#f7f5ef' : c.pattern === 'points' && c.marks ? c.marks : c.base;
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden>
+      <path d="M14 46 L20 8 L44 30 Z" fill={ear} stroke="#0003" strokeWidth="2" />
+      <path d="M86 46 L80 8 L56 30 Z" fill={ear} stroke="#0003" strokeWidth="2" />
+      <path d="M21 36 L24 17 L36 30 Z" fill="#f2a0a8" />
+      <path d="M79 36 L76 17 L64 30 Z" fill="#f2a0a8" />
+      <ellipse cx="50" cy="56" rx="38" ry="34" fill={c.base} stroke="#0003" strokeWidth="2" />
+      {c.pattern === 'tabby' && c.marks && (
+        <g stroke={c.marks} strokeWidth="4" strokeLinecap="round">
+          <path d="M50 24 L50 36" /><path d="M40 26 L42 36" /><path d="M60 26 L58 36" />
+          <path d="M14 54 L24 56" /><path d="M86 54 L76 56" />
+        </g>
+      )}
+      {c.pattern === 'patches' && (
+        <>
+          <ellipse cx="30" cy="40" rx="14" ry="12" fill={c.marks ?? '#000'} />
+          <ellipse cx="72" cy="36" rx="12" ry="10" fill={c.marks2 ?? '#000'} />
+        </>
+      )}
+      {c.pattern === 'points' && c.marks && <ellipse cx="50" cy="66" rx="20" ry="18" fill={c.marks} opacity="0.85" />}
+      <ellipse cx="50" cy="70" rx="17" ry="12" fill={muzzle} opacity={muzzle === c.base ? 0 : 1} />
+      <ellipse cx="35" cy="52" rx="8" ry="9" fill={c.eyes} />
+      <ellipse cx="65" cy="52" rx="8" ry="9" fill={c.eyes} />
+      <ellipse cx="35" cy="53" rx="2.6" ry="7" fill="#111" />
+      <ellipse cx="65" cy="53" rx="2.6" ry="7" fill="#111" />
+      <circle cx="37" cy="49" r="2" fill="#fff" />
+      <circle cx="67" cy="49" r="2" fill="#fff" />
+      <path d="M45 64 L55 64 L50 70 Z" fill="#f2a0a8" />
+      <path d="M50 70 Q45 76 40 73 M50 70 Q55 76 60 73" stroke="#0007" strokeWidth="2" fill="none" />
+      <g stroke="#fff" strokeWidth="1.5" opacity="0.8">
+        <path d="M30 68 L6 64" /><path d="M30 72 L6 74" /><path d="M70 68 L94 64" /><path d="M70 72 L94 74" />
+      </g>
+    </svg>
+  );
+}
+
+function CatPoster({ cat }: { cat: NonNullable<HudState['cat']> }) {
+  const coat = COATS[cat.coat as CoatId];
+  const line =
+    cat.state === 'lost' ? 'Listen for meows. Hop off and walk up slowly.'
+    : cat.state === 'carried' ? `Got ${cat.name}! Bring them to ${cat.owner} 💗`
+    : `${cat.name} is home ♥`;
+  return (
+    <div className={`cc-poster ${cat.state}`}>
+      <div className="cc-poster-face"><CatFace coat={cat.coat} size={52} /></div>
+      <div style={{ minWidth: 0 }}>
+        <div className="cc-poster-k">{cat.state === 'home' ? 'Reunited' : 'Lost cat'} · ${cat.reward} reward</div>
+        <div className="cc-poster-n">{cat.name}</div>
+        <div className="cc-poster-d">{coat?.label} · {cat.owner}</div>
+        <div className="cc-poster-l">{line}</div>
+      </div>
+    </div>
+  );
+}
+
+function CatGallery({ cats, onBack }: { cats: RescuedCat[]; onBack: () => void }) {
+  const total = cats.reduce((a, c) => a + c.reward, 0);
+  return (
+    <div className="cc-center cc-modal-wrap">
+      <div className="cc-panel" style={{ width: 640, maxWidth: '94vw', maxHeight: '88vh', overflow: 'auto' }}>
+        <div className="cc-h">CATS YOU BROUGHT HOME</div>
+        <div className="cc-dim" style={{ marginBottom: 12 }}>{cats.length} {cats.length === 1 ? 'cat' : 'cats'} back with their families · ${total} in rewards</div>
+        <div className="cc-catgrid">
+          {[...cats].reverse().map((c, i) => (
+            <div key={`${c.at}-${i}`} className="cc-catcard">
+              <CatFace coat={c.coat} size={72} />
+              <div className="cc-poster-n" style={{ fontSize: 18 }}>{c.name}</div>
+              <div className="cc-poster-d">{COATS[c.coat as CoatId]?.label}</div>
+              <div className="cc-poster-d">home with {c.owner}</div>
+            </div>
+          ))}
+        </div>
+        <button className="cc-btn" style={{ marginTop: 14 }} onClick={onBack}>Back</button>
+      </div>
+    </div>
   );
 }
 
@@ -873,7 +1043,7 @@ function useCountUp(target: number, delay: number, dur = 900) {
   return v;
 }
 
-function Results({ r, onCollect }: { r: { job: JobDef; payout: Payout; timeUp: boolean; style: number; minutes: number }; onCollect: () => void }) {
+function Results({ r, onCollect }: { r: ResultState; onCollect: () => void }) {
   const p = r.payout;
   const earned = useCountUp(p.earned, 700, 1400);
   const base = Math.round(r.job.pay * p.success);
@@ -906,6 +1076,7 @@ function Results({ r, onCollect }: { r: { job: JobDef; payout: Payout; timeUp: b
           <div><span>Pay at {pct(p.success)}</span><b>{money(base)}</b></div>
           <div><span>Tip for style</span><b style={{ color: LIME }}>+{money(p.tip)}</b></div>
           {p.damage > 0 && <div><span>Damage</span><b style={{ color: '#ff7a6b' }}>−{money(p.damage)}</b></div>}
+          {r.cat && <div><span>🐾 Brought {r.cat.name} home to {r.cat.owner}</span><b style={{ color: '#ff8fb3' }}>+{money(r.cat.reward)}</b></div>}
           <div className="total"><span>Earned</span><b>{money(earned)}</b></div>
         </div>
         <button className="cc-btn cc-primary" style={{ width: '100%', marginTop: 14 }} onClick={onCollect}>Collect {money(p.earned)}</button>
@@ -1111,7 +1282,54 @@ const CSS = `
 .cc-deck-step{width:7px;height:16px;border-radius:2px;background:rgba(255,255,255,.18);position:relative}
 .cc-deck-step.want{box-shadow:0 0 0 1.5px ${LIME}}
 .cc-deck-step.on{background:#fff}
-.cc-hint{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);font-size:13px;font-weight:600;padding:7px 14px;border-radius:999px;background:rgba(0,0,0,.5);white-space:nowrap}
+.cc-hud-bc{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px}
+.cc-hint{font-size:13px;font-weight:600;padding:7px 14px;border-radius:999px;background:rgba(0,0,0,.5);white-space:nowrap}
+.cc-mount{display:flex;align-items:center;gap:10px}
+.cc-mount.go{border-color:rgba(255,209,102,.6)}
+.cc-mount:hover:not(:disabled){transform:translateY(-2px)}
+.cc-key-sm{min-width:0;padding:2px 7px}
+.cc-poster{margin-top:10px;display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:12px;background:#fff8ec;color:#2a1d14;border:2px dashed #e8a35b;box-shadow:0 6px 18px rgba(0,0,0,.35);transform:rotate(-1.2deg)}
+.cc-poster.carried{background:#ffe3ee;border-color:#ff5c8a;animation:cc-wiggle 1.2s ease-in-out infinite}
+.cc-poster.home{background:#e9ffd6;border-color:${LIME};border-style:solid}
+@keyframes cc-wiggle{0%,100%{transform:rotate(-1.2deg)}50%{transform:rotate(1.2deg) scale(1.02)}}
+.cc-poster-face{flex:none;border-radius:50%;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.08)}
+.cc-poster-k{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#c2410c}
+.cc-poster.carried .cc-poster-k{color:#d6336c}
+.cc-poster-n{font-family:var(--font-anton),Impact,sans-serif;font-size:22px;line-height:1.05}
+.cc-poster-d{font-size:11px;opacity:.75}
+.cc-poster-l{font-size:11.5px;font-weight:700;margin-top:3px}
+.cc-catbtn{background:linear-gradient(90deg,rgba(255,92,138,.3),${PANEL});border-color:rgba(255,143,179,.5);display:flex;align-items:center;gap:8px}
+.cc-catcount{margin-left:auto;background:#ff5c8a;color:#fff;border-radius:999px;padding:1px 9px;font-size:13px}
+.cc-catchip{background:rgba(255,92,138,.22);color:#ffb3cb}
+.cc-catgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.cc-catcard{background:#fff8ec;color:#2a1d14;border-radius:14px;padding:12px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:2px;box-shadow:0 6px 16px rgba(0,0,0,.3)}
+.cc-tbtn.cat{background:#ff5c8a;border-color:#ff8fb3}
+.cc-tbtn small{font-size:10px;opacity:.7}
+.cc-rotate{display:none}
+/* phones and tablets: thumbs own the bottom corners, everything else gets out of their way */
+.cc-touchui .cc-hud-br{display:none}
+.cc-touchui .cc-hud-tl{width:200px;top:8px;left:8px}
+.cc-touchui .cc-jobcard{padding:8px 10px}
+.cc-touchui .cc-jobcard .cc-chips,.cc-touchui .cc-jobcard .cc-meter+.cc-meter{display:none}
+.cc-touchui .cc-poster{padding:6px 8px;gap:8px}
+.cc-touchui .cc-poster-face svg{width:38px;height:38px}
+.cc-touchui .cc-poster-n{font-size:17px}
+.cc-touchui .cc-poster-l{display:none}
+.cc-touchui .cc-hud-tr{top:8px;right:10px}
+.cc-touchui .cc-clock{font-size:24px}
+.cc-touchui .cc-money{font-size:28px}
+.cc-touchui .cc-hud-bl{left:auto;bottom:auto;right:10px;top:96px}
+.cc-touchui .cc-radar{width:104px;height:104px}
+.cc-touchui .cc-stick{left:24px;bottom:24px}
+.cc-touchui .cc-tbtns{right:12px;bottom:14px;grid-template-columns:repeat(3,auto)}
+.cc-touchui .cc-toasts{top:auto;bottom:150px}
+.cc-touchui .cc-toast{font-size:13px}
+.cc-touchui .cc-toast.gold{font-size:18px}
+@media (orientation: portrait){
+  .cc-touchui .cc-rotate{display:block;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.6);padding:8px 14px;border-radius:999px;font-size:13px;font-weight:700;pointer-events:none;white-space:nowrap;animation:cc-fade 6s forwards}
+  .cc-touchui .cc-hud-bl{top:auto;bottom:200px}
+}
+@keyframes cc-fade{0%,70%{opacity:1}100%{opacity:0}}
 .cc-stripe{position:absolute;bottom:62px;left:50%;transform:translateX(-50%);font-family:var(--font-anton),Impact,sans-serif;font-size:22px;color:${LIME};text-shadow:0 2px 0 #000;letter-spacing:.06em}
 .cc-toasts{position:absolute;top:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
 .cc-toast{font-weight:800;font-size:15px;padding:8px 16px;border-radius:10px;background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.1);animation:cc-pop .35s cubic-bezier(.2,1.6,.4,1)}

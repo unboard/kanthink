@@ -13,9 +13,12 @@ export class Environment {
   private skyScene = new THREE.Scene();
   private lastEnvMinute = -999;
   private shadowSize: number;
+  private useEnvMap: boolean;
 
-  constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, shadowMap: number) {
+  /** `envMap: false` skips the baked sky reflection: some phone GPUs bake it full of NaNs, which paints every lit surface black. */
+  constructor(private renderer: THREE.WebGLRenderer, private scene: THREE.Scene, shadowMap: number, envMap = true) {
     this.shadowSize = shadowMap;
+    this.useEnvMap = envMap;
     this.sky = new Sky();
     this.sky.scale.setScalar(4500);
     const u = this.sky.material.uniforms;
@@ -59,7 +62,8 @@ export class Environment {
     const warm = new THREE.Color('#fff4e2').lerp(new THREE.Color('#ffb36b'), low * 0.85);
     this.sun.color.copy(warm);
     this.sun.intensity = 2.0 + 1.6 * (1 - low);
-    this.hemi.intensity = 0.22 + 0.12 * (1 - low);
+    // without the baked sky light, the hemisphere carries the fill on its own
+    this.hemi.intensity = (0.22 + 0.12 * (1 - low)) * (this.useEnvMap ? 1 : 1.9);
     this.hemi.color.set('#bcd4ff').lerp(new THREE.Color('#ffd2a8'), low * 0.5);
     const fog = this.scene.fog as THREE.Fog;
     fog.color.set('#cfdde9').lerp(new THREE.Color('#f0c9a0'), low * 0.6);
@@ -74,7 +78,7 @@ export class Environment {
     this.sun.position.set(fx + this.sunDir.x * 110, this.sunDir.y * 110, fz + this.sunDir.z * 110);
     this.sun.target.updateMatrixWorld();
 
-    if (Math.abs(minute - this.lastEnvMinute) > 20) {
+    if (this.useEnvMap && Math.abs(minute - this.lastEnvMinute) > 20) {
       this.lastEnvMinute = minute;
       this.bakeEnv();
     }

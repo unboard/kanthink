@@ -15,12 +15,16 @@ import { buildBeds, buildFence, buildHard, buildHouse, buildProp, buildRig, buil
 import { buildColliders, houseFootprints, propShape, type Collider } from './shapes';
 import { TexLib } from './textures';
 import type { HudState, JobDef, Quality, SiteDef, Toast } from './types';
-import { buildMower, buildPerson, buildTrimmer, poseSeated, poseWalk, vehicleMaterials, type Materials, type MowerRig, type PersonRig, type TrimmerRig } from './vehicle';
+import { buildMower, buildPerson, buildTrimmer, poseOwner, poseSeated, poseWalk, vehicleMaterials, type Materials, type MowerRig, type PersonRig, type TrimmerRig } from './vehicle';
+import { planLostCat, type LostCat } from './cats';
+import { Bubble, buildCat, Hearts, type CatRig } from './catModel';
+import { makeRng } from './rng';
 
 export interface GameEvents {
   hud: (h: HudState) => void;
   toast: (text: string, tone: Toast['tone']) => void;
   timeUp: () => void;
+  catHome?: (cat: LostCat) => void;
 }
 
 // pr = the most pixels we'll ever render; dynamic resolution scales down from there to hold the frame rate
@@ -231,6 +235,11 @@ function pushOut(x: number, z: number, r: number, colliders: Collider[], out: { 
 
 // ———————————————————————————————————————— the game
 
+export function isPhone(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(hover: none) and (pointer: coarse)').matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+}
+
 type Mode = 'idle' | 'attract' | 'play' | 'flyover';
 
 export class Game {
@@ -337,12 +346,36 @@ export class Game {
   private minimapBg: HTMLCanvasElement | null = null;
   private minimapTimer = 0;
 
+  // the lost cat (some jobs)
+  lostCat: LostCat | null = null;
+  catState: 'lost' | 'bolting' | 'carried' | 'home' = 'lost';
+  private catRig: CatRig | null = null;
+  private owner: PersonRig | null = null;
+  private bubble: Bubble | null = null;
+  private hearts = new Hearts();
+  private catX = 0;
+  private catZ = 0;
+  private catHeading = 0;
+  private catSpot = 0;
+  private catWalk = 0;
+  private catLook = 0;
+  private boltFrom = { x: 0, z: 0 };
+  private catMeow = 3;
+  private catHeard = false;
+  private catSpooked = false;
+  private catHintAt = 0;
+  private catParent: THREE.Object3D | null = null;
+  private homeT = 0;
+  private catCollider: Extract<Collider, { kind: 'circle' }> = { kind: 'circle', x: 1e6, z: 1e6, r: 0.32, tag: 'cat' };
+
   constructor(container: HTMLElement, quality: Quality, events: GameEvents) {
     this.container = container;
     this.quality = quality;
     this.events = events;
     const q = QUALITY[quality];
-    this.post = q.post;
+    const phone = isPhone();
+    // phones: no half-float post chain, no baked environment — both are where mobile GPUs go black
+    this.post = q.post && !phone;
     this.renderer = new THREE.WebGLRenderer({ antialias: q.aa, powerPreference: 'high-performance', stencil: false });
     this.prMax = Math.min(window.devicePixelRatio || 1, q.pr);
     this.prMin = Math.min(this.prMax, q.minPr);
@@ -360,7 +393,7 @@ export class Game {
     this.lib.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
 
     this.camera = new THREE.PerspectiveCamera(58, container.clientWidth / container.clientHeight, 0.08, 1500);
-    this.env = new Environment(this.renderer, this.scene, q.shadow);
+    this.env = new Environment(this.renderer, this.scene, q.shadow, !phone && quality !== 'low');
 
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: q.msaa });
     this.composer = new EffectComposer(this.renderer, rt);
@@ -393,7 +426,16 @@ export class Game {
     window.addEventListener('mousemove', this.onMouseMove);
     el.addEventListener('wheel', this.onWheel, { passive: false });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('webglcontextlost', this.onContextLost, false);
   }
+
+  /** The GPU dropped us (common on phones under memory pressure): say so instead of sitting on a black screen. */
+  private onContextLost = (e: Event) => {
+    e.preventDefault();
+    this.stop();
+    this.events.toast('Graphics reset — reloading…', 'bad');
+    setTimeout(() => window.location.reload(), 1200);
+  };
 
   // ——————————————————————————— lifecycle
 
@@ -453,6 +495,12 @@ export class Game {
     this.anims = [];
     this.flowers = null;
     this.particles.clear();
+    this.hearts.clear();
+    this.lostCat = null;
+    this.catRig = null;
+    this.owner = null;
+    this.bubble = null;
+    this.catParent = null;
   }
 
   /** Build a yard. `attract` pre-mows it for the title screen. */
@@ -504,7 +552,8 @@ export class Game {
 
     this.lawn = new Lawn(site, field, this.quality);
     world.add(this.lawn.group);
-    world.add(this.mower.root, this.particles.mesh, this.mowerShadow, this.personShadow, this.trimmer.root);
+    world.add(this.mower.root, this.particles.mesh, this.mowerShadow, this.personShadow, this.trimmer.root, this.hearts.group);
+    if (job && mode === 'play') this.setupCat(job, site);
     this.buildMinimapBg(site);
 
     // reset state
@@ -535,6 +584,9 @@ export class Game {
       this.premow(field, site);
       this.minute = 17 * 60 + 40;
     }
+    // a play load waits, paused, until the shell sets the clock and says go — otherwise the
+    // previous day's late clock can fire time-up while the truck is still "driving"
+    this.paused = mode === 'play';
     this.mode = mode;
     await this.lib.ready();
     onProgress?.(1);
@@ -827,6 +879,7 @@ export class Game {
     if (this.overlapAcc > 60) this.overlapFlash = 1;
     this.overlapFlash = Math.max(0, this.overlapFlash - dt * 1.5);
 
+    this.updateCat(dt);
     this.updateCamera(dt);
     this.particles.update(dt);
     this.audio.update(dt, {
@@ -892,7 +945,7 @@ export class Game {
     const into = -(pushX * fx + pushZ * fz) * Math.sign(this.speed);
     if (hitTag && into > 0.004) {
       const impact = Math.abs(this.speed);
-      if (impact > 1.6 && performance.now() - this.lastBump > 900) {
+      if (impact > 1.6 && hitTag !== 'cat' && hitTag !== 'neighbour' && performance.now() - this.lastBump > 900) {
         this.lastBump = performance.now();
         this.bumps++;
         this.shake = Math.min(1, impact / 4);
@@ -1006,6 +1059,13 @@ export class Game {
   }
 
   private walk(dt: number, fwdIn: number, sideIn: number, field: Field) {
+    if (this.trigger && this.catState === 'carried' && this.lostCat) {
+      this.trigger = false;
+      if (performance.now() - this.catHintAt > 3000) {
+        this.catHintAt = performance.now();
+        this.events.toast(`Can't trim while you're holding ${this.lostCat.name}!`, 'info');
+      }
+    }
     // camera-relative movement, like any third-person game
     const cy = this.camYaw;
     const fx = Math.cos(cy);
@@ -1187,7 +1247,9 @@ export class Game {
       const p = this.person;
       p.root.position.set(this.px, 0, this.pz);
       p.root.rotation.set(0, -this.pFacing, 0);
-      poseWalk(p, this.walkPhase, Math.min(1, this.pSpeed / 2), this.trigger, this.trimSwing);
+      const carrying = this.catState === 'carried' && !!this.lostCat;
+      poseWalk(p, this.walkPhase, Math.min(1, this.pSpeed / 2), this.trigger, this.trimSwing, carrying);
+      this.trimmer.root.visible = !carrying;
       this.personShadow.visible = true;
       this.personShadow.position.set(this.px, 0.036, this.pz);
       // trimmer from the hip to the head
@@ -1208,6 +1270,7 @@ export class Game {
       lm.opacity = this.trimRpm > 0.4 ? 0.22 + Math.random() * 0.08 : 0;
     }
     m.bladeDisc.visible = false;
+    this.catVisuals(dt, t);
   }
 
   // ——————————————————————————— HUD + minimap
@@ -1231,6 +1294,10 @@ export class Game {
       camMode: this.camMode,
       stripeRun: this.stripeRun,
       overlapFlash: this.overlapFlash,
+      cat: this.lostCat
+        ? { name: this.lostCat.name, coat: this.lostCat.coat, owner: this.lostCat.owner, reward: this.lostCat.reward, state: this.catState === 'bolting' ? 'lost' : this.catState }
+        : null,
+      nearCat: this.mounted && !!this.lostCat && this.catState === 'lost' && Math.hypot(this.catX - this.mx, this.catZ - this.mz) < 3.5,
     });
   }
 
@@ -1329,6 +1396,7 @@ export class Game {
       camYaw: this.camYaw,
       mower: { x: this.mx, z: this.mz, heading: this.heading },
       onFoot: !this.mounted,
+      owner: this.lostCat && this.catState !== 'home' ? { x: this.lostCat.ownerAt.x, z: this.lostCat.ownerAt.z, urgent: this.catState === 'carried' } : null,
     };
   }
 
@@ -1342,6 +1410,8 @@ export class Game {
     const flourish = Math.round(Math.min(this.job.pay * 0.08, this.styleBonus * 0.6) * p.success);
     p.tip += flourish;
     p.earned += flourish;
+    const cat = this.catHome;
+    if (cat) p.earned += cat.reward;
     this.mode = 'flyover';
     this.flyT = 0;
     this.blades = false;
@@ -1349,6 +1419,202 @@ export class Game {
     this.keys.clear();
     this.trigger = false;
     return p;
+  }
+
+  /** The cat you brought home this job, if any — its reward is already in the payout. */
+  get catHome() {
+    return this.lostCat && this.catState === 'home' ? this.lostCat : null;
+  }
+
+  // ——————————————————————————— the lost cat
+
+  private setupCat(job: JobDef, site: SiteDef) {
+    const plan = planLostCat(job, site);
+    if (!plan) return;
+    this.lostCat = plan;
+    this.catState = 'lost';
+    this.catSpot = 0;
+    [this.catX, this.catZ] = plan.spots[0];
+    this.catHeading = Math.random() * Math.PI * 2;
+    this.catMeow = 4;
+    this.catHeard = false;
+    this.catSpooked = false;
+    this.homeT = 0;
+    this.catRig = buildCat(plan.coat);
+    this.catRig.root.scale.setScalar(1.25); // storybook-sized, so it reads from the mower
+    this.world.add(this.catRig.root);
+    this.catParent = this.world;
+    // the owner, in their own clothes
+    const r = makeRng((job.seed ^ 0x0a11ce) >>> 0);
+    this.owner = buildPerson({
+      skin: r.pick(['#f1c9a5', '#c58a64', '#8d5a3b', '#e8b48c', '#5c3a24']),
+      shirt: r.pick(['#e85d9a', '#7e57c2', '#2f80ed', '#f2994a', '#27ae60', '#eb5757']),
+      pants: r.pick(['#3a4656', '#6b5b4b', '#2d3142', '#8e7d6a']),
+      hair: r.pick(['#3a2a1c', '#c9c4bd', '#8a5a2b', '#121212', '#e0b860']),
+      cap: null,
+      vest: false,
+      muffs: false,
+      shades: false,
+    });
+    this.owner.root.position.set(plan.ownerAt.x, 0, plan.ownerAt.z);
+    this.owner.root.rotation.y = -plan.ownerAt.facing;
+    this.world.add(this.owner.root);
+    this.bubble = new Bubble();
+    this.bubble.set(`Have you seen ${plan.name}?`);
+    this.bubble.sprite.position.set(plan.ownerAt.x, 2.35, plan.ownerAt.z);
+    this.world.add(this.bubble.sprite);
+    this.colliders.push({ kind: 'circle', x: plan.ownerAt.x, z: plan.ownerAt.z, r: 0.35, tag: 'neighbour' });
+    this.catCollider = { kind: 'circle', x: this.catX, z: this.catZ, r: 0.32, tag: 'cat' };
+    this.colliders.push(this.catCollider);
+  }
+
+  private updateCat(dt: number) {
+    const c = this.lostCat;
+    if (!c || !this.catRig) return;
+    const ux = this.mounted ? this.mx : this.px;
+    const uz = this.mounted ? this.mz : this.pz;
+    const d = Math.hypot(this.catX - ux, this.catZ - uz);
+    if (this.catState === 'lost') {
+      this.catMeow -= dt;
+      if (this.catMeow <= 0) {
+        this.catMeow = 4.5 + Math.random() * 4;
+        // follow the meows: louder as you get close
+        this.audio.meow(Math.max(0, 1 - d / 40), 1.05);
+      }
+      if (d < 9 && !this.catHeard) {
+        this.catHeard = true;
+        this.catMeow = Math.min(this.catMeow, 0.6);
+        this.events.toast('Mrrrow? Something is meowing close by…', 'info');
+      }
+      if (this.mounted && d < 4.5 && Math.abs(this.speed) > 0.6 && this.catSpot < c.spots.length - 1) {
+        // the mower is loud and scary: off it goes to another hiding place
+        this.catSpot++;
+        this.catState = 'bolting';
+        this.boltFrom = { x: this.catX, z: this.catZ };
+        this.audio.meow(1, 1.3);
+        if (!this.catSpooked) {
+          this.catSpooked = true;
+          this.events.toast(`${c.name} got scared of the mower! Hop off and tiptoe up.`, 'bad');
+        }
+      } else if (!this.mounted && d < 1.05) {
+        this.catState = 'carried';
+        this.audio.meow(1, 1.15);
+        this.audio.purr(3);
+        this.audio.chime(2);
+        this.hearts.burst(new THREE.Vector3(this.px, 1.4, this.pz), 8);
+        this.styleBonus += 2;
+        this.events.toast(`You found ${c.name}! ♥`, 'gold');
+        setTimeout(() => this.lostCat === c && this.events.toast(`Take ${c.name} back to ${c.owner}`, 'info'), 1600);
+        this.bubble?.set(`${c.name}!! ♥`, 'happy');
+      } else if (this.mounted && d < 3.5 && performance.now() - this.catHintAt > 6000) {
+        this.catHintAt = performance.now();
+        this.events.toast(`Hop off (E) to pick up ${c.name}`, 'info');
+      }
+      // watch you come closer
+      if (d < 7) {
+        const want = Math.atan2(uz - this.catZ, ux - this.catX);
+        this.catLook = Math.max(-0.9, Math.min(0.9, -angleWrap(want - this.catHeading)));
+      } else this.catLook *= Math.exp(-dt * 2);
+    } else if (this.catState === 'bolting') {
+      const [tx, tz] = c.spots[this.catSpot];
+      const dx = tx - this.catX;
+      const dz = tz - this.catZ;
+      const dl = Math.hypot(dx, dz);
+      const step = 5.5 * dt;
+      this.catHeading = Math.atan2(dz, dx);
+      this.catWalk += dt * 22;
+      this.catLook = 0;
+      if (dl <= step) {
+        this.catX = tx;
+        this.catZ = tz;
+        this.catState = 'lost';
+        this.catHeading = Math.atan2(this.boltFrom.z - tz, this.boltFrom.x - tx);
+        this.catMeow = 2.5;
+      } else {
+        this.catX += (dx / dl) * step;
+        this.catZ += (dz / dl) * step;
+      }
+    } else if (this.catState === 'carried') {
+      const o = c.ownerAt;
+      if (Math.hypot(o.x - ux, o.z - uz) < 2.9) this.reunite();
+    } else {
+      this.homeT += dt;
+    }
+    const free = this.catState === 'lost' || this.catState === 'bolting';
+    this.catCollider.x = free ? this.catX : 1e6;
+    this.catCollider.z = free ? this.catZ : 1e6;
+  }
+
+  private reunite() {
+    const c = this.lostCat!;
+    this.catState = 'home';
+    this.homeT = 0;
+    this.audio.reunite();
+    this.audio.purr(4);
+    setTimeout(() => this.audio.meow(0.9, 1.2), 700);
+    this.hearts.burst(new THREE.Vector3(c.ownerAt.x, 1.6, c.ownerAt.z), 22, 0.9);
+    this.styleBonus += 4;
+    this.bubble?.set('Thank you!! ♥', 'happy');
+    this.events.toast(`${c.name} is home! ${c.owner} gives you $${c.reward} ♥`, 'gold');
+    this.events.catHome?.(c);
+  }
+
+  private catVisuals(dt: number, t: number) {
+    this.hearts.update(dt);
+    const c = this.lostCat;
+    const rig = this.catRig;
+    if (!c || !rig) return;
+    const ux = this.mounted ? this.mx : this.px;
+    const uz = this.mounted ? this.mz : this.pz;
+    // whoever is holding the cat decides where it sits
+    let parent: THREE.Object3D = this.world;
+    if (this.catState === 'carried') parent = this.mounted ? this.mower.body : this.person.torso;
+    else if (this.catState === 'home' && this.owner) parent = this.owner.torso;
+    if (parent !== this.catParent) {
+      parent.add(rig.root);
+      this.catParent = parent;
+    }
+    if (parent === this.world) {
+      rig.root.position.set(this.catX, 0, this.catZ);
+      rig.root.rotation.set(0, -this.catHeading, 0);
+      rig.root.scale.setScalar(1.25);
+      const close = !this.mounted && Math.hypot(this.catX - ux, this.catZ - uz) < 5;
+      rig.animate(t, this.catState === 'bolting' ? 'walk' : close ? 'stand' : 'loaf', this.catWalk, this.catLook);
+    } else if (parent === this.mower.body) {
+      // riding up front on the hood like a little hood ornament
+      rig.root.position.set(0.52, 0.86, 0);
+      rig.root.rotation.set(0, 0, 0);
+      rig.root.scale.setScalar(1.25);
+      rig.animate(t, 'loaf', 0, Math.sin(t * 0.5) * 0.4);
+    } else {
+      // cradled in someone's arms
+      rig.root.position.set(0.24, 0.12, 0.08);
+      rig.root.rotation.set(0, Math.PI / 2, 0);
+      rig.root.scale.setScalar(1.1);
+      rig.animate(t, 'held', 0, -0.6 + Math.sin(t * 0.8) * 0.2);
+    }
+    const o = this.owner;
+    if (o) {
+      const oa = c.ownerAt;
+      const near = Math.hypot(oa.x - ux, oa.z - uz) < 14;
+      let mood: 'worried' | 'excited' | 'cuddle' = 'worried';
+      if (this.catState === 'home') mood = this.homeT < 2.5 ? 'excited' : 'cuddle';
+      else if (this.catState === 'carried' && near) mood = 'excited';
+      o.root.rotation.y = -(mood === 'worried' ? oa.facing : Math.atan2(uz - oa.z, ux - oa.x));
+      poseOwner(o, t, mood);
+      // held up high while they celebrate
+      if (this.catState === 'home' && mood === 'excited') rig.root.position.set(0.2, 0.45, 0);
+    }
+    if (this.bubble) {
+      const b = this.bubble.sprite;
+      b.visible = this.catState !== 'home' || this.homeT < 6;
+      b.position.y = 2.35 + Math.sin(t * 2.5) * (this.catState === 'carried' ? 0.08 : 0.03);
+      const sc = this.catState === 'carried' ? 1.25 : 1;
+      b.scale.set(2.6 * sc, 0.82 * sc, 1);
+    }
+    if (this.catState === 'home' && this.homeT < 6 && Math.random() < dt * 2.2) {
+      this.hearts.burst(new THREE.Vector3(c.ownerAt.x, 1.7, c.ownerAt.z), 1, 0.5);
+    }
   }
 
   get styleEarned() {

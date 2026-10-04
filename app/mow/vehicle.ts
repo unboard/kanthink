@@ -292,15 +292,29 @@ export interface PersonRig {
   rShin: THREE.Group;
 }
 
-export function buildPerson(): PersonRig {
-  const skin = new THREE.MeshPhysicalMaterial({ color: '#c58a64', roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffb59a') });
-  const shirt = new THREE.MeshStandardMaterial({ color: '#2b7a4b', roughness: 0.85 });
-  const pants = new THREE.MeshStandardMaterial({ color: '#3a4656', roughness: 0.9 });
+export interface PersonLook {
+  skin: string;
+  shirt: string;
+  pants: string;
+  hair: string;
+  cap: string | null; // null = no cap, shows hair
+  vest: boolean;
+  muffs: boolean;
+  shades: boolean;
+}
+
+const WORKER: PersonLook = { skin: '#c58a64', shirt: '#2b7a4b', pants: '#3a4656', hair: '#3a2a1c', cap: '#c8361a', vest: true, muffs: true, shades: true };
+
+export function buildPerson(look: Partial<PersonLook> = {}): PersonRig {
+  const L = { ...WORKER, ...look };
+  const skin = new THREE.MeshPhysicalMaterial({ color: L.skin, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color('#ffb59a') });
+  const shirt = new THREE.MeshStandardMaterial({ color: L.shirt, roughness: 0.85 });
+  const pants = new THREE.MeshStandardMaterial({ color: L.pants, roughness: 0.9 });
   const boots = new THREE.MeshStandardMaterial({ color: '#5a3c22', roughness: 0.7 });
-  const cap = new THREE.MeshStandardMaterial({ color: '#c8361a', roughness: 0.75 });
+  const cap = new THREE.MeshStandardMaterial({ color: L.cap ?? L.hair, roughness: 0.75 });
   const dark = new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.3, metalness: 0.3 });
   const muff = new THREE.MeshStandardMaterial({ color: '#f2c230', roughness: 0.5 });
-  const hair = new THREE.MeshStandardMaterial({ color: '#3a2a1c', roughness: 0.9 });
+  const hair = new THREE.MeshStandardMaterial({ color: L.hair, roughness: 0.9 });
   const vest = new THREE.MeshStandardMaterial({ color: '#d7ff3a', roughness: 0.7, emissive: '#222f00', emissiveIntensity: 0.4 });
 
   const cap_ = (r: number, len: number, mat: THREE.Material, y: number) => {
@@ -323,9 +337,11 @@ export function buildPerson(): PersonRig {
   const chest = cap_(0.17, 0.3, shirt, 0.3);
   chest.scale.set(0.7, 1, 1.12);
   torso.add(chest);
-  const vestM = cap_(0.175, 0.24, vest, 0.3);
-  vestM.scale.set(0.72, 0.98, 1.13);
-  torso.add(vestM);
+  if (L.vest) {
+    const vestM = cap_(0.175, 0.24, vest, 0.3);
+    vestM.scale.set(0.72, 0.98, 1.13);
+    torso.add(vestM);
+  }
   torso.add(mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.1, 12), skin, 0, 0.6, 0));
   const head = new THREE.Group();
   head.position.y = 0.66;
@@ -344,18 +360,21 @@ export function buildPerson(): PersonRig {
   head.add(domeM);
   const brim = mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.012, 20, 1, false, -Math.PI / 2, Math.PI), cap, 0.06, 0.155, 0);
   brim.scale.set(1.1, 1, 0.9);
-  head.add(brim);
-  // sunglasses + ear defenders
-  head.add(mesh(rbox(0.03, 0.035, 0.17, 0.012), dark, 0.1, 0.115, 0));
-  for (const z of [-0.105, 0.105]) {
-    const cup = new THREE.CylinderGeometry(0.045, 0.045, 0.04, 16);
-    cup.rotateX(Math.PI / 2);
-    head.add(mesh(cup, muff, -0.005, 0.1, z));
+  if (L.cap) head.add(brim);
+  // sunglasses + ear defenders, or a friendly face
+  if (L.shades) head.add(mesh(rbox(0.03, 0.035, 0.17, 0.012), dark, 0.1, 0.115, 0));
+  else for (const z of [-0.04, 0.04]) head.add(mesh(new THREE.SphereGeometry(0.014, 10, 8), dark, 0.1, 0.115, z));
+  if (L.muffs) {
+    for (const z of [-0.105, 0.105]) {
+      const cup = new THREE.CylinderGeometry(0.045, 0.045, 0.04, 16);
+      cup.rotateX(Math.PI / 2);
+      head.add(mesh(cup, muff, -0.005, 0.1, z));
+    }
+    const band = new THREE.TorusGeometry(0.12, 0.01, 6, 20, Math.PI);
+    band.rotateY(Math.PI / 2);
+    const bandM = mesh(band, dark, -0.005, 0.1, 0);
+    head.add(bandM);
   }
-  const band = new THREE.TorusGeometry(0.12, 0.01, 6, 20, Math.PI);
-  band.rotateY(Math.PI / 2);
-  const bandM = mesh(band, dark, -0.005, 0.1, 0);
-  head.add(bandM);
 
   const limb = (parent: THREE.Group, x: number, y: number, z: number) => {
     const g = new THREE.Group();
@@ -392,9 +411,11 @@ export function buildPerson(): PersonRig {
   return { root, hips, torso, head, lArm, lFore, rArm, rFore, lLeg, lShin, rLeg, rShin };
 }
 
+const HIP_Y = 0.95;
+
 export function poseSeated(p: PersonRig, steer: number, bounce: number) {
   p.root.rotation.set(0, 0, 0);
-  p.hips.position.set(0, 0, 0);
+  p.hips.position.set(0, HIP_Y, 0);
   p.hips.rotation.set(0, 0, -0.08 + bounce * 0.02);
   p.torso.rotation.set(steer * 0.08, 0, -0.06);
   p.head.rotation.set(0, -steer * 0.25, 0.08);
@@ -408,10 +429,10 @@ export function poseSeated(p: PersonRig, steer: number, bounce: number) {
   p.rFore.rotation.set(-0.2, 0, 0.55);
 }
 
-export function poseWalk(p: PersonRig, phase: number, amt: number, trimming: boolean, swing: number) {
+export function poseWalk(p: PersonRig, phase: number, amt: number, trimming: boolean, swing: number, carrying = false) {
   const s = Math.sin(phase);
   const c = Math.cos(phase);
-  p.hips.position.set(0, Math.abs(c) * 0.03 * amt, 0);
+  p.hips.position.set(0, HIP_Y + Math.abs(c) * 0.03 * amt, 0);
   p.hips.rotation.set(0, s * 0.06 * amt, 0);
   p.torso.rotation.set(0, trimming ? swing * 0.35 : -s * 0.1 * amt, trimming ? -0.18 : -0.04);
   p.head.rotation.set(0, trimming ? -swing * 0.25 : 0, trimming ? 0.25 : 0);
@@ -419,7 +440,13 @@ export function poseWalk(p: PersonRig, phase: number, amt: number, trimming: boo
   p.rLeg.rotation.set(0, 0, -s * 0.55 * amt);
   p.lShin.rotation.set(0, 0, -Math.max(0, -c) * 0.8 * amt - 0.05);
   p.rShin.rotation.set(0, 0, -Math.max(0, c) * 0.8 * amt - 0.05);
-  if (trimming) {
+  if (carrying) {
+    // cradling a cat against the chest
+    p.lArm.rotation.set(-0.35, 0, 0.55);
+    p.rArm.rotation.set(0.35, 0, 0.55);
+    p.lFore.rotation.set(0.55, 0, 1.25);
+    p.rFore.rotation.set(-0.55, 0, 1.25);
+  } else if (trimming) {
     p.lArm.rotation.set(-0.35, 0, 0.75);
     p.rArm.rotation.set(0.25, 0, 0.35);
     p.lFore.rotation.set(0.3, 0, 0.6);
@@ -429,6 +456,40 @@ export function poseWalk(p: PersonRig, phase: number, amt: number, trimming: boo
     p.rArm.rotation.set(0.08, 0, s * 0.5 * amt);
     p.lFore.rotation.set(0, 0, 0.25 + Math.max(0, s) * 0.4 * amt);
     p.rFore.rotation.set(0, 0, 0.25 + Math.max(0, -s) * 0.4 * amt);
+  }
+}
+
+/** The neighbour waiting for their cat: worried looking-about, a wave when you bring it, then a cuddle. */
+export function poseOwner(p: PersonRig, t: number, mood: 'worried' | 'excited' | 'cuddle') {
+  p.hips.position.set(0, HIP_Y + (mood === 'excited' ? Math.abs(Math.sin(t * 7)) * 0.05 : 0), 0);
+  p.hips.rotation.set(0, 0, 0);
+  p.lLeg.rotation.set(0, 0, 0);
+  p.rLeg.rotation.set(0, 0, 0);
+  p.lShin.rotation.set(0, 0, -0.05);
+  p.rShin.rotation.set(0, 0, -0.05);
+  if (mood === 'worried') {
+    // a hand shading the eyes, scanning the yard
+    p.torso.rotation.set(0, Math.sin(t * 0.6) * 0.35, 0.04);
+    p.head.rotation.set(0, Math.sin(t * 0.6 + 0.4) * 0.3, 0.1);
+    p.lArm.rotation.set(-0.08, 0, 0.1);
+    p.lFore.rotation.set(0, 0, 0.2);
+    p.rArm.rotation.set(0.5, 0, 2.2);
+    p.rFore.rotation.set(0, 0, 1.9);
+  } else if (mood === 'excited') {
+    p.torso.rotation.set(0, 0, -0.05);
+    p.head.rotation.set(0, 0, -0.1);
+    const w = Math.sin(t * 9) * 0.35;
+    p.lArm.rotation.set(-0.9 - w, 0, 0.3);
+    p.rArm.rotation.set(0.9 + w, 0, 0.3);
+    p.lFore.rotation.set(0, 0, 0.3);
+    p.rFore.rotation.set(0, 0, 0.3);
+  } else {
+    p.torso.rotation.set(Math.sin(t * 1.4) * 0.08, 0, -0.05);
+    p.head.rotation.set(0, 0, 0.3);
+    p.lArm.rotation.set(-0.35, 0, 0.55);
+    p.rArm.rotation.set(0.35, 0, 0.55);
+    p.lFore.rotation.set(0.55, 0, 1.25);
+    p.rFore.rotation.set(-0.55, 0, 1.25);
   }
 }
 
