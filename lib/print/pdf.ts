@@ -30,7 +30,7 @@ const SLUG_IN = 0.375
 const MARK_LEN_IN = 0.25
 const MARK_GAP_IN = 0.0625
 
-/** Colour components of a JPEG, from its frame header. */
+/** Color components of a JPEG, from its frame header. */
 export function jpegComponents(jpeg: Uint8Array): number {
   let i = 2
   while (i + 9 < jpeg.length) {

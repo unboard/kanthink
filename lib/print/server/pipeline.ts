@@ -139,7 +139,7 @@ async function loadImages(refs: RefImage[], canvas?: Buffer): Promise<InputImage
   )
 }
 
-/** The colour of a plain frame drawn around a page, or null when it bleeds properly. */
+/** The color of a plain frame drawn around a page, or null when it bleeds properly. */
 async function frameColor(spec: PrintSpec, page: Buffer): Promise<[number, number, number] | null> {
   if (spec.guide) return null
   const px = await pagePixels(page)
@@ -148,7 +148,7 @@ async function frameColor(spec: PrintSpec, page: Buffer): Promise<[number, numbe
 
 /**
  * The page with a drawn frame trimmed off and the art scaled back out to the sheet,
- * or null when trimming would eat the design (its ground really is that colour).
+ * or null when trimming would eat the design (its ground really is that color).
  */
 async function trimFrame(page: Buffer, color: [number, number, number]): Promise<Buffer | null> {
   const { width, height } = await dimensions(page)
@@ -283,7 +283,7 @@ async function edit(
   const prep = await prepareEdit(raw, model.provider, mode === 'upscale' ? 'print' : quality, mode === 'upscale')
 
   // The geometry the prompt states must describe the frame the model sees: the sheet
-  // is the raw frame's own centred crop, offset by any padding added for the edit.
+  // is the raw frame's own centered crop, offset by any padding added for the edit.
   const inner = centerCrop(rawDims.width / rawDims.height, sheetRatio(spec))
   const frame: Frame = {
     provider: model.provider,
@@ -360,7 +360,7 @@ async function edit(
  *
  * Models sometimes inset a design with a white margin despite being told to bleed. The
  * art itself is usually fine, so trimming the uniform frame and scaling the art back
- * out to the sheet (a centred cover fit) fixes it instantly and for nothing. The art
+ * out to the sheet (a centered cover fit) fixes it instantly and for nothing. The art
  * grows by the frame's width, so the preflight runs again afterwards as usual.
  */
 async function fillToEdges(req: RenderRequest): Promise<RenderResult> {
@@ -370,7 +370,7 @@ async function fillToEdges(req: RenderRequest): Promise<RenderResult> {
   const { width, height } = await dimensions(page)
   const color = await frameColor(req.design.spec, page)
   const filled = color ? await trimFrame(page, color) : null
-  if (!filled) throw new RenderError('There’s no frame to remove here — that colour is part of the design. Use Fix instead.', 422)
+  if (!filled) throw new RenderError('There’s no frame to remove here — that color is part of the design. Use Fix instead.', 422)
   const jpeg = await printJpeg(filled)
   const stored = await storeImage(jpeg, userId, 'pages')
   return {

@@ -318,7 +318,7 @@ export function BrandPanel(props: BrandPanelProps) {
 
         <div ref={scroller} className="flex-1 overflow-y-auto print-scroll px-4 py-5 space-y-7 relative">
           <section>
-            <Heading id="brand-site" title="Start from your website" hint="We’ll pick up your logo, colours, phone, email and address. Keep what’s right." />
+            <Heading id="brand-site" title="Start from your website" hint="We’ll pick up your logo, colors, phone, email and address. Keep what’s right." />
             <form
               className="flex gap-2"
               onSubmit={(e) => {
@@ -413,7 +413,7 @@ export function BrandPanel(props: BrandPanelProps) {
           </section>
 
           <section>
-            <Heading id="brand-colors" title="Colours" hint="Designs are built from these. The first is used most." />
+            <Heading id="brand-colors" title="Colors" hint="Designs are built from these. The first is used most." />
             <div className="flex flex-wrap items-center gap-2">
               {(kit?.colors ?? []).map((c, i) => (
                 <div key={`${c.hex}-${i}`} className="flex items-center gap-1.5 rounded-full border pl-1 pr-2 h-9" style={{ borderColor: 'var(--line)' }}>
@@ -423,7 +423,7 @@ export function BrandPanel(props: BrandPanelProps) {
                       className="absolute inset-0 opacity-0 cursor-pointer"
                       value={c.hex.toLowerCase()}
                       onChange={(e) => update((k) => ({ ...k, colors: k.colors.map((x, j) => (j === i ? { ...x, hex: e.target.value.toUpperCase() } : x)) }))}
-                      aria-label={`Colour ${i + 1}`}
+                      aria-label={`Color ${i + 1}`}
                     />
                   </label>
                   <input
@@ -437,7 +437,7 @@ export function BrandPanel(props: BrandPanelProps) {
                       else e.target.value = c.hex
                     }}
                   />
-                  <button type="button" onClick={() => update((k) => ({ ...k, colors: k.colors.filter((_, j) => j !== i) }))} className="text-[13px]" style={{ color: 'var(--muted)' }} aria-label="Remove colour">
+                  <button type="button" onClick={() => update((k) => ({ ...k, colors: k.colors.filter((_, j) => j !== i) }))} className="text-[13px]" style={{ color: 'var(--muted)' }} aria-label="Remove color">
                     ×
                   </button>
                 </div>
@@ -449,7 +449,7 @@ export function BrandPanel(props: BrandPanelProps) {
                   className="h-9 px-3 rounded-full border border-dashed text-[13px]"
                   style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }}
                 >
-                  + Add colour
+                  + Add color
                 </button>
               )}
             </div>

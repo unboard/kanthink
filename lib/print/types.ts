@@ -145,7 +145,7 @@ export interface PrintVersion {
   height: number
   /**
    * What the model actually returned. A model's frame rarely matches a print ratio
-   * exactly, so the page is a centred crop of this. Edits run against the raw frame
+   * exactly, so the page is a centered crop of this. Edits run against the raw frame
    * so the model sees the same canvas it drew, and are cropped again afterwards.
    */
   rawUrl: string

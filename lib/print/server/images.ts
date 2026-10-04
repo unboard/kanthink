@@ -95,8 +95,8 @@ export async function storeImage(buffer: Buffer, userId: string, kind: 'pages' |
 // ---------------------------------------------------------------------------
 
 /**
- * The image handed to the model as page one: the model frame, with the sheet centred
- * in it. A plain product is flat grey (not white — white invites a white border);
+ * The image handed to the model as page one: the model frame, with the sheet centered
+ * in it. A plain product is flat gray (not white — white invites a white border);
  * a shaped one is the die-cut guide, white piece on black.
  */
 export async function renderCanvas(spec: PrintSpec, frame: Frame, longEdge = 1024): Promise<Buffer> {
@@ -162,7 +162,7 @@ export async function normalizeGuide(input: Buffer): Promise<Buffer> {
 // Crop and composite
 // ---------------------------------------------------------------------------
 
-/** The centred crop of a model frame to the sheet's exact ratio. */
+/** The centered crop of a model frame to the sheet's exact ratio. */
 export async function cropToSheet(raw: Buffer, spec: PrintSpec): Promise<{ buffer: Buffer; width: number; height: number; cropped: boolean }> {
   const { width, height } = await dimensions(raw)
   const crop = centerCrop(width / height, sheetRatio(spec))
@@ -180,7 +180,7 @@ export async function cropToSheet(raw: Buffer, spec: PrintSpec): Promise<{ buffe
 
 /**
  * A mask painted on the page (sheet coordinates), placed into the raw frame. The page
- * is a centred crop of the raw frame, so the mask lands at the same offset.
+ * is a centered crop of the raw frame, so the mask lands at the same offset.
  */
 export async function maskInRawFrame(
   maskPng: Buffer,
@@ -245,7 +245,7 @@ export async function markedImage(raw: Buffer, mask: Buffer, maxEdge = 1600): Pr
 /**
  * Lay the model's edit over the original only where the mask was painted, feathered.
  *
- * Models given "change only this area" still nudge colours and re-render text all over
+ * Models given "change only this area" still nudge colors and re-render text all over
  * the page. The composite makes "only there" true by construction: outside the mask,
  * every pixel is the original's.
  */

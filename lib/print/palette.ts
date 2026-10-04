@@ -1,8 +1,8 @@
 /**
- * Brand colours from a logo.
+ * Brand colors from a logo.
  *
  * Buckets opaque pixels coarsely, then merges buckets that look the same, so a logo
- * with anti-aliased edges yields its three or four real colours rather than forty
+ * with anti-aliased edges yields its three or four real colors rather than forty
  * shades of its edges. Near-white is skipped (it's usually the ground, not the brand);
  * near-black is kept only when it is a real part of the mark.
  */
@@ -45,7 +45,7 @@ export function extractPalette(
     const g = pixels[i + 1]
     const b = pixels[i + 2]
     if (Math.min(r, g, b) > 238) continue
-    // Light greys are anti-aliasing and paper, not brand.
+    // Light grays are anti-aliasing and paper, not brand.
     if (Math.min(r, g, b) > 150 && Math.max(r, g, b) - Math.min(r, g, b) < 24) continue
     const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
     const bucket = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 }

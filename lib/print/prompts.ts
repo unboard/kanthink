@@ -1,7 +1,7 @@
 /**
  * What the image model is told.
  *
- * Print has rules a picture generator does not know: colour runs past the trim, words
+ * Print has rules a picture generator does not know: color runs past the trim, words
  * stay inside the safe line, nothing crosses a fold, the die-cut shape is the piece.
  * Each rule is stated in the model's own frame — percentages of the image it returns
  * — because that is the only coordinate system it can act on. The percentages come
@@ -58,7 +58,7 @@ export function printRules(spec: PrintSpec, frame: Frame, hasCanvas: boolean): s
   if (g) {
     lines.push(
       `${hasCanvas ? 'Image 1' : 'The canvas'} is the die-cut guide for this piece: the WHITE shape is the finished piece, and everything BLACK is cut away and thrown out.`,
-      'Design the piece to fill the white shape completely, and let its background colour, photo or pattern continue a little past the white shape’s edge into the black — that overlap is the bleed that keeps the cut edge clean.',
+      'Design the piece to fill the white shape completely, and let its background color, photo or pattern continue a little past the white shape’s edge into the black — that overlap is the bleed that keeps the cut edge clean.',
       'Leave the rest of the black area plain black. Do not draw the outline of the shape, a border along it, or any cut line.',
       'Keep every word, logo, phone number and face well inside the white shape: at least ' +
         `${Math.max(m.left, m.right)}% of the image width away from its left and right edges, and away from every curve and hole by the same distance.`,
@@ -69,14 +69,14 @@ export function printRules(spec: PrintSpec, frame: Frame, hasCanvas: boolean): s
       )
     }
     if (g.kind === 'circle') {
-      lines.push('The piece is round. Compose for a circle: centred, with nothing important near the curve.')
+      lines.push('The piece is round. Compose for a circle: centered, with nothing important near the curve.')
     }
   } else {
     lines.push(
       hasCanvas
-        ? 'Image 1 is a blank canvas. It only fixes the shape and proportions of the sheet — replace it entirely with the design. Nothing of its flat grey may remain.'
+        ? 'Image 1 is a blank canvas. It only fixes the shape and proportions of the sheet — replace it entirely with the design. Nothing of its flat gray may remain.'
         : 'The image is the whole printed sheet.',
-      'The image you return is the full sheet including the bleed that is trimmed off. The background colour, photos, textures and shapes must run all the way to every edge of the image. Never leave a white, blank or contrasting border or frame around the design — unless the design itself is deliberately on a white background, in which case white simply continues to the edges.',
+      'The image you return is the full sheet including the bleed that is trimmed off. The background color, photos, textures and shapes must run all the way to every edge of the image. Never leave a white, blank or contrasting border or frame around the design — unless the design itself is deliberately on a white background, in which case white simply continues to the edges.',
       `All text, logos, phone numbers, QR codes and faces stay inside the safe area: at least ${m.left}% of the image width from the left edge, ${m.right}% from the right edge, ${m.top}% of the image height from the top and ${m.bottom}% from the bottom. Only background, photo and decorative shapes may go beyond that.`,
     )
   }
@@ -113,20 +113,20 @@ export function brandLines(kit: BrandKit | null, brief: PrintBrief, refs: RefIma
     const name = imageName(i)
     if (ref.role === 'logo') {
       lines.push(
-        `${name} is the business’s logo. Place it on the design exactly as supplied — the same shapes, letters, proportions and colours. Never redraw, restyle, simplify, re-letter or invent a logo, and use no other logo.`,
+        `${name} is the business’s logo. Place it on the design exactly as supplied — the same shapes, letters, proportions and colors. Never redraw, restyle, simplify, re-letter or invent a logo, and use no other logo.`,
       )
     } else if (ref.role === 'asset') {
       lines.push(`${name} is a photo or graphic the business supplied${ref.note ? ` (${ref.note})` : ''}. Use it in the design as it is — don’t alter what it shows.`)
     } else if (ref.role === 'inspiration') {
-      lines.push(`${name} is inspiration for style only${ref.note ? ` (${ref.note})` : ''}: take its mood, layout ideas, typography feel and colour treatment. Don’t copy its words, logo, or subject.`)
+      lines.push(`${name} is inspiration for style only${ref.note ? ` (${ref.note})` : ''}: take its mood, layout ideas, typography feel and color treatment. Don’t copy its words, logo, or subject.`)
     } else if (ref.role === 'page') {
-      lines.push(`${name} is the ${ref.label ?? 'other'} page of this same piece, already designed. Match it as one family: same colours, typefaces, graphic language and photo style. Don’t repeat its content.`)
+      lines.push(`${name} is the ${ref.label ?? 'other'} page of this same piece, already designed. Match it as one family: same colors, typefaces, graphic language and photo style. Don’t repeat its content.`)
     }
   })
 
   if (kit && brief.useColors && kit.colors.length) {
     lines.push(
-      `Brand colours: ${kit.colors.map((c) => (c.name ? `${c.name} ${c.hex}` : c.hex)).join(', ')}. Build the palette from these, with neutrals as needed.`,
+      `Brand colors: ${kit.colors.map((c) => (c.name ? `${c.name} ${c.hex}` : c.hex)).join(', ')}. Build the palette from these, with neutrals as needed.`,
     )
   }
   if (kit?.voice) lines.push(`Tone and audience: ${kit.voice}`)
@@ -192,7 +192,7 @@ export function buildEditPrompt(spec: PrintSpec, frame: Frame, instruction: stri
   const extra = refs.slice(1)
   return [
     `Image 1 is a finished print design (${describeProduct(spec)}). Edit it: ${instruction}`,
-    'Change only what that asks for. Keep everything else — layout, text, spelling, logo, photos, colours — exactly as it is, at the same size and position.',
+    'Change only what that asks for. Keep everything else — layout, text, spelling, logo, photos, colors — exactly as it is, at the same size and position.',
     ...extra.map((r, i) =>
       r.role === 'logo'
         ? `Image ${i + 2} is the business’s logo, exactly as it must appear.`
@@ -211,7 +211,7 @@ export function buildAreaPrompt(spec: PrintSpec, instruction: string, refs: RefI
   return [
     `Image 1 is a finished print design (${describeProduct(spec)}). Image 2 is the same design with one area highlighted in bright magenta.`,
     `Change only the highlighted area: ${instruction}`,
-    'Everything outside the highlighted area must stay exactly as it is in Image 1 — same pixels, layout, text and colours. Blend the change seamlessly into its surroundings. The result must contain no magenta highlight.',
+    'Everything outside the highlighted area must stay exactly as it is in Image 1 — same pixels, layout, text and colors. Blend the change seamlessly into its surroundings. The result must contain no magenta highlight.',
     'Return the whole design, the same size and framing as Image 1.',
     ...extra.map((r, i) =>
       r.role === 'logo'
@@ -225,8 +225,8 @@ export function buildRetextPrompt(spec: PrintSpec, frame: Frame, before: PageCop
   return [
     `Image 1 is a finished print design (${describeProduct(spec)}). Update its words.`,
     ...copyBlock({ ...after, imagery: undefined, layout: undefined }),
-    before ? 'Replace the existing text with this, keeping each piece in the same place, typeface, size, weight and colour as the text it replaces. Where text is new, set it to match the design.' : '',
-    'Keep the layout, imagery, logo and colours exactly as they are.',
+    before ? 'Replace the existing text with this, keeping each piece in the same place, typeface, size, weight and color as the text it replaces. Where text is new, set it to match the design.' : '',
+    'Keep the layout, imagery, logo and colors exactly as they are.',
     '',
     ...printRules(spec, frame, false).slice(1),
   ]
@@ -238,7 +238,7 @@ export function buildFixPrompt(spec: PrintSpec, frame: Frame, issues: PreflightI
   const asks = issues.map((issue) => {
     switch (issue.kind) {
       case 'border':
-        return `- ${issue.message} Extend the background, colour or photo so it runs fully off that edge — no white strip.`
+        return `- ${issue.message} Extend the background, color or photo so it runs fully off that edge — no white strip.`
       case 'safe':
       case 'cut':
         return `- ${issue.message} Move or shrink it so it sits comfortably inside the safe area described below.`
@@ -253,7 +253,7 @@ export function buildFixPrompt(spec: PrintSpec, frame: Frame, issues: PreflightI
   return [
     `Image 1 is a print design (${describeProduct(spec)}) that failed a print check. Fix these problems:`,
     ...asks,
-    'Change as little as possible otherwise: keep the same design, words, imagery, logo and colours.',
+    'Change as little as possible otherwise: keep the same design, words, imagery, logo and colors.',
     '',
     ...printRules(spec, frame, false).slice(1),
   ].join('\n')
@@ -262,7 +262,7 @@ export function buildFixPrompt(spec: PrintSpec, frame: Frame, issues: PreflightI
 export function buildUpscalePrompt(spec: PrintSpec): string {
   return [
     `Image 1 is a finished print design (${describeProduct(spec)}).`,
-    'Reproduce it exactly at higher resolution for print: identical layout, wording, spelling, logo, colours and imagery, with sharper type, cleaner edges and finer photographic detail.',
+    'Reproduce it exactly at higher resolution for print: identical layout, wording, spelling, logo, colors and imagery, with sharper type, cleaner edges and finer photographic detail.',
     'Change nothing else. Do not add, remove, move or restyle anything.',
   ].join('\n')
 }

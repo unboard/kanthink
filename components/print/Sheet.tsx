@@ -201,6 +201,7 @@ export const Sheet = forwardRef<SheetHandle, SheetProps>(function Sheet(
   const onPointerDown = (e: React.PointerEvent) => {
     if (!brushActive) return
     e.preventDefault()
+    fitCanvas()
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     painting.current = true
     const p = pointAt(e)
@@ -234,7 +235,10 @@ export const Sheet = forwardRef<SheetHandle, SheetProps>(function Sheet(
   }
 
   // Keep the canvas bitmap in step with the displayed size (strokes scale with it).
-  useEffect(() => {
+  // The canvas only exists once the page has an image, so this also runs when that
+  // happens and before every stroke — a canvas left at the browser's default 300×150
+  // takes strokes that land off its edge and never show.
+  const fitCanvas = useCallback(() => {
     const c = canvasRef.current
     if (!c) return
     const w = Math.round(width * dpr)
@@ -253,6 +257,10 @@ export const Sheet = forwardRef<SheetHandle, SheetProps>(function Sheet(
       c.height = h
     }
   }, [width, height, dpr])
+
+  useEffect(() => {
+    fitCanvas()
+  }, [fitCanvas, version?.id])
 
   // ---- rendering -----------------------------------------------------------
   const clipStyle: React.CSSProperties | undefined = shaped && !showGuides
@@ -406,7 +414,7 @@ export const Sheet = forwardRef<SheetHandle, SheetProps>(function Sheet(
             onPointerUp()
           }}
         >
-          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ opacity: 0.55, mixBlendMode: 'normal' }} />
+          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ opacity: 0.4 }} />
           {brushActive && cursor && (
             <div
               className="absolute rounded-full pointer-events-none"

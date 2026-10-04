@@ -123,7 +123,7 @@ export const CATALOG: CatalogProduct[] = [
       widthIn: 3.5, heightIn: 2, bleedIn: BLEED, safeIn: SAFE,
       pages: [
         { label: 'Front', hint: 'Name, title, phone, email, website. Small type must stay legible: nothing smaller than about 7pt.' },
-        { label: 'Back', hint: 'Logo-led and simple: the logo, a tagline, or a pattern in brand colours.' },
+        { label: 'Back', hint: 'Logo-led and simple: the logo, a tagline, or a pattern in brand colors.' },
       ],
     },
   },
@@ -342,7 +342,7 @@ function rectDistance(px: number, py: number, W: number, H: number): number {
 
 function roundedRectDistance(px: number, py: number, W: number, H: number, radius: number): number {
   const r = Math.max(0, Math.min(radius, W / 2, H / 2))
-  // Standard rounded-box SDF, centred, sign flipped so inside is positive.
+  // Standard rounded-box SDF, centered, sign flipped so inside is positive.
   const qx = Math.abs(px - W / 2) - (W / 2 - r)
   const qy = Math.abs(py - H / 2) - (H / 2 - r)
   const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0))
@@ -444,13 +444,13 @@ export interface Frame {
   /** Expected output size. Exact for OpenAI, approximate for Gemini. */
   width: number
   height: number
-  /** The sheet inside the frame, as fractions of it. Centred. */
+  /** The sheet inside the frame, as fractions of it. Centered. */
   sheet: FracRect
   /** Effective resolution of the sheet at print size. */
   dpi: number
 }
 
-/** The centred region of a frame with ratio `frameRatio` that has ratio `targetRatio`. */
+/** The centered region of a frame with ratio `frameRatio` that has ratio `targetRatio`. */
 export function centerCrop(frameRatio: number, targetRatio: number): FracRect {
   if (frameRatio > targetRatio) {
     const w = targetRatio / frameRatio
@@ -469,8 +469,8 @@ function round16(n: number): number {
  *
  * `print` picks the smallest frame that reaches 300 DPI at print size (or the largest
  * available when nothing does — big signs); `draft` is the cheap fast frame for
- * exploring. The sheet is always centred in the frame, so cropping the result is the
- * same centred crop whatever size actually comes back.
+ * exploring. The sheet is always centered in the frame, so cropping the result is the
+ * same centered crop whatever size actually comes back.
  */
 export function planFrame(
   spec: PrintSpec,

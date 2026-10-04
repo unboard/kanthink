@@ -211,7 +211,7 @@ export function Inspector(props: InspectorProps) {
           <div className="flex items-start gap-2.5">
             <span className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ background: 'var(--ok)' }} />
             <p className="text-[13.5px] leading-snug" style={{ color: 'var(--ink-2)' }}>
-              Ready to print. Text and logos are inside the safe area, colour runs to the edges, and the words match.
+              Ready to print. Text and logos are inside the safe area, color runs to the edges, and the words match.
             </p>
           </div>
         ) : (

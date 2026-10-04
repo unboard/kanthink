@@ -5,7 +5,7 @@ import { smallRgba } from './images'
 
 /**
  * Read a small business's website for the pieces a print design needs: its name, logo,
- * colours, phone, email, address and a few photos. Everything found is a suggestion —
+ * colors, phone, email, address and a few photos. Everything found is a suggestion —
  * the studio shows it and the person keeps what is right.
  */
 
@@ -196,7 +196,7 @@ function parsePage(html: string, base: string): CrawlResult & { contactUrl?: str
     if (!hex) continue
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
     const spread = Math.max(r, g, b) - Math.min(r, g, b)
-    if (spread < 30) continue // greys, white, black — not brand colours
+    if (spread < 30) continue // grays, white, black — not brand colors
     counts.set(hex, (counts.get(hex) ?? 0) + 1)
   }
   for (const [hex] of [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4)) {
@@ -253,7 +253,7 @@ export async function crawlSite(input: string): Promise<CrawlResult> {
     }
   }
 
-  // The logo's own colours beat whatever the stylesheet happens to repeat most.
+  // The logo's own colors beat whatever the stylesheet happens to repeat most.
   for (const logo of found.logos.slice(0, 2)) {
     try {
       const palette = extractPalette(await smallRgba(await loadRemoteImage(logo)), 4, 4)

@@ -202,13 +202,13 @@ function isNearWhite(r: number, g: number, b: number): boolean {
 }
 
 /**
- * Flag an edge framed by a plain band — white, cream, or any flat colour — that the
+ * Flag an edge framed by a plain band — white, cream, or any flat color — that the
  * design just inside it does not continue. That is the "picture in a frame" failure
  * that ruins a full-bleed print: the knife never lands exactly, so the frame prints as
- * an uneven sliver. A design whose ground really is that colour carries it inward too,
+ * an uneven sliver. A design whose ground really is that color carries it inward too,
  * and passes.
  *
- * Returns the issue and the frame's colour, which is what a trim should cut against.
+ * Returns the issue and the frame's color, which is what a trim should cut against.
  * `pixels` is the trimmed-with-bleed page, downsampled, `channels` per pixel.
  */
 export function detectFrame(
@@ -259,7 +259,7 @@ export function detectFrame(
   const framed: { name: string; box: Rect; color: [number, number, number] }[] = []
   for (const side of sides) {
     const color = median(side.outer)
-    // The band is one flat colour (crop marks drawn in it are a few stray pixels)...
+    // The band is one flat color (crop marks drawn in it are a few stray pixels)...
     if (share(side.outer, color, 36) < 0.86) continue
     // ...that the design just inside does not carry on.
     if (share(side.inner, color, 54) >= 0.5) continue

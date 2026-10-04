@@ -42,7 +42,7 @@ describe('print geometry', () => {
     expect(nearestGeminiRatio(1)).toBe('1:1')
   })
 
-  it('crops the centre of a frame to the target ratio', () => {
+  it('crops the center of a frame to the target ratio', () => {
     const crop = centerCrop(0.8, 0.7778)
     expect(crop.h).toBe(1)
     expect(crop.w).toBeCloseTo(0.7778 / 0.8, 4)
@@ -79,7 +79,7 @@ describe('print geometry', () => {
   it('measures distance to a die line, with the door hanger hole cut out', () => {
     // Middle of the hanger body: well inside.
     expect(pieceDistance(doorHanger, 0.125 + 2.125, 0.125 + 6)).toBeGreaterThan(1.5)
-    // Centre of the hole: outside the piece.
+    // Center of the hole: outside the piece.
     expect(pieceDistance(doorHanger, 0.125 + 2.125, 0.125 + 1.4)).toBeLessThan(0)
     // In the bleed: outside.
     expect(pieceDistance(flyer, 0.05, 5)).toBeLessThan(0)
@@ -152,7 +152,7 @@ describe('preflight', () => {
     expect(detectWhiteBorders(flyer, fullBleed, w, h, 3)).toHaveLength(0)
   })
 
-  it('catches a coloured frame and reports its colour for trimming', () => {
+  it('catches a colored frame and reports its color for trimming', () => {
     const w = 100
     const h = 128
     const px = new Uint8Array(w * h * 3)
@@ -213,7 +213,7 @@ describe('pdf', () => {
   // A minimal baseline JPEG header: SOI, SOF0 (8-bit, 2×2, 3 components), EOI.
   const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x02, 0x03, 1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1, 0xff, 0xd9])
 
-  it('reads the colour components of a JPEG', () => {
+  it('reads the color components of a JPEG', () => {
     expect(jpegComponents(jpeg)).toBe(3)
   })
 
@@ -237,7 +237,7 @@ describe('pdf', () => {
 })
 
 describe('palette', () => {
-  it('finds the real colours and skips the white ground', () => {
+  it('finds the real colors and skips the white ground', () => {
     const px = new Uint8Array(100 * 4)
     for (let i = 0; i < 100; i++) {
       const c = i < 50 ? [255, 255, 255, 255] : i < 80 ? [194, 65, 12, 255] : [124, 45, 18, 255]

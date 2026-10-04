@@ -114,7 +114,7 @@ export function Composer(props: ComposerProps) {
     mode === 'area'
       ? 'What should change in the painted area?'
       : mode === 'edit'
-        ? `Ask for a change to the ${pageLabel.toLowerCase()} — “make the headline bigger”, “warmer colours”`
+        ? `Ask for a change to the ${pageLabel.toLowerCase()} — “make the headline bigger”, “warmer colors”`
         : isFirstPage
           ? `Describe your ${spec.name.toLowerCase()}: who it’s for, the offer, the feel`
           : `What goes on the ${pageLabel.toLowerCase()}? Leave it blank to carry on from the design so far`
@@ -155,17 +155,17 @@ export function Composer(props: ComposerProps) {
             <Chip muted onClick={() => onOpenBrand('logo')}>+ Logo</Chip>
           )}
           {kit?.colors.length ? (
-            <Chip on={brief.useColors} onClick={() => onBrief({ useColors: !brief.useColors })} title="Design with the brand colours">
+            <Chip on={brief.useColors} onClick={() => onBrief({ useColors: !brief.useColors })} title="Design with the brand colors">
               <Check on={brief.useColors} />
               <span className="flex -space-x-1">
                 {kit.colors.slice(0, 5).map((c) => (
                   <span key={c.hex} className="w-3.5 h-3.5 rounded-full border" style={{ background: c.hex, borderColor: 'var(--chrome)' }} />
                 ))}
               </span>
-              Colours
+              Colors
             </Chip>
           ) : (
-            <Chip muted onClick={() => onOpenBrand('colors')}>+ Colours</Chip>
+            <Chip muted onClick={() => onOpenBrand('colors')}>+ Colors</Chip>
           )}
           {kit && Object.values(kit.details).some(Boolean) ? (
             <Chip on={brief.useDetails} onClick={() => onBrief({ useDetails: !brief.useDetails })} title="Use the business name, phone, address and website">
