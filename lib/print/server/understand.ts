@@ -14,7 +14,7 @@ import type { PageCopy, PreflightElement } from '../types'
 
 const GEMINI_TEXT_MODELS = ['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash']
 
-async function geminiJson<T>(
+export async function geminiJson<T>(
   apiKey: string,
   parts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[],
   schema: Schema,
@@ -39,7 +39,7 @@ async function geminiJson<T>(
   throw lastError
 }
 
-function parseLooseJson<T>(text: string): T | null {
+export function parseLooseJson<T>(text: string): T | null {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start < 0 || end <= start) return null

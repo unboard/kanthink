@@ -182,6 +182,18 @@ export interface PrintBrief {
   quality?: RenderQuality
 }
 
+/** One turn in the chat way of designing. Kept on the design so the conversation resumes. */
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'kan'
+  text: string
+  /** Page images to show with the message: what was just made or changed. */
+  images?: { url: string; label: string; pageIndex: number }[]
+  /** Quick replies Kan offers. */
+  suggestions?: string[]
+  at: number
+}
+
 export interface PrintDesign {
   id: string
   name: string
@@ -191,6 +203,7 @@ export interface PrintDesign {
   pages: PrintPage[]
   renders: number
   spendCents: number
+  chat?: ChatMessage[]
   createdAt: number
   updatedAt: number
 }

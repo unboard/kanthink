@@ -7,6 +7,7 @@ import {
   DEFAULT_BRIEF,
   EMPTY_BRAND_KIT,
   type BrandKit,
+  type ChatMessage,
   type PrintBrand,
   type PrintBrief,
   type PrintDesign,
@@ -46,6 +47,7 @@ export function toDesign(row: DesignRow): PrintDesign {
     pages: parse<PrintPage[]>(row.pages, []),
     renders: row.renders ?? 0,
     spendCents: row.spendCents ?? 0,
+    chat: parse<ChatMessage[]>(row.chat, []),
     createdAt: row.createdAt ?? 0,
     updatedAt: row.updatedAt ?? 0,
   }

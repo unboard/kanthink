@@ -79,10 +79,25 @@ export function PrintHome() {
             {formatCents(total)} spent across designs
           </span>
         )}
+        <Link href="/print/easy" className="hidden sm:inline-flex h-9 px-3.5 rounded-lg text-[14px] items-center border" style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }} title="Big buttons, one question at a time">
+          Easy maker
+        </Link>
+        <Link href="/print/chat" className="hidden sm:inline-flex h-9 px-3.5 rounded-lg text-[14px] items-center border" style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }} title="Tell Kan what you need">
+          Chat with Kan
+        </Link>
         <button type="button" onClick={() => setCreating(true)} className="h-9 px-4 rounded-lg text-[14px] font-semibold text-white" style={{ background: 'var(--magenta)' }}>
           New design
         </button>
       </header>
+
+      <div className="sm:hidden flex gap-2 px-4 pt-4">
+        <Link href="/print/easy" className="flex-1 h-10 rounded-lg text-[14px] inline-flex items-center justify-center border" style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
+          Easy maker
+        </Link>
+        <Link href="/print/chat" className="flex-1 h-10 rounded-lg text-[14px] inline-flex items-center justify-center border" style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
+          Chat with Kan
+        </Link>
+      </div>
 
       <main className="px-4 sm:px-6 py-6 max-w-[1240px] mx-auto">
         {status && status !== 401 && (
@@ -103,6 +118,14 @@ export function PrintHome() {
                     </div>
                   </div>
                 </Link>
+                <div className="absolute top-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <a href={"/print/easy?d=" + d.id} className="h-7 px-2.5 rounded-lg text-[12px] inline-flex items-center" style={{ background: 'rgba(19,24,22,.85)', color: 'var(--ink-2)' }}>
+                    Easy
+                  </a>
+                  <a href={"/print/chat?d=" + d.id} className="h-7 px-2.5 rounded-lg text-[12px] inline-flex items-center" style={{ background: 'rgba(19,24,22,.85)', color: 'var(--ink-2)' }}>
+                    Chat
+                  </a>
+                </div>
                 <button
                   type="button"
                   onClick={() => {

@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { printDesigns } from '@/lib/db/schema'
 import { isOwnImageUrl } from '@/lib/print/server/images'
 import { getDesign, now, printUser } from '@/lib/print/server/store'
-import type { PrintBrief, PrintPage } from '@/lib/print/types'
+import type { ChatMessage, PrintBrief, PrintPage } from '@/lib/print/types'
 
 /**
  * GET → the design. PATCH { name?, pages?, brief?, brandId? } → save. DELETE → gone.
@@ -60,6 +60,23 @@ function cleanBrief(input: unknown): PrintBrief | null {
   }
 }
 
+function cleanChat(input: unknown[]): ChatMessage[] {
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '')
+  return input
+    .filter((m): m is ChatMessage => !!m && typeof m === 'object' && ((m as ChatMessage).role === 'user' || (m as ChatMessage).role === 'kan'))
+    .slice(-80)
+    .map((m) => ({
+      id: str(m.id, 40) || Math.random().toString(36).slice(2, 10),
+      role: m.role,
+      text: str(m.text, 4000),
+      images: Array.isArray(m.images)
+        ? m.images.filter((i) => i && typeof i.url === 'string' && isOwnImageUrl(i.url)).slice(0, 6).map((i) => ({ url: i.url, label: str(i.label, 40), pageIndex: Number(i.pageIndex) || 0 }))
+        : undefined,
+      suggestions: Array.isArray(m.suggestions) ? m.suggestions.map((s) => str(s, 80)).filter(Boolean).slice(0, 4) : undefined,
+      at: Number(m.at) || 0,
+    }))
+}
+
 export async function PATCH(request: Request, { params }: Params) {
   const userId = await printUser()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -76,6 +93,7 @@ export async function PATCH(request: Request, { params }: Params) {
     const brief = cleanBrief(body.brief)
     if (brief) set.brief = JSON.stringify(brief)
   }
+  if (Array.isArray(body.chat)) set.chat = JSON.stringify(cleanChat(body.chat))
   if (body.pages !== undefined) {
     const pages = cleanPages(body.pages, design.spec.pages.length)
     if (!pages) return NextResponse.json({ error: 'Pages don’t match this design.' }, { status: 400 })

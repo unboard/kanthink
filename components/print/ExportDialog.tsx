@@ -26,6 +26,23 @@ async function pageJpeg(url: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer())
 }
 
+/** The print PDF of every designed page, saved to the person's device. */
+export async function downloadPrintPdf(design: PrintDesign, cropMarks = false) {
+  const ready = design.pages.map((p) => p.versions[p.current]).filter((v): v is NonNullable<typeof v> => !!v)
+  const pages = await Promise.all(ready.map(async (v) => ({ jpeg: await pageJpeg(v.url), width: v.width, height: v.height })))
+  const bytes = buildPrintPdf(design.spec, pages, { cropMarks, title: design.name })
+  save(new Blob([bytes as BlobPart], { type: 'application/pdf' }), `${slug(design.name)}-print.pdf`)
+}
+
+/** One page as a JPG. */
+export async function downloadPageJpg(design: PrintDesign, pageIndex: number) {
+  const page = design.pages[pageIndex]
+  const v = page?.versions[page.current]
+  if (!v) return
+  const bytes = await pageJpeg(v.url)
+  save(new Blob([bytes as BlobPart], { type: 'image/jpeg' }), `${slug(design.name)}-${slug(page.label)}.jpg`)
+}
+
 export function ExportDialog({ design, onClose }: { design: PrintDesign; onClose: () => void }) {
   const [marks, setMarks] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
@@ -41,11 +58,7 @@ export function ExportDialog({ design, onClose }: { design: PrintDesign; onClose
     setBusy('pdf')
     setError(null)
     try {
-      const pages = await Promise.all(
-        ready.filter(Boolean).map(async (v) => ({ jpeg: await pageJpeg(v!.url), width: v!.width, height: v!.height })),
-      )
-      const bytes = buildPrintPdf(spec, pages, { cropMarks: marks, title: design.name })
-      save(new Blob([bytes as BlobPart], { type: 'application/pdf' }), `${slug(design.name)}-print.pdf`)
+      await downloadPrintPdf(design, marks)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Export failed.')
     } finally {
@@ -57,12 +70,7 @@ export function ExportDialog({ design, onClose }: { design: PrintDesign; onClose
     setBusy('jpg')
     setError(null)
     try {
-      for (let i = 0; i < ready.length; i++) {
-        const v = ready[i]
-        if (!v) continue
-        const bytes = await pageJpeg(v.url)
-        save(new Blob([bytes as BlobPart], { type: 'image/jpeg' }), `${slug(design.name)}-${slug(design.pages[i].label)}.jpg`)
-      }
+      for (let i = 0; i < ready.length; i++) if (ready[i]) await downloadPageJpg(design, i)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Export failed.')
     } finally {

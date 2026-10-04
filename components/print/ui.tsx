@@ -86,3 +86,39 @@ export function ProductGlyph({ spec, box = 56, active }: { spec: PrintSpec; box?
     </svg>
   )
 }
+
+export type Surface = 'studio' | 'easy' | 'chat'
+
+export function surfaceHref(surface: Surface, designId: string | null): string {
+  if (surface === 'studio') return designId ? `/print/${designId}` : '/print'
+  return designId ? `/print/${surface}?d=${designId}` : `/print/${surface}`
+}
+
+/** The three ways to work on one design. */
+export function SurfaceSwitch({ current, designId, tone = 'dark' }: { current: Surface; designId: string | null; tone?: 'dark' | 'light' }) {
+  const items: { key: Surface; label: string }[] = [
+    { key: 'studio', label: 'Studio' },
+    { key: 'easy', label: 'Easy' },
+    { key: 'chat', label: 'Chat' },
+  ]
+  const dark = tone === 'dark'
+  return (
+    <nav
+      aria-label="Ways to design"
+      className="inline-flex rounded-full p-0.5 text-[12.5px] shrink-0"
+      style={{ border: `1px solid ${dark ? 'var(--line)' : 'rgba(30,30,60,.15)'}` }}
+    >
+      {items.map((it) =>
+        it.key === current ? (
+          <span key={it.key} aria-current="page" className="px-2.5 h-7 inline-flex items-center rounded-full font-medium" style={{ background: dark ? 'var(--raise)' : '#1f2a5a', color: dark ? 'var(--ink)' : '#fff' }}>
+            {it.label}
+          </span>
+        ) : (
+          <a key={it.key} href={surfaceHref(it.key, designId)} className="px-2.5 h-7 inline-flex items-center rounded-full" style={{ color: dark ? 'var(--muted)' : '#4a5280' }}>
+            {it.label}
+          </a>
+        ),
+      )}
+    </nav>
+  )
+}

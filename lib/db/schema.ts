@@ -1615,7 +1615,8 @@ export const printDesigns = sqliteTable('print_designs', {
   brief: text('brief'),                               // JSON PrintBrief
   pages: text('pages'),                               // JSON PrintPage[]
   renders: integer('renders').default(0),
-  spendCents: integer('spend_cents').default(0),      // approximate model spend
+  spendCents: integer('spend_cents').default(0),      // model spend, from usage reports
+  chat: text('chat'),                                 // JSON ChatMessage[], the chat way of designing
   createdAt: integer('created_at'),                   // epoch seconds
   updatedAt: integer('updated_at'),
 }, (table) => [

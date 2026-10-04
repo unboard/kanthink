@@ -1,43 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatCents } from '@/lib/print/models'
 import { bleedSize, formatSize, guideLabel } from '@/lib/print/spec'
-import type {
-  BrandKit,
-  PageCopy,
-  PreflightIssue,
-  PreflightResult,
-  PrintBrand,
-  PrintBrief,
-  PrintDesign,
-  PrintVersion,
-  VersionMode,
-} from '@/lib/print/types'
-import { api, ApiError } from './api'
+import type { PrintVersion, VersionMode } from '@/lib/print/types'
 import { BrandPanel } from './BrandPanel'
-import { Composer, type BrandSection, type ComposerMode, type ModelInfo } from './Composer'
+import { Composer, type BrandSection, type ComposerMode } from './Composer'
 import { ExportDialog } from './ExportDialog'
 import { Inspector } from './Inspector'
 import { Sheet, type BrushMode, type SheetHandle } from './Sheet'
-import { SignInGate, useNotice, Notice } from './ui'
-
-interface Pending {
-  label: string
-  startedAt: number
-  count: number
-}
-
-const PENDING_LABEL: Record<VersionMode, string> = {
-  create: 'Designing',
-  edit: 'Changing',
-  area: 'Changing the area',
-  retext: 'Setting the words',
-  fix: 'Fixing for print',
-  upscale: 'Sharpening',
-  fill: 'Filling to the edges',
-}
+import { SignInGate, SurfaceSwitch, useNotice, Notice } from './ui'
+import { useDesign, type RenderOptions } from './useDesign'
 
 /** Measures an element's content box. */
 function useSize<T extends HTMLElement>() {
@@ -67,13 +41,7 @@ function statusOf(v: PrintVersion | undefined, checking: boolean): { text: strin
 }
 
 export function Studio({ id }: { id: string }) {
-  const [design, setDesign] = useState<PrintDesign | null>(null)
-  const [loadError, setLoadError] = useState<{ message: string; status: number } | null>(null)
-  const [brands, setBrands] = useState<PrintBrand[]>([])
-  const [models, setModels] = useState<ModelInfo[]>([])
   const [focus, setFocus] = useState<number | null>(null)
-  const [pending, setPending] = useState<Record<number, Pending>>({})
-  const [checking, setChecking] = useState<Record<string, boolean>>({})
   const [guides, setGuides] = useState(true)
   const [brush, setBrush] = useState<BrushMode>('off')
   const [brushSize, setBrushSize] = useState(44)
@@ -87,217 +55,33 @@ export function Studio({ id }: { id: string }) {
   const { notice, notify } = useNotice()
   const sheetRef = useRef<SheetHandle>(null)
   const [matRef, mat] = useSize<HTMLElement>()
-
-  // ---- loading -------------------------------------------------------------
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([
-      api<{ design: PrintDesign }>(`/api/print/designs/${id}`),
-      api<{ brands: PrintBrand[] }>('/api/print/brands'),
-      api<{ models: ModelInfo[] }>('/api/print/models'),
-    ])
-      .then(([d, b, m]) => {
-        if (cancelled) return
-        setDesign(d.design)
-        setBrands(b.brands)
-        setModels(m.models)
-      })
-      .catch((err) => {
-        if (!cancelled) setLoadError({ message: err.message, status: err instanceof ApiError ? err.status : 500 })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [id])
-
-  // ---- saving --------------------------------------------------------------
-  // The studio is the one writer of a design. Edits are saved after a short pause;
-  // anything that renders flushes first, so the server sees the brief it is asked about.
-  const designRef = useRef<PrintDesign | null>(null)
-  designRef.current = design
-  const savedSig = useRef<string>('')
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const sigOf = (d: PrintDesign) => JSON.stringify([d.name, d.brief, d.brandId, d.pages])
-
-  const flushSave = useCallback(async () => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current)
-      saveTimer.current = null
-    }
-    const d = designRef.current
-    if (!d) return
-    const sig = sigOf(d)
-    if (sig === savedSig.current) return
-    savedSig.current = sig
-    try {
-      await api(`/api/print/designs/${d.id}`, { method: 'PATCH', json: { name: d.name, brief: d.brief, brandId: d.brandId, pages: d.pages } })
-    } catch (err) {
-      savedSig.current = ''
-      notify(err instanceof Error ? `Couldn’t save: ${err.message}` : 'Couldn’t save.')
-    }
-  }, [notify])
-
-  useEffect(() => {
-    if (!design) return
-    if (!savedSig.current) {
-      savedSig.current = sigOf(design)
-      return
-    }
-    if (sigOf(design) === savedSig.current) return
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(flushSave, 700)
-  }, [design, flushSave])
-
-  useEffect(() => {
-    const beforeUnload = () => {
-      const d = designRef.current
-      if (d && sigOf(d) !== savedSig.current) {
-        // keepalive lets the save finish after the tab has gone.
-        fetch(`/api/print/designs/${d.id}`, {
-          method: 'PATCH',
-          keepalive: true,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: d.name, brief: d.brief, brandId: d.brandId, pages: d.pages }),
-        })
-      }
-    }
-    window.addEventListener('beforeunload', beforeUnload)
-    return () => window.removeEventListener('beforeunload', beforeUnload)
-  }, [flushSave])
-
-  const patch = useCallback((fn: (d: PrintDesign) => PrintDesign) => {
-    setDesign((d) => (d ? fn(d) : d))
-  }, [])
-
-  const setBrief = useCallback((p: Partial<PrintBrief>) => patch((d) => ({ ...d, brief: { ...d.brief, ...p } })), [patch])
-
-  // ---- brands --------------------------------------------------------------
-  const brand = useMemo(() => brands.find((b) => b.id === design?.brandId) ?? null, [brands, design?.brandId])
-  const brandTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-
-  const changeBrand = useCallback((b: PrintBrand) => {
-    setBrands((all) => all.map((x) => (x.id === b.id ? b : x)))
-    clearTimeout(brandTimers.current[b.id])
-    brandTimers.current[b.id] = setTimeout(() => {
-      api(`/api/print/brands/${b.id}`, { method: 'PATCH', json: { name: b.name, data: b.data } }).catch((err) => notify(`Couldn’t save the brand: ${err.message}`))
-    }, 600)
-  }, [notify])
-
-  const flushBrands = useCallback(async () => {
-    const ids = Object.keys(brandTimers.current)
-    await Promise.all(
-      ids.map(async (bid) => {
-        clearTimeout(brandTimers.current[bid])
-        delete brandTimers.current[bid]
-        const b = brands.find((x) => x.id === bid)
-        if (b) await api(`/api/print/brands/${b.id}`, { method: 'PATCH', json: { name: b.name, data: b.data } }).catch(() => {})
-      }),
-    )
-  }, [brands])
-
-  const createBrand = useCallback(async (name: string, data?: Partial<BrandKit>) => {
-    try {
-      const { brand: created } = await api<{ brand: PrintBrand }>('/api/print/brands', { method: 'POST', json: { name, data: data ?? {} } })
-      setBrands((all) => [created, ...all])
-      patch((d) => ({ ...d, brandId: created.id }))
-      return created
-    } catch (err) {
-      notify(err instanceof Error ? err.message : 'Couldn’t create the brand.')
-      return null
-    }
-  }, [patch, notify])
-
-  // ---- versions ------------------------------------------------------------
-  const addVersion = useCallback((pageIndex: number, version: PrintVersion, makeCurrent: boolean) => {
-    patch((d) => ({
-      ...d,
-      renders: d.renders + 1,
-      spendCents: d.spendCents + (version.costCents ?? 0),
-      pages: d.pages.map((p, i) =>
-        i === pageIndex
-          ? { ...p, versions: [...p.versions, version], current: makeCurrent || p.versions.length === 0 ? p.versions.length : p.current }
-          : p,
-      ),
-    }))
-  }, [patch])
-
-  const setCheck = useCallback((pageIndex: number, versionId: string, check: PreflightResult) => {
-    patch((d) => ({
-      ...d,
-      pages: d.pages.map((p, i) => (i === pageIndex ? { ...p, versions: p.versions.map((v) => (v.id === versionId ? { ...v, check } : v)) } : p)),
-    }))
-  }, [patch])
-
-  const runCheck = useCallback(async (pageIndex: number, version: PrintVersion) => {
-    const d = designRef.current
-    if (!d) return
-    setChecking((c) => ({ ...c, [version.id]: true }))
-    try {
-      const { check } = await api<{ check: PreflightResult }>('/api/print/preflight', { method: 'POST', json: { designId: d.id, version: { ...version, check: undefined } } })
-      setCheck(pageIndex, version.id, check)
-    } catch (err) {
-      notify(err instanceof Error ? `Print check failed: ${err.message}` : 'Print check failed.')
-    } finally {
-      setChecking((c) => {
-        const next = { ...c }
-        delete next[version.id]
-        return next
-      })
-    }
-  }, [notify, setCheck])
+  const {
+    design,
+    loadError,
+    brands,
+    models,
+    brand,
+    pending,
+    checking,
+    patch,
+    setBrief,
+    flushSave,
+    changeBrand,
+    flushBrands,
+    createBrand,
+    render: renderPage,
+    runCheck,
+  } = useDesign(id, { notify })
 
   const render = useCallback(
-    async (
-      pageIndex: number,
-      mode: VersionMode,
-      opts: { prompt?: string; mask?: string; copy?: PageCopy; issues?: PreflightIssue[]; takes?: number } = {},
-    ) => {
-      const d = designRef.current
-      if (!d || pending[pageIndex]) return
-      await Promise.all([flushSave(), flushBrands()])
-      const page = d.pages[pageIndex]
-      const source = page.versions[page.current]
-      const takes = Math.max(1, opts.takes ?? 1)
-      setPending((p) => ({ ...p, [pageIndex]: { label: PENDING_LABEL[mode], startedAt: Date.now(), count: takes } }))
-      let first = true
-      const one = async () => {
-        try {
-          const { version } = await api<{ version: PrintVersion; cents: number }>('/api/print/render', {
-            method: 'POST',
-            json: {
-              designId: d.id,
-              pageIndex,
-              mode,
-              prompt: opts.prompt || undefined,
-              modelId: d.brief.modelId,
-              quality: d.brief.quality,
-              source: mode === 'create' ? undefined : { ...source, check: undefined },
-              mask: opts.mask,
-              copy: opts.copy,
-              issues: opts.issues,
-            },
-          })
-          addVersion(pageIndex, version, first)
-          first = false
-          void runCheck(pageIndex, version)
-          return true
-        } catch (err) {
-          notify(err instanceof Error ? err.message : 'That didn’t work. Try again.')
-          return false
-        }
-      }
-      await Promise.all(Array.from({ length: takes }, one))
-      setPending((p) => {
-        const next = { ...p }
-        delete next[pageIndex]
-        return next
-      })
+    async (pageIndex: number, mode: VersionMode, opts: RenderOptions = {}) => {
+      await renderPage(pageIndex, mode, opts)
       if (mode === 'area') {
         sheetRef.current?.clearMask()
         setBrush('off')
       }
     },
-    [pending, flushSave, flushBrands, addVersion, runCheck, notify],
+    [renderPage],
   )
 
   // ---- derived -------------------------------------------------------------
@@ -428,7 +212,10 @@ export function Studio({ id }: { id: string }) {
             {spec.guide ? ` · ${guideLabel(spec.guide)}` : ''}
           </div>
         </div>
-        <div className="hidden sm:flex flex-col items-end text-[12.5px] leading-tight mr-1" title="Approximate image model spend on this design">
+        <div className="hidden lg:block">
+          <SurfaceSwitch current="studio" designId={design.id} />
+        </div>
+        <div className="hidden sm:flex flex-col items-end text-[12.5px] leading-tight mr-1" title="Image model spend on this design">
           <span style={{ color: 'var(--ink-2)' }}>{formatCents(design.spendCents)} spent</span>
           <span style={{ color: 'var(--muted)' }}>
             {design.renders} render{design.renders === 1 ? '' : 's'}
