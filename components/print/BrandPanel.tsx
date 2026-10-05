@@ -119,6 +119,9 @@ export function BrandPanel(props: BrandPanelProps) {
   }
 
   const update = async (fn: (k: BrandKit) => BrandKit, name?: string) => {
+    // Synchronous when the kit exists: a controlled input resets to its old value
+    // as soon as the change event returns, so an awaited update reads that old value.
+    if (brand) return onChange({ ...brand, name: name ?? brand.name, data: fn(brand.data) })
     const b = await ensure()
     if (!b) return
     onChange({ ...b, name: name ?? b.name, data: fn(b.data) })
@@ -231,7 +234,10 @@ export function BrandPanel(props: BrandPanelProps) {
                   style={{ color: 'var(--ink-2)' }}
                   placeholder={pool === 'assets' ? 'What is it? Where to use it?' : 'What do you like about it?'}
                   value={img.note ?? ''}
-                  onChange={(e) => update((k) => ({ ...k, [pool]: k[pool].map((x) => (x.id === img.id ? { ...x, note: e.target.value } : x)) }))}
+                  onChange={(e) => {
+            const v = e.target.value
+            update((k) => ({ ...k, [pool]: k[pool].map((x) => (x.id === img.id ? { ...x, note: v } : x)) }))
+          }}
                 />
                 <button
                   type="button"
@@ -261,14 +267,20 @@ export function BrandPanel(props: BrandPanelProps) {
           className="print-input resize-none"
           placeholder={placeholder}
           value={kit?.details[key] ?? ''}
-          onChange={(e) => update((k) => ({ ...k, details: { ...k.details, [key]: e.target.value } }))}
+          onChange={(e) => {
+            const v = e.target.value
+            update((k) => ({ ...k, details: { ...k.details, [key]: v } }))
+          }}
         />
       ) : (
         <input
           className="print-input"
           placeholder={placeholder}
           value={kit?.details[key] ?? ''}
-          onChange={(e) => update((k) => ({ ...k, details: { ...k.details, [key]: e.target.value } }))}
+          onChange={(e) => {
+            const v = e.target.value
+            update((k) => ({ ...k, details: { ...k.details, [key]: v } }))
+          }}
         />
       )}
     </label>
@@ -422,7 +434,10 @@ export function BrandPanel(props: BrandPanelProps) {
                       type="color"
                       className="absolute inset-0 opacity-0 cursor-pointer"
                       value={c.hex.toLowerCase()}
-                      onChange={(e) => update((k) => ({ ...k, colors: k.colors.map((x, j) => (j === i ? { ...x, hex: e.target.value.toUpperCase() } : x)) }))}
+                      onChange={(e) => {
+                        const v = e.target.value.toUpperCase()
+                        update((k) => ({ ...k, colors: k.colors.map((x, j) => (j === i ? { ...x, hex: v } : x)) }))
+                      }}
                       aria-label={`Color ${i + 1}`}
                     />
                   </label>
@@ -494,7 +509,10 @@ export function BrandPanel(props: BrandPanelProps) {
                   className="print-input resize-none"
                   placeholder="Friendly and local; families in the neighborhood"
                   value={kit?.voice ?? ''}
-                  onChange={(e) => update((k) => ({ ...k, voice: e.target.value }))}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    update((k) => ({ ...k, voice: v }))
+                  }}
                 />
               </label>
             </div>
