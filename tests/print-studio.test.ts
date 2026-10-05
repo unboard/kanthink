@@ -3,7 +3,7 @@ import { findPrintModel, formatCents } from '../lib/print/models'
 import { buildPrintPdf, jpegComponents } from '../lib/print/pdf'
 import { extractPalette, normalizeHex } from '../lib/print/palette'
 import { checkPlacement, checkSpelling, detectFrame, detectWhiteBorders, distanceField, rasterSampler, samplerFor } from '../lib/print/preflight'
-import { buildCreatePrompt, buildRecreatePrompt, printRules, wordBudget } from '../lib/print/prompts'
+import { buildCreatePrompt, buildEditPrompt, buildFixPrompt, buildRecreatePrompt, printRules, wordBudget } from '../lib/print/prompts'
 import {
   CATALOG,
   catalogProduct,
@@ -254,6 +254,18 @@ describe('prompts', () => {
     expect(prompt).toContain('Image 3 is the business’s logo')
     // The die-cut rules still apply, hole and all.
     expect(prompt).toContain('doorknob')
+  })
+
+  it('guards content and brand before asking for any change, naming the exact words', () => {
+    const frame = planFrame(flyer, 'openai', 'print')
+    const edit = buildEditPrompt(flyer, frame, 'warmer colors', [{ role: 'current', url: '' }], ['614-300-0458', 'D&B'])
+    const guard = edit.indexOf('Preserve all details pertaining to content and brand')
+    expect(guard).toBeGreaterThan(-1)
+    expect(guard).toBeLessThan(edit.indexOf('warmer colors'))
+    expect(edit).toContain('“614-300-0458”')
+    const fix = buildFixPrompt(flyer, frame, [{ id: 'a', kind: 'safe', severity: 'error', message: 'Phone is too close to the edge.' }], ['614-300-0458'])
+    expect(fix.indexOf('Preserve all details pertaining to content and brand')).toBeLessThan(fix.indexOf('Phone is too close'))
+    expect(fix).toContain('Moving and resizing elements to fix them is expected')
   })
 
   it('gives small pieces small word budgets', () => {

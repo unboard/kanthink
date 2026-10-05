@@ -278,11 +278,29 @@ export function buildRecreatePrompt(options: {
     .join('\n')
 }
 
+/**
+ * The guard that opens every change to a finished design.
+ *
+ * Image models drift on revisions: a word respelled, a logo redrawn, a color nudged.
+ * Saying what must survive in the same breath as the change — "preserve all of this,
+ * but do that" — and naming the exact words, holds them far better than a general
+ * "keep everything else" after it. It guards content and brand, not position: a
+ * guard that also froze the layout made fixes too timid to move anything.
+ */
+export function preserveBut(change: string, keep: string[] = []): string[] {
+  const words = [...new Set(keep.map((w) => w.trim()).filter(Boolean))].slice(0, 24)
+  return [
+    `Preserve all details pertaining to content and brand — every word and number exactly as written, the logo, photos and illustrations, typefaces and colors — but ${change}`,
+    words.length ? `This text must still read exactly like this afterwards, unless the change asks for different words: ${words.map((w) => `“${w}”`).join(', ')}.` : '',
+  ].filter(Boolean)
+}
+
 /** A change to the whole page, keeping everything not mentioned. */
-export function buildEditPrompt(spec: PrintSpec, frame: Frame, instruction: string, refs: RefImage[]): string {
+export function buildEditPrompt(spec: PrintSpec, frame: Frame, instruction: string, refs: RefImage[], keep: string[] = []): string {
   const extra = refs.slice(1)
   return [
-    `Image 1 is a finished print design (${describeProduct(spec)}). Edit it: ${instruction}`,
+    `Image 1 is a finished print design (${describeProduct(spec)}).`,
+    ...preserveBut(`make this one change: ${instruction}`, keep),
     'Change only what that asks for. Keep everything else — layout, text, spelling, logo, photos, colors — exactly as it is, at the same size and position.',
     ...extra.map((r, i) =>
       r.role === 'logo'
@@ -299,11 +317,11 @@ export function buildEditPrompt(spec: PrintSpec, frame: Frame, instruction: stri
 }
 
 /** A change confined to a painted area. The composite afterwards enforces "only there". */
-export function buildAreaPrompt(spec: PrintSpec, instruction: string, refs: RefImage[]): string {
+export function buildAreaPrompt(spec: PrintSpec, instruction: string, refs: RefImage[], keep: string[] = []): string {
   const extra = refs.slice(2)
   return [
     `Image 1 is a finished print design (${describeProduct(spec)}). Image 2 is the same design with one area highlighted in bright magenta.`,
-    `Change only the highlighted area: ${instruction}`,
+    ...preserveBut(`make this one change, inside the highlighted area only: ${instruction}`, keep),
     'Everything outside the highlighted area must stay exactly as it is in Image 1 — same pixels, layout, text and colors. Blend the change seamlessly into its surroundings. The result must contain no magenta highlight.',
     'Return the whole design, the same size and framing as Image 1.',
     ...extra.map((r, i) =>
@@ -329,7 +347,7 @@ export function buildRetextPrompt(spec: PrintSpec, frame: Frame, before: PageCop
     .join('\n')
 }
 
-export function buildFixPrompt(spec: PrintSpec, frame: Frame, issues: PreflightIssue[]): string {
+export function buildFixPrompt(spec: PrintSpec, frame: Frame, issues: PreflightIssue[], keep: string[] = []): string {
   const asks = issues.map((issue) => {
     switch (issue.kind) {
       case 'border':
@@ -346,9 +364,10 @@ export function buildFixPrompt(spec: PrintSpec, frame: Frame, issues: PreflightI
     }
   })
   return [
-    `Image 1 is a print design (${describeProduct(spec)}) that failed a print check. Fix these problems:`,
+    `Image 1 is a print design (${describeProduct(spec)}) that failed a print check.`,
+    ...preserveBut('fix the print problems below. Moving and resizing elements to fix them is expected — that is the point of this pass.', keep),
     ...asks,
-    'Change as little as possible otherwise: keep the same design, words, imagery, logo and colors.',
+    'Leave anything not involved in a problem where it is.',
     '',
     ...printRules(spec, frame, false).slice(1),
   ].join('\n')

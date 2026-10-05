@@ -349,6 +349,9 @@ async function edit(
     if (original) extras.push({ role: 'recreate', url: original.url, note: original.note })
   }
 
+  // The words already on the page, named in every change so they survive it.
+  const keepWords = printedWords(source.copy, design.brief.useDetails ? kit : null)
+
   let images: InputImage[] = [{ data: prep.input }]
   let prompt: string
   let maskRaw: Buffer | undefined
@@ -361,13 +364,13 @@ async function edit(
     images.push({ data: await markedImage(prep.input, padded) })
     if (model.provider === 'openai') openaiMask = await transparentWhere(padded)
     const refs: RefImage[] = [{ role: 'current', url: '' }, { role: 'marked', url: '' }, ...extras]
-    prompt = buildAreaPrompt(spec, instruction, refs)
+    prompt = buildAreaPrompt(spec, instruction, refs, keepWords)
   } else if (mode === 'edit') {
-    prompt = buildEditPrompt(spec, frame, instruction, [{ role: 'current', url: '' }, ...extras])
+    prompt = buildEditPrompt(spec, frame, instruction, [{ role: 'current', url: '' }, ...extras], keepWords)
   } else if (mode === 'retext') {
     prompt = buildRetextPrompt(spec, frame, source.copy, req.copy!)
   } else if (mode === 'fix') {
-    prompt = buildFixPrompt(spec, frame, req.issues!)
+    prompt = buildFixPrompt(spec, frame, req.issues!, keepWords)
   } else {
     prompt = buildUpscalePrompt(spec)
   }
