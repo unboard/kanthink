@@ -29,6 +29,8 @@ interface SheetProps {
   onClick?: () => void
   selected?: boolean
   imageWidth?: number
+  /** Drawn over everything, sized to the sheet: the markup layer. */
+  overlay?: React.ReactNode
 }
 
 /** Seconds since a render began, ticking. */
@@ -102,7 +104,7 @@ function useRasterGuide(spec: PrintSpec): string | null {
 }
 
 export const Sheet = forwardRef<SheetHandle, SheetProps>(function Sheet(
-  { spec, version, width, showGuides, label, pending, brush = 'off', brushSize = 40, onMaskChange, issues, hoverIssue, onClick, selected, imageWidth },
+  { spec, version, width, showGuides, label, pending, brush = 'off', brushSize = 40, onMaskChange, issues, hoverIssue, onClick, selected, imageWidth, overlay },
   ref,
 ) {
   const clipId = useId().replace(/:/g, '')
@@ -430,6 +432,8 @@ export const Sheet = forwardRef<SheetHandle, SheetProps>(function Sheet(
           )}
         </div>
       )}
+
+      {overlay}
     </div>
   )
 })

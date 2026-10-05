@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { findPrintModel, formatCents } from '@/lib/print/models'
 import { effectiveDpi } from '@/lib/print/spec'
 import type { PageCopy, PreflightIssue, PrintPage, PrintSpec, PrintVersion } from '@/lib/print/types'
+import { KIND_LABEL, MARK_COLOR, type Mark } from '@/lib/print/markup'
 import { thumb } from './api'
 
 const MODE_LABEL: Record<PrintVersion['mode'], string> = {
@@ -14,6 +15,7 @@ const MODE_LABEL: Record<PrintVersion['mode'], string> = {
   fix: 'Fixed for print',
   upscale: 'Sharpened',
   fill: 'Filled to the edges',
+  markup: 'Changed from markup',
 }
 
 interface InspectorProps {
@@ -31,6 +33,127 @@ interface InspectorProps {
   onRetext: (copy: PageCopy) => void
   onHoverIssue: (id: string | null) => void
   onClose?: () => void
+  markup?: MarkupProps
+}
+
+interface MarkupProps {
+  selectedId: string | null
+  showDone: boolean
+  onSelect: (id: string | null) => void
+  onUpdate: (id: string, change: Partial<Mark>) => void
+  onDelete: (id: string) => void
+  onShowDone: (on: boolean) => void
+}
+
+/**
+ * Every mark on the page, kept across versions: what it asks, where it came from and
+ * where it went. Sent marks step back on the version that came back; showing one again
+ * puts it over the new version to see whether the change landed.
+ */
+function MarkupList({ page, markup }: { page: PrintPage; markup: MarkupProps }) {
+  const marks = [...(page.marks ?? [])].sort((a, b) => a.n - b.n)
+  const done = marks.filter((m) => m.status === 'done').length
+  const listed = marks.filter((m) => m.status === 'open' || markup.showDone)
+  const versionNo = (id?: string) => {
+    const i = page.versions.findIndex((v) => v.id === id)
+    return i >= 0 ? i + 1 : null
+  }
+  const open = marks.filter((m) => m.status === 'open')
+  const anyHidden = open.some((m) => m.hidden)
+
+  return (
+    <Section
+      title={`Markup${open.length ? ` · ${open.length} open` : ''}`}
+      aside={
+        <span className="flex items-center gap-3 text-[12.5px]" style={{ color: 'var(--muted)' }}>
+          {open.length > 0 && (
+            <button type="button" onClick={() => open.forEach((m) => markup.onUpdate(m.id, { hidden: !anyHidden }))}>
+              {anyHidden ? 'Show all' : 'Hide all'}
+            </button>
+          )}
+          {done > 0 && (
+            <button type="button" onClick={() => markup.onShowDone(!markup.showDone)}>
+              {markup.showDone ? 'Hide done' : `Show done (${done})`}
+            </button>
+          )}
+        </span>
+      }
+    >
+      {listed.length === 0 ? (
+        <p className="text-[13px] leading-snug" style={{ color: 'var(--muted)' }}>
+          {marks.length
+            ? 'Everything here is done.'
+            : 'Draw, Arrow, Circle or Box marks up the page. Each mark gets a number and a note, and Apply sends them as one change.'}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {listed.map((m) => {
+            const drawn = versionNo(m.versionId)
+            const sent = (m.sentIn ?? []).map(versionNo).filter((n): n is number => n !== null)
+            const sel = markup.selectedId === m.id
+            return (
+              <li
+                key={m.id}
+                className="rounded-lg border p-2"
+                style={{ borderColor: sel ? MARK_COLOR : 'var(--line)', opacity: m.status === 'done' ? 0.6 : 1 }}
+              >
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => markup.onSelect(sel ? null : m.id)}
+                    className="w-6 h-6 rounded-full text-[12px] font-bold text-white shrink-0"
+                    style={{ background: m.status === 'done' ? '#7a7f7c' : MARK_COLOR }}
+                    title="Show it on the page"
+                  >
+                    {m.n}
+                  </button>
+                  <span className="text-[12.5px] flex-1 min-w-0 truncate" style={{ color: 'var(--muted)' }}>
+                    {KIND_LABEL[m.kind]}
+                    {drawn ? ` · on v${drawn}` : ''}
+                    {sent.length ? ` · sent → v${sent.join(', v')}` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => markup.onUpdate(m.id, { hidden: !m.hidden })}
+                    className="text-[12px] px-1"
+                    style={{ color: m.hidden ? 'var(--muted)' : 'var(--ink-2)' }}
+                    title={m.hidden ? 'Show on the page' : 'Hide from the page'}
+                  >
+                    {m.hidden ? 'Show' : 'Hide'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markup.onUpdate(m.id, { status: m.status === 'done' ? 'open' : 'done' })}
+                    className="text-[12px] px-1"
+                    style={{ color: 'var(--ink-2)' }}
+                  >
+                    {m.status === 'done' ? 'Reopen' : 'Done'}
+                  </button>
+                  <button type="button" onClick={() => markup.onDelete(m.id)} className="text-[14px] px-1" style={{ color: 'var(--muted)' }} aria-label="Delete mark">
+                    ×
+                  </button>
+                </div>
+                <textarea
+                  rows={1}
+                  value={m.note}
+                  onChange={(e) => markup.onUpdate(m.id, { note: e.target.value })}
+                  onFocus={() => markup.onSelect(m.id)}
+                  placeholder="Note (optional)"
+                  className="mt-1.5 w-full resize-none bg-transparent outline-none text-[13px] leading-snug"
+                  style={{ color: 'var(--ink)', fieldSizing: 'content' } as React.CSSProperties}
+                />
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {open.some((m) => m.hidden) && (
+        <p className="text-[12px] mt-2 leading-snug" style={{ color: 'var(--muted)' }}>
+          Hidden marks aren’t sent. Show one again to compare it with this version or send it again.
+        </p>
+      )}
+    </Section>
+  )
 }
 
 function Section({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
@@ -121,7 +244,7 @@ function WordsEditor({ copy, busy, onRetext }: { copy: PageCopy; busy: boolean; 
 }
 
 export function Inspector(props: InspectorProps) {
-  const { spec, page, busy, checking, onSelectVersion, onDeleteVersion, onCheck, onFix, onUpscale, onFill, onRetext, onHoverIssue, onClose } = props
+  const { spec, page, busy, checking, onSelectVersion, onDeleteVersion, onCheck, onFix, onUpscale, onFill, onRetext, onHoverIssue, onClose, markup } = props
   const version = page.versions[page.current]
   if (!version) return null
   const check = version.check
@@ -188,6 +311,8 @@ export function Inspector(props: InspectorProps) {
           ))}
         </div>
       )}
+
+      {markup && <MarkupList page={page} markup={markup} />}
 
       <Section
         title="Print check"

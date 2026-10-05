@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { findPrintModel, formatCents } from '@/lib/print/models'
+import { DEFAULT_PRINT_MODEL, findPrintModel, formatCents } from '@/lib/print/models'
 import { planFrame } from '@/lib/print/spec'
 import type { DesignImage, DesignImageRole, PrintBrand, PrintBrief, PrintSpec, RenderQuality } from '@/lib/print/types'
 import { shortId, thumb, uploadImage } from './api'
@@ -26,7 +26,7 @@ export interface ModelInfo {
   available: boolean
 }
 
-export type ComposerMode = 'create' | 'edit' | 'area'
+export type ComposerMode = 'create' | 'edit' | 'area' | 'markup'
 
 export type BrandSection = 'site' | 'logo' | 'colors' | 'details' | 'assets' | 'inspiration'
 
@@ -44,6 +44,8 @@ interface ComposerProps {
   onSubmit: (prompt: string, takes: number) => void
   onNewTake?: () => void
   notify?: (message: string) => void
+  /** `markup`: how many marks will be sent. */
+  markCount?: number
 }
 
 function Chip({
@@ -93,7 +95,7 @@ function Check({ on }: { on: boolean }) {
 }
 
 export function Composer(props: ComposerProps) {
-  const { spec, brief, brand, models, mode, pageLabel, isFirstPage, busy, onBrief, onOpenBrand, onSubmit, onNewTake, notify } = props
+  const { spec, brief, brand, models, mode, pageLabel, isFirstPage, busy, onBrief, onOpenBrand, onSubmit, onNewTake, notify, markCount = 0 } = props
   const [text, setText] = useState(mode === 'create' && isFirstPage ? brief.prompt ?? '' : '')
   const [takes, setTakes] = useState(1)
   const [modelOpen, setModelOpen] = useState(false)
@@ -156,17 +158,19 @@ export function Composer(props: ComposerProps) {
   }, [text])
 
   const available = models.filter((m) => m.available)
-  const modelId = available.find((m) => m.id === brief.modelId)?.id ?? available[0]?.id
+  const modelId = available.find((m) => m.id === brief.modelId)?.id ?? available.find((m) => m.id === DEFAULT_PRINT_MODEL)?.id ?? available[0]?.id
   const model = findPrintModel(modelId)
   const quality: RenderQuality = brief.quality ?? 'print'
   const frame = model ? planFrame(spec, model.provider, quality) : null
   const each = model && frame ? model.cents(frame, quality) : 0
   const count = mode === 'create' ? takes : 1
 
-  const canSubmit = !busy && !uploading && (mode === 'create' ? (isFirstPage && !recreating ? text.trim().length > 0 : true) : text.trim().length > 0)
+  const canSubmit = !busy && !uploading && (mode === 'create' ? (isFirstPage && !recreating ? text.trim().length > 0 : true) : mode === 'markup' ? true : text.trim().length > 0)
 
   const placeholder =
-    mode === 'area'
+    mode === 'markup'
+      ? 'Anything else, besides the marks? Optional'
+      : mode === 'area'
       ? 'What should change in the painted area?'
       : mode === 'edit'
         ? `Ask for a change to the ${pageLabel.toLowerCase()} — “make the headline bigger”, “warmer colors”`
@@ -177,7 +181,9 @@ export function Composer(props: ComposerProps) {
           : `What goes on the ${pageLabel.toLowerCase()}? Leave it blank to carry on from the design so far`
 
   const action =
-    mode === 'area'
+    mode === 'markup'
+      ? `Apply ${markCount} mark${markCount === 1 ? '' : 's'}`
+      : mode === 'area'
       ? 'Change area'
       : mode === 'edit'
         ? 'Apply change'
@@ -310,7 +316,7 @@ export function Composer(props: ComposerProps) {
         {/* The ask */}
         <div
           className="rounded-2xl border flex items-end gap-2 p-2 pl-3.5 transition-colors"
-          style={{ borderColor: mode === 'area' ? 'var(--magenta)' : 'var(--line)', background: 'var(--chrome-2)' }}
+          style={{ borderColor: mode === 'area' || mode === 'markup' ? 'var(--magenta)' : 'var(--line)', background: 'var(--chrome-2)' }}
         >
           <textarea
             ref={area}

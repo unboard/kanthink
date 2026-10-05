@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server'
 import { cleanCopy } from '@/lib/print/server/understand'
 import { fetchOwnImage, isOwnImageUrl } from '@/lib/print/server/images'
 import { RenderError, render } from '@/lib/print/server/pipeline'
+import { cleanMarks } from '@/lib/print/markup'
 import { chargeRender, getBrand, getDesign, printUser } from '@/lib/print/server/store'
 import type { PreflightIssue, PrintVersion, VersionMode } from '@/lib/print/types'
 
 /**
  * POST — draw one page version.
  *
- * { designId, pageIndex, mode, prompt?, modelId?, quality?, source?, mask?, copy?, issues? }
+ * { designId, pageIndex, mode, prompt?, modelId?, quality?, source?, mask?, copy?, issues?, marks? }
  *
  * Returns { version, cents }. The studio places the version and saves the design; this
  * route only counts the render against it.
@@ -16,7 +17,7 @@ import type { PreflightIssue, PrintVersion, VersionMode } from '@/lib/print/type
 
 export const maxDuration = 300
 
-const MODES: VersionMode[] = ['create', 'edit', 'area', 'retext', 'fix', 'upscale', 'fill']
+const MODES: VersionMode[] = ['create', 'edit', 'area', 'retext', 'fix', 'upscale', 'fill', 'markup']
 
 function cleanSource(input: unknown): PrintVersion | undefined {
   const v = input as PrintVersion | undefined
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
       mask,
       copy: body.copy ? cleanCopy(body.copy) : undefined,
       issues,
+      marks: mode === 'markup' ? cleanMarks(body.marks, 30) : undefined,
     })
     await chargeRender(userId, design.id, result.cents)
     return NextResponse.json(result)

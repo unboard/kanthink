@@ -12,6 +12,7 @@ import type {
   PrintVersion,
   VersionMode,
 } from '@/lib/print/types'
+import type { Mark } from '@/lib/print/markup'
 import { api, ApiError } from './api'
 import type { ModelInfo } from './Composer'
 
@@ -38,6 +39,7 @@ export const PENDING_LABEL: Record<VersionMode, string> = {
   fix: 'Fixing for print',
   upscale: 'Sharpening',
   fill: 'Filling to the edges',
+  markup: 'Working through your marks',
 }
 
 export interface RenderOptions {
@@ -45,6 +47,8 @@ export interface RenderOptions {
   mask?: string
   copy?: PageCopy
   issues?: PreflightIssue[]
+  /** `markup`: the marks to act on. */
+  marks?: Mark[]
   takes?: number
   /** Wait for each new version's print check before resolving. */
   awaitCheck?: boolean
@@ -302,6 +306,7 @@ export function useDesign(id: string | null, { notify }: Options) {
               mask: opts.mask,
               copy: opts.copy,
               issues: opts.issues,
+              marks: opts.marks,
             },
           })
           addVersion(pageIndex, version, first)

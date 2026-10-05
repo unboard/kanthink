@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'print-markup-notes',
+    date: '2026-10-05',
+    kind: 'capability',
+    title: 'Mark up a print design with numbered notes',
+    body: 'In the print studio, draw, arrow, circle or box anything on a page. Each mark gets a number and its own note, and Apply sends them all as one change. Marks stay with the page, so you can show them over the new version to check each one landed. GPT-Image 2.5 Sunburst is now the default model.',
+  },
+  {
     id: 'print-recreate-a-design',
     date: '2026-10-05',
     kind: 'capability',

@@ -83,7 +83,7 @@ export const PRINT_MODELS: PrintModel[] = [
     model: 'gemini-3.1-flash-image-preview',
     label: 'Nano Banana 2',
     canvas: true,
-    blurb: 'Fast, sharp type, follows references well. The everyday choice.',
+    blurb: 'Fast and cheap, good for quick drafts.',
     rates: GEMINI_FLASH,
     cents: geminiCents('gemini-3.1-flash-image-preview', GEMINI_FLASH),
   },
@@ -103,7 +103,7 @@ export const PRINT_MODELS: PrintModel[] = [
     model: 'gpt-image-2.5-sunburst',
     label: 'GPT-Image 2.5 Sunburst',
     canvas: false,
-    blurb: 'OpenAI’s most capable. Draws at the exact print shape.',
+    blurb: 'The default: OpenAI’s most capable, best at holding type and making edits. Draws at the exact print shape.',
     rates: GPT_IMAGE_25,
     cents: openaiCents(GPT_IMAGE_25),
   },
@@ -119,7 +119,8 @@ export const PRINT_MODELS: PrintModel[] = [
   },
 ]
 
-export const DEFAULT_PRINT_MODEL = PRINT_MODELS[0].id
+/** GPT-Image 2.5 Sunburst: in use it holds type, layout and edits best. */
+export const DEFAULT_PRINT_MODEL = 'openai:gpt-image-2.5-sunburst'
 
 export function findPrintModel(id: string | null | undefined): PrintModel | null {
   if (!id) return null

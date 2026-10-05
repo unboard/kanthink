@@ -10,6 +10,7 @@
  */
 
 import type { BrandKit, PageCopy, PrintBrief, PrintSpec, PreflightIssue } from './types'
+import { placeWords, type Mark } from './markup'
 import {
   bleedSize,
   foldsInFrame,
@@ -332,6 +333,40 @@ export function buildAreaPrompt(spec: PrintSpec, instruction: string, refs: RefI
           : `Image ${i + 3} is a supplied photo or graphic${r.note ? ` (${r.note})` : ''} to use if the change calls for it.`,
     ),
   ].join('\n')
+}
+
+/**
+ * A change described by numbered marks on the page, each with its own note.
+ *
+ * The model sees the clean design and the same design with the marks drawn on, and a
+ * list that ties each number to what it means. Arrows, circles and boxes carry the
+ * usual proofing meanings, which is what lets a mark with no note still say something.
+ */
+export function buildMarkupPrompt(spec: PrintSpec, frame: Frame, marks: Mark[], instruction: string, refs: RefImage[], keep: string[] = []): string {
+  const extra = refs.slice(2)
+  const shape: Record<Mark['kind'], string> = { draw: 'drawing', arrow: 'arrow', ellipse: 'circle', rect: 'box' }
+  const lines = [...marks]
+    .sort((a, b) => a.n - b.n)
+    .map((m) => `  • Mark ${m.n} (${shape[m.kind]} ${placeWords(m)}): ${m.note.trim() || 'no note — act on what the mark itself shows'}`)
+  return [
+    `Image 1 is a finished print design (${describeProduct(spec)}). Image 2 is the same design with the person's markup drawn over it in bright pink, each mark numbered in a pink circle. The markup is instructions, not part of the design.`,
+    ...preserveBut('make the changes the marks ask for:', keep),
+    ...lines,
+    instruction ? `Also: ${instruction}` : '',
+    'How to read the marks: an arrow means move what is at its tail to where it points, unless its note says otherwise. A circle or box picks out the thing its note is about. A drawing sketches something to add, or crosses something out, as its note explains.',
+    'Change only what the marks and notes ask for. Return Image 1 with those changes, the same size and framing, with no pink marks, numbers, circles or outlines anywhere in it.',
+    ...extra.map((r, i) =>
+      r.role === 'logo'
+        ? `Image ${i + 3} is the business’s logo, exactly as it must appear.`
+        : r.role === 'recreate'
+          ? `Image ${i + 3} is the original design this page was recreated from, to match details against if a note refers to it.`
+          : `Image ${i + 3} is a supplied photo or graphic${r.note ? ` (${r.note})` : ''} to use if a note calls for it.`,
+    ),
+    '',
+    ...printRules(spec, frame, false).slice(1),
+  ]
+    .filter((l, i, arr) => l !== '' || (i > 0 && arr[i - 1] !== ''))
+    .join('\n')
 }
 
 export function buildRetextPrompt(spec: PrintSpec, frame: Frame, before: PageCopy | undefined, after: PageCopy): string {

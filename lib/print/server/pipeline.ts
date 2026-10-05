@@ -15,7 +15,9 @@ import {
   buildUpscalePrompt,
   printedWords,
   type RefImage,
+  buildMarkupPrompt,
 } from '../prompts'
+import { markupSvg, type Mark } from '../markup'
 import { bleedSize, centerCrop, effectiveDpi, planFrame, sheetRatio, type Frame } from '../spec'
 import type {
   BrandKit,
@@ -77,6 +79,8 @@ export interface RenderRequest {
   copy?: PageCopy
   /** `fix` only. */
   issues?: PreflightIssue[]
+  /** `markup` only: the numbered marks to act on, each with its note. */
+  marks?: Mark[]
 }
 
 export interface RenderResult {
@@ -158,6 +162,17 @@ async function loadImages(refs: RefImage[], canvas?: Buffer): Promise<InputImage
   return Promise.all(
     refs.map(async (r) => ({ data: r.role === 'canvas' && canvas ? canvas : await fetchOwnImage(r.url) })),
   )
+}
+
+/** The edit input with the marks drawn over the page inside it, for the model to read. */
+async function markedUp(input: Buffer, frame: Frame, marks: Mark[]): Promise<Buffer> {
+  const { width, height } = await dimensions(input)
+  const left = Math.round(frame.sheet.x * width)
+  const top = Math.round(frame.sheet.y * height)
+  const w = Math.max(1, Math.min(width - left, Math.round(frame.sheet.w * width)))
+  const h = Math.max(1, Math.min(height - top, Math.round(frame.sheet.h * height)))
+  const svg = Buffer.from(markupSvg(marks, w, h))
+  return sharp(input).composite([{ input: svg, left, top }]).png().toBuffer()
 }
 
 /** A plain frame drawn around a page — its color and depth on each edge — or null when it bleeds properly. */
@@ -312,6 +327,7 @@ async function edit(
   if (!source) throw new RenderError('Pick a version to edit.')
   const instruction = (req.prompt ?? '').trim()
   if ((mode === 'edit' || mode === 'area') && !instruction) throw new RenderError('Say what to change.')
+  if (mode === 'markup' && !req.marks?.length) throw new RenderError('Draw a mark on the page first.')
   if (mode === 'area' && !req.mask) throw new RenderError('Paint the area to change first.')
   if (mode === 'retext' && !req.copy) throw new RenderError('No new words to set.')
   if (mode === 'fix' && !req.issues?.length) throw new RenderError('Nothing to fix.')
@@ -340,8 +356,9 @@ async function edit(
   }
 
   const extras: RefImage[] = []
-  if ((mode === 'edit' || mode === 'area') && kit?.logo && design.brief.useLogo) extras.push({ role: 'logo', url: kit.logo.url })
-  if (mode === 'edit' || mode === 'area') {
+  const changes = mode === 'edit' || mode === 'area' || mode === 'markup'
+  if (changes && kit?.logo && design.brief.useLogo) extras.push({ role: 'logo', url: kit.logo.url })
+  if (changes) {
     const photos = [...(design.brief.images ?? []).filter((i) => i.role === 'photo'), ...selectedImages(kit, design.brief.assetIds, 'assets', 3)].slice(0, 3)
     for (const a of photos) extras.push({ role: 'asset', url: a.url, note: a.note })
     // A recreated page is checked against its original: "match the original's phone number".
@@ -365,6 +382,10 @@ async function edit(
     if (model.provider === 'openai') openaiMask = await transparentWhere(padded)
     const refs: RefImage[] = [{ role: 'current', url: '' }, { role: 'marked', url: '' }, ...extras]
     prompt = buildAreaPrompt(spec, instruction, refs, keepWords)
+  } else if (mode === 'markup') {
+    // The same frame the model edits, with the marks drawn where they sit on the page.
+    images.push({ data: await markedUp(prep.input, frame, req.marks!) })
+    prompt = buildMarkupPrompt(spec, frame, req.marks!, instruction, [{ role: 'current', url: '' }, { role: 'marked', url: '' }, ...extras], keepWords)
   } else if (mode === 'edit') {
     prompt = buildEditPrompt(spec, frame, instruction, [{ role: 'current', url: '' }, ...extras], keepWords)
   } else if (mode === 'retext') {

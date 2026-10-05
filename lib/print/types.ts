@@ -7,6 +7,8 @@
  * checks the result and the PDF that is exported can never disagree.
  */
 
+import type { Mark } from './markup'
+
 export type Unit = 'in' | 'mm'
 
 /**
@@ -148,7 +150,7 @@ export interface PreflightResult {
   dpi: number
 }
 
-export type VersionMode = 'create' | 'edit' | 'area' | 'retext' | 'fix' | 'upscale' | 'fill'
+export type VersionMode = 'create' | 'edit' | 'area' | 'retext' | 'fix' | 'upscale' | 'fill' | 'markup'
 
 export interface PrintVersion {
   id: string
@@ -179,6 +181,8 @@ export interface PrintPage {
   versions: PrintVersion[]
   /** Index into versions of the one in use. */
   current: number
+  /** Numbered markup on this page, kept across versions. See lib/print/markup.ts. */
+  marks?: Mark[]
 }
 
 export type RenderQuality = 'print' | 'draft'

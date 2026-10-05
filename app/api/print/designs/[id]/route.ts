@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { printDesigns } from '@/lib/db/schema'
 import { isOwnImageUrl } from '@/lib/print/server/images'
 import { catalogProduct } from '@/lib/print/spec'
+import { cleanMarks } from '@/lib/print/markup'
 import { getDesign, now, printUser } from '@/lib/print/server/store'
 import type { ChatMessage, DesignImage, DesignImageRole, PrintBrief, PrintPage } from '@/lib/print/types'
 
@@ -40,6 +41,7 @@ function cleanPages(input: unknown, count: number): PrintPage[] | null {
       label: String(p.label ?? '').slice(0, 40),
       versions,
       current: Math.max(0, Math.min(versions.length - 1, Number(p.current) || 0)),
+      marks: cleanMarks(p.marks),
     })
   }
   return pages

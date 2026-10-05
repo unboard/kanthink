@@ -11,6 +11,9 @@ import { Composer, type BrandSection, type ComposerMode } from './Composer'
 import { ExportDialog } from './ExportDialog'
 import { Inspector } from './Inspector'
 import { Sheet, type BrushMode, type SheetHandle } from './Sheet'
+import { MarkupLayer, type MarkTool } from './MarkupLayer'
+import { GROUP_MS, joinsLast, nextNumber, type Mark, type MarkKind, type Pt } from '@/lib/print/markup'
+import { shortId } from './api'
 import { SignInGate, SurfaceSwitch, useNotice, Notice } from './ui'
 import { useDesign, type RenderOptions } from './useDesign'
 
@@ -41,10 +44,23 @@ function statusOf(v: PrintVersion | undefined, checking: boolean): { text: strin
   return { text: 'Print-ready', color: 'var(--ok)' }
 }
 
+const MARK_TOOLS: { kind: MarkKind; label: string; title: string; icon: React.ReactNode }[] = [
+  { kind: 'draw', label: 'Draw', title: 'Draw a mark. Strokes made close together count as one.', icon: <path d="M2.5 11.5c2-4 3.5-6 5-4.5s1 4 3 3 2.5-4 3-6" /> },
+  { kind: 'arrow', label: 'Arrow', title: 'An arrow: move this there', icon: <><path d="M3 13L13 3" /><path d="M7 3h6v6" /></> },
+  { kind: 'ellipse', label: 'Circle', title: 'Circle something', icon: <ellipse cx="8" cy="8" rx="5.5" ry="4.5" /> },
+  { kind: 'rect', label: 'Box', title: 'Box an area', icon: <rect x="2.5" y="3.5" width="11" height="9" rx="1" /> },
+]
+
 export function Studio({ id }: { id: string }) {
   const [focus, setFocus] = useState<number | null>(null)
   const [guides, setGuides] = useState(true)
   const [brush, setBrush] = useState<BrushMode>('off')
+  const [markTool, setMarkTool] = useState<MarkTool>(null)
+  const [selectedMark, setSelectedMark] = useState<string | null>(null)
+  const [showDone, setShowDone] = useState(false)
+  // The freehand mark still taking strokes, and when it last took one.
+  const lastDraw = useRef<{ id: string; at: number } | null>(null)
+  const openNote = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [brushSize, setBrushSize] = useState(44)
   const [masked, setMasked] = useState(false)
   const [hoverIssue, setHoverIssue] = useState<string | null>(null)
@@ -73,6 +89,24 @@ export function Studio({ id }: { id: string }) {
     render: renderPage,
     runCheck,
   } = useDesign(id, { notify })
+
+  // Escape lets go of the tool and the mark; Delete removes the picked mark.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      if (e.key === 'Escape') {
+        setSelectedMark(null)
+        setMarkTool(null)
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedMark) {
+        patch((d) => ({ ...d, pages: d.pages.map((p) => ({ ...p, marks: (p.marks ?? []).filter((m) => m.id !== selectedMark) })) }))
+        setSelectedMark(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedMark, patch])
 
   const render = useCallback(
     async (pageIndex: number, mode: VersionMode, opts: RenderOptions = {}) => {
@@ -108,7 +142,42 @@ export function Studio({ id }: { id: string }) {
   const target = focus ?? (firstEmpty >= 0 ? firstEmpty : 0)
   const targetPage = design.pages[target]
   const targetVersion = targetPage.versions[targetPage.current]
-  const composerMode: ComposerMode = !targetVersion ? 'create' : focus !== null && masked ? 'area' : 'edit'
+  const focusedVersionId = focus !== null ? design.pages[focus].versions[design.pages[focus].current]?.id : undefined
+  // ---- markup --------------------------------------------------------------
+  const markPage = focus ?? target
+  const pageMarks: Mark[] = design.pages[markPage]?.marks ?? []
+  const visibleMarks = pageMarks.filter((m) => !m.hidden && (m.status === 'open' || showDone))
+  const marksToSend = focus !== null ? visibleMarks.filter((m) => m.status === 'open') : []
+
+  const setMarks = (pageIndex: number, fn: (marks: Mark[]) => Mark[]) =>
+    patch((d) => ({ ...d, pages: d.pages.map((p, i) => (i === pageIndex ? { ...p, marks: fn(p.marks ?? []) } : p)) }))
+  const updateMark = (id: string, change: Partial<Mark> | ((m: Mark) => Mark)) =>
+    setMarks(markPage, (ms) => ms.map((m) => (m.id === id ? (typeof change === 'function' ? change(m) : { ...m, ...change }) : m)))
+  const deleteMark = (id: string) => {
+    setMarks(markPage, (ms) => ms.filter((m) => m.id !== id))
+    if (selectedMark === id) setSelectedMark(null)
+  }
+
+  const addStroke = (kind: MarkKind, pts: Pt[]) => {
+    const now = Date.now()
+    if (openNote.current) clearTimeout(openNote.current)
+    const last = lastDraw.current ? pageMarks.find((m) => m.id === lastDraw.current!.id) ?? null : null
+    let id: string
+    if (kind === 'draw' && last && joinsLast(last, lastDraw.current!.at, pts, now)) {
+      id = last.id
+      updateMark(id, (m) => ({ ...m, pts: [...m.pts, pts] }))
+    } else {
+      id = shortId()
+      const mark: Mark = { id, n: nextNumber(pageMarks), kind, pts: [pts], note: '', status: 'open', versionId: focusedVersionId, at: Math.floor(now / 1000) }
+      setMarks(markPage, (ms) => [...ms, mark])
+    }
+    lastDraw.current = kind === 'draw' ? { id, at: now } : null
+    // Shapes open their note at once; a drawing waits a moment in case more strokes follow.
+    if (kind === 'draw') openNote.current = setTimeout(() => setSelectedMark(id), GROUP_MS)
+    else setSelectedMark(id)
+  }
+
+  const composerMode: ComposerMode = !targetVersion ? 'create' : focus !== null && masked ? 'area' : marksToSend.length ? 'markup' : 'edit'
   const anyPending = Object.keys(pending).length > 0
 
 
@@ -126,6 +195,19 @@ export function Studio({ id }: { id: string }) {
   const sheetWidth = Math.max(focus === null ? 140 : 200, Math.floor(scale * sheet.w))
 
   const submit = (prompt: string, takes: number) => {
+    if (composerMode === 'markup') {
+      const sent = marksToSend
+      const sentIds = new Set(sent.map((m) => m.id))
+      setSelectedMark(null)
+      setMarkTool(null)
+      void renderPage(target, 'markup', { prompt: prompt || undefined, marks: sent }).then((out) => {
+        if (!out.versions.length) return
+        // Sent marks step back on the new version; show them from Markup to compare.
+        const made = out.versions.map((v) => v.id)
+        setMarks(target, (ms) => ms.map((m) => (sentIds.has(m.id) ? { ...m, hidden: true, sentIn: [...(m.sentIn ?? []), ...made] } : m)))
+      })
+      return
+    }
     if (composerMode === 'create') {
       if (target === 0 && prompt) setBrief({ prompt })
       render(target, 'create', { prompt: prompt || undefined, takes })
@@ -189,6 +271,17 @@ export function Studio({ id }: { id: string }) {
         onRetext={(copy) => render(focus, 'retext', { copy })}
         onHoverIssue={setHoverIssue}
         onClose={onClose}
+        markup={{
+          selectedId: selectedMark,
+          showDone,
+          onSelect: (id) => {
+            if (id) updateMark(id, { hidden: false })
+            setSelectedMark(id)
+          },
+          onUpdate: (id, change) => updateMark(id, change),
+          onDelete: deleteMark,
+          onShowDone: setShowDone,
+        }}
       />
     ) : null
 
@@ -287,7 +380,7 @@ export function Studio({ id }: { id: string }) {
         <main ref={matRef} className="mat flex-1 min-w-0 relative overflow-auto print-scroll">
           {focus !== null && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-xl border p-1 shadow-lg" style={{ background: 'rgba(19,24,22,.92)', borderColor: 'var(--line)' }}>
-              <button type="button" onClick={() => { setFocus(null); setBrush('off') }} className="h-8 px-2.5 rounded-lg text-[13px]" style={{ color: 'var(--ink-2)' }}>
+              <button type="button" onClick={() => { setFocus(null); setBrush('off'); setMarkTool(null); setSelectedMark(null) }} className="h-8 px-2.5 rounded-lg text-[13px]" style={{ color: 'var(--ink-2)' }}>
                 {pageCount > 1 ? 'All pages' : 'Done'}
               </button>
               {focusedVersion && (
@@ -295,7 +388,10 @@ export function Studio({ id }: { id: string }) {
                   <span className="w-px h-5 mx-1" style={{ background: 'var(--line)' }} />
                   <button
                     type="button"
-                    onClick={() => setBrush((b) => (b === 'paint' ? 'off' : 'paint'))}
+                    onClick={() => {
+                      setMarkTool(null)
+                      setBrush((b) => (b === 'paint' ? 'off' : 'paint'))
+                    }}
                     aria-pressed={brush === 'paint'}
                     className="h-8 px-2.5 rounded-lg text-[13px] inline-flex items-center gap-1.5"
                     style={{ background: brush === 'paint' ? 'var(--magenta-soft)' : 'transparent', color: brush === 'paint' ? '#ff6fb5' : 'var(--ink-2)' }}
@@ -317,6 +413,27 @@ export function Studio({ id }: { id: string }) {
                   >
                     Erase
                   </button>
+                  <span className="w-px h-5 mx-1" style={{ background: 'var(--line)' }} />
+                  {MARK_TOOLS.map((t) => (
+                    <button
+                      key={t.kind}
+                      type="button"
+                      onClick={() => {
+                        setBrush('off')
+                        setSelectedMark(null)
+                        setMarkTool((m) => (m === t.kind ? null : t.kind))
+                      }}
+                      aria-pressed={markTool === t.kind}
+                      className="h-8 w-8 sm:w-auto sm:px-2.5 rounded-lg text-[13px] inline-flex items-center justify-center gap-1.5"
+                      style={{ background: markTool === t.kind ? 'var(--magenta-soft)' : 'transparent', color: markTool === t.kind ? '#ff6fb5' : 'var(--ink-2)' }}
+                      title={t.title}
+                    >
+                      <svg viewBox="0 0 16 16" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                        {t.icon}
+                      </svg>
+                      <span className="hidden xl:inline">{t.label}</span>
+                    </button>
+                  ))}
                   {brush !== 'off' && (
                     <input
                       type="range"
@@ -410,6 +527,23 @@ export function Studio({ id }: { id: string }) {
                   brush={brush}
                   brushSize={brushSize}
                   onMaskChange={setMasked}
+                  overlay={
+                    focusedVersion && brush === 'off' ? (
+                      <MarkupLayer
+                        width={sheetWidth}
+                        height={Math.round((sheetWidth * sheet.h) / sheet.w)}
+                        marks={visibleMarks}
+                        tool={markTool}
+                        selectedId={selectedMark}
+                        onSelect={setSelectedMark}
+                        onStroke={addStroke}
+                        onChange={(id, m) => updateMark(id, { pts: m.pts })}
+                        onNote={(id, note) => updateMark(id, { note })}
+                        onDelete={deleteMark}
+                        onDone={(id) => updateMark(id, (m) => ({ ...m, status: m.status === 'done' ? 'open' : 'done' }))}
+                      />
+                    ) : null
+                  }
                   issues={focusedVersion?.check?.issues}
                   hoverIssue={hoverIssue}
                   selected
@@ -458,6 +592,7 @@ export function Studio({ id }: { id: string }) {
         onSubmit={submit}
         onNewTake={targetVersion ? () => render(target, 'create', {}) : undefined}
         notify={notify}
+        markCount={marksToSend.length}
       />
 
       {brandSection && (
