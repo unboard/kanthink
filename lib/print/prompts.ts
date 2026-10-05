@@ -19,7 +19,7 @@ import {
   type Frame,
 } from './spec'
 
-export type RefRole = 'canvas' | 'logo' | 'asset' | 'inspiration' | 'page' | 'current' | 'marked'
+export type RefRole = 'canvas' | 'logo' | 'asset' | 'inspiration' | 'recreate' | 'page' | 'current' | 'marked'
 
 export interface RefImage {
   role: RefRole
@@ -187,6 +187,97 @@ export function buildCreatePrompt(options: {
     .join('\n')
 }
 
+/**
+ * Brief for rebuilding an existing design on this product.
+ *
+ * The person has a finished piece — theirs, or one they like — and wants it on this
+ * product. Their design wins: its layout, words, imagery, typefaces and colors are kept,
+ * and only what this product's geometry demands changes. What they typed, and the
+ * business details they've chosen to use, are applied on top. No copywriter runs, so
+ * nothing in the original is rewritten unless they ask.
+ */
+/** 0.77 → "3 : 4", near enough for a model to picture. */
+function ratioText(r: number): string {
+  let best = { a: 1, b: 1, err: Infinity }
+  for (let b = 1; b <= 12; b++) {
+    const a = Math.max(1, Math.round(r * b))
+    const err = Math.abs(a / b - r)
+    if (err < best.err - 1e-9) best = { a, b, err }
+  }
+  return `${best.a} : ${best.b}`
+}
+
+export function buildRecreatePrompt(options: {
+  spec: PrintSpec
+  pageIndex: number
+  frame: Frame
+  refs: RefImage[]
+  kit: BrandKit | null
+  brief: PrintBrief
+  userPrompt: string
+  /** The original's width over height, when known. */
+  originalRatio?: number
+}): string {
+  const { spec, pageIndex, frame, refs, kit, brief, userPrompt, originalRatio } = options
+  const page = spec.pages[pageIndex]
+  const hasCanvas = refs[0]?.role === 'canvas'
+  const m = safeMarginsInFrame(spec, frame)
+  // A different shape is where faithful copies go wrong: the model keeps the type size
+  // and the words run off the piece. Say so plainly when the shapes really differ.
+  const target = spec.widthIn / spec.heightIn
+  const reshaped = originalRatio && Math.abs(Math.log(originalRatio / target)) > 0.15 ? (originalRatio > target ? 'wider' : 'taller') : null
+  const original = refs.findIndex((r) => r.role === 'recreate')
+  const name = imageName(original)
+  const note = refs[original]?.note
+  const multi = spec.pages.length > 1
+
+  const d = kit && brief.useDetails ? kit.details : {}
+  const facts = [
+    d.business && `Business name: ${d.business}`,
+    d.tagline && `Tagline: ${d.tagline}`,
+    d.phone && `Phone: ${d.phone}`,
+    d.email && `Email: ${d.email}`,
+    d.website && `Website: ${d.website}`,
+    d.address && `Address: ${d.address}`,
+    d.other && `Other: ${d.other}`,
+  ].filter(Boolean) as string[]
+
+  const others = refs
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.role !== 'canvas' && r.role !== 'recreate')
+    .map(({ r, i }) => {
+      const n = imageName(i)
+      if (r.role === 'logo') return `${n} is the business’s logo. Where the original shows a logo, put this one there instead, exactly as supplied — never redrawn or restyled.`
+      if (r.role === 'asset') return `${n} is a photo or graphic to use${r.note ? ` (${r.note})` : ''}, as it is, where the request or the original’s layout calls for one.`
+      if (r.role === 'inspiration') return `${n} is style reference only${r.note ? ` (${r.note})` : ''}; the original design still leads.`
+      if (r.role === 'page') return `${n} is the ${r.label ?? 'other'} page of this same piece, already made. Keep the two consistent.`
+      return ''
+    })
+    .filter(Boolean)
+
+  return [
+    `Recreate an existing design as ${describeProduct(spec)} for print.${multi ? ` This is the ${page.label.toLowerCase()} (page ${pageIndex + 1} of ${spec.pages.length}).` : ''}`,
+    `${name} is the original design${note ? ` (${note})` : ''}. Reproduce it faithfully: the same layout and hierarchy, every word spelled exactly as it appears, the same imagery, illustrations, icons, typefaces, colors and logo placement. It should read as the same design, not a new one inspired by it.`,
+    multi ? `If the original has more than one side or panel, recreate only the part that belongs on the ${page.label.toLowerCase()}.` : '',
+    reshaped
+      ? `The original is ${reshaped} than this piece (the original is about ${ratioText(originalRatio!)} wide-to-tall; this piece is ${ratioText(target)}), so its layout cannot be copied at the same scale. Rearrange it for this shape: keep every element, but re-wrap each line of text and make the type smaller until every line fits completely inside the safe area — at least ${m.left}% of the image width from the left edge and ${m.right}% from the right. Breaking a headline onto more lines is expected. Crop or rescale photos to suit the new shape rather than cutting them off at the edge.`
+      : `Fit it to this product: rebalance the composition to this sheet's proportions rather than stretching or squashing anything, and move any text or logo that would land outside the safe area inward.`,
+    `Keep the original's background color, texture or photo and run it across the whole piece and into the bleed — don't swap it for plain white unless the original's ground is white. Never drop content to make it fit.`,
+    'Before finishing, check every line of text: no letter may touch or cross the edge of the piece. If one would, set that text smaller.',
+    userPrompt ? `Changes the person asked for (these override the original): ${userPrompt}` : 'Make no other changes.',
+    facts.length
+      ? `Business details to use, word for word, in place of the matching details on the original — same position and style as what they replace. Don't add any the original has no place for unless the request asks:\n${facts.map((f) => `  • ${f}`).join('\n')}`
+      : '',
+    ...others,
+    '',
+    ...printRules(spec, frame, hasCanvas),
+    '',
+    'Type is crisp and sized for print. No placeholder text, no invented phone numbers, addresses, prices or URLs, no fake QR codes or barcodes.',
+  ]
+    .filter((l, i, arr) => l !== '' || (i > 0 && arr[i - 1] !== ''))
+    .join('\n')
+}
+
 /** A change to the whole page, keeping everything not mentioned. */
 export function buildEditPrompt(spec: PrintSpec, frame: Frame, instruction: string, refs: RefImage[]): string {
   const extra = refs.slice(1)
@@ -198,7 +289,9 @@ export function buildEditPrompt(spec: PrintSpec, frame: Frame, instruction: stri
         ? `Image ${i + 2} is the business’s logo, exactly as it must appear.`
         : r.role === 'asset'
           ? `Image ${i + 2} is a supplied photo or graphic${r.note ? ` (${r.note})` : ''}.`
-          : `Image ${i + 2} is for reference${r.note ? ` (${r.note})` : ''}.`,
+          : r.role === 'recreate'
+            ? `Image ${i + 2} is the original design Image 1 was recreated from. Use it to match details — exact words, numbers, imagery — when the change refers to the original.`
+            : `Image ${i + 2} is for reference${r.note ? ` (${r.note})` : ''}.`,
     ),
     '',
     ...printRules(spec, frame, false).slice(1),
@@ -216,7 +309,9 @@ export function buildAreaPrompt(spec: PrintSpec, instruction: string, refs: RefI
     ...extra.map((r, i) =>
       r.role === 'logo'
         ? `Image ${i + 3} is the business’s logo, exactly as it must appear if the change involves it.`
-        : `Image ${i + 3} is a supplied photo or graphic${r.note ? ` (${r.note})` : ''} to use if the change calls for it.`,
+        : r.role === 'recreate'
+          ? `Image ${i + 3} is the original design this page was recreated from, to match details against if the change refers to it.`
+          : `Image ${i + 3} is a supplied photo or graphic${r.note ? ` (${r.note})` : ''} to use if the change calls for it.`,
     ),
   ].join('\n')
 }

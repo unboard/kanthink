@@ -22,6 +22,17 @@ export interface CatalogProduct {
   pageOptions?: number[]
   /** Labels for each page count, when the default ones don't fit. */
   sampleIdeas: string[]
+  /**
+   * Die-line variants of the same product — square or rounded corners, say. The
+   * first is the default and matches `spec.guide`.
+   */
+  shapes?: ProductShape[]
+}
+
+export interface ProductShape {
+  key: string
+  label: string
+  guide: GuideShape
 }
 
 const BLEED = 0.125
@@ -147,6 +158,10 @@ export const CATALOG: CatalogProduct[] = [
     name: 'Door hanger',
     group: 'Die-cut',
     blurb: '4.25 × 11 in · die-cut',
+    shapes: [
+      { key: 'square', label: 'Square corners', guide: { kind: 'doorhanger', holeDiameterIn: 1.5, holeCenterFromTopIn: 1.4, cornerIn: 0 } },
+      { key: 'rounded', label: 'Rounded corners', guide: { kind: 'doorhanger', holeDiameterIn: 1.5, holeCenterFromTopIn: 1.4, cornerIn: 0.5 } },
+    ],
     sampleIdeas: [
       'Door hanger for a window cleaning company: “Your neighbors chose us”',
       'Pest control door hanger with a spring discount',
@@ -154,7 +169,7 @@ export const CATALOG: CatalogProduct[] = [
     spec: {
       id: 'door-hanger', name: 'Door hanger', kind: 'die-cut door hanger',
       widthIn: 4.25, heightIn: 11, bleedIn: BLEED, safeIn: SAFE,
-      guide: { kind: 'doorhanger', holeDiameterIn: 1.5, holeCenterFromTopIn: 1.4, cornerIn: 0.5 },
+      guide: { kind: 'doorhanger', holeDiameterIn: 1.5, holeCenterFromTopIn: 1.4, cornerIn: 0 },
       pages: [
         { label: 'Front', hint: 'Hangs on a doorknob. Logo and headline just below the hole, then the offer and a clear call to action.' },
         { label: 'Back', hint: 'Details, services, and contact information, below the hole.' },
@@ -202,6 +217,12 @@ export const CATALOG: CatalogProduct[] = [
 
 export function catalogProduct(key: string): CatalogProduct | undefined {
   return CATALOG.find((p) => p.key === key)
+}
+
+/** A catalog spec cut to one of its shapes. Unknown keys keep the default. */
+export function specWithShape(spec: PrintSpec, product: CatalogProduct, shapeKey: string | null): PrintSpec {
+  const shape = product.shapes?.find((s) => s.key === shapeKey)
+  return shape ? { ...spec, guide: shape.guide } : spec
 }
 
 /** A catalog spec with a chosen page count. Labels fall back to "Page n". */
@@ -391,7 +412,7 @@ export function guideLabel(guide: GuideShape | undefined): string | null {
   switch (guide.kind) {
     case 'circle': return 'Circle die-cut'
     case 'rounded': return `Rounded corners (${trimNum(guide.radiusIn, 3)} in)`
-    case 'doorhanger': return 'Door hanger die-cut'
+    case 'doorhanger': return `Door hanger die-cut, ${guide.cornerIn > 0 ? 'rounded' : 'square'} corners`
     case 'image': return guide.name ? `Custom guide · ${guide.name}` : 'Custom guide'
   }
 }

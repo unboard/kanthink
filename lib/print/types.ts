@@ -63,6 +63,19 @@ export interface BrandImage {
   note?: string
 }
 
+/**
+ * An image attached to one design, not kept in the brand kit.
+ *
+ * `photo` goes on the page as it is, `inspiration` lends its style, and `recreate`
+ * is a finished design to rebuild faithfully on this product — same layout, words
+ * and look, refitted to this piece's size, bleed, safe area and shape.
+ */
+export type DesignImageRole = 'photo' | 'inspiration' | 'recreate'
+
+export interface DesignImage extends BrandImage {
+  role: DesignImageRole
+}
+
 export interface BrandColor {
   hex: string
   name?: string
@@ -178,6 +191,8 @@ export interface PrintBrief {
   /** BrandImage ids from the brand kit to put in this design. */
   assetIds: string[]
   inspirationIds: string[]
+  /** Images attached to this design only. */
+  images?: DesignImage[]
   modelId?: string
   quality?: RenderQuality
 }

@@ -228,13 +228,8 @@ export function EasyMaker({ initialId }: { initialId: string | null }) {
         window.history.replaceState(null, '', `/print/easy?d=${d.id}`)
       }
       h.setBrief({ prompt, quality: 'print', useLogo: false, useColors: false, useDetails: false })
-      if (photo) {
-        const b = await h.ensureBrand('My pictures')
-        if (b && !b.data.assets.some((a) => a.id === photo.id)) {
-          h.changeBrand({ ...b, data: { ...b.data, assets: [...b.data.assets, { id: photo.id, url: photo.url, note: 'my picture' }] } })
-        }
-        h.setBrief({ assetIds: [photo.id] })
-      }
+      // The picture belongs to this design, not to a brand kit.
+      h.setBrief({ assetIds: [], images: photo ? [{ id: photo.id, url: photo.url, note: 'my picture', role: 'photo' }] : [] })
       const before = d.pages[0].versions.length
       const out = await h.render(0, 'create', { prompt, takes: 2 })
       if (!out.versions.length) throw new Error(out.errors[0] ?? 'It didn’t work.')

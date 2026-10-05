@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'print-recreate-a-design',
+    date: '2026-10-05',
+    kind: 'capability',
+    title: 'Recreate a design on any print product',
+    body: 'In the print studio, Recreate a design takes a finished piece and rebuilds it on the product you picked, with every word kept and everything refitted to its size, bleed and die-cut. Images you add there stay with that design and no longer go into your brand kit. Door hangers now come with square or rounded corners.',
+  },
+  {
     id: 'app-orders-and-payment-check',
     date: '2026-10-03',
     kind: 'capability',

@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatCents } from '@/lib/print/models'
-import { bleedSize, formatSize, guideLabel } from '@/lib/print/spec'
+import { bleedSize, catalogProduct, formatSize, guideLabel } from '@/lib/print/spec'
+import { api } from './api'
 import type { PrintVersion, VersionMode } from '@/lib/print/types'
 import { BrandPanel } from './BrandPanel'
 import { Composer, type BrandSection, type ComposerMode } from './Composer'
@@ -151,6 +152,21 @@ export function Studio({ id }: { id: string }) {
       }),
     }))
 
+  // A product cut more than one way (square or rounded corners) can switch here.
+  const shapes = catalogProduct(spec.id)?.shapes
+  const currentShape = shapes?.find((s) => JSON.stringify(s.guide) === JSON.stringify(spec.guide))?.key ?? ''
+  const changeShape = async (key: string) => {
+    const shape = shapes?.find((s) => s.key === key)
+    if (!shape) return
+    try {
+      await api(`/api/print/designs/${design.id}`, { method: 'PATCH', json: { shape: key } })
+      patch((d) => ({ ...d, spec: { ...d.spec, guide: shape.guide } }))
+      notify(`${shape.label} from the next design on. Pages already drawn keep their old shape — redraw or check them.`)
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Couldn’t change the shape.')
+    }
+  }
+
   const focusedPage = focus !== null ? design.pages[focus] : null
   const focusedVersion = focusedPage?.versions[focusedPage.current] ?? null
   const showInspector = !!focusedVersion && inspectorOpen
@@ -209,7 +225,25 @@ export function Studio({ id }: { id: string }) {
           <div className="text-[12.5px] truncate" style={{ color: 'var(--muted)' }}>
             {spec.name} · {formatSize(spec)}
             {pageCount > 1 ? ` · ${pageCount} pages` : ''}
-            {spec.guide ? ` · ${guideLabel(spec.guide)}` : ''}
+            {spec.guide && !shapes ? ` · ${guideLabel(spec.guide)}` : ''}
+            {shapes && (
+              <>
+                {' · '}
+                <select
+                  value={currentShape}
+                  onChange={(e) => void changeShape(e.target.value)}
+                  className="bg-transparent outline-none cursor-pointer hover:text-[color:var(--ink)]"
+                  aria-label="Die-cut shape"
+                  title="The die line this piece is cut to"
+                >
+                  {shapes.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
         </div>
         <div className="hidden lg:block">
@@ -423,6 +457,7 @@ export function Studio({ id }: { id: string }) {
         onOpenBrand={(s) => setBrandSection(s)}
         onSubmit={submit}
         onNewTake={targetVersion ? () => render(target, 'create', {}) : undefined}
+        notify={notify}
       />
 
       {brandSection && (

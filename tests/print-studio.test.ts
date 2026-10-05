@@ -3,7 +3,7 @@ import { findPrintModel, formatCents } from '../lib/print/models'
 import { buildPrintPdf, jpegComponents } from '../lib/print/pdf'
 import { extractPalette, normalizeHex } from '../lib/print/palette'
 import { checkPlacement, checkSpelling, detectFrame, detectWhiteBorders, distanceField, rasterSampler, samplerFor } from '../lib/print/preflight'
-import { buildCreatePrompt, printRules, wordBudget } from '../lib/print/prompts'
+import { buildCreatePrompt, buildRecreatePrompt, printRules, wordBudget } from '../lib/print/prompts'
 import {
   CATALOG,
   catalogProduct,
@@ -15,6 +15,7 @@ import {
   safeMarginsInFrame,
   safeRect,
   sheetRatio,
+  specWithShape,
   validateSpec,
 } from '../lib/print/spec'
 import { DEFAULT_BRIEF, type PrintSpec } from '../lib/print/types'
@@ -88,6 +89,16 @@ describe('print geometry', () => {
     expect(pieceDistance(circle, 0.125 + 1.5, 0.125 + 1.5)).toBeCloseTo(1.5, 5)
     // A corner of the square trim is outside a circle.
     expect(pieceDistance(circle, 0.2, 0.2)).toBeLessThan(0)
+  })
+
+  it('cuts door hangers square by default, rounded on request', () => {
+    const product = catalogProduct('door-hanger')!
+    // Square: the very corner of the trim is still on the piece.
+    expect(pieceDistance(doorHanger, 0.125 + 0.01, 0.125 + 0.01)).toBeGreaterThan(0)
+    const rounded = specWithShape(doorHanger, product, 'rounded')
+    expect(pieceDistance(rounded, 0.125 + 0.01, 0.125 + 0.01)).toBeLessThan(0)
+    expect(specWithShape(doorHanger, product, 'nope')).toBe(doorHanger)
+    expect(product.shapes![0].guide).toEqual(doorHanger.guide)
   })
 
   it('validates specs from clients', () => {
@@ -203,6 +214,26 @@ describe('prompts', () => {
     })
     expect(prompt).toContain('Image 2 is the business’s logo')
     expect(prompt).toContain('Headline: Bake sale Saturday')
+  })
+
+  it('recreates a design faithfully, fitted to the product, with the request and details on top', () => {
+    const frame = planFrame(doorHanger, 'google', 'print')
+    const prompt = buildRecreatePrompt({
+      spec: doorHanger,
+      pageIndex: 0,
+      frame,
+      refs: [{ role: 'canvas', url: '' }, { role: 'recreate', url: 'x' }, { role: 'logo', url: 'y' }],
+      kit: { colors: [], details: { phone: '701-363-5959' }, assets: [], inspiration: [] },
+      brief: DEFAULT_BRIEF,
+      userPrompt: 'make the offer 20% off',
+    })
+    expect(prompt).toContain('Image 2 is the original design')
+    expect(prompt).toContain('every word spelled exactly')
+    expect(prompt).toContain('make the offer 20% off')
+    expect(prompt).toContain('Phone: 701-363-5959')
+    expect(prompt).toContain('Image 3 is the business’s logo')
+    // The die-cut rules still apply, hole and all.
+    expect(prompt).toContain('doorknob')
   })
 
   it('gives small pieces small word budgets', () => {

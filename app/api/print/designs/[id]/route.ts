@@ -3,8 +3,9 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { printDesigns } from '@/lib/db/schema'
 import { isOwnImageUrl } from '@/lib/print/server/images'
+import { catalogProduct } from '@/lib/print/spec'
 import { getDesign, now, printUser } from '@/lib/print/server/store'
-import type { ChatMessage, PrintBrief, PrintPage } from '@/lib/print/types'
+import type { ChatMessage, DesignImage, DesignImageRole, PrintBrief, PrintPage } from '@/lib/print/types'
 
 /**
  * GET → the design. PATCH { name?, pages?, brief?, brandId? } → save. DELETE → gone.
@@ -44,6 +45,23 @@ function cleanPages(input: unknown, count: number): PrintPage[] | null {
   return pages
 }
 
+const IMAGE_ROLES: DesignImageRole[] = ['photo', 'inspiration', 'recreate']
+
+function cleanImages(input: unknown): DesignImage[] {
+  if (!Array.isArray(input)) return []
+  return input
+    .filter((i): i is DesignImage => !!i && typeof i === 'object' && typeof i.id === 'string' && typeof i.url === 'string' && isOwnImageUrl(i.url))
+    .slice(0, 12)
+    .map((i) => ({
+      id: i.id.slice(0, 40),
+      url: i.url,
+      width: Number(i.width) || undefined,
+      height: Number(i.height) || undefined,
+      note: typeof i.note === 'string' ? i.note.slice(0, 300) || undefined : undefined,
+      role: IMAGE_ROLES.find((r) => r === i.role) ?? 'photo',
+    }))
+}
+
 function cleanBrief(input: unknown): PrintBrief | null {
   if (!input || typeof input !== 'object') return null
   const b = input as Partial<PrintBrief>
@@ -55,6 +73,7 @@ function cleanBrief(input: unknown): PrintBrief | null {
     useDetails: b.useDetails !== false,
     assetIds: ids(b.assetIds),
     inspirationIds: ids(b.inspirationIds),
+    images: cleanImages(b.images),
     modelId: typeof b.modelId === 'string' ? b.modelId.slice(0, 80) : undefined,
     quality: b.quality === 'draft' ? 'draft' : 'print',
   }
@@ -92,6 +111,12 @@ export async function PATCH(request: Request, { params }: Params) {
   if (body.brief !== undefined) {
     const brief = cleanBrief(body.brief)
     if (brief) set.brief = JSON.stringify(brief)
+  }
+  // A catalog product's other die line: square or rounded corners, say.
+  if (typeof body.shape === 'string') {
+    const shape = catalogProduct(design.spec.id)?.shapes?.find((s) => s.key === body.shape)
+    if (!shape) return NextResponse.json({ error: 'That shape isn’t offered for this product.' }, { status: 400 })
+    set.spec = JSON.stringify({ ...design.spec, guide: shape.guide })
   }
   if (Array.isArray(body.chat)) set.chat = JSON.stringify(cleanChat(body.chat))
   if (body.pages !== undefined) {

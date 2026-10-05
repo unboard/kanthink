@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { CATALOG, formatLength, formatSize, fromUnit, guideLabel, specWithPageCount, toUnit, type CatalogProduct } from '@/lib/print/spec'
+import { CATALOG, formatLength, formatSize, fromUnit, guideLabel, specWithPageCount, specWithShape, toUnit, type CatalogProduct } from '@/lib/print/spec'
 import type { GuideShape, PrintBrand, PrintPreset, PrintSpec, Unit } from '@/lib/print/types'
 import { api, uploadImage } from './api'
 import { ProductGlyph } from './ui'
@@ -80,6 +80,7 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploadingGuide, setUploadingGuide] = useState(false)
+  const [shape, setShape] = useState<string | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -90,11 +91,12 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
   const spec: PrintSpec | null = useMemo(() => {
     if (choice.kind === 'product') {
       const opts = choice.product.pageOptions
-      return opts ? specWithPageCount(choice.product.spec, pages) : choice.product.spec
+      const base = opts ? specWithPageCount(choice.product.spec, pages) : choice.product.spec
+      return specWithShape(base, choice.product, shape)
     }
     if (choice.kind === 'preset') return choice.preset.spec
     return customSpec(custom)
-  }, [choice, pages, custom])
+  }, [choice, pages, custom, shape])
 
   const groups = useMemo(() => {
     const map = new Map<string, CatalogProduct[]>()
@@ -105,7 +107,10 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
   const pick = (c: Choice) => {
     setChoice(c)
     setError(null)
-    if (c.kind === 'product') setPages(c.product.spec.pages.length)
+    if (c.kind === 'product') {
+      setPages(c.product.spec.pages.length)
+      setShape(c.product.shapes?.[0]?.key ?? null)
+    }
   }
 
   const create = async () => {
@@ -386,6 +391,23 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
                             {n === 1 ? 'Front only' : n === 2 ? 'Front and back' : `${n} pages`}
                           </button>
                         ))}
+                      </div>
+                    </div>
+                  )}
+                  {choice.kind === 'product' && choice.product.shapes && (
+                    <div className="mt-4">
+                      <span className="block text-[12px] mb-1.5" style={{ color: 'var(--muted)' }}>
+                        Shape
+                      </span>
+                      <div className="inline-flex rounded-full border p-0.5 text-[13px]" style={{ borderColor: 'var(--line)' }}>
+                        {choice.product.shapes.map((s, i) => {
+                          const on = (shape ?? choice.product.shapes![0].key) === s.key || (!choice.product.shapes!.some((x) => x.key === shape) && i === 0)
+                          return (
+                            <button key={s.key} type="button" onClick={() => setShape(s.key)} className="px-3 h-7 rounded-full" style={{ background: on ? 'var(--raise)' : 'transparent', color: on ? 'var(--ink)' : 'var(--muted)' }}>
+                              {s.label}
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
                   )}

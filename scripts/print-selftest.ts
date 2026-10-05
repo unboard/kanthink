@@ -3,6 +3,7 @@
  *
  *   npx tsx scripts/print-selftest.ts create [productKey] [modelId]   — brand + copy + first page + preflight
  *   npx tsx scripts/print-selftest.ts chain [productKey] [modelId] [print|draft] — front, back, retext, edit, fix, sharpen
+ *   npx tsx scripts/print-selftest.ts recreate [productKey] [imagePathOrUrl] [modelId] — rebuild a finished design (default: a fresh flyer) on this product
  *   npx tsx scripts/print-selftest.ts area <pageUrl> <rawUrl> [productKey] — paint the lower third and change it
  *
  * Runs as the ADMIN_EMAIL account. Writes images to the directory in PRINT_OUT (or
@@ -82,6 +83,29 @@ async function main() {
     const t2 = Date.now()
     const check = await preflight(userId, design, version, brand.data)
     console.log('preflight in', Date.now() - t2, 'ms', JSON.stringify({ ok: check.ok, dpi: check.dpi, issues: check.issues, n: check.elements.length }, null, 1))
+    return
+  }
+
+  if (cmd === 'recreate') {
+    // A finished design (an image file or URL, or a fresh flyer) rebuilt on this product.
+    const [from, , modelId] = args.slice(1)
+    let source: Buffer
+    if (from) source = from.startsWith('http') ? Buffer.from(await (await fetch(from)).arrayBuffer()) : readFileSync(from)
+    else {
+      const flyerProduct = catalogProduct('flyer-letter')!
+      const flyerDesign = { ...design, spec: flyerProduct.spec, pages: flyerProduct.spec.pages.map((p, i) => ({ id: `f${i}`, label: p.label, versions: [], current: 0 })) }
+      const { version } = await render({ userId, design: flyerDesign, brand, pageIndex: 0, mode: 'create', modelId, quality: 'draft' })
+      console.log('original saved', await save(version.url, 'recreate-original.jpg'))
+      source = Buffer.from(await (await fetch(version.url)).arrayBuffer())
+    }
+    const original = await ingestImage(userId, source, 'inspiration')
+    const recreating = { ...design, brief: { ...design.brief, prompt: '', images: [{ id: 'orig', url: original.url, width: original.width, height: original.height, role: 'recreate' as const }] } }
+    const t = Date.now()
+    const { version, cents } = await render({ userId, design: recreating, brand, pageIndex: 0, mode: 'create', modelId, quality: 'draft' })
+    console.log('recreated in', Date.now() - t, 'ms', cents, '¢', 'copywriter ran:', !!version.copy)
+    console.log('saved', await save(version.url, `recreate-${key}.jpg`))
+    const check = await preflight(userId, recreating, version, brand.data)
+    console.log('preflight', JSON.stringify({ ok: check.ok, issues: check.issues.map((i) => `[${i.severity}] ${i.message}`) }, null, 1))
     return
   }
 

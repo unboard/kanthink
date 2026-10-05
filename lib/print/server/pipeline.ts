@@ -8,6 +8,7 @@ import {
   buildAreaPrompt,
   buildCopyPrompt,
   buildCreatePrompt,
+  buildRecreatePrompt,
   buildEditPrompt,
   buildFixPrompt,
   buildRetextPrompt,
@@ -114,13 +115,33 @@ function selectedImages(kit: BrandKit | null, ids: string[], pool: 'assets' | 'i
   return kit[pool].filter((a) => want.has(a.id)).slice(0, max)
 }
 
+/** The design to rebuild on this product, if one is attached: the latest. */
+function recreateImage(brief: PrintDesign['brief']) {
+  return [...(brief.images ?? [])].reverse().find((i) => i.role === 'recreate') ?? null
+}
+
+/** The original's shape, from the upload's size or, failing that, the image itself. */
+async function originalRatio(brief: PrintDesign['brief']): Promise<number | undefined> {
+  const img = recreateImage(brief)
+  if (!img) return undefined
+  if (img.width && img.height) return img.width / img.height
+  const dims = await dimensions(await fetchOwnImage(img.url)).catch(() => null)
+  return dims ? dims.width / dims.height : undefined
+}
+
 /** References for a page: logo, chosen photos, inspiration, and the pages already designed. */
 function referencesFor(design: PrintDesign, kit: BrandKit | null, pageIndex: number): RefImage[] {
   const refs: RefImage[] = []
   const brief = design.brief
+  const own = brief.images ?? []
+  // The design to recreate goes first, so it is the image the brief leans on most.
+  const original = recreateImage(brief)
+  if (original) refs.push({ role: 'recreate', url: original.url, note: original.note })
   if (kit?.logo && brief.useLogo) refs.push({ role: 'logo', url: kit.logo.url })
-  for (const a of selectedImages(kit, brief.assetIds, 'assets', 5)) refs.push({ role: 'asset', url: a.url, note: a.note })
-  for (const a of selectedImages(kit, brief.inspirationIds, 'inspiration', 2)) refs.push({ role: 'inspiration', url: a.url, note: a.note })
+  const photos = [...own.filter((i) => i.role === 'photo'), ...selectedImages(kit, brief.assetIds, 'assets', 5)].slice(0, 5)
+  for (const a of photos) refs.push({ role: 'asset', url: a.url, note: a.note })
+  const inspo = [...own.filter((i) => i.role === 'inspiration'), ...selectedImages(kit, brief.inspirationIds, 'inspiration', 2)].slice(0, original ? 1 : 2)
+  for (const a of inspo) refs.push({ role: 'inspiration', url: a.url, note: a.note })
 
   // The designed pages nearest this one set the family look. Two at most: more just
   // dilutes the instruction about which page is being drawn.
@@ -242,8 +263,10 @@ async function create(
   const canvas = useCanvas ? await renderCanvas(spec, frame) : undefined
   const refs: RefImage[] = [...(useCanvas ? [{ role: 'canvas' as const, url: '' }] : []), ...referencesFor(design, kit, pageIndex)]
 
+  // Recreating keeps the original's words, so no copywriter runs.
+  const recreating = !!recreateImage(design.brief) && !req.copy
   let copy = req.copy
-  if (!copy) {
+  if (!copy && !recreating) {
     const otherCopy = design.pages
       .map((p, i) => ({ label: spec.pages[i]?.label ?? `Page ${i + 1}`, copy: p.versions[p.current]?.copy, i }))
       .filter((o): o is { label: string; copy: PageCopy; i: number } => o.i !== pageIndex && !!o.copy)
@@ -251,7 +274,9 @@ async function create(
     copy = (await writeCopy(userId, keys, buildCopyPrompt({ spec, pageIndex, userPrompt, kit, brief: design.brief, otherCopy, assetNotes }))) ?? undefined
   }
 
-  const prompt = buildCreatePrompt({ spec, pageIndex, frame, refs, kit, brief: design.brief, userPrompt, copy })
+  const prompt = recreating
+    ? buildRecreatePrompt({ spec, pageIndex, frame, refs, kit, brief: design.brief, userPrompt, originalRatio: await originalRatio(design.brief) })
+    : buildCreatePrompt({ spec, pageIndex, frame, refs, kit, brief: design.brief, userPrompt, copy })
   const images = await loadImages(refs, canvas)
   const drawn = await draw({ model, apiKey, prompt, images, frame, quality })
   const stored = await keep(userId, design, drawn.image)
@@ -304,7 +329,11 @@ async function edit(
   const extras: RefImage[] = []
   if ((mode === 'edit' || mode === 'area') && kit?.logo && design.brief.useLogo) extras.push({ role: 'logo', url: kit.logo.url })
   if (mode === 'edit' || mode === 'area') {
-    for (const a of selectedImages(kit, design.brief.assetIds, 'assets', 3)) extras.push({ role: 'asset', url: a.url, note: a.note })
+    const photos = [...(design.brief.images ?? []).filter((i) => i.role === 'photo'), ...selectedImages(kit, design.brief.assetIds, 'assets', 3)].slice(0, 3)
+    for (const a of photos) extras.push({ role: 'asset', url: a.url, note: a.note })
+    // A recreated page is checked against its original: "match the original's phone number".
+    const original = recreateImage(design.brief)
+    if (original) extras.push({ role: 'recreate', url: original.url, note: original.note })
   }
 
   let images: InputImage[] = [{ data: prep.input }]

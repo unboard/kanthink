@@ -3,8 +3,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { findPrintModel, formatCents } from '@/lib/print/models'
 import { planFrame } from '@/lib/print/spec'
-import type { PrintBrand, PrintBrief, PrintSpec, RenderQuality } from '@/lib/print/types'
-import { thumb } from './api'
+import type { DesignImage, DesignImageRole, PrintBrand, PrintBrief, PrintSpec, RenderQuality } from '@/lib/print/types'
+import { shortId, thumb, uploadImage } from './api'
+
+const ROLE_LABEL: Record<DesignImageRole, string> = {
+  recreate: 'Recreate this',
+  photo: 'Use as a photo',
+  inspiration: 'Inspiration',
+}
+
+const ROLE_HINT: Record<DesignImageRole, string> = {
+  recreate: 'Rebuild this design on this product, fitted to its size, bleed and shape',
+  photo: 'Place it on the design as it is',
+  inspiration: 'Borrow its style, not its content',
+}
 
 export interface ModelInfo {
   id: string
@@ -31,6 +43,7 @@ interface ComposerProps {
   onOpenBrand: (section: BrandSection) => void
   onSubmit: (prompt: string, takes: number) => void
   onNewTake?: () => void
+  notify?: (message: string) => void
 }
 
 function Chip({
@@ -80,12 +93,54 @@ function Check({ on }: { on: boolean }) {
 }
 
 export function Composer(props: ComposerProps) {
-  const { spec, brief, brand, models, mode, pageLabel, isFirstPage, busy, onBrief, onOpenBrand, onSubmit, onNewTake } = props
+  const { spec, brief, brand, models, mode, pageLabel, isFirstPage, busy, onBrief, onOpenBrand, onSubmit, onNewTake, notify } = props
   const [text, setText] = useState(mode === 'create' && isFirstPage ? brief.prompt ?? '' : '')
   const [takes, setTakes] = useState(1)
   const [modelOpen, setModelOpen] = useState(false)
   const area = useRef<HTMLTextAreaElement>(null)
   const kit = brand?.data
+  const images = brief.images ?? []
+  const recreating = images.some((i) => i.role === 'recreate')
+  const [uploading, setUploading] = useState(false)
+  const fileRole = useRef<DesignImageRole>('photo')
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  // Images attached here belong to this design only; the brand kit is untouched.
+  const pick = (role: DesignImageRole) => {
+    fileRole.current = role
+    fileInput.current?.click()
+  }
+
+  const attach = async (files: File[]) => {
+    const role = fileRole.current
+    setUploading(true)
+    try {
+      const added: DesignImage[] = []
+      for (const file of role === 'recreate' ? files.slice(0, 1) : files) {
+        try {
+          const up = await uploadImage(file, role === 'photo' ? 'asset' : 'inspiration')
+          added.push({ id: shortId(), url: up.url, width: up.width, height: up.height, role })
+        } catch (err) {
+          notify?.(err instanceof Error ? err.message : 'That image didn’t upload.')
+        }
+      }
+      if (!added.length) return
+      // One design to recreate at a time: a new one demotes the last to inspiration.
+      const kept = role === 'recreate' ? images.map((i) => (i.role === 'recreate' ? { ...i, role: 'inspiration' as const } : i)) : images
+      onBrief({ images: [...kept, ...added] })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const setRole = (id: string, role: DesignImageRole) =>
+    onBrief({
+      images: images.map((i) =>
+        i.id === id ? { ...i, role } : role === 'recreate' && i.role === 'recreate' ? { ...i, role: 'inspiration' as const } : i,
+      ),
+    })
+
+  const removeImage = (id: string) => onBrief({ images: images.filter((i) => i.id !== id) })
 
   // Switching what the composer acts on clears what was typed for the last thing.
   useEffect(() => {
@@ -108,19 +163,27 @@ export function Composer(props: ComposerProps) {
   const each = model && frame ? model.cents(frame, quality) : 0
   const count = mode === 'create' ? takes : 1
 
-  const canSubmit = !busy && (mode === 'create' ? isFirstPage ? text.trim().length > 0 : true : text.trim().length > 0)
+  const canSubmit = !busy && !uploading && (mode === 'create' ? (isFirstPage && !recreating ? text.trim().length > 0 : true) : text.trim().length > 0)
 
   const placeholder =
     mode === 'area'
       ? 'What should change in the painted area?'
       : mode === 'edit'
         ? `Ask for a change to the ${pageLabel.toLowerCase()} — “make the headline bigger”, “warmer colors”`
-        : isFirstPage
+        : recreating
+          ? `Anything to change as it moves onto the ${spec.name.toLowerCase()}? Optional`
+          : isFirstPage
           ? `Describe your ${spec.name.toLowerCase()}: who it’s for, the offer, the feel`
           : `What goes on the ${pageLabel.toLowerCase()}? Leave it blank to carry on from the design so far`
 
   const action =
-    mode === 'area' ? 'Change area' : mode === 'edit' ? 'Apply change' : count > 1 ? `Design ${count} takes` : `Design the ${pageLabel.toLowerCase()}`
+    mode === 'area'
+      ? 'Change area'
+      : mode === 'edit'
+        ? 'Apply change'
+        : recreating
+          ? count > 1 ? `Recreate ${count} takes` : `Recreate on the ${pageLabel.toLowerCase()}`
+          : count > 1 ? `Design ${count} takes` : `Design the ${pageLabel.toLowerCase()}`
 
   const submit = () => {
     if (!canSubmit) return
@@ -175,13 +238,74 @@ export function Composer(props: ComposerProps) {
           ) : (
             <Chip muted onClick={() => onOpenBrand('details')}>+ Contact details</Chip>
           )}
-          <Chip on={assetsOn > 0} muted={assetsOn === 0} onClick={() => onOpenBrand('assets')} title="Photos and graphics to place on the design">
-            {assetsOn > 0 ? `${assetsOn} photo${assetsOn === 1 ? '' : 's'}` : '+ Photos'}
+          {!!kit?.assets.length && (
+            <Chip on={assetsOn > 0} muted={assetsOn === 0} onClick={() => onOpenBrand('assets')} title="Photos saved in your brand kit">
+              {assetsOn > 0 ? `${assetsOn} brand photo${assetsOn === 1 ? '' : 's'}` : 'Brand photos'}
+            </Chip>
+          )}
+          {!!kit?.inspiration.length && (
+            <Chip on={inspoOn > 0} muted={inspoOn === 0} onClick={() => onOpenBrand('inspiration')} title="Inspiration saved in your brand kit">
+              {inspoOn > 0 ? `${inspoOn} brand inspiration` : 'Brand inspiration'}
+            </Chip>
+          )}
+          <Chip muted onClick={() => pick('photo')} title="A photo or graphic for this design only. It isn’t saved to your brand.">
+            {uploading ? 'Uploading…' : '+ Image'}
           </Chip>
-          <Chip on={inspoOn > 0} muted={inspoOn === 0} onClick={() => onOpenBrand('inspiration')} title="Designs you like, for style">
-            {inspoOn > 0 ? `${inspoOn} inspiration` : '+ Inspiration'}
+          <Chip muted={!recreating} on={recreating} onClick={() => pick('recreate')} title="Upload a finished design and rebuild it on this product">
+            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.4}>
+              <path d="M13 6.5A5 5 0 0 0 3.6 4.4M3 9.5a5 5 0 0 0 9.4 2.1" />
+              <path d="M3.2 1.8v2.8H6M12.8 14.2v-2.8H10" />
+            </svg>
+            Recreate a design
           </Chip>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? [])
+              e.target.value = ''
+              if (files.length) void attach(files)
+            }}
+          />
         </div>
+
+        {/* Images attached to this design */}
+        {images.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto print-scroll pb-2 -mx-1 px-1">
+            {images.map((img) => (
+              <div
+                key={img.id}
+                className="shrink-0 flex items-center gap-2 rounded-xl border p-1 pr-1.5"
+                style={{ borderColor: img.role === 'recreate' ? 'var(--magenta)' : 'var(--line)', background: 'var(--chrome-2)' }}
+                title={ROLE_HINT[img.role]}
+              >
+                <span className="checker w-10 h-10 rounded-lg overflow-hidden inline-flex items-center justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={thumb(img.url, 120)} alt="" className="max-w-full max-h-full object-contain" />
+                </span>
+                <select
+                  value={img.role}
+                  onChange={(e) => setRole(img.id, e.target.value as DesignImageRole)}
+                  className="bg-transparent text-[12.5px] outline-none"
+                  style={{ color: 'var(--ink-2)' }}
+                  aria-label="How to use this image"
+                >
+                  {(Object.keys(ROLE_LABEL) as DesignImageRole[]).map((r) => (
+                    <option key={r} value={r}>
+                      {ROLE_LABEL[r]}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => removeImage(img.id)} className="w-6 h-6 rounded text-[14px]" style={{ color: 'var(--muted)' }} aria-label="Remove image">
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* The ask */}
         <div

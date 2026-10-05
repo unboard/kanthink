@@ -394,9 +394,11 @@ export function ChatStudio({ initialId }: { initialId: string | null }) {
       if (kind === 'logo') {
         await updateKit('My brand', (k) => ({ ...k, logo: image, colors: k.colors.length ? k.colors : (up.palette ?? []).slice(0, 4).map((hex) => ({ hex })) }))
         if (designRef.current) h.setBrief({ useLogo: true })
+      } else if (designRef.current) {
+        // A photo is for this design; it isn't filed in the brand kit.
+        h.setBrief({ images: [...(designRef.current.brief.images ?? []), { ...image, role: 'photo' }] })
       } else {
         await updateKit('My brand', (k) => ({ ...k, assets: [...k.assets, image] }))
-        if (designRef.current) h.setBrief({ assetIds: [...(designRef.current.brief.assetIds ?? []), image.id] })
       }
       setWorking(null)
       const msg: ChatMessage = {
