@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid'
 import { resolveProviderKeys, type ProviderKeys } from '@/lib/ai/keys'
 import { recordUsage } from '@/lib/usage'
 import { DEFAULT_PRINT_MODEL, PRINT_MODELS, findPrintModel, type PrintModel } from '../models'
-import { checkPlacement, checkSpelling, detectFrame, detectWhiteBorders, distanceField, rasterSampler, samplerFor } from '../preflight'
+import { checkPlacement, checkSpelling, detectFrame, detectWhiteBorders, distanceField, rasterSampler, samplerFor, type FrameBands } from '../preflight'
 import {
   buildAreaPrompt,
   buildCopyPrompt,
@@ -16,7 +16,7 @@ import {
   printedWords,
   type RefImage,
 } from '../prompts'
-import { centerCrop, effectiveDpi, planFrame, sheetRatio, type Frame } from '../spec'
+import { bleedSize, centerCrop, effectiveDpi, planFrame, sheetRatio, type Frame } from '../spec'
 import type {
   BrandKit,
   PageCopy,
@@ -160,29 +160,42 @@ async function loadImages(refs: RefImage[], canvas?: Buffer): Promise<InputImage
   )
 }
 
-/** The color of a plain frame drawn around a page, or null when it bleeds properly. */
-async function frameColor(spec: PrintSpec, page: Buffer): Promise<[number, number, number] | null> {
+/** A plain frame drawn around a page — its color and depth on each edge — or null when it bleeds properly. */
+async function frameOf(spec: PrintSpec, page: Buffer): Promise<{ color: [number, number, number]; bands: FrameBands } | null> {
   if (spec.guide) return null
   const px = await pagePixels(page)
-  return detectFrame(spec, px.data, px.width, px.height, 3).color
+  const found = detectFrame(spec, px.data, px.width, px.height, 3)
+  return found.color && found.bands ? { color: found.color, bands: found.bands } : null
 }
 
 /**
- * The page with a drawn frame trimmed off and the art scaled back out to the sheet,
- * or null when trimming would eat the design (its ground really is that color).
+ * The page with a drawn frame removed, or null when removing it would eat the design.
+ *
+ * Only the framed edges are cut. A band no deeper than the bleed is rebuilt from the
+ * art's own edge pixels, so nothing moves or grows; that part is trimmed off anyway.
+ * A deeper band means the art really was drawn small, and it is scaled back out — but
+ * only by the depth of the band. Trimming every side to the content's bounding box
+ * (which `sharp.trim` does) zoomed a white-ground design on every pass and walked its
+ * words off the sheet.
  */
-async function trimFrame(page: Buffer, color: [number, number, number]): Promise<Buffer | null> {
+async function trimFrame(page: Buffer, spec: PrintSpec, bands: FrameBands): Promise<Buffer | null> {
   const { width, height } = await dimensions(page)
-  const { data, info } = await sharp(page)
-    .trim({ background: { r: color[0], g: color[1], b: color[2] }, threshold: 34 })
-    .toBuffer({ resolveWithObject: true })
-  if (info.width < width * 0.82 || info.height < height * 0.82) return null
-  if (info.width >= width - 2 && info.height >= height - 2) return null
-  // A hair more than the frame, so anti-aliased frame edges and drawn trim marks go too.
-  const inset = Math.round(Math.min(info.width, info.height) * 0.004)
-  const inner = await sharp(data)
-    .extract({ left: inset, top: inset, width: info.width - 2 * inset, height: info.height - 2 * inset })
-    .toBuffer()
+  // A hair more than the band, so anti-aliased frame edges and drawn trim marks go too.
+  const hair = Math.round(Math.min(width, height) * 0.004)
+  const cut = (f: number, size: number) => (f > 0 ? Math.min(Math.round(size / 2) - 1, Math.ceil(f * size) + hair) : 0)
+  const c = { top: cut(bands.top, height), bottom: cut(bands.bottom, height), left: cut(bands.left, width), right: cut(bands.right, width) }
+  const innerW = width - c.left - c.right
+  const innerH = height - c.top - c.bottom
+  if (innerW === width && innerH === height) return null
+  if (innerW < width * 0.82 || innerH < height * 0.82) return null
+  const inner = await sharp(page).extract({ left: c.left, top: c.top, width: innerW, height: innerH }).toBuffer()
+
+  const sheet = bleedSize(spec)
+  const bleedX = (spec.bleedIn / sheet.w) * width * 1.3
+  const bleedY = (spec.bleedIn / sheet.h) * height * 1.3
+  if (Math.max(c.left, c.right) <= bleedX && Math.max(c.top, c.bottom) <= bleedY) {
+    return sharp(inner).extend({ ...c, extendWith: 'copy' }).toBuffer()
+  }
   return sharp(inner).resize(width, height, { fit: 'cover', position: 'centre' }).toBuffer()
 }
 
@@ -197,9 +210,9 @@ async function keep(userId: string, design: PrintDesign, raw: Buffer, opts: { en
   let rawJpeg = await printJpeg(raw)
   if (opts.enforceBleed !== false) {
     const sheet = await cropToSheet(rawJpeg, design.spec)
-    const color = await frameColor(design.spec, sheet.buffer)
-    if (color) {
-      const filled = await trimFrame(sheet.buffer, color)
+    const frame = await frameOf(design.spec, sheet.buffer)
+    if (frame) {
+      const filled = await trimFrame(sheet.buffer, design.spec, frame.bands)
       if (filled) rawJpeg = await printJpeg(filled)
     }
   }
@@ -399,8 +412,8 @@ async function fillToEdges(req: RenderRequest): Promise<RenderResult> {
   if (!source) throw new RenderError('Pick a version to fill.')
   const page = await fetchOwnImage(source.url)
   const { width, height } = await dimensions(page)
-  const color = await frameColor(req.design.spec, page)
-  const filled = color ? await trimFrame(page, color) : null
+  const frame = await frameOf(req.design.spec, page)
+  const filled = frame ? await trimFrame(page, req.design.spec, frame.bands) : null
   if (!filled) throw new RenderError('There’s no frame to remove here — that color is part of the design. Use Fix instead.', 422)
   const jpeg = await printJpeg(filled)
   const stored = await storeImage(jpeg, userId, 'pages')

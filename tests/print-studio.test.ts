@@ -179,6 +179,26 @@ describe('preflight', () => {
     expect(color).toEqual([246, 232, 170])
   })
 
+  it('measures only the framed edge on a white-ground design, so a trim never zooms it', () => {
+    // White ground everywhere, dark art in the middle, and a white strip under a dark
+    // band along the bottom: only the bottom is a frame. Trimming the other three sides
+    // to the art's bounding box is what walked a yard sign's words off the sheet.
+    const w = 200
+    const h = 100
+    const px = new Uint8Array(w * h * 3).fill(255)
+    const paint = (x0: number, y0: number, x1: number, y1: number, v: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) px.fill(v, (y * w + x) * 3, (y * w + x) * 3 + 3)
+    }
+    paint(0, 80, w, 95, 40) // a dark band running edge to edge
+    paint(60, 20, 140, 60, 40) // the art
+    const { bands } = detectFrame(flyer, px, w, h, 3)
+    expect(bands).toBeDefined()
+    expect(bands!.bottom).toBeCloseTo(0.05, 2)
+    expect(bands!.top).toBe(0)
+    expect(bands!.left).toBe(0)
+    expect(bands!.right).toBe(0)
+  })
+
   it('spots near-miss spellings and wrong phone numbers only', () => {
     const planned = ['Hearth Bakehouse Grand Opening', '(614) 555-0148']
     const issues = checkSpelling(['Hearth Bakehose Grand Opening', 'Call (614) 555-0184', 'Fresh bread'], planned)

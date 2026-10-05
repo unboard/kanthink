@@ -201,6 +201,14 @@ function isNearWhite(r: number, g: number, b: number): boolean {
   return min > 232 && max - min < 18
 }
 
+/** Depth of a drawn frame on each edge, as a fraction of that axis. Zero is no frame. */
+export interface FrameBands {
+  top: number
+  bottom: number
+  left: number
+  right: number
+}
+
 /**
  * Flag an edge framed by a plain band — white, cream, or any flat color — that the
  * design just inside it does not continue. That is the "picture in a frame" failure
@@ -217,7 +225,7 @@ export function detectFrame(
   w: number,
   h: number,
   channels: number,
-): { issues: PreflightIssue[]; color: [number, number, number] | null } {
+): { issues: PreflightIssue[]; color: [number, number, number] | null; bands?: FrameBands } {
   if (spec.guide) return { issues: [], color: null }
   const sheet = bleedSize(spec)
   const bandX = Math.max(2, Math.round(Math.max(spec.bleedIn / sheet.w, 0.012) * w))
@@ -276,8 +284,22 @@ export function detectFrame(
         : `the ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]} edges`
   const color = framed[0].color
   const kind = isNearWhite(...color) ? 'white border' : 'plain border'
+  // How deep each framed band runs, so a trim cuts those edges and no others.
+  const bands: FrameBands = { top: 0, bottom: 0, left: 0, right: 0 }
+  const rowShare = (y: number, c: [number, number, number]) => share([0, y, w, y + 1], c, 36)
+  const colShare = (x: number, c: [number, number, number]) => share([x, 0, x + 1, h], c, 36)
+  for (const side of framed) {
+    const c = side.color
+    let n = 0
+    if (side.name === 'top') while (n < h / 2 && rowShare(n, c) >= 0.86) n++
+    if (side.name === 'bottom') while (n < h / 2 && rowShare(h - 1 - n, c) >= 0.86) n++
+    if (side.name === 'left') while (n < w / 2 && colShare(n, c) >= 0.86) n++
+    if (side.name === 'right') while (n < w / 2 && colShare(w - 1 - n, c) >= 0.86) n++
+    bands[side.name as keyof FrameBands] = n / (side.name === 'top' || side.name === 'bottom' ? h : w)
+  }
   return {
     color,
+    bands,
     issues: [
       {
         id: `border-${names.join('-')}`,
