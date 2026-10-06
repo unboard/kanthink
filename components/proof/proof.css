@@ -1,68 +1,278 @@
 /*
- * The shared order page. Light and calm: it's read by a customer who just paid for
- * something and wants to know it's right. The printer's brand colour is the accent;
- * proofing marks keep their usual meanings (cyan safe line, magenta markup).
+ * The shared order page: a proofing light table.
+ *
+ * The artwork sits on a cool, faintly dotted surface with real paper depth; the
+ * controls float over it in frosted glass and get out of the way. One colour means
+ * "this needs you": process magenta, the colour printers already mark proofs with.
+ * The printer's own brand colour is the primary button and nothing else.
  */
 
 .proof {
-  --bg: #f4f3ef;
+  --table: #e4e7ea;
+  --table-dot: rgba(20, 24, 29, 0.07);
+  --ink: #14181d;
+  --ink-2: #4a525c;
+  --muted: #7c858f;
+  --line: rgba(20, 24, 29, 0.1);
+  --raise: #eef0f2;
+  --glass: rgba(255, 255, 255, 0.86);
   --card: #ffffff;
-  --ink: #16181b;
-  --ink-2: #464b52;
-  --muted: #7a8088;
-  --line: #e4e1da;
-  --raise: #efede8;
   --chrome: #ffffff;
   --chrome-2: #ffffff;
   --paper: #ffffff;
+  --signal: #e5007e;
+  --signal-soft: rgba(229, 0, 126, 0.09);
+  --good: #0b7a5b;
+  --good-soft: rgba(11, 122, 91, 0.1);
   --magenta: #e5007e;
-  --magenta-soft: rgba(229, 0, 126, 0.1);
-  --cyan: #0ea5d8;
+  --magenta-soft: rgba(229, 0, 126, 0.12);
+  --cyan: #0b9fd0;
   --fold: #c98f00;
-  --ok: #15803d;
+  --ok: #0b7a5b;
   --warn: #b45309;
-  --err: #dc2626;
-  --accent: #1f2937;
+  --err: #d42a3a;
+  --accent: #14181d;
   --accent-ink: #ffffff;
 
-  background: var(--bg);
   color: var(--ink);
+  background: var(--table);
   font-family: var(--font-print), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'tnum' 1;
   -webkit-font-smoothing: antialiased;
-  min-height: 100%;
 }
 
 .proof ::selection {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--signal);
+  color: #fff;
 }
 
 .proof :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
-.proof-card {
-  background: var(--card);
+/* The surface the pages sit on. */
+.light-table {
+  background-color: var(--table);
+  background-image: radial-gradient(var(--table-dot) 1px, transparent 1.3px);
+  background-size: 18px 18px;
+}
+
+/* Floating chrome. */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid rgba(20, 24, 29, 0.07);
+  box-shadow: 0 1px 2px rgba(20, 24, 29, 0.05), 0 10px 30px rgba(20, 24, 29, 0.1);
+}
+
+/* Segmented control: a choice of views, not a set of pages. */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  gap: 2px;
+}
+.seg button {
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.seg button[aria-pressed='true'] {
+  background: var(--ink);
+  color: #fff;
+}
+
+/* Buttons. */
+.pbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink);
+  background: #fff;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  transition: transform 0.12s, opacity 0.15s;
+}
+.pbtn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.pbtn:disabled {
+  opacity: 0.45;
+}
+.pbtn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.pbtn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-2);
+}
+.pbtn.sm {
+  height: 36px;
+  padding: 0 13px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--ink-2);
+}
+.icon-btn:hover,
+.icon-btn[aria-expanded='true'] {
+  background: rgba(20, 24, 29, 0.06);
+  color: var(--ink);
+}
+.badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  background: var(--ink);
+  color: #fff;
+}
+.badge.signal {
+  background: var(--signal);
+}
+
+/* The signal: something here is waiting on you. */
+.signal-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--signal);
+  flex-shrink: 0;
+  animation: signal 2.2s ease-out infinite;
+}
+@keyframes signal {
+  0% {
+    box-shadow: 0 0 0 0 rgba(229, 0, 126, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 9px rgba(229, 0, 126, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(229, 0, 126, 0);
+  }
+}
+
+/* Drawer: a sheet from the right on wide screens, from the bottom on phones. */
+.drawer {
+  position: fixed;
+  z-index: 40;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(20, 24, 29, 0.22);
+  animation: drawer-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 84dvh;
+  border-radius: 22px 22px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@media (min-width: 900px) {
+  .drawer {
+    left: auto;
+    top: 76px;
+    right: 14px;
+    bottom: 14px;
+    width: 400px;
+    max-height: none;
+    border-radius: 20px;
+    animation-name: drawer-in;
+  }
+}
+/* The approve sheet stays a sheet, centred, on wide screens too. */
+@media (min-width: 900px) {
+  .drawer.approve {
+    top: auto;
+    right: auto;
+    left: 50%;
+    bottom: 24px;
+    width: 460px;
+    transform: translateX(-50%);
+    animation-name: fade;
+  }
+}
+@keyframes drawer-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgba(20, 24, 29, 0.28);
+  animation: fade 0.2s;
+}
+/* Wide screens: the drawer is a side panel and the page beside it stays usable. */
+@media (min-width: 900px) {
+  .scrim.desktop-clear {
+    display: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
 }
 
 .proof-input {
   width: 100%;
   background: #fff;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px 12px;
-  font-size: 14px;
+  border-radius: 12px;
+  padding: 11px 13px;
+  font-size: 15px;
   color: var(--ink);
   outline: none;
 }
-
 .proof-input:focus {
-  border-color: var(--accent);
+  border-color: var(--ink);
 }
 
+/* Older surfaces still on the shared styles. */
+.proof-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
 .proof-btn {
   display: inline-flex;
   align-items: center;
@@ -76,25 +286,20 @@
   border: 1px solid var(--line);
   background: #fff;
   color: var(--ink);
-  transition: opacity 0.15s;
 }
-
 .proof-btn:disabled {
   opacity: 0.45;
 }
-
 .proof-btn.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
 }
-
 .proof-btn.quiet {
   border-color: transparent;
   background: transparent;
   color: var(--ink-2);
 }
-
 .proof-chip {
   display: inline-flex;
   align-items: center;
@@ -108,10 +313,10 @@
   color: var(--ink-2);
 }
 
-/* The stage the pages sit on. */
-.proof-stage {
-  background: #e9e7e1;
-  background-image: radial-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px);
-  background-size: 14px 14px;
-  border-radius: 14px;
+@media (prefers-reduced-motion: reduce) {
+  .signal-dot,
+  .drawer,
+  .scrim {
+    animation: none;
+  }
 }

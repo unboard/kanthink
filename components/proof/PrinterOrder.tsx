@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { SignInGate } from '@/components/print/ui'
-import { thumb } from '@/components/print/api'
+import { thumb } from '@/lib/print/thumb'
 import { PRINTER_STATUS_LABEL, type JobStatus } from '@/lib/print/orders/types'
 
 interface ApiOrder {
@@ -38,7 +38,7 @@ function Copy({ text, label }: { text: string; label: string }) {
   return (
     <button
       type="button"
-      className="proof-btn h-8 text-[13px]"
+      className="pbtn sm"
       onClick={() => {
         void navigator.clipboard.writeText(text)
         setDone(true)
@@ -87,85 +87,95 @@ export function PrinterOrder({ id }: { id: string }) {
   }
 
   const c = order.customer
+  const needs = order.jobs.filter((j) => j.status === 'received' || j.status === 'changes_requested').length
   return (
-    <div className="proof h-full overflow-y-auto">
-      <header className="border-b bg-white sticky top-0 z-10" style={{ borderColor: 'var(--line)' }}>
-        <div className="max-w-[1100px] mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
-          <Link href="/print/orders" className="text-[13px]" style={{ color: 'var(--muted)' }}>
-            ← Orders
+    <div className="proof light-table h-full overflow-y-auto">
+      <header className="sticky top-0 z-10 bg-white/85 backdrop-blur border-b" style={{ borderColor: 'var(--line)' }}>
+        <div className="max-w-[1100px] mx-auto px-4 sm:px-6 h-[60px] flex items-center gap-2">
+          <Link href="/print/orders" className="icon-btn -ml-2" aria-label="Back to orders">
+            <svg viewBox="0 0 20 20" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <path d="m12 5-5 5 5 5" />
+            </svg>
           </Link>
-          <h1 className="text-[16px] font-semibold flex-1">{order.ref ? `Order ${order.ref}` : 'Order'}</h1>
-          <Copy text={order.links.customer} label="Copy customer’s order link" />
+          <h1 className="text-[17px] font-semibold flex-1 truncate">{order.ref ? `Order ${order.ref}` : c.name || 'Order'}</h1>
+          <Copy text={order.links.customer} label="Copy customer link" />
         </div>
       </header>
-      <main className="max-w-[1100px] mx-auto px-4 sm:px-6 py-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
+      <main className="max-w-[1100px] mx-auto px-4 sm:px-6 py-6 sm:py-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] items-start">
         <section>
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {order.jobs.map((j, i) => {
+          <div className="mb-4 px-1">
+            <div className="text-[22px] font-semibold tracking-tight">{c.name || 'Customer'}</div>
+            <div className="text-[14.5px] mt-0.5" style={{ color: needs ? '#9d004f' : 'var(--ink-2)' }}>
+              {needs ? `${needs} of ${order.jobs.length} item${order.jobs.length === 1 ? '' : 's'} need${needs === 1 ? 's' : ''} you` : `${order.jobs.length} item${order.jobs.length === 1 ? '' : 's'}`}
+            </div>
+          </div>
+          <ul className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+            {order.jobs.map((j) => {
               const img = j.pages[0]?.current?.url ?? j.pages[0]?.final?.url
+              const waiting = j.status === 'received' || j.status === 'changes_requested'
               return (
-                <li key={j.id} className="proof-card overflow-hidden">
-                  <Link href={`/print/jobs/${j.id}`} className="block">
-                    <div className="proof-stage rounded-none h-48 flex items-center justify-center p-4">
+                <li key={j.id}>
+                  <Link href={`/print/jobs/${j.id}`} className="block rounded-3xl bg-white/70 hover:bg-white transition-colors p-3 border" style={{ borderColor: waiting ? 'rgba(229,0,126,.35)' : 'var(--line)' }}>
+                    <span className="light-table h-56 rounded-2xl flex items-center justify-center p-5">
                       {img ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={thumb(img, 520)} alt="" className="max-w-full max-h-full shadow" />
+                        <img src={thumb(img, 640)} alt="" className="max-w-full max-h-full object-contain bg-white" style={{ boxShadow: '0 2px 4px rgba(0,0,0,.08), 0 14px 30px rgba(20,24,29,.16)' }} />
                       ) : (
-                        <span className="text-[13px]" style={{ color: 'var(--muted)' }}>
+                        <span className="text-[13.5px]" style={{ color: 'var(--muted)' }}>
                           No artwork yet
                         </span>
                       )}
-                    </div>
-                    <div className="px-4 pt-3">
-                      <div className="text-[15px] font-semibold">
-                        {i + 1}. {j.name}
-                      </div>
-                      <div className="text-[13px]" style={{ color: 'var(--ink-2)' }}>
-                        {j.spec.name}
-                        {j.quantity ? ` · ${j.quantity.toLocaleString()}` : ''} · {PRINTER_STATUS_LABEL[j.status]}
-                      </div>
-                    </div>
+                    </span>
+                    <span className="flex items-center gap-2 px-2 pt-3">
+                      {waiting && <span className="signal-dot" />}
+                      <span className="text-[16px] font-semibold">{j.name}</span>
+                    </span>
+                    <span className="block px-2 pb-1 text-[14px]" style={{ color: waiting ? '#9d004f' : 'var(--ink-2)' }}>
+                      {PRINTER_STATUS_LABEL[j.status]}
+                      {j.quantity ? `, ${j.quantity.toLocaleString()} copies` : ''}
+                    </span>
                   </Link>
-                  <div className="px-4 pb-3 pt-2 flex gap-2">
-                    <Copy text={j.links.customer} label="Copy link" />
-                    <a href={j.links.printFile} className="proof-btn quiet h-8 text-[13px]">
-                      Print file
-                    </a>
-                  </div>
                 </li>
               )
             })}
           </ul>
         </section>
-        <aside className="space-y-4">
-          <div className="proof-card p-5">
-            <div className="text-[12px] uppercase tracking-wide font-semibold" style={{ color: 'var(--muted)' }}>
-              Customer
-            </div>
-            <div className="text-[15px] mt-1">{c.name || '—'}{c.company ? ` · ${c.company}` : ''}</div>
-            <div className="text-[13px] mt-0.5 space-x-3" style={{ color: 'var(--ink-2)' }}>
-              {c.email && <a href={`mailto:${c.email}`}>{c.email}</a>}
-              {c.phone && <a href={`tel:${c.phone}`}>{c.phone}</a>}
+        <aside className="space-y-3 lg:sticky lg:top-[84px]">
+          <div className="rounded-3xl bg-white p-5 border" style={{ borderColor: 'var(--line)' }}>
+            <div className="text-[15px] font-semibold">Contact</div>
+            <div className="text-[14px] mt-1.5 space-y-0.5" style={{ color: 'var(--ink-2)' }}>
+              {c.company && <div>{c.company}</div>}
+              {c.email && (
+                <div>
+                  <a href={`mailto:${c.email}`} className="hover:underline">
+                    {c.email}
+                  </a>
+                </div>
+              )}
+              {c.phone && (
+                <div>
+                  <a href={`tel:${c.phone}`} className="hover:underline">
+                    {c.phone}
+                  </a>
+                </div>
+              )}
+              {!c.email && !c.phone && <div>No contact details on this order.</div>}
             </div>
           </div>
-          <div className="proof-card p-5">
-            <div className="text-[12px] uppercase tracking-wide font-semibold" style={{ color: 'var(--muted)' }}>
-              Changes close
-            </div>
+          <div className="rounded-3xl bg-white p-5 border" style={{ borderColor: 'var(--line)' }}>
+            <div className="text-[15px] font-semibold">Changes close</div>
             <input type="datetime-local" className="proof-input mt-2" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-            <button type="button" className="proof-btn mt-2 h-8 text-[13px]" disabled={saving || deadline === local(order.lockAt)} onClick={saveDeadline}>
+            <button type="button" className="pbtn sm mt-2" disabled={saving || deadline === local(order.lockAt)} onClick={saveDeadline}>
               {saving ? 'Saving…' : 'Save deadline'}
             </button>
-            <p className="text-[12px] mt-2" style={{ color: 'var(--muted)' }}>
-              Applies to every item. After it, each item’s proof is final.
+            <p className="text-[13px] mt-2" style={{ color: 'var(--muted)' }}>
+              For every item. After it, each proof is final.
             </p>
           </div>
           {(order.externalId || order.metadata) && (
-            <div className="proof-card p-5 text-[12.5px]">
-              <div className="text-[12px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--muted)' }}>
-                From your system
-              </div>
-              {order.externalId && <div>externalId: {order.externalId}</div>}
+            <div className="rounded-3xl bg-white p-5 border text-[13px]" style={{ borderColor: 'var(--line)' }}>
+              <div className="text-[15px] font-semibold mb-1">From your system</div>
+              {order.externalId && <div style={{ color: 'var(--ink-2)' }}>Order id {order.externalId}</div>}
               {order.metadata && <pre className="mt-1 whitespace-pre-wrap break-all" style={{ color: 'var(--ink-2)' }}>{JSON.stringify(order.metadata, null, 1)}</pre>}
             </div>
           )}

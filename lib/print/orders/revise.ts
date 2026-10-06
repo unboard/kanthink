@@ -4,6 +4,7 @@ import { printDesigns } from '@/lib/db/schema'
 import { preflight, render } from '../server/pipeline'
 import { chargeRender, now } from '../server/store'
 import type { PrintVersion, VersionMode } from '../types'
+import type { Mark } from '../markup'
 import { OrderError, designOf, orderOf, parseJson, recordEvent, settleStatus, type JobRow } from './server'
 import { isOpen } from './rules'
 import { REVISE_CHANGES, type ArtworkFile } from './types'
@@ -20,7 +21,7 @@ import { REVISE_CHANGES, type ArtworkFile } from './types'
  * shown to the customer until the printer sends the proof.
  */
 
-export type ReviseAction = 'fit' | 'fix' | 'sharpen'
+export type ReviseAction = 'fit' | 'fix' | 'sharpen' | 'marks'
 
 
 export async function reviseJob(job: JobRow, action: ReviseAction, pageIndex: number, prompt?: string): Promise<PrintVersion> {
@@ -33,6 +34,7 @@ export async function reviseJob(job: JobRow, action: ReviseAction, pageIndex: nu
   const source = page.versions[page.current]
 
   let mode: VersionMode
+  let sentMarks: Mark[] = []
   let req: Parameters<typeof render>[0]
   if (action === 'fit') {
     const original = parseJson<ArtworkFile[]>(job.artwork, []).filter((a) => a.page === pageIndex).at(-1)
@@ -46,6 +48,13 @@ export async function reviseJob(job: JobRow, action: ReviseAction, pageIndex: nu
       mode,
       prompt: prompt || undefined,
     }
+  } else if (action === 'marks') {
+    // The customer's numbered marks, made as asked, through the same markup pipeline.
+    if (!source) throw new OrderError('There’s no artwork on this page yet.', 409)
+    sentMarks = (page.marks ?? []).filter((m) => m.status === 'open' && !m.hidden)
+    if (!sentMarks.length) throw new OrderError('There are no open marks on this side.', 409)
+    mode = 'markup'
+    req = { userId: job.userId, design, brand: null, pageIndex, mode, source: { ...source, check: undefined }, marks: sentMarks, prompt: prompt || undefined }
   } else {
     if (!source) throw new OrderError('There’s no artwork on this page yet.', 409)
     mode = action === 'fix' ? 'fix' : 'upscale'
@@ -61,7 +70,18 @@ export async function reviseJob(job: JobRow, action: ReviseAction, pageIndex: nu
 
   // Re-read: the printer may have the studio open on the same design.
   const fresh = await designOf(job)
-  const pages = fresh.pages.map((p, i) => (i === pageIndex ? { ...p, versions: [...p.versions, placed], current: p.versions.length } : p))
+  // Marks that were made step back, keeping a note of the version they went into.
+  const sent = new Set(sentMarks.map((m) => m.id))
+  const pages = fresh.pages.map((p, i) =>
+    i === pageIndex
+      ? {
+          ...p,
+          versions: [...p.versions, placed],
+          current: p.versions.length,
+          marks: (p.marks ?? []).map((m) => (sent.has(m.id) ? { ...m, hidden: true, sentIn: [...(m.sentIn ?? []), placed.id] } : m)),
+        }
+      : p,
+  )
   await db.update(printDesigns).set({ pages: JSON.stringify(pages), updatedAt: now() }).where(eq(printDesigns.id, design.id))
   await recordEvent(job, 'printer', 'revised', `${REVISE_CHANGES[action].text} (${page.label}).`, { action, page: pageIndex, versionId: placed.id })
   return placed

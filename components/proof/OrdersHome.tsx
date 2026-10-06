@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { SignInGate } from '@/components/print/ui'
 import { CATALOG } from '@/lib/print/spec'
 import { PRINTER_STATUS_LABEL, type JobStatus } from '@/lib/print/orders/types'
+import { thumb } from '@/lib/print/thumb'
 import { uploadToStorage } from './upload'
 
 /**
@@ -24,16 +25,7 @@ interface OrderRow {
   lockAt: string | null
   createdAt: string | null
   updatedAt: string | null
-  jobs: { id: string; name: string; quantity: number | null; status: JobStatus }[]
-}
-
-const STATUS_TONE: Partial<Record<JobStatus, string>> = {
-  received: '#64748b',
-  awaiting_approval: '#b45309',
-  changes_requested: '#7c3aed',
-  approved: '#15803d',
-  locked: '#15803d',
-  in_production: '#0369a1',
+  jobs: { id: string; name: string; quantity: number | null; status: JobStatus; thumb: string | null }[]
 }
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
@@ -107,11 +99,11 @@ function NewOrder({ onClose, approvalHours }: { onClose: () => void; approvalHou
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto p-4 sm:p-8" style={{ background: 'rgba(10,12,14,.45)' }}>
-      <div className="proof-card w-full max-w-[720px] p-5 sm:p-6">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-start justify-center overflow-y-auto sm:p-8" style={{ background: 'rgba(20,24,29,.35)' }}>
+      <div className="bg-white w-full max-w-[720px] p-5 sm:p-7 rounded-t-3xl sm:rounded-3xl shadow-2xl">
         <div className="flex items-center justify-between">
-          <h2 className="text-[19px] font-semibold">New order</h2>
-          <button type="button" className="proof-btn quiet h-8" onClick={onClose}>
+          <h2 className="text-[21px] font-semibold tracking-tight">New order</h2>
+          <button type="button" className="pbtn sm ghost" onClick={onClose}>
             Close
           </button>
         </div>
@@ -136,7 +128,7 @@ function NewOrder({ onClose, approvalHours }: { onClose: () => void; approvalHou
           {jobs.map((j, i) => {
             const catalog = CATALOG.find((p) => p.key === j.product)
             return (
-              <div key={j.key} className="rounded-xl border p-3.5" style={{ borderColor: 'var(--line)' }}>
+              <div key={j.key} className="rounded-2xl p-3.5" style={{ background: 'var(--raise)' }}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[13px] font-semibold">Item {i + 1}</span>
                   {jobs.length > 1 && (
@@ -195,7 +187,7 @@ function NewOrder({ onClose, approvalHours }: { onClose: () => void; approvalHou
               </div>
             )
           })}
-          <button type="button" className="proof-btn quiet h-9" onClick={() => setJobs([...jobs, blankJob()])}>
+          <button type="button" className="pbtn sm ghost" onClick={() => setJobs([...jobs, blankJob()])}>
             + Add another item
           </button>
         </div>
@@ -209,7 +201,7 @@ function NewOrder({ onClose, approvalHours }: { onClose: () => void; approvalHou
           </p>
         )}
         <div className="flex items-center gap-3 mt-5">
-          <button type="button" className="proof-btn primary" disabled={!!busy || jobs.some((j) => !CATALOG.find((p) => p.key === j.product) && !(Number(j.width) > 0 && Number(j.height) > 0))} onClick={submit}>
+          <button type="button" className="pbtn primary" disabled={!!busy || jobs.some((j) => !CATALOG.find((p) => p.key === j.product) && !(Number(j.width) > 0 && Number(j.height) > 0))} onClick={submit}>
             {busy ?? 'Create order'}
           </button>
           <span className="text-[12.5px]" style={{ color: 'var(--muted)' }}>
@@ -218,6 +210,57 @@ function NewOrder({ onClose, approvalHours }: { onClose: () => void; approvalHou
         </div>
       </div>
     </div>
+  )
+}
+
+const NEEDS_YOU: JobStatus[] = ['received', 'changes_requested']
+const WITH_THEM: JobStatus[] = ['awaiting_approval']
+
+function OrderRowView({ o }: { o: OrderRow }) {
+  const waiting = o.jobs.filter((j) => NEEDS_YOU.includes(j.status)).length
+  const thumbs = o.jobs.filter((j) => j.thumb).slice(0, 3)
+  const settled = o.jobs.every((j) => ['locked', 'in_production', 'complete', 'cancelled'].includes(j.status))
+  return (
+    <li>
+      <Link href={`/print/orders/${o.id}`} className="flex items-center gap-4 rounded-2xl bg-white px-3 py-3 sm:px-4 border hover:shadow-md transition-shadow" style={{ borderColor: 'var(--line)' }}>
+        <span className="light-table relative w-[76px] h-[64px] rounded-xl shrink-0 overflow-hidden flex items-center justify-center">
+          {thumbs.map((j, i) => {
+            const k = i - (thumbs.length - 1) / 2
+            return (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={j.id}
+                src={thumb(j.thumb!, 200)}
+                alt=""
+                className="absolute max-w-[62%] max-h-[70%] object-contain bg-white"
+                style={{ transform: `translate(${k * 9}px, ${k * -4}px) rotate(${k * 5}deg)`, boxShadow: '0 2px 6px rgba(20,24,29,.18)', zIndex: i }}
+              />
+            )
+          })}
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2">
+            {waiting > 0 && <span className="signal-dot" />}
+            <span className="text-[16px] font-semibold truncate">{o.ref ? `Order ${o.ref}` : o.customer.name || 'Order'}</span>
+          </span>
+          <span className="block text-[13.5px] truncate mt-0.5" style={{ color: 'var(--ink-2)' }}>
+            {o.ref && o.customer.name ? `${o.customer.name}, ` : ''}
+            {o.jobs.map((j) => j.name).join(', ')}
+          </span>
+          <span className="block text-[13px] mt-0.5" style={{ color: waiting ? '#9d004f' : 'var(--muted)' }}>
+            {waiting
+              ? `${waiting} item${waiting === 1 ? '' : 's'} need${waiting === 1 ? 's' : ''} you`
+              : o.jobs.every((j) => ['approved', 'locked', 'in_production', 'complete'].includes(j.status))
+                ? 'All approved'
+                : o.jobs.some((j) => WITH_THEM.includes(j.status))
+                  ? 'Waiting on the customer'
+                  : PRINTER_STATUS_LABEL[o.jobs[0]?.status ?? 'received']}
+            {o.lockAt && !settled ? `, closes ${new Date(o.lockAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}
+          </span>
+        </span>
+        {o.source === 'api' || o.source === 'mcp' ? <span className="proof-chip hidden sm:inline-flex">{o.source === 'mcp' ? 'From a bot' : 'From your system'}</span> : null}
+      </Link>
+    </li>
   )
 }
 
@@ -238,68 +281,71 @@ export function OrdersHome() {
 
   if (status === 401) return <SignInGate callbackUrl="/print/orders" />
 
+  const open = (o: OrderRow, list: JobStatus[]) => o.jobs.some((j) => list.includes(j.status))
+  const groups = orders
+    ? [
+        { title: 'Needs you', hint: 'New files to review, or changes the customer asked for.', rows: orders.filter((o) => open(o, NEEDS_YOU)) },
+        { title: 'With customers', hint: 'Proofs waiting for approval.', rows: orders.filter((o) => !open(o, NEEDS_YOU) && open(o, WITH_THEM)) },
+        { title: 'Approved and printing', hint: '', rows: orders.filter((o) => !open(o, NEEDS_YOU) && !open(o, WITH_THEM) && open(o, ['approved', 'locked', 'in_production'])) },
+        { title: 'Done', hint: '', rows: orders.filter((o) => o.jobs.length > 0 && o.jobs.every((j) => ['complete', 'cancelled'].includes(j.status))) },
+      ].filter((g) => g.rows.length)
+    : []
+
   return (
-    <div className="proof h-full overflow-y-auto">
-      <header className="border-b bg-white sticky top-0 z-10" style={{ borderColor: 'var(--line)' }}>
-        <div className="max-w-[1100px] mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
-          <Link href="/print" className="text-[13px]" style={{ color: 'var(--muted)' }}>
-            ← Studio
+    <div className="proof light-table h-full overflow-y-auto">
+      <header className="sticky top-0 z-10 bg-white/85 backdrop-blur border-b" style={{ borderColor: 'var(--line)' }}>
+        <div className="max-w-[920px] mx-auto px-4 sm:px-6 h-[60px] flex items-center gap-2">
+          <Link href="/print" className="icon-btn -ml-2" aria-label="Back to the studio">
+            <svg viewBox="0 0 20 20" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <path d="m12 5-5 5 5 5" />
+            </svg>
           </Link>
-          <h1 className="text-[16px] font-semibold flex-1">Orders</h1>
-          <Link href="/print/developers" className="proof-btn quiet h-9 text-[13.5px]">
-            Settings &amp; API
+          <h1 className="text-[17px] font-semibold flex-1">Orders</h1>
+          <Link href="/print/developers" className="pbtn sm ghost hidden sm:inline-flex">
+            Settings and API
           </Link>
-          <button type="button" className="proof-btn primary h-9" onClick={() => setCreating(true)}>
+          <button type="button" className="pbtn sm primary" onClick={() => setCreating(true)}>
             New order
           </button>
         </div>
       </header>
-      <main className="max-w-[1100px] mx-auto px-4 sm:px-6 py-6">
+      <main className="max-w-[920px] mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {orders && orders.length === 0 && (
-          <div className="proof-card p-10 text-center">
-            <p className="text-[16px] font-medium">No orders yet.</p>
-            <p className="text-[14px] mt-1" style={{ color: 'var(--ink-2)' }}>
-              Start one here, or send them in from your own system with the API.
+          <div className="rounded-3xl bg-white p-8 sm:p-12 text-center border" style={{ borderColor: 'var(--line)' }}>
+            <p className="text-[20px] font-semibold tracking-tight">No orders yet</p>
+            <p className="text-[15px] mt-1.5 max-w-[440px] mx-auto" style={{ color: 'var(--ink-2)' }}>
+              Start one here, or send them in from your own system. Each item gets a page you and your customer share until it’s approved.
             </p>
-            <div className="flex justify-center gap-2 mt-4">
-              <button type="button" className="proof-btn primary" onClick={() => setCreating(true)}>
+            <div className="flex justify-center gap-2 mt-5">
+              <button type="button" className="pbtn primary" onClick={() => setCreating(true)}>
                 New order
               </button>
-              <Link href="/print/developers" className="proof-btn">
-                API docs
+              <Link href="/print/developers" className="pbtn">
+                Connect your system
               </Link>
             </div>
           </div>
         )}
-        {orders && orders.length > 0 && (
-          <ul className="space-y-2.5">
-            {orders.map((o) => (
-              <li key={o.id}>
-                <Link href={`/print/orders/${o.id}`} className="proof-card flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3.5 hover:shadow-sm">
-                  <div className="min-w-[180px]">
-                    <div className="text-[15px] font-semibold">{o.ref || o.customer.name || 'Order'}</div>
-                    <div className="text-[12.5px]" style={{ color: 'var(--muted)' }}>
-                      {[o.ref ? o.customer.name : null, o.source === 'api' ? 'via API' : o.source === 'mcp' ? 'via MCP' : null, o.createdAt ? new Date(o.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null].filter(Boolean).join(' · ')}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 flex-1">
-                    {o.jobs.map((j) => (
-                      <span key={j.id} className="proof-chip" style={{ color: STATUS_TONE[j.status] ?? 'var(--ink-2)' }}>
-                        {j.name} · {PRINTER_STATUS_LABEL[j.status]}
-                      </span>
-                    ))}
-                  </div>
-                  {o.lockAt && (
-                    <div className="text-[12.5px]" style={{ color: 'var(--muted)' }}>
-                      Closes {new Date(o.lockAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                    </div>
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-        {status && status !== 401 && <p style={{ color: 'var(--err)' }}>Couldn’t load orders. Refresh to try again.</p>}
+        {groups.map((g) => (
+          <section key={g.title} className="mb-8">
+            <div className="flex items-baseline justify-between mb-2.5 px-1">
+              <h2 className="text-[15px] font-semibold">
+                {g.title} <span style={{ color: 'var(--muted)' }}>{g.rows.length}</span>
+              </h2>
+              {g.hint && (
+                <span className="text-[13px] hidden sm:inline" style={{ color: 'var(--muted)' }}>
+                  {g.hint}
+                </span>
+              )}
+            </div>
+            <ul className="space-y-2">
+              {g.rows.map((o) => (
+                <OrderRowView key={o.id} o={o} />
+              ))}
+            </ul>
+          </section>
+        ))}
+        {status && status !== 401 && <p style={{ color: 'var(--err)' }}>Couldn’t load your orders. Refresh to try again.</p>}
       </main>
       {creating && <NewOrder onClose={() => setCreating(false)} approvalHours={approvalHours} />}
     </div>

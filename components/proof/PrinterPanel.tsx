@@ -4,22 +4,15 @@ import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import type { PageView } from '@/lib/print/orders/views'
 import { REVISE_CHANGES, type JobStatus, type ProofChange } from '@/lib/print/orders/types'
+import { MARK_COLOR } from '@/lib/print/markup'
 
 /**
- * The printer's side of the shared page: who ordered it, where the file came from,
- * one-click fixes, sending the proof, and moving the job along.
+ * The printer's tools on the shared page, as drawer sections: Work (fix the file),
+ * Send (the proof and what changed), Details (the customer, links, status).
  *
- * Fixes make new versions the customer doesn't see until "Send proof"; the proof is
- * the only thing that changes their page.
+ * Fixes make new versions the customer doesn't see until the proof is sent; sending
+ * the proof is the only thing that changes their page.
  */
-
-interface Props {
-  view: PageView
-  onView: (v: PageView) => void
-  busy: string | null
-  setBusy: (b: string | null) => void
-  setError: (e: string | null) => void
-}
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } })
@@ -28,14 +21,187 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   return json as T
 }
 
-const ORIGIN_LABEL: Record<string, string> = { customer: 'made by the customer', designer: 'made by their designer', printer: 'made by us', unknown: 'maker unknown' }
+export interface PrinterOps {
+  revise: (action: 'fit' | 'fix' | 'sharpen' | 'marks', page: number) => Promise<void>
+  sendProof: (message: string, changes: ProofChange[]) => Promise<boolean>
+  setStatus: (status: JobStatus) => Promise<void>
+  approve: () => Promise<void>
+}
 
-export function PrinterPanel({ view, onView, busy, setBusy, setError }: Props) {
-  const { job, order } = view
-  const id = job.id!
-  const open = ['received', 'awaiting_approval', 'changes_requested', 'approved'].includes(job.status)
+export function usePrinterOps(view: PageView, onView: (v: PageView) => void, setBusy: (b: string | null) => void, setError: (e: string | null) => void): PrinterOps {
+  const id = view.job.id!
+  const reload = async () => onView(await call<PageView>(`/api/print/jobs/${id}`))
+  const act = async (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label)
+    setError(null)
+    try {
+      await fn()
+      await reload()
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That didn’t work.')
+      return false
+    } finally {
+      setBusy(null)
+    }
+  }
+  return {
+    revise: async (action, page) => {
+      await act(`${action}-${page}`, async () => onView(await call<PageView>(`/api/print/jobs/${id}/revise`, { method: 'POST', body: JSON.stringify({ action, page }) })))
+    },
+    sendProof: (message, changes) => act('proof', () => call(`/api/v1/print/jobs/${id}/proof`, { method: 'POST', body: JSON.stringify({ message: message.trim() || undefined, changes }) })),
+    setStatus: async (status) => {
+      await act(status, () => call(`/api/v1/print/jobs/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }))
+    },
+    approve: async () => {
+      await act('approve', () => call(`/api/v1/print/jobs/${id}/approve`, { method: 'POST', body: JSON.stringify({ by: 'Approved by phone or email' }) }))
+    },
+  }
+}
 
-  // Changes made since the last proof, as suggested lines for the customer.
+const OPEN: JobStatus[] = ['received', 'awaiting_approval', 'changes_requested', 'approved']
+
+function Section({ title, children, hint }: { title: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <section className="py-5 border-b last:border-b-0" style={{ borderColor: 'var(--line)' }}>
+      <h3 className="text-[15px] font-semibold">{title}</h3>
+      {hint && (
+        <p className="text-[13.5px] mt-0.5" style={{ color: 'var(--muted)' }}>
+          {hint}
+        </p>
+      )}
+      <div className="mt-3">{children}</div>
+    </section>
+  )
+}
+
+/** Fix the file: one-click fixes per side, the studio, the check, the customer's marks, the files. */
+export function PrinterWork({ view, ops, busy }: { view: PageView; ops: PrinterOps; busy: string | null }) {
+  const open = OPEN.includes(view.job.status)
+  const marks = view.pages.flatMap((p, i) => p.marks.filter((m) => m.status === 'open' && !m.hidden).map((m) => ({ ...m, page: i })))
+  const markedSides = [...new Set(marks.map((m) => m.page))]
+  return (
+    <div>
+      {marks.length > 0 && (
+        <Section title={`${view.order.customerName || 'The customer'} asked for`}>
+          <ul className="space-y-2.5">
+            {marks.map((m) => (
+              <li key={m.id} className="flex gap-2.5 text-[14.5px]">
+                <span className="w-6 h-6 rounded-full text-[12px] font-bold text-white inline-flex items-center justify-center shrink-0" style={{ background: MARK_COLOR }}>
+                  {m.n}
+                </span>
+                <span className="pt-0.5">
+                  {m.note || <span style={{ color: 'var(--muted)' }}>A mark with no note</span>}
+                  {view.pages.length > 1 && <span style={{ color: 'var(--muted)' }}> on the {view.pages[m.page].label.toLowerCase()}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {open && (
+            <div className="flex flex-wrap gap-2 mt-3.5">
+              {markedSides.map((i) => (
+                <button key={i} type="button" className="pbtn sm primary" disabled={!!busy} onClick={() => ops.revise('marks', i)}>
+                  {busy === `marks-${i}` ? 'Making the changes…' : `Make these changes${markedSides.length > 1 || view.pages.length > 1 ? ` on the ${view.pages[i].label.toLowerCase()}` : ''}`}
+                </button>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {open && (
+        <Section title="One-click fixes" hint="Each fix makes a new version. Your customer sees it only when you send the proof.">
+          <div className="space-y-3">
+            {view.pages.map((p, i) => {
+              const issues = (p.current?.check?.issues ?? []).filter((x) => x.kind !== 'resolution')
+              const lowRes = (p.current?.check?.dpi ?? 300) < 240
+              const misfit = view.fit.find((f) => f.page === i && f.kind === 'mismatch')
+              const hasFile = view.artwork.some((a) => a.page === i)
+              const nothing = !hasFile && !issues.length && !lowRes
+              return (
+                <div key={i}>
+                  {view.pages.length > 1 && <div className="text-[13px] font-medium mb-1.5">{p.label}</div>}
+                  {misfit && (
+                    <p className="text-[13.5px] mb-2 rounded-xl px-3 py-2.5" style={{ background: 'var(--signal-soft)', color: '#9d004f' }}>
+                      {misfit.message}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {hasFile && (
+                      <button type="button" className={`pbtn sm ${misfit ? 'primary' : ''}`} disabled={!!busy} onClick={() => ops.revise('fit', i)}>
+                        {busy === `fit-${i}` ? 'Fitting…' : 'Fit to product'}
+                      </button>
+                    )}
+                    {issues.length > 0 && (
+                      <button type="button" className="pbtn sm" disabled={!!busy} onClick={() => ops.revise('fix', i)}>
+                        {busy === `fix-${i}` ? 'Fixing…' : `Fix ${issues.length} print issue${issues.length === 1 ? '' : 's'}`}
+                      </button>
+                    )}
+                    {lowRes && (
+                      <button type="button" className="pbtn sm" disabled={!!busy} onClick={() => ops.revise('sharpen', i)}>
+                        {busy === `sharpen-${i}` ? 'Sharpening…' : 'Sharpen'}
+                      </button>
+                    )}
+                    {nothing && <span className="text-[13.5px]" style={{ color: 'var(--muted)' }}>No file on this side.</span>}
+                  </div>
+                  {issues.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-[13.5px]" style={{ color: 'var(--ink-2)' }}>
+                      {issues.slice(0, 4).map((x, k) => (
+                        <li key={k}>{x.message}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+            {busy && /^(fit|fix|sharpen|marks)/.test(busy) && (
+              <p className="text-[13px]" style={{ color: 'var(--muted)' }}>
+                About a minute. You can keep reading while it works.
+              </p>
+            )}
+            {view.job.designId && (
+              <Link href={`/print/${view.job.designId}`} className="pbtn sm ghost px-0">
+                Open in the studio for anything else
+              </Link>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {view.artwork.length > 0 && (
+        <Section title="Files received">
+          <ul className="space-y-3">
+            {view.artwork.map((a) => (
+              <li key={a.id} className="text-[14px]">
+                <a href={a.url} target="_blank" rel="noreferrer" className="font-medium hover:underline underline-offset-2">
+                  {a.filename || 'File'}
+                </a>
+                <div className="text-[13px]" style={{ color: 'var(--muted)' }}>
+                  {view.pages[a.page]?.label}, {a.width} × {a.height} px{a.format ? `, ${a.format.toUpperCase()}` : ''}
+                </div>
+                {a.origin && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {a.origin.madeBy && a.origin.madeBy !== 'unknown' && <span className="proof-chip">Made by {a.origin.madeBy === 'printer' ? 'us' : a.origin.madeBy === 'customer' ? 'the customer' : 'their designer'}</span>}
+                    {a.origin.madeWith && <span className="proof-chip">{a.origin.madeWith}</span>}
+                    {a.origin.via === 'reorder' && <span className="proof-chip">Reorder</span>}
+                    {a.origin.aiGenerated && (
+                      <span className="proof-chip" style={{ background: 'var(--signal-soft)', color: '#9d004f' }}>
+                        AI-made
+                      </span>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+    </div>
+  )
+}
+
+/** Send the proof: what changed (suggested from the fixes made), and a note. */
+export function PrinterSend({ view, ops, busy, onSent }: { view: PageView; ops: PrinterOps; busy: string | null; onSent: () => void }) {
   const suggested = useMemo(() => {
     const lastProof = [...view.events].reverse().find((e) => e.type === 'proof_sent')?.at ?? 0
     const out: ProofChange[] = []
@@ -47,234 +213,172 @@ export function PrinterPanel({ view, onView, busy, setBusy, setError }: Props) {
     if (view.events.some((e) => e.type === 'changes_requested' && e.at > lastProof)) out.push({ kind: 'content', text: 'Made the changes you asked for' })
     return out
   }, [view.events])
-
-  const [message, setMessage] = useState('')
   const [picked, setPicked] = useState<string[] | null>(null)
   const [extra, setExtra] = useState('')
-  const [copied, setCopied] = useState(false)
+  const [message, setMessage] = useState('')
   const chosen = picked ?? suggested.map((c) => c.text)
 
-  const reload = async () => onView(await call<PageView>(`/api/print/jobs/${id}`))
-  const act = async (label: string, fn: () => Promise<unknown>) => {
-    setBusy(label)
-    setError(null)
-    try {
-      await fn()
-      await reload()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'That didn’t work.')
-    } finally {
-      setBusy(null)
-    }
+  const send = async () => {
+    const changes: ProofChange[] = [
+      ...suggested.filter((c) => chosen.includes(c.text)),
+      ...extra.split('\n').map((t) => t.trim()).filter(Boolean).map((text) => ({ kind: 'other' as const, text })),
+    ]
+    if (await ops.sendProof(message, changes)) onSent()
   }
 
-  const revise = (action: 'fit' | 'fix' | 'sharpen', page: number) =>
-    act(`${action}-${page}`, async () => onView(await call<PageView>(`/api/print/jobs/${id}/revise`, { method: 'POST', body: JSON.stringify({ action, page }) })))
-
-  const sendProof = () =>
-    act('proof', () => {
-      const changes: ProofChange[] = [
-        ...suggested.filter((c) => chosen.includes(c.text)),
-        ...extra.split('\n').map((t) => t.trim()).filter(Boolean).map((text) => ({ kind: 'other' as const, text })),
-      ]
-      return call(`/api/v1/print/jobs/${id}/proof`, { method: 'POST', body: JSON.stringify({ message: message.trim() || undefined, changes }) }).then(() => {
-        setMessage('')
-        setExtra('')
-        setPicked(null)
-      })
-    })
-
-  const setStatus = (status: JobStatus) => act(status, () => call(`/api/v1/print/jobs/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }))
-  const approve = () => act('approve', () => call(`/api/v1/print/jobs/${id}/approve`, { method: 'POST', body: JSON.stringify({ by: 'Approved by phone or email' }) }))
-
-  const customerLink = typeof window !== 'undefined' ? `${window.location.origin}/proof/${job.token}` : `/proof/${job.token}`
-  const c = order.customer ?? {}
-
   return (
-    <div className="proof-card p-5 space-y-5" style={{ borderColor: 'var(--accent)' }}>
-      {/* Who and where */}
-      <div>
-        <div className="text-[12px] uppercase tracking-wide font-semibold" style={{ color: 'var(--muted)' }}>
-          Customer
-        </div>
-        <div className="text-[14px] mt-1">
-          {c.name || 'No name'}
-          {c.company ? ` · ${c.company}` : ''}
-        </div>
-        <div className="text-[13px] flex flex-wrap gap-x-3" style={{ color: 'var(--ink-2)' }}>
-          {c.email && <a href={`mailto:${c.email}`}>{c.email}</a>}
-          {c.phone && <a href={`tel:${c.phone}`}>{c.phone}</a>}
-        </div>
-        <div className="flex gap-2 mt-2">
-          <button
-            type="button"
-            className="proof-btn h-8 text-[13px]"
-            onClick={() => {
-              void navigator.clipboard.writeText(customerLink)
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1600)
-            }}
-          >
-            {copied ? 'Copied' : 'Copy customer link'}
-          </button>
-          <a href={`/proof/${job.token}`} target="_blank" rel="noreferrer" className="proof-btn quiet h-8 text-[13px]">
-            View as customer ↗
-          </a>
-        </div>
-      </div>
-
-      {/* The files */}
-      {view.artwork.length > 0 && (
-        <div>
-          <div className="text-[12px] uppercase tracking-wide font-semibold" style={{ color: 'var(--muted)' }}>
-            Artwork received
-          </div>
-          <ul className="mt-1.5 space-y-1.5">
-            {view.artwork.map((a) => (
-              <li key={a.id} className="text-[13px]">
-                <a href={a.url} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline">
-                  {a.filename || 'File'}
-                </a>
-                <span style={{ color: 'var(--muted)' }}>
-                  {' '}
-                  · {view.pages[a.page]?.label} · {a.width}×{a.height}px{a.format ? ` · ${a.format.toUpperCase()}` : ''}
-                </span>
-                {a.origin && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {a.origin.madeBy && <span className="proof-chip">{ORIGIN_LABEL[a.origin.madeBy]}</span>}
-                    {a.origin.madeWith && <span className="proof-chip">{a.origin.madeWith}</span>}
-                    {a.origin.via === 'reorder' && <span className="proof-chip">reorder</span>}
-                    {a.origin.aiGenerated && <span className="proof-chip" style={{ background: '#fef3c7', color: '#92400e' }}>AI-made</span>}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-          {view.fit.map((f) => (
-            <p key={f.page} className="text-[12.5px] mt-2 rounded-lg px-2.5 py-2" style={{ background: '#fffbeb', color: '#92400e' }}>
-              {view.pages[f.page]?.label}: {f.message}
-            </p>
-          ))}
-        </div>
-      )}
-
-      {/* Fixes */}
-      {open && (
-        <div>
-          <div className="text-[12px] uppercase tracking-wide font-semibold" style={{ color: 'var(--muted)' }}>
-            Fix
-          </div>
-          <div className="space-y-2 mt-1.5">
-            {view.pages.map((p, i) => {
-              const issues = (p.current?.check?.issues ?? []).filter((x) => x.kind !== 'resolution')
-              const lowRes = (p.current?.check?.dpi ?? 300) < 240
-              const misfit = view.fit.some((f) => f.page === i && f.kind === 'mismatch')
-              const hasOriginal = view.artwork.some((a) => a.page === i)
-              return (
-                <div key={i} className="flex flex-wrap items-center gap-1.5">
-                  {view.pages.length > 1 && <span className="text-[12.5px] w-12" style={{ color: 'var(--muted)' }}>{p.label}</span>}
-                  {hasOriginal && (
-                    <button type="button" className="proof-btn h-8 text-[13px]" disabled={!!busy} onClick={() => revise('fit', i)} style={misfit ? { borderColor: '#d97706' } : undefined} title="Rebuild the customer’s file at this product’s size, keeping every word">
-                      {busy === `fit-${i}` ? 'Fitting…' : 'Fit to product'}
-                    </button>
-                  )}
-                  {p.current && issues.length > 0 && (
-                    <button type="button" className="proof-btn h-8 text-[13px]" disabled={!!busy} onClick={() => revise('fix', i)}>
-                      {busy === `fix-${i}` ? 'Fixing…' : `Fix ${issues.length} issue${issues.length === 1 ? '' : 's'}`}
-                    </button>
-                  )}
-                  {p.current && lowRes && (
-                    <button type="button" className="proof-btn h-8 text-[13px]" disabled={!!busy} onClick={() => revise('sharpen', i)}>
-                      {busy === `sharpen-${i}` ? 'Sharpening…' : 'Sharpen'}
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-            {job.designId && (
-              <Link href={`/print/${job.designId}`} className="proof-btn quiet h-8 text-[13px] px-0">
-                Open in the studio for anything else →
-              </Link>
-            )}
-            {busy && /^(fit|fix|sharpen)/.test(busy) && (
-              <p className="text-[12.5px]" style={{ color: 'var(--muted)' }}>
-                This takes 20–60 seconds. The customer won’t see it until you send the proof.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* The proof */}
-      {open && (
-        <div>
-          <div className="text-[12px] uppercase tracking-wide font-semibold" style={{ color: 'var(--muted)' }}>
-            {job.status === 'received' ? 'Send the proof' : 'Send an updated proof'}
-          </div>
-          {suggested.length > 0 && (
-            <ul className="mt-1.5 space-y-1">
+    <div>
+      <Section title={view.proof ? 'Send an updated proof' : 'Send the proof'} hint="Your customer sees the current version of every side and can approve it or ask for a change.">
+        {suggested.length > 0 && (
+          <div className="mb-4">
+            <div className="text-[13.5px] font-medium mb-2">Tell them what changed</div>
+            <ul className="space-y-2">
               {suggested.map((s) => (
                 <li key={s.text}>
-                  <label className="flex gap-2 text-[13px]">
-                    <input type="checkbox" checked={chosen.includes(s.text)} onChange={(e) => setPicked(e.target.checked ? [...chosen, s.text] : chosen.filter((x) => x !== s.text))} />
+                  <label className="flex gap-2.5 text-[14px] leading-snug">
+                    <input type="checkbox" className="mt-0.5 w-4 h-4" checked={chosen.includes(s.text)} onChange={(e) => setPicked(e.target.checked ? [...chosen, s.text] : chosen.filter((x) => x !== s.text))} />
                     {s.text}
                   </label>
                 </li>
               ))}
             </ul>
-          )}
-          <textarea className="proof-input mt-2" rows={2} placeholder="Other changes, one per line (optional)" value={extra} onChange={(e) => setExtra(e.target.value)} />
-          <textarea className="proof-input mt-2" rows={2} placeholder="A note to the customer (optional)" value={message} onChange={(e) => setMessage(e.target.value)} />
-          <button type="button" className="proof-btn primary w-full mt-2" disabled={!!busy} onClick={sendProof}>
-            {busy === 'proof' ? 'Sending…' : 'Send proof to customer'}
-          </button>
-          <p className="text-[12px] mt-1.5" style={{ color: 'var(--muted)' }}>
-            Shows them the current version of every page{order.customer?.email ? ' and emails them the link' : ''}.
-          </p>
-        </div>
-      )}
+          </div>
+        )}
+        <textarea className="proof-input" rows={2} placeholder={suggested.length ? 'Anything else you changed, one per line' : 'What you changed, one per line (optional)'} value={extra} onChange={(e) => setExtra(e.target.value)} />
+        <textarea className="proof-input mt-2" rows={3} placeholder="A note for them (optional)" value={message} onChange={(e) => setMessage(e.target.value)} />
+        <button type="button" className="pbtn primary w-full mt-3" disabled={!!busy} onClick={send}>
+          {busy === 'proof' ? 'Sending…' : 'Send proof'}
+        </button>
+        <p className="text-[12.5px] mt-2" style={{ color: 'var(--muted)' }}>
+          {view.order.customer?.email ? `We’ll email ${view.order.customer.email} the link.` : 'There’s no email on this order, so copy the link to them from Details.'}
+        </p>
+      </Section>
+    </div>
+  )
+}
 
-      {/* Status */}
-      <div>
-        <div className="text-[12px] uppercase tracking-wide font-semibold" style={{ color: 'var(--muted)' }}>
-          Status
+function Copy({ text, label }: { text: string; label: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      type="button"
+      className="pbtn sm"
+      onClick={() => {
+        void navigator.clipboard.writeText(text)
+        setDone(true)
+        setTimeout(() => setDone(false), 1500)
+      }}
+    >
+      {done ? 'Copied' : label}
+    </button>
+  )
+}
+
+/** Who ordered it, the links to send them, and where the job goes next. */
+export function PrinterDetails({ view, ops, busy }: { view: PageView; ops: PrinterOps; busy: string | null }) {
+  const { job, order } = view
+  const c = order.customer ?? {}
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const s = job.status
+  const facts = Object.entries(job.product).filter(([k, v]) => !['key', 'shape', 'width', 'height', 'unit', 'bleed', 'safe', 'pages', 'name'].includes(k) && (typeof v === 'string' || typeof v === 'number'))
+  return (
+    <div>
+      <Section title={c.name || 'Customer'}>
+        <div className="text-[14px] space-y-1" style={{ color: 'var(--ink-2)' }}>
+          {c.company && <div>{c.company}</div>}
+          {c.email && (
+            <div>
+              <a href={`mailto:${c.email}`} className="hover:underline">
+                {c.email}
+              </a>
+            </div>
+          )}
+          {c.phone && (
+            <div>
+              <a href={`tel:${c.phone}`} className="hover:underline">
+                {c.phone}
+              </a>
+            </div>
+          )}
         </div>
-        <div className="flex flex-wrap gap-1.5 mt-1.5">
-          {['received', 'awaiting_approval', 'changes_requested'].includes(job.status) && (
-            <button type="button" className="proof-btn h-8 text-[13px]" disabled={!!busy} onClick={approve}>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <Copy text={`${origin}/proof/${job.token}`} label="Copy their link" />
+          {view.siblings.length > 1 && <Copy text={`${origin}/proof/o/${order.token}`} label="Copy order link" />}
+        </div>
+      </Section>
+
+      <Section title="Item">
+        <dl className="grid grid-cols-[110px_1fr] gap-y-1.5 text-[14px]">
+          <dt style={{ color: 'var(--muted)' }}>Product</dt>
+          <dd>{view.spec.name}</dd>
+          {job.quantity && (
+            <>
+              <dt style={{ color: 'var(--muted)' }}>Quantity</dt>
+              <dd>{job.quantity.toLocaleString()}</dd>
+            </>
+          )}
+          {facts.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="capitalize" style={{ color: 'var(--muted)' }}>
+                {k}
+              </dt>
+              <dd>{String(v)}</dd>
+            </div>
+          ))}
+          {order.ref && (
+            <>
+              <dt style={{ color: 'var(--muted)' }}>Order</dt>
+              <dd>
+                {order.id ? (
+                  <Link href={`/print/orders/${order.id}`} className="hover:underline">
+                    {order.ref}
+                  </Link>
+                ) : (
+                  order.ref
+                )}
+              </dd>
+            </>
+          )}
+        </dl>
+      </Section>
+
+      <Section title="Move it along">
+        <div className="flex flex-wrap gap-2">
+          {['received', 'awaiting_approval', 'changes_requested'].includes(s) && (
+            <button type="button" className="pbtn sm" disabled={!!busy} onClick={ops.approve}>
               Approve for them
             </button>
           )}
-          {open && (
-            <button type="button" className="proof-btn h-8 text-[13px]" disabled={!!busy} onClick={() => setStatus('locked')}>
-              Lock now
+          {OPEN.includes(s) && (
+            <button type="button" className="pbtn sm" disabled={!!busy} onClick={() => ops.setStatus('locked')}>
+              Lock for print now
             </button>
           )}
-          {['approved', 'locked'].includes(job.status) && (
-            <button type="button" className="proof-btn h-8 text-[13px]" disabled={!!busy} onClick={() => setStatus('in_production')}>
-              In production
+          {['approved', 'locked'].includes(s) && (
+            <button type="button" className="pbtn sm" disabled={!!busy} onClick={() => ops.setStatus('in_production')}>
+              Start printing
             </button>
           )}
-          {job.status === 'in_production' && (
-            <button type="button" className="proof-btn h-8 text-[13px]" disabled={!!busy} onClick={() => setStatus('complete')}>
-              Complete
+          {s === 'in_production' && (
+            <button type="button" className="pbtn sm" disabled={!!busy} onClick={() => ops.setStatus('complete')}>
+              Mark complete
             </button>
           )}
-          {['locked', 'cancelled'].includes(job.status) && (
-            <button type="button" className="proof-btn quiet h-8 text-[13px]" disabled={!!busy} onClick={() => setStatus('received')}>
-              Reopen
+          {['locked', 'cancelled'].includes(s) && (
+            <button type="button" className="pbtn sm" disabled={!!busy} onClick={() => ops.setStatus('received')}>
+              Reopen for changes
             </button>
           )}
-          {!['complete', 'cancelled'].includes(job.status) && (
-            <button type="button" className="proof-btn quiet h-8 text-[13px]" disabled={!!busy} onClick={() => setStatus('cancelled')}>
-              Cancel job
-            </button>
-          )}
-          <a href={`/api/v1/print/jobs/${id}/print-file`} className="proof-btn quiet h-8 text-[13px]">
-            Print file (PDF)
+          <a href={`/api/v1/print/jobs/${job.id}/print-file`} className="pbtn sm">
+            Download print file
           </a>
+          {!['complete', 'cancelled'].includes(s) && (
+            <button type="button" className="pbtn sm ghost" disabled={!!busy} onClick={() => ops.setStatus('cancelled')}>
+              Cancel this item
+            </button>
+          )}
         </div>
-      </div>
+      </Section>
     </div>
   )
 }

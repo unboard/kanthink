@@ -86,7 +86,8 @@ export interface ArtworkFile {
 }
 
 /** How each of the printer's one-click fixes is described to the customer. */
-export const REVISE_CHANGES: Record<'fit' | 'fix' | 'sharpen', ProofChange> = {
+export const REVISE_CHANGES: Record<'fit' | 'fix' | 'sharpen' | 'marks', ProofChange> = {
+  marks: { kind: 'content', text: 'Made the changes you marked' },
   fit: { kind: 'fit', text: 'Fit your design to this product’s size, keeping every word and detail' },
   fix: { kind: 'safe', text: 'Moved anything too close to the edge inside the safe area, and ran colour to the edges' },
   sharpen: { kind: 'resolution', text: 'Sharpened the artwork so it prints crisp' },

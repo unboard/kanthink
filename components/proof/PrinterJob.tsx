@@ -25,6 +25,7 @@ export function PrinterJob({ id }: { id: string }) {
         return call<PageView>(`/api/print/jobs/${id}`)
       },
       jobHref: (s) => `/print/jobs/${s.id}`,
+      customerView: () => call<PageView>(`/api/print/jobs/${id}?as=customer`),
     }),
     [id],
   )

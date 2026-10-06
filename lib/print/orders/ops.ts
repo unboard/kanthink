@@ -5,6 +5,7 @@ import {
   OrderError,
   addArtwork,
   addComment,
+  designOf,
   approveJob,
   createOrder,
   eventsOf,
@@ -58,7 +59,20 @@ export async function listOrdersOp(who: Caller, opts: { limit?: number; since?: 
       rows.map(async (o) => ({
         ...(await apiOrder(o, false)),
         // A light summary per job; GET the order for everything.
-        jobs: (await jobsOf(o.id)).map((j) => ({ id: j.id, externalId: j.externalId, name: j.name, quantity: j.quantity, status: effectiveStatus(j.status as JobStatus, lockAtFor(j, o), t) })),
+        jobs: await Promise.all(
+          (await jobsOf(o.id)).map(async (j) => {
+            const d = await designOf(j).catch(() => null)
+            const first = d?.pages[0]
+            return {
+              id: j.id,
+              externalId: j.externalId,
+              name: j.name,
+              quantity: j.quantity,
+              status: effectiveStatus(j.status as JobStatus, lockAtFor(j, o), t),
+              thumb: first?.versions[first.current]?.url ?? null,
+            }
+          }),
+        ),
       })),
     ),
   }
