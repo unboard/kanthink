@@ -86,6 +86,7 @@ const Icon = {
   chevron: <path d="m6 8 4 4 4-4" />,
   back: <path d="m12 5-5 5 5 5" />,
   check: <path d="m4.5 10.5 3.5 3.5 7.5-8" />,
+  pen: <path d="M13.5 3.5 16.5 6.5 7 16H4v-3l9.5-9.5ZM11.5 5.5l3 3" />,
 }
 
 function Svg({ d, size = 20 }: { d: React.ReactNode; size?: number }) {
@@ -152,6 +153,7 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
   const [uploadPage, setUploadPage] = useState(0)
   const lastDraw = useRef<{ id: string; at: number; page: number } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const thread = useRef<HTMLDivElement>(null)
   const [canvasRef, canvas] = useBox<HTMLDivElement>()
   const sheetWrap = useRef<HTMLDivElement>(null)
 
@@ -162,15 +164,16 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
   const sheet = bleedSize(spec)
   const page = view.pages[Math.min(side, view.pages.length - 1)]
   const mobile = canvas.w > 0 && canvas.w < 700
-  // The artwork takes whatever the controls leave: room for the switches above,
-  // the side switch and the dock below.
-  const reserveTop = account === 'printer' && mobile ? 104 : 64
-  const dockH = mobile ? 148 : 100
-  const reserveBottom = dockH + (view.pages.length > 1 ? 52 : 12)
-  // On a wide screen the drawer sits beside the artwork, not over it.
-  const aside = drawer && canvas.w >= 900 ? 428 : 0
-  const room = canvas.w - aside
-  const pageW = Math.max(120, Math.floor(Math.min(room - (mobile ? 28 : 96), ((canvas.h - reserveTop - reserveBottom) * sheet.w) / sheet.h)))
+  // The artwork takes whatever the rails leave. Wide screens: pages on the left, tools
+  // on the right, the drawer beside the tools. Phones: side chips and a tab bar.
+  const multi = view.pages.length > 1
+  const towerW = mobile ? 0 : 84
+  const railW = !mobile && multi ? 112 : 0
+  const aside = drawer && canvas.w >= 900 ? 412 : 0
+  const reserveTop = account === 'printer' && mobile ? 100 : 60
+  const reserveBottom = mobile ? (multi ? 64 : 20) : 52
+  const room = canvas.w - aside - towerW - railW
+  const pageW = Math.max(120, Math.floor(Math.min(room - (mobile ? 28 : 64), ((canvas.h - reserveTop - reserveBottom) * sheet.w) / sheet.h)))
   const pageH = Math.round((pageW * sheet.h) / sheet.w)
 
   const refresh = useCallback(async () => {
@@ -318,16 +321,82 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
   const siblingsWaiting = view.siblings.filter((x) => !x.current && waitingOn(x.status, printer ? 'printer' : 'customer')).length
   const shortLeft = job.timeLeft?.replace('in ', '').replace(/ hours?/, 'h').replace(/ days?/, 'd').replace(/ minutes?/, 'm')
 
+  // Messages read like a text thread: oldest first, opened at the newest.
+  useEffect(() => {
+    if (drawer === 'activity') thread.current?.scrollIntoView({ block: 'end' })
+  }, [drawer, view.events.length])
+
+  // A blank side can be filled from here: the printer adds the file, the customer sends one.
+  const addFile = async (f: File, pageIndex: number) => {
+    if (account === 'printer' && !preview) {
+      await run('upload', async () => {
+        const { uploadToStorage } = await import('./upload')
+        const url = await uploadToStorage(f, '/api/print/sign-artwork')
+        const res = await fetch(`/api/v1/print/jobs/${own.job.id}/artwork`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artwork: [{ url, page: pageIndex, filename: f.name }] }) })
+        const json = await res.json().catch(() => null)
+        if (!res.ok) throw new Error(json?.error?.message ?? 'That file didn’t go through.')
+        return actions.reload()
+      })
+    } else if (actions.upload && !preview) {
+      await run('upload', () => actions.upload!(f, pageIndex))
+    }
+  }
+
+  // The one thing to do now, for whoever is looking. It lives in the top right.
+  const primary: { label: string; onClick: () => void; quiet?: boolean } | null = asking
+    ? null
+    : printer
+      ? s === 'received' || s === 'changes_requested'
+        ? { label: 'Send proof', onClick: () => setDrawer('send') }
+        : s === 'awaiting_approval'
+          ? { label: 'Send update', onClick: () => setDrawer('send'), quiet: true }
+          : s === 'approved'
+            ? { label: 'Lock for print', onClick: () => void ops.setStatus('locked') }
+            : s === 'locked'
+              ? { label: 'Start printing', onClick: () => void ops.setStatus('in_production') }
+              : s === 'in_production'
+                ? { label: 'Mark complete', onClick: () => void ops.setStatus('complete') }
+                : null
+      : view.can.approve
+        ? { label: 'Approve', onClick: () => setConfirming(true) }
+        : null
+
+  // The tools, in the right-hand rail (a tab bar on phones).
+  const tools: { id: Drawer | 'ask' | 'guides'; label: string; icon: React.ReactNode; badge?: number; signal?: boolean; on?: boolean; hidden?: boolean }[] = printer
+    ? [
+        { id: 'work', label: 'Fix', icon: Icon.wand, badge: openMarks.length || undefined, signal: openMarks.length > 0 },
+        { id: 'activity', label: 'Messages', icon: Icon.chat },
+        { id: 'details', label: 'Customer', icon: Icon.user },
+        { id: 'guides', label: 'Guides', icon: Icon.guides, on: guides, hidden: raw || !version },
+      ]
+    : [
+        { id: 'changes', label: 'Changes', icon: Icon.info, badge: view.proof?.changes.length || undefined, hidden: !view.proof },
+        { id: 'ask', label: 'Mark up', icon: Icon.pen, hidden: !view.can.requestChanges || !view.proof },
+        { id: 'activity', label: 'Messages', icon: Icon.chat },
+        { id: 'details', label: 'Order', icon: Icon.list },
+        { id: 'guides', label: 'Guides', icon: Icon.guides, on: guides, hidden: raw || !version || mobile },
+      ]
+  const pickTool = (id: (typeof tools)[number]['id']) => {
+    if (id === 'guides') setGuides(!guides)
+    else if (id === 'ask') {
+      if (!preview) startAsking()
+    } else setDrawer(drawer === id ? null : id)
+  }
+  const visibleTools = tools.filter((t) => !t.hidden)
+
+  // A page's picture for the side rail: what this view would show of it.
+  const thumbFor = (p: PageView['pages'][number], i: number) => (raw ? fileFor(i)?.url : (show === 'working' && printer ? p.current ?? p.proof ?? p.original : p.proof ?? (printer ? p.current : p.original))?.url) ?? null
+
   return (
     <div className="proof h-full w-full flex flex-col overflow-hidden" style={{ ['--accent' as string]: accent }}>
-      {/* Top bar: whose page, which item, how long is left */}
-      <header className="relative z-20 h-[60px] shrink-0 flex items-center gap-2 px-3 sm:px-5 bg-white/80 backdrop-blur border-b" style={{ borderColor: 'var(--line)' }}>
+      {/* Top bar: whose page, which item and whose move, and the one thing to do */}
+      <header className="relative z-30 h-[64px] shrink-0 flex items-center gap-2 px-2.5 sm:px-4 bg-white/85 backdrop-blur border-b" style={{ borderColor: 'var(--line)' }}>
         {account === 'printer' && (
-          <Link href={order.id ? `/print/orders/${order.id}` : '/print/orders'} className="icon-btn -ml-1.5 shrink-0" aria-label="Back to the order">
+          <Link href={order.id ? `/print/orders/${order.id}` : '/print/orders'} className="icon-btn -ml-1 shrink-0" aria-label="Back to the order">
             <Svg d={Icon.back} />
           </Link>
         )}
-        <div className="shrink-0 max-w-[28%] flex items-center">
+        <div className={`shrink-0 items-center ${mobile ? 'hidden' : 'flex'} max-w-[180px]`}>
           {brand.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={brand.logoUrl} alt={brand.name ?? ''} className="max-h-8 max-w-full object-contain" />
@@ -336,50 +405,80 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
           )}
         </div>
 
-        <div className="flex-1 min-w-0 flex justify-center">
+        <div className="flex-1 min-w-0 flex sm:justify-center">
           <button
             type="button"
             onClick={() => setDrawer(drawer === 'items' ? null : 'items')}
-            className="min-w-0 max-w-full flex items-center gap-1.5 h-11 pl-3 pr-2 rounded-xl enabled:hover:bg-black/5"
+            className="min-w-0 max-w-full flex items-center gap-1.5 h-12 px-2.5 rounded-xl enabled:hover:bg-black/5 text-left"
             aria-expanded={drawer === 'items'}
             disabled={view.siblings.length < 2}
           >
-            <span className="min-w-0 text-left leading-tight">
-              <span className="block text-[15px] font-semibold truncate">{job.name}</span>
-              {view.siblings.length > 1 && (
-                <span className="block text-[12px] truncate" style={{ color: siblingsWaiting ? '#9d004f' : 'var(--muted)' }}>
-                  Item {view.siblings.findIndex((x) => x.current) + 1} of {view.siblings.length}
-                  {siblingsWaiting ? `, ${siblingsWaiting} more need${siblingsWaiting === 1 ? 's' : ''} you` : ''}
+            <span className="min-w-0 leading-tight">
+              <span className="block text-[15.5px] font-semibold truncate">
+                {job.name}
+                {view.siblings.length > 1 && (
+                  <span className="font-normal" style={{ color: 'var(--muted)' }}>
+                    {' '}
+                    {view.siblings.findIndex((x) => x.current) + 1}/{view.siblings.length}
+                  </span>
+                )}
+              </span>
+              <span className="flex items-center gap-1.5 text-[12.5px] truncate" style={{ color: yours ? '#9d004f' : 'var(--ink-2)' }}>
+                {yours ? <span className="signal-dot" style={{ width: 7, height: 7 }} /> : <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: ['approved', 'locked', 'complete', 'in_production'].includes(s) ? 'var(--good)' : 'var(--muted)' }} />}
+                <span className="truncate">
+                  {status.title}
+                  {mobile && job.lockAt && job.timeLeft !== 'closed' ? `, closes ${shortLeft}` : ''}
                 </span>
-              )}
+              </span>
             </span>
             {view.siblings.length > 1 && (
-              <span className="shrink-0" style={{ color: 'var(--muted)' }}>
+              <span className="relative shrink-0" style={{ color: 'var(--muted)' }}>
                 <Svg d={Icon.chevron} size={18} />
+                {siblingsWaiting > 0 && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style={{ background: 'var(--signal)' }} />}
               </span>
             )}
           </button>
         </div>
 
-        {job.lockAt ? (
+        {job.lockAt && !mobile && (
           <div
             className="shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-full text-[13px] font-medium"
             style={{ background: job.timeLeft !== 'closed' && yours ? 'var(--signal-soft)' : 'var(--raise)', color: job.timeLeft !== 'closed' && yours ? '#9d004f' : 'var(--ink-2)' }}
             title={`Changes close ${deadlineText(job.lockAt)}`}
           >
             <Svg d={job.timeLeft === 'closed' ? Icon.lock : Icon.clock} size={16} />
-            <span className="hidden sm:inline">{job.timeLeft === 'closed' ? 'Final' : `Closes ${job.timeLeft}`}</span>
-            <span className="sm:hidden">{job.timeLeft === 'closed' ? 'Final' : shortLeft}</span>
+            {job.timeLeft === 'closed' ? 'Final' : `Closes ${job.timeLeft}`}
           </div>
+        )}
+        {asking ? (
+          <>
+            <button type="button" className="pbtn sm ghost shrink-0" onClick={stopAsking}>
+              Cancel
+            </button>
+            <button type="button" className="pbtn sm primary shrink-0" disabled={preview || !!busy || (!note.trim() && !markCount)} onClick={submitChanges}>
+              {busy === 'changes' ? 'Sending…' : markCount ? `Send ${markCount} change${markCount === 1 ? '' : 's'}` : 'Send'}
+            </button>
+          </>
         ) : (
-          <div className="w-9" />
+          <>
+            {!printer && view.can.approve && !mobile && (
+              <button type="button" className="pbtn sm shrink-0" disabled={preview} onClick={startAsking}>
+                Request a change
+              </button>
+            )}
+            {primary && (
+              <button type="button" className={`pbtn sm shrink-0 ${primary.quiet ? '' : 'primary'}`} disabled={preview || !!busy} onClick={primary.onClick}>
+                {primary.label}
+              </button>
+            )}
+          </>
         )}
       </header>
 
       {/* The light table */}
       <div ref={canvasRef} className="light-table relative flex-1 min-h-0 overflow-hidden">
         {/* Above the artwork: whose view and which version, or the markup tools */}
-        <div className="absolute top-3 left-2 z-10 flex flex-wrap items-center justify-center gap-2 pointer-events-none transition-[right] duration-200" style={{ right: aside + 8 }}>
+        <div className="absolute top-3 z-10 flex flex-wrap items-center justify-center gap-2 pointer-events-none transition-[right] duration-200" style={{ left: railW + 8, right: aside + towerW + 8 }}>
           {asking ? (
             <div className="glass seg pointer-events-auto" role="toolbar" aria-label="Markup tools">
               {(['ellipse', 'arrow', 'rect', 'draw'] as MarkKind[]).map((t) => (
@@ -422,24 +521,47 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
                   Exactly what {customerName} sees
                 </span>
               )}
-              {!raw && version && (
-                <button
-                  type="button"
-                  onClick={() => setGuides(!guides)}
-                  aria-pressed={guides}
-                  className="glass pointer-events-auto w-9 h-9 rounded-full inline-flex items-center justify-center"
-                  title="Show the trim line and safe area"
-                  style={{ color: guides ? 'var(--cyan)' : 'var(--ink-2)' }}
-                >
-                  <Svg d={Icon.guides} size={18} />
-                </button>
-              )}
             </>
           )}
         </div>
 
+        {error && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 max-w-[min(520px,90%)] rounded-xl px-3.5 py-2.5 text-[13.5px] flex items-start gap-2 shadow-lg" style={{ background: '#fdecee', color: '#9b1c2c' }}>
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={() => setError(null)} aria-label="Dismiss" className="shrink-0">
+              <Svg d={Icon.close} size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* Pages: every side the product has */}
+        {multi && !mobile && (
+          <nav className="absolute left-3 top-1/2 -translate-y-1/2 z-10 glass rounded-2xl p-2 flex flex-col gap-2 max-h-[calc(100%-32px)] overflow-y-auto" style={{ width: railW - 16 }} aria-label="Sides">
+            {view.pages.map((p, i) => {
+              const t = thumbFor(p, i)
+              const marked = p.marks.some((m) => m.status === 'open' && !m.hidden && (printer || m.by?.startsWith('customer'))) || (draft[i]?.length ?? 0) > 0
+              return (
+                <button key={i} type="button" onClick={() => setSide(i)} aria-current={side === i ? 'page' : undefined} className="relative flex flex-col items-center gap-1.5 rounded-xl p-1.5 hover:bg-black/[.04]" style={{ background: side === i ? 'rgba(20,24,29,.07)' : undefined }}>
+                  <span className="light-table w-full h-[72px] rounded-lg flex items-center justify-center overflow-hidden" style={{ outline: side === i ? '2px solid var(--ink)' : 'none', outlineOffset: 1 }}>
+                    {t ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumb(t, 180)} alt="" className="max-w-[86%] max-h-[86%] object-contain bg-white shadow" />
+                    ) : (
+                      <span className="w-[58%] h-[78%] rounded-sm border-2 border-dashed" style={{ borderColor: 'rgba(20,24,29,.18)' }} />
+                    )}
+                  </span>
+                  <span className="text-[12px] font-medium" style={{ color: side === i ? 'var(--ink)' : 'var(--ink-2)' }}>
+                    {p.label}
+                  </span>
+                  {marked && <span className="absolute top-2 right-2 w-2 h-2 rounded-full" style={{ background: 'var(--signal)' }} />}
+                </button>
+              )
+            })}
+          </nav>
+        )}
+
         {/* The artwork */}
-        <div className="absolute left-0 flex flex-col items-center justify-center" style={{ top: reserveTop, bottom: reserveBottom, right: aside }}>
+        <div className="absolute flex flex-col items-center justify-center transition-[right] duration-200" style={{ top: reserveTop, bottom: reserveBottom, left: railW, right: aside + towerW }}>
           {canvas.w > 0 &&
             (raw ? (
               file ? (
@@ -449,7 +571,7 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
                     src={thumb(file.url, 1800)}
                     alt={file.filename ?? page.label}
                     className="bg-white"
-                    style={{ maxWidth: Math.min(room - (mobile ? 28 : 96), 1400), maxHeight: canvas.h - reserveTop - reserveBottom - 30, objectFit: 'contain', boxShadow: '0 2px 4px rgba(0,0,0,.08), 0 18px 44px rgba(20,24,29,.16)' }}
+                    style={{ maxWidth: Math.min(room - (mobile ? 28 : 64), 1400), maxHeight: canvas.h - reserveTop - reserveBottom - 30, objectFit: 'contain', boxShadow: '0 2px 4px rgba(0,0,0,.08), 0 18px 44px rgba(20,24,29,.16)' }}
                   />
                   <figcaption className="mt-2.5 text-[12.5px]" style={{ color: 'var(--ink-2)' }}>
                     {file.filename || 'The file'}, exactly as {printer ? 'it was sent' : 'you sent it'}
@@ -462,184 +584,131 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
               )
             ) : version ? (
               <div ref={sheetWrap} className="relative">
-              {!loaded && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-                  <span className="glass text-[13px] px-3.5 py-1.5 rounded-full" style={{ color: 'var(--ink-2)' }}>
-                    Loading the artwork…
-                  </span>
-                </div>
-              )}
-              <Sheet
-                spec={spec}
-                version={asVersion(version)}
-                width={pageW}
-                showGuides={guides}
-                label={page.label}
-                selected
-                issues={printer && show === 'working' && guides ? (version.check?.issues as never) : undefined}
-                overlay={
-                  asking ? (
-                    <MarkupLayer
-                      width={pageW}
-                      height={pageH}
-                      marks={draft[side] ?? []}
-                      tool={tool}
-                      selectedId={selected}
-                      onSelect={setSelected}
-                      onStroke={addStroke(side)}
-                      onChange={(id, m) => editMark(side, id, { pts: m.pts })}
-                      onNote={(id, n) => editMark(side, id, { note: n })}
-                      onDelete={(id) => editMark(side, id, null)}
-                      onDone={() => setSelected(null)}
-                    />
-                  ) : page.marks.some((m) => m.status === 'open' && !m.hidden && (printer || m.by?.startsWith('customer'))) ? (
-                    <ReadMarks marks={page.marks.filter((m) => m.status === 'open' && !m.hidden && (printer || m.by?.startsWith('customer')))} width={pageW} height={pageH} />
-                  ) : null
-                }
-              />
+                {!loaded && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                    <span className="glass text-[13px] px-3.5 py-1.5 rounded-full" style={{ color: 'var(--ink-2)' }}>
+                      Loading the artwork…
+                    </span>
+                  </div>
+                )}
+                <Sheet
+                  spec={spec}
+                  version={asVersion(version)}
+                  width={pageW}
+                  showGuides={guides}
+                  label={page.label}
+                  selected
+                  issues={printer && show === 'working' && guides ? (version.check?.issues as never) : undefined}
+                  overlay={
+                    asking ? (
+                      <MarkupLayer
+                        width={pageW}
+                        height={pageH}
+                        marks={draft[side] ?? []}
+                        tool={tool}
+                        selectedId={selected}
+                        onSelect={setSelected}
+                        onStroke={addStroke(side)}
+                        onChange={(id, m) => editMark(side, id, { pts: m.pts })}
+                        onNote={(id, n) => editMark(side, id, { note: n })}
+                        onDelete={(id) => editMark(side, id, null)}
+                        onDone={() => setSelected(null)}
+                      />
+                    ) : page.marks.some((m) => m.status === 'open' && !m.hidden && (printer || m.by?.startsWith('customer'))) ? (
+                      <ReadMarks marks={page.marks.filter((m) => m.status === 'open' && !m.hidden && (printer || m.by?.startsWith('customer')))} width={pageW} height={pageH} />
+                    ) : null
+                  }
+                />
               </div>
             ) : (
-              <div className="bg-white rounded-sm flex items-center justify-center text-[14px] text-center px-4" style={{ width: pageW, height: pageH, color: 'var(--muted)', boxShadow: '0 18px 44px rgba(20,24,29,.12)' }}>
-                {printer ? `No artwork on the ${page.label.toLowerCase()} yet` : `The ${page.label.toLowerCase()} prints blank`}
+              // A blank side still shows the product's shape: the hole of a door hanger, the round of a sticker.
+              <div className="relative" style={{ width: pageW, height: pageH }}>
+                <Sheet spec={spec} version={null} width={pageW} showGuides={guides} selected />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-[14px] text-center px-5" style={{ color: 'var(--muted)' }}>
+                <span>{printer ? `No artwork on the ${page.label.toLowerCase()} yet` : `The ${page.label.toLowerCase()} prints blank`}</span>
+                {((printer && !preview && ['received', 'awaiting_approval', 'changes_requested', 'approved'].includes(s)) || (!printer && view.can.upload && !preview)) && (
+                  <button
+                    type="button"
+                    className="pbtn sm"
+                    disabled={!!busy}
+                    onClick={() => {
+                      setUploadPage(side)
+                      fileInput.current?.click()
+                    }}
+                  >
+                    {busy === 'upload' ? 'Adding…' : printer ? `Add a file for the ${page.label.toLowerCase()}` : `Send a file for the ${page.label.toLowerCase()}`}
+                  </button>
+                )}
+                </div>
               </div>
             ))}
         </div>
 
-        {/* Sides */}
-        {view.pages.length > 1 && (
-          <div className="absolute left-0 z-10 flex justify-center" style={{ bottom: dockH + 2, right: aside }}>
+        {/* What to do, said quietly under the page */}
+        {!mobile && status.sub && !asking && (
+          <p className="absolute bottom-4 z-10 text-center text-[13px] px-4 pointer-events-none" style={{ left: railW, right: aside + towerW, color: 'var(--ink-2)' }}>
+            {status.sub}
+          </p>
+        )}
+        {asking && (
+          <div className="absolute bottom-3 z-20 flex justify-center px-3" style={{ left: railW, right: aside + towerW }}>
+            <input className="proof-input glass max-w-[560px]" placeholder={markCount ? 'Anything else? (optional)' : 'Circle what to change, or just write it here'} value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+        )}
+
+        {/* Sides, on a phone */}
+        {multi && mobile && !asking && (
+          <div className="absolute inset-x-0 bottom-3 z-10 flex justify-center">
             <div className="glass seg" role="group" aria-label="Side">
-              {view.pages.map((p, i) => {
-                const marked = p.marks.some((m) => m.status === 'open' && !m.hidden && (printer || m.by?.startsWith('customer'))) || (draft[i]?.length ?? 0) > 0
-                return (
-                  <button key={i} type="button" aria-pressed={side === i} onClick={() => setSide(i)} className="relative">
-                    {p.label}
-                    {marked && <span className="absolute top-1 right-1.5 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--signal)' }} />}
-                  </button>
-                )
-              })}
+              {view.pages.map((p, i) => (
+                <button key={i} type="button" aria-pressed={side === i} onClick={() => setSide(i)}>
+                  {p.label}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        {/* The dock: whose move, and what to do */}
-        <div className="absolute left-0 bottom-0 z-20 flex justify-center px-2.5 sm:px-4 pb-[max(10px,env(safe-area-inset-bottom))]" style={{ right: aside }}>
-          <div className="glass w-full max-w-[780px] rounded-[20px] p-2.5 sm:p-3">
-            {error && (
-              <div className="mb-2 rounded-xl px-3 py-2 text-[13.5px] flex items-start gap-2" style={{ background: '#fdecee', color: '#9b1c2c' }}>
-                <span className="flex-1">{error}</span>
-                <button type="button" onClick={() => setError(null)} aria-label="Dismiss" className="shrink-0">
-                  <Svg d={Icon.close} size={16} />
+        {/* Tools: the right-hand rail */}
+        {!mobile && (
+          <nav className="absolute right-3 top-1/2 -translate-y-1/2 z-20 glass rounded-2xl p-1.5 flex flex-col gap-1" style={{ width: towerW - 16 }} aria-label="Tools">
+            {visibleTools.map((t) => {
+              const active = t.id === 'guides' ? t.on : t.id === 'ask' ? asking : drawer === t.id
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => pickTool(t.id)}
+                  aria-pressed={active}
+                  className="relative flex flex-col items-center gap-1 rounded-xl py-2.5 hover:bg-black/[.05]"
+                  style={{ background: active ? 'var(--ink)' : undefined, color: active ? '#fff' : 'var(--ink-2)' }}
+                  disabled={t.id === 'ask' && preview}
+                >
+                  <Svg d={t.icon} size={21} />
+                  <span className="text-[11px] font-medium leading-none">{t.label}</span>
+                  {t.badge ? <span className={`badge ${t.signal ? 'signal' : ''}`}>{t.badge}</span> : null}
                 </button>
-              </div>
-            )}
-            {asking ? (
-              <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                <input className="proof-input flex-1" placeholder={markCount ? 'Anything else? (optional)' : 'Circle what to change, or just write it here'} value={note} onChange={(e) => setNote(e.target.value)} />
-                <div className="flex gap-2">
-                  <button type="button" className="pbtn ghost" onClick={stopAsking}>
-                    Cancel
-                  </button>
-                  <button type="button" className="pbtn primary flex-1 sm:flex-none" disabled={preview || !!busy || (!note.trim() && !markCount)} onClick={submitChanges}>
-                    {busy === 'changes' ? 'Sending…' : markCount ? `Send ${markCount} change${markCount === 1 ? '' : 's'}` : 'Send'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 sm:items-center">
-                <div className="flex items-center gap-3 min-w-0 flex-1 px-1.5 pt-0.5 sm:pt-0">
-                  {yours ? (
-                    <span className="signal-dot" />
-                  ) : (
-                    <span className="w-[9px] h-[9px] rounded-full shrink-0" style={{ background: ['approved', 'locked', 'complete', 'in_production'].includes(s) ? 'var(--good)' : 'var(--muted)' }} />
-                  )}
-                  <div className="min-w-0 leading-tight">
-                    <div className="text-[15.5px] font-semibold truncate">{status.title}</div>
-                    {status.sub && (
-                      <div className="text-[13px] mt-0.5 line-clamp-2" style={{ color: 'var(--ink-2)' }}>
-                        {status.sub}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {printer ? (
-                    <>
-                      <button type="button" className="icon-btn" aria-expanded={drawer === 'work'} onClick={() => setDrawer(drawer === 'work' ? null : 'work')} title="Fix the file" aria-label="Fix the file">
-                        <Svg d={Icon.wand} />
-                        {openMarks.length > 0 && <span className="badge signal">{openMarks.length}</span>}
-                      </button>
-                      <button type="button" className="icon-btn" aria-expanded={drawer === 'details'} onClick={() => setDrawer(drawer === 'details' ? null : 'details')} title="Customer and item" aria-label="Customer and item">
-                        <Svg d={Icon.user} />
-                      </button>
-                    </>
-                  ) : (
-                    view.proof && (
-                      <button type="button" className="icon-btn" aria-expanded={drawer === 'changes'} onClick={() => setDrawer(drawer === 'changes' ? null : 'changes')} title="What we changed and checked" aria-label="What we changed and checked">
-                        <Svg d={Icon.info} />
-                        {!!view.proof.changes.length && <span className="badge">{view.proof.changes.length}</span>}
-                      </button>
-                    )
-                  )}
-                  <button type="button" className="icon-btn" aria-expanded={drawer === 'activity'} onClick={() => setDrawer(drawer === 'activity' ? null : 'activity')} title="Messages and history" aria-label="Messages and history">
-                    <Svg d={Icon.chat} />
-                  </button>
-                  {!printer && (
-                    <button type="button" className="icon-btn" aria-expanded={drawer === 'details'} onClick={() => setDrawer(drawer === 'details' ? null : 'details')} title="Order details" aria-label="Order details">
-                      <Svg d={Icon.list} />
-                    </button>
-                  )}
-
-                  <div className="flex-1 sm:flex-none sm:w-1.5" />
-
-                  {printer ? (
-                    <>
-                      {['received', 'changes_requested', 'awaiting_approval'].includes(s) && (
-                        <button type="button" className={`pbtn ${s === 'awaiting_approval' ? '' : 'primary'}`} onClick={() => setDrawer('send')}>
-                          {s === 'awaiting_approval' ? 'Send update' : 'Send proof'}
-                        </button>
-                      )}
-                      {s === 'approved' && (
-                        <button type="button" className="pbtn primary" disabled={!!busy} onClick={() => ops.setStatus('locked')}>
-                          Lock for print
-                        </button>
-                      )}
-                      {s === 'locked' && (
-                        <button type="button" className="pbtn primary" disabled={!!busy} onClick={() => ops.setStatus('in_production')}>
-                          Start printing
-                        </button>
-                      )}
-                      {s === 'in_production' && (
-                        <button type="button" className="pbtn primary" disabled={!!busy} onClick={() => ops.setStatus('complete')}>
-                          Mark complete
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {view.can.requestChanges && view.proof && (
-                        <button type="button" className={`pbtn ${s === 'awaiting_approval' ? '' : 'ghost'}`} disabled={preview} onClick={startAsking}>
-                          {s === 'approved' ? 'Change something' : 'Request a change'}
-                        </button>
-                      )}
-                      {view.can.approve && (
-                        <button type="button" className="pbtn primary" disabled={preview} onClick={() => setConfirming(true)}>
-                          Approve
-                        </button>
-                      )}
-                      {!view.proof && view.can.upload && (
-                        <button type="button" className="pbtn" disabled={preview || !!busy} onClick={() => fileInput.current?.click()}>
-                          {busy === 'upload' ? 'Sending…' : 'Send a new file'}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+              )
+            })}
+          </nav>
+        )}
       </div>
+
+      {/* Tools: a tab bar on a phone */}
+      {mobile && (
+        <nav className="shrink-0 z-20 bg-white/90 backdrop-blur border-t flex justify-around px-1 pt-1 pb-[max(6px,env(safe-area-inset-bottom))]" style={{ borderColor: 'var(--line)' }} aria-label="Tools">
+          {visibleTools.map((t) => {
+            const active = t.id === 'guides' ? t.on : t.id === 'ask' ? asking : drawer === t.id
+            return (
+              <button key={t.id} type="button" onClick={() => pickTool(t.id)} aria-pressed={active} className="relative flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl" style={{ color: active ? 'var(--ink)' : 'var(--muted)' }} disabled={t.id === 'ask' && preview}>
+                <Svg d={t.icon} size={22} />
+                <span className="text-[11px] font-medium">{t.label}</span>
+                {t.badge ? <span className={`badge ${t.signal ? 'signal' : ''}`} style={{ right: '22%' }}>{t.badge}</span> : null}
+              </button>
+            )
+          })}
+        </nav>
+      )}
 
       <input
         ref={fileInput}
@@ -649,7 +718,7 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
         onChange={(e) => {
           const f = e.target.files?.[0]
           e.target.value = ''
-          if (f && actions.upload) void run('upload', () => actions.upload!(f, uploadPage))
+          if (f) void addFile(f, uploadPage)
         }}
       />
 
@@ -685,11 +754,11 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
         </>
       )}
 
-      {/* The drawer */}
+      {/* The drawer, beside the tools on a wide screen */}
       {drawer && (
         <>
           <div className="scrim desktop-clear" onClick={() => setDrawer(null)} />
-          <aside className="drawer" role="dialog" aria-label="Details">
+          <aside className="drawer" role="dialog" aria-label="Details" style={canvas.w >= 900 ? { right: towerW + 8 } : undefined}>
             <div className="flex items-center justify-between px-5 pt-4 pb-1">
               <h2 className="text-[18px] font-semibold tracking-tight">
                 {
@@ -746,8 +815,8 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
 
               {drawer === 'activity' && (
                 <div className="flex flex-col min-h-full">
-                  <ol className="py-3 space-y-4 flex-1">
-                    {[...view.events].reverse().map((e) => {
+                  <ol className="py-3 space-y-4 mt-auto">
+                    {view.events.map((e) => {
                       const mine = e.actor === 'customer' ? !printer : printer
                       return (
                         <li key={e.id} className={`flex ${mine ? 'justify-end' : ''}`}>
@@ -765,6 +834,7 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
                       )
                     })}
                   </ol>
+                  <div ref={thread} />
                   {!['complete', 'canceled'].includes(s) && (
                     <div className="sticky bottom-0 bg-white pt-2 flex gap-2">
                       <input

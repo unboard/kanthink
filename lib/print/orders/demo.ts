@@ -53,7 +53,7 @@ export function demoOrderPayload(externalId: string) {
         externalId: 'line-2',
         name: 'Door hangers',
         quantity: 500,
-        product: { key: 'door-hanger', shape: 'square', pages: 1, sku: 'DH-425x11', stock: '14pt gloss' },
+        product: { key: 'door-hanger', shape: 'square', sku: 'DH-425x11', stock: '14pt gloss' },
         artwork: [{ url: ART, filename: 'yard-sign.jpg', origin: { madeBy: 'customer', via: 'upload' } }],
         notes: 'Customer sent their yard sign file for the door hangers too.',
       },
