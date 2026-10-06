@@ -16,6 +16,7 @@ const MODE_LABEL: Record<PrintVersion['mode'], string> = {
   upscale: 'Sharpened',
   fill: 'Filled to the edges',
   markup: 'Changed from markup',
+  upload: 'As sent',
 }
 
 interface InspectorProps {

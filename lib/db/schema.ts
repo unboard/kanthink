@@ -1617,6 +1617,7 @@ export const printDesigns = sqliteTable('print_designs', {
   renders: integer('renders').default(0),
   spendCents: integer('spend_cents').default(0),      // model spend, from usage reports
   chat: text('chat'),                                 // JSON ChatMessage[], the chat way of designing
+  jobId: text('job_id'),                              // set when the design is an order job's artwork
   createdAt: integer('created_at'),                   // epoch seconds
   updatedAt: integer('updated_at'),
 }, (table) => [
@@ -1645,6 +1646,94 @@ export const printPresets = sqliteTable('print_presets', {
 }, (table) => [
   index('print_presets_user_idx').on(table.userId),
 ])
+
+// ===== /print orders — shared proof pages between a printer and their customer =====
+// An order holds one or more jobs; each job is one printed item with its own artwork,
+// its own print_designs row (so every studio tool works on it) and its own public link.
+// Orders arrive from the studio, the API or MCP. Everything is owned by the printer's
+// account (user_id); customers reach a job only through its unguessable token.
+export const printOrders = sqliteTable('print_orders', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  externalId: text('external_id'),                    // the sending system's id; makes creates idempotent
+  ref: text('ref'),                                   // order number shown to people
+  source: text('source'),                             // studio | api | mcp
+  token: text('token').notNull(),                     // public order link
+  customer: text('customer'),                         // JSON { name, email, phone, company }
+  metadata: text('metadata'),                         // JSON, anything the sender wants back
+  offer: text('offer'),                               // JSON { title, body, url } optional upsell slot
+  lockAt: integer('lock_at'),                         // epoch seconds: changes close
+  createdAt: integer('created_at'),
+  updatedAt: integer('updated_at'),
+}, (table) => [
+  index('print_orders_user_idx').on(table.userId, table.createdAt),
+  uniqueIndex('print_orders_token_idx').on(table.token),
+])
+
+export const printJobs = sqliteTable('print_jobs', {
+  id: text('id').primaryKey(),
+  orderId: text('order_id').notNull().references(() => printOrders.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  designId: text('design_id').notNull(),
+  externalId: text('external_id'),
+  position: integer('position').default(0),
+  name: text('name').notNull(),
+  quantity: integer('quantity'),
+  product: text('product'),                           // JSON: the sender's product facts (sku, stock, finish…)
+  artwork: text('artwork'),                           // JSON ArtworkFile[]: what was sent, and where it came from
+  token: text('token').notNull(),                     // public job link
+  status: text('status').notNull(),                   // see lib/print/orders/status.ts
+  proof: text('proof'),                               // JSON JobProof: the version per page the customer sees
+  approvedAt: integer('approved_at'),
+  approvedBy: text('approved_by'),
+  lockAt: integer('lock_at'),                         // overrides the order's when set
+  createdAt: integer('created_at'),
+  updatedAt: integer('updated_at'),
+}, (table) => [
+  index('print_jobs_order_idx').on(table.orderId, table.position),
+  uniqueIndex('print_jobs_token_idx').on(table.token),
+])
+
+// What happened to a job, in order: the shared timeline and the webhook feed.
+export const printJobEvents = sqliteTable('print_job_events', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull().references(() => printJobs.id, { onDelete: 'cascade' }),
+  orderId: text('order_id').notNull(),
+  userId: text('user_id').notNull(),
+  actor: text('actor').notNull(),                     // printer | customer | api | system
+  type: text('type').notNull(),
+  message: text('message'),
+  data: text('data'),                                 // JSON
+  createdAt: integer('created_at'),
+}, (table) => [
+  index('print_job_events_job_idx').on(table.jobId, table.createdAt),
+])
+
+// Keys for the print API and MCP. Only the SHA-256 is stored; the key is shown once.
+export const printApiKeys = sqliteTable('print_api_keys', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  keyHash: text('key_hash').notNull(),
+  prefix: text('prefix').notNull(),                   // first characters, to tell keys apart
+  label: text('label'),
+  createdAt: integer('created_at'),
+  lastUsedAt: integer('last_used_at'),
+  revokedAt: integer('revoked_at'),
+}, (table) => [
+  uniqueIndex('print_api_keys_hash_idx').on(table.keyHash),
+])
+
+// A printer's settings for orders: how their proof pages look, where events are sent,
+// and how long customers have to approve by default.
+export const printPartners = sqliteTable('print_partners', {
+  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  brand: text('brand'),                               // JSON { name, logoUrl, color, email, phone, website }
+  webhookUrl: text('webhook_url'),
+  webhookSecret: text('webhook_secret'),
+  approvalHours: integer('approval_hours'),
+  createdAt: integer('created_at'),
+  updatedAt: integer('updated_at'),
+})
 
 // ---- Kanwatch -----------------------------------------------------------------
 // Browser activity, reduced by extensions/kanwatch/privacy.js before it is stored:

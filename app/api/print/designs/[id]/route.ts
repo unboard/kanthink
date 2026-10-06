@@ -5,6 +5,7 @@ import { printDesigns } from '@/lib/db/schema'
 import { isOwnImageUrl } from '@/lib/print/server/images'
 import { catalogProduct } from '@/lib/print/spec'
 import { cleanMarks } from '@/lib/print/markup'
+import { mergeJobPages } from '@/lib/print/orders/rules'
 import { getDesign, now, printUser } from '@/lib/print/server/store'
 import type { ChatMessage, DesignImage, DesignImageRole, PrintBrief, PrintPage } from '@/lib/print/types'
 
@@ -124,7 +125,8 @@ export async function PATCH(request: Request, { params }: Params) {
   if (body.pages !== undefined) {
     const pages = cleanPages(body.pages, design.spec.pages.length)
     if (!pages) return NextResponse.json({ error: 'Pages don’t match this design.' }, { status: 400 })
-    set.pages = JSON.stringify(pages)
+    // An order job's artwork is also written by its customer and its job page.
+    set.pages = JSON.stringify(design.jobId ? mergeJobPages(pages, design.pages) : pages)
   }
   await db.update(printDesigns).set(set).where(and(eq(printDesigns.id, id), eq(printDesigns.userId, userId)))
   return NextResponse.json({ ok: true, updatedAt: set.updatedAt })

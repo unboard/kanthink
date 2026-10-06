@@ -15,6 +15,7 @@ export const PUSH_TYPES = new Set<NotificationType>([
   'app_order',
   'app_purchase',
   'app_feedback',
+  'print_job',
   'ai_generation_completed',
 ])
 
@@ -31,6 +32,7 @@ function configure(): boolean {
 /** Where tapping the notification goes. Mirrors NotificationItem's routing for the push types. */
 export function notificationUrl(input: { type: string; data?: Record<string, unknown> | null }): string {
   const d = input.data ?? {}
+  if (input.type === 'print_job' && typeof d.url === 'string') return d.url
   const channelId = d.channelId as string | undefined
   if (channelId && d.cardId && d.appId) {
     return `/channel/${channelId}/card/${d.cardId}?app=${d.appId}${input.type === 'app_order' || input.type === 'app_feedback' ? '&pane=people' : ''}`

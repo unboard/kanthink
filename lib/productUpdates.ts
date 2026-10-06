@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'print-orders-proof-pages',
+    date: '2026-10-06',
+    kind: 'capability',
+    title: 'Print orders with a shared proof page for each item',
+    body: 'Print studio → Orders: every item in an order gets a page you and your customer share. You fix the artwork in one click (fit to the product, fix print issues, sharpen) and send the proof; they approve or mark up what to change before the deadline. Orders can also come in from other systems through an API, webhooks or MCP.',
+  },
+  {
     id: 'print-markup-notes',
     date: '2026-10-05',
     kind: 'capability',

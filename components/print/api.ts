@@ -71,7 +71,4 @@ export function shortId(): string {
 }
 
 /** A smaller copy of one of our stored images, via Cloudinary's on-the-fly resize. */
-export function thumb(url: string, width: number): string {
-  if (!url.includes('res.cloudinary.com') || !url.includes('/image/upload/')) return url
-  return url.replace('/image/upload/', `/image/upload/c_limit,w_${width},q_auto,f_auto/`)
-}
+export { thumb } from '@/lib/print/thumb'

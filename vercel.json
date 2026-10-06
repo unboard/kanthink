@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/studio",
       "schedule": "20 * * * *"
+    },
+    {
+      "path": "/api/cron/print-orders",
+      "schedule": "5 * * * *"
     }
   ]
 }

@@ -339,9 +339,16 @@ export function Studio({ id }: { id: string }) {
             )}
           </div>
         </div>
-        <div className="hidden lg:block">
-          <SurfaceSwitch current="studio" designId={design.id} />
-        </div>
+        {design.jobId ? (
+          // An order job's artwork: the job page is where the proof is sent from.
+          <Link href={`/print/jobs/${design.jobId}`} className="h-9 px-3 rounded-lg text-[13.5px] inline-flex items-center font-semibold" style={{ background: 'var(--raise)', color: 'var(--ink)' }}>
+            Back to the order job →
+          </Link>
+        ) : (
+          <div className="hidden lg:block">
+            <SurfaceSwitch current="studio" designId={design.id} />
+          </div>
+        )}
         <div className="hidden sm:flex flex-col items-end text-[12.5px] leading-tight mr-1" title="Image model spend on this design">
           <span style={{ color: 'var(--ink-2)' }}>{formatCents(design.spendCents)} spent</span>
           <span style={{ color: 'var(--muted)' }}>

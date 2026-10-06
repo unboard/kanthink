@@ -79,6 +79,9 @@ export function PrintHome() {
             {formatCents(total)} spent across designs
           </span>
         )}
+        <Link href="/print/orders" className="inline-flex h-9 px-3.5 rounded-lg text-[14px] items-center border" style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }} title="Orders and their shared proof pages">
+          Orders
+        </Link>
         <Link href="/print/easy" className="hidden sm:inline-flex h-9 px-3.5 rounded-lg text-[14px] items-center border" style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }} title="Big buttons, one question at a time">
           Easy maker
         </Link>

@@ -150,7 +150,7 @@ export interface PreflightResult {
   dpi: number
 }
 
-export type VersionMode = 'create' | 'edit' | 'area' | 'retext' | 'fix' | 'upscale' | 'fill' | 'markup'
+export type VersionMode = 'create' | 'edit' | 'area' | 'retext' | 'fix' | 'upscale' | 'fill' | 'markup' | 'upload'
 
 export interface PrintVersion {
   id: string
@@ -223,6 +223,8 @@ export interface PrintDesign {
   renders: number
   spendCents: number
   chat?: ChatMessage[]
+  /** Set when this design is an order job's artwork. */
+  jobId?: string | null
   createdAt: number
   updatedAt: number
 }

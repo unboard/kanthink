@@ -40,6 +40,7 @@ export const PENDING_LABEL: Record<VersionMode, string> = {
   upscale: 'Sharpening',
   fill: 'Filling to the edges',
   markup: 'Working through your marks',
+  upload: 'Adding the file',
 }
 
 export interface RenderOptions {

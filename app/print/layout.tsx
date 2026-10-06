@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Instrument_Sans } from 'next/font/google'
 import './print.css'
+import '@/components/proof/proof.css'
 
 const sans = Instrument_Sans({ subsets: ['latin'], variable: '--font-print', weight: ['400', '500', '600', '700'] })
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
@@ -48,6 +48,7 @@ export function toDesign(row: DesignRow): PrintDesign {
     renders: row.renders ?? 0,
     spendCents: row.spendCents ?? 0,
     chat: parse<ChatMessage[]>(row.chat, []),
+    jobId: row.jobId ?? null,
     createdAt: row.createdAt ?? 0,
     updatedAt: row.updatedAt ?? 0,
   }
@@ -64,7 +65,7 @@ export async function listDesigns(userId: string): Promise<PrintDesign[]> {
   const rows = await db
     .select()
     .from(printDesigns)
-    .where(eq(printDesigns.userId, userId))
+    .where(and(eq(printDesigns.userId, userId), isNull(printDesigns.jobId)))
     .orderBy(desc(printDesigns.updatedAt))
     .limit(200)
   return rows.map(toDesign)

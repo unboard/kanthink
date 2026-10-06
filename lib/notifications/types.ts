@@ -28,6 +28,8 @@ export type NotificationType =
   | 'app_purchase'
   | 'app_order'
   | 'app_reply'
+  // Print orders
+  | 'print_job'
 
 export type NotificationCategory = 'collaboration' | 'ai' | 'automation' | 'board_activity' | 'published_apps'
 
@@ -55,7 +57,7 @@ export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, { label: stri
   published_apps: {
     label: 'Published Apps',
     description: 'Feedback, purchases, orders, and replies on apps you have published',
-    types: ['app_feedback', 'app_purchase', 'app_order', 'app_reply'],
+    types: ['app_feedback', 'app_purchase', 'app_order', 'app_reply', 'print_job'],
   },
 }
 

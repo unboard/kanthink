@@ -19,6 +19,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@google/genai": "^1.39.0",
     "@libsql/client": "^0.14.0",
+    "@napi-rs/canvas": "^1.0.10",
     "@react-email/components": "^1.0.8",
     "@react-email/render": "^2.0.4",
     "@tailwindcss/typography": "^0.5.19",
@@ -53,6 +54,7 @@
     "sharp": "^0.34.5",
     "stripe": "^20.2.0",
     "three": "^0.185.1",
+    "unpdf": "^1.8.1",
     "web-push": "^3.6.7",
     "zustand": "^5.0.9"
   },

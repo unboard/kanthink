@@ -74,6 +74,11 @@ export function getNavigationUrl(notification: NotificationData, tasks: Record<s
     return data.readId ? `/kanwatch#read-${data.readId}` : '/kanwatch'
   }
 
+  // A customer acted on a print order: the job's page.
+  if (notification.type === 'print_job') {
+    return data.jobId ? `/print/jobs/${data.jobId}` : '/print/orders'
+  }
+
   const channelId = data.channelId as string | undefined
   if (!channelId) return null
 
@@ -132,6 +137,7 @@ function getTypeLabel(notification: NotificationData): string | null {
     case 'app_purchase': return 'Sale'
     case 'app_order': return 'Order'
     case 'app_reply': return 'Reply'
+    case 'print_job': return 'Print'
     case 'ai_generation_completed': return 'AI'
     case 'ai_instruction_refinement': return 'AI'
     case 'ai_clarifying_questions': return 'Insights'

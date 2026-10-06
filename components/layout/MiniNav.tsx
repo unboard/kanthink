@@ -427,6 +427,7 @@ export function MiniNav() {
     pathname.startsWith('/wildwood') ||  // the Wildwood game owns the full viewport
     pathname.startsWith('/rescue') ||  // Paws & Found game owns the full viewport
     pathname.startsWith('/print') ||  // the print studio owns the full viewport
+    pathname.startsWith('/proof') ||  // a printer's customer page: their brand, not ours
     pathname.startsWith('/catlife')  // Whisker Wilds game owns the full viewport
   ) return null;
 

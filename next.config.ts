@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Native canvas for rendering PDF artwork in the print pipeline (lib/print/server/pdf.ts).
+  serverExternalPackages: ['@napi-rs/canvas'],
   images: {
     remotePatterns: [
       {
