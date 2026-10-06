@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { quickstartPayload } from '@/lib/print/orders/demo'
 
 /**
  * /print/developers — everything a developer (or a bot) needs to send orders in and get
@@ -76,7 +77,7 @@ const C = ({ children }: { children: React.ReactNode }) => (
   </code>
 )
 
-function Settings({ base }: { base: string }) {
+function Settings({ base, onKey }: { base: string; onKey: (key: string) => void }) {
   const [partner, setPartner] = useState<Partner | null>(null)
   const [keys, setKeys] = useState<Key[]>([])
   const [fresh, setFresh] = useState<string | null>(null)
@@ -126,12 +127,14 @@ function Settings({ base }: { base: string }) {
 
   return (
     <div className="space-y-4">
+      <DemoCard />
+
       <div className="proof-card p-5">
         <div className="text-[15px] font-semibold">API keys</div>
-        <P>Keys act as your account. Keep them on your server; revoke one if it leaks.</P>
+        <P>A key lets your system (or a bot) create orders as you. Make one, and the quickstart on the left fills it in so you can run it straight from this page.</P>
         {fresh && (
           <div className="rounded-lg p-3 my-2 text-[13px]" style={{ background: '#ecfdf5' }}>
-            <div className="font-semibold">Copy this key now — it won’t be shown again.</div>
+            <div className="font-semibold">Copy this key now. It won’t be shown again.</div>
             <Code>{fresh}</Code>
           </div>
         )}
@@ -156,6 +159,7 @@ function Settings({ base }: { base: string }) {
             onClick={async () => {
               const k = await call<{ id: string; key: string; prefix: string }>('/api/print/keys', { method: 'POST', body: JSON.stringify({ label }) })
               setFresh(k.key)
+              onKey(k.key)
               setKeys([{ id: k.id, prefix: k.prefix, label: label || 'API key', createdAt: Date.now() / 1000, lastUsedAt: null }, ...keys])
               setLabel('')
             }}
@@ -194,12 +198,32 @@ function Settings({ base }: { base: string }) {
 
 function WebhookForm({ partner, onSave, saving }: { partner: Partner; onSave: (p: Partial<Partner>) => void; saving: boolean }) {
   const [url, setUrl] = useState(partner.webhookUrl ?? '')
+  // A picture or a file host is never a system that receives events; usually a pasted logo link.
+  const wrong = /res\.cloudinary\.com|\.(png|jpe?g|gif|webp|svg|pdf)(\?|$)/i.test(url)
   return (
-    <div className="flex gap-2">
-      <input className="proof-input" placeholder="https://your-system.example.com/kanthink" value={url} onChange={(e) => setUrl(e.target.value)} />
-      <button type="button" className="proof-btn shrink-0" disabled={saving || url === (partner.webhookUrl ?? '')} onClick={() => onSave({ webhookUrl: url.trim() || null })}>
-        Save
-      </button>
+    <div>
+      <label className="block text-[13px] font-medium mb-1" htmlFor="webhook-url">
+        Your system’s URL
+      </label>
+      <div className="flex gap-2">
+        <input id="webhook-url" className="proof-input" placeholder="https://orders.yourshop.com/kanthink-events" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <button type="button" className="proof-btn shrink-0" disabled={saving || url === (partner.webhookUrl ?? '')} onClick={() => onSave({ webhookUrl: url.trim() || null })}>
+          Save
+        </button>
+      </div>
+      {wrong && (
+        <p className="text-[13px] mt-2 rounded-lg px-3 py-2" style={{ background: 'var(--signal-soft)', color: '#9d004f' }}>
+          That looks like an image or file link, not your system. Events would be sent there and lost.{' '}
+          <button type="button" className="underline font-medium" onClick={() => { setUrl(''); onSave({ webhookUrl: null }) }}>
+            Clear it
+          </button>
+        </p>
+      )}
+      {!url && (
+        <p className="text-[12.5px] mt-1.5" style={{ color: 'var(--muted)' }}>
+          Optional. Only needed once your developers are connecting your own order system.
+        </p>
+      )}
     </div>
   )
 }
@@ -207,20 +231,32 @@ function WebhookForm({ partner, onSave, saving }: { partner: Partner; onSave: (p
 function BrandForm({ brand, approvalHours, onSave, saving }: { brand: Partner['brand']; approvalHours: number; onSave: (p: Partial<Partner>) => void; saving: boolean }) {
   const [b, setB] = useState(brand)
   const [hours, setHours] = useState(String(approvalHours))
-  const field = (k: keyof Partner['brand'], placeholder: string) => (
-    <input className="proof-input" placeholder={placeholder} value={b[k] ?? ''} onChange={(e) => setB({ ...b, [k]: e.target.value })} />
+  const field = (k: keyof Partner['brand'], label: string, placeholder: string, wide = false) => (
+    <label className={`block ${wide ? 'sm:col-span-2' : ''}`}>
+      <span className="block text-[13px] font-medium mb-1">{label}</span>
+      <input className="proof-input" placeholder={placeholder} value={b[k] ?? ''} onChange={(e) => setB({ ...b, [k]: e.target.value })} />
+    </label>
   )
+  const emailLooksWrong = !!b.phone && /@/.test(b.phone)
   return (
-    <div className="grid sm:grid-cols-2 gap-2">
-      {field('name', 'Business name')}
-      {field('logoUrl', 'Logo URL (https://…)')}
-      {field('email', 'Reply-to email')}
-      {field('phone', 'Phone')}
-      {field('website', 'Website')}
-      <div className="flex gap-2 items-center">
-        <input type="color" value={/^#[0-9a-f]{6}$/i.test(b.color ?? '') ? b.color : '#1f2937'} onChange={(e) => setB({ ...b, color: e.target.value })} className="w-10 h-10 rounded" />
-        {field('color', '#1f2937')}
-      </div>
+    <div className="grid sm:grid-cols-2 gap-x-2 gap-y-3">
+      {field('name', 'Business name', 'Gray Painting & Print', true)}
+      {field('logoUrl', 'Logo link', 'https://… (a PNG or SVG)', true)}
+      {field('email', 'Reply-to email', 'orders@yourshop.com')}
+      {field('phone', 'Phone', '614-555-0100')}
+      {emailLooksWrong && (
+        <p className="sm:col-span-2 text-[13px] -mt-1" style={{ color: '#9d004f' }}>
+          There’s an email address in Phone. It probably belongs in Reply-to email.
+        </p>
+      )}
+      {field('website', 'Website', 'yourshop.com')}
+      <label className="block">
+        <span className="block text-[13px] font-medium mb-1">Button color</span>
+        <span className="flex gap-2 items-center">
+          <input type="color" value={/^#[0-9a-f]{6}$/i.test(b.color ?? '') ? b.color : '#1f2937'} onChange={(e) => setB({ ...b, color: e.target.value })} className="w-11 h-11 rounded-lg shrink-0" aria-label="Pick a color" />
+          <input className="proof-input" placeholder="#1f2937" value={b.color ?? ''} onChange={(e) => setB({ ...b, color: e.target.value })} />
+        </span>
+      </label>
       <label className="flex items-center gap-2 text-[13.5px] sm:col-span-2">
         Customers have
         <input className="proof-input w-20" inputMode="numeric" value={hours} onChange={(e) => setHours(e.target.value.replace(/[^\d]/g, ''))} />
@@ -233,6 +269,127 @@ function BrandForm({ brand, approvalHours, onSave, saving }: { brand: Partner['b
   )
 }
 
+interface OrderResult {
+  id: string
+  ref: string | null
+  links: { customer: string; printer: string }
+  jobs?: { id: string; name: string; status: string; links: { customer: string; printer: string } }[]
+}
+
+/** The quickstart, run for real with the key just made. */
+function TryIt({ api, apiKey }: { api: string; apiKey: string | null }) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ status: number; body: unknown } | null>(null)
+  if (!apiKey) {
+    return (
+      <p className="text-[13.5px] -mt-1 mb-2" style={{ color: 'var(--muted)' }}>
+        Make a key on the right to run this from here.
+      </p>
+    )
+  }
+  const run = async () => {
+    setBusy(true)
+    setResult(null)
+    try {
+      const res = await fetch(`${api}/orders`, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(quickstartPayload()) })
+      setResult({ status: res.status, body: await res.json().catch(() => null) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const order = result && result.status < 300 ? (result.body as OrderResult) : null
+  return (
+    <div className="-mt-1 mb-3">
+      <button type="button" className="pbtn primary sm" disabled={busy} onClick={run}>
+        {busy ? 'Sending, and checking the artwork…' : 'Run it with my key'}
+      </button>
+      {result && (
+        <div className="mt-3 rounded-2xl bg-white border p-4" style={{ borderColor: 'var(--line)' }}>
+          <div className="text-[14px] font-semibold">
+            {result.status === 201 ? '201 Created' : result.status === 200 ? '200 OK, the same order as last time (externalId matched)' : `${result.status}: ${(result.body as { error?: { message?: string } })?.error?.message ?? 'Error'}`}
+          </div>
+          {order?.jobs?.[0] && (
+            <div className="flex flex-wrap gap-2 mt-2.5">
+              <a href={order.jobs[0].links.customer} target="_blank" rel="noreferrer" className="pbtn sm">
+                Customer’s page ↗
+              </a>
+              <a href={order.jobs[0].links.printer} target="_blank" rel="noreferrer" className="pbtn sm">
+                Your page ↗
+              </a>
+            </div>
+          )}
+          <details className="mt-3">
+            <summary className="text-[13px] cursor-pointer" style={{ color: 'var(--ink-2)' }}>
+              The response
+            </summary>
+            <pre className="mt-2 text-[11.5px] leading-relaxed max-h-[320px] overflow-auto rounded-lg p-3" style={{ background: '#16181b', color: '#e7e9ec' }}>
+              {JSON.stringify(result.body, null, 2)}
+            </pre>
+          </details>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** One click: a real two-item order on this account, and where to look. */
+function DemoCard() {
+  const [busy, setBusy] = useState(false)
+  const [order, setOrder] = useState<OrderResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const make = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setOrder(await call<OrderResult>('/api/print/demo', { method: 'POST' }))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'That didn’t work.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="proof-card p-5" style={{ borderColor: 'var(--ink)' }}>
+      <div className="text-[15px] font-semibold">See it work</div>
+      <P>Make a demo order with two items: yard signs whose file fits, and door hangers sent the same yard-sign file, which doesn’t. Nobody is emailed.</P>
+      {!order ? (
+        <button type="button" className="pbtn primary w-full" disabled={busy} onClick={make}>
+          {busy ? 'Making it, and checking the artwork…' : 'Create a demo order'}
+        </button>
+      ) : (
+        <div className="space-y-2.5">
+          {order.jobs?.map((j) => (
+            <div key={j.id} className="rounded-xl p-3" style={{ background: 'var(--raise)' }}>
+              <div className="text-[14px] font-semibold">{j.name}</div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <a href={j.links.printer} className="pbtn sm">
+                  Your page
+                </a>
+                <a href={j.links.customer} target="_blank" rel="noreferrer" className="pbtn sm">
+                  Customer’s page ↗
+                </a>
+              </div>
+            </div>
+          ))}
+          <ol className="text-[13.5px] list-decimal pl-5 space-y-1 pt-1" style={{ color: 'var(--ink-2)' }}>
+            <li>Open the door hangers on your page. The file doesn’t fit, and it says so.</li>
+            <li>Tap the wand, then Fit to product. About a minute.</li>
+            <li>Send proof, then open the customer’s page and approve it, or circle something and ask for a change.</li>
+          </ol>
+          <button type="button" className="pbtn sm ghost px-0" onClick={() => setOrder(null)}>
+            Make another
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className="text-[13px] mt-2" style={{ color: 'var(--err)' }}>
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function Developers() {
   // The host the docs are read on, so examples paste straight into a terminal.
   const base = useSyncExternalStore(
@@ -241,6 +398,12 @@ export function Developers() {
     () => 'https://www.kanthink.com',
   )
   const api = `${base}/api/v1/print`
+  const [key, setKey] = useState<string | null>(null)
+  const sample = quickstartPayload()
+  const curl = `curl ${api}/orders \\
+  -H "Authorization: Bearer ${key ?? 'kp_live_YOUR_KEY'}" \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify(sample, null, 2).replace(/\n/g, '\n  ')}'`
 
   return (
     <div className="proof h-full overflow-y-auto">
@@ -279,26 +442,13 @@ export function Developers() {
           </nav>
 
           <H2 id="quickstart">Quickstart</H2>
-          <P>Make a key on this page, then create an order with one job. The response has a link for the customer and one for your team.</P>
-          <Code lang="bash">{`curl ${api}/orders \\
-  -H "Authorization: Bearer kp_live_YOUR_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "externalId": "order-1042",
-    "ref": "1042",
-    "customer": { "name": "Pat Example", "email": "pat@example.com", "phone": "614-555-0100" },
-    "approvalHours": 24,
-    "jobs": [{
-      "externalId": "line-1",
-      "name": "Door hangers",
-      "quantity": 500,
-      "product": { "key": "door-hanger", "shape": "square", "sku": "DH-425x11", "stock": "14pt gloss" },
-      "artwork": [{ "url": "https://files.example.com/1042/hanger.pdf",
-                    "origin": { "madeBy": "customer", "madeWith": "Canva", "via": "upload" } }]
-    }]
-  }'`}</Code>
           <P>
-            The customer gets an email with their page (turn it off with <C>{'"notifyCustomer": false'}</C>). Your team opens <C>links.printer</C>.
+            Make a key on this page and this request fills it in. It creates a real order on your account with sample artwork, and the response has a page for your customer and one for your team. Run it here, or paste it into a terminal.
+          </P>
+          <Code lang="bash">{curl}</Code>
+          <TryIt api={api} apiKey={key} />
+          <P>
+            Sending the same <C>externalId</C> again returns the same order instead of making a second one, so retries are safe. Leave <C>{'"notifyCustomer": false'}</C> out and the customer is emailed their page.
           </P>
 
           <H2 id="auth">Auth</H2>
@@ -353,7 +503,7 @@ export function Developers() {
           </P>
           <Code lang="bash">{`curl ${api}/jobs/JOB_ID/artwork -H "Authorization: Bearer kp_live_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{ "artwork": [{ "url": "https://files.example.com/1042/back.png", "page": "back" }] }'`}</Code>
+  -d '{ "artwork": [{ "url": "https://your-files.example.com/1042/back.pdf", "page": "back" }] }'`}</Code>
 
           <H2 id="jobs">Jobs</H2>
           <div className="overflow-x-auto">
@@ -447,7 +597,7 @@ function verify(rawBody, header, secret) {
           </ul>
         </article>
         <aside className="lg:sticky lg:top-20">
-          <Settings base={base} />
+          <Settings base={base} onKey={setKey} />
         </aside>
       </main>
     </div>

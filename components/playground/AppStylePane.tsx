@@ -194,7 +194,7 @@ export function AppStylePane({
                   <PaletteChip key={p.id} palette={p} on={style.palette === p.id} onClick={() => set({ palette: p.id })} />
                 ))}
               </div>
-              <BrandColours style={style} onChange={set} />
+              <BrandColors style={style} onChange={set} />
             </Section>
 
             <Section title="Type">
@@ -380,7 +380,7 @@ function PaletteChip({ palette, on, onClick }: { palette: Palette; on: boolean; 
 }
 
 /** Your own colors: pick one, or take them from the logo. */
-function BrandColours({ style, onChange }: { style: AppStyle; onChange: (patch: Partial<AppStyle>) => void }) {
+function BrandColors({ style, onChange }: { style: AppStyle; onChange: (patch: Partial<AppStyle>) => void }) {
   const brand = style.brand ?? { primary: resolveStyle(style).palette.colors.primary, highlight: null, mode: 'light' as const };
   const [draft, setDraft] = useState(brand);
   // Colors chosen elsewhere (from the logo) replace the draft; our own commits
@@ -446,7 +446,7 @@ function LogoPicker({ style, cardId, onChange }: { style: AppStyle; cardId: stri
   const [colors, setColors] = useState<string[]>([]);
   const input = useRef<HTMLInputElement>(null);
 
-  const readColours = (url: string) => {
+  const readColors = (url: string) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
@@ -479,7 +479,7 @@ function LogoPicker({ style, cardId, onChange }: { style: AppStyle; cardId: stri
         return;
       }
       onChange({ logoUrl: data.url });
-      readColours(data.url);
+      readColors(data.url);
     } catch {
       setError('Upload failed. Check your connection.');
     } finally {
@@ -523,7 +523,7 @@ function LogoPicker({ style, cardId, onChange }: { style: AppStyle; cardId: stri
         )}
       </div>
       {style.logoUrl && colors.length === 0 && (
-        <button onClick={() => readColours(style.logoUrl!)} className="mt-2 text-[11px] font-medium text-violet-600 hover:underline dark:text-violet-400">
+        <button onClick={() => readColors(style.logoUrl!)} className="mt-2 text-[11px] font-medium text-violet-600 hover:underline dark:text-violet-400">
           Take colors from the logo
         </button>
       )}
