@@ -119,7 +119,7 @@ export default function MarketplacePage() {
       {/* Controls */}
       <div className="sticky top-14 z-40 border-b border-white/[0.06] bg-[#0e0e0e]/90 backdrop-blur-xl">
         <div className="mx-auto max-w-6xl px-6">
-          {/* Search. The shrooms/channels tab pair went with the shroom catalogue —
+          {/* Search. The shrooms/channels tab pair went with the shroom catalog —
               one kind of thing left means nothing to switch between. */}
           <div className="flex items-center gap-4 py-3">
             <div className="flex-1 max-w-xs">

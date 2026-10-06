@@ -28,7 +28,7 @@ import type { ProviderKeys } from './keys'
  * choice. Voice and image generation are deliberately not in this list: those need
  * models that can do speech and pictures, and offering a text model against them
  * would be a setting that silently does nothing. Image generation has its own
- * `imageDefault` field below, drawn from its own catalogue.
+ * `imageDefault` field below, drawn from its own catalog.
  */
 export type AiSurface = 'chat' | 'automations' | 'apps'
 
@@ -61,7 +61,7 @@ export interface ModelPreferences {
   default: string | null
   overrides: Partial<Record<AiSurface, string>>
   /**
-   * The image model, provider-qualified, or null for the catalogue default.
+   * The image model, provider-qualified, or null for the catalog default.
    *
    * Its own field rather than a fourth surface override, because the surfaces above
    * all take a *text* model and this one cannot. Putting an image model in that list
@@ -145,7 +145,7 @@ export async function setModelPreferences(
     updates.modelOverrides = Object.keys(clean).length > 0 ? clean : null
   }
   if (next.imageDefault !== undefined) {
-    // Same rule as the text default: an unrecognised value means "no preference"
+    // Same rule as the text default: an unrecognized value means "no preference"
     // rather than an error, because the only way to send one is to pick from a list
     // we control, and a model we have retired should decay to the default quietly.
     updates.imageModelDefault = findImageModel(next.imageDefault)?.id ?? null
@@ -165,14 +165,14 @@ export async function setModelPreferences(
  *
  * Step 3 is why picking an OpenAI model with only a Google key no longer silently
  * runs something else without saying so — the caller is handed back the fact that
- * the choice could not be honoured.
+ * the choice could not be honored.
  */
 export interface ResolvedModel {
   provider: ModelProvider
   model: string
   /** True when a preference existed for a provider with no usable key. */
   fellBack: boolean
-  /** The choice that could not be honoured, for saying so. */
+  /** The choice that could not be honored, for saying so. */
   requested?: ModelChoice
 }
 
@@ -189,7 +189,7 @@ export function resolveSurfaceModel(
   }
 
   // Whatever we do hold a key for — but a key the user brought outranks one this
-  // deployment shares, whatever order the catalogue happens to be in.
+  // deployment shares, whatever order the catalog happens to be in.
   //
   // This is not a tie-break detail. An account with its own Google key and nothing
   // else set would otherwise land on OpenAI the moment the deployment had an owner

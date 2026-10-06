@@ -260,8 +260,8 @@ export async function write(
     }
   }
 
-  const serialised = JSON.stringify(value ?? null)
-  const bytes = Buffer.byteLength(serialised, 'utf8')
+  const serialized = JSON.stringify(value ?? null)
+  const bytes = Buffer.byteLength(serialized, 'utf8')
   if (bytes > MAX_VALUE_BYTES) {
     return {
       ok: false,
@@ -314,7 +314,7 @@ export async function write(
   if (existing) {
     await db
       .update(appCustomerData)
-      .set({ value: serialised, bytes, updatedAt: now })
+      .set({ value: serialized, bytes, updatedAt: now })
       .where(eq(appCustomerData.id, existing.id))
   } else {
     await db.insert(appCustomerData).values({
@@ -322,7 +322,7 @@ export async function write(
       appUserId,
       scope,
       key,
-      value: serialised,
+      value: serialized,
       bytes,
       createdAt: now,
       updatedAt: now,

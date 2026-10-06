@@ -25,7 +25,7 @@ export async function getPublishedVersion(app: AppRow): Promise<AppVersion | nul
     where: eq(playgroundAppVersions.id, app.publishedVersionId),
   })
   // A pointer at a version that no longer exists means serve nothing, rather than
-  // silently falling back to the draft — which is the behaviour being removed.
+  // silently falling back to the draft — which is the behavior being removed.
   return version && version.appId === app.id ? version : null
 }
 
@@ -64,7 +64,7 @@ export function appStatus(app: Pick<AppRow, 'publishedVersionId' | 'isPublic'>):
  * are deliberately kept from the previously held app by mergeAppUpdate, so those
  * two answered a finished build with a stale `hasUnpublishedChanges`: you published
  * version 1, asked for a change, the build landed, and the panel still said the
- * draft and the release were the same with Publish greyed out. Reopening the drawer
+ * draft and the release were the same with Publish grayed out. Reopening the drawer
  * fixed it, which is exactly why it read as intermittent.
  *
  * Every route that hands an app back now calls this. A new one that forgets returns
@@ -219,7 +219,7 @@ export function hasUnpublishedChanges(app: AppRow, published: AppVersion | null)
 
 /**
  * Would publishing the draft change what customers get? The code, or the style it
- * is painted with — a recolour is a real change to the app people see.
+ * is painted with — a recolor is a real change to the app people see.
  */
 function sameRelease(version: AppVersion, app: AppRow): boolean {
   return version.code === app.code && JSON.stringify(version.style ?? null) === JSON.stringify(app.style ?? null)

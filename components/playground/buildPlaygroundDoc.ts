@@ -44,7 +44,7 @@ export function buildPlaygroundDoc(
      * when nobody is signed in, which is what makes kanthinkData.signedIn false.
      */
     dataToken?: string;
-    /** Who is signed in, for the app to show. Never used for authorisation. */
+    /** Who is signed in, for the app to show. Never used for authorization. */
     customer?: { email: string; name?: string | null } | null;
     /**
      * Everything this customer has saved, baked in so an app can render their work

@@ -4,7 +4,7 @@
  * Measured on real apps: output tokens are about two thirds of what a build costs,
  * and essentially all of what a build *waits* on — a model emitting 3,800 tokens
  * takes over a minute regardless of how small the change was. Because the generator
- * always asked for the complete file back, changing one colour cost the same as
+ * always asked for the complete file back, changing one color cost the same as
  * rebuilding the app.
  *
  * So for small edits the model returns find/replace pairs instead. A one-line change
@@ -88,7 +88,7 @@ export function applyCodeEdits(code: string, edits: CodeEdit[]): ApplyResult {
 /**
  * Edit types worth patching rather than rewriting.
  *
- * Cosmetic and behaviour changes touch a handful of lines by definition. Structural
+ * Cosmetic and behavior changes touch a handful of lines by definition. Structural
  * work and redesigns rearrange enough of the file that a patch would be neither
  * smaller nor safer than simply asking for the file.
  */

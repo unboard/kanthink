@@ -65,8 +65,8 @@ const when = (t: number, now: number) => {
 
 const deadlineText = (t: number) => new Date(t * 1000).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
-const PRINTER_STATUS: Record<JobStatus, string> = { received: 'Needs review', awaiting_approval: 'Proof sent', changes_requested: 'Changes requested', approved: 'Approved', locked: 'Locked', in_production: 'Printing', complete: 'Complete', cancelled: 'Cancelled' }
-const CUSTOMER_STATUS: Record<JobStatus, string> = { received: 'Being checked', awaiting_approval: 'Ready to approve', changes_requested: 'Being changed', approved: 'Approved', locked: 'Final', in_production: 'Printing', complete: 'Complete', cancelled: 'Cancelled' }
+const PRINTER_STATUS: Record<JobStatus, string> = { received: 'Needs review', awaiting_approval: 'Proof sent', changes_requested: 'Changes requested', approved: 'Approved', locked: 'Locked', in_production: 'Printing', complete: 'Complete', canceled: 'Canceled' }
+const CUSTOMER_STATUS: Record<JobStatus, string> = { received: 'Being checked', awaiting_approval: 'Ready to approve', changes_requested: 'Being changed', approved: 'Approved', locked: 'Final', in_production: 'Printing', complete: 'Complete', canceled: 'Canceled' }
 
 // ---------------------------------------------------------------------------
 // Small pieces
@@ -302,7 +302,7 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
         locked: { title: 'Locked — this is what prints' },
         in_production: { title: 'Printing' },
         complete: { title: 'Complete' },
-        cancelled: { title: 'Cancelled' },
+        canceled: { title: 'Canceled' },
       }[s]
     : {
         received: { title: 'We’re checking your file', sub: 'You’ll get an email as soon as your proof is ready.' },
@@ -312,7 +312,7 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
         locked: { title: 'Final — going to print' },
         in_production: { title: 'Printing now' },
         complete: { title: 'Your order is complete' },
-        cancelled: { title: 'This item was cancelled' },
+        canceled: { title: 'This item was canceled' },
       }[s]
 
   const siblingsWaiting = view.siblings.filter((x) => !x.current && waitingOn(x.status, printer ? 'printer' : 'customer')).length
@@ -765,7 +765,7 @@ export function ProofPage({ initial, actions }: { initial: PageView; actions: Pr
                       )
                     })}
                   </ol>
-                  {!['complete', 'cancelled'].includes(s) && (
+                  {!['complete', 'canceled'].includes(s) && (
                     <div className="sticky bottom-0 bg-white pt-2 flex gap-2">
                       <input
                         className="proof-input"

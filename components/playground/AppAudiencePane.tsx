@@ -118,7 +118,7 @@ export function AppAudiencePane({ appId, onUnreadChange, onAppUpdated, onOpenThr
     <div className="px-4 py-4">
       <div className="grid grid-cols-3 gap-2 mb-4">
         <Stat label="People" value={String(audience.length)} />
-        <Stat label={waiting ? 'To fulfil' : 'Buyers'} value={String(waiting || totals?.buyers || 0)} accent={waiting > 0} />
+        <Stat label={waiting ? 'To fulfill' : 'Buyers'} value={String(waiting || totals?.buyers || 0)} accent={waiting > 0} />
         <Stat label="Collected" value={revenue > 0 ? formatAppPrice(revenue, totals?.currency ?? 'usd', null) : '—'} />
       </div>
 
@@ -143,7 +143,7 @@ export function AppAudiencePane({ appId, onUnreadChange, onAppUpdated, onOpenThr
                 {toFulfil > 0 && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
                     <Package className="h-3 w-3" />
-                    {toFulfil} to fulfil
+                    {toFulfil} to fulfill
                   </span>
                 )}
                 {member.unreadForOwner > 0 && (
@@ -308,7 +308,7 @@ function Person({
       {shown.length > 0 && (
         <div className="border-b border-neutral-200 px-3 py-2.5 dark:border-neutral-800">
           <p className="mb-1.5 px-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-            {shown.length} order{shown.length === 1 ? '' : 's'}{open ? ` · ${open} to fulfil` : ''}
+            {shown.length} order{shown.length === 1 ? '' : 's'}{open ? ` · ${open} to fulfill` : ''}
           </p>
           <div className="flex gap-2 overflow-x-auto pb-0.5">
             {shown.map((o) => (
@@ -396,7 +396,7 @@ function Person({
 
 const STATUS_LABEL: Record<AppOrderView['status'], string> = {
   pending: 'Checking out',
-  paid: 'To fulfil',
+  paid: 'To fulfill',
   fulfilled: 'Fulfilled',
   canceled: 'Canceled',
   refunded: 'Refunded',

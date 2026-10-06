@@ -275,7 +275,7 @@ export const APPROACHES: IntentApproach[] = [
     id: 'fork',
     name: 'The field forks',
     principle: 'Ask at the moment of engagement, then get out of the way',
-    note: 'Empty and idle, the composer is one quiet line. Put the cursor in and it opens into two labelled lanes that say what each one does to the thread. Collapses again when you leave. The most explicit of the five — nothing is inferred and nothing is hidden.',
+    note: 'Empty and idle, the composer is one quiet line. Put the cursor in and it opens into two labeled lanes that say what each one does to the thread. Collapses again when you leave. The most explicit of the five — nothing is inferred and nothing is hidden.',
     Footer: ForkFooter,
   },
   {

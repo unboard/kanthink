@@ -151,7 +151,7 @@ describe('textOn', () => {
     expect(textOn('#3A6DBE')).toBe('#FFFFFF')
   })
 
-  it('gives every palette colour a legible pairing', () => {
+  it('gives every palette color a legible pairing', () => {
     for (const c of PALETTE) {
       expect(['#FFFFFF', '#3A3733']).toContain(textOn(c.cap))
     }

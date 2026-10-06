@@ -37,9 +37,9 @@ const SHROOMS: DemoShroom[] = [
     id: 'weekly-digest',
     title: 'Monday Digest',
     summary:
-      'Summarises everything that moved last week into a single report card, then emails it before you open the board.',
+      'Summarizes everything that moved last week into a single report card, then emails it before you open the board.',
     firstPerson:
-      'Every Monday I summarise what moved last week into one report card, then email it to you before you open the board.',
+      'Every Monday I summarize what moved last week into one report card, then email it to you before you open the board.',
     action: 'report',
     state: 'scheduled',
     trigger: 'Mondays at 7:00',
@@ -51,7 +51,7 @@ const SHROOMS: DemoShroom[] = [
   {
     id: 'long-name',
     // Deliberately overlong — the truncation case, and a name people really do write
-    title: 'Deep analyse inbox bookmarks and extract cross-domain insights',
+    title: 'Deep analyze inbox bookmarks and extract cross-domain insights',
     summary:
       'Pulls the underlying idea out of each saved link and notes where else it could apply.',
     firstPerson:
@@ -101,7 +101,7 @@ const CONCEPTS: Variant[] = [
     key: 'standing',
     name: 'Standing Order',
     pitch:
-      'No icons at all. A title, a sentence, one status line — and a coloured left rail so you can read a whole column of states without reading a word.',
+      'No icons at all. A title, a sentence, one status line — and a colored left rail so you can read a whole column of states without reading a word.',
     component: StandingOrder,
   },
   {
@@ -140,7 +140,7 @@ const STUDIES: Variant[] = [
     key: 'indexcard',
     name: 'Index Card',
     pitch:
-      'The catalogue drawer rather than the specimen jar. Content sits on ruled baselines with a margin rule down the left.',
+      'The catalog drawer rather than the specimen jar. Content sits on ruled baselines with a margin rule down the left.',
     component: SpecimenIndex,
   },
   {

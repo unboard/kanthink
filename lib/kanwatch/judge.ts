@@ -28,7 +28,7 @@ export const MODES = {
   researching: 'Looking things up to answer a specific question or solve a specific problem.',
   learning: 'Studying a topic more broadly: courses, tutorials, long explanations.',
   communicating: 'Messages, chat, forums, comments, meetings.',
-  planning: 'Organising work: boards, calendars, notes, to-do lists.',
+  planning: 'Organizing work: boards, calendars, notes, to-do lists.',
   admin: 'Accounts, settings, forms, errands.',
   entertainment: 'Video, games, music or reading for fun.',
   shopping: 'Browsing or comparing things to buy.',
@@ -147,7 +147,7 @@ export async function judgeEpisode(episodeId: string, access?: Access): Promise<
   const channelRows = board.channels.slice(0, 25);
 
   // Areas in the user's own words ("MyCreativeShop · template manufacturing"). Once
-  // named, an area is a choice like any channel, so it can be recognised next time.
+  // named, an area is a choice like any channel, so it can be recognized next time.
   const named = await db.query.kanwatchEpisodes.findMany({
     where: and(
       eq(kanwatchEpisodes.userId, ep.userId),

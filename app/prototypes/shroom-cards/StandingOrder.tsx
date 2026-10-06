@@ -10,7 +10,7 @@ import { STATE_COLOR, STATE_LABEL, type ConceptProps } from './types';
  * eight of them. Run and Edit are words that gain contrast on hover rather than buttons
  * competing with the title for attention.
  *
- * The signature is the left rail — a 2px edge whose colour *is* the state. You read a
+ * The signature is the left rail — a 2px edge whose color *is* the state. You read a
  * column of these and see which shrooms are awake without reading a word.
  */
 export function StandingOrder({ shroom, isRunning, onRun, onEdit }: ConceptProps) {

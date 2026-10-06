@@ -193,7 +193,7 @@ export async function personDetail(ownerId: string, appUserId: string) {
     ...orders.filter((o) => o.paidAt).map((o) => ({
       kind: 'event' as const,
       at: o.paidAt!.toISOString(),
-      text: `Ordered #${o.number}: ${o.quantity > 1 ? `${o.quantity} × ` : ''}${o.item}, ${money(o.amount, o.currency)}. ${o.status === 'fulfilled' ? 'Fulfilled' : o.status === 'refunded' ? 'Refunded' : 'To fulfil'}`,
+      text: `Ordered #${o.number}: ${o.quantity > 1 ? `${o.quantity} × ` : ''}${o.item}, ${money(o.amount, o.currency)}. ${o.status === 'fulfilled' ? 'Fulfilled' : o.status === 'refunded' ? 'Refunded' : 'To fulfill'}`,
     })),
     ...messages.map((m) => ({
       kind: m.sender === 'user' ? 'theirs' as const : 'reply' as const,

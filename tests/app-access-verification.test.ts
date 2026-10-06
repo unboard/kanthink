@@ -8,7 +8,7 @@
  *
  * The second, found in review of the fix: verification was recorded on the customer
  * *record* rather than on the session. That meant the genuine customer proving their
- * address silently re-authorised every stale cookie for it — the invalidation undid
+ * address silently re-authorized every stale cookie for it — the invalidation undid
  * itself — and it meant a Stripe purchase, which proves a card and not an inbox,
  * could hand over an existing customer's history.
  *
@@ -115,7 +115,7 @@ describe('paying with someone else’s address buys the app, not their account',
   it('cannot be escalated by asking for a code, because the code goes to the inbox', () => {
     // Nothing to assert in code — the escalation path is "issue a code", and the
     // code is mailed to the address, not returned to the caller. This test exists
-    // to keep that reasoning attached to the behaviour it depends on.
+    // to keep that reasoning attached to the behavior it depends on.
     const code = generateCode()
     const stored = hashCode(MEMBER, code)
     expect(stored).not.toContain(code)
@@ -143,7 +143,7 @@ describe('a cookie from before the fix stays rejected, whatever happens later', 
 
   it('stays rejected after the genuine customer verifies in another browser', () => {
     // The whole point. Verification now lands on a session, so a new one elsewhere
-    // cannot reach back and re-authorise this cookie.
+    // cannot reach back and re-authorize this cookie.
     const theirNewSession = verifyAccessToken(signAccessToken(MEMBER, 0, 'verified'))
     expect(theirNewSession).not.toBeNull()
     expect(verifyAccessToken(legacyCookie)).toBeNull()

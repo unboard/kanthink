@@ -442,7 +442,7 @@ function ModelSelect({
 /**
  * The image model picker.
  *
- * Separate from ModelSelect rather than a generic one taking either catalogue: the
+ * Separate from ModelSelect rather than a generic one taking either catalog: the
  * two lists answer different questions, and the thing worth saying next to an image
  * model — whether it can produce a real alpha channel — has no counterpart on a text
  * model. A shared component would carry both sets of fields and show the wrong half.
@@ -486,7 +486,7 @@ function ImageModelSelect({
   );
 }
 
-/** The friendly name for a stored choice, from the catalogue the server sent. */
+/** The friendly name for a stored choice, from the catalog the server sent. */
 function labelFor(catalog: ProviderGroup[], choice: string): string {
   const parsed = parseModelChoice(choice);
   if (!parsed) return choice;

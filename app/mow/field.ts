@@ -9,7 +9,7 @@ import { pointInPoly } from './geom';
 import { grassBlockers } from './shapes';
 import type { PatternRequest, Poly, SiteDef } from './types';
 
-export const RES = 8; // cells per metre
+export const RES = 8; // cells per meter
 export const UNCUT = 255;
 export const TRIMMED = 20; // height code for string-trimmer cuts
 const TAU = Math.PI * 2;

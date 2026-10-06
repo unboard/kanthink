@@ -21,10 +21,10 @@ import { bestText, contrast, fitForText, hexToOklch, isHex, oklchToHex, rgbChann
 /**
  * An app's style: the choices, stored on the app, and everything derived from them.
  *
- * The choices are a handful of ids. Resolving them gives concrete colours, fonts and
+ * The choices are a handful of ids. Resolving them gives concrete colors, fonts and
  * a radius. Those are injected into the app's page at runtime as CSS variables and a
- * Tailwind config, and handed to the builder as a brief. Because the colours live in
- * variables rather than in the code, recolouring an app that was built with the
+ * Tailwind config, and handed to the builder as a brief. Because the colors live in
+ * variables rather than in the code, recoloring an app that was built with the
  * tokens is instant and costs nothing. No rebuild needed.
  */
 
@@ -86,7 +86,7 @@ export function styleForLook(lookId: string, chosenBy: AppStyle['chosenBy'] = 'k
 
 /**
  * Anything claiming to be a style, made safe. Unknown ids fall back to the look's
- * defaults rather than failing, so a catalogue change never breaks a stored app.
+ * defaults rather than failing, so a catalog change never breaks a stored app.
  * Returns null when there is nothing usable at all.
  */
 export function normalizeStyle(input: unknown): AppStyle | null {
@@ -128,10 +128,10 @@ export function normalizeStyle(input: unknown): AppStyle | null {
 }
 
 /**
- * A full palette from one or two brand colours.
+ * A full palette from one or two brand colors.
  *
  * The neutrals are tinted slightly toward the brand hue so the page feels like it
- * belongs to the colour rather than sitting next to it. The brand colour itself is
+ * belongs to the color rather than sitting next to it. The brand color itself is
  * kept unless text on it would fail contrast, and then only its lightness moves.
  */
 export function brandPalette(primary: string, highlight?: string | null, mode: 'light' | 'dark' = 'light'): Palette {
@@ -153,7 +153,7 @@ export function brandPalette(primary: string, highlight?: string | null, mode: '
 
   return {
     id: 'brand',
-    name: 'Your colours',
+    name: 'Your colors',
     mode,
     colors: {
       ...neutrals,
@@ -310,14 +310,14 @@ export function runtimeStyleInfo(resolved: ResolvedStyle, appName: string) {
  * designer rather than as a list of bans, and each one names what to do instead.
  */
 export const DESIGN_GUARDRAILS = `DESIGN QUALITY. These patterns make an app look machine-made. Avoid them, and do the alternative instead:
-- Gradient text (bg-clip-text text-transparent) and purple-to-blue gradients. Use solid token colours. Use at most one gradient in the whole app, and only if the direction asks for it.
-- Decoration standing in for hierarchy: glows, coloured shadows, glassmorphism (backdrop-blur over translucent white), shadows on every card. Use size, weight and space for hierarchy. Elevation (shadow-lg) is only for things that float: dialogs, menus, toasts.
-- Cards inside cards, a coloured left border stripe on every card, a grid of identical stat cards. Use one level of containers. Lists and tables are often better than cards.
-- A marketing hero on a tool. The first screen IS the tool, ready to use. Don't add a big centred headline, a subhead and two buttons.
+- Gradient text (bg-clip-text text-transparent) and purple-to-blue gradients. Use solid token colors. Use at most one gradient in the whole app, and only if the direction asks for it.
+- Decoration standing in for hierarchy: glows, colored shadows, glassmorphism (backdrop-blur over translucent white), shadows on every card. Use size, weight and space for hierarchy. Elevation (shadow-lg) is only for things that float: dialogs, menus, toasts.
+- Cards inside cards, a colored left border stripe on every card, a grid of identical stat cards. Use one level of containers. Lists and tables are often better than cards.
+- A marketing hero on a tool. The first screen IS the tool, ready to use. Don't add a big centered headline, a subhead and two buttons.
 - Emoji as icons or decoration in the interface (✨🚀💡). Use lucide-react icons, or nothing. Emoji are fine as content the person chose.
 - Motion nobody asked for: animate-bounce, animate-ping, pulsing content, staggered fade-ins. Motion only answers an action (opening, confirming, a game move), at 150–250ms ease-out, and respects prefers-reduced-motion (motion-safe:).
 - ALL-CAPS tracked labels above every heading, "01 / 02 / 03" numbering on things that aren't steps, and meta strings joined with " · " everywhere.
-- Grey text on a coloured background. Text on primary uses text-primary-foreground, and on highlight uses text-highlight-foreground.
+- Gray text on a colored background. Text on primary uses text-primary-foreground, and on highlight uses text-highlight-foreground.
 - Hype copy: "Unlock", "Supercharge", "Seamless", "Elevate", "Effortless", exclamation marks. Labels say exactly what happens ("Add bill", "Check answers"). Use sentence case.
 - Pure #000 / #FFF and Tailwind's raw palette (blue-500, gray-100, slate-*) for interface chrome. The tokens are the palette.
 Also: one primary button per screen; secondary actions are outline or ghost. Body text is at least text-sm, and at least text-base for long reading. Numbers in tables and totals use tabular-nums. Empty states are one plain sentence plus the action that fills them.`
@@ -337,7 +337,7 @@ Prefer it over hand-rolling controls. It's accessible and consistent, and it fol
   Render <Toaster/> once at the root, then call toast("Saved") or toast({ title, description, variant: "success|destructive" }).
   <Alert variant="default|destructive|success" title>…</Alert>   <EmptyState icon={<LucideIcon/>} title action={<Button/>}>one line</EmptyState>
   <Stat label value hint trend="up|down"/>   <Table><THead><TR><TH>…</TH></TR></THead><TBody><TR><TD align="right">…</TD></TR></TBody></Table>
-  <Page> centres content to a readable width with the right padding for the style's density.
+  <Page> centers content to a readable width with the right padding for the style's density.
   <AppHeader title actions={…}/> shows the app's logo (or a monogram) and name. <Logo size={32}/> shows the logo alone.
   cn(...classes) joins class names. Every component takes className to extend it.`
 
@@ -351,7 +351,7 @@ export function stylePrompt(resolved: ResolvedStyle): string {
     `Look: ${look.name}. ${look.direction}`,
     style.direction ? `The owner's own direction (follow it): "${style.direction}"` : '',
     ``,
-    `Colour: the host page defines these Tailwind colours (shadcn token names). Use them for every surface, text and control, and opacity modifiers work (bg-primary/10):`,
+    `Color: the host page defines these Tailwind colors (shadcn token names). Use them for every surface, text and control, and opacity modifiers work (bg-primary/10):`,
     `  bg-background text-foreground: the page (${colors.background} / ${colors.foreground}), ${resolved.palette.mode} mode`,
     `  bg-card text-card-foreground: raised surfaces`,
     `  bg-muted text-muted-foreground: quiet fills and secondary text`,
@@ -359,13 +359,13 @@ export function stylePrompt(resolved: ResolvedStyle): string {
     `  bg-highlight text-highlight-foreground: rare emphasis only (${colors.highlight})`,
     `  bg-accent: hover fill for ghost and list items. border-border, border-input, ring-ring.`,
     `  text-destructive / bg-destructive, text-success, text-warning: state only.`,
-    `Use the tokens, not raw Tailwind colours. The owner can recolour the app without a rebuild only through the tokens. Raw colours are acceptable only for content that is inherently coloured (chart series, game pieces).`,
+    `Use the tokens, not raw Tailwind colors. The owner can recolor the app without a rebuild only through the tokens. Raw colors are acceptable only for content that is inherently colored (chart series, game pieces).`,
     `Type: font-heading for headings and display numbers (${fonts.heading.family}), font-sans for everything else (${fonts.body.family}, already the default), font-mono for code and IDs (${fonts.mono.family}). Don't set font-family any other way or load other fonts.`,
     `Corners: ${radius}. The rounded-* scale is already mapped to this style, so use rounded-sm/md/lg/xl/full normally and never arbitrary radius values.`,
     `Spacing: ${density.prompt}`,
     style.logoUrl
-      ? `Logo: the owner uploaded one. window.kanthinkStyle.logoUrl, or <Logo/> / <AppHeader/> from the kit. Show it once, in the header. Don't recolour or crop it.`
-      : `Logo: none uploaded. <AppHeader/> and <Logo/> draw a monogram from the app's name in the primary colour.`,
+      ? `Logo: the owner uploaded one. window.kanthinkStyle.logoUrl, or <Logo/> / <AppHeader/> from the kit. Show it once, in the header. Don't recolor or crop it.`
+      : `Logo: none uploaded. <AppHeader/> and <Logo/> draw a monogram from the app's name in the primary color.`,
     ``,
     style.kit ? KIT_PROMPT : `COMPONENTS: the owner turned the kit off, so build controls by hand with the tokens above.`,
     ``,
@@ -379,7 +379,7 @@ export function describeStyle(resolved: ResolvedStyle): string {
   return `${resolved.look.name} · ${resolved.palette.name} · ${resolved.fonts.name}`
 }
 
-/** True when the code was written against the tokens, so recolouring reaches it. */
+/** True when the code was written against the tokens, so recoloring reaches it. */
 export function usesTokens(code: string | null | undefined): boolean {
   if (!code) return false
   return /from\s+['"]kit['"]/.test(code) || /\b(bg|text|border)-(primary|background|foreground|muted|card)\b/.test(code)
@@ -387,7 +387,7 @@ export function usesTokens(code: string | null | undefined): boolean {
 
 export { LOOKS, PALETTES, FONT_PAIRINGS, RADII, DENSITIES, contrast }
 
-/** Every face in the catalogue, for the Style tab's pickers to render each choice in its own type. */
+/** Every face in the catalog, for the Style tab's pickers to render each choice in its own type. */
 export function catalogueFontsHref(): string {
   const families = new Map<string, Set<number>>()
   for (const pairing of FONT_PAIRINGS) {

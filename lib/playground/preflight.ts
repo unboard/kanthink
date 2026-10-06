@@ -127,7 +127,7 @@ When the request mixes types, pick the most ambitious one. (If both cosmetic and
 4. REMOVALS — has the user, on THIS turn, explicitly asked for an existing feature to be taken OUT?
 
    Fill "requestedRemovals" only for features they have asked you to delete. This is
-   the only place a removal can be authorised, so read it strictly:
+   the only place a removal can be authorized, so read it strictly:
 
    - An instruction to KEEP something is not a removal. "Do not remove the AI
      comments", "keep the share link", "leave the upload alone" — all of these mean
@@ -315,7 +315,7 @@ export async function runPreflight(opts: {
       smallerScope?: unknown;
       requestedRemovals?: unknown;
     };
-    // Three verdicts now, and anything unrecognised means build — a classifier
+    // Three verdicts now, and anything unrecognized means build — a classifier
   // that returns nonsense should not be able to block work.
     // The prompt reasons in three sections, and a model given three headings will
     // sometimes answer with three fields — clarity: ACT, capability: UNSUPPORTED —
@@ -357,7 +357,7 @@ export async function runPreflight(opts: {
     ).filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
     const smallerScope = typeof parsed.smallerScope === 'string' ? parsed.smallerScope.trim() : '';
 
-    // The only list that can authorise deleting something. Read defensively: a
+    // The only list that can authorize deleting something. Read defensively: a
     // classifier that answers oddly should end up authorising nothing, never
     // authorising something by accident.
     const requestedRemovals = (

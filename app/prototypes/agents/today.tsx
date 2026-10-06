@@ -14,7 +14,7 @@ type SetSim = (fn: (s: Sim) => Sim) => void;
 /** Rough seconds each kind of call takes, for the "about 2 minutes" line. */
 const ITEM_SECONDS: Record<Item['kind'], number> = { conviction: 15, build: 25, ship: 60, outward: 10, trust: 5, allocate: 40, direction: 8 };
 
-/** The conviction scale. Colour deepens with certainty; cobalt only ever marks your decision. */
+/** The conviction scale. Color deepens with certainty; cobalt only ever marks your decision. */
 const SCALE: { id: Call; label: string; cls: string }[] = [
   { id: 'pass', label: 'Pass', cls: 'bg-(--card) text-(--ink)' },
   { id: 'leanNo', label: 'Not sure', cls: 'bg-(--card) text-(--ink)' },

@@ -43,7 +43,7 @@ interface Props {
  *
  * Whatever the person has to do next is the loudest thing on the card. The first
  * version got this backwards: on the code step it kept the address in a disabled
- * input, which rendered as a heavy grey slab sitting above a nearly invisible code
+ * input, which rendered as a heavy gray slab sitting above a nearly invisible code
  * field — the one control they actually needed. The address is now a line of text
  * with a way back, and the code box is the only thing competing for attention.
  */

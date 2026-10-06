@@ -1,11 +1,11 @@
 // Backfill: pre-bake the mp4 delivery derivative for every existing recording so
 // playback streams a cached asset instead of triggering a live webm→mp4 transcode
 // on first request. New recordings do this automatically at create time (see
-// ensureRecordingTranscoded); this covers the back catalogue.
+// ensureRecordingTranscoded); this covers the back catalog.
 //
 // Re-run this whenever RECORDING_DELIVERY_TRANSFORM changes. The transform is
 // imported rather than copied here — when it was duplicated inline, changing the
-// encode silently left the whole back catalogue serving the old derivative.
+// encode silently left the whole back catalog serving the old derivative.
 //
 // Run: npx tsx scripts/backfill-recording-transcodes.ts
 

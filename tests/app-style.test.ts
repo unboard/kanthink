@@ -38,7 +38,7 @@ describe('palettes', () => {
     }
   })
 
-  it('palettes made from any brand colour stay readable, light and dark', () => {
+  it('palettes made from any brand color stay readable, light and dark', () => {
     for (let h = 0; h < 360; h += 15) {
       for (const l of [0.35, 0.6, 0.85]) {
         for (const mode of ['light', 'dark'] as const) {
@@ -52,21 +52,21 @@ describe('palettes', () => {
     }
   })
 
-  it('keeps a brand colour as given when text on it already reads', () => {
+  it('keeps a brand color as given when text on it already reads', () => {
     expect(brandPalette('#1D4E89').colors.primary).toBe('#1D4E89')
   })
 
-  it('round-trips colours through OKLCH', () => {
+  it('round-trips colors through OKLCH', () => {
     for (const hex of ['#1D4E89', '#C2411F', '#0F766E', '#F2B705']) {
       expect(oklchToHex(hexToOklch(hex))).toBe(hex)
     }
   })
 
-  it('reads the brand colours out of a logo, ignoring white and grey', () => {
+  it('reads the brand colors out of a logo, ignoring white and gray', () => {
     const px: number[] = []
     const push = (r: number, g: number, b: number, n: number) => { for (let i = 0; i < n; i++) px.push(r, g, b, 255) }
     push(255, 255, 255, 400) // background
-    push(120, 120, 120, 100) // grey text
+    push(120, 120, 120, 100) // gray text
     push(200, 30, 40, 300) // red mark
     push(20, 60, 160, 150) // blue mark
     const found = dominantColors(px, 2)
@@ -75,7 +75,7 @@ describe('palettes', () => {
   })
 })
 
-describe('catalogue', () => {
+describe('catalog', () => {
   it('every look points at a real palette and font pairing', () => {
     for (const look of LOOKS) {
       expect(paletteById(look.palette), look.id).toBeTruthy()
@@ -113,7 +113,7 @@ describe('normalizeStyle', () => {
     expect(normalizeStyle({ look: 'utility', logoUrl: 'http://x.com/a.png' })!.logoUrl).toBeNull()
   })
 
-  it('needs a valid brand colour before it will use one', () => {
+  it('needs a valid brand color before it will use one', () => {
     expect(normalizeStyle({ look: 'utility', palette: 'brand', brand: { primary: 'red' } })!.palette).toBe('harbor')
     expect(normalizeStyle({ look: 'utility', palette: 'brand', brand: { primary: '#ff0000' } })!.palette).toBe('brand')
   })
@@ -303,7 +303,7 @@ describe('component kit', async () => {
 describe('the page around a published app', async () => {
   const { hostTheme } = await import('@/lib/playground/hostChrome')
 
-  it('takes the app style colours, so a dark app gets a dark bar', () => {
+  it('takes the app style colors, so a dark app gets a dark bar', () => {
     const t = hostTheme(styleForLook('arcade'))
     expect(t.mode).toBe('dark')
     expect(t.vars['--kp-primary']).toMatch(/^\d+ \d+ \d+$/)

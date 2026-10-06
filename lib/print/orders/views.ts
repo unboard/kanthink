@@ -260,7 +260,7 @@ export async function pageView(job: JobRow, order: OrderRow, audience: Audience)
     artwork: audience === 'printer' ? artwork : artwork.map((a) => ({ ...a, sourceUrl: undefined })),
     // Working steps stay on the printer's side; the customer sees them once a proof is sent.
     events: events.filter((e) => audience === 'printer' || !['deadline_changed', 'checked', 'revised'].includes(e.type)),
-    can: audience === 'customer' ? customerCan(status, !!proof) : { approve: ['received', 'awaiting_approval', 'changes_requested'].includes(status), requestChanges: false, upload: !['in_production', 'complete', 'cancelled'].includes(status) },
+    can: audience === 'customer' ? customerCan(status, !!proof) : { approve: ['received', 'awaiting_approval', 'changes_requested'].includes(status), requestChanges: false, upload: !['in_production', 'complete', 'canceled'].includes(status) },
     now: t,
   }
 }

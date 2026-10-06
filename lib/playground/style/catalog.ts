@@ -228,7 +228,7 @@ export const LOOKS: Look[] = [
   {
     id: 'utility', name: 'Utility', fits: 'everyday tools, calculators, planners, trackers',
     palette: 'harbor', fonts: 'figtree', radius: 'md', density: 'comfortable',
-    direction: 'A quiet, capable tool. The first screen is the tool itself, not a pitch for it. Hierarchy comes from size, weight and space; colour is saved for the primary action and state.',
+    direction: 'A quiet, capable tool. The first screen is the tool itself, not a pitch for it. Hierarchy comes from size, weight and space; color is saved for the primary action and state.',
   },
   {
     id: 'ledger', name: 'Ledger', fits: 'money, bills, budgets, invoices, accounting, inventory',
@@ -263,7 +263,7 @@ export const LOOKS: Look[] = [
   {
     id: 'boutique', name: 'Boutique', fits: 'salons, spas, boutiques, beauty, weddings, gifts',
     palette: 'salon', fonts: 'bodoni', radius: 'md', density: 'airy',
-    direction: 'Polished and considered. A high-contrast serif for headings, generous whitespace, and fine details: thin borders and restrained colour. Imagery leads; UI chrome stays out of the way.',
+    direction: 'Polished and considered. A high-contrast serif for headings, generous whitespace, and fine details: thin borders and restrained color. Imagery leads; UI chrome stays out of the way.',
   },
   {
     id: 'clinic', name: 'Clinic', fits: 'appointments, intake forms, health office admin, checklists, compliance',
@@ -273,7 +273,7 @@ export const LOOKS: Look[] = [
   {
     id: 'playful', name: 'Playful', fits: 'creative tools, generators, party planning, hobbies',
     palette: 'citrus', fonts: 'grotesk', radius: 'lg', density: 'comfortable',
-    direction: 'Lively and confident: one punchy colour, one surprising accent, and type with some attitude. Fun comes from content and interaction, not from bouncing animations or emoji.',
+    direction: 'Lively and confident: one punchy color, one surprising accent, and type with some attitude. Fun comes from content and interaction, not from bouncing animations or emoji.',
   },
   {
     id: 'studio-dark', name: 'Studio dark', fits: 'creative pro tools, editors, dashboards, focus tools',
@@ -288,7 +288,7 @@ export const LOOKS: Look[] = [
   {
     id: 'arcade', name: 'Arcade', fits: 'games, scoreboards, trivia, competitions',
     palette: 'arcade', fonts: 'chakra', radius: 'lg', density: 'comfortable',
-    direction: 'A game, not a form. The play area is the hero and fills the screen. Feedback is immediate and satisfying (a quick scale or colour change on a move, 150ms). Score and state are always visible. Pink is the main action, green is success.',
+    direction: 'A game, not a form. The play area is the hero and fills the screen. Feedback is immediate and satisfying (a quick scale or color change on a move, 150ms). Score and state are always visible. Pink is the main action, green is success.',
   },
   {
     id: 'mono', name: 'Mono', fits: 'minimal tools, writing, portfolios, anything that should feel invisible',

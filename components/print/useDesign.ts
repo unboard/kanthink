@@ -86,14 +86,14 @@ export function useDesign(id: string | null, { notify }: Options) {
 
   // ---- loading -------------------------------------------------------------
   useEffect(() => {
-    let cancelled = false
+    let canceled = false
     Promise.all([
       id ? api<{ design: PrintDesign }>(`/api/print/designs/${id}`) : Promise.resolve(null),
       api<{ brands: PrintBrand[] }>('/api/print/brands'),
       api<{ models: ModelInfo[] }>('/api/print/models'),
     ])
       .then(([d, b, m]) => {
-        if (cancelled) return
+        if (canceled) return
         if (d) {
           designRef.current = d.design
           setDesign(d.design)
@@ -104,10 +104,10 @@ export function useDesign(id: string | null, { notify }: Options) {
         setReady(true)
       })
       .catch((err) => {
-        if (!cancelled) setLoadError({ message: err.message, status: err instanceof ApiError ? err.status : 500 })
+        if (!canceled) setLoadError({ message: err.message, status: err instanceof ApiError ? err.status : 500 })
       })
     return () => {
-      cancelled = true
+      canceled = true
     }
     // A design adopted after creation is already in state; don't reload for it.
     // eslint-disable-next-line react-hooks/exhaustive-deps

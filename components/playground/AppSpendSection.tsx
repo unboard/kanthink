@@ -46,21 +46,21 @@ export function AppSpendSection({ appId }: { appId: ID }) {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         const res = await fetch(`/api/playground/apps/${appId}/spend`, { cache: 'no-store' });
         const data = await res.json();
-        if (cancelled) return;
+        if (canceled) return;
         if (!res.ok) { setError(data?.error || 'Could not load spending'); return; }
         apply(data as Spend);
       } catch {
-        if (!cancelled) setError('Could not load spending');
+        if (!canceled) setError('Could not load spending');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, [appId, apply]);
 
   const save = async () => {

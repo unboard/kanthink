@@ -16,7 +16,7 @@ export type { ArtworkFit }
  *   - full bleed: already the sheet's shape, so it is used as is;
  *   - trim size: the finished size with no bleed, so the edges are extended into the
  *     bleed (mirrored) and the printer is told to look at them;
- *   - another shape altogether: centred and cropped to fit, with how much is lost, so
+ *   - another shape altogether: centered and cropped to fit, with how much is lost, so
  *     the printer can decide between printing it as is and rebuilding it to fit.
  * The finding travels with the file, so the proof page can say what happened.
  */
@@ -77,7 +77,7 @@ export async function placeArtwork(userId: string, spec: PrintSpec, image: Buffe
     const by = Math.round((spec.bleedIn / spec.heightIn) * height)
     page = await sharp(flat).extend({ left: bx, right: bx, top: by, bottom: by, extendWith: 'mirror' }).toBuffer()
   } else {
-    // Centred cover crop to the sheet.
+    // Centered cover crop to the sheet.
     const r = sheet.w / sheet.h
     const cw = width / height > r ? Math.round(height * r) : width
     const ch = width / height > r ? height : Math.round(width / r)

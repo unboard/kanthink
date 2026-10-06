@@ -332,7 +332,7 @@ test('edit form preserves data when navigating away and back', async ({ page }) 
   await expect(page.getByLabel('Product name')).toHaveValue('Modified Name');
 });
 
-test('cancelling edit discards changes', async ({ page }) => {
+test('canceling edit discards changes', async ({ page }) => {
   await page.goto('/products');
 
   const row = page.getByRole('row', { name: /Wireless Keyboard/ });
@@ -377,7 +377,7 @@ test('updates an existing product', async ({ page }) => {
   await expect(page.getByRole('row', { name: /Wireless Keyboard Pro/ })).toContainText('$99.99');
 });
 
-test('cancelling edit discards changes', async ({ page }) => {
+test('canceling edit discards changes', async ({ page }) => {
   await page.goto('/products');
 
   const row = page.getByRole('row', { name: /Wireless Keyboard/ });

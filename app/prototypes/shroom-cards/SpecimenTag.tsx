@@ -9,7 +9,7 @@ import { ACTION_LABEL, STATE_COLOR, type ConceptProps } from './types';
  * eyelet and a clipped corner where the string would go.
  *
  * The classification sits in the eyelet strip rather than as a line of text, which buys
- * back a whole row and gives the card an obvious anchor point for the state colour. The
+ * back a whole row and gives the card an obvious anchor point for the state color. The
  * clipped corner is the one piece of pure craft here — everything else stays plain.
  */
 export function SpecimenTag({ shroom, index, isRunning, onRun, onEdit }: ConceptProps) {

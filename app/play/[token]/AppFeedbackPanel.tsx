@@ -30,7 +30,7 @@ const RUN_MS = 5 * 60_000;
  * behaves like a text thread: bubbles, runs, day breaks, a composer that grows, and
  * Enter to send.
  *
- * Every colour is a --kp-* variable set by the page from the app's own style
+ * Every color is a --kp-* variable set by the page from the app's own style
  * (lib/playground/hostChrome), so it belongs to whichever app it opens over.
  */
 export function AppFeedbackPanel({ token, appTitle, maker, initiallyOpen, onRequestSignIn }: Props) {
@@ -69,9 +69,9 @@ export function AppFeedbackPanel({ token, appTitle, maker, initiallyOpen, onRequ
 
   // Fast while open, slow while shut (that only feeds the badge), paused while hidden.
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     const tick = () => {
-      if (cancelled || document.hidden) return;
+      if (canceled || document.hidden) return;
       void load({ countUnread: !open });
     };
     // The first load always runs: a tab opened from an email link can start out
@@ -80,7 +80,7 @@ export function AppFeedbackPanel({ token, appTitle, maker, initiallyOpen, onRequ
     const timer = setInterval(tick, open ? OPEN_POLL_MS : IDLE_POLL_MS);
     document.addEventListener('visibilitychange', tick);
     return () => {
-      cancelled = true;
+      canceled = true;
       clearInterval(timer);
       document.removeEventListener('visibilitychange', tick);
     };

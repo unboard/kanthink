@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { providerGroup } from '../modelCatalog';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
 
-// From the catalogue, so "the OpenAI default" has exactly one answer. This used
+// From the catalog, so "the OpenAI default" has exactly one answer. This used
 // to be a separate literal and had drifted to gpt-4.1 — two generations behind
 // what the settings screen offered, and silently what keyless accounts ran.
 const DEFAULT_MODEL = providerGroup('openai').defaultModel;

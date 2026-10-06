@@ -43,7 +43,7 @@ const MANUAL_APP_AT = 40;
 const EXTENDS_AT = 50;
 
 const KANTHINK_ABOUT =
-  'Kanthink is an AI-assisted Kanban app: channels and cards that an assistant named Kan helps create and organise, ' +
+  'Kanthink is an AI-assisted Kanban app: channels and cards that an assistant named Kan helps create and organize, ' +
   'automations called shrooms, voice mode, card chat, apps generated from cards, and Kanwatch (browsing-time insight).';
 
 export const READ_CATEGORIES = {
@@ -51,7 +51,7 @@ export const READ_CATEGORIES = {
   general_learning: 'Learning about something unrelated to their work.',
   reference: 'Looking something up: documentation, a spec, a how-to.',
   news: 'News or current events.',
-  entertainment: 'Entertainment, humour or leisure.',
+  entertainment: 'Entertainment, humor or leisure.',
   social_chatter: 'Social posting with little substance.',
   shopping: 'Products or deals.',
 } as const;
@@ -282,7 +282,7 @@ export async function judgeRead(read: ReadRow): Promise<void> {
         {
           role: 'system',
           content:
-            `You are Kan, the assistant in Kanthink. ${firstName} read a page; you summarise it for them and ask one short question. ` +
+            `You are Kan, the assistant in Kanthink. ${firstName} read a page; you summarize it for them and ask one short question. ` +
             'Reply with JSON only: {"tldr": "2–3 plain sentences on what the page says", ' +
             '"why": "one line on why it matters to them, given their work", "nudge": "one question to them, under 25 words"}. ' +
             `For the nudge: ${guide} No preamble, no markdown.`,

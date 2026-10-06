@@ -16,7 +16,7 @@ export const STYLE_PASSES: StylePass[] = ['restyle', 'polish', 'bolder', 'quiete
 /** Every pass a build accepts, including the payment fix, whose brief is written in generateApp. */
 export const BUILD_PASSES: StylePass[] = [...STYLE_PASSES, 'payments']
 
-const VISUAL_ONLY = `This is a VISUAL pass. You may change classes, spacing, typography, layout and component markup anywhere in the app. You must NOT change behaviour: same features, same state shape, same window.kanthinkData keys, same calculations, same flows, and copy that means the same thing. Every feature that works now must still work.`
+const VISUAL_ONLY = `This is a VISUAL pass. You may change classes, spacing, typography, layout and component markup anywhere in the app. You must NOT change behavior: same features, same state shape, same window.kanthinkData keys, same calculations, same flows, and copy that means the same thing. Every feature that works now must still work.`
 
 export function isStylePass(value: unknown): value is StylePass {
   return typeof value === 'string' && (BUILD_PASSES as string[]).includes(value)
@@ -39,7 +39,7 @@ export function passPrompt(pass: StylePass, code: string | null | undefined, loo
 
 ${VISUAL_ONLY}
 
-Rebuild the look on the STYLE SYSTEM: the colour tokens instead of raw Tailwind colours, font-heading and font-sans, the radius scale, the density, and kit components in place of hand-rolled buttons, inputs, cards, tabs, dialogs and toasts. Follow the look's direction and the design quality rules. Replace the ESTABLISHED DESIGN DECISIONS about palette, fonts and corners with the new style.`
+Rebuild the look on the STYLE SYSTEM: the color tokens instead of raw Tailwind colors, font-heading and font-sans, the radius scale, the density, and kit components in place of hand-rolled buttons, inputs, cards, tabs, dialogs and toasts. Follow the look's direction and the design quality rules. Replace the ESTABLISHED DESIGN DECISIONS about palette, fonts and corners with the new style.`
     case 'polish':
       return `${PASS_LABEL.polish}.
 
@@ -51,7 +51,7 @@ A finishing pass, done the way a careful designer would before launch. Small ref
 - Button hierarchy: one primary action per screen, the rest outline or ghost.
 - Every state looks designed: empty, loading, error and success.
 - Visible focus states, tap targets at least 44px, tabular-nums on numbers.
-- Remove leftovers: stray colours, inconsistent corners, unneeded borders and shadows.`
+- Remove leftovers: stray colors, inconsistent corners, unneeded borders and shadows.`
     case 'bolder':
       return `${PASS_LABEL.bolder}.
 
@@ -63,7 +63,7 @@ Increase the confidence, not the decoration: a bigger, heavier font-heading scal
 
 ${VISUAL_ONLY}
 
-Turn the volume down: colour only for the primary action and real state; lighter weights; more whitespace; fewer borders, badges, icons and dividers; secondary text in text-muted-foreground. Remove decoration that isn't helping someone use the app.`
+Turn the volume down: color only for the primary action and real state; lighter weights; more whitespace; fewer borders, badges, icons and dividers; secondary text in text-muted-foreground. Remove decoration that isn't helping someone use the app.`
     case 'payments':
       // Written in generateApp, which has the app's settings and Kan's review.
       return PASS_LABEL.payments

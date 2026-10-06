@@ -27,7 +27,7 @@ interface Props {
   unlockRecurring?: boolean;
   /** Open the conversation with the maker on load (from a reply email). */
   openMessages?: boolean;
-  /** Colours from the app's own style, and who made it. See lib/playground/hostChrome. */
+  /** Colors from the app's own style, and who made it. See lib/playground/hostChrome. */
   chrome?: HostChrome;
 }
 
@@ -37,7 +37,7 @@ interface Props {
  * The app gets the screen. Under it, one slim bar that belongs to the app rather
  * than to Kanthink: who you're signed in as, and Chat, the conversation with the
  * person who made it. The bar, the chat and the sign-in sheet all take their
- * colours from the app's style, so they fit a dark game and a paper puzzle alike.
+ * colors from the app's style, so they fit a dark game and a paper puzzle alike.
  */
 export function PublicPlaygroundFrame({
   srcDoc,

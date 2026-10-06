@@ -22,8 +22,8 @@ interface ShroomAvatarPickerProps {
  * Choosing a shroom's face.
  *
  * Opens closed: every shroom already has a derived face different from its
- * neighbours, so this is a refinement rather than a step anyone has to take. Cap
- * first because the silhouette is what carries at small sizes — colour is the
+ * neighbors, so this is a refinement rather than a step anyone has to take. Cap
+ * first because the silhouette is what carries at small sizes — color is the
  * tiebreak, not the identity.
  */
 export function ShroomAvatarPicker({ shroomId, value, onChange }: ShroomAvatarPickerProps) {
@@ -59,7 +59,7 @@ export function ShroomAvatarPicker({ shroomId, value, onChange }: ShroomAvatarPi
             ))}
           </Section>
 
-          <Section label="Colour">
+          <Section label="Color">
             {PALETTE.map((c) => (
               <Swatch
                 key={c.key}

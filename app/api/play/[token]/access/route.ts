@@ -154,7 +154,7 @@ async function startCheckout(
  * The access cookie.
  *
  * A year, httpOnly, lax. Long-lived because the token is checked against the row on
- * every load — a refund, a cancelled subscription, or an unverified row all fail
+ * every load — a refund, a canceled subscription, or an unverified row all fail
  * there regardless of how much life the cookie has left.
  */
 function grantResponse(

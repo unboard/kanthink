@@ -14,7 +14,7 @@ import { REVISE_CHANGES, type ArtworkFile } from './types'
  *
  *   fit     — rebuild the customer's whole original file on this product (recreate),
  *             keeping every word; for files that are the wrong shape
- *   fix     — move what the print check flagged inside the lines, run colour to the edge
+ *   fix     — move what the print check flagged inside the lines, run color to the edge
  *   sharpen — redraw at full print resolution
  *
  * The result becomes the page's newest version and is checked straight away; it isn't

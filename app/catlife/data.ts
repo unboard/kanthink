@@ -55,12 +55,12 @@ export const FAVORITES = [
 // ——— Coat palettes: [base, marking, belly] ———
 export const COAT_PALETTES: readonly [string, string, string][] = [
   ['#e8963c', '#b5651d', '#f7e3c1'], // orange tabby
-  ['#4a4a52', '#2b2b31', '#c9c9cf'], // grey
+  ['#4a4a52', '#2b2b31', '#c9c9cf'], // gray
   ['#1f1f24', '#0e0e11', '#e8e4da'], // black tuxedo
   ['#c8b49a', '#8a6f4d', '#efe6d4'], // cream/brown
   ['#f5efe6', '#d9c8a9', '#ffffff'], // white/cream
   ['#7a5236', '#4c3018', '#d8c3a5'], // chocolate
-  ['#b0b7c4', '#7c8494', '#e6e9ef'], // blue-grey
+  ['#b0b7c4', '#7c8494', '#e6e9ef'], // blue-gray
   ['#d98e4a', '#8f4f1d', '#f5e2c8'], // ginger deep
   ['#9c8570', '#5f4a35', '#e0d4c2'], // lilac brown
   ['#e6d3b3', '#a3846b', '#fdf6ea'], // fawn (siamese-ish)

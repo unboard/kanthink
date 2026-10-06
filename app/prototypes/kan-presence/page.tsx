@@ -171,7 +171,7 @@ export default function KanPresencePage() {
             <Option label="Breathing cap" note="The mascot itself breathes while spores drift up. Calmest option and the most clearly Kan.">
               <BreathingCap />
             </Option>
-            <Option label="Gill shimmer" note="A wave travelling through gill strokes. Suggests scanning or reading rather than idling.">
+            <Option label="Gill shimmer" note="A wave traveling through gill strokes. Suggests scanning or reading rather than idling.">
               <GillShimmer />
             </Option>
             <Option label="Popping caps" note="Three small caps rise in sequence — closest in rhythm to the dots it replaces, but on-theme.">

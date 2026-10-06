@@ -57,7 +57,7 @@ const TOOLS = [
             columnName: { type: 'STRING', description: 'Column name. Pass this ONLY if you can see that column listed for this specific channel — most channels have no "Inbox". Omit it when unsure and the card lands in the channel default.' },
             title: { type: 'STRING', description: 'Card title' },
             content: { type: 'STRING', description: 'Card first message in markdown. Use ## headers, **bold**, - bullet lists, 1. numbered lists, [links](url), > blockquotes to make it well-structured and readable.' },
-            distinct: { type: 'STRING', description: 'Set to "true" ONLY after the user has explicitly said this is a separate card from one you already made in this conversation. Never set it on a first attempt, and never to get past a warning on your own judgement.' },
+            distinct: { type: 'STRING', description: 'Set to "true" ONLY after the user has explicitly said this is a separate card from one you already made in this conversation. Never set it on a first attempt, and never to get past a warning on your own judgment.' },
           },
           required: ['channelId', 'title'],
         },
@@ -232,7 +232,7 @@ const TOOLS = [
           type: 'OBJECT',
           properties: {
             name: { type: 'STRING', description: 'Channel name, short and specific' },
-            brief: { type: 'STRING', description: "Everything the user said they want this channel and its shrooms to do, as fully as they said it. Do not summarise — a long brief makes a better channel." },
+            brief: { type: 'STRING', description: "Everything the user said they want this channel and its shrooms to do, as fully as they said it. Do not summarize — a long brief makes a better channel." },
             columnNames: {
               type: 'ARRAY',
               items: { type: 'STRING' },
@@ -1205,7 +1205,7 @@ ${a.imageGen.prompt}${a.imageGen.imageUrl ? `
       // Retry logic for transient WebSocket errors (e.g. 1011 server errors)
       const MAX_RETRIES = 2;
       const connectWs = (attempt: number): Promise<void> => new Promise<void>((resolve, reject) => {
-        if (!activeRef.current) { reject(new Error('Cancelled')); return; }
+        if (!activeRef.current) { reject(new Error('Canceled')); return; }
         setStatus(attempt > 0 ? `Reconnecting (attempt ${attempt + 1})...` : 'Connecting...');
         // OpenAI authenticates a browser socket through the subprotocol, because a
         // WebSocket cannot carry an Authorization header and credentials in the

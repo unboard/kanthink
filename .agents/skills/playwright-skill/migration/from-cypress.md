@@ -881,7 +881,7 @@ Replace the Cypress CI step with Playwright:
 
 - name: Upload Playwright Report
   uses: actions/upload-artifact@v4
-  if: ${{ !cancelled() }}
+  if: ${{ !canceled() }}
   with:
     name: playwright-report
     path: playwright-report/

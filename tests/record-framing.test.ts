@@ -32,7 +32,7 @@ describe('surfacePlacement — contain', () => {
     const p = surfacePlacement(WIDE.w, WIDE.h, TALL_FRAME, view({ fit: 'contain' }));
     expect(p.dw).toBeLessThanOrEqual(TALL_FRAME.w + 0.001);
     expect(p.dh).toBeLessThanOrEqual(TALL_FRAME.h + 0.001);
-    // Letterboxed: centred vertically with space above and below.
+    // Letterboxed: centered vertically with space above and below.
     expect(p.dy).toBeGreaterThan(0);
   });
 });
@@ -46,7 +46,7 @@ describe('surfacePlacement — zoom and focus', () => {
     expect(at2.dw / at1.dw).toBeCloseTo(2, 4);
   });
 
-  it('centres the focal point in the frame when there is room to pan', () => {
+  it('centers the focal point in the frame when there is room to pan', () => {
     // Focus a quarter of the way across, zoomed enough that panning is possible.
     const p = surfacePlacement(1000, 1000, SQUARE_FRAME, view({ zoom: 4, x: 0.25, y: 0.25 }));
     const focusX = p.dx + 0.25 * p.dw;
@@ -76,7 +76,7 @@ describe('surfacePlacement — zoom and focus', () => {
     expect(under.dw).toBeCloseTo(at1.dw, 4);
   });
 
-  it('centres a contained image instead of clamping it to an edge', () => {
+  it('centers a contained image instead of clamping it to an edge', () => {
     // Smaller than the frame in one axis, so the clamp must not apply there.
     const p = surfacePlacement(1920, 1080, { x: 0, y: 0, w: 1000, h: 1000 }, view({ fit: 'contain', x: 0, y: 0 }));
     expect(p.dy).toBeCloseTo((1000 - p.dh) / 2, 4);
@@ -100,7 +100,7 @@ describe('focusForAnchoredZoom', () => {
 
   it('holds the anchored point under the cursor while zooming in', () => {
     const from = view({ zoom: 1.5 });
-    // Cursor somewhere off-centre, and the source point currently beneath it.
+    // Cursor somewhere off-center, and the source point currently beneath it.
     const cursor = { x: 300, y: 700 };
     const p = surfacePlacement(SRC.w, SRC.h, FRAME, from);
     const anchor = { x: (cursor.x - p.dx) / p.dw, y: (cursor.y - p.dy) / p.dh };

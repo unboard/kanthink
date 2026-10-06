@@ -1253,7 +1253,7 @@ export async function POST(request: Request) {
     const columnName = (columnId: string): string =>
       channel.columns.find((c) => c.id === columnId)?.name ?? 'another column';
 
-    // Get authenticated LLM client. A shroom can name its own model; it's honoured only
+    // Get authenticated LLM client. A shroom can name its own model; it's honored only
     // when a key for that provider exists, otherwise the run falls back to the account
     // default rather than failing.
     const preferredModel = parseModelChoice(instructionCard.modelId) ?? undefined;

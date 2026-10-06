@@ -117,7 +117,7 @@ export function surfacePlacement(
 
   // Put the focal point in the middle of the frame, then pull back so the frame
   // never shows past an edge — panning into empty space looks like a bug, and at
-  // zoom 1 with 'cover' this is what keeps the crop centred.
+  // zoom 1 with 'cover' this is what keeps the crop centered.
   let dx = r.x + r.w / 2 - view.x * dw;
   let dy = r.y + r.h / 2 - view.y * dh;
   dx = dw >= r.w ? clamp(dx, r.x + r.w - dw, r.x) : r.x + (r.w - dw) / 2;

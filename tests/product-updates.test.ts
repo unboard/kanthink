@@ -42,7 +42,7 @@ describe('product updates reach Kan', () => {
     expect(buildProductUpdateContext(0)).toBe('');
   });
 
-  it('leaves the existing unseen-marker behaviour alone', () => {
+  it('leaves the existing unseen-marker behavior alone', () => {
     expect(unseenProductUpdates(null)).toHaveLength(PRODUCT_UPDATES.length);
     expect(unseenProductUpdates(PRODUCT_UPDATES[0].id)).toHaveLength(0);
     expect(unseenProductUpdates('no-such-id')).toHaveLength(0);

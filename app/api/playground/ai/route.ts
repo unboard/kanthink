@@ -41,7 +41,7 @@ const MAX_SYSTEM_LENGTH = 8000;
 // generated app via window.kanthinkAI.generateImage(), and from the composer.
 //
 // Which one runs is the app's own request first, then the owner's account default
-// from Settings → AI, then the catalogue default. A transparent request narrows the
+// from Settings → AI, then the catalog default. A transparent request narrows the
 // field to models that actually have the parameter, which is what makes a sticker
 // app possible: Gemini cannot cut a background out, and quietly handing back an
 // opaque PNG would leave the app's author debugging their prompt for an hour.

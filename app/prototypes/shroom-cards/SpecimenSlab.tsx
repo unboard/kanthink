@@ -10,7 +10,7 @@ import { ACTION_LABEL, STATE_COLOR, type ConceptProps } from './types';
  *
  * Boxiness is usually what makes a card feel heavy, and a specimen label was never really
  * a box — it's a printed strip. This is the lightest the direction goes while keeping the
- * catalogue number, the classification, and the key of facts.
+ * catalog number, the classification, and the key of facts.
  */
 export function SpecimenSlab({ shroom, index, isRunning, onRun, onEdit }: ConceptProps) {
   const accent = isRunning ? '#8b5cf6' : STATE_COLOR[shroom.state];

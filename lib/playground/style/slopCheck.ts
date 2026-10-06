@@ -2,7 +2,7 @@
  * A design check that reads the code: no model, no cost, the same answer every time.
  *
  * Each detector looks for a pattern that makes a generated app look generated:
- * gradient text, purple-to-blue washes, glows, emoji standing in for icons, colours
+ * gradient text, purple-to-blue washes, glows, emoji standing in for icons, colors
  * hard-coded where the style's tokens belong. Findings name the fix in plain words,
  * because the Style tab hands them straight to a build as the brief for "Fix these".
  *
@@ -63,7 +63,7 @@ const RULES: Rule[] = [
     id: 'ai-gradient',
     severity: 'high',
     title: 'Purple-to-blue gradient',
-    fix: 'Remove the purple/indigo/blue gradients. Use a solid token colour (bg-primary, bg-muted or bg-background).',
+    fix: 'Remove the purple/indigo/blue gradients. Use a solid token color (bg-primary, bg-muted or bg-background).',
     count: (code) => classStrings(code).filter((c) => new RegExp(`\\bfrom-${COOL}-\\d+`).test(c) && new RegExp(`\\b(?:to|via)-(?:blue|indigo|purple|violet|pink|fuchsia|cyan|sky)-\\d+`).test(c)).length,
   },
   {
@@ -76,8 +76,8 @@ const RULES: Rule[] = [
   {
     id: 'grey-on-colour',
     severity: 'high',
-    title: 'Grey text on a coloured background',
-    fix: 'Text on a coloured fill must use its paired foreground (text-primary-foreground on bg-primary, text-highlight-foreground on bg-highlight), never grey.',
+    title: 'Gray text on a colored background',
+    fix: 'Text on a colored fill must use its paired foreground (text-primary-foreground on bg-primary, text-highlight-foreground on bg-highlight), never gray.',
     count: (code) => classStrings(code).filter((c) => new RegExp(`\\bbg-(?:primary|highlight|${COLOR}-[5-9]00)\\b`).test(c) && /\btext-(?:gray|slate|zinc|neutral|stone)-[3-6]00\b|\btext-muted-foreground\b/.test(c)).length,
   },
   {
@@ -90,8 +90,8 @@ const RULES: Rule[] = [
   {
     id: 'glow',
     severity: 'medium',
-    title: 'Glows and coloured shadows',
-    fix: 'Remove coloured shadows and glows. Elevation is only for floating things (dialogs, menus) and uses a plain shadow.',
+    title: 'Glows and colored shadows',
+    fix: 'Remove colored shadows and glows. Elevation is only for floating things (dialogs, menus) and uses a plain shadow.',
     count: (code) => count(code, new RegExp(`\\bshadow-${COLOR}-\\d{2,3}(?:\\/\\d+)?\\b|shadow-\\[0_0_|drop-shadow-\\[0_0_`, 'g')),
   },
   {
@@ -122,8 +122,8 @@ const RULES: Rule[] = [
   {
     id: 'raw-colours',
     severity: (n, ctx) => (!ctx.hasStyle ? null : n >= 12 ? 'medium' : n >= 6 ? 'low' : null),
-    title: 'Hard-coded colours',
-    fix: 'Swap Tailwind palette colours (gray-100, blue-600, slate-*) in the interface for the style tokens: bg-background, bg-card, bg-muted, text-foreground, text-muted-foreground, bg-primary, border-border. That lets the owner recolour the app.',
+    title: 'Hard-coded colors',
+    fix: 'Swap Tailwind palette colors (gray-100, blue-600, slate-*) in the interface for the style tokens: bg-background, bg-card, bg-muted, text-foreground, text-muted-foreground, bg-primary, border-border. That lets the owner recolor the app.',
     count: (code) => count(code, new RegExp(`\\b(?:bg|text|border|ring|divide|from|to|via|fill|stroke|outline)-${COLOR}-\\d{2,3}\\b`, 'g')),
   },
   {
@@ -150,15 +150,15 @@ const RULES: Rule[] = [
   {
     id: 'side-stripes',
     severity: (n) => (n >= 2 ? 'low' : null),
-    title: 'Coloured side stripes',
-    fix: 'Remove the thick coloured left borders (border-l-4) on cards and callouts. Use a small badge or icon if state needs showing.',
+    title: 'Colored side stripes',
+    fix: 'Remove the thick colored left borders (border-l-4) on cards and callouts. Use a small badge or icon if state needs showing.',
     count: (code) => count(code, /\bborder-l-(?:4|8)\b/g),
   },
   {
     id: 'hover-scale',
     severity: (n) => (n >= 3 ? 'low' : null),
     title: 'Everything grows on hover',
-    fix: 'Remove hover:scale-* from cards and buttons. Hover feedback is a colour change (hover:bg-accent). Touch screens never see hover anyway.',
+    fix: 'Remove hover:scale-* from cards and buttons. Hover feedback is a color change (hover:bg-accent). Touch screens never see hover anyway.',
     count: (code) => count(code, /\bhover:scale-1\d\d\b/g),
   },
   {
@@ -171,8 +171,8 @@ const RULES: Rule[] = [
   {
     id: 'inline-colours',
     severity: (n) => (n >= 4 ? 'low' : null),
-    title: 'Colours in inline styles',
-    fix: 'Move inline style colours (style={{ color: "#…" }}) to token classes so they follow the style.',
+    title: 'Colors in inline styles',
+    fix: 'Move inline style colors (style={{ color: "#…" }}) to token classes so they follow the style.',
     count: (code) => count(code, /(?:color|background(?:Color)?|borderColor)\s*:\s*['"`]#[0-9a-fA-F]{3,8}/g),
   },
 ]

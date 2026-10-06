@@ -23,7 +23,7 @@ const STAGE: Record<Stage, { label: string; cls: string; note: string }> = {
   prospect: { label: 'Prospect', cls: 'bg-amber-500/15 text-amber-300', note: 'Reserved or gave their email, hasn’t used the app yet' },
   using: { label: 'Using', cls: 'bg-sky-500/15 text-sky-300', note: 'Proved their email and is using the app' },
   customer: { label: 'Customer', cls: 'bg-emerald-500/15 text-emerald-300', note: 'Has paid' },
-  lapsed: { label: 'Lapsed', cls: 'bg-neutral-700 text-neutral-300', note: 'Refunded or cancelled' },
+  lapsed: { label: 'Lapsed', cls: 'bg-neutral-700 text-neutral-300', note: 'Refunded or canceled' },
 };
 
 interface PersonSummary {
@@ -139,7 +139,7 @@ export function People() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-white group-hover:text-violet-400">{p.name || p.email} <span className="text-neutral-500">· {p.appTitle}</span></p>
                   <p className="truncate text-xs text-neutral-400">
-                    {p.orders ? `${p.orders.count} order${p.orders.count === 1 ? '' : 's'} · ${formatAppPrice(p.orders.total, p.orders.currency, null)}${p.orders.toFulfil ? ` · ${p.orders.toFulfil} to fulfil` : ''} · ` : ''}
+                    {p.orders ? `${p.orders.count} order${p.orders.count === 1 ? '' : 's'} · ${formatAppPrice(p.orders.total, p.orders.currency, null)}${p.orders.toFulfil ? ` · ${p.orders.toFulfil} to fulfill` : ''} · ` : ''}
                     {p.unsubscribed ? 'Unsubscribed' : p.lastEmail ? `${p.lastEmail.subject}: ${p.lastEmail.clickedAt ? 'clicked' : p.lastEmail.openedAt ? 'opened' : 'sent'} ${when(p.lastEmail.clickedAt || p.lastEmail.openedAt || p.lastEmail.sentAt)}` : p.email}
                   </p>
                 </div>
@@ -322,7 +322,7 @@ function PersonView({ id, onBack }: { id: string; onBack: () => void }) {
                 <span className="tabular-nums text-neutral-500">#{o.number}</span>
                 <span className="min-w-0 flex-1 truncate text-neutral-200">{o.quantity > 1 ? `${o.quantity} × ` : ''}{o.item}</span>
                 <span className="tabular-nums text-neutral-400">{o.amount}</span>
-                <span className="text-neutral-500">{o.status === 'paid' ? 'To fulfil' : o.status === 'fulfilled' ? 'Fulfilled' : 'Refunded'}</span>
+                <span className="text-neutral-500">{o.status === 'paid' ? 'To fulfill' : o.status === 'fulfilled' ? 'Fulfilled' : 'Refunded'}</span>
               </li>
             ))}
           </ul>

@@ -92,7 +92,7 @@ const CARD_MENTION_REGEX = /#\[([^\]]+)\]\(([^)]+)\)/g;
  */
 const ALL_MENTIONS_REGEX = /(@\[([^\]]+)\]\(([^)]+)\)|#\[([^\]]+)\]\(([^)]+)\)|(^|\s)(@kan)\b)/gi;
 
-/** Grey pill, ordinary text colour — a mention should read as part of the sentence. */
+/** Gray pill, ordinary text color — a mention should read as part of the sentence. */
 const MENTION_CHIP =
   'inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-neutral-200/80 dark:bg-neutral-600/50 text-neutral-900 dark:text-white';
 
@@ -245,7 +245,7 @@ function renderContentWithMentions(content: string, linkHandlers?: LinkHandlers)
           );
         }
         if (part.type === 'mention') {
-          // Data sources keep their own colour — @mixpanel is a different kind
+          // Data sources keep their own color — @mixpanel is a different kind
           // of thing from a person, and the chip is the only place that shows.
           const isIntegration = part.id?.startsWith('integration-');
           return (

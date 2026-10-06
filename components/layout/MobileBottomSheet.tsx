@@ -865,7 +865,7 @@ function ShroomsList({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* The My Shrooms / Community tab pair went with the shroom catalogue — there is
+      {/* The My Shrooms / Community tab pair went with the shroom catalog — there is
           only one kind of shroom now, the ones on your board. */}
       <div className="flex-1 p-4 space-y-3 overflow-y-auto">
             {allChannelShrooms.length === 0 ? (

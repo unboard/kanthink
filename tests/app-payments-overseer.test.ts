@@ -117,7 +117,7 @@ describe('payment check', () => {
 })
 
 describe('what builds are told', () => {
-  it('a shop build gets the order API, the fulfilment and the rules', () => {
+  it('a shop build gets the order API, the fulfillment and the rules', () => {
     const c = paymentContract({ mode: 'order', price: '$2.00', setup: { fulfilment: 'pickup', fulfilmentNote: 'Pickup in Fargo, Saturdays' } })
     expect(c).toContain('kanthinkPay.order(')
     expect(c).toContain('Pickup in Fargo, Saturdays')

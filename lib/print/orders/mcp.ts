@@ -136,8 +136,8 @@ export const TOOLS = [
   { name: 'message_customer', description: 'Post a message on the job\'s timeline and email it to the customer.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, message: { type: 'string' } }, required: ['id', 'message'] } },
   {
     name: 'set_job_status',
-    description: 'Move a job along after approval: locked, in_production, complete, cancelled, or back to received.',
-    inputSchema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['locked', 'in_production', 'complete', 'cancelled', 'received'] } }, required: ['id', 'status'] },
+    description: 'Move a job along after approval: locked, in_production, complete, canceled, or back to received.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['locked', 'in_production', 'complete', 'canceled', 'received'] } }, required: ['id', 'status'] },
   },
   {
     name: 'set_deadline',

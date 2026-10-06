@@ -325,7 +325,7 @@ const ASSEMBLY_ROLES = [
 type AssemblyLine = Partial<Record<(typeof ASSEMBLY_ROLES)[number]['key'], string>>;
 
 /**
- * Recognise an assembly-line layout.
+ * Recognize an assembly-line layout.
  *
  * Requires a build column plus at least two upstream roles — one enrichment step
  * before a build isn't a pipeline, it's a channel with a build shroom, and wiring a
@@ -390,11 +390,11 @@ export function getAssemblyLineShrooms(line: AssemblyLine, topicContext: string)
 
   const enrichments: Array<[keyof AssemblyLine, string, string]> = [
     ['requirements', 'Product Manager',
-      'Act as the product manager. Write: the specific user and the moment they reach for this; the single job it must do well; 3-5 concrete requirements stated as observable behaviour; what is deliberately out of scope for v1; and how you would know it worked. Pick one interpretation and commit. Do not restate the idea — add what was missing.'],
+      'Act as the product manager. Write: the specific user and the moment they reach for this; the single job it must do well; 3-5 concrete requirements stated as observable behavior; what is deliberately out of scope for v1; and how you would know it worked. Pick one interpretation and commit. Do not restate the idea — add what was missing.'],
     ['spec', 'CTO Spec',
       'Act as the CTO. Given the requirements already on this card, specify: the core data model; the main screens and what each is for; the one hard technical problem and how to solve it; and any library worth pulling in, named exactly. This runs as a single-file React app in the browser with localStorage only and no backend. If a requirement cannot survive that, say so and propose the version that can.'],
     ['design', 'Designer',
-      'Act as the designer. Give this a specific point of view, not a neutral one. Write: the feeling someone should have using it, in one line; a concrete palette with real colour values; type treatment; the one moment worth making delightful; and one convention you are deliberately breaking, and why. Reject anything that reads as a generic dashboard — name what would make this recognisably itself.'],
+      'Act as the designer. Give this a specific point of view, not a neutral one. Write: the feeling someone should have using it, in one line; a concrete palette with real color values; type treatment; the one moment worth making delightful; and one convention you are deliberately breaking, and why. Reject anything that reads as a generic dashboard — name what would make this recognizably itself.'],
   ];
 
   for (const [key, title, instructions] of enrichments) {

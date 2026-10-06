@@ -2,9 +2,9 @@
  * The shared order page: a proofing light table.
  *
  * The artwork sits on a cool, faintly dotted surface with real paper depth; the
- * controls float over it in frosted glass and get out of the way. One colour means
- * "this needs you": process magenta, the colour printers already mark proofs with.
- * The printer's own brand colour is the primary button and nothing else.
+ * controls float over it in frosted glass and get out of the way. One color means
+ * "this needs you": process magenta, the color printers already mark proofs with.
+ * The printer's own brand color is the primary button and nothing else.
  */
 
 .proof {
@@ -210,7 +210,7 @@
     animation-name: drawer-in;
   }
 }
-/* The approve sheet stays a sheet, centred, on wide screens too. */
+/* The approve sheet stays a sheet, centered, on wide screens too. */
 @media (min-width: 900px) {
   .drawer.approve {
     top: auto;

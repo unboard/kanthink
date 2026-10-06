@@ -173,12 +173,12 @@ export function InstructionDetailDrawerV2({
       setLearnings(null);
       return;
     }
-    let cancelled = false;
+    let canceled = false;
     fetch(`/api/channels/${channel.id}/instructions/${instructionCard.id}/learnings`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => { if (!cancelled && data) setLearnings(data); })
+      .then((data) => { if (!canceled && data) setLearnings(data); })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, [isOpen, instructionCard, channel.id]);
 
   useEffect(() => {
@@ -351,14 +351,14 @@ export function InstructionDetailDrawerV2({
   const handleGenerateSummary = async () => {
     if (!instructionCard || isSummaryLoading) return;
     if (!instructions.trim()) {
-      setSummaryError('Write the instructions first — there is nothing to summarise yet.');
+      setSummaryError('Write the instructions first — there is nothing to summarize yet.');
       return;
     }
     setIsSummaryLoading(true);
     setSummaryError(null);
     try {
       // Save first: the generator reads the instructions from the database, so an
-      // unsaved edit in the textarea would otherwise be summarised from the old text.
+      // unsaved edit in the textarea would otherwise be summarized from the old text.
       handleSave();
       const res = await fetch('/api/shroom-summary', {
         method: 'POST',
@@ -796,7 +796,7 @@ export function InstructionDetailDrawerV2({
                   : action === 'modify'
                     ? 'Describe how to modify the cards...'
                     : action === 'report'
-                      ? 'Describe what to observe and summarise...'
+                      ? 'Describe what to observe and summarize...'
                       : action === 'build'
                         // A build turns the card into a playground app. The card's own
                         // thread and tasks are already the brief — this is the standing

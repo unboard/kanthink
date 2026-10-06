@@ -30,7 +30,7 @@ export function settingsKey(settings: PaymentSettings): string {
   return JSON.stringify([settings.mode, settings.price, settings.setup ?? null])
 }
 
-/** A short, stable hash of code, so a review of an older build is recognisable. */
+/** A short, stable hash of code, so a review of an older build is recognizable. */
 export function codeHash(code: string | null | undefined): string {
   let h = 2166136261
   const s = code || ''

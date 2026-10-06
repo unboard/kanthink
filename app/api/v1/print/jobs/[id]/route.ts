@@ -4,7 +4,7 @@ import { getJobOp, setDeadlineOp, setStatusOp } from '@/lib/print/orders/ops'
 
 /**
  * GET   /api/v1/print/jobs/:id   — the job: status, pages (final, proof, current, original), links
- * PATCH /api/v1/print/jobs/:id   — { status } (locked | in_production | complete | cancelled | received)
+ * PATCH /api/v1/print/jobs/:id   — { status } (locked | in_production | complete | canceled | received)
  *                                  and/or { lockAt } for this job's own deadline
  */
 

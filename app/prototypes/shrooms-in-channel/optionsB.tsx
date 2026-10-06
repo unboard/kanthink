@@ -287,7 +287,7 @@ export function SporePalette({ shrooms, runningId, onRun }: OptionProps) {
 const COL_W = 224;
 const GAP = 12;
 const PAD = 16;
-/** Centre of the gutter to the right of column `i`. */
+/** Center of the gutter to the right of column `i`. */
 const gutterX = (i: number) => PAD + (i + 1) * (COL_W + GAP) - GAP / 2;
 const colIndex = (id: string | null) => COLUMNS.findIndex((c) => c.id === id);
 

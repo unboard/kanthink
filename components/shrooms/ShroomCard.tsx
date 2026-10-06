@@ -41,7 +41,7 @@ function seededRandom(seed: string): () => number {
  * spores fall into a pattern specific to the species. Each shroom gets one drawn from its
  * id, so the same shroom always prints the same mark and no two print alike. It's an
  * identity you learn by sight, which is what a card in a long column needs, and it takes
- * the state colour so it doubles as the status light.
+ * the state color so it doubles as the status light.
  */
 function SporePrint({ id, color, live }: { id: string; color: string; live: boolean }) {
   const { spores, rays } = useMemo(() => {

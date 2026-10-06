@@ -53,11 +53,11 @@ function useRasterGuide(spec: PrintSpec): string | null {
   const url = spec.guide?.kind === 'image' ? spec.guide.url : null
   useEffect(() => {
     if (!url) return
-    let cancelled = false
+    let canceled = false
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => {
-      if (cancelled) return
+      if (canceled) return
       const sheet = bleedSize(spec)
       const w = 640
       const h = Math.round((w * sheet.h) / sheet.w)
@@ -97,7 +97,7 @@ function useRasterGuide(spec: PrintSpec): string | null {
     }
     img.src = url
     return () => {
-      cancelled = true
+      canceled = true
     }
   }, [url, spec])
   return overlay && overlay.url === url ? overlay.data : null

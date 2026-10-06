@@ -25,7 +25,7 @@ import { uploadImageToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinar
  * It no longer tries Google and then OpenAI and hopes. The account names an image
  * model in Settings → AI, a single request may name a different one, and
  * `resolveImageModel` picks between them against the keys actually held. The old
- * chain survives only as the shape of the catalogue's default — Nano Banana first,
+ * chain survives only as the shape of the catalog's default — Nano Banana first,
  * because that is what every existing card cover was drawn with.
  *
  * The one thing that still overrides a stated preference is transparency: a request
@@ -79,12 +79,12 @@ export interface GenerateImageResult {
   status?: number
   /** The model that actually drew it, qualified. Worth showing when it moved. */
   model?: string
-  /** Set when the request named a model that could not be honoured. */
+  /** Set when the request named a model that could not be honored. */
   fellBackFrom?: string
 }
 
 /**
- * Generate one image for a user, honouring their keys and their model preference.
+ * Generate one image for a user, honoring their keys and their model preference.
  */
 export async function generateImageForUser(
   userId: string,

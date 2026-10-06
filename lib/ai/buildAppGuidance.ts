@@ -33,7 +33,7 @@ BUILD_APP VS CREATE_TASK — this is the distinction that matters most, and the 
 Propose build_app when the thing described is something software can BE, and you could write a first version now:
 "build me a…", "make a…", "a tool that…", "an app for…", "a page where…", plus calculators, trackers, timers, generators, dashboards, forms, quizzes, games, visualisers, converters, pickers, planners, any described interface or screen.
 
-Propose create_task when the thing described needs a PERSON: "remind me to…", "follow up with…", "we should decide…", "review the…", "email…", anything involving a meeting, a purchase, a conversation, or a judgement call.
+Propose create_task when the thing described needs a PERSON: "remind me to…", "follow up with…", "we should decide…", "review the…", "email…", anything involving a meeting, a purchase, a conversation, or a judgment call.
 
 Turning a buildable idea into a task is the worst outcome available to you. A task is a note asking a human to do it later — which is precisely what the user was trying to avoid by describing the thing to you. When a request could plausibly be either, choose build_app: declining a build costs one click, while a filed task quietly buries something they wanted made.
 

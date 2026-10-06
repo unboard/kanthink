@@ -1,6 +1,6 @@
 /**
  * Data for the Takes prototype — a studio of agents that finds, tests, builds,
- * ships and sells small apps, and asks you for direction rather than labour.
+ * ships and sells small apps, and asks you for direction rather than labor.
  *
  * Every take here is an example of what scouts would plausibly bring back from
  * public demand. Sources are described, never named. Each take carries a hidden
@@ -247,7 +247,7 @@ export const TAKES: Take[] = [
     testPost: 'Making a tiny tool that does quilt yardage and cutting plans so nobody buys an extra yard again. Reserve at $7.',
     launchPost: 'Quilt Math: pick a block and size, get yardage per fabric and a cutting plan. $7 once.',
     where: 'the quilting forum',
-    preview: { header: 'Log Cabin · Queen', rows: ['Light: 3¼ yd  Dark: 2¾ yd  Centre: ½ yd', 'Cut 84 strips at 2½″', 'Binding: ¾ yd'], cta: 'Print cutting plan' },
+    preview: { header: 'Log Cabin · Queen', rows: ['Light: 3¼ yd  Dark: 2¾ yd  Center: ½ yd', 'Cut 84 strips at 2½″', 'Binding: ¾ yd'], cta: 'Print cutting plan' },
     qa: { fixed: ['Rounded yardage down instead of up — fixed'], open: 'Only six block patterns.' },
     promise: 0.86,
     truth: { pull: 0.9, intent: 0.06, buildDays: 2 },
@@ -396,7 +396,7 @@ export const CREW: Crew[] = [
   { id: 'demand', stage: 'identify', name: 'Demand scout', job: 'Reads public posts where people describe a chore they’d pay to lose, or say “I’d pay for”.', alone: 'Read, collect quotes', needsYes: 'Nothing', builtFrom: 'Scheduled shroom + web search; Jev for “is this a buyer?”', budget: 4 },
   { id: 'reviews', stage: 'identify', name: 'Review miner', job: 'Reads 1–3 star reviews of paid tools: what people paid for and didn’t get.', alone: 'Read, collect quotes', needsYes: 'Nothing', builtFrom: 'Scheduled shroom + web search', budget: 2 },
   { id: 'trends', stage: 'identify', name: 'Trend scout', job: 'Finds the seasonal clock on a take — when people search, when it’s too late.', alone: 'Read', needsYes: 'Nothing', builtFrom: 'Scheduled shroom + search-interest data', budget: 1 },
-  { id: 'shelf', stage: 'identify', name: 'Your shelf', job: 'Checks what you already own against a take. A tiebreaker only — it never brings a take in.', alone: 'Read your apps and MCS', needsYes: 'Nothing', builtFrom: 'playground_apps, MCS catalogue. Kanwatch is not an input.', budget: 0 },
+  { id: 'shelf', stage: 'identify', name: 'Your shelf', job: 'Checks what you already own against a take. A tiebreaker only — it never brings a take in.', alone: 'Read your apps and MCS', needsYes: 'Nothing', builtFrom: 'playground_apps, MCS catalog. Kanwatch is not an input.', budget: 0 },
   { id: 'analyst', stage: 'vet', name: 'Analyst', job: 'Turns scout finds into a take: a claim, who pays, the bet, the price, and Jev’s read before any test.', alone: 'Write takes', needsYes: 'Nothing — you make the call', builtFrom: 'Jev Noul, instruction cards', budget: 3 },
   { id: 'testpage', stage: 'vet', name: 'Test page', job: 'Builds a one-page offer for the take with the price and a Reserve button. Nobody is charged — reserving saves their email and the launch price.', alone: 'Build and publish the test page', needsYes: 'Nothing new — runs inside your mandate', builtFrom: 'Playground generator, /play pages, appPricing in a new reserve mode', budget: 3 },
   { id: 'reach', stage: 'vet', name: 'Reach', job: 'Brings people to test pages: capped ads, and a post in the thread where the demand was found.', alone: 'Spend the take’s chips on ads', needsYes: 'Every post, until you trust it', builtFrom: 'Ad spend inside your weekly budget; drafts follow your rules', budget: 1 },

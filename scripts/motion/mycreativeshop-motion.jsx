@@ -8,9 +8,9 @@ import { useEffect, useRef, useState } from 'react';
  *
  *   0–4.5s    Your business deserves to be seen.
  *   4.5–11    A postcard, exploded into its layers and put back together
- *   11–16.5   Make it yours: headline types in, colours try themselves on
+ *   11–16.5   Make it yours: headline types in, colors try themselves on
  *   16.5–22   Every format. One design.
- *   22–28     Printed. Mailed. Delivered — a route draws across a neighbourhood
+ *   22–28     Printed. Mailed. Delivered — a route draws across a neighborhood
  *   28–32     MyCreativeShop — Design it. Print it. Grow it.
  *
  * Everything is drawn from one clock on a 1920×1080 stage scaled to fit, so it plays
@@ -308,7 +308,7 @@ function SceneFormats({ t }) {
   );
 }
 
-/** Print, mail, deliver: a route drawn across a neighbourhood, homes lighting up. */
+/** Print, mail, deliver: a route drawn across a neighborhood, homes lighting up. */
 function SceneMail({ t }) {
   const p = presence(t, 22.0, 28.3);
   if (p <= 0) return null;

@@ -28,12 +28,12 @@ export default function AppsSettingsPage() {
   const [isPublic, setIsPublic] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         const res = await fetch('/api/playground/profile', { cache: 'no-store' });
         const data = await res.json();
-        if (cancelled) return;
+        if (canceled) return;
         if (!res.ok) { setError(data?.error || 'Could not load your app settings'); return; }
         const p = data.profile as AppPublisherProfile;
         setProfile(p);
@@ -44,12 +44,12 @@ export default function AppsSettingsPage() {
         setBio(p.appPageBio || '');
         setIsPublic(p.appPagePublic);
       } catch {
-        if (!cancelled) setError('Could not load your app settings');
+        if (!canceled) setError('Could not load your app settings');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, []);
 
   const save = useCallback(async (patch: Record<string, unknown>) => {

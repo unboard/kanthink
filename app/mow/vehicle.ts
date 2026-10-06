@@ -45,7 +45,7 @@ export function vehicleMaterials(): Materials {
   };
 }
 
-/** A tyre as a lathe (rounded section) plus chevron tread lugs, axis along Z. */
+/** A tire as a lathe (rounded section) plus chevron tread lugs, axis along Z. */
 function wheel(r: number, w: number, mats: Materials, lugs = 22): THREE.Group {
   const g = new THREE.Group();
   const prof: THREE.Vector2[] = [];
@@ -162,7 +162,7 @@ export function buildMower(lib: TexLib, mats: Materials): MowerRig {
   const fenderMat = mats.paint.clone();
   fenderMat.side = THREE.DoubleSide;
   for (const z of [-0.47, 0.47]) {
-    // upper half-shell over each rear tyre
+    // upper half-shell over each rear tire
     const f = new THREE.CylinderGeometry(0.43, 0.43, 0.28, 32, 1, true, Math.PI / 2, Math.PI);
     f.rotateX(Math.PI / 2);
     body.add(mesh(f, fenderMat, -0.55, 0.36, z));
@@ -459,7 +459,7 @@ export function poseWalk(p: PersonRig, phase: number, amt: number, trimming: boo
   }
 }
 
-/** The neighbour waiting for their cat: worried looking-about, a wave when you bring it, then a cuddle. */
+/** The neighbor waiting for their cat: worried looking-about, a wave when you bring it, then a cuddle. */
 export function poseOwner(p: PersonRig, t: number, mood: 'worried' | 'excited' | 'cuddle') {
   p.hips.position.set(0, HIP_Y + (mood === 'excited' ? Math.abs(Math.sin(t * 7)) * 0.05 : 0), 0);
   p.hips.rotation.set(0, 0, 0);

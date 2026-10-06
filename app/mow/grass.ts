@@ -25,7 +25,7 @@ export interface GrassUniforms {
   uSunDir: { value: THREE.Vector3 };
 }
 
-/** GLSL shared by blades and ground: reading the lawn and colouring grass. */
+/** GLSL shared by blades and ground: reading the lawn and coloring grass. */
 const COMMON = /* glsl */ `
 uniform sampler2D uState;
 uniform vec4 uStateBox;
@@ -49,7 +49,7 @@ float worldGrass(vec2 xz) {
   return texture2D(uMask, uv).r;
 }
 
-// neighbours' lawns: already mowed, with their own tidy stripes
+// neighbors' lawns: already mowed, with their own tidy stripes
 vec2 neighbourStripe(vec2 xz) {
   float s = sin(xz.x * 3.14159 / 1.25 + 0.4);
   return vec2(0.0, s > 0.0 ? 0.42 : -0.42);
@@ -68,7 +68,7 @@ float vnoise(vec2 p) {
   return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
-// Base grass colours (linear). Cut turf is a deep, even green; long grass is lighter,
+// Base grass colors (linear). Cut turf is a deep, even green; long grass is lighter,
 // patchier and goes olive at the tips.
 vec3 cutGreen(vec2 xz) {
   float n = vnoise(xz * 0.45);
@@ -226,7 +226,7 @@ varying float vHi;
   vec3 bladeN = normalize(vec3(-across.y, 0.0, across.x));
   vec3 objectNormal = normalize(mix(bladeN, vec3(0.0, 1.0, 0.0), 0.62) + vec3(bend.x, 0.0, bend.y) * 0.2);
 
-  // colour
+  // color
   vec3 baseC = uncut > 0.5 ? longGreen(root) : cutGreen(root);
   baseC *= 0.86 + 0.28 * aRnd.w;
   float y = position.y;
@@ -308,7 +308,7 @@ varying vec2 vXZ;`)
   return mat;
 }
 
-/** World mask: white where grass grows anywhere in the neighbourhood. Drawn with canvas. */
+/** World mask: white where grass grows anywhere in the neighborhood. Drawn with canvas. */
 function worldMask(site: SiteDef): { tex: THREE.Texture; box: THREE.Vector4 } {
   const W = site.world;
   const ppm = 4;
@@ -442,7 +442,7 @@ export class Lawn {
     this.group.add(ground);
   }
 
-  /** Recentre the blade tiles ahead of the camera. */
+  /** Recenter the blade tiles ahead of the camera. */
   update(time: number, camPos: THREE.Vector3, camDir: THREE.Vector3) {
     this.uniforms.uTime.value = time;
     const fx = camDir.x;

@@ -212,7 +212,7 @@ export async function maskInRawFrame(
 
 /**
  * A mask as exactly one byte per pixel at a size. sharp keeps three channels through
- * some greyscale operations, and a three-channel buffer read as one smears the mask
+ * some grayscale operations, and a three-channel buffer read as one smears the mask
  * across the image — so the channel is extracted explicitly and the length checked.
  */
 export async function maskChannel(mask: Buffer, width: number, height: number, op?: (img: sharp.Sharp) => sharp.Sharp): Promise<Buffer> {

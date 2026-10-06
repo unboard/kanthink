@@ -66,7 +66,7 @@ export const users = sqliteTable('users', {
    * The image model Kan draws with, provider-qualified ("openai:gpt-image-2.5-flare").
    * Separate from modelDefault because a text model cannot make a picture — one
    * setting covering both would be a choice that silently does nothing half the time.
-   * NULL means the catalogue default; see lib/ai/imageModels.
+   * NULL means the catalog default; see lib/ai/imageModels.
    */
   imageModelDefault: text('image_model_default'),
 
@@ -438,7 +438,7 @@ export const playgroundApps = sqliteTable('playground_apps', {
    * How the app looks: a look, palette, fonts, corners, density, logo and the
    * owner's own direction. Kan picks one on the first build; the Style tab changes
    * it. Injected into the page at runtime as CSS variables and a Tailwind config,
-   * so recolouring an app built on the tokens needs no rebuild. See
+   * so recoloring an app built on the tokens needs no rebuild. See
    * lib/playground/style. Null for apps from before styles existed.
    */
   style: text('style', { mode: 'json' }).$type<AppStyle | null>(),
@@ -495,7 +495,7 @@ export const playgroundApps = sqliteTable('playground_apps', {
   /**
    * Kan's read of the app against its payment settings: what it sells, the mode it
    * should use, and whether the code takes money the way the settings say. Keyed by
-   * a hash of the code it read, so a stale review is recognisable.
+   * a hash of the code it read, so a stale review is recognizable.
    */
   paymentReview: text('payment_review', { mode: 'json' }).$type<PaymentReview | null>(),
 
@@ -586,7 +586,7 @@ export const playgroundAppVersions = sqliteTable('playground_app_versions', {
 export const appUsers = sqliteTable('app_users', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
-  /** The publisher. Denormalised so "everyone across all my apps" is one query. */
+  /** The publisher. Denormalized so "everyone across all my apps" is one query. */
   ownerId: text('owner_id').notNull(),
 
   email: text('email').notNull(),
@@ -751,14 +751,14 @@ export const pushSubscriptions = sqliteTable('push_subscriptions', {
  * that started this sold access by mistake, which meant one payment unlocked every
  * rock after it and no order ever reached the seller. Here each order is its own
  * Stripe Checkout, carries what was bought and who bought it, and lands in front of
- * the owner to fulfil.
+ * the owner to fulfill.
  *
  * The amount is always the server's: the app names the item, never the price.
  */
 export const appOrders = sqliteTable('app_orders', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
-  /** The publisher, denormalised so "orders across my apps" is one query. */
+  /** The publisher, denormalized so "orders across my apps" is one query. */
   ownerId: text('owner_id').notNull(),
   /**
    * What the buyer and the owner call it: five random digits, unique within the app.
@@ -769,7 +769,7 @@ export const appOrders = sqliteTable('app_orders', {
   appUserId: text('app_user_id'),
   item: text('item').notNull(),
   quantity: integer('quantity').notNull().default(1),
-  /** What the app attached: which variant, a personalisation, its own ids. */
+  /** What the app attached: which variant, a personalization, its own ids. */
   details: text('details', { mode: 'json' }).$type<Record<string, string> | null>(),
   /** Minor units, total for the order. */
   amount: integer('amount').notNull(),
@@ -865,7 +865,7 @@ export const appPurchases = sqliteTable('app_purchases', {
 export const appAiUsage = sqliteTable('app_ai_usage', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   appId: text('app_id').notNull().references(() => playgroundApps.id, { onDelete: 'cascade' }),
-  /** Denormalised so the owner's total is one query rather than a join per app. */
+  /** Denormalized so the owner's total is one query rather than a join per app. */
   ownerId: text('owner_id').notNull(),
 
   /** The customer this was spent on behalf of, when we know who that is. */
@@ -922,7 +922,7 @@ export const instructionCards = sqliteTable('instruction_cards', {
   // than spawning a new one. Stored as text, so no migration for the new value.
   action: text('action').$type<'generate' | 'modify' | 'move' | 'report' | 'build'>().notNull(),
   /**
-   * The shroom's face, as "shape:pattern:colour" — see lib/shrooms/avatar.
+   * The shroom's face, as "shape:pattern:color" — see lib/shrooms/avatar.
    * Null means nobody picked one, and a stable avatar is derived from the id
    * instead, so a channel's shrooms look different without anyone doing anything.
    */
@@ -1176,7 +1176,7 @@ export const operatorChatThreads = sqliteTable('operator_chat_threads', {
   title: text('title').default('New conversation'),
   messages: safeJsonText<ChannelChatMessageJson[]>([])('messages').default([]),
   // 'voice' for saved voice sessions; null for typed chat. Older voice threads are
-  // recognised by their "🎙 " title prefix.
+  // recognized by their "🎙 " title prefix.
   kind: text('kind'),
   // The title was written by Kan from the conversation, not its first line — so later
   // saves of the same thread must not overwrite it.
@@ -1624,7 +1624,7 @@ export const printDesigns = sqliteTable('print_designs', {
   index('print_designs_user_idx').on(table.userId, table.updatedAt),
 ])
 
-// A reusable brand kit: logo, colours, business details, photos and inspiration.
+// A reusable brand kit: logo, colors, business details, photos and inspiration.
 export const printBrands = sqliteTable('print_brands', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

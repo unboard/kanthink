@@ -295,7 +295,7 @@ blob-report/              # Blob report for shard merging
 ```yaml
 # Upload HTML report (always -- useful even when tests pass)
 - uses: actions/upload-artifact@v4
-  if: ${{ !cancelled() }}
+  if: ${{ !canceled() }}
   with:
     name: playwright-report
     path: playwright-report/
@@ -379,12 +379,12 @@ test('checkout flow', async ({ page }) => {
 
 | Artifact | When to Collect | Retention | Upload Condition |
 |---|---|---|---|
-| HTML report | Always | 14 days | `if: ${{ !cancelled() }}` |
+| HTML report | Always | 14 days | `if: ${{ !canceled() }}` |
 | Traces (`.zip`) | On failure | 7 days | `if: failure()` |
 | Screenshots (`.png`) | On failure | 7 days | `if: failure()` |
 | Videos (`.webm`) | On failure | 7 days | `if: failure()` |
-| JUnit XML | Always | 14 days | `if: ${{ !cancelled() }}` |
-| Blob report | Always (sharded) | 1 day | `if: ${{ !cancelled() }}` |
+| JUnit XML | Always | 14 days | `if: ${{ !canceled() }}` |
+| Blob report | Always (sharded) | 1 day | `if: ${{ !canceled() }}` |
 
 ## Anti-Patterns
 
@@ -393,7 +393,7 @@ test('checkout flow', async ({ page }) => {
 | No reporter configured | Default `list` only; no persistent report | Always configure `html` + one CI reporter |
 | `trace: 'on'` in CI | Massive artifacts (50-100 MB per test), slow uploads | Use `trace: 'on-first-retry'` |
 | `video: 'on'` in CI | Enormous storage cost; slows test execution | Use `video: 'retain-on-failure'` |
-| Only uploading artifacts on failure | No report when tests pass; can't verify results | Upload with `if: ${{ !cancelled() }}` (always) |
+| Only uploading artifacts on failure | No report when tests pass; can't verify results | Upload with `if: ${{ !canceled() }}` (always) |
 | No retention limits on artifacts | CI storage fills up within weeks | Set `retention-days: 7-14` |
 | Using only `dot` reporter with no HTML | Can't drill into failures after the run | Always pair `dot` with `html` in CI |
 | JUnit output to stdout | Interferes with console output; hard to parse | Write to file: `['junit', { outputFile: 'results/junit.xml' }]` |

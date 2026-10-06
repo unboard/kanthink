@@ -13,7 +13,7 @@ import {
 interface ShroomAvatarProps {
   /** The shroom's id — used to derive a face when none was chosen. */
   id: string;
-  /** The stored "cap:stem:pattern:colour", if the shroom has one. */
+  /** The stored "cap:stem:pattern:color", if the shroom has one. */
   avatar?: string | null;
   /** Draw this exact face instead of resolving from id/avatar. Used by the picker. */
   spec?: ShroomAvatarSpec;
@@ -24,7 +24,7 @@ interface ShroomAvatarProps {
 /**
  * A shroom, drawn flat.
  *
- * Solid colour, no gradients, no shading, no shadow — the cap shape, the stem shape
+ * Solid color, no gradients, no shading, no shadow — the cap shape, the stem shape
  * and the marking do the work. Stem first, cap over it, pattern clipped to the cap.
  *
  * The clip id is per-instance: several of these render in one row and SVG defs are
@@ -146,7 +146,7 @@ export function ShroomAvatar({ id, avatar, spec, size = 16, className = '' }: Sh
   );
 }
 
-/** A chunky five-point star, drawn from its centre. */
+/** A chunky five-point star, drawn from its center. */
 function starPath(cx: number, cy: number, r: number): string {
   const pts: string[] = [];
   for (let i = 0; i < 10; i++) {
@@ -157,7 +157,7 @@ function starPath(cx: number, cy: number, r: number): string {
   return `M${pts.join('L')}Z`;
 }
 
-/** A small heart, drawn from its centre. */
+/** A small heart, drawn from its center. */
 function heartPath(cx: number, cy: number, r: number): string {
   const n = (v: number) => v.toFixed(2);
   return [

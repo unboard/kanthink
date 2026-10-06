@@ -87,7 +87,7 @@ function sideStreet(site: SiteDef, curbX: number, z0: number, z1: number) {
   site.lines.push({ a: [curbX + 4, z0], b: [curbX + 4, z1], color: '#e8c547', dashed: true, width: 0.12 });
 }
 
-/** Neighbour houses along a street so the yard sits inside a believable block. */
+/** Neighbor houses along a street so the yard sits inside a believable block. */
 function neighbours(site: SiteDef, rng: Rng, curbZ: number, xs: number[], across: number[]) {
   for (const x of xs) {
     const w = rng.range(12, 16);
@@ -466,10 +466,10 @@ function wedge(rng: Rng): SiteDef {
   site.props.push({ kind: 'gnome', x: gx, z: gz, rot: 0.4 });
   const [mx, mz] = at(da + dHalf + 0.06, R + 1.2);
   site.props.push({ kind: 'mailbox', x: mx, z: mz, rot: 0 });
-  // neighbours around the bulb
+  // neighbors around the bulb
   for (const ang of [-Math.PI / 2 - 1.55, -Math.PI / 2 + 1.55, 0.35, Math.PI - 0.35]) {
     const [nx, nz] = at(ang, 27);
-    // front (+Z local) turned to face the bulb centre
+    // front (+Z local) turned to face the bulb center
     const rot = Math.atan2(-Math.cos(ang), -Math.sin(ang));
     site.houses.push(house(rng, { x: nx, z: nz, w: 14, d: 10, rot, decor: true }));
     const [tx, tz] = at(ang + 0.12, 18);

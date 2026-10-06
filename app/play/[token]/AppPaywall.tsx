@@ -129,7 +129,7 @@ export function AppPaywall({ token, title, tagline, thumbnailUrl, price, recurri
 
             {notice === 'canceled' && step === 'email' && (
               <p className="mt-4 px-3 py-2 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-xs text-neutral-600 dark:text-neutral-300">
-                Checkout was cancelled — nothing was charged.
+                Checkout was canceled — nothing was charged.
               </p>
             )}
             {notice === 'unconfirmed' && step === 'email' && (

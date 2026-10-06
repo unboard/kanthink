@@ -5,10 +5,10 @@ import { ACTION_LABEL, STATE_COLOR, type ConceptProps } from './types';
 /**
  * Specimen study — Index Card
  *
- * The catalogue drawer rather than the specimen jar. Content sits on ruled baselines with
+ * The catalog drawer rather than the specimen jar. Content sits on ruled baselines with
  * a margin rule down the left, the way a card in a physical index actually looks.
  *
- * The ruling isn't decoration — it's what makes a stack of these read as one catalogue,
+ * The ruling isn't decoration — it's what makes a stack of these read as one catalog,
  * and it gives the label/value key somewhere to sit that feels intentional rather than
  * like a leftover metadata row.
  */

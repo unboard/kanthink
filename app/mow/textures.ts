@@ -40,7 +40,7 @@ export class TexLib {
     return s;
   }
 
-  /** Standard material from a PBR set. UVs are expected in metres; `scale` = metres per tile. */
+  /** Standard material from a PBR set. UVs are expected in meters; `scale` = meters per tile. */
   material(name: PbrName, opts: { scale?: number; tint?: THREE.ColorRepresentation; normal?: number; rough?: number } = {}): THREE.MeshStandardMaterial {
     const s = this.pbr(name);
     const scale = opts.scale ?? 2;
@@ -142,7 +142,7 @@ export class TexLib {
     });
   }
 
-  /** Horizontal lap siding: colour is applied by material tint. */
+  /** Horizontal lap siding: color is applied by material tint. */
   siding(): { map: THREE.Texture; normal: THREE.Texture } {
     const map = this.canvasTex('siding', 256, 256, (ctx) => {
       ctx.fillStyle = '#ffffff';
@@ -249,7 +249,7 @@ export function shadeHex(hex: string, k: number): string {
 }
 
 /**
- * Box-project UVs in metres: each face takes the two world axes it's most aligned
+ * Box-project UVs in meters: each face takes the two world axes it's most aligned
  * with. Good enough for walls, slabs, decks and posts.
  */
 export function metricUV(geo: THREE.BufferGeometry, offset = new THREE.Vector3()): THREE.BufferGeometry {

@@ -66,7 +66,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   // This used to return the bare row, and the drawer keeps keys a response omits —
   // so a build finishing here left `hasUnpublishedChanges` at whatever it was
   // before the build. Publish, ask for a change, watch it land, and the panel still
-  // said the draft matched the release with Publish greyed out. A finished build is
+  // said the draft matched the release with Publish grayed out. A finished build is
   // precisely the moment that answer changes, so it has to be recomputed here.
   return NextResponse.json({
     app: { ...app, ...(await releaseView(app)) },

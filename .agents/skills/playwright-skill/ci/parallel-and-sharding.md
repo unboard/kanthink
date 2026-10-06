@@ -122,7 +122,7 @@ PLAYWRIGHT_HTML_REPORT=merged-report npx playwright merge-reports --reporter=htm
 
 ```yaml
 merge-reports:
-  if: ${{ !cancelled() }}
+  if: ${{ !canceled() }}
   needs: test
   runs-on: ubuntu-latest
   steps:

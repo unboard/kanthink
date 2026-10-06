@@ -34,7 +34,7 @@ export interface DemoShroom {
  * Deterministic 0–1 sequence from a shroom's id.
  *
  * Lets a card draw a mark that is always the same for the same shroom and different for
- * every other one — an identity you can recognise without reading, like a wax seal.
+ * every other one — an identity you can recognize without reading, like a wax seal.
  */
 export function seededRandom(seed: string): () => number {
   let h = 2166136261;

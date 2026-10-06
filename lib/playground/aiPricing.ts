@@ -35,7 +35,7 @@ export interface ModelPrice {
 }
 
 /**
- * Image model prices, which the playground model catalogue does not carry because
+ * Image model prices, which the playground model catalog does not carry because
  * those models are excluded from it — they are not code generators.
  *
  * Verified against ai.google.dev/gemini-api/docs/pricing and
@@ -56,7 +56,7 @@ const IMAGE_PRICES: Record<string, ModelPrice> = {
   'gpt-image-1': { input: perToken(10), output: 0, perImage: 4_000 },
 }
 
-/** Text prices come from the catalogue the picker already offers. */
+/** Text prices come from the catalog the picker already offers. */
 const TEXT_PRICES: Record<string, ModelPrice> = Object.fromEntries(
   PLAYGROUND_MODELS
     .filter((m) => !m.isAuto)

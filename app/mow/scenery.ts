@@ -390,7 +390,7 @@ export function buildHouse(hd: HouseDef, mats: SceneMats, seed: number): { group
     geo.computeVertexNormals();
     const roofGeo = metricUV(geo);
     b.add(roofGeo, mats.roof);
-    // underside (soffit) — same triangles flipped, plain colour
+    // underside (soffit) — same triangles flipped, plain color
     const under = geo.clone();
     const p = under.getAttribute('position');
     for (let i = 0; i < p.count; i += 3) {
@@ -492,7 +492,7 @@ export function buildHouse(hd: HouseDef, mats: SceneMats, seed: number): { group
   };
 
   if (office) {
-    // ribbon glazing on every face, per storey
+    // ribbon glazing on every face, per story
     for (const f of faces) {
       for (let s = 0; s < hd.stories; s++) {
         const y = base + s * story + 1.6;
@@ -560,7 +560,7 @@ export function buildHouse(hd: HouseDef, mats: SceneMats, seed: number): { group
     }
   }
   const group = b.build();
-  // foundation shrubs along the sides for neighbours (life!)
+  // foundation shrubs along the sides for neighbors (life!)
   if (hd.decor && !office && !church) {
     const sb = new Builder();
     const leaf = shrub(sb, mats, -w / 2 + 1, d / 2 + 0.8, 0.6, rng);
@@ -758,7 +758,7 @@ export function buildBeds(beds: BedDef[], mats: SceneMats, seed: number): { grou
   if (leafRef) finishLeafGroup(group, leafRef.depth, leafRef.mat);
   let flowers: FlowerSet | null = null;
   if (flowerPts.length) {
-    // one flower: stem + five petals + centre
+    // one flower: stem + five petals + center
     const fb = new Builder();
     const stemMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
     fb.add(tintGeo(new THREE.CylinderGeometry(0.006, 0.008, 0.3, 4), new THREE.Color('#3d6b22')), stemMat, 0, 0.15, 0);
@@ -785,7 +785,7 @@ export function buildBeds(beds: BedDef[], mats: SceneMats, seed: number): { grou
       pos[i * 2] = f.x;
       pos[i * 2 + 1] = f.z;
     });
-    // petals carry the instance colour; the stem colour comes from vertex colours (green)
+    // petals carry the instance color; the stem color comes from vertex colors (green)
     im.castShadow = true;
     im.receiveShadow = true;
     group.add(im);

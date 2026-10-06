@@ -119,7 +119,7 @@ describe('where an app stands, as a customer would see it', () => {
  *
  * That is what happened: the build-completion poll returned the row, so publishing
  * version 1 and then building a change left the panel saying the draft and the
- * release matched, with Publish greyed out. Reopening the drawer fixed it, which is
+ * release matched, with Publish grayed out. Reopening the drawer fixed it, which is
  * why it read as flaky rather than broken.
  *
  * Scanning the source rather than calling the routes because the thing worth

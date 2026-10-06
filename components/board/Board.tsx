@@ -695,10 +695,10 @@ export function Board({ channel }: BoardProps) {
       }
 
       // Toast feedback for shroom completion
-      if (result.error && result.error !== 'cancelled') {
+      if (result.error && result.error !== 'canceled') {
         console.error('Instruction run error:', result.error);
         addToast(`Shroom failed: ${result.error}`, 'warning', 5000);
-      } else if (result.error === 'cancelled') {
+      } else if (result.error === 'canceled') {
         // No toast for user-initiated cancel
       } else if (result.action === 'generate') {
         // Already toasted above, from what the server actually wrote.
@@ -733,8 +733,8 @@ export function Board({ channel }: BoardProps) {
       }
       // Record the run. Only the automation engine used to do this, so a shroom you
       // ran by hand stayed on "Never run" forever no matter how often you pressed Run.
-      // A cancelled run is deliberately not recorded — nothing was attempted.
-      if (result.error !== 'cancelled') {
+      // A canceled run is deliberately not recorded — nothing was attempted.
+      if (result.error !== 'canceled') {
         const cardsAffected =
           (result.modifiedCards?.length ?? 0) +
           (result.movedCards?.length ?? 0) +

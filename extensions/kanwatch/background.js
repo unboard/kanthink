@@ -25,7 +25,7 @@ const MEDIA_FRESH_MS = 20000;         // a "video playing" report counts for thi
 const IDLE_SECONDS = 180;
 // Work happens beside Chrome as much as in it: docs on one screen, an editor or terminal
 // focused on the other. The tab you were on keeps counting this long after another app
-// takes focus — while you're active and the window isn't minimised. Capped, so a tab
+// takes focus — while you're active and the window isn't minimized. Capped, so a tab
 // left on a second screen can't collect an afternoon.
 const UNFOCUSED_GRACE_MS = 10 * 60 * 1000;
 const MAX_QUEUE = 2000;

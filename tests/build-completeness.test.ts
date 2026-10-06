@@ -40,7 +40,7 @@ describe('the generator is told to finish the job', () => {
     expect(generator).not.toMatch(/clear "Coming soon" labels for unimplemented features/i)
   })
 
-  it('requires controls to do what they are labelled with', () => {
+  it('requires controls to do what they are labeled with', () => {
     expect(generator).toMatch(/A button that says Save saves/i)
   })
 
@@ -59,8 +59,8 @@ describe('the generator is told to finish the job', () => {
     expect(generator).toMatch(/No setTimeout standing in for a real/i)
   })
 
-  it('requires sample data to be labelled as sample', () => {
-    expect(generator).toMatch(/SAMPLE DATA IS LABELLED AS SAMPLE/i)
+  it('requires sample data to be labeled as sample', () => {
+    expect(generator).toMatch(/SAMPLE DATA IS LABELED AS SAMPLE/i)
     expect(generator).toMatch(/If a number was made up, the screen says so/i)
   })
 

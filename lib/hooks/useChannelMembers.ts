@@ -27,18 +27,18 @@ export function useChannelMembers(channelId: string | undefined) {
       return;
     }
 
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
 
     fetchChannelMembers(channelId)
       .then((data) => {
-        if (cancelled) return;
+        if (canceled) return;
         const memberList = data.members as ChannelMember[];
         cache.set(channelId, { members: memberList, fetchedAt: Date.now() });
         setMembers(memberList);
       })
       .catch(() => {
-        if (cancelled) return;
+        if (canceled) return;
         // Fallback: just the current user
         if (session?.user?.id) {
           setMembers([{
@@ -50,10 +50,10 @@ export function useChannelMembers(channelId: string | undefined) {
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       });
 
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, [channelId, session?.user?.id]);
 
   return { members, loading };

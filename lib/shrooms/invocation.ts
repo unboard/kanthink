@@ -19,7 +19,7 @@ import type {
  * the cards one run produced); a fourth would be bookkeeping without a new capability.
  */
 
-/** Where a run came from. Used to describe the scope, not to change behaviour. */
+/** Where a run came from. Used to describe the scope, not to change behavior. */
 export type InvocationSource =
   | 'manual'
   | 'thread'
@@ -47,7 +47,7 @@ export interface Invocation {
 /**
  * Capabilities to apply to a run.
  *
- * Unset means unrestricted, deliberately. The old behaviour — infer from the prose —
+ * Unset means unrestricted, deliberately. The old behavior — infer from the prose —
  * failed in both directions, and the failure that hurt was the false negative: a
  * prohibition reaching the model because the user's sentence lacked a keyword. An
  * un-narrowed ceiling can't produce that. What the shroom actually does is still

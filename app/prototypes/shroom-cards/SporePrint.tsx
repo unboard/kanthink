@@ -11,12 +11,12 @@ import { ACTION_LABEL, STATE_COLOR, seededRandom, type ConceptProps } from './ty
  * no two shrooms print alike.
  *
  * It's an identity you learn by sight rather than by reading, which is what a card in a
- * long column actually needs. The print takes the state colour, so it doubles as the
+ * long column actually needs. The print takes the state color, so it doubles as the
  * status light without needing a separate dot.
  */
 function Print({ id, color, live }: { id: string; color: string; live: boolean }) {
   const rand = seededRandom(id);
-  // Radial scatter, denser toward the centre the way real spores fall
+  // Radial scatter, denser toward the center the way real spores fall
   const spores = Array.from({ length: 220 }, () => {
     const angle = rand() * Math.PI * 2;
     const radius = Math.pow(rand(), 0.55) * 25;

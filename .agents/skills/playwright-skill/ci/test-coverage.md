@@ -240,14 +240,14 @@ npx nyc report
 
 - name: Generate coverage report
   run: npx nyc report --reporter=html --reporter=text-summary --reporter=lcov
-  if: ${{ !cancelled() }}
+  if: ${{ !canceled() }}
 
 - name: Check coverage thresholds
   run: npx nyc check-coverage --lines 80 --branches 70 --functions 75
 
 - name: Upload coverage report
   uses: actions/upload-artifact@v4
-  if: ${{ !cancelled() }}
+  if: ${{ !canceled() }}
   with:
     name: coverage-report
     path: coverage/
@@ -275,7 +275,7 @@ jobs:
 
       - name: Upload coverage data
         uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !canceled() }}
         with:
           name: coverage-${{ strategy.job-index }}
           path: .nyc_output/
@@ -283,7 +283,7 @@ jobs:
 
   merge-coverage:
     needs: test
-    if: ${{ !cancelled() }}
+    if: ${{ !canceled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

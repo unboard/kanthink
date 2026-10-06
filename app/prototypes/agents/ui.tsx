@@ -2,7 +2,7 @@
 
 /**
  * The studio's look: a cool morning page, ink-dark type set large, and one
- * colour — cobalt — that only ever means "your decision". Money is green and
+ * color — cobalt — that only ever means "your decision". Money is green and
  * nothing else is. Nothing on screen is smaller than 13px.
  */
 

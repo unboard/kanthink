@@ -7,7 +7,7 @@ import { thumb } from '@/lib/print/thumb'
 
 export const dynamic = 'force-dynamic'
 
-const LABEL: Record<JobStatus, string> = { received: 'Being checked', awaiting_approval: 'Ready for you to approve', changes_requested: 'We’re making your changes', approved: 'Approved', locked: 'Final', in_production: 'Printing', complete: 'Complete', cancelled: 'Cancelled' }
+const LABEL: Record<JobStatus, string> = { received: 'Being checked', awaiting_approval: 'Ready for you to approve', changes_requested: 'We’re making your changes', approved: 'Approved', locked: 'Final', in_production: 'Printing', complete: 'Complete', canceled: 'Canceled' }
 
 /** /proof/o/:token — every item in an order, each opening its own page. One item goes straight there. */
 export default async function ProofOrderPage({ params }: { params: Promise<{ token: string }> }) {

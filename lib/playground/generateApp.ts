@@ -115,7 +115,7 @@ convincing picture of doing it. This applies equally to a first build, an update
 redesign, and a rewrite after a failed edit.
 
 1. WORK OUT WHAT WAS PROMISED. Read the thread for the outcome the person actually
-   wants — "practise times tables", "track what I ate", "split a bill" — and the
+   wants — "practice times tables", "track what I ate", "split a bill" — and the
    handful of actions that outcome depends on. Those actions are the build.
 
 2. USE THE LATEST AGREED VERSION. A conversation contains changes of mind. Build what
@@ -123,7 +123,7 @@ redesign, and a rewrite after a failed edit.
    an idea that was considered and dropped, however good it looked.
 
 3. FINISH THE CORE ACTIONS. Every control central to the promised outcome does the
-   thing it is labelled with. A button that says Save saves. A score that says 3/5
+   thing it is labeled with. A button that says Save saves. A score that says 3/5
    counted five answers. A message that says "Saved" appears only after the save
    actually happened — never on a timer, never optimistically for something that did
    not occur.
@@ -133,7 +133,7 @@ redesign, and a rewrite after a failed edit.
    that can fail says what went wrong in plain words and leaves a way forward. These
    are part of the core job, not polish to add later.
 
-5. SAMPLE DATA IS LABELLED AS SAMPLE. Seeding a list so the first screen is not empty
+5. SAMPLE DATA IS LABELED AS SAMPLE. Seeding a list so the first screen is not empty
    is good. Presenting invented output as the result of work the app did not do is
    not. If a number was made up, the screen says so.
 
@@ -218,7 +218,7 @@ const { dataUrl } = await window.kanthinkAI.generateImage({
   background: 'transparent',
   size: '1:1',
 });
-// Real alpha — safe over any colour, and ready to save or print as a sticker sheet.
+// Real alpha — safe over any color, and ready to save or print as a sticker sheet.
 
 // Image edit — pass the source via imageUrl (CDN/Cloudinary) or imageData (data: URL)
 const { dataUrl } = await window.kanthinkAI.generateImage({
@@ -227,7 +227,7 @@ const { dataUrl } = await window.kanthinkAI.generateImage({
 });
 \`\`\`
 
-Returns \`{ dataUrl, mimeType, text?, model }\`. The dataUrl is base64 — use it directly in \`<img src>\`, or pass to \`window.kanthinkUpload\` (convert to a File first) if you need a permanent CDN URL. When you render a transparent image, put it on a checkerboard or a coloured surface so the user can see the cut-out worked — a transparent PNG on a white card looks identical to an opaque one.
+Returns \`{ dataUrl, mimeType, text?, model }\`. The dataUrl is base64 — use it directly in \`<img src>\`, or pass to \`window.kanthinkUpload\` (convert to a File first) if you need a permanent CDN URL. When you render a transparent image, put it on a checkerboard or a colored surface so the user can see the cut-out worked — a transparent PNG on a white card looks identical to an opaque one.
 
 ALWAYS wrap calls in try/catch with a loading state. On error, show a SHORT friendly inline message ("Couldn't generate that — try a different prompt") with a retry button. NEVER render \`err.message\` verbatim in the UI — it may contain raw API JSON that looks like garbage to users. If you must show details, render them small/secondary and never as the primary error.
 
@@ -367,7 +367,7 @@ It takes whatever you already have:
                                     plain link to a remote image navigates to it
                                     instead of saving it
 - a string                        — CSV, JSON, SVG markup, plain text
-- any other value                 — serialised as pretty JSON
+- any other value                 — serialized as pretty JSON
 
 RULES for downloads — these are judged:
 - NEVER tell someone to right-click, long-press, or "save the image manually". That is
@@ -805,11 +805,11 @@ export async function generatePlaygroundApp(
   // Images the model should see, newest last.
   //
   // A picture pinned to the thread is a spec — a screenshot of a layout, a photo of
-  // a colour scheme, a sketch of a screen. Passing only the images attached to THIS
+  // a color scheme, a sketch of a screen. Passing only the images attached to THIS
   // turn meant a reference dropped two messages ago was silently ignored, and on the
   // first build the ones on the source card never arrived at all, even though the
   // card is the brief. Collected here rather than passed by the client so every
-  // caller — the drawer, a shroom, voice — gets the same behaviour.
+  // caller — the drawer, a shroom, voice — gets the same behavior.
   const collectImages = (messages: ThreadMessage[]): string[] =>
     messages.flatMap((m) => [
       ...(Array.isArray(m.imageUrls) ? m.imageUrls : []),
@@ -832,7 +832,7 @@ export async function generatePlaygroundApp(
   ).slice(-6);
 
   const imageNote = attachedImages.length > 0
-    ? `\n\n${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} ${attachedImages.length === 1 ? 'is' : 'are'} attached below — from this thread${isIteration ? '' : ' and the source card'}. Use them as visual reference for style, layout, colour and content.`
+    ? `\n\n${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} ${attachedImages.length === 1 ? 'is' : 'are'} attached below — from this thread${isIteration ? '' : ' and the source card'}. Use them as visual reference for style, layout, color and content.`
     : '';
 
   // -- Preflight: decide whether to ASK, ACT, or say the runtime cannot do this, and
@@ -1039,10 +1039,10 @@ export async function generatePlaygroundApp(
     ? `REQUIREMENTS — everything this app must do. All of it still applies; this turn's request is IN ADDITION unless it explicitly replaces a line. Do not regress any of these:\n${activeRequirements}`
     : 'REQUIREMENTS: (none recorded yet — start the list from what this turn asks for)';
 
-  // The only thing that can authorise deleting anything, decided by preflight from
+  // The only thing that can authorize deleting anything, decided by preflight from
   // the request itself before a line of code existed. Scoped to this turn, and not
   // re-derived from text anywhere downstream — reading intent out of a transcript
-  // after the fact is what let "do not remove the AI comments" authorise removing
+  // after the fact is what let "do not remove the AI comments" authorize removing
   // the AI comments.
   const authorisedRemovals = [...(preflight.requestedRemovals ?? [])];
   // A payment fix may remove the flow the owner's settings rule out: unlock() in a

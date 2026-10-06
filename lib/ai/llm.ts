@@ -49,7 +49,7 @@ export interface LLMClientResult {
 /**
  * A caller's model preference — a shroom's per-run override, say.
  *
- * Honoured only when we hold a key for that provider. A key belongs to one provider, so
+ * Honored only when we hold a key for that provider. A key belongs to one provider, so
  * picking an OpenAI model with only a Google key configured cannot work, and falling back
  * to the default beats failing the run.
  */
@@ -70,7 +70,7 @@ export interface PreferredModel {
  * ...and then whichever provider we actually hold a key for, which is the step that
  * used to be silent. A key used to belong to the account rather than to a provider,
  * so asking for an OpenAI model on a Google key quietly ran Gemini instead. Keys are
- * now held per provider, and when a preference still cannot be honoured the caller
+ * now held per provider, and when a preference still cannot be honored the caller
  * is told via `requestedModelUnavailable` rather than left to assume it was.
  */
 export async function getLLMClientForUser(

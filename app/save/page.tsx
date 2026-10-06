@@ -75,14 +75,14 @@ function SaveContent() {
     if (state !== 'loading') return
     if (!hasPayload) return
 
-    let cancelled = false
+    let canceled = false
     fetch('/api/inbox/destinations')
       .then(async (res) => {
         if (!res.ok) throw new Error('Could not load your channels')
         return res.json()
       })
       .then((data) => {
-        if (cancelled) return
+        if (canceled) return
         const list: Destination[] = data.destinations || []
         setDestinations(list)
         if (data.default) {
@@ -95,14 +95,14 @@ function SaveContent() {
         setState('compose')
       })
       .catch((err) => {
-        if (cancelled) return
+        if (canceled) return
         // Don't dead-end the share: without the picker we can still save to the
         // default destination server-side, so fall through to compose with no options.
         setError(err.message || 'Could not load your channels')
         setState('compose')
       })
 
-    return () => { cancelled = true }
+    return () => { canceled = true }
   }, [sessionStatus, state, hasPayload])
 
   // Changing channel resets the column to that channel's AI target (its inbox).

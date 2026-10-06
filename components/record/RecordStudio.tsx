@@ -381,19 +381,19 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
   // all: the mic used to be acquired solely as a side effect of turning the
   // webcam on, so "Record microphone" could read as on with nothing behind it.
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     void (async () => {
       await refreshDevices();
-      if (cancelled) return;
+      if (canceled) return;
       const granted = await navigator.permissions
         .query({ name: 'microphone' as PermissionName })
         .then((status) => status.state === 'granted')
         // Safari and Firefox reject the 'microphone' descriptor. Leave it to the
         // explicit button rather than prompting on load.
         .catch(() => false);
-      if (granted && !cancelled) await acquireMic(loadPreferredMic() ?? undefined);
+      if (granted && !canceled) await acquireMic(loadPreferredMic() ?? undefined);
     })();
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, [refreshDevices, acquireMic]);
 
   // Plugging in a headset mid-setup should put it in the picker.
@@ -464,7 +464,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
         stateRef.current.screenFrames = null;
       });
     } catch {
-      setError('Screen share was cancelled.');
+      setError('Screen share was canceled.');
     }
   }, []);
 
@@ -487,7 +487,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
     if (!canvasRef.current) return;
     if (!hasScreen) { setError('Share your screen before recording.'); return; }
 
-    // Last line of defence against a silent take: the toggle says the mic is
+    // Last line of defense against a silent take: the toggle says the mic is
     // being recorded, so open it now if nothing is holding it open yet.
     if (micEnabled && !micStreamRef.current) {
       await acquireMic(micId || loadPreferredMic() || undefined);
@@ -639,7 +639,7 @@ export default function RecordStudio({ cloudinaryReady }: { cloudinaryReady: boo
       if (!src) return;
       e.preventDefault();
 
-      // deltaMode 1 is lines and 2 is pages; normalise both to pixel-ish units
+      // deltaMode 1 is lines and 2 is pages; normalize both to pixel-ish units
       // so a notched mouse wheel and a trackpad land in the same ballpark.
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
       const next = clampZoom(view.zoom * Math.exp(-e.deltaY * unit * 0.0015));

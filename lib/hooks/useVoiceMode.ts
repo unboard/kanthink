@@ -81,7 +81,7 @@ export function useVoiceMode() {
 
         const blob = new Blob(chunksRef.current, { type: mimeType });
 
-        // If cancelled (no resolve waiting), just return
+        // If canceled (no resolve waiting), just return
         if (!stopResolveRef.current) return;
 
         if (blob.size < 100) {

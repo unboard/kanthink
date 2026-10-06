@@ -61,7 +61,7 @@ describe('products', () => {
     expect('spec' in one && one.spec.pages).toHaveLength(1)
   })
 
-  it('builds any size, in inches or millimetres', () => {
+  it('builds any size, in inches or millimeters', () => {
     const mm = specForProduct({ width: 210, height: 297, unit: 'mm', bleed: 3, safe: 5, pages: ['Front', 'Back'] })
     expect('spec' in mm && mm.spec.widthIn).toBeCloseTo(8.268, 2)
     expect('spec' in mm && mm.spec.bleedIn).toBeCloseTo(3 / 25.4, 4)

@@ -194,12 +194,12 @@ describe('spark audit', () => {
   })
 
   it('does not count a post another spark already stands on', async () => {
-    const { readSources, sparkVerdict, normaliseUrl } = await import('../lib/studio/audit')
+    const { readSources, sparkVerdict, normalizeUrl } = await import('../lib/studio/audit')
     const text = [
       '* "a" — May 2026 (https://forum.example.com/t/1?utm=x)',
       '* "b" — June 2026 (https://forum.example.com/t/9)',
     ].join('\n')
-    const elsewhere = new Set([normaliseUrl('https://www.forum.example.com/t/1/')])
+    const elsewhere = new Set([normalizeUrl('https://www.forum.example.com/t/1/')])
     expect(sparkVerdict(readSources(text, now, elsewhere)).keep).toBe(false)
   })
 
@@ -261,7 +261,7 @@ describe('audit leniency where it is earned', () => {
   })
 
   it('does not count the price link as a buyer, and dates undated sources from the page', async () => {
-    const { readSources, sparkVerdict, pageDate, normaliseUrl } = await import('../lib/studio/audit')
+    const { readSources, sparkVerdict, pageDate, normalizeUrl } = await import('../lib/studio/audit')
     const now = new Date('2026-10-02T12:00:00Z')
     const content = [
       'Paid today: $300 a month (https://vendor.example.com/pricing)',
@@ -271,7 +271,7 @@ describe('audit leniency where it is earned', () => {
     ].join('\n')
     expect(readSources(content, now).map((s) => s.url)).not.toContain('https://vendor.example.com/pricing')
     expect(sparkVerdict(readSources(content, now), content).keep).toBe(false)
-    const dates = new Map([[normaliseUrl('https://forum.example.com/t/9'), new Date('2026-04-01')]])
+    const dates = new Map([[normalizeUrl('https://forum.example.com/t/9'), new Date('2026-04-01')]])
     expect(sparkVerdict(readSources(content, now, new Set(), dates), content).keep).toBe(true)
     expect(pageDate('<script>{"datePublished":"2026-03-04T10:00:00Z","dateModified":"2026-09-01"}</script>')?.toISOString().slice(0, 10)).toBe('2026-03-04')
     expect(pageDate('<time datetime="2025-12-01">Dec 1</time><time datetime="2026-02-01">')?.toISOString().slice(0, 10)).toBe('2025-12-01')

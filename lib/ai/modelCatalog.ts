@@ -140,7 +140,7 @@ export function labelForModelChoice(value: string | null | undefined): string | 
   return `${group?.label ?? choice.provider} · ${known?.label ?? choice.model}`;
 }
 
-/** The catalogue entry for a stored choice, when it is one we know about. */
+/** The catalog entry for a stored choice, when it is one we know about. */
 export function findCatalogModel(value: string | null | undefined): CatalogModel | null {
   const choice = parseModelChoice(value);
   if (!choice) return null;

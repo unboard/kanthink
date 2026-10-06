@@ -143,13 +143,13 @@ describe('the app builder routing to a provider it holds a key for', () => {
     }
   })
 
-  it('keeps the old behaviour when nobody says which providers are available', () => {
+  it('keeps the old behavior when nobody says which providers are available', () => {
     // Called without the list — every existing caller before this change.
     expect(resolveActiveModelId('auto', 'cosmetic')).toMatch(/^gemini-/)
   })
 })
 
-describe('the catalogues agree with themselves', () => {
+describe('the catalogs agree with themselves', () => {
   it('gives every playground model a provider that matches its id', () => {
     for (const model of PLAYGROUND_MODELS) {
       if (model.isAuto) continue
@@ -163,7 +163,7 @@ describe('the catalogues agree with themselves', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('parses every catalogue entry back to itself', () => {
+  it('parses every catalog entry back to itself', () => {
     for (const group of MODEL_CATALOG) {
       for (const model of group.models) {
         expect(parseModelChoice(`${group.provider}:${model.model}`)).toEqual({
@@ -206,7 +206,7 @@ describe('an account with its own key and no stated preference', () => {
     }
   })
 
-  it('still honours an explicit choice of the shared provider', () => {
+  it('still honors an explicit choice of the shared provider', () => {
     // Preferring their own key is a fallback rule, not an override of what they asked for.
     const resolved = resolveSurfaceModel(
       prefs({ default: 'openai:gpt-5.6-terra' }),

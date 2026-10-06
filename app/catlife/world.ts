@@ -1958,7 +1958,7 @@ export class World {
   /** Cliff Scramble: a spiral of gates + stone steps up the big hill. Harder! */
   private buildCliffCourse() {
     const c = this.hillC;
-    const baseA = Math.atan2(-c.z, -c.x); // start on the island-centre side
+    const baseA = Math.atan2(-c.z, -c.x); // start on the island-center side
     const gates: AgilityGate[] = [];
     const stone = new THREE.MeshStandardMaterial({ color: '#9a9a90', roughness: 1 });
     const N = 7;
@@ -2008,7 +2008,7 @@ export class World {
       }
       return { x: c.x + ux * 40 * sign, z: c.z + uz * 40 * sign };
     };
-    const start = shoreAt(1);   // island-centre side shore
+    const start = shoreAt(1);   // island-center side shore
     const finish = shoreAt(-1); // far shore
     gates.push({ x: start.x, z: start.z, kind: 'start' });
 
@@ -2152,7 +2152,7 @@ export class World {
       this.paintBuckets.push({ x, z, color });
     };
     colors.forEach((col, i) => {
-      const a = -0.9 + (i / (colors.length - 1)) * 1.8; // arc facing the centre
+      const a = -0.9 + (i / (colors.length - 1)) * 1.8; // arc facing the center
       mkBucket(c.x + Math.cos(a) * 9, c.z + Math.sin(a) * 9, col);
     });
     mkBucket(c.x + Math.cos(Math.PI) * 9, c.z + Math.sin(Math.PI) * 9, null); // water

@@ -64,7 +64,7 @@ export class Builder {
   }
 }
 
-/** Paint a flat colour into a geometry's vertex colours (for AO-ish gradients and variety). */
+/** Paint a flat color into a geometry's vertex colors (for AO-ish gradients and variety). */
 export function tintGeo(geo: THREE.BufferGeometry, color: THREE.Color, fn?: (x: number, y: number, z: number) => number): THREE.BufferGeometry {
   const pos = geo.getAttribute('position');
   const col = new Float32Array(pos.count * 3);

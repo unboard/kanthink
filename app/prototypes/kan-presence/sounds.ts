@@ -297,7 +297,7 @@ export const SOUND_OPTIONS: SoundOption[] = [
     id: 'phase-wash',
     name: 'Phase wash',
     description:
-      'A rich bed pushed through a sweeping comb filter, so a notch travels up and down the harmonics on a six second cycle. That travelling notch is the jet-flyover whoosh — motion you feel as a shape moving through the sound rather than as a note changing pitch.',
+      'A rich bed pushed through a sweeping comb filter, so a notch travels up and down the harmonics on a six second cycle. That traveling notch is the jet-flyover whoosh — motion you feel as a shape moving through the sound rather than as a note changing pitch.',
     start: (ctx) => {
       const rig = createRig(ctx, { seconds: 3, decay: 2.4, wet: 0.35, level: 0.6, drive: 8 });
 

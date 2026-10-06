@@ -60,14 +60,14 @@ export const PRODUCT_UPDATES: ProductUpdate[] = [
     date: '2026-10-03',
     kind: 'capability',
     title: 'Apps can sell items, and Kan checks every payment flow',
-    body: 'Choose Items under Access and an app becomes a shop. Each Buy goes straight to Stripe checkout, buyers come back to a real confirmation, and orders land in Settings for you to fulfil. Kan checks that each app takes payment the way its settings say, and fixes it in one click.',
+    body: 'Choose Items under Access and an app becomes a shop. Each Buy goes straight to Stripe checkout, buyers come back to a real confirmation, and orders land in Settings for you to fulfill. Kan checks that each app takes payment the way its settings say, and fixes it in one click.',
   },
   {
     id: 'app-styles',
     date: '2026-10-02',
     kind: 'capability',
     title: 'Every app gets its own look',
-    body: 'Kan picks a look for each new app (Ledger for bills, Newsprint for puzzles, and so on) and builds it with a proper component kit. The Style tab lets you change colours, type, corners and logo instantly, and run Polish, Bolder or Quieter passes.',
+    body: 'Kan picks a look for each new app (Ledger for bills, Newsprint for puzzles, and so on) and builds it with a proper component kit. The Style tab lets you change colors, type, corners and logo instantly, and run Polish, Bolder or Quieter passes.',
   },
   {
     id: 'shrooms-learn-from-reasons-only',
@@ -242,7 +242,7 @@ export const PRODUCT_UPDATES: ProductUpdate[] = [
     date: '2026-08-16',
     kind: 'capability',
     title: 'See the shape of your automations',
-    body: 'A map of your shrooms — one per board, and one showing every board at once. Colour says how each one starts: watching a column, on a schedule, or only when you run it. Lines show what feeds what, and a line turns red when the shroom downstream needs more cards than the one upstream can produce, which you could previously only discover by running it. Drag from a shroom\'s right dot onto another to chain them, or onto empty space to unchain.',
+    body: 'A map of your shrooms — one per board, and one showing every board at once. Color says how each one starts: watching a column, on a schedule, or only when you run it. Lines show what feeds what, and a line turns red when the shroom downstream needs more cards than the one upstream can produce, which you could previously only discover by running it. Drag from a shroom\'s right dot onto another to chain them, or onto empty space to unchain.',
   },
   {
     id: 'shrooms-portable-scope-and-capabilities',
@@ -382,7 +382,7 @@ export const PRODUCT_UPDATES: ProductUpdate[] = [
     date: '2026-07-24',
     kind: 'automation',
     title: 'Shrooms can work your shared bookmarks',
-    body: 'A shroom watching your bookmark inbox now wakes on anything you share to it — summarising the link, tying it into your other channels, and emailing you the digest without you opening the app.',
+    body: 'A shroom watching your bookmark inbox now wakes on anything you share to it — summarizing the link, tying it into your other channels, and emailing you the digest without you opening the app.',
   },
 ];
 
@@ -431,7 +431,7 @@ When you are answering such a question:
 /**
  * Updates newer than the last one the user acknowledged.
  *
- * Position-based rather than date-based: an unrecognised id (an entry that was removed,
+ * Position-based rather than date-based: an unrecognized id (an entry that was removed,
  * or a marker from a future build) means we can't place the user in the list, so we
  * show nothing as unseen rather than dumping the whole history back on them.
  */

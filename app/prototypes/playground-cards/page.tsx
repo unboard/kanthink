@@ -13,7 +13,7 @@ import { ArrowLeft } from 'lucide-react';
  *  - The building state is the one that already exists — `.card-processing` plus
  *    `isProcessing` (glowing top edge, ambient wash, Kan watermark, status line).
  *    There is no second building animation to design.
- *  - The only licence is a subtle mark that it is a playground, and a bottom area
+ *  - The only license is a subtle mark that it is a playground, and a bottom area
  *    carrying status and whatever else is worth knowing without opening it.
  *  - No previews. A preview belongs in its own tab.
  *
@@ -296,7 +296,7 @@ export default function PlaygroundCardsPrototype() {
               <li>
                 <strong className="text-neutral-700 dark:text-neutral-300">Today&apos;s badge is gone.</strong>{' '}
                 The current gradient &ldquo;Playground&rdquo; pill sits above the title and pushes the
-                body down, so a playground card is a different height from its neighbours. None of
+                body down, so a playground card is a different height from its neighbors. None of
                 these touch the body.
               </li>
               <li>

@@ -78,7 +78,7 @@ export async function processCard(
         success: false,
         properties: [],
         suggestedProperties: [],
-        error: 'cancelled',
+        error: 'canceled',
       };
     }
     console.error('Process card error:', error);

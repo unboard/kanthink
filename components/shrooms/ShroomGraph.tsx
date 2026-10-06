@@ -224,8 +224,8 @@ export function ShroomGraph({
               onDoubleClick={() => onOpen(node.shroom)}
               className="cursor-pointer"
             >
-              {/* Border colour comes from a class in the ordinary case so it follows the
-                  theme; only the three states that mean something get a fixed colour. */}
+              {/* Border color comes from a class in the ordinary case so it follows the
+                  theme; only the three states that mean something get a fixed color. */}
               <rect
                 width={NODE_W}
                 height={NODE_H}
@@ -240,7 +240,7 @@ export function ShroomGraph({
                 opacity={node.reachable ? 1 : 0.82}
               />
 
-              {/* Entry stripe: the colour says how a run of this node begins. */}
+              {/* Entry stripe: the color says how a run of this node begins. */}
               <rect width={4} height={NODE_H} rx={2} fill={accent} />
 
               <text x={16} y={22} className="fill-neutral-400 dark:fill-neutral-500" fontSize={8.5} fontFamily="ui-monospace, monospace" letterSpacing={1.4}>

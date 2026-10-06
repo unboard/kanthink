@@ -21,7 +21,7 @@ const BOTH = ['google', 'openai'] as const
 const GOOGLE_ONLY = ['google'] as const
 const OPENAI_ONLY = ['openai'] as const
 
-describe('the catalogue', () => {
+describe('the catalog', () => {
   it('only claims transparency for models that actually take the parameter', () => {
     for (const model of IMAGE_MODELS) {
       if (model.provider === 'google') expect(model.supportsTransparency).toBe(false)
@@ -46,7 +46,7 @@ describe('the catalogue', () => {
 
   it('prices every model, or the playground budget cannot reserve for it', () => {
     // An unpriced model is refused by lib/playground/aiBudget rather than guessed
-    // at, so a catalogue entry with no price is a feature that fails at runtime.
+    // at, so a catalog entry with no price is a feature that fails at runtime.
     for (const model of IMAGE_MODELS) {
       expect(PRICED_MODELS[model.model], `${model.model} is unpriced`).toBeTruthy()
       expect(PRICED_MODELS[model.model].perImage).toBeGreaterThan(0)
@@ -76,7 +76,7 @@ describe('parsing a stored choice', () => {
 })
 
 describe('resolution order', () => {
-  it('honours what the single request asked for', () => {
+  it('honors what the single request asked for', () => {
     const r = resolveImageModel({
       requested: 'openai:gpt-image-2.5-sunburst',
       accountDefault: DEFAULT_IMAGE_MODEL_ID,

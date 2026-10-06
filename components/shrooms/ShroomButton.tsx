@@ -20,10 +20,10 @@ interface ShroomButtonProps {
  * A shroom as a button: its face on the left, its name on the right.
  *
  * The tall card this replaced put the name under the picture, which meant a row of
- * shrooms was mostly empty colour and cost the board more than a hundred pixels of
+ * shrooms was mostly empty color and cost the board more than a hundred pixels of
  * height. Side by side, the same two things fit in a control you can put anywhere.
  *
- * The colour stays — it is how you pick one out without reading — but it is now the
+ * The color stays — it is how you pick one out without reading — but it is now the
  * size of a button rather than the size of a poster.
  */
 export function ShroomButton({
@@ -38,7 +38,7 @@ export function ShroomButton({
 }: ShroomButtonProps) {
   const avatar = resolveAvatar(shroom.id, shroom.avatar);
   const palette = PALETTE.find((p) => p.key === avatar.color) ?? PALETTE[0];
-  // Worked out from the colour rather than listed, so a palette entry added later
+  // Worked out from the color rather than listed, so a palette entry added later
   // cannot quietly produce a button nobody can read.
   const ink = textOn(palette.bg);
 

@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { providerGroup } from '../modelCatalog';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
 
-// From the catalogue — see the note in the OpenAI provider.
+// From the catalog — see the note in the OpenAI provider.
 const DEFAULT_MODEL = providerGroup('google').defaultModel;
 
 /**
@@ -20,7 +20,7 @@ function roomierModel(modelId: string): string | null {
   if (/pro/.test(modelId)) return ESCALATION_TOP;
   if (/lite/.test(modelId)) return ESCALATION_TARGET;
   if (/flash/.test(modelId)) return ESCALATION_TOP;
-  // An id we don't recognise: send it to the top rather than guess a middle rung.
+  // An id we don't recognize: send it to the top rather than guess a middle rung.
   return ESCALATION_TOP;
 }
 

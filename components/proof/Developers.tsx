@@ -181,7 +181,7 @@ function Settings({ base }: { base: string }) {
 
       <div className="proof-card p-5">
         <div className="text-[15px] font-semibold">Your customers’ pages</div>
-        <P>Your name, logo and colour on every proof page and email. Customers never see Kanthink’s.</P>
+        <P>Your name, logo and color on every proof page and email. Customers never see Kanthink’s.</P>
         <BrandForm brand={b} approvalHours={partner.approvalHours} onSave={save} saving={saving} />
         {saved && <div className="text-[13px] mt-2" style={{ color: 'var(--ok)' }}>Saved.</div>}
       </div>
@@ -348,7 +348,7 @@ export function Developers() {
             page with an index or label (<C>{'"page": "back"'}</C>).
           </P>
           <P>
-            Files are checked as they arrive. Full-bleed files are used as they are; trim-size files get their edges extended into the bleed; a file of a different shape is centred and the job says how much is cut off, so your team can fit it to
+            Files are checked as they arrive. Full-bleed files are used as they are; trim-size files get their edges extended into the bleed; a file of a different shape is centered and the job says how much is cut off, so your team can fit it to
             the product with one click. <C>origin</C> (who made it, in what, uploaded or reordered, AI-made) is shown to whoever reviews it.
           </P>
           <Code lang="bash">{`curl ${api}/jobs/JOB_ID/artwork -H "Authorization: Bearer kp_live_YOUR_KEY" \\
@@ -391,7 +391,7 @@ export function Developers() {
     └──── new file ───────┴── changes_requested ◀───┘   (customer can ask until the deadline)
 
 at lockAt, any of the above ──▶ locked   (the proof as it stands is final)
-then, from your system:  in_production ──▶ complete      (or cancelled)`}</Code>
+then, from your system:  in_production ──▶ complete      (or canceled)`}</Code>
           <P>
             After <C>lockAt</C> nobody can change the job from the page: the customer sees the version that will print. The print file is always the approved or locked proof (or, before any proof, the current pages); the response header{' '}
             <C>X-Print-Final: true</C> tells you it’s settled.

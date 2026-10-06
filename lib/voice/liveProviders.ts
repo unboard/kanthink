@@ -9,12 +9,12 @@
  * parameters in its own uppercase pseudo-schema and OpenAI in plain JSON Schema.
  *
  * Rather than fork LiveVoiceMode — 1700 lines of UI that has nothing to do with any
- * of that — this module normalises the wire. The component builds one outbound
+ * of that — this module normalizes the wire. The component builds one outbound
  * message through `buildSetupMessage` and reads one inbound shape from
  * `normalizeLiveEvent`, and the differences stay here where they can be read side
  * by side.
  *
- * The normalised shape is Gemini's, because that is what already worked and
+ * The normalized shape is Gemini's, because that is what already worked and
  * reshaping the working side to meet the new one is how a working feature acquires
  * a regression.
  */
@@ -349,7 +349,7 @@ export interface NormalizedLiveEvent {
  *
  * Returns null for the many frames neither side needs to act on — rate-limit
  * updates, item lifecycle echoes, buffer commits. Everything the UI reacts to is
- * enumerated here rather than pattern-matched loosely, so adding a behaviour means
+ * enumerated here rather than pattern-matched loosely, so adding a behavior means
  * naming the event that drives it.
  */
 export function normalizeLiveEvent(

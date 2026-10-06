@@ -10,7 +10,7 @@ interface RouteParams {
   params: Promise<{ id: string; columnId: string }>
 }
 
-// Allow-list so a bad client value can't put an unrecognised rule in the column row,
+// Allow-list so a bad client value can't put an unrecognized rule in the column row,
 // which the placement logic would then silently treat as 'manual'.
 const VALID_SORT_ORDERS = ['manual', 'created_newest', 'created_oldest', 'updated_newest', 'updated_oldest']
 

@@ -3,7 +3,7 @@ import { providerGroup } from '../modelCatalog';
 import { fallbackParams, imageBlock, responseText } from '../anthropic';
 import type { LLMProvider, LLMMessage, LLMResponse, LLMContentPart, LLMCompleteOptions } from './types';
 
-// From the catalogue — see the note in the OpenAI provider.
+// From the catalog — see the note in the OpenAI provider.
 const DEFAULT_MODEL = providerGroup('anthropic').defaultModel;
 
 /**

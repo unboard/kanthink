@@ -31,8 +31,8 @@ import type { StylePass } from '@/lib/playground/style/passes';
  * How an app looks, and the one-click passes that improve it.
  *
  * Nothing here is required. Kan picks a style on the first build and it is usually
- * right; this is for when the owner has a logo, a brand colour, or an opinion.
- * Colour, type and corner changes apply to the live preview at once, with no
+ * right; this is for when the owner has a logo, a brand color, or an opinion.
+ * Color, type and corner changes apply to the live preview at once, with no
  * rebuild, because a styled app reads them from tokens. A rebuild is only needed
  * to change the layout or to bring an older app onto the tokens.
  */
@@ -45,9 +45,9 @@ const SEVERITY_DOT: Record<Severity, string> = {
 
 const PASSES: Array<{ pass: StylePass; label: string; hint: string }> = [
   { pass: 'polish', label: 'Polish', hint: 'Spacing, type scale, states and focus, tidied the way a designer would before launch.' },
-  { pass: 'bolder', label: 'Bolder', hint: 'Bigger type contrast and more confident colour. No gradients or glows.' },
-  { pass: 'quieter', label: 'Quieter', hint: 'Less colour and decoration, more space.' },
-  { pass: 'restyle', label: 'Restyle', hint: 'Rebuild the whole look on this style: tokens, fonts and kit components. Behaviour stays the same.' },
+  { pass: 'bolder', label: 'Bolder', hint: 'Bigger type contrast and more confident color. No gradients or glows.' },
+  { pass: 'quieter', label: 'Quieter', hint: 'Less color and decoration, more space.' },
+  { pass: 'restyle', label: 'Restyle', hint: 'Rebuild the whole look on this style: tokens, fonts and kit components. Behavior stays the same.' },
 ];
 
 export function AppStylePane({
@@ -68,7 +68,7 @@ export function AppStylePane({
   const style = app.style ?? null;
   const resolved = useMemo(() => (style ? resolveStyle(style) : null), [style]);
   const hasCode = Boolean(app.code);
-  const tokenised = usesTokens(app.code);
+  const tokenized = usesTokens(app.code);
   const check = useMemo(
     () => checkDesign(app.code, { hasStyle: !!style, look: style?.look }),
     [app.code, style]
@@ -134,12 +134,12 @@ export function AppStylePane({
               : 'Kan picks a look on the first build. Choose one now if you already know what you want.'}
           </p>
         )}
-        {style && hasCode && !tokenised && (
+        {style && hasCode && !tokenized && (
           <div className="flex items-start gap-3 rounded-xl border border-violet-500/30 bg-violet-500/5 px-3 py-2.5">
             <Wand2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-violet-500" />
             <div className="min-w-0 flex-1 text-xs text-neutral-700 dark:text-neutral-300">
-              Most of this app&apos;s colours are written into its code, so changes here only reach its background and fonts.
-              Restyle rebuilds the look on this style, and after that colour changes apply instantly.
+              Most of this app&apos;s colors are written into its code, so changes here only reach its background and fonts.
+              Restyle rebuilds the look on this style, and after that color changes apply instantly.
               <button
                 onClick={() => onPass('restyle')}
                 disabled={busy}
@@ -188,7 +188,7 @@ export function AppStylePane({
 
         {style && resolved && (
           <>
-            <Section title="Colours">
+            <Section title="Colors">
               <div className="flex flex-wrap gap-2">
                 {PALETTES.map((p) => (
                   <PaletteChip key={p.id} palette={p} on={style.palette === p.id} onClick={() => set({ palette: p.id })} />
@@ -260,7 +260,7 @@ export function AppStylePane({
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm text-neutral-900 dark:text-white">Build with the component kit</span>
                   <span className="block text-xs text-neutral-500 dark:text-neutral-400">
-                    Buttons, fields, tabs, dialogs, tables and toasts modelled on shadcn/ui, styled by this look. Applies from the next build.
+                    Buttons, fields, tabs, dialogs, tables and toasts modeled on shadcn/ui, styled by this look. Applies from the next build.
                   </span>
                 </span>
               </label>
@@ -379,11 +379,11 @@ function PaletteChip({ palette, on, onClick }: { palette: Palette; on: boolean; 
   );
 }
 
-/** Your own colours: pick one, or take them from the logo. */
+/** Your own colors: pick one, or take them from the logo. */
 function BrandColours({ style, onChange }: { style: AppStyle; onChange: (patch: Partial<AppStyle>) => void }) {
   const brand = style.brand ?? { primary: resolveStyle(style).palette.colors.primary, highlight: null, mode: 'light' as const };
   const [draft, setDraft] = useState(brand);
-  // Colours chosen elsewhere (from the logo) replace the draft; our own commits
+  // Colors chosen elsewhere (from the logo) replace the draft; our own commits
   // come back equal to it and leave it alone.
   const [seen, setSeen] = useState(style.brand);
   if (style.brand !== seen) {
@@ -393,7 +393,7 @@ function BrandColours({ style, onChange }: { style: AppStyle; onChange: (patch: 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const active = style.palette === 'brand';
 
-  // A colour input fires on every step of a drag, so changes are committed once it settles.
+  // A color input fires on every step of a drag, so changes are committed once it settles.
   const commit = (next: typeof brand) => {
     setDraft(next);
     if (timer.current) clearTimeout(timer.current);
@@ -405,7 +405,7 @@ function BrandColours({ style, onChange }: { style: AppStyle; onChange: (patch: 
   return (
     <div className={`mt-3 rounded-xl border px-3 py-2.5 ${active ? 'border-violet-500/60' : 'border-neutral-200 dark:border-neutral-800'}`}>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs font-medium text-neutral-900 dark:text-white">Your colours</span>
+        <span className="text-xs font-medium text-neutral-900 dark:text-white">Your colors</span>
         <label className="flex items-center gap-1.5 text-[11px] text-neutral-500">
           <input type="color" value={draft.primary} onChange={(e) => commit({ ...draft, primary: e.target.value.toUpperCase() })} className="h-7 w-7 cursor-pointer rounded border-0 bg-transparent p-0" />
           Main
@@ -428,12 +428,12 @@ function BrandColours({ style, onChange }: { style: AppStyle; onChange: (patch: 
       </div>
       {!active && (
         <button onClick={() => onChange({ palette: 'brand', brand: draft })} className="mt-2 text-[11px] font-medium text-violet-600 hover:underline dark:text-violet-400">
-          Use these colours
+          Use these colors
         </button>
       )}
       {active && (
         <p className="mt-1.5 text-[10.5px] text-neutral-400">
-          Neutrals are tinted to match, and colours are adjusted only as far as text on them needs to stay readable.
+          Neutrals are tinted to match, and colors are adjusted only as far as text on them needs to stay readable.
         </p>
       )}
     </div>
@@ -443,7 +443,7 @@ function BrandColours({ style, onChange }: { style: AppStyle; onChange: (patch: 
 function LogoPicker({ style, cardId, onChange }: { style: AppStyle; cardId: string; onChange: (patch: Partial<AppStyle>) => void }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [colours, setColours] = useState<string[]>([]);
+  const [colors, setColors] = useState<string[]>([]);
   const input = useRef<HTMLInputElement>(null);
 
   const readColours = (url: string) => {
@@ -457,9 +457,9 @@ function LogoPicker({ style, cardId, onChange }: { style: AppStyle; cardId: stri
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         ctx.drawImage(img, 0, 0, 64, 64);
-        setColours(dominantColors(ctx.getImageData(0, 0, 64, 64).data, 2));
+        setColors(dominantColors(ctx.getImageData(0, 0, 64, 64).data, 2));
       } catch {
-        // A logo whose host forbids reading pixels just doesn't offer its colours.
+        // A logo whose host forbids reading pixels just doesn't offer its colors.
       }
     };
     img.src = url;
@@ -506,7 +506,7 @@ function LogoPicker({ style, cardId, onChange }: { style: AppStyle; cardId: stri
           </span>
         )}
         <span className="min-w-0 flex-1 text-xs text-neutral-500 dark:text-neutral-400">
-          {style.logoUrl ? 'Shown in the app header and as its icon.' : 'Without one, the app shows a monogram in its main colour.'}
+          {style.logoUrl ? 'Shown in the app header and as its icon.' : 'Without one, the app shows a monogram in its main color.'}
         </span>
         <button
           onClick={() => input.current?.click()}
@@ -517,24 +517,24 @@ function LogoPicker({ style, cardId, onChange }: { style: AppStyle; cardId: stri
           {style.logoUrl ? 'Replace' : 'Upload'}
         </button>
         {style.logoUrl && (
-          <button onClick={() => { onChange({ logoUrl: null }); setColours([]); }} aria-label="Remove logo" className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800">
+          <button onClick={() => { onChange({ logoUrl: null }); setColors([]); }} aria-label="Remove logo" className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800">
             <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
-      {style.logoUrl && colours.length === 0 && (
+      {style.logoUrl && colors.length === 0 && (
         <button onClick={() => readColours(style.logoUrl!)} className="mt-2 text-[11px] font-medium text-violet-600 hover:underline dark:text-violet-400">
-          Take colours from the logo
+          Take colors from the logo
         </button>
       )}
-      {colours.length > 0 && (
+      {colors.length > 0 && (
         <div className="mt-2 flex items-center gap-2">
-          {colours.map((c) => <span key={c} className="h-5 w-5 rounded-full border border-neutral-200 dark:border-neutral-700" style={{ background: c }} />)}
+          {colors.map((c) => <span key={c} className="h-5 w-5 rounded-full border border-neutral-200 dark:border-neutral-700" style={{ background: c }} />)}
           <button
-            onClick={() => { onChange({ palette: 'brand', brand: { primary: colours[0], highlight: colours[1] ?? null, mode: style.brand?.mode ?? 'light' } }); setColours([]); }}
+            onClick={() => { onChange({ palette: 'brand', brand: { primary: colors[0], highlight: colors[1] ?? null, mode: style.brand?.mode ?? 'light' } }); setColors([]); }}
             className="text-[11px] font-medium text-violet-600 hover:underline dark:text-violet-400"
           >
-            Use the logo&apos;s colours
+            Use the logo&apos;s colors
           </button>
         </div>
       )}

@@ -32,7 +32,7 @@ describe('where the gate sits', () => {
     expect(gatesAction(paid)).toBe(false)
   })
 
-  it('reads an unrecognised mode as the door rather than trusting it', () => {
+  it('reads an unrecognized mode as the door rather than trusting it', () => {
     // A typo in this column must not quietly publish a paid app to everybody.
     expect(paywallMode({ ...paid, paywallMode: 'Action' })).toBe('app')
     expect(paywallMode({ ...paid, paywallMode: 'inside' })).toBe('app')

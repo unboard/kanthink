@@ -28,7 +28,7 @@ import {
  * three were admitted where one fit: the subquery inside the INSERT can read a
  * snapshot taken before another connection committed, so several callers each see
  * room that is already gone. It looked safe only because an earlier test shared a
- * single client, which serialised the writers for us.
+ * single client, which serialized the writers for us.
  *
  * The insert therefore runs inside a write transaction, which takes the write lock
  * BEFORE the read rather than upgrading to it afterwards. Contenders then queue or
@@ -154,7 +154,7 @@ async function spentMillicents(where: ReturnType<typeof sql>): Promise<number> {
  * simultaneous visitors each spend the last of an allowance.
  */
 /**
- * Admissions are serialised within this process before they reach the database.
+ * Admissions are serialized within this process before they reach the database.
  *
  * Two reasons. The connection is shared, and overlapping BEGIN/COMMIT pairs on one
  * connection interleave into each other — one transaction commits another's work,
@@ -350,7 +350,7 @@ export interface SpendSummary {
 }
 
 /** What the creator is shown. Figures are estimates until a call settles. */
-export async function summarise(appId: string, ownerId: string): Promise<SpendSummary> {
+export async function summarize(appId: string, ownerId: string): Promise<SpendSummary> {
   const period = currentPeriodKey()
   const limits = await resolveLimits(appId, ownerId)
 

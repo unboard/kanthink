@@ -311,7 +311,7 @@ export default function Mow() {
       {!ready && (
         <div className="cc-center">
           <div className="cc-logo">CLEAN CUT</div>
-          <div className="cc-sub">Loading the neighbourhood…</div>
+          <div className="cc-sub">Loading the neighborhood…</div>
         </div>
       )}
 
@@ -520,7 +520,7 @@ function Help({ onBack }: { onBack: () => void }) {
         <p className="cc-p"><b>Stripes are real.</b> Grass bends the way you drive. Mow alternating lanes and the lawn shows light and dark bands. Lay a couple of laps around the edge first, keep your runs straight, and match the client&apos;s request — stripes, diagonals or a checkerboard (mow it twice, crossways; the second pass is free when they ask for it). Style earns tips.</p>
         <p className="cc-p"><b>Trim last.</b> The deck can&apos;t reach right up to fences, trunks and walls. Hop off (E) and run the string trimmer along them — each edge you finish rings a bell. Long grass glows while you&apos;re on foot.</p>
         <p className="cc-p">Set the deck to the height they asked for, stay off the flower beds, and don&apos;t ram the shed.</p>
-        <p className="cc-p"><b>🐾 Lost cats.</b> Some yards have a neighbour&apos;s cat hiding in them. Listen for meows. The mower scares cats, so hop off and walk up softly to pick it up, then carry it back to its owner for a reward. Every cat you bring home goes in your collection.</p>
+        <p className="cc-p"><b>🐾 Lost cats.</b> Some yards have a neighbor&apos;s cat hiding in them. Listen for meows. The mower scares cats, so hop off and walk up softly to pick it up, then carry it back to its owner for a reward. Every cat you bring home goes in your collection.</p>
         <Controls />
         <button className="cc-btn cc-primary" style={{ marginTop: 14 }} onClick={onBack}>Got it</button>
       </div>
@@ -586,7 +586,7 @@ function BoardScreen(props: { day: DayState; jobs: JobDef[]; selected: string | 
               <span className="cc-tagchip">{PATTERN_LABEL[sel.pattern]}</span>
               <span className="cc-tagchip">Cut at {sel.heightIn}&quot;</span>
               <span className="cc-tagchip">{sel.obstacles} things in the way</span>
-              {hasLostCat(sel) && <span className="cc-tagchip cc-catchip">🐾 A neighbour lost their cat here</span>}
+              {hasLostCat(sel) && <span className="cc-tagchip cc-catchip">🐾 A neighbor lost their cat here</span>}
             </div>
             <DetailGo day={day} job={sel} onGo={props.onGo} />
           </div>
@@ -779,7 +779,7 @@ function Radar({ game }: { game: Game }) {
       ctx.clip();
       ctx.fillStyle = '#22361d';
       ctx.fillRect(0, 0, S, S);
-      const scale = (S / 2) / 22; // px per metre: ~22 m radius
+      const scale = (S / 2) / 22; // px per meter: ~22 m radius
       const rot = -Math.PI / 2 - m.camYaw;
       ctx.translate(r, r);
       ctx.rotate(rot);
@@ -942,7 +942,7 @@ function TouchButtons({ game, hud }: { game: Game; hud: HudState }) {
 
 // ———————————————————————————————————————— cats
 
-/** A little cat face in the coat's colours, for the poster and the collection. */
+/** A little cat face in the coat's colors, for the poster and the collection. */
 function CatFace({ coat, size = 56 }: { coat: string; size?: number }) {
   const c = COATS[coat as CoatId] ?? COATS.ginger;
   const ear = c.pattern === 'points' && c.marks ? c.marks : c.base;

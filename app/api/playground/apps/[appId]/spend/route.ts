@@ -7,7 +7,7 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { findAppOwnerId } from '@/lib/playground/publicApp'
 import {
-  summarise,
+  summarize,
   DEFAULT_APP_LIMIT_CENTS,
   DEFAULT_CUSTOMER_LIMIT_CENTS,
   DEFAULT_OWNER_LIMIT_CENTS,
@@ -41,7 +41,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     await requirePermission(app.channelId, session.user.id, 'view')
 
     const ownerId = await findAppOwnerId(app)
-    const summary = await summarise(app.id, ownerId)
+    const summary = await summarize(app.id, ownerId)
 
     return NextResponse.json({
       ...summary,
@@ -113,7 +113,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     }
 
     const fresh = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) })
-    const summary = await summarise(appId, ownerId)
+    const summary = await summarize(appId, ownerId)
     return NextResponse.json({
       ...summary,
       appLimitSetting: fresh?.aiSpendLimitCents ?? null,

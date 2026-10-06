@@ -219,7 +219,7 @@ const WITH_THEM: JobStatus[] = ['awaiting_approval']
 function OrderRowView({ o }: { o: OrderRow }) {
   const waiting = o.jobs.filter((j) => NEEDS_YOU.includes(j.status)).length
   const thumbs = o.jobs.filter((j) => j.thumb).slice(0, 3)
-  const settled = o.jobs.every((j) => ['locked', 'in_production', 'complete', 'cancelled'].includes(j.status))
+  const settled = o.jobs.every((j) => ['locked', 'in_production', 'complete', 'canceled'].includes(j.status))
   return (
     <li>
       <Link href={`/print/orders/${o.id}`} className="flex items-center gap-4 rounded-2xl bg-white px-3 py-3 sm:px-4 border hover:shadow-md transition-shadow" style={{ borderColor: 'var(--line)' }}>
@@ -287,7 +287,7 @@ export function OrdersHome() {
         { title: 'Needs you', hint: 'New files to review, or changes the customer asked for.', rows: orders.filter((o) => open(o, NEEDS_YOU)) },
         { title: 'With customers', hint: 'Proofs waiting for approval.', rows: orders.filter((o) => !open(o, NEEDS_YOU) && open(o, WITH_THEM)) },
         { title: 'Approved and printing', hint: '', rows: orders.filter((o) => !open(o, NEEDS_YOU) && !open(o, WITH_THEM) && open(o, ['approved', 'locked', 'in_production'])) },
-        { title: 'Done', hint: '', rows: orders.filter((o) => o.jobs.length > 0 && o.jobs.every((j) => ['complete', 'cancelled'].includes(j.status))) },
+        { title: 'Done', hint: '', rows: orders.filter((o) => o.jobs.length > 0 && o.jobs.every((j) => ['complete', 'canceled'].includes(j.status))) },
       ].filter((g) => g.rows.length)
     : []
 

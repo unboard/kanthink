@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
  *   0–4.5     Your brand. On every design. In about a minute.
  *   4.5–9     Pick any template → Personalize
  *   9–14      Enter your website
- *   14–20.5   BrandSnap reads it: logo, colours, photos, words → brand kit
+ *   14–20.5   BrandSnap reads it: logo, colors, photos, words → brand kit
  *   20.5–25   A few ideas to start from
  *   25–31     The design assembles in your brand, then every format follows
  *   31–35     Skip the designer back-and-forth
@@ -147,8 +147,8 @@ function Cursor({ x, y, opacity = 1, pressed = false }) {
 }
 
 /**
- * A postcard at any stage of personalisation: `brand` 0 is the bare template
- * (grey blocks), 1 is fully in the business's brand.
+ * A postcard at any stage of personalization: `brand` 0 is the bare template
+ * (gray blocks), 1 is fully in the business's brand.
  */
 function Postcard({ w = 760, h = 500, brand = 1, headline = 'Your Best Lawn Starts Now.', parts = {} }) {
   const p = { wash: brand, photo: brand, logo: brand, words: brand, cta: brand, ...parts };
@@ -156,7 +156,7 @@ function Postcard({ w = 760, h = 500, brand = 1, headline = 'Your Best Lawn Star
   const mix = (a, b, q) => (q >= 1 ? b : q <= 0 ? a : b);
   return (
     <div style={{ position: 'relative', width: w, height: h, borderRadius: 16, overflow: 'hidden', background: C.white, boxShadow: '0 30px 80px rgba(40,20,90,.18)' }}>
-      {/* Colour wash sweeping in from the left */}
+      {/* Color wash sweeping in from the left */}
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '52%', background: grey }} />
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${52 * clamp(p.wash)}%`, background: C.navy }} />
       {/* Photo */}

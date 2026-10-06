@@ -6,7 +6,7 @@ import {
 } from '@/lib/channelCreation/generateShrooms';
 
 describe('detectAssemblyLine', () => {
-  it('recognises the canonical layout', () => {
+  it('recognizes the canonical layout', () => {
     const line = detectAssemblyLine(['Inbox', 'Promising', 'Requirements', 'Spec', 'Design', 'Build']);
     expect(line).toBeTruthy();
     expect(line!.inbox).toBe('Inbox');

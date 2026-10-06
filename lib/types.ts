@@ -18,7 +18,7 @@ export interface ShroomChatMessage {
 
 // Instruction Card types
 /**
- * `report` shrooms analyse their context columns and write a single digest card instead
+ * `report` shrooms analyze their context columns and write a single digest card instead
  * of producing N new cards. The point is signal without clutter — a shroom that watches
  * a channel and tells you what changed, rather than adding to the pile you're already
  * struggling to read.
@@ -35,7 +35,7 @@ export interface ShroomStep {
 export type InstructionScope = 'channel' | 'global' | 'public';
 
 /**
- * Optional "email me after this runs" behaviour on a shroom.
+ * Optional "email me after this runs" behavior on a shroom.
  *
  * `brief` is a natural-language description of what the email should say — not a
  * template. Kan writes the actual email at send time from the brief plus what the run
@@ -276,7 +276,7 @@ export interface InstructionCard {
   title: string;
   instructions: string;
   action: InstructionAction;
-  /** Face, as "shape:pattern:colour". Unset means one is derived from the id. */
+  /** Face, as "shape:pattern:color". Unset means one is derived from the id. */
   avatar?: string | null;
   /**
    * The shroom's **default scope**: the cards a run acts on when the invoker doesn't
@@ -311,7 +311,7 @@ export interface InstructionCard {
   emailConfig?: ShroomEmailConfig;        // Email the channel owner after a run
   /**
    * Which model this shroom runs on, stored provider-qualified ("google:gemini-3.7-flash").
-   * Unset means the account default. Honoured only when there's a key for that provider —
+   * Unset means the account default. Honored only when there's a key for that provider —
    * see `resolveShroomModel`.
    */
   modelId?: string;

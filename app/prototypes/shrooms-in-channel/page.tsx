@@ -55,7 +55,7 @@ const OPTIONS: Option[] = [
     name: 'Column Watchers',
     cost: 'none',
     pitch:
-      'No global chrome at all. A cap appears above the column a shroom acts on, because that is the only place its behaviour is legible — you learn what Inbox Analyzer does by seeing it sitting on Inbox. Columns nothing watches show a ghost slot instead.',
+      'No global chrome at all. A cap appears above the column a shroom acts on, because that is the only place its behavior is legible — you learn what Inbox Analyzer does by seeing it sitting on Inbox. Columns nothing watches show a ghost slot instead.',
     component: ColumnWatchers,
   },
   {

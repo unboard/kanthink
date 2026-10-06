@@ -24,10 +24,10 @@ import { apiJob, apiOrder } from './views'
 
 /**
  * Everything the API can do, once. The REST routes and the MCP tools both call these,
- * so a bot and a developer get the same behaviour and the same errors.
+ * so a bot and a developer get the same behavior and the same errors.
  */
 
-const PRINTER_STATUSES: JobStatus[] = ['locked', 'in_production', 'complete', 'cancelled', 'received']
+const PRINTER_STATUSES: JobStatus[] = ['locked', 'in_production', 'complete', 'canceled', 'received']
 
 async function job(who: Caller, id: string) {
   const j = await findJob(who.userId, id)

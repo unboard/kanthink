@@ -1,7 +1,7 @@
 /**
  * Voice opened from a card
  *
- * The card asked for the open card's context to be prioritised immediately. Two
+ * The card asked for the open card's context to be prioritized immediately. Two
  * things have to be true for that: Kan has to actually receive what the card SAYS
  * (not just its name), and it has to arrive before the workspace dump rather than
  * buried after every channel, card and task in the account.

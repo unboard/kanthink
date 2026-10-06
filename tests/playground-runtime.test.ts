@@ -37,7 +37,7 @@ describe('resolveDep', () => {
     expect(resolveDep('gh:mrdoob/three.js@r160').url).toContain('https://esm.sh/gh/mrdoob/three.js@r160?');
   });
 
-  it('honours an explicit import alias', () => {
+  it('honors an explicit import alias', () => {
     const dep = resolveDep('three=gh:mrdoob/three.js@r160');
     expect(dep.specifier).toBe('three');
     expect(dep.url).toContain('gh/mrdoob/three.js@r160');

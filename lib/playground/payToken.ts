@@ -118,7 +118,7 @@ export function verifyPayToken(token: string | null | undefined): PayClaims | nu
  * - the app gates an action — this is the only case the token decides
  *
  * The token is a claim about the past and the rows are the present, so a refund or
- * a cancelled subscription takes effect on the next call rather than whenever the
+ * a canceled subscription takes effect on the next call rather than whenever the
  * token happens to lapse.
  */
 export async function allowsPaidCapability(

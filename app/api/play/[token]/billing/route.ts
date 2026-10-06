@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     const member = resolved.member
     if (!member.stripeCustomerId) return NextResponse.redirect(home)
 
-    // Cancelling a subscription and reading payment history are private to the
+    // Canceling a subscription and reading payment history are private to the
     // inbox, not to the card — a purchase-scope session does not get here.
     if (!canReadPrivateData(resolved.session)) return NextResponse.redirect(home)
 

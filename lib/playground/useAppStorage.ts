@@ -27,7 +27,7 @@ export function useAppStorage(appKey: string) {
       const raw = window.localStorage.getItem(storageKey);
       return raw ? JSON.parse(raw) : {};
     } catch {
-      // A browser with storage blocked simply gets the in-memory behaviour back.
+      // A browser with storage blocked simply gets the in-memory behavior back.
       return {};
     }
   });

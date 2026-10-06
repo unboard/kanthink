@@ -1,4 +1,4 @@
-// Clean Cut — lost cats. Some jobs come with a neighbour's cat hiding somewhere in the yard.
+// Clean Cut — lost cats. Some jobs come with a neighbor's cat hiding somewhere in the yard.
 // Find it, carry it back, and they'll thank you. This file is the pure part: who's lost,
 // where they hide, where the owner waits. Same seed, same cat — so the daily is fair.
 
@@ -14,7 +14,7 @@ export interface Coat {
   label: string;
   base: string;
   marks: string | null; // stripes or patches
-  marks2?: string; // calico's second colour
+  marks2?: string; // calico's second color
   pattern: 'tabby' | 'patches' | 'solid' | 'points';
   bib: boolean; // white chest and paws
   eyes: string;
@@ -22,7 +22,7 @@ export interface Coat {
 
 export const COATS: Record<CoatId, Coat> = {
   ginger: { id: 'ginger', label: 'ginger tabby', base: '#d9822b', marks: '#9c4f17', pattern: 'tabby', bib: false, eyes: '#9ccf3a' },
-  grey: { id: 'grey', label: 'grey tabby', base: '#8f8f8c', marks: '#4a4a4a', pattern: 'tabby', bib: true, eyes: '#d9b13a' },
+  grey: { id: 'grey', label: 'gray tabby', base: '#8f8f8c', marks: '#4a4a4a', pattern: 'tabby', bib: true, eyes: '#d9b13a' },
   tuxedo: { id: 'tuxedo', label: 'tuxedo', base: '#1c1c1f', marks: null, pattern: 'solid', bib: true, eyes: '#c9d93a' },
   calico: { id: 'calico', label: 'calico', base: '#f3efe6', marks: '#d27a2c', marks2: '#2a2522', pattern: 'patches', bib: false, eyes: '#b6c93a' },
   black: { id: 'black', label: 'black cat', base: '#151517', marks: null, pattern: 'solid', bib: false, eyes: '#f0c419' },

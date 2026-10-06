@@ -17,7 +17,7 @@ async function main() {
 
   const chat = await createAnthropicProvider(apiKey, modelId).complete([
     { role: 'system', content: 'Answer in five words or fewer.' },
-    { role: 'user', content: 'Name a colour.' },
+    { role: 'user', content: 'Name a color.' },
   ], { maxTokens: 2000 })
   console.log('chat:', JSON.stringify(chat.content), chat.usage)
 

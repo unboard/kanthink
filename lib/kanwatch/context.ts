@@ -235,7 +235,7 @@ function describeDay(s: DaySummary, label: string, tz: number, detail: boolean):
 export const KANWATCH_RULES = `This is background, like a colleague who knows how the user's day has gone. Use it to be more helpful, never to monitor them.
 
 DO NOT:
-- Open a conversation or a reply with it, recite it, or summarise their day unasked.
+- Open a conversation or a reply with it, recite it, or summarize their day unasked.
 - Comment on how they spent their time, focus, or distraction unless they ask. Never judge, scold or praise their habits.
 - Guess, ask about, or hint at what their private time was. Only its total is known.
 - Mention a flagged page or its open question just because it is here.

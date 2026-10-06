@@ -58,36 +58,36 @@ export function useStableSessionStatus(): StableSessionStatus {
 
   useEffect(() => {
     if (status !== 'unauthenticated') return;
-    let cancelled = false;
+    let canceled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
 
     // Never signed in on this device: nothing to doubt.
     if (!readRemembered()) {
-      timers.push(setTimeout(() => { if (!cancelled) setConfirmedOut(true); }, 0));
-      return () => { cancelled = true; timers.forEach(clearTimeout); };
+      timers.push(setTimeout(() => { if (!canceled) setConfirmedOut(true); }, 0));
+      return () => { canceled = true; timers.forEach(clearTimeout); };
     }
 
     // Was signed in: ask again a few times before believing it.
     let attempt = 0;
     const giveUp = () => { writeRemembered(false); setConfirmedOut(true); };
     const retry = () => {
-      if (cancelled) return;
+      if (canceled) return;
       update()
         .then((session) => {
-          if (cancelled || session) return; // a session came back; status flips to authenticated
+          if (canceled || session) return; // a session came back; status flips to authenticated
           attempt += 1;
           if (attempt < RETRY_DELAYS_MS.length) timers.push(setTimeout(retry, RETRY_DELAYS_MS[attempt]));
           else giveUp();
         })
         .catch(() => {
-          if (cancelled) return;
+          if (canceled) return;
           attempt += 1;
           if (attempt < RETRY_DELAYS_MS.length) timers.push(setTimeout(retry, RETRY_DELAYS_MS[attempt]));
           // Errors all the way down are a network problem, not a sign-out. Stay put.
         });
     };
     timers.push(setTimeout(retry, RETRY_DELAYS_MS[0]));
-    return () => { cancelled = true; timers.forEach(clearTimeout); };
+    return () => { canceled = true; timers.forEach(clearTimeout); };
   }, [status, update]);
 
   if (status === 'authenticated') return 'authenticated';

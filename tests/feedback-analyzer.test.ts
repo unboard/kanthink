@@ -197,7 +197,7 @@ describe('rejection context is scoped to the shroom being run', () => {
     expect(context).toContain('THIS shroom');
     expect(context).toContain('Mine');
     expect(context).toContain('Give me specifics, not themes');
-    // Its own lesson comes before the neighbours', despite being the oldest row.
+    // Its own lesson comes before the neighbors', despite being the oldest row.
     expect(context.indexOf('Mine')).toBeLessThan(context.indexOf('Not mine 1'));
   });
 
@@ -206,7 +206,7 @@ describe('rejection context is scoped to the shroom being run', () => {
     expect(context).toMatch(/weaker signal/i);
   });
 
-  it('keeps the old channel-wide behaviour when no shroom is named', () => {
+  it('keeps the old channel-wide behavior when no shroom is named', () => {
     const context = buildRejectionContext(entries, 'ch1') ?? '';
     expect(context).toContain('Recent rejections from this channel');
     expect(context).not.toMatch(/weaker signal/i);

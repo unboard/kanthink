@@ -16,7 +16,7 @@ describe('stripeFailureMessage', () => {
     expect(message).toMatch(/STRIPE_SECRET_KEY/)
   })
 
-  it('recognises the message Stripe actually sends for a dead key', () => {
+  it('recognizes the message Stripe actually sends for a dead key', () => {
     // Verbatim shape of what the live account returned.
     const err = new Error('Invalid API Key provided: sk_live_****fr6.')
     expect(stripeFailureMessage(err)).toMatch(/rotated or revoked/)
@@ -74,7 +74,7 @@ describe('validatePriceInput', () => {
     expect(() => validatePriceInput({ amount: 400, currency: 'dollars' })).toThrow(/three-letter/)
   })
 
-  it('normalises the currency case, because Stripe wants it lower', () => {
+  it('normalizes the currency case, because Stripe wants it lower', () => {
     expect(validatePriceInput({ amount: 400, currency: 'GBP' }).currency).toBe('gbp')
   })
 })

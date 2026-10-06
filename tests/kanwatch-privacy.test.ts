@@ -129,7 +129,7 @@ describe('private sites keep nothing but time', () => {
     expect(sanitizeVisit({ url: 'https://example.com/step', title: 'Sign in to continue' })).toEqual({ private: true })
   })
 
-  it('honours domains the user blocked themselves', () => {
+  it('honors domains the user blocked themselves', () => {
     expect(isPrivateUrl('https://news.ycombinator.com/', ['ycombinator.com'])).toBe(true)
   })
 

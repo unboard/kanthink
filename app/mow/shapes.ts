@@ -12,7 +12,7 @@ export type Collider =
 export function houseFootprints(h: HouseDef): Poly[] {
   const out: Poly[] = [obb(h.x, h.z, h.w, h.d, h.rot)];
   if (h.porch && h.kind !== 'office') {
-    // porch sits on the front (+Z local) face, centred a little off the middle
+    // porch sits on the front (+Z local) face, centered a little off the middle
     const pw = Math.min(h.w * 0.42, 7);
     const off = h.garage === 'right' ? -h.w * 0.18 : h.garage === 'left' ? h.w * 0.18 : 0;
     const c = Math.cos(h.rot);

@@ -32,8 +32,8 @@ const MAX_CARDS = 20;
  * board's own stacking context — where it lost to a bottom nav sitting at z-40 on
  * the document. A high z-index cannot help with that; leaving the context can.
  *
- * A sheet rising from the bottom on a phone and a centred card on a desktop: on a
- * phone a centred dialog leaves dead space above and below and puts the actions in
+ * A sheet rising from the bottom on a phone and a centered card on a desktop: on a
+ * phone a centered dialog leaves dead space above and below and puts the actions in
  * the middle of the screen, away from the thumb.
  */
 export function ShroomDetail({

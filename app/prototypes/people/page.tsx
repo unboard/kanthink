@@ -12,7 +12,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  * emails you sent, and what happened to each (delivered, opened, clicked), in
  * the same thread UI the app's Audience pane already uses. Right: a private
  * side conversation with Kan about this person. Kan drafts there; nothing
- * crosses to the left until you press Send. The two never share a colour,
+ * crosses to the left until you press Send. The two never share a color,
  * a border or a composer, so you can't confuse which one they can see.
  *
  * Styles are lifted from AppAudiencePane (the thread) and LiveVoiceMode (the

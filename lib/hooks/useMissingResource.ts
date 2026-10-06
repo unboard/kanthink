@@ -62,15 +62,15 @@ export function useMissingResource({
     if (asked.current === apiPath) return;
     asked.current = apiPath;
 
-    let cancelled = false;
+    let canceled = false;
     const answered = (verdict: MissingVerdict) => {
-      if (!cancelled) setAnswer({ path: apiPath, verdict });
+      if (!canceled) setAnswer({ path: apiPath, verdict });
     };
 
     (async () => {
       try {
         const res = await fetch(apiPath);
-        if (cancelled) return;
+        if (canceled) return;
 
         if (res.status === 404) return answered('gone');
         if (res.status === 401 || res.status === 403) return answered('noAccess');
@@ -79,7 +79,7 @@ export function useMissingResource({
         // It exists and we don't have it, so the snapshot is behind. Pull a
         // fresh one rather than 404 something that is sitting in the database.
         await refetch();
-        if (cancelled) return;
+        if (canceled) return;
         // If the refetch brought it in, the caller is about to render it and
         // this hook has nothing left to say.
         answered(isPresent() ? 'checking' : 'stale');
@@ -89,7 +89,7 @@ export function useMissingResource({
     })();
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [apiPath, enabled, refetch, isPresent]);
 

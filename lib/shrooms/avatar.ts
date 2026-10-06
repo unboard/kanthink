@@ -1,8 +1,8 @@
 /**
  * A shroom's face.
  *
- * Four axes — cap, stem, colour, pattern — so a channel's shrooms can each be a
- * different creature without anyone drawing one. Flat colour throughout: no
+ * Four axes — cap, stem, color, pattern — so a channel's shrooms can each be a
+ * different creature without anyone drawing one. Flat color throughout: no
  * gradients, no shadows, no shading. The shapes carry it.
  *
  * Nothing has one chosen, and asking people to pick before the row is useful would
@@ -10,7 +10,7 @@
  * set: stable, well spread, and different for every shroom in a channel with nobody
  * doing anything. Picking one later just overrides it.
  *
- * Everything is drawn in a 48×48 box with the shroom centred on x=24, the cap
+ * Everything is drawn in a 48×48 box with the shroom centered on x=24, the cap
  * bottoming out around y=27 and the stem running to y=42.
  */
 
@@ -34,15 +34,15 @@ export interface ShroomPalette {
   name: string;
   cap: string;
   /**
-   * The card behind the shroom: the same colour, deeper.
+   * The card behind the shroom: the same color, deeper.
    *
-   * A flat cap on a card of its own colour is an invisible cap — with no gradient
+   * A flat cap on a card of its own color is an invisible cap — with no gradient
    * and no shadow there is nothing left to separate them. Two flat tones of one
-   * colour keeps the card reading as the shroom's own without drawing anything the
+   * color keeps the card reading as the shroom's own without drawing anything the
    * reference doesn't have.
    */
   bg: string;
-  /** Marking colour. Cream on everything, except where cream would vanish. */
+  /** Marking color. Cream on everything, except where cream would vanish. */
   mark: string;
 }
 
@@ -71,13 +71,13 @@ export interface ShroomAvatarSpec {
   color: string;
 }
 
-/** Stored as "cap:stem:pattern:colour" — one short string, no JSON to parse. */
+/** Stored as "cap:stem:pattern:color" — one short string, no JSON to parse. */
 export function serializeAvatar(a: ShroomAvatarSpec): string {
   return `${a.cap}:${a.stem}:${a.pattern}:${a.color}`;
 }
 
 /**
- * Parse a stored avatar, returning null for anything unrecognised.
+ * Parse a stored avatar, returning null for anything unrecognized.
  *
  * Also returns null for the older three-part format, which described a different
  * set of shapes — those shrooms fall back to a derived avatar rather than to a
@@ -190,10 +190,10 @@ export function hasStem(): boolean {
 }
 
 /**
- * Text colour for a card in a given cap colour.
+ * Text color for a card in a given cap color.
  *
  * Cream and yellow caps need dark type. Computed from relative luminance rather
- * than listed, so adding a colour to the palette cannot silently produce a card
+ * than listed, so adding a color to the palette cannot silently produce a card
  * with white text on a pale background.
  */
 export function textOn(capHex: string): string {

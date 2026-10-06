@@ -132,7 +132,7 @@ export async function runInstruction(
       return {
         action: instructionCard.action,
         targetColumnIds: [],
-        error: 'cancelled',
+        error: 'canceled',
       };
     }
     console.error('Run instruction error:', error);

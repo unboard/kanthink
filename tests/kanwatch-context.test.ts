@@ -14,10 +14,10 @@ vi.mock('@/lib/api/permissions', () => ({ getUserChannels: vi.fn() }))
 import { KANWATCH_RULES } from '@/lib/kanwatch/context'
 
 describe('Kanwatch context rules', () => {
-  it('keeps it background: never opened with, recited or summarised unasked', () => {
+  it('keeps it background: never opened with, recited or summarized unasked', () => {
     expect(KANWATCH_RULES).toMatch(/DO NOT:/)
     expect(KANWATCH_RULES).toMatch(/Open a conversation or a reply with it/)
-    expect(KANWATCH_RULES).toMatch(/summarise their day unasked/)
+    expect(KANWATCH_RULES).toMatch(/summarize their day unasked/)
   })
 
   it('never judges how time was spent unless asked', () => {

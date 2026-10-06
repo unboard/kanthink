@@ -616,9 +616,9 @@ test('cancels an in-progress upload', async ({ page }) => {
   // Cancel the upload
   await page.getByRole('button', { name: 'Cancel upload' }).click();
 
-  // Verify upload was cancelled
+  // Verify upload was canceled
   await expect(page.getByRole('progressbar')).not.toBeVisible();
-  await expect(page.getByText(/cancelled|aborted/i)).toBeVisible();
+  await expect(page.getByText(/canceled|aborted/i)).toBeVisible();
 
   // Verify the file did not appear in the documents list
   await expect(page.getByRole('link', { name: 'large-file.bin' })).not.toBeVisible();
@@ -717,7 +717,7 @@ test('cancels an in-progress upload', async ({ page }) => {
   await page.getByRole('button', { name: 'Cancel upload' }).click();
 
   await expect(page.getByRole('progressbar')).not.toBeVisible();
-  await expect(page.getByText(/cancelled|aborted/i)).toBeVisible();
+  await expect(page.getByText(/canceled|aborted/i)).toBeVisible();
 });
 ```
 

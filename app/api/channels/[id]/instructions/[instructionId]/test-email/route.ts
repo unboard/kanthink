@@ -90,7 +90,7 @@ function sampleOutcome(instructionCard: InstructionCard) {
           headline: 'Sample report — this is a test',
           highlights: [
             'This is a test email, so these findings are made up',
-            'A real run would summarise what it actually found on your board',
+            'A real run would summarize what it actually found on your board',
           ],
           summary: 'Sent from the shroom editor to preview how your brief reads.',
         },

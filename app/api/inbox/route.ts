@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
 
     // The user's own note goes in its own thread message rather than being merged into
     // the link blurb — it's the one part of the card they actually wrote, and it should
-    // read that way in the thread and to any shroom summarising the card.
+    // read that way in the thread and to any shroom summarizing the card.
     const trimmedNote = typeof note === 'string' ? note.trim() : ''
 
     // Place the card according to the column's sort rule. This route writes the row

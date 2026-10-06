@@ -32,7 +32,7 @@ window.kanthinkPay.order({ item, quantity, details })
   // Starts Stripe checkout for this order. Call it from the buy button's click handler.
   // item:     string, required: exactly what is being bought, as the buyer would name it ("Pumpkin Boo rock").
   // quantity: number, optional, default 1.
-  // details:  optional object of short strings the owner needs to fulfil it ({ rockId: "r12", color: "orange" }).
+  // details:  optional object of short strings the owner needs to fulfill it ({ rockId: "r12", color: "orange" }).
   // The page navigates to checkout; when the buyer pays they come back to this same page.
 window.kanthinkPay.lastOrder   // set when the buyer has just returned from paying, otherwise null:
   // { id, number, item, quantity, amount: "$5.00", status: "paid", details, fulfilmentNote, preview }

@@ -6,9 +6,9 @@ import { normalizeStyle, styleForLook, type AppStyle } from './tokens'
 /**
  * Kan picks an app's style on its first build, so the owner never has to.
  *
- * A small, cheap call: the brief in, five catalogue ids and a reason out. If it
+ * A small, cheap call: the brief in, five catalog ids and a reason out. If it
  * fails for any reason, the keyword match below picks instead. A first build must
- * never wait on, or fail because of, its paint colour.
+ * never wait on, or fail because of, its paint color.
  */
 
 const PICK_MODEL: Record<PlaygroundProvider, { id: string; maxTokens: number }> = {
@@ -51,7 +51,7 @@ export function heuristicLook(text: string): string {
   return best
 }
 
-function catalogue(): string {
+function catalogPrompt(): string {
   return [
     'LOOKS (id: who it fits, and its default palette / fonts / corners / density):',
     ...LOOKS.map((l) => `- ${l.id}: ${l.fits} (${l.palette} / ${l.fonts} / ${l.radius} / ${l.density})`),
@@ -64,9 +64,9 @@ function catalogue(): string {
   ].join('\n')
 }
 
-const SYSTEM = `You art-direct small single-screen web apps. Choose a style for the app described, from the catalogue only.
+const SYSTEM = `You art-direct small single-screen web apps. Choose a style for the app described, from the catalog only.
 
-Start from the look whose audience fits best, and keep its defaults unless the brief gives a reason to change one: a stated colour or brand, a dark or light preference, an audience the default would suit poorly (for example older readers need airy density and a larger type). Games want the play area to dominate. Money and data apps want compact density and exact type. Don't pick dark for a business form unless the brief asks for it.
+Start from the look whose audience fits best, and keep its defaults unless the brief gives a reason to change one: a stated color or brand, a dark or light preference, an audience the default would suit poorly (for example older readers need airy density and a larger type). Games want the play area to dominate. Money and data apps want compact density and exact type. Don't pick dark for a business form unless the brief asks for it.
 
 "why" is one short sentence in plain words for the app's owner: what you picked and the reason.`
 
@@ -99,7 +99,7 @@ export async function pickStyle(opts: {
     const response = await runStructured({
       model: getPlaygroundModel(pick.id),
       apiKey: opts.apiKey,
-      systemInstruction: `${SYSTEM}\n\n${catalogue()}`,
+      systemInstruction: `${SYSTEM}\n\n${catalogPrompt()}`,
       userText: `THE APP:\n${opts.brief.slice(0, 6000)}`,
       images: [],
       schema: SCHEMA,

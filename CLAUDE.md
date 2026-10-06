@@ -45,7 +45,7 @@ Default column names live in `lib/constants.ts` (Inbox, Like, Dislike, This Week
 Kanthink is well past MVP. A rough map of the surfaces, so you don't rebuild something that ships:
 
 - **Board** — channels, folders, columns, cards, tasks, tags, search, bulk actions, list/focus views, card detail drawer with threads
-- **Shrooms** (`app/shrooms`, `lib/shrooms/*`) — the automation engine: triggers, scheduled + event runs, run history, graph view, summaries, learning from rejections. Arguably the centre of the product; nothing else here is as load-bearing.
+- **Shrooms** (`app/shrooms`, `lib/shrooms/*`) — the automation engine: triggers, scheduled + event runs, run history, graph view, summaries, learning from rejections. Arguably the center of the product; nothing else here is as load-bearing.
 - **Instruction cards** — per-channel reusable prompts, with guide/suggest/chat flows and learnings
 - **AI surfaces** — channel chat, card chat, operator chat, task chat, voice (live + transcribe + TTS), image generation
 - **Apps / playground** (`components/playground`, `app/api/playground/*`) — generates single-file React apps that hang off a card as artifacts, listed under its tasks on the Apps tab. Many per card; each row in `playground_apps` owns its own code, thread, model choice, design notes and share token, and publishes at `/play/{token}`. The source card seeds the **first** build only (its thread and tasks go in as the brief); every build after that reads the app's own thread plus the current code. Talking in that thread is ordinary chat with Kan and never touches the code — building is the explicit Update app action. Libraries resolve through `lib/playground/runtime.ts` — **every declaration must go through `resolveDeps`**, because resolved URLs are interpolated into the iframe's import map.
@@ -63,7 +63,7 @@ Kanthink is well past MVP. A rough map of the surfaces, so you don't rebuild som
 ## Testing
 
 `npm test` runs vitest (`tests/`). The suite is small but load-bearing — it guards schema
-migrations, product-update prompt rules, and a good chunk of shroom behaviour. Run it before
+migrations, product-update prompt rules, and a good chunk of shroom behavior. Run it before
 you deploy.
 
 ## Instruction Intelligence

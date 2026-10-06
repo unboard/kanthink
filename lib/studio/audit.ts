@@ -39,7 +39,7 @@ export function isPre2023Reddit(url: string): boolean {
 }
 
 /** One URL, compared without tracking noise. */
-export function normaliseUrl(url: string): string {
+export function normalizeUrl(url: string): string {
   try {
     const u = new URL(url)
     u.hash = ''
@@ -69,7 +69,7 @@ export function readSources(content: string, now: Date, citedElsewhere: Set<stri
     const url = line.match(URL_RE)?.[0]
     if (!url) continue
     if (PAID_LABEL.test(line.replace(/^[\s*\-•]+/, '').replace(/\*\*|__/g, ''))) continue
-    const key = normaliseUrl(url)
+    const key = normalizeUrl(url)
     if (seen.has(key)) continue
     seen.add(key)
     const date = statedDate(line) ?? pageDates.get(key) ?? null
@@ -234,7 +234,7 @@ export async function auditStudioSparks(studio: { channelId: string; sparksColum
     const elsewhere = new Set<string>()
     for (const other of all) {
       if (other.id === card.id) continue
-      for (const u of contentOf(other).match(URL_RE) ?? []) elsewhere.add(normaliseUrl(u))
+      for (const u of contentOf(other).match(URL_RE) ?? []) elsewhere.add(normalizeUrl(u))
     }
 
     // Undated sources get their date from the page, where the page publishes one.
@@ -243,7 +243,7 @@ export async function auditStudioSparks(studio: { channelId: string; sparksColum
       const url = line.match(URL_RE)?.[0]
       if (!url || statedDate(line) || isPre2023Reddit(url)) continue
       const d = await fetchPageDate(url)
-      if (d) pageDates.set(normaliseUrl(url), d)
+      if (d) pageDates.set(normalizeUrl(url), d)
     }
 
     const verdict = sparkVerdict(readSources(content, now, elsewhere, pageDates), content)

@@ -13,7 +13,7 @@ import {
  * dropped the AI calls an app was built around, nothing noticed, and its owner spent
  * three messages working out why it had stopped doing the thing it was for.
  *
- * The rule these hold the line on is that a removal is authorised in exactly one
+ * The rule these hold the line on is that a removal is authorized in exactly one
  * place — preflight, before any code is written — and cannot be manufactured
  * downstream. Two earlier versions each let it be manufactured a different way, so
  * the cases below are mostly about what must NOT count as permission.
@@ -56,7 +56,7 @@ describe('what the code can do', () => {
   })
 })
 
-describe('an unauthorised removal is a regression', () => {
+describe('an unauthorized removal is a regression', () => {
   it('catches AI generation going missing', () => {
     const loss = capabilitiesLost(WITH_AI, AI_REMOVED)
     expect(loss?.ids).toEqual(['ai.generate'])
@@ -75,7 +75,7 @@ describe('an unauthorised removal is a regression', () => {
  * The three cases named in review. Each is a real thing a user might write, and none
  * of them is permission to delete the AI calls.
  */
-describe('what must never authorise a removal', () => {
+describe('what must never authorize a removal', () => {
   it('an instruction to KEEP the feature', () => {
     // The case that broke the quote-matching version: this sentence contains the
     // substring "remove the AI-generated comments".
@@ -91,7 +91,7 @@ describe('what must never authorise a removal', () => {
   })
 
   it('a removal request the user later reversed', () => {
-    // A reversal is preflight's judgement to make, and it makes it by returning an
+    // A reversal is preflight's judgment to make, and it makes it by returning an
     // empty list. Nothing downstream can reinstate the earlier request, because
     // nothing downstream reads the transcript.
     const preflightSaidNothingToRemove: string[] = []
@@ -105,13 +105,13 @@ describe('what must never authorise a removal', () => {
     expect(capabilitiesLost(WITH_AI, AI_REMOVED, [])?.ids).toEqual(['ai.generate'])
   })
 
-  it('an empty or whitespace authorisation', () => {
+  it('an empty or whitespace authorization', () => {
     expect(coversCapability('', cap('ai.generate'))).toBe(false)
     expect(coversCapability('   ', cap('ai.generate'))).toBe(false)
   })
 })
 
-describe('an authorised removal is allowed, and only that one', () => {
+describe('an authorized removal is allowed, and only that one', () => {
   it('lets the named capability go', () => {
     expect(capabilitiesLost(WITH_AI, AI_REMOVED, ['AI text generation'])).toBeNull()
   })
@@ -120,7 +120,7 @@ describe('an authorised removal is allowed, and only that one', () => {
     expect(capabilitiesLost(WITH_AI, AI_REMOVED, ['ai.generate'])).toBeNull()
   })
 
-  it('does not let one authorised removal license another', () => {
+  it('does not let one authorized removal license another', () => {
     const bothGone = AI_REMOVED.replace('window.kanthinkUpload(f)', 'null')
     const loss = capabilitiesLost(WITH_AI, bothGone, ['image upload'])
     expect(loss?.ids).toEqual(['ai.generate'])
@@ -139,13 +139,13 @@ describe('the contract does not shrink by accident', () => {
     '- Metrics tick up on reveal',
   ].join('\n')
 
-  it('puts back a line dropped without authorisation', () => {
+  it('puts back a line dropped without authorization', () => {
     const result = reconcileRequirements(CONTRACT, WITHOUT_FLOP_RULE, [])
     expect(result.restored).toHaveLength(1)
     expect(result.requirements).toMatch(/flop gets silence/)
   })
 
-  it('does not accept a KEEP instruction as authorisation', () => {
+  it('does not accept a KEEP instruction as authorization', () => {
     const result = reconcileRequirements(CONTRACT, WITHOUT_FLOP_RULE, [
       'do not remove the rule that a flop gets silence or criticism',
     ])
@@ -154,7 +154,7 @@ describe('the contract does not shrink by accident', () => {
     expect(result.requirements).toMatch(/flop gets silence/)
   })
 
-  it('lets a line go when preflight authorised that line', () => {
+  it('lets a line go when preflight authorized that line', () => {
     const result = reconcileRequirements(CONTRACT, WITHOUT_FLOP_RULE, [
       'a flop gets silence or criticism, never praise',
     ])
@@ -189,6 +189,6 @@ describe('what the model is told to fix', () => {
   it('names the features and denies it any say in the matter', () => {
     const instruction = preservationInstruction(capabilitiesLost(WITH_AI, AI_REMOVED)!)
     expect(instruction).toMatch(/AI text generation/)
-    expect(instruction).toMatch(/cannot authorise a removal yourself/i)
+    expect(instruction).toMatch(/cannot authorize a removal yourself/i)
   })
 })

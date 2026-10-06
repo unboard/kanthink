@@ -78,7 +78,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 
     await db.update(playgroundApps).set({
       paywallEnabled: true,
-      // Only ever the two, and an unrecognised value falls to the stricter one —
+      // Only ever the two, and an unrecognized value falls to the stricter one —
       // a typo here would otherwise quietly publish a paid app to everybody.
       paywallMode: mode,
       priceAmount: price.amount,

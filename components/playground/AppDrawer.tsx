@@ -171,25 +171,25 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, init
   // --- Load ----------------------------------------------------------------
   useEffect(() => {
     if (!isOpen) return;
-    let cancelled = false;
+    let canceled = false;
     setLoading(true);
     (async () => {
       try {
         const res = await fetch(`/api/playground/apps/${appId}`, { cache: 'no-store' });
         const data = await res.json();
-        if (cancelled) return;
+        if (canceled) return;
         if (!res.ok || !data?.app) {
           setError(data?.error || 'Could not load this app');
           return;
         }
         setApp(data.app);
       } catch {
-        if (!cancelled) setError('Could not load this app');
+        if (!canceled) setError('Could not load this app');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!canceled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, [appId, isOpen]);
 
   const messages = useMemo(

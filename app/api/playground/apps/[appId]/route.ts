@@ -127,7 +127,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       updates.listedInDirectory = body.listedInDirectory
     }
     if (body.style !== undefined) {
-      // Validated into known catalogue ids and a safe logo URL: the style is
+      // Validated into known catalog ids and a safe logo URL: the style is
       // interpolated into the app's page. Anything changed here is the owner's
       // choice, so Kan's reason for its own pick no longer applies.
       const style = normalizeStyle(body.style)

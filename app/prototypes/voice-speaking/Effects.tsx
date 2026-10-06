@@ -43,7 +43,7 @@ export function AuroraCurrent({ active }: EffectProps) {
 
 /**
  * 1. Spore surge — no overlay at all. The spores themselves brighten and lift,
- *    so speech reads as the field coming alive rather than as a colour wash.
+ *    so speech reads as the field coming alive rather than as a color wash.
  */
 export function SporeSurge({ active }: EffectProps) {
   return (
@@ -81,7 +81,7 @@ export function SporeSurge({ active }: EffectProps) {
 }
 
 /**
- * 2. Sonar rings — soft rings leaving the centre in time with speech. Reads
+ * 2. Sonar rings — soft rings leaving the center in time with speech. Reads
  *    unmistakably as emission: something is being sent out from Kan.
  */
 export function SonarRings({ active }: EffectProps) {
@@ -212,8 +212,8 @@ export function CanopyRays({ active }: EffectProps) {
 
 /* ── Batch two ───────────────────────────────────────────────────
    The first batch mostly added something on top of the spores. These try other
-   relationships: connecting them, recolouring the whole scene, moving them as a
-   body, or leaving the centre alone entirely. */
+   relationships: connecting them, recoloring the whole scene, moving them as a
+   body, or leaving the center alone entirely. */
 
 /**
  * 6. Mycelial threads — light branching between spores, the same idea as the
@@ -306,7 +306,7 @@ export function WarmShift({ active }: EffectProps) {
 }
 
 /**
- * 9. Vortex — faint arms turning slowly about the centre, so the whole field
+ * 9. Vortex — faint arms turning slowly about the center, so the whole field
  *    reads as circulating. Motion rather than brightness, which stays legible
  *    over a long call because there is no repeating flash to catch the eye.
  */
@@ -391,7 +391,7 @@ export const EFFECTS_V1: EffectOption[] = [
   {
     id: 'sonar',
     name: 'Sonar rings',
-    note: 'Soft rings leaving the centre. Unmistakably emission — something is being sent out from Kan. The most legible at a glance, and the most repetitive over a long call.',
+    note: 'Soft rings leaving the center. Unmistakably emission — something is being sent out from Kan. The most legible at a glance, and the most repetitive over a long call.',
     Component: SonarRings,
   },
   {
@@ -436,7 +436,7 @@ export const EFFECTS_V2: EffectOption[] = [
   {
     id: 'vortex',
     name: 'Vortex',
-    note: 'Faint arms turning slowly about the centre, so the field reads as circulating. Motion rather than brightness, which holds up over a long call because there is no repeating flash to catch the eye.',
+    note: 'Faint arms turning slowly about the center, so the field reads as circulating. Motion rather than brightness, which holds up over a long call because there is no repeating flash to catch the eye.',
     Component: Vortex,
   },
   {

@@ -1,9 +1,9 @@
 /**
- * Just enough colour science to build a palette that reads.
+ * Just enough color science to build a palette that reads.
  *
  * Contrast is WCAG 2 relative luminance, the check every accessibility tool
  * reports against. Palettes are built in OKLCH, which keeps lightness
- * perceptually even, so a brand colour can be lightened or darkened until text
+ * perceptually even, so a brand color can be lightened or darkened until text
  * on it passes without its hue drifting. No dependencies: the conversions are a
  * few dozen lines, and this module also runs in the browser.
  */
@@ -26,7 +26,7 @@ export function isHex(value: unknown): value is string {
   return typeof value === 'string' && hexToRgb(value) !== null
 }
 
-/** "R G B", the form Tailwind's `<alpha-value>` colours read from a CSS variable. */
+/** "R G B", the form Tailwind's `<alpha-value>` colors read from a CSS variable. */
 export function rgbChannels(hex: string): string {
   const rgb = hexToRgb(hex) ?? [0, 0, 0]
   return rgb.join(' ')
@@ -88,7 +88,7 @@ function oklchToLinear({ l, c, h }: Oklch): [number, number, number] {
   ]
 }
 
-/** Back to hex, pulling chroma in until the colour fits in sRGB rather than clipping it. */
+/** Back to hex, pulling chroma in until the color fits in sRGB rather than clipping it. */
 export function oklchToHex(color: Oklch): string {
   let c = color.c
   for (let i = 0; i < 24; i++) {
@@ -101,14 +101,14 @@ export function oklchToHex(color: Oklch): string {
   return rgbToHex(oklchToLinear({ ...color, c: 0 }).map((v) => linearToChannel(Math.min(1, Math.max(0, v)))) as Rgb)
 }
 
-/** Whichever of two text colours reads better on `bg`. */
+/** Whichever of two text colors reads better on `bg`. */
 export function bestText(bg: string, light = '#FFFFFF', dark = '#14151A'): string {
   return contrast(bg, light) >= contrast(bg, dark) ? light : dark
 }
 
 /**
- * Move a colour's lightness, keeping its hue, until `text` on it reaches `min`.
- * Used to make a brand colour safe as a button without making it a different colour.
+ * Move a color's lightness, keeping its hue, until `text` on it reaches `min`.
+ * Used to make a brand color safe as a button without making it a different color.
  */
 export function fitForText(color: string, text: string, min = 4.5): string {
   if (contrast(color, text) >= min) return color
@@ -124,8 +124,8 @@ export function fitForText(color: string, text: string, min = 4.5): string {
 }
 
 /**
- * The colours an image is mostly made of, most prominent first, skipping
- * near-white, near-black and greys — a logo's background is rarely its brand.
+ * The colors an image is mostly made of, most prominent first, skipping
+ * near-white, near-black and grays — a logo's background is rarely its brand.
  * Takes raw RGBA pixels so it works on a canvas in the browser and in tests.
  */
 export function dominantColors(pixels: Uint8ClampedArray | number[], max = 3): string[] {
@@ -148,7 +148,7 @@ export function dominantColors(pixels: Uint8ClampedArray | number[], max = 3): s
   const picked: string[] = []
   for (const { hex } of ranked) {
     const o = hexToOklch(hex)
-    // One entry per hue family: two shades of the same red are one brand colour.
+    // One entry per hue family: two shades of the same red are one brand color.
     if (picked.some((p) => Math.abs(hexToOklch(p).h - o.h) < 25)) continue
     picked.push(hex)
     if (picked.length >= max) break

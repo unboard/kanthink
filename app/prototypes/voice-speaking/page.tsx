@@ -129,7 +129,7 @@ export default function VoiceSpeakingPrototype() {
           <div>
             {([
               ['Batch one', 'Kept as-is — still on the table.', EFFECTS_V1],
-              ['Batch two', 'Other relationships to the spores: connecting them, recolouring the whole scene, moving them as a body, or leaving the middle alone.', EFFECTS_V2],
+              ['Batch two', 'Other relationships to the spores: connecting them, recoloring the whole scene, moving them as a body, or leaving the middle alone.', EFFECTS_V2],
             ] as [string, string, EffectOption[]][]).map(([heading, sub, list], gi) => (
               <div key={heading} className={gi > 0 ? 'mt-8' : ''}>
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">{heading}</h2>

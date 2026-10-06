@@ -37,7 +37,7 @@ const SORTS: { key: SortKey; label: string }[] = [
 ];
 
 /**
- * Apps from the same card get a colour, not a container.
+ * Apps from the same card get a color, not a container.
  *
  * A card that produced four apps is a set, and the grid should say so — but pulling
  * those four out into their own panel breaks the one thing a grid is good at, which
@@ -114,17 +114,17 @@ export function AppDirectory() {
   // The public page link in the header. Cheap, and it is the one thing people
   // forget they have turned on.
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         const res = await fetch('/api/playground/profile', { cache: 'no-store' });
         const data = await res.json();
-        if (cancelled || !res.ok) return;
+        if (canceled || !res.ok) return;
         setProfileSlug(data.profile?.appPageSlug ?? null);
         setProfilePublic(!!data.profile?.appPagePublic);
       } catch { /* the header just shows less */ }
     })();
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, []);
 
   /** Fold a changed row back into the list without refetching the whole directory. */
@@ -457,7 +457,7 @@ function AppTile({
         {/* Sits above the hover overlay rather than yielding to it. Fading this out
             on hover put it out of reach of the cursor that was on its way to it —
             the one state where a button must not move is while you are clicking it.
-            It is nudged off centre so the Play/Edit bar has the bottom to itself. */}
+            It is nudged off center so the Play/Edit bar has the bottom to itself. */}
         {!app.thumbnailUrl && (
           <button
             onClick={onThumbnail}
@@ -508,9 +508,9 @@ function AppTile({
 /**
  * The tile before it has a picture.
  *
- * Deliberately not a grey box: a directory of grey boxes tells you nothing, and an
+ * Deliberately not a gray box: a directory of gray boxes tells you nothing, and an
  * app with no thumbnail is still an app you might be looking for. The initials give
- * every tile something to recognise from across the grid.
+ * every tile something to recognize from across the grid.
  */
 function PlaceholderArt({ pending, failed }: { pending: boolean; failed: boolean }) {
   return (

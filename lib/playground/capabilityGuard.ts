@@ -19,7 +19,7 @@
  * comments" contains "remove the AI comments", so an instruction to KEEP a feature
  * read as permission to delete it.
  *
- * Whether the user asked for something to go is a judgement about intent, and it is
+ * Whether the user asked for something to go is a judgment about intent, and it is
  * made once, up front, by the component whose whole job is reading the request. By
  * the time the guard runs it is settled: a list of names, scoped to this turn. The
  * generator cannot add to it, and nothing here re-derives it from text.
@@ -52,14 +52,14 @@ export const RUNTIME_CAPABILITIES: RuntimeCapability[] = [
  * A plain string, named as preflight named it — "AI text generation", "image
  * upload", or a requirement line quoted back.
  */
-export type AuthorisedRemoval = string
+export type AuthorizedRemoval = string
 
 /**
  * The exact names preflight must use when it authorises removing a runtime feature.
  *
  * A fixed vocabulary rather than free text, because the alternative is matching one
  * phrase against another and guessing whether they mean the same thing. They often
- * do not: preflight once authorised "AI-generated comments" for a capability called
+ * do not: preflight once authorized "AI-generated comments" for a capability called
  * "AI text generation", the names did not overlap, and a removal the user had asked
  * for in plain words was refused every time they tried it.
  *
@@ -76,22 +76,22 @@ export function capabilitiesIn(code: string): Set<string> {
   return found
 }
 
-const normalise = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim()
+const normalize = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim()
 
 /**
- * Does this authorisation cover this capability?
+ * Does this authorization cover this capability?
  *
  * Deliberately a name match against a decision already made, and nothing cleverer.
  * The earlier version searched the transcript for a quote, which answered the wrong
  * question: "do not remove the AI comments" contains "remove the AI comments", so a
  * instruction to KEEP a feature read as permission to delete it. Whether removal was
- * wanted is a judgement, it is made once in preflight, and by the time it gets here
+ * wanted is a judgment, it is made once in preflight, and by the time it gets here
  * it is settled.
  */
-export function coversCapability(authorised: AuthorisedRemoval, cap: RuntimeCapability): boolean {
-  const a = normalise(authorised)
+export function coversCapability(authorized: AuthorizedRemoval, cap: RuntimeCapability): boolean {
+  const a = normalize(authorized)
   if (a.length === 0) return false
-  return a === normalise(cap.label) || a === cap.id.toLowerCase()
+  return a === normalize(cap.label) || a === cap.id.toLowerCase()
 }
 export interface CapabilityLoss {
   ids: string[]
@@ -110,7 +110,7 @@ export interface CapabilityLoss {
 export function capabilitiesLost(
   before: string,
   after: string,
-  authorisedRemovals: AuthorisedRemoval[] = [],
+  authorisedRemovals: AuthorizedRemoval[] = [],
 ): CapabilityLoss | null {
   const had = capabilitiesIn(before)
   if (had.size === 0) return null
@@ -132,7 +132,7 @@ export function preservationInstruction(loss: CapabilityLoss): string {
     `${loss.labels.join(', ')}, and your version does not. The user did not ask for ` +
     `${loss.labels.length === 1 ? 'it' : 'them'} to be removed. Produce the file again with ` +
     `${loss.labels.length === 1 ? 'that feature' : 'those features'} still wired up exactly as ` +
-    `before, plus the change that was actually requested. You cannot authorise a removal ` +
+    `before, plus the change that was actually requested. You cannot authorize a removal ` +
     `yourself — if the user wants one, they will say so and it will be allowed before you ` +
     `are asked to build.`
   )
@@ -154,20 +154,20 @@ export interface RequirementReconciliation {
 }
 
 /**
- * Does an authorised removal name this requirement line?
+ * Does an authorized removal name this requirement line?
  *
  * Whole-line identity, not overlap. Overlap was the bug: "do not remove the rule
  * that a flop gets silence" CONTAINS "a flop gets silence", so a sentence insisting
- * a line stay read as authorisation to drop it — the same substring-for-intent
+ * a line stay read as authorization to drop it — the same substring-for-intent
  * mistake the capability side had, surviving one layer down.
  *
  * Preflight is asked to quote the line it is dropping, so identity is what it should
  * produce. Anything less exact preserves the line, which is the direction to be
  * wrong in.
  */
-function coversRequirement(authorised: AuthorisedRemoval, line: string): boolean {
-  const strip = (t: string) => normalise(t).replace(/^[-*•]\s*/, '').replace(/[.]+$/, '')
-  const a = strip(authorised)
+function coversRequirement(authorized: AuthorizedRemoval, line: string): boolean {
+  const strip = (t: string) => normalize(t).replace(/^[-*•]\s*/, '').replace(/[.]+$/, '')
+  const a = strip(authorized)
   const body = strip(line)
   return a.length >= 8 && a === body
 }
@@ -186,7 +186,7 @@ function coversRequirement(authorised: AuthorisedRemoval, line: string): boolean
 export function reconcileRequirements(
   previous: string | null | undefined,
   proposed: string | null | undefined,
-  authorisedRemovals: AuthorisedRemoval[] = [],
+  authorisedRemovals: AuthorizedRemoval[] = [],
 ): RequirementReconciliation {
   const had = requirementLines(previous)
   const now = requirementLines(proposed)
@@ -195,12 +195,12 @@ export function reconcileRequirements(
   if (now.length === 0) return { requirements: (previous ?? '').trim(), restored: [] }
   if (had.length === 0) return { requirements: now.join('\n'), restored: [] }
 
-  const kept = new Set(now.map(normalise))
+  const kept = new Set(now.map(normalize))
   const restored = had.filter((line) => {
-    if (kept.has(normalise(line))) return false
+    if (kept.has(normalize(line))) return false
     // Reworded rather than removed: if most of the line survives somewhere, let it be.
-    const body = normalise(line).replace(/^[-*•]\s*/, '')
-    if (body.length >= 20 && now.some((n) => normalise(n).includes(body.slice(0, 20)))) return false
+    const body = normalize(line).replace(/^[-*•]\s*/, '')
+    if (body.length >= 20 && now.some((n) => normalize(n).includes(body.slice(0, 20)))) return false
     return !authorisedRemovals.some((a) => coversRequirement(a, line))
   })
 

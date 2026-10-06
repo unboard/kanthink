@@ -227,7 +227,7 @@ export function analyzeInstructionEffectiveness(
  * This used to also scan card text for themes and tell the model to prefer or avoid
  * them. It did that with a hardcoded list of cuisines and ingredients left over from
  * an early recipe board, so on every other kind of channel it either said nothing or
- * said something made up. Deleted rather than generalised — the rejection loop already
+ * said something made up. Deleted rather than generalized — the rejection loop already
  * carries this weight, and carries it in the user's own words.
  */
 export function buildBoardContext(
@@ -538,7 +538,7 @@ const REJECTION_REASON_LABELS: Record<string, string> = {
  * against the shroom that produced the card, and the "What we've learned" panel reads
  * them that way — but this used to take the channel's most recent rejections regardless
  * of origin, so a busy channel let one shroom's rejections push another's out entirely,
- * and every shroom was taught lessons meant for its neighbours. What a shroom reads here
+ * and every shroom was taught lessons meant for its neighbors. What a shroom reads here
  * is now what its own panel shows.
  *
  * Rejections from other shrooms in the channel are still worth something — they are the

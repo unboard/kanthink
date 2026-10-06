@@ -2215,7 +2215,7 @@ export class Game {
   private pumpSwing() {
     if (this.riding?.kind !== 'swing') return;
     const s = this.riding.swing;
-    // pump in whichever direction you're already travelling
+    // pump in whichever direction you're already traveling
     const dir = s.vel >= 0 ? 1 : -1;
     s.vel += dir * 0.55;
     s.vel = Math.max(-3.2, Math.min(3.2, s.vel));
@@ -2584,7 +2584,7 @@ export class Game {
     this.hopPre = { x: this.px, z: this.pz };
     const midX = (this.px + r.x) / 2;
     const midZ = (this.pz + r.z) / 2;
-    // court runs toward the island centre (keeps it on land)
+    // court runs toward the island center (keeps it on land)
     let dirX = -midX, dirZ = -midZ;
     const dl = Math.hypot(dirX, dirZ) || 1;
     dirX /= dl; dirZ /= dl;
@@ -4357,7 +4357,7 @@ export class Game {
     // hopscotch: steep top-down view; the counted row rides above the UI panel
     if (this.duel?.kind === 'hopscotch' && this.hop) {
       const o = this.hop.origin;
-      // cat rides screen-centre so the counted row (just ahead) clears the UI panel
+      // cat rides screen-center so the counted row (just ahead) clears the UI panel
       const cx = this.px - o.dirX * 2.9;
       const cz = this.pz - o.dirZ * 2.9;
       const cy = this.hop.courtY + 11.5;

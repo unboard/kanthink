@@ -359,8 +359,8 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
       `}
     >
       {/* Which stop this column is on the hovered shroom's route. A number rather
-          than a colour, because a shroom can visit several columns in order and a
-          colour cannot say which came first. */}
+          than a color, because a shroom can visit several columns in order and a
+          color cannot say which came first. */}
       {trailStop !== undefined && (
         <span className="pointer-events-none absolute -top-2 left-2 z-10 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-violet-500 px-1.5 font-mono text-[10px] font-bold text-white shadow">
           {trailStop}

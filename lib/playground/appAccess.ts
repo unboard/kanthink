@@ -9,7 +9,7 @@ import crypto from 'crypto';
  * lives in a cookie on the app's own page and in the link the receipt email carries.
  *
  * Token format mirrors lib/playground/appToken: `<appUserId>.<hmac>`. Stateless, no
- * expiry in the token itself — expiry is a column, so a refund or a cancelled
+ * expiry in the token itself — expiry is a column, so a refund or a canceled
  * subscription takes effect on the next page load rather than whenever a JWT
  * happens to lapse.
  */
@@ -187,7 +187,7 @@ export interface PaywallState {
   stripePriceId?: string | null;
 }
 
-/** Null and anything unrecognised mean 'app' — the safest of the three. */
+/** Null and anything unrecognized mean 'app' — the safest of the three. */
 export function paywallMode(app: PaywallState): PaywallMode {
   return app.paywallMode === 'action' ? 'action' : app.paywallMode === 'order' ? 'order' : 'app';
 }

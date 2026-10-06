@@ -9,7 +9,7 @@ import { rgbChannels, contrast } from './style/color'
  * What the page around a published app looks like: its footer, the conversation
  * with the maker, the sign-in sheet.
  *
- * All three take their colours from the app's own style, so a dark arcade game gets
+ * All three take their colors from the app's own style, so a dark arcade game gets
  * a dark footer and a newsprint puzzle gets a paper one, and nothing looks bolted
  * on. An app without a style gets a quiet neutral that sits under anything.
  *
@@ -45,7 +45,7 @@ export function hostTheme(style: AppStyle | null | undefined): HostTheme {
     const t = tokenColors(resolved.palette)
     return { mode: resolved.palette.mode, ...t }
   })() : NEUTRAL
-  // The bar under the app is its card colour where that stands apart from the page,
+  // The bar under the app is its card color where that stands apart from the page,
   // otherwise the muted fill, so the footer reads as part of the app, not of the page.
   const bar = contrast(c.card, c.background) > 1.05 ? c.card : c.muted
   return {

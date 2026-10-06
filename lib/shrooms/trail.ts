@@ -7,7 +7,7 @@ import type { Channel, InstructionCard, InstructionAction } from '@/lib/types';
  * is a lie for a good share of real shrooms: `steps` means a shroom can touch three
  * columns in sequence, `target: board` means all of them, `report` writes to an email
  * and no column at all, and a `generate` that isn't auto-approved lands in the review
- * bucket rather than on the column. Two colours cannot say any of that.
+ * bucket rather than on the column. Two colors cannot say any of that.
  *
  * So a trail is an ordered list of stops, and destinations that aren't columns get to
  * be stops too. A map you cannot trust is worse than no map — that is the lesson of
@@ -36,7 +36,7 @@ export interface ShroomTrail {
   /** True when it reads the whole board, which is drawn as one wash rather than lit columns. */
   readsEverything: boolean;
   /**
-   * The shroom's behaviour depends on a judgement it makes per card, so the trail is
+   * The shroom's behavior depends on a judgment it makes per card, so the trail is
    * what it *may* do rather than what it will. Stated in words, because a drawing
    * cannot show a conditional.
    */
@@ -132,7 +132,7 @@ export function buildShroomTrail(
   }
 
   // Context: what it reads but does not change. Columns it acts on are already
-  // accounted for by a stop, so listing them again would double-colour them.
+  // accounted for by a stop, so listing them again would double-color them.
   const actedOn = new Set(stops.map((s) => s.columnId).filter((id): id is string => !!id));
   const context = shroom.contextColumns;
   const readsEverything = !context || context.type === 'all';

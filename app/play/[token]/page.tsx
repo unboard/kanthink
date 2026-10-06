@@ -147,7 +147,7 @@ export default async function PlayPage({ params, searchParams }: PageProps) {
   // payment, not the inbox, and someone's saved work is inbox-private.
   const member = resolved && canReadPrivateData(resolved.session) ? resolved.member : null;
   const saved = member ? await readAll(app.id, member.id, 'live') : [];
-  // The bar, chat and sign-in take the app's own colours, and the chat shows its maker.
+  // The bar, chat and sign-in take the app's own colors, and the chat shows its maker.
   const chrome = await hostChrome(app, release.style);
   const srcDoc = buildPlaygroundDoc(release.code, {
     title,

@@ -5,7 +5,7 @@
  * Plain fetch rather than the SDK, to keep dependencies down; the wire format is
  * small and documented at https://docs.typesafe.ai/api.
  *
- * Every call here is an optimisation layered over a path that already works, so
+ * Every call here is an optimization layered over a path that already works, so
  * failure is quiet: a timeout, a 429 or a missing key returns null and the caller
  * falls back to what it did before Jev existed.
  */

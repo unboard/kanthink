@@ -15,9 +15,9 @@ export type JobStatus =
   | 'locked' //            the deadline passed (or the printer locked it): this is what prints
   | 'in_production'
   | 'complete'
-  | 'cancelled'
+  | 'canceled'
 
-export const JOB_STATUSES: JobStatus[] = ['received', 'awaiting_approval', 'changes_requested', 'approved', 'locked', 'in_production', 'complete', 'cancelled']
+export const JOB_STATUSES: JobStatus[] = ['received', 'awaiting_approval', 'changes_requested', 'approved', 'locked', 'in_production', 'complete', 'canceled']
 
 /** Statuses a deadline can still close. After these, the job has moved on. */
 export const OPEN_STATUSES: JobStatus[] = ['received', 'awaiting_approval', 'changes_requested', 'approved']
@@ -30,7 +30,7 @@ export const STATUS_LABEL: Record<JobStatus, string> = {
   locked: 'Final — going to print',
   in_production: 'Printing',
   complete: 'Complete',
-  cancelled: 'Cancelled',
+  canceled: 'Canceled',
 }
 
 /** The same, from the printer's side of the page. */
@@ -42,7 +42,7 @@ export const PRINTER_STATUS_LABEL: Record<JobStatus, string> = {
   locked: 'Locked',
   in_production: 'In production',
   complete: 'Complete',
-  cancelled: 'Cancelled',
+  canceled: 'Canceled',
 }
 
 export interface Customer {
@@ -89,7 +89,7 @@ export interface ArtworkFile {
 export const REVISE_CHANGES: Record<'fit' | 'fix' | 'sharpen' | 'marks', ProofChange> = {
   marks: { kind: 'content', text: 'Made the changes you marked' },
   fit: { kind: 'fit', text: 'Fit your design to this product’s size, keeping every word and detail' },
-  fix: { kind: 'safe', text: 'Moved anything too close to the edge inside the safe area, and ran colour to the edges' },
+  fix: { kind: 'safe', text: 'Moved anything too close to the edge inside the safe area, and ran color to the edges' },
   sharpen: { kind: 'resolution', text: 'Sharpened the artwork so it prints crisp' },
 }
 

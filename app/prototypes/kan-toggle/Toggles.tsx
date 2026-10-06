@@ -12,7 +12,7 @@ import { AskKanSwitch } from '@/components/board/AskKanSwitch';
  *
  * One constraint shapes all five: the mascot is a single monochrome path, so
  * he can't blink or change expression. The personality has to come from motion,
- * scale, colour and what happens *around* him.
+ * scale, color and what happens *around* him.
  */
 
 export interface ToggleProps {

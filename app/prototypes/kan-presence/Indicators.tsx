@@ -134,7 +134,7 @@ export function LiquidCap() {
   );
 }
 
-/** Rings pulse outward from beneath, like something signalling underground. */
+/** Rings pulse outward from beneath, like something signaling underground. */
 export function SoilRipple() {
   return (
     <div className="flex items-center gap-2.5">

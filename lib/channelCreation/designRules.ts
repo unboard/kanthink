@@ -10,7 +10,7 @@
 export const CHANNEL_DESIGN_RULES = `A channel has:
 - **name**: short and specific.
 - **description**: one sentence on what the channel is for.
-- **instructions**: the standing brief Kan reads on every run in this channel. Carry every requirement the person stated — the fields each card must cover, rubrics and grades, audiences, constraints, sources, tone. Keep their structure: if they listed things, list them. Length follows what they gave you: a sentence when they said little, a full rubric when they gave one. Never summarise a requirement away. Write it to Kan doing the work, not as notes on how to set the channel up.
+- **instructions**: the standing brief Kan reads on every run in this channel. Carry every requirement the person stated — the fields each card must cover, rubrics and grades, audiences, constraints, sources, tone. Keep their structure: if they listed things, list them. Length follows what they gave you: a sentence when they said little, a full rubric when they gave one. Never summarize a requirement away. Write it to Kan doing the work, not as notes on how to set the channel up.
 - **columns**: 3–6, named in the person's domain (1–3 words each). Each has a one-line "description" of what belongs in it. The first is where new cards land and has "isAiTarget": true.
 - **shrooms**: the automations, usually 1–3. Each has:
   - "title": a short verb phrase

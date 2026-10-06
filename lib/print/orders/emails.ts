@@ -2,7 +2,7 @@ import type { JobRow, OrderRow } from './server'
 import type { Customer, PartnerBrand } from './types'
 
 /**
- * The emails around an order, in the printer's name and colour.
+ * The emails around an order, in the printer's name and color.
  *
  * Plain, table-free HTML: one message, one button, the deadline stated. These go to
  * people who just bought something and want to know it's on track.

@@ -97,18 +97,18 @@ A shroom has these fields:
 - Not: "Write a PRD for all the cards in Ideas."
 The one exception is a **move** destination ("...then move it to This Week"), which has nowhere else to live — the destination is chosen per card, so it is criteria, not configuration.
 
-**Capabilities are permissions, not requests.** Set one true when the user's intent could reasonably call for it, false when it plainly could not. A shroom that summarises a card doesn't need properties. A shroom told to "break this down into steps I can work through" needs tasks — even though the word "task" never appears. Judge the intent, not the vocabulary. When unsure leave it true: an unused capability costs nothing, a missing one silently prevents the thing the user asked for.
+**Capabilities are permissions, not requests.** Set one true when the user's intent could reasonably call for it, false when it plainly could not. A shroom that summarizes a card doesn't need properties. A shroom told to "break this down into steps I can work through" needs tasks — even though the word "task" never appears. Judge the intent, not the vocabulary. When unsure leave it true: an unused capability costs nothing, a missing one silently prevents the thing the user asked for.
 
 **Input requirements** stop a shroom being run where it cannot make sense. Set minCards to:
 - **1** for most modify/move shrooms — they transform whatever card they are handed.
-- **2 or more** when the instructions compare, rank, or choose between cards ("pick the best", "find duplicates", "summarise the week"). One card cannot be ranked against itself.
+- **2 or more** when the instructions compare, rank, or choose between cards ("pick the best", "find duplicates", "summarize the week"). One card cannot be ranked against itself.
 - **0** for generate shrooms — they write new cards and need no input; a card handed to one is just a seed.
 Write reason as a plain sentence the person will read when a run is refused: "Picks the strongest of several ideas, so it needs at least two cards to compare."
 
 **The email field.** Shrooms can email the owner once a run finishes. This is off unless the user asks for it. What you save is a *brief* — a plain-English description of what the email should say and how — not a fixed template. Kan writes the actual email at send time from the brief plus what the run really did, so a quiet run and a busy one produce different emails.
 
 - **enabled**: true when the user wants the email
-- **brief**: what to cover, tone, length, what to lead with. Write this in the user's own terms, specific enough to act on. Good: "Summarise the new cards in one short paragraph, then bullet anything tagged urgent. Casual tone, under 150 words." Weak: "Send me a summary."
+- **brief**: what to cover, tone, length, what to lead with. Write this in the user's own terms, specific enough to act on. Good: "Summarize the new cards in one short paragraph, then bullet anything tagged urgent. Casual tone, under 150 words." Weak: "Send me a summary."
 - **subjectHint**: optional steer on the subject line, only if the user expressed one
 - **skipWhenNothingHappened**: default true — don't email when the run changed nothing. Set false only if the user explicitly wants an email every time.
 
@@ -136,7 +136,7 @@ For a simple single-action shroom:
 
 For a shroom that emails the owner after it runs:
 [SHROOM_CONFIG]
-{"title": "Morning digest", "instructions": "Summarise what has come in and flag anything that looks urgent or blocked.", "action": "report", "targetColumnName": "Ideas", "capabilities": {"tasks": false, "tags": false, "properties": false, "assignment": false}, "inputRequirements": {"minCards": 2, "reason": "Writes one digest across a set of cards, so a single card gives it nothing to summarise."}, "email": {"enabled": true, "brief": "Short morning summary of what landed overnight. Open with a one-line headline, then up to five bullets. Lead with anything urgent. Casual tone, under 150 words.", "skipWhenNothingHappened": true}}
+{"title": "Morning digest", "instructions": "Summarize what has come in and flag anything that looks urgent or blocked.", "action": "report", "targetColumnName": "Ideas", "capabilities": {"tasks": false, "tags": false, "properties": false, "assignment": false}, "inputRequirements": {"minCards": 2, "reason": "Writes one digest across a set of cards, so a single card gives it nothing to summarize."}, "email": {"enabled": true, "brief": "Short morning summary of what landed overnight. Open with a one-line headline, then up to five bullets. Lead with anything urgent. Casual tone, under 150 words.", "skipWhenNothingHappened": true}}
 [/SHROOM_CONFIG]
 
 For a multi-step shroom (e.g., review cards in Ideas, add a note, then move the best to This Week):
@@ -155,7 +155,7 @@ Important guidelines:
 - Always include capabilities and inputRequirements
 - For "generate" action, always include cardCount (default 5)
 - For "modify", "move" or "report" actions, don't include cardCount
-- For "report", targetColumnName is the column to read and summarise
+- For "report", targetColumnName is the column to read and summarize
 - Only include the "email" object when the user actually wants an email — omit it otherwise
 - Don't duplicate existing shrooms — suggest variations if similar ones exist
 - Keep instructions specific and actionable
@@ -260,7 +260,7 @@ function resolveColumnName(proposed: unknown, columnNames: string[]): string {
   const exact = columnNames.find((name) => name.toLowerCase() === wanted);
   if (exact) return exact;
 
-  // A near miss ("Ideas" for "Raw Ideas") is worth honouring; a miss is not worth
+  // A near miss ("Ideas" for "Raw Ideas") is worth honoring; a miss is not worth
   // guessing at, so it falls back to the first column rather than inventing one.
   const partial = columnNames.find(
     (name) => name.toLowerCase().includes(wanted) || wanted.includes(name.toLowerCase())

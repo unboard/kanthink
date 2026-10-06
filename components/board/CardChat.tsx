@@ -116,10 +116,10 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
   // Fetch channel members for @mentions
   const sessionUserId = session?.user?.id as string | undefined;
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     fetchShares(card.channelId)
       .then((data) => {
-        if (cancelled) return;
+        if (canceled) return;
         const memberList: ChannelMember[] = [];
         if (data.owner) {
           memberList.push({
@@ -143,7 +143,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
       })
       .catch(() => {
         // On failure, fall back to just the current session user
-        if (!cancelled && session?.user?.id) {
+        if (!canceled && session?.user?.id) {
           setMembers([{
             id: session.user.id as string,
             name: (session.user.name ?? session.user.email ?? 'You') as string,
@@ -152,7 +152,7 @@ export function CardChat({ card, channelName, channelDescription, tagDefinitions
           }]);
         }
       });
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.channelId, sessionUserId]);
 

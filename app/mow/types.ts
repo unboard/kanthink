@@ -1,5 +1,5 @@
 // Clean Cut — shared types.
-// World units are metres. X runs along the street, Z toward it (front of the house is +Z), Y is up.
+// World units are meters. X runs along the street, Z toward it (front of the house is +Z), Y is up.
 
 export type Vec2 = [number, number];
 export type Poly = Vec2[];
@@ -33,7 +33,7 @@ export interface HouseDef {
   porch?: boolean;
   roof?: 'gable' | 'hip' | 'flat';
   kind?: 'home' | 'office' | 'church';
-  decor?: boolean; // neighbour house — no collision detail needed beyond the box
+  decor?: boolean; // neighbor house — no collision detail needed beyond the box
 }
 
 export type PropKind =

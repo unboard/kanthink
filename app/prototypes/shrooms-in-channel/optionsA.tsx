@@ -177,7 +177,7 @@ export function CapRow({ shrooms, runningId, onRun }: OptionProps) {
 /* ────────────────────────────────────────────────────────────────────────────
    3 · Column Watchers
    No global chrome at all. A shroom appears above the column it acts on, because
-   that is the only place its behaviour is legible: you learn what Inbox Analyzer
+   that is the only place its behavior is legible: you learn what Inbox Analyzer
    does by seeing it sitting on Inbox.
    ──────────────────────────────────────────────────────────────────────────── */
 

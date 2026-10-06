@@ -875,7 +875,7 @@ function AvatarLibrary() {
       </div>
 
       <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600">
-        Colour
+        Color
       </p>
       <div className="mb-4 flex flex-wrap gap-1.5">
         {PALETTE.map((c) => (
@@ -931,9 +931,9 @@ function AvatarLibrary() {
         ))}
       </div>
       <p className="mt-2 max-w-[68ch] text-[11.5px] leading-relaxed text-neutral-600">
-        Shape carries further than colour at 16px, so shape should be the thing Kan varies first
+        Shape carries further than color at 16px, so shape should be the thing Kan varies first
         when he assigns one — and two shrooms in the same channel should never get the same cap,
-        whatever their colour.
+        whatever their color.
       </p>
     </div>
   );
@@ -956,13 +956,13 @@ const PITCH: Record<string, string> = {
   phone:
     'No hover on a phone, so the trail arrives as a sheet instead. Tapping a cap opens the same ordered stops as text with Run inside — which also stops a thumb firing a build shroom by accident. Twelve shrooms in the row; it scrolls, the height does not.',
   trail:
-    'Two colours could not tell the truth about every shroom, so the trail is ordered stops instead: numbered badges in step order, blue for columns read only for context, and off-board destinations — an email, the review queue — given their own stop rather than vanishing. Hover each of the five; Triage is two stops, Monday Digest never touches the board, Idea Farm lands in review rather than on the column.',
+    'Two colors could not tell the truth about every shroom, so the trail is ordered stops instead: numbered badges in step order, blue for columns read only for context, and off-board destinations — an email, the review queue — given their own stop rather than vanishing. Hover each of the five; Triage is two stops, Monday Digest never touches the board, Idea Farm lands in review rather than on the column.',
   states:
     'The cap holds its own job. Queued, running with a progress bar on the button itself, finished with a count that fades back to rest, failed, and skipped — which is the state nothing currently shows and the one that explains a shroom that looks broken but is only capped.',
   drawer:
     'One place for all of them, channel first and global below, each row saying what it does and when in plain words rather than making you open it to find out. Clicking a cap in the row opens this already scrolled to that shroom, so a click is never just a directory. New shrooms start where they are good — describing one to Kan.',
   avatars:
-    'Twelve caps, twelve colours, four markings. Enough for every shroom in a channel to be a different silhouette, which is what matters at row size — pick one and watch it at 14, 16, 22 and 32px.',
+    'Twelve caps, twelve colors, four markings. Enough for every shroom in a channel to be a different silhouette, which is what matters at row size — pick one and watch it at 14, 16, 22 and 32px.',
 };
 
 export default function ShroomRowPage() {

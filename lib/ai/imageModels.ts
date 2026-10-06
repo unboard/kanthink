@@ -116,7 +116,7 @@ export function isImageBackground(value: unknown): value is ImageBackground {
   return typeof value === 'string' && (IMAGE_BACKGROUNDS as string[]).includes(value)
 }
 
-/** The catalogue entry for a stored choice, or null when it isn't one we offer. */
+/** The catalog entry for a stored choice, or null when it isn't one we offer. */
 export function findImageModel(value: string | null | undefined): ImageModel | null {
   if (!value) return null
   const direct = IMAGE_MODELS.find((m) => m.id === value)
@@ -142,7 +142,7 @@ export function availableImageModels(providers: ImageProvider[]): ImageModel[] {
  *
  *   1. the model this one request named, if there is a key for its provider
  *   2. the account default, if there is a key for its provider
- *   3. the first model in the catalogue there *is* a key for
+ *   3. the first model in the catalog there *is* a key for
  *
  * Transparency overrides all three. A request for a cut-out that lands on a model
  * with no `background` parameter would come back opaque, and an opaque sticker is
@@ -151,7 +151,7 @@ export function availableImageModels(providers: ImageProvider[]): ImageModel[] {
  */
 export interface ImageModelResolution {
   model: ImageModel
-  /** True when a named preference could not be honoured. */
+  /** True when a named preference could not be honored. */
   fellBack: boolean
   /** Why it moved, for saying so in a log or an error. */
   reason?: 'no-key' | 'needs-transparency'

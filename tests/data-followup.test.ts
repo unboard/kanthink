@@ -115,7 +115,7 @@ describe('date windows from natural language', () => {
   // 2026-07-31 was a Friday.
   const now = new Date('2026-07-31T15:00:00-05:00');
 
-  it('honours "today" instead of falling back to the 7-day default', () => {
+  it('honors "today" instead of falling back to the 7-day default', () => {
     expect(parseDateWindow('How many print order events did we have today', now))
       .toEqual({ fromDate: '2026-07-31', toDate: '2026-07-31' });
   });
@@ -154,7 +154,7 @@ describe('a stalled Mixpanel never hangs the caller', () => {
     vi.resetModules();
   });
 
-  /** Stand-in for a Mixpanel request that never answers, but honours abort. */
+  /** Stand-in for a Mixpanel request that never answers, but honors abort. */
   function hangingFetch() {
     return vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => {

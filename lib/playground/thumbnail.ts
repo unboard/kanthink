@@ -83,6 +83,6 @@ export function buildThumbnailPrompt(ctx: ThumbnailContext): string {
   return [
     `App thumbnail for ${subject}.`,
     style,
-    'Square, centred, reads clearly at 200px. Absolutely no text or lettering anywhere in the image.',
+    'Square, centered, reads clearly at 200px. Absolutely no text or lettering anywhere in the image.',
   ].join('\n\n');
 }

@@ -72,7 +72,7 @@ jobs:
 
       - name: Upload HTML report
         uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !canceled() }}
         with:
           name: playwright-report
           path: playwright-report/
@@ -149,14 +149,14 @@ jobs:
 
       - name: Upload blob report
         uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !canceled() }}
         with:
           name: blob-report-${{ strategy.job-index }}
           path: blob-report/
           retention-days: 1
 
   merge-reports:
-    if: ${{ !cancelled() }}
+    if: ${{ !canceled() }}
     needs: test
     runs-on: ubuntu-latest
 
@@ -272,7 +272,7 @@ jobs:
         run: ${{ inputs.test-command }} --shard=${{ matrix.shard }}
 
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !canceled() }}
         with:
           name: playwright-report-${{ strategy.job-index }}
           path: playwright-report/
@@ -335,7 +335,7 @@ jobs:
           HOME: /root  # required when running as root in container
 
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !canceled() }}
         with:
           name: playwright-report
           path: playwright-report/
@@ -397,7 +397,7 @@ jobs:
         run: npx playwright test --grep @smoke
 
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !canceled() }}
         with:
           name: staging-report
           path: playwright-report/
@@ -444,7 +444,7 @@ jobs:
         run: npx playwright test --grep @regression
 
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !canceled() }}
         with:
           name: nightly-report-${{ github.run_number }}
           path: playwright-report/
@@ -521,7 +521,7 @@ steps:
 | `fail-fast: true` with sharding | One shard failure cancels others; you lose their results | Set `fail-fast: false` to collect all failures |
 | Installing browsers without caching | 60-90 seconds wasted every run | Cache `~/.cache/ms-playwright` keyed on lockfile hash |
 | `timeout-minutes` not set | Stuck jobs run for 6 hours (GitHub default) | Set explicit timeout: 20-30 minutes |
-| Uploading artifacts only on failure | No report when tests pass; can't verify results | Use `if: ${{ !cancelled() }}` to always upload |
+| Uploading artifacts only on failure | No report when tests pass; can't verify results | Use `if: ${{ !canceled() }}` to always upload |
 | Hardcoding secrets in workflow files | Security breach | Use GitHub Secrets and Environments |
 | Running all browsers on every PR | 3x CI cost for marginal benefit | Chromium on PR; cross-browser on main merge |
 | `actions/upload-artifact` with no retention | Default 90-day retention fills storage | Set `retention-days: 7-14` for reports |

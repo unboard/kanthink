@@ -22,7 +22,7 @@ interface ShroomRowProps {
 }
 
 /**
- * The shrooms of a channel, above the board, as cards in their own colours.
+ * The shrooms of a channel, above the board, as cards in their own colors.
  *
  * A bar like this existed once and was removed for taking too much height — but the
  * reason it grew was that it *wrapped*, so more shrooms meant more rows. This one

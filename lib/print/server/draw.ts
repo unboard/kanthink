@@ -8,7 +8,7 @@ import { forModel } from './images'
 /**
  * One drawing call to an image model, whichever provider it is.
  *
- * Images go in labelled ("Image 1", "Image 2"…) so a prompt can refer to them by
+ * Images go in labeled ("Image 1", "Image 2"…) so a prompt can refer to them by
  * position; the label sits immediately before each picture rather than in a list at
  * the end, which is what keeps Gemini from mixing up the logo and the inspiration.
  */

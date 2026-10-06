@@ -37,7 +37,7 @@ describe('model escalation ladder', () => {
       'gemini-3.6-flash',
       'gemini-3.7-flash',
       'gemini-3.5-flash-lite',
-      'something-unrecognised',
+      'something-unrecognized',
     ]) {
       let current = createGoogleProvider('test-key', start);
       let hops = 0;

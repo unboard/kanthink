@@ -364,7 +364,7 @@ export function PrinterDetails({ view, ops, busy }: { view: PageView; ops: Print
               Mark complete
             </button>
           )}
-          {['locked', 'cancelled'].includes(s) && (
+          {['locked', 'canceled'].includes(s) && (
             <button type="button" className="pbtn sm" disabled={!!busy} onClick={() => ops.setStatus('received')}>
               Reopen for changes
             </button>
@@ -372,8 +372,8 @@ export function PrinterDetails({ view, ops, busy }: { view: PageView; ops: Print
           <a href={`/api/v1/print/jobs/${job.id}/print-file`} className="pbtn sm">
             Download print file
           </a>
-          {!['complete', 'cancelled'].includes(s) && (
-            <button type="button" className="pbtn sm ghost" disabled={!!busy} onClick={() => ops.setStatus('cancelled')}>
+          {!['complete', 'canceled'].includes(s) && (
+            <button type="button" className="pbtn sm ghost" disabled={!!busy} onClick={() => ops.setStatus('canceled')}>
               Cancel this item
             </button>
           )}

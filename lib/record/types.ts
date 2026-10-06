@@ -93,7 +93,7 @@ export interface SubtitleStyle {
 export interface ScreenView {
   /** 1 = the whole surface. Above that, zooms in around the focal point. */
   zoom: number;
-  /** Focal point in source-normalized coordinates (0..1), centred in frame. */
+  /** Focal point in source-normalized coordinates (0..1), centered in frame. */
   x: number;
   y: number;
   /** 'cover' crops to fill the frame; 'contain' fits it whole and leaves bars. */

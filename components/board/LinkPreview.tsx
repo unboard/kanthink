@@ -25,23 +25,23 @@ export function LinkPreview({ url, onDismiss }: { url: string; onDismiss?: () =>
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
 
     async function fetchPreview() {
       try {
         const res = await fetch(`/api/og-preview?url=${encodeURIComponent(url)}`);
         if (!res.ok) throw new Error();
         const ogData = await res.json();
-        if (!cancelled) setData(ogData);
+        if (!canceled) setData(ogData);
       } catch {
-        if (!cancelled) setError(true);
+        if (!canceled) setError(true);
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!canceled) setIsLoading(false);
       }
     }
 
     fetchPreview();
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, [url]);
 
   if (isLoading) {

@@ -77,10 +77,10 @@ describe('refunding one purchase leaves the other alone', () => {
   })
 })
 
-describe('cancelling one subscription leaves the other alone', () => {
+describe('canceling one subscription leaves the other alone', () => {
   const afterCancel = [canceled(FIRST), active(SECOND)]
 
-  it('ends only the cancelled purchase', () => {
+  it('ends only the canceled purchase', () => {
     expect(hasActiveAccess(paidApp, sessionFor(FIRST), afterCancel)).toBe(false)
     expect(hasActiveAccess(paidApp, sessionFor(SECOND), afterCancel)).toBe(true)
   })

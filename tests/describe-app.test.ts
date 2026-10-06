@@ -109,7 +109,7 @@ describe('the app thread, which was unreachable', () => {
     msg('note', 'Still shows the old copy on mobile, worth a look'),
   ]
 
-  it('reads the app thread back, labelled by who said what', () => {
+  it('reads the app thread back, labeled by who said what', () => {
     const out = describeApp(app({ messages: thread as never }), null, { full: true })
     expect(out).toContain('App thread')
     expect(out).toContain('[User asked] Make the download button actually work please')

@@ -161,7 +161,7 @@ export function HomeOrbs({ onOpenCard }: { onOpenCard: (cardId: string) => void 
         )}
         {toFulfilIds.length > 0 && (
           <Orb
-            label="Orders to fulfil"
+            label="Orders to fulfill"
             count={toFulfilIds.length}
             fresh={isFresh('orders', toFulfilIds)}
             onClick={() => openOrb('orders', toFulfilIds)}

@@ -27,7 +27,7 @@ function shroom(over: Partial<InstructionCard> = {}): InstructionCard {
 
 describe('capabilities are a stored decision, not a guess about the prose', () => {
   it('leaves an un-narrowed shroom unrestricted', () => {
-    // The old behaviour inferred these from keywords, so a shroom whose wording happened
+    // The old behavior inferred these from keywords, so a shroom whose wording happened
     // to omit "task" was told NOT to make tasks. Absent config must not narrow anything.
     expect(resolveCapabilities(shroom())).toEqual({
       tasks: true,
@@ -37,7 +37,7 @@ describe('capabilities are a stored decision, not a guess about the prose', () =
     })
   })
 
-  it('honours a narrowed ceiling exactly', () => {
+  it('honors a narrowed ceiling exactly', () => {
     const caps = { tasks: true, tags: false, properties: false, assignment: false }
     expect(resolveCapabilities(shroom({ capabilities: caps }))).toEqual(caps)
   })

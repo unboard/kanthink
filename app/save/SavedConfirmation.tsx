@@ -9,7 +9,7 @@
  * isn't decided yet.
  *
  * The columns are the channel's real columns in board order, so the miniature is
- * recognisably the board you'll open. Long names truncate rather than wrap: the
+ * recognizably the board you'll open. Long names truncate rather than wrap: the
  * label is orientation, and the full name is one tap away.
  */
 

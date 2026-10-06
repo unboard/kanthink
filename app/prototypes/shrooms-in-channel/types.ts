@@ -107,7 +107,7 @@ export const SHROOMS: DemoShroom[] = [
   {
     id: 'digest',
     title: 'Monday Digest',
-    blurb: 'Summarises what moved last week into one card, then emails it.',
+    blurb: 'Summarizes what moved last week into one card, then emails it.',
     action: 'report',
     state: 'scheduled',
     trigger: 'Mondays 07:00',

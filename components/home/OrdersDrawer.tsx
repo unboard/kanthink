@@ -40,7 +40,7 @@ export function OrdersDrawer({ isOpen, onClose, groups }: { isOpen: boolean; onC
         <div className="flex items-start justify-between gap-3 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
           <div>
             <h2 className="text-[15px] font-semibold text-neutral-900 dark:text-white">Orders</h2>
-            <p className="text-xs text-neutral-500">{waiting ? `${waiting} to fulfil` : 'All fulfilled'} · across your apps</p>
+            <p className="text-xs text-neutral-500">{waiting ? `${waiting} to fulfill` : 'All fulfilled'} · across your apps</p>
           </div>
           <button onClick={onClose} className="rounded-md p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200" aria-label="Close">
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -75,7 +75,7 @@ export function OrdersDrawer({ isOpen, onClose, groups }: { isOpen: boolean; onC
                         </span>
                         <span className="block truncate text-[11px] text-neutral-500">
                           {o.buyerName || o.buyerEmail}{o.buyerPhone ? ` · ${o.buyerPhone}` : ''} · {formatAppPrice(o.amount, o.currency, null)}
-                          {o.status === 'paid' ? ' · to fulfil' : ' · done'}
+                          {o.status === 'paid' ? ' · to fulfill' : ' · done'}
                         </span>
                       </span>
                     </Link>

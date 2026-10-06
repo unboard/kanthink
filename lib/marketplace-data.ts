@@ -1,6 +1,6 @@
 // Static seed data for the Kanthink Marketplace
 //
-// Channels only. The shroom catalogue was removed: a shroom is defined by its
+// Channels only. The shroom catalog was removed: a shroom is defined by its
 // instructions, capabilities and input requirements, and the templates here carried
 // none of that — they were prose blobs that pre-dated the model. Shrooms are built by
 // talking to Kan instead.

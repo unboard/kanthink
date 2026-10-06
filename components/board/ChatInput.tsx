@@ -266,18 +266,18 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
   // Asked for the first time the @ list opens, not on every card you look at.
   useEffect(() => {
     if (!mention.isActive || !channelId || connectedProviders !== null) return;
-    let cancelled = false;
+    let canceled = false;
     fetch(`/api/channels/${channelId}/data-sources`)
       .then((res) => (res.ok ? res.json() : { sources: [] }))
       .then((data) => {
-        if (cancelled) return;
+        if (canceled) return;
         const sources = (data.sources || []) as Array<{ provider: string }>;
         setConnectedProviders(sources.map((s) => s.provider));
       })
       .catch(() => {
-        if (!cancelled) setConnectedProviders([]);
+        if (!canceled) setConnectedProviders([]);
       });
-    return () => { cancelled = true; };
+    return () => { canceled = true; };
   }, [mention.isActive, channelId, connectedProviders]);
 
   const integrationMentions = useMemo<ChannelMember[]>(() => {
@@ -1140,7 +1140,7 @@ export function ChatInput({ ref, onSubmit, isLoading = false, placeholder, cardI
                   setImageSettings(s => ({
                     ...s,
                     model,
-                    // A model with no `background` parameter cannot honour a
+                    // A model with no `background` parameter cannot honor a
                     // transparent request, so switching to one drops the toggle
                     // rather than leaving a setting on that does nothing.
                     background:

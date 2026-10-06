@@ -72,7 +72,7 @@ describe('buildShroomTrail', () => {
     expect(t.stops.map((s) => s.columnName)).toEqual(['Inbox', 'Ready'])
   })
 
-  it('keeps steps in order, which two colours could not express', () => {
+  it('keeps steps in order, which two colors could not express', () => {
     const t = buildShroomTrail(
       make({
         steps: [
@@ -140,7 +140,7 @@ describe('buildShroomTrail', () => {
     expect(t.readsColumnIds).toEqual(['col-ready'])
   })
 
-  it('does not colour a column twice when it is both read and acted on', () => {
+  it('does not color a column twice when it is both read and acted on', () => {
     const t = buildShroomTrail(
       make({ contextColumns: { type: 'columns', columnIds: ['col-inbox', 'col-ready'] } }),
       channel

@@ -30,7 +30,7 @@ const SCHEMA = {
 
 const SYSTEM = `You are reading the full history of one app being built, to recover the requirements its owner has accumulated.
 
-Write down what the app MUST DO. A user repeating themselves is the strongest possible signal that a requirement was never satisfied — those lines matter most, and they belong in the list even if a later message claims they were handled. Include anything asked for and not withdrawn. Leave out design and styling unless the user was specific about it, leave out anything they explicitly cancelled, and leave out the model's own claims about what it built.
+Write down what the app MUST DO. A user repeating themselves is the strongest possible signal that a requirement was never satisfied — those lines matter most, and they belong in the list even if a later message claims they were handled. Include anything asked for and not withdrawn. Leave out design and styling unless the user was specific about it, leave out anything they explicitly canceled, and leave out the model's own claims about what it built.
 
 Be terse. One requirement per line, starting with "- ". No preamble.`
 

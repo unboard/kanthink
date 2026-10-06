@@ -53,7 +53,7 @@ export type PaymentReview = {
   questions?: string[]
   /** Problems Kan found reading the code that the deterministic check can't see. */
   issues?: PaymentFinding[]
-  /** Hash of the code that was read, so a review of an older build is recognisable. */
+  /** Hash of the code that was read, so a review of an older build is recognizable. */
   codeHash: string
   /** The settings the review was made against, as a fingerprint. */
   settingsKey: string

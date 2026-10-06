@@ -37,7 +37,7 @@ export function rotXZ(x: number, z: number, rot: number): Vec2 {
   return [x * c + z * s, -x * s + z * c];
 }
 
-/** Rotated rectangle centred at (cx,cz), rotated like a three.js object with rotation.y = rot. */
+/** Rotated rectangle centered at (cx,cz), rotated like a three.js object with rotation.y = rot. */
 export function obb(cx: number, cz: number, w: number, d: number, rot: number): Poly {
   const hw = w / 2;
   const hd = d / 2;

@@ -3,7 +3,7 @@
  *
  * Taken from a real session: the user attached three photos of a phonics worksheet,
  * pressed Update, and preflight replied "Could you please provide the image URLs or
- * detailed descriptions of the images you'd like to include?" — cancelling the build
+ * detailed descriptions of the images you'd like to include?" — canceling the build
  * while the builder was holding those exact photos.
  */
 import { describe, it, expect } from 'vitest'

@@ -16,7 +16,7 @@ import type { PaymentFinding, PaymentReview } from './types'
  * thing that should cost money, that the owner hasn't said where pickup happens.
  * It runs after a price is saved and after builds of apps that charge or look like
  * they sell. It's a small call on a cheap model, and stored with the code it read so
- * a stale one is recognisable.
+ * a stale one is recognizable.
  */
 
 const MODEL: Record<PlaygroundProvider, { id: string; maxTokens: number }> = {

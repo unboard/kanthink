@@ -133,7 +133,7 @@ export default function EmailBuilderPage() {
   useEffect(() => {
     if (!emailConfig) return
 
-    let cancelled = false
+    let canceled = false
     async function fetchPreview() {
       try {
         const res = await fetch('/api/admin/emails/preview', {
@@ -143,13 +143,13 @@ export default function EmailBuilderPage() {
         })
         if (!res.ok) return
         const html = await res.text()
-        if (!cancelled) setPreviewHtml(html)
+        if (!canceled) setPreviewHtml(html)
       } catch {
         // silently fail
       }
     }
     fetchPreview()
-    return () => { cancelled = true }
+    return () => { canceled = true }
   }, [emailConfig])
 
   const sendMessage = useCallback(async (userMessage: string, isInitialGreeting = false) => {
