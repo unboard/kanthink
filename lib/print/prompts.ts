@@ -336,6 +336,20 @@ export function buildAreaPrompt(spec: PrintSpec, instruction: string, refs: RefI
 }
 
 /**
+ * Erase what sits in the highlighted areas, leaving only background: the first half of
+ * an exact move. The element is cut from the original and set down elsewhere, so this
+ * prompt must not ask to keep any words — the words in those areas are the ones going.
+ */
+export function buildErasePrompt(spec: PrintSpec): string {
+  return [
+    `Image 1 is a finished print design (${describeProduct(spec)}). Image 2 is the same design with one or more areas highlighted in bright magenta.`,
+    'Remove the text, logos, icons and graphics that sit inside the highlighted areas, and fill those areas with the background exactly as it continues around them — same colors, gradients, textures, patterns and lines — as if nothing had ever been placed there.',
+    'Background shapes, color bands and photos that pass through an area continue through it unchanged. Add nothing: no new text, no new shapes, no magenta.',
+    'Everything outside the highlighted areas stays exactly as it is in Image 1. Return the whole design, the same size and framing as Image 1.',
+  ].join('\n')
+}
+
+/**
  * A change described by numbered marks on the page, each with its own note.
  *
  * The model sees the clean design and the same design with the marks drawn on, and a

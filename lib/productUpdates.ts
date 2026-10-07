@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'print-markup-exact-moves',
+    date: '2026-10-07',
+    kind: 'fix',
+    title: 'Marked-up moves in print now land where you point',
+    body: 'In the print studio, a mark that says to move something — “center this in the box”, an arrow pointing down, “centered between the line above and the bar” — now moves exactly that text to exactly that spot, without redrawing the rest of the design. Other marks on the page are still handled as before.',
+  },
+  {
     id: 'print-orders-proof-pages',
     date: '2026-10-06',
     kind: 'capability',

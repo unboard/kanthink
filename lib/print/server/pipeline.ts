@@ -16,6 +16,7 @@ import {
   printedWords,
   type RefImage,
   buildMarkupPrompt,
+  buildErasePrompt,
 } from '../prompts'
 import { markupSvg, type Mark } from '../markup'
 import { bleedSize, centerCrop, effectiveDpi, planFrame, sheetRatio, type Frame } from '../spec'
@@ -47,6 +48,8 @@ import {
   storeImage,
 } from './images'
 import { locateElements, writeCopy } from './understand'
+import { eraseMask, liftAndPlace, planMoves } from './move'
+import { resolveMove, type ResolvedMove } from '../move'
 
 /**
  * The print studio's render pipeline.
@@ -57,6 +60,7 @@ import { locateElements, writeCopy } from './understand'
  *   retext   new words, same design
  *   fix      the preflight's issues, as instructions
  *   upscale  same design, redrawn at print resolution
+ *   markup   numbered marks; pure moves are done exactly (move.ts), the rest by the model
  *
  * Every mode returns a new version; nothing is overwritten. The caller (the studio)
  * owns the design's page list and decides which version is current.
@@ -262,7 +266,7 @@ export async function render(req: RenderRequest): Promise<RenderResult> {
   try {
     const result = mode === 'create'
       ? await create(req, keys, model, apiKey, quality, kit)
-      : await edit(req, model, apiKey, quality, kit)
+      : await edit(req, keys, model, apiKey, quality, kit)
     await recordPrintUsage(userId, 'print-image').catch(() => {})
     return result
   } catch (err) {
@@ -317,6 +321,7 @@ async function create(
 
 async function edit(
   req: RenderRequest,
+  keys: ProviderKeys,
   model: PrintModel,
   apiKey: string,
   quality: RenderQuality,
@@ -332,8 +337,33 @@ async function edit(
   if (mode === 'retext' && !req.copy) throw new RenderError('No new words to set.')
   if (mode === 'fix' && !req.issues?.length) throw new RenderError('Nothing to fix.')
 
-  const raw = await fetchOwnImage(source.rawUrl)
+  let raw = await fetchOwnImage(source.rawUrl)
   const rawDims = await dimensions(raw)
+
+  // Marks that only ask to move something are done by measurement, not by asking the
+  // model to redraw the page with it somewhere else. Whatever else the marks ask for
+  // then goes to the model as usual, on the moved page.
+  let marks = req.marks ?? []
+  let moveCents = 0
+  if (mode === 'markup') {
+    const moved = await moveByMarks(req, keys, model, apiKey, quality, raw, rawDims, instruction).catch((err) => {
+      console.error('[print] exact move failed, using the model:', err instanceof Error ? err.message : err)
+      return null
+    })
+    if (moved) {
+      raw = moved.raw
+      marks = moved.rest
+      moveCents = moved.cents
+      if (!marks.length && !instruction) {
+        const stored = await keep(userId, design, raw, { enforceBleed: false })
+        return {
+          cents: moveCents,
+          version: { id: nanoid(10), ...stored, model: model.id, mode, copy: source.copy, costCents: moveCents, at: Math.floor(Date.now() / 1000) },
+        }
+      }
+    }
+  }
+
   const prep = await prepareEdit(raw, model.provider, mode === 'upscale' ? 'print' : quality, mode === 'upscale')
 
   // The geometry the prompt states must describe the frame the model sees: the sheet
@@ -384,8 +414,8 @@ async function edit(
     prompt = buildAreaPrompt(spec, instruction, refs, keepWords)
   } else if (mode === 'markup') {
     // The same frame the model edits, with the marks drawn where they sit on the page.
-    images.push({ data: await markedUp(prep.input, frame, req.marks!) })
-    prompt = buildMarkupPrompt(spec, frame, req.marks!, instruction, [{ role: 'current', url: '' }, { role: 'marked', url: '' }, ...extras], keepWords)
+    images.push({ data: await markedUp(prep.input, frame, marks) })
+    prompt = buildMarkupPrompt(spec, frame, marks, instruction, [{ role: 'current', url: '' }, { role: 'marked', url: '' }, ...extras], keepWords)
   } else if (mode === 'edit') {
     prompt = buildEditPrompt(spec, frame, instruction, [{ role: 'current', url: '' }, ...extras], keepWords)
   } else if (mode === 'retext') {
@@ -406,7 +436,7 @@ async function edit(
   if (mode === 'area' && maskRaw) restored = await compositeArea(raw, restored, maskRaw)
 
   const stored = await keep(userId, design, restored, { enforceBleed: mode !== 'area' })
-  const cents = drawn.cents ?? model.cents(prep.frame, drawQuality)
+  const cents = (drawn.cents ?? model.cents(prep.frame, drawQuality)) + moveCents
   const copy = mode === 'retext' ? req.copy : source.copy
   return {
     cents,
@@ -420,6 +450,63 @@ async function edit(
       costCents: cents,
       at: Math.floor(Date.now() / 1000),
     },
+  }
+}
+
+/**
+ * Do the marks that ask only to move something, exactly.
+ *
+ * A planner reads the marks against the elements the preflight found and says which
+ * are pure moves and where each group goes; the destination is computed, not drawn.
+ * One area edit erases the groups (the model paints only background), and the groups
+ * are cut from the original by difference matte and set down at their destinations.
+ * Null when nothing is a pure move or a step can't be done, and the model does it all.
+ */
+async function moveByMarks(
+  req: RenderRequest,
+  keys: ProviderKeys,
+  model: PrintModel,
+  apiKey: string,
+  quality: RenderQuality,
+  raw: Buffer,
+  rawDims: { width: number; height: number },
+  instruction: string,
+): Promise<{ raw: Buffer; rest: Mark[]; cents: number } | null> {
+  const google = keys.google?.apiKey
+  const marks = req.marks ?? []
+  if (!google || !marks.length) return null
+  const spec = req.design.spec
+  const page = (await cropToSheet(raw, spec)).buffer
+  let elements = req.source?.check?.elements ?? []
+  if (!elements.length) {
+    const jpeg = await sharp(page).resize({ width: 1400, height: 1400, fit: 'inside' }).jpeg({ quality: 88 }).toBuffer()
+    elements = (await locateElements(req.userId, keys, jpeg)) ?? []
+  }
+  if (!elements.length) return null
+
+  const plans = await planMoves(google, page, spec, elements, marks, instruction)
+  const moves = (plans ?? []).map((p) => resolveMove(p, elements, marks)).filter((m): m is ResolvedMove => !!m)
+  if (!moves.length) return null
+  console.log('[print] exact moves:', JSON.stringify(moves))
+
+  const maskRaw = await maskInRawFrame(await eraseMask(spec, moves.map((m) => m.from)), rawDims, spec)
+  const prep = await prepareEdit(raw, model.provider, quality)
+  const padded = await padMaskLike(maskRaw, prep)
+  const drawn = await draw({
+    model,
+    apiKey,
+    prompt: buildErasePrompt(spec),
+    images: [{ data: prep.input }, { data: await markedImage(prep.input, padded) }],
+    frame: prep.frame,
+    quality,
+    openaiMask: model.provider === 'openai' ? await transparentWhere(padded) : undefined,
+  })
+  const clean = await compositeArea(raw, await restoreEdit(drawn.image, prep, rawDims), maskRaw)
+  const done = new Set(moves.flatMap((m) => m.marks))
+  return {
+    raw: await liftAndPlace(raw, clean, spec, moves),
+    rest: marks.filter((m) => !done.has(m.n)),
+    cents: drawn.cents ?? model.cents(prep.frame, quality),
   }
 }
 
