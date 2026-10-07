@@ -60,7 +60,7 @@ export interface ResolvedKeys {
  * they are Kanthink's keys, and quota is the thing that meters them. A user's own
  * key is never metered, which is the whole point of bringing one.
  */
-export async function resolveProviderKeys(userId: string): Promise<ResolvedKeys> {
+export async function resolveProviderKeys(userId: string, opts: { unmetered?: boolean } = {}): Promise<ResolvedKeys> {
   // Agent seats borrow the parent's keys at read time rather than holding copies,
   // so rotating a key is still a single edit in one place.
   const billingUserId = await resolveBillingUserId(userId)
@@ -113,7 +113,8 @@ export async function resolveProviderKeys(userId: string): Promise<ResolvedKeys>
   // key for every provider they can reach is never metered — and asking anyway
   // would put a usage query in front of every AI call for no reason.
   if (wouldAddShared) {
-    const usage = await checkUsageLimit(userId)
+    // An admin can exempt specific work (an account's print renders) from the meter.
+    const usage = opts.unmetered ? { allowed: true as const, message: undefined } : await checkUsageLimit(userId)
     if (!usage.allowed) {
       return { keys, error, quotaExhausted: true, quotaMessage: usage.message }
     }

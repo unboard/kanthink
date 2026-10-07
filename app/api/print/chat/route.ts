@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Type, type Schema } from '@google/genai'
-import { resolveProviderKeys } from '@/lib/ai/keys'
+import { printProviderKeys, recordPrintUsage } from '@/lib/print/server/meter'
 import { getLLMClientForUser } from '@/lib/ai/llm'
-import { recordUsage } from '@/lib/usage'
 import { CHAT_ACTIONS, chatSystemPrompt, chatUserPrompt, cleanChatReply, summarizeDesign, type ChatTurn } from '@/lib/print/chat'
 import { geminiJson, parseLooseJson } from '@/lib/print/server/understand'
 import { getBrand, getDesign, printUser } from '@/lib/print/server/store'
@@ -78,7 +77,7 @@ export async function POST(request: Request) {
   const user = chatUserPrompt(summary, turns)
 
   try {
-    const { keys } = await resolveProviderKeys(userId)
+    const { keys } = await printProviderKeys(userId)
     let raw: unknown = null
     if (keys.google) {
       raw = await geminiJson<unknown>(keys.google.apiKey, [{ text: `${system}\n\n${user}` }], REPLY_SCHEMA)
@@ -98,7 +97,7 @@ export async function POST(request: Request) {
     if (!reply.reply && !reply.actions.length) {
       return NextResponse.json({ reply: 'Sorry — I lost my train of thought. Could you say that again?', actions: [], suggestions: [] })
     }
-    await recordUsage(userId, 'print-chat').catch(() => {})
+    await recordPrintUsage(userId, 'print-chat').catch(() => {})
     return NextResponse.json(reply)
   } catch (err) {
     console.error('[print] chat failed:', err)

@@ -1,7 +1,7 @@
 import sharp from 'sharp'
 import { nanoid } from 'nanoid'
-import { resolveProviderKeys, type ProviderKeys } from '@/lib/ai/keys'
-import { recordUsage } from '@/lib/usage'
+import type { ProviderKeys } from '@/lib/ai/keys'
+import { printProviderKeys, recordPrintUsage } from './meter'
 import { DEFAULT_PRINT_MODEL, PRINT_MODELS, findPrintModel, type PrintModel } from '../models'
 import { checkPlacement, checkSpelling, detectFrame, detectWhiteBorders, distanceField, rasterSampler, samplerFor, type FrameBands } from '../preflight'
 import {
@@ -102,7 +102,7 @@ export function pickModel(modelId: string | undefined, keys: ProviderKeys): Prin
 }
 
 async function keysFor(userId: string): Promise<ProviderKeys> {
-  const { keys, error, quotaExhausted, quotaMessage } = await resolveProviderKeys(userId)
+  const { keys, error, quotaExhausted, quotaMessage } = await printProviderKeys(userId)
   if (error) throw new RenderError(error, 400)
   if (!keys.google && !keys.openai) {
     throw new RenderError(
@@ -263,7 +263,7 @@ export async function render(req: RenderRequest): Promise<RenderResult> {
     const result = mode === 'create'
       ? await create(req, keys, model, apiKey, quality, kit)
       : await edit(req, model, apiKey, quality, kit)
-    await recordUsage(userId, 'print-image').catch(() => {})
+    await recordPrintUsage(userId, 'print-image').catch(() => {})
     return result
   } catch (err) {
     if (err instanceof RenderError) throw err

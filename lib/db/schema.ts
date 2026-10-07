@@ -1731,6 +1731,9 @@ export const printPartners = sqliteTable('print_partners', {
   webhookUrl: text('webhook_url'),
   webhookSecret: text('webhook_secret'),
   approvalHours: integer('approval_hours'),
+  // Set by an admin only: this account's print work isn't counted against, or held
+  // back by, the monthly AI allowance. Never writable through the API.
+  unmetered: integer('unmetered').default(0),
   createdAt: integer('created_at'),
   updatedAt: integer('updated_at'),
 })

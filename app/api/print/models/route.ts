@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { resolveProviderKeys } from '@/lib/ai/keys'
+import { printProviderKeys } from '@/lib/print/server/meter'
 import { PRINT_MODELS } from '@/lib/print/models'
 import { printUser } from '@/lib/print/server/store'
 
@@ -8,7 +8,7 @@ import { printUser } from '@/lib/print/server/store'
 export async function GET() {
   const userId = await printUser()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { keys } = await resolveProviderKeys(userId)
+  const { keys } = await printProviderKeys(userId)
   return NextResponse.json({
     models: PRINT_MODELS.map((m) => ({ id: m.id, label: m.label, blurb: m.blurb, provider: m.provider, available: !!keys[m.provider] })),
   })
