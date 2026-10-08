@@ -268,6 +268,18 @@ describe('prompts', () => {
     expect(fix).toContain('Moving and resizing elements to fix them is expected')
   })
 
+  it('never asks an edit of a die-cut piece to draw the hole back in', () => {
+    // A fix on a door hanger whose black hole had been removed painted it back, because
+    // the edit inherited the create prompt's "the black circle is the hole" wording.
+    const frame = planFrame(doorHanger, 'openai', 'print')
+    const fix = buildFixPrompt(doorHanger, frame, [{ id: 'a', kind: 'safe', severity: 'error', message: 'JUNK REMOVAL is too close.' }])
+    expect(fix).not.toMatch(/black circle|plain black/i)
+    expect(fix).toContain('Do not draw the hole')
+    expect(fix).toContain('doorknob hole')
+    // Creating still works from the guide image, hole and all.
+    expect(printRules(doorHanger, frame, true).join('\n')).toContain('black circle')
+  })
+
   it('gives small pieces small word budgets', () => {
     expect(wordBudget(catalogProduct('business-card')!.spec)).toBeLessThan(wordBudget(flyer))
   })

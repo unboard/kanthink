@@ -56,9 +56,9 @@ export function printRules(spec: PrintSpec, frame: Frame, hasCanvas: boolean): s
   const lines: string[] = []
   const g = spec.guide
 
-  if (g) {
+  if (g && hasCanvas) {
     lines.push(
-      `${hasCanvas ? 'Image 1' : 'The canvas'} is the die-cut guide for this piece: the WHITE shape is the finished piece, and everything BLACK is cut away and thrown out.`,
+      'Image 1 is the die-cut guide for this piece: the WHITE shape is the finished piece, and everything BLACK is cut away and thrown out.',
       'Design the piece to fill the white shape completely, and let its background color, photo or pattern continue a little past the white shape’s edge into the black — that overlap is the bleed that keeps the cut edge clean.',
       'Leave the rest of the black area plain black. Do not draw the outline of the shape, a border along it, or any cut line.',
       'Keep every word, logo, phone number and face well inside the white shape: at least ' +
@@ -71,6 +71,27 @@ export function printRules(spec: PrintSpec, frame: Frame, hasCanvas: boolean): s
     }
     if (g.kind === 'circle') {
       lines.push('The piece is round. Compose for a circle: centered, with nothing important near the curve.')
+    }
+  } else if (g) {
+    // Editing a finished die-cut piece: no guide image is sent, so the cut is described
+    // in words. Telling the model about a "black circle" here made it paint one back in
+    // after the person had removed it — the die cuts the hole; the artwork never needs it.
+    lines.push(
+      'The image is the whole printed sheet, which a die then cuts to its shape.',
+      'Keep every word, logo, phone number and face well inside the piece: at least ' +
+        `${Math.max(m.left, m.right)}% of the image width away from its left and right edges.`,
+    )
+    if (g.kind === 'doorhanger') {
+      const b = bleedSize(spec)
+      const holeY = Math.round((frame.sheet.y + ((spec.bleedIn + g.holeCenterFromTopIn) / b.h) * frame.sheet.h) * 100)
+      const holeW = Math.round(((g.holeDiameterIn / b.w) * frame.sheet.w) * 100)
+      lines.push(
+        `The doorknob hole is cut out by the die, centered across the piece about ${holeY}% of the image height from the top, roughly ${holeW}% of the image width across. Keep words and logos clear of that spot.`,
+        'Do not draw the hole, a circle, the die line or any black cut-away area. Whatever Image 1 shows at the hole’s spot, keep as it is — do not add a hole that isn’t there.',
+      )
+    }
+    if (g.kind === 'circle') {
+      lines.push('The piece is round. Keep everything important well away from the curve.')
     }
   } else {
     lines.push(
