@@ -31,6 +31,8 @@ interface SheetProps {
   imageWidth?: number
   /** Drawn over everything, sized to the sheet: the markup layer. */
   overlay?: React.ReactNode
+  /** Names of the panels between the folds, shown with the guides. */
+  panels?: string[] | null
 }
 
 /** Seconds since a render began, ticking. */
@@ -104,7 +106,7 @@ function useRasterGuide(spec: PrintSpec): string | null {
 }
 
 export const Sheet = forwardRef<SheetHandle, SheetProps>(function Sheet(
-  { spec, version, width, showGuides, label, pending, brush = 'off', brushSize = 40, onMaskChange, issues, hoverIssue, onClick, selected, imageWidth, overlay },
+  { spec, version, width, showGuides, label, pending, brush = 'off', brushSize = 40, onMaskChange, issues, hoverIssue, onClick, selected, imageWidth, overlay, panels },
   ref,
 ) {
   const clipId = useId().replace(/:/g, '')
@@ -401,6 +403,28 @@ export const Sheet = forwardRef<SheetHandle, SheetProps>(function Sheet(
       {showGuides && rasterOverlay && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={rasterOverlay} alt="" className="absolute inset-0 w-full h-full pointer-events-none" style={{ imageRendering: 'auto' }} />
+      )}
+
+      {showGuides && panels && panels.length === folds.length + 1 && (
+        <div className="absolute inset-0 pointer-events-none">
+          {panels.map((name, i) => {
+            const vertical = spec.folds?.direction === 'vertical'
+            const edges = [vertical ? trim.x : trim.y, ...folds, vertical ? trim.x + trim.w : trim.y + trim.h]
+            const mid = (edges[i] + edges[i + 1]) / 2
+            const style: React.CSSProperties = vertical
+              ? { left: `${mid * 100}%`, top: `${(trim.y + trim.h * 0.03) * 100}%`, transform: 'translateX(-50%)' }
+              : { top: `${mid * 100}%`, left: '50%', transform: 'translate(-50%, -50%)' }
+            return (
+              <span
+                key={i}
+                className="absolute px-1.5 py-0.5 rounded text-[10.5px] font-medium whitespace-nowrap"
+                style={{ ...style, background: 'rgba(10,14,12,.62)', color: '#fff', maxWidth: `${((edges[i + 1] - edges[i]) * width) - 6}px`, overflow: 'hidden', textOverflow: 'ellipsis' }}
+              >
+                {name}
+              </span>
+            )
+          })}
+        </div>
       )}
 
       {/* Painted area */}

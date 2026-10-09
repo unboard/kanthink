@@ -28,6 +28,12 @@ export interface PageDef {
   label: string
   /** What this page is for, in print-designer terms. Goes into the brief. */
   hint?: string
+  /**
+   * What each panel between the folds is, in reading order as this side is seen flat —
+   * left to right for vertical folds, top to bottom for horizontal. "Fold-in flap",
+   * "Back cover", "Front cover". Only meaningful when its length matches the panels.
+   */
+  panels?: string[]
 }
 
 /** Fold lines, as fractions of the trim along the axis they divide. */

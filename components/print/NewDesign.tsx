@@ -5,9 +5,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { CATALOG, formatLength, formatSize, fromUnit, guideLabel, specWithPageCount, specWithShape, toUnit, type CatalogProduct } from '@/lib/print/spec'
 import type { GuideShape, PrintBrand, PrintPreset, PrintSpec, Unit } from '@/lib/print/types'
 import { api, uploadImage } from './api'
+import { TemplateImport } from './TemplateImport'
 import { ProductGlyph } from './ui'
 
-type Choice = { kind: 'product'; product: CatalogProduct } | { kind: 'preset'; preset: PrintPreset } | { kind: 'custom' }
+type Choice = { kind: 'product'; product: CatalogProduct } | { kind: 'preset'; preset: PrintPreset } | { kind: 'custom' } | { kind: 'template' }
 
 interface CustomState {
   name: string
@@ -81,6 +82,7 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
   const [error, setError] = useState<string | null>(null)
   const [uploadingGuide, setUploadingGuide] = useState(false)
   const [shape, setShape] = useState<string | null>(null)
+  const [templateSpec, setTemplateSpec] = useState<PrintSpec | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -95,8 +97,9 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
       return specWithShape(base, choice.product, shape)
     }
     if (choice.kind === 'preset') return choice.preset.spec
+    if (choice.kind === 'template') return templateSpec
     return customSpec(custom)
-  }, [choice, pages, custom, shape])
+  }, [choice, pages, custom, shape, templateSpec])
 
   const groups = useMemo(() => {
     const map = new Map<string, CatalogProduct[]>()
@@ -118,7 +121,8 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
     setBusy(true)
     setError(null)
     try {
-      if (choice.kind === 'custom' && custom.save) {
+      // A product read from a template is always kept: adding it is the point.
+      if ((choice.kind === 'custom' && custom.save) || choice.kind === 'template') {
         const { preset } = await api<{ preset: PrintPreset }>('/api/print/presets', { method: 'POST', json: { name: spec.name, spec } })
         onPresetsChange([preset, ...presets])
       }
@@ -255,6 +259,18 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
                 'Any size or shape',
                 () => pick({ kind: 'custom' }),
               )}
+              {tile(
+                'template',
+                choice.kind === 'template',
+                <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden>
+                  <rect x="6" y="14" width="44" height="30" fill="none" stroke="var(--ink-2)" />
+                  <path d="M20.7 14v30M35.3 14v30" stroke="var(--ink-2)" strokeDasharray="2 2" />
+                  <path d="M28 6v10M24 12l4 4 4-4" fill="none" stroke="var(--ink-2)" strokeWidth="1.5" />
+                </svg>,
+                'From a template',
+                'Upload a printer’s guide',
+                () => pick({ kind: 'template' }),
+              )}
             </div>
           </div>
         </div>
@@ -262,7 +278,9 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
         {/* The choice, and how to start */}
         <div className="md:w-[380px] shrink-0 border-t md:border-t-0 md:border-l flex flex-col max-h-[60%] md:max-h-none" style={{ borderColor: 'var(--line)', background: 'var(--chrome-2)' }}>
           <div className="flex-1 overflow-y-auto print-scroll p-5 sm:p-6">
-            {choice.kind === 'custom' ? (
+            {choice.kind === 'template' ? (
+              <TemplateImport onSpec={setTemplateSpec} />
+            ) : choice.kind === 'custom' ? (
               <div className="space-y-3">
                 <label className="block">
                   <span className="block text-[12px] mb-1" style={{ color: 'var(--muted)' }}>
@@ -469,7 +487,7 @@ export function NewDesign({ brands, presets, onPresetsChange, onClose }: { brand
               className="h-10 px-4 rounded-xl text-[14px] font-semibold text-white disabled:opacity-40 ml-auto md:ml-0"
               style={{ background: 'var(--magenta)' }}
             >
-              {busy ? 'Starting…' : 'Start designing'}
+              {busy ? 'Starting…' : choice.kind === 'template' ? 'Save and start designing' : 'Start designing'}
             </button>
           </div>
         </div>

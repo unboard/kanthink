@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatCents } from '@/lib/print/models'
-import { bleedSize, catalogProduct, formatSize, guideLabel } from '@/lib/print/spec'
+import { bleedSize, catalogProduct, formatSize, guideLabel, pagePanels } from '@/lib/print/spec'
 import { api } from './api'
 import type { PrintVersion, VersionMode } from '@/lib/print/types'
 import { BrandPanel } from './BrandPanel'
@@ -484,6 +484,7 @@ export function Studio({ id }: { id: string }) {
                         width={sheetWidth}
                         showGuides={guides}
                         label={p.label}
+                        panels={pagePanels(spec, i)}
                         pending={pending[i] ?? null}
                         onClick={() => setFocus(i)}
                       />
@@ -530,6 +531,7 @@ export function Studio({ id }: { id: string }) {
                   width={sheetWidth}
                   showGuides={guides}
                   label={focusedPage!.label}
+                  panels={pagePanels(spec, focus)}
                   pending={pending[focus] ?? null}
                   brush={brush}
                   brushSize={brushSize}

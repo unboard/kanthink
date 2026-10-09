@@ -24,3 +24,15 @@ export async function rasterizePdf(data: Buffer, opts: { maxPages: number; targe
   if (!out.length) throw new Error('That PDF has no pages.')
   return out
 }
+
+/** Each page's size in inches, as the PDF states it (its media box, 72 points to the inch). */
+export async function pdfPageSizes(data: Buffer, maxPages: number): Promise<{ widthIn: number; heightIn: number }[]> {
+  const { getDocumentProxy } = await import('unpdf')
+  const pdf = await getDocumentProxy(new Uint8Array(data))
+  const out: { widthIn: number; heightIn: number }[] = []
+  for (let n = 1; n <= Math.min(pdf.numPages, maxPages); n++) {
+    const view = (await pdf.getPage(n)).getViewport({ scale: 1 })
+    out.push({ widthIn: view.width / 72, heightIn: view.height / 72 })
+  }
+  return out
+}

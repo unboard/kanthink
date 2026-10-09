@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'print-products-from-templates',
+    date: '2026-10-09',
+    kind: 'capability',
+    title: 'Add a print product from a printer’s template',
+    body: 'In the print studio, choose From a template when starting a design and upload the printer’s guide (PDF or image, one or two sides) with any notes. Kan reads the size, bleed, folds and what each panel is — fold-in, back, cover — so you can check it, save it to your sizes, and every design on it knows which panel is the cover.',
+  },
+  {
     id: 'print-markup-exact-moves',
     date: '2026-10-07',
     kind: 'fix',

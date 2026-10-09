@@ -3,13 +3,14 @@ import { findPrintModel, formatCents } from '../lib/print/models'
 import { buildPrintPdf, jpegComponents } from '../lib/print/pdf'
 import { extractPalette, normalizeHex } from '../lib/print/palette'
 import { checkPlacement, checkSpelling, detectFrame, detectWhiteBorders, distanceField, rasterSampler, samplerFor } from '../lib/print/preflight'
-import { buildCreatePrompt, buildEditPrompt, buildFixPrompt, buildRecreatePrompt, printRules, wordBudget } from '../lib/print/prompts'
+import { buildCreatePrompt, buildEditPrompt, buildFixPrompt, buildRecreatePrompt, panelRules, printRules, wordBudget } from '../lib/print/prompts'
 import {
   CATALOG,
   catalogProduct,
   centerCrop,
   foldPositions,
   nearestGeminiRatio,
+  pagePanels,
   pieceDistance,
   planFrame,
   safeMarginsInFrame,
@@ -220,6 +221,26 @@ describe('prompts', () => {
     expect(printRules(doorHanger, planFrame(doorHanger, 'google', 'print'), true).join('\n')).toMatch(/doorknob/)
   })
 
+  it('names each panel of a folded side where it sits, without printing the names', () => {
+    // A template-read tri-fold: the fold-in flap is narrower, so the folds aren't thirds.
+    const spec: PrintSpec = {
+      ...brochure,
+      folds: { direction: 'vertical', at: [3.625 / 11, 7.3125 / 11] },
+      pages: [
+        { label: 'Outside', panels: ['Fold-in flap', 'Back cover', 'Front cover'] },
+        { label: 'Inside', panels: ['Inside left', 'Inside middle'] },
+      ],
+    }
+    const rules = panelRules(spec, 0, planFrame(spec, 'google', 'print')).join('\n')
+    expect(rules).toMatch(/left to right/)
+    expect(rules).toMatch(/1\. Fold-in flap \(\d+–\d+% of the image width\)/)
+    expect(rules).toMatch(/3\. Front cover/)
+    expect(rules).toMatch(/Never print these panel names/)
+    // A side whose names don't cover every panel says nothing rather than mislabel.
+    expect(panelRules(spec, 1)).toEqual([])
+    expect(pagePanels(spec, 1)).toBeNull()
+  })
+
   it('tells the model to place the logo exactly as supplied', () => {
     const frame = planFrame(flyer, 'google', 'print')
     const prompt = buildCreatePrompt({
@@ -349,5 +370,16 @@ describe('cost', () => {
     expect(formatCents(0.4)).toBe('0.4¢')
     expect(formatCents(14.2)).toBe('14¢')
     expect(formatCents(140)).toBe('$1.40')
+  })
+})
+
+describe('templates', () => {
+  it('keeps panel names through validation, trimmed and capped', () => {
+    const spec = validateSpec({
+      ...brochure,
+      pages: [{ label: 'Outside', panels: ['  Fold-in flap ', 'Back cover', 'x'.repeat(90)] }],
+    })!
+    expect(spec.pages[0].panels).toEqual(['Fold-in flap', 'Back cover', 'x'.repeat(40)])
+    expect(validateSpec({ ...brochure, pages: [{ label: 'Inside', panels: [] }] })!.pages[0].panels).toBeUndefined()
   })
 })

@@ -312,6 +312,13 @@ export function panelCount(spec: PrintSpec): number {
   return spec.folds ? spec.folds.at.length + 1 : 1
 }
 
+/** A page's panel labels, when there is one for every panel. */
+export function pagePanels(spec: PrintSpec, pageIndex: number): string[] | null {
+  const panels = spec.pages[pageIndex]?.panels
+  if (!spec.folds || !panels || panels.length !== panelCount(spec) || panels.some((p) => !p)) return null
+  return panels
+}
+
 // ---------------------------------------------------------------------------
 // Die-cut shapes as signed distance functions
 // ---------------------------------------------------------------------------
@@ -590,6 +597,9 @@ export function validateSpec(input: unknown): PrintSpec | null {
   const pages = s.pages.map((p, i) => ({
     label: String(p?.label ?? `Page ${i + 1}`).slice(0, 40) || `Page ${i + 1}`,
     hint: p?.hint ? String(p.hint).slice(0, 600) : undefined,
+    panels: Array.isArray(p?.panels) && p.panels.length
+      ? p.panels.slice(0, 7).map((x) => String(x ?? '').trim().slice(0, 40))
+      : undefined,
   }))
   let guide: GuideShape | undefined
   const g = s.guide as GuideShape | undefined

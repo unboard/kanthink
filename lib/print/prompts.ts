@@ -15,6 +15,7 @@ import {
   bleedSize,
   foldsInFrame,
   formatSize,
+  pagePanels,
   panelCount,
   safeMarginsInFrame,
   type Frame,
@@ -120,6 +121,27 @@ export function printRules(spec: PrintSpec, frame: Frame, hasCanvas: boolean): s
   return lines
 }
 
+/**
+ * What each panel of a folded page is for, with where it sits in the image. Without
+ * this a model treats a tri-fold's outside as three equal columns and puts the cover
+ * in the middle.
+ */
+export function panelRules(spec: PrintSpec, pageIndex: number, frame?: Frame): string[] {
+  const panels = pagePanels(spec, pageIndex)
+  if (!panels || !spec.folds) return []
+  const vertical = spec.folds.direction === 'vertical'
+  const edges = frame ? [0, ...foldsInFrame(spec, frame), 100] : null
+  const list = panels.map((label, i) => {
+    const where = edges ? ` (${Math.round(edges[i])}–${Math.round(edges[i + 1])}% of the image ${vertical ? 'width' : 'height'})` : ''
+    return `  ${i + 1}. ${label}${where}`
+  })
+  return [
+    `The panels of this side, ${vertical ? 'left to right' : 'top to bottom'}, and what each one is:`,
+    ...list,
+    'Give each panel the content its role calls for — the front cover is the first thing anyone sees, so it carries the logo and headline. Never print these panel names on the piece.',
+  ]
+}
+
 export function qualityRules(spec: PrintSpec): string[] {
   const budget = wordBudget(spec)
   return [
@@ -199,6 +221,7 @@ export function buildCreatePrompt(options: {
     userPrompt ? `The request: ${userPrompt}` : '',
     '',
     ...printRules(spec, frame, hasCanvas),
+    ...panelRules(spec, pageIndex, frame),
     '',
     ...brandLines(kit, brief, refs),
     ...copyBlock(copy),
@@ -293,6 +316,7 @@ export function buildRecreatePrompt(options: {
     ...others,
     '',
     ...printRules(spec, frame, hasCanvas),
+    ...panelRules(spec, pageIndex, frame),
     '',
     'Type is crisp and sized for print. No placeholder text, no invented phone numbers, addresses, prices or URLs, no fake QR codes or barcodes.',
   ]
@@ -480,6 +504,7 @@ export function buildCopyPrompt(options: {
     `You are the copywriter and art director for ${describeProduct(spec)}, ${area} square inches of paper${spec.folds ? ` folded into ${panelCount(spec)} panels` : ''}.`,
     spec.pages.length > 1 ? `Write page ${pageIndex + 1} of ${spec.pages.length}: the ${page.label}.` : '',
     page.hint ? `This page’s job: ${page.hint}` : '',
+    ...panelRules(spec, pageIndex),
     `The request: ${userPrompt || '(none given — continue the piece sensibly from the other pages and the business details)'}`,
     facts.length ? `Facts you may use (use them verbatim, never alter a phone number, address or URL):\n${facts.join('\n')}` : 'No business details were given. Do not invent a phone number, address, email, URL or price — leave them out.',
     assetNotes.length ? `Supplied photos/graphics: ${assetNotes.join('; ')}` : '',
