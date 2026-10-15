@@ -1951,8 +1951,8 @@ export const studioSettings = sqliteTable('studio_settings', {
  *
  * Drafts live here too: a draft is an email that has not been allowed out yet, and
  * keeping it in the same row means approving it is a status change rather than a
- * copy. Delivery events come back from Customer.IO's reporting webhook, matched on
- * the delivery id the send returned.
+ * copy. Delivery events come back from Resend's webhook, matched on the email id
+ * the send returned.
  */
 export const appEmails = sqliteTable('app_emails', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -1969,7 +1969,8 @@ export const appEmails = sqliteTable('app_emails', {
   kind: text('kind'),
   /** For crew drafts: why, in a sentence, shown beside the draft. */
   reason: text('reason'),
-  cioDeliveryId: text('cio_delivery_id'),
+  /** The provider's email id (Resend). The column keeps its Customer.IO-era name. */
+  deliveryId: text('cio_delivery_id'),
   sentAt: integer('sent_at', { mode: 'timestamp' }),
   deliveredAt: integer('delivered_at', { mode: 'timestamp' }),
   openedAt: integer('opened_at', { mode: 'timestamp' }),
@@ -1980,7 +1981,7 @@ export const appEmails = sqliteTable('app_emails', {
 }, (table) => [
   index('app_emails_user_idx').on(table.appUserId, table.createdAt),
   index('app_emails_owner_status_idx').on(table.ownerId, table.status),
-  index('app_emails_delivery_idx').on(table.cioDeliveryId),
+  index('app_emails_delivery_idx').on(table.deliveryId),
 ])
 
 /**

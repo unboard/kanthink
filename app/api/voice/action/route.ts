@@ -1041,7 +1041,7 @@ export async function POST(request: Request) {
 
       case 'send_email': {
         try {
-          const { sendTransactionalEmail } = await import('@/lib/customerio');
+          const { sendTransactionalEmail } = await import('@/lib/resend');
           const { render } = await import('@react-email/render');
           const React = await import('react');
           const { VoiceComposed } = await import('@/lib/emails/VoiceComposed');

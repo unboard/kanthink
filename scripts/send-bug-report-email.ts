@@ -7,7 +7,6 @@
  */
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
-import { RegionUS, APIClient, SendEmailRequest } from 'customerio-node'
 
 // Load .env.local manually (no dotenv dep)
 const envPath = resolve(import.meta.dirname || __dirname, '..', '.env.local')
@@ -145,26 +144,12 @@ async function main() {
   // Use consistent subject so Gmail threads all reports together
   const subject = 'Kan Work Report'
 
-  // Send via Customer.IO
-  const cioApi = new APIClient(process.env.CUSTOMERIO_TRANSACTIONAL_API_KEY as string, { region: RegionUS })
-  const messageId = process.env.CUSTOMERIO_TRANSACTIONAL_MESSAGE_ID || 'kanthink_email'
-
-  const request = new SendEmailRequest({
-    transactional_message_id: messageId,
-    to,
-    from: process.env.CUSTOMERIO_FROM_EMAIL || 'kan@kanthink.com',
-    subject,
-    body: html,
-    identifiers: { email: to },
-    message_data: { subject, body: html },
-    disable_message_retention: false,
-  })
-
-  try {
-    await cioApi.sendEmail(request)
+  // Loaded after .env.local so the client sees RESEND_API_KEY
+  const { sendTransactionalEmail } = await import('../lib/resend')
+  if (await sendTransactionalEmail({ to, subject, html })) {
     console.log(`✓ Bug Bot Report sent to ${to}`)
-  } catch (error) {
-    console.error('✗ Failed to send email:', error)
+  } else {
+    console.error('✗ Failed to send email (see the [Resend] error above)')
     process.exit(1)
   }
 }

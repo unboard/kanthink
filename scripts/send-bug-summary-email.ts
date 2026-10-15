@@ -27,7 +27,6 @@ const TO = 'dhodg22@gmail.com'
 
 // ── Parse CLI args ──────────────────────────────────────────────────
 // Usage:
-//   --identify                         Ensure user exists in CIO
 //   --no-work                          Send "no cards in queue" email
 //   --completed <json>                 Send summary of completed cards
 //     json format: [{"title":"...", "summary":"..."}]
@@ -160,13 +159,6 @@ function buildNoWorkConfig() {
 async function main() {
   const args = process.argv.slice(2)
 
-  if (args[0] === '--identify') {
-    const { identifyUser } = await import('../lib/customerio.js')
-    await identifyUser({ id: 'claude-bot-notify', email: TO, name: 'Dustin (Bug Bot)' })
-    console.log(`Identified ${TO} in Customer.IO`)
-    return
-  }
-
   // Build email config
   let emailConfig: { subject: string; previewText: string; body: unknown[] }
 
@@ -178,7 +170,6 @@ async function main() {
     emailConfig = buildEmailConfig(cards)
   } else {
     console.log('Usage:')
-    console.log('  npx tsx scripts/send-bug-summary-email.ts --identify')
     console.log('  npx tsx scripts/send-bug-summary-email.ts --no-work')
     console.log('  npx tsx scripts/send-bug-summary-email.ts --completed \'[{"title":"...","summary":"..."}]\'')
     process.exit(1)
@@ -194,7 +185,7 @@ async function main() {
   )
 
   // Send via CIO
-  const { sendTransactionalEmail } = await import('../lib/customerio.js')
+  const { sendTransactionalEmail } = await import('../lib/resend.js')
   const sent = await sendTransactionalEmail({
     to: TO,
     subject: emailConfig.subject,

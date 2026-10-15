@@ -15,7 +15,7 @@ run a sequence of steps, and learn from what you reject.
 - **NextAuth v5** (Google OAuth, database session strategy)
 - **Pusher** for realtime (presence, notifications, live board sync)
 - **OpenAI** / **Google Gemini** for AI; per-user BYOK supported
-- **Stripe** for billing, **Customer.IO** for email, **Cloudinary** for media
+- **Stripe** for billing, **Resend** for email, **Cloudinary** for media
 - **Vitest** for tests, **Playwright** for E2E
 
 ## Getting started
@@ -41,7 +41,7 @@ At minimum you need a database, auth, and one AI provider:
 | `NEXT_PUBLIC_APP_URL` | Absolute URLs in emails and share links |
 
 Optional, per feature: `PUSHER_*` / `NEXT_PUBLIC_PUSHER_*` (realtime), `STRIPE_*` (billing),
-`CUSTOMERIO_*` (email), `CLOUDINARY_*` (uploads), `ENCRYPTION_KEY` (BYOK key storage),
+`RESEND_*` (email), `CLOUDINARY_*` (uploads), `ENCRYPTION_KEY` (BYOK key storage),
 `CRON_SECRET` (scheduled routes), `INTERNAL_API_SECRET` (internal move API),
 `OWNER_*_API_KEY` (fallback keys), `*_MONTHLY_LIMIT` (usage tiers).
 

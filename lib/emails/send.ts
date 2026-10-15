@@ -1,7 +1,8 @@
 import { render } from '@react-email/render'
-import { sendTransactionalEmail } from '@/lib/customerio'
+import { sendTransactionalEmail } from '@/lib/resend'
 
-const CIO_ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024
+// Resend caps an email at 40MB after base64 encoding, which grows files by a third
+const ATTACHMENT_MAX_BYTES = 30 * 1024 * 1024
 
 export type SendToKindleResult =
   | { ok: true }
@@ -11,7 +12,7 @@ export type SendToKindleResult =
  * Send an EPUB file as an attachment to a Kindle email address.
  *
  * Kindle's Personal Documents Service ignores the email body; it cares only
- * about the attachment. The sender (kan@kanthink.com via CIO) must be on the
+ * about the attachment. The sender (kan@kanthink.com via Resend) must be on the
  * user's Kindle approved senders list at amazon.com/myk, and the kanthink.com
  * domain must have MX records pointing to a real mailbox so Amazon's sender
  * verification passes.
@@ -28,11 +29,11 @@ export async function sendToKindleEmail({
   if (!/\.epub$/i.test(filename)) {
     return { ok: false, reason: 'Filename must end with .epub' }
   }
-  if (data.length > CIO_ATTACHMENT_MAX_BYTES) {
+  if (data.length > ATTACHMENT_MAX_BYTES) {
     const mb = (data.length / 1024 / 1024).toFixed(2)
     return {
       ok: false,
-      reason: `EPUB is ${mb}MB; Customer.IO caps attachments at 2MB`,
+      reason: `EPUB is ${mb}MB; attachments are capped at 30MB`,
     }
   }
 
@@ -48,7 +49,7 @@ export async function sendToKindleEmail({
 
   return sent
     ? { ok: true }
-    : { ok: false, reason: 'Customer.IO send failed; see server logs' }
+    : { ok: false, reason: 'Email send failed; see server logs' }
 }
 import { ChannelInvite } from './ChannelInvite'
 import { Welcome } from './Welcome'

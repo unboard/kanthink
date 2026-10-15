@@ -11,7 +11,6 @@
  */
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
-import { RegionUS, APIClient, SendEmailRequest } from 'customerio-node'
 
 const envPath = resolve(import.meta.dirname || __dirname, '..', '.env.local')
 const envContent = readFileSync(envPath, 'utf-8')
@@ -89,23 +88,12 @@ async function main() {
   }
 
   const html = buildHtml(title, body, url, cta)
-  const cioApi = new APIClient(process.env.CUSTOMERIO_TRANSACTIONAL_API_KEY as string, { region: RegionUS })
-  const request = new SendEmailRequest({
-    transactional_message_id: process.env.CUSTOMERIO_TRANSACTIONAL_MESSAGE_ID || 'kanthink_email',
-    to,
-    from: process.env.CUSTOMERIO_FROM_EMAIL || 'kan@kanthink.com',
-    subject,
-    body: html,
-    identifiers: { email: to },
-    message_data: { subject, body: html },
-    disable_message_retention: false,
-  })
-
-  try {
-    await cioApi.sendEmail(request)
+  // Loaded after .env.local so the client sees RESEND_API_KEY
+  const { sendTransactionalEmail } = await import('../lib/resend')
+  if (await sendTransactionalEmail({ to, subject, html })) {
     console.log(`✓ Sent to ${to}`)
-  } catch (error) {
-    console.error('✗ Failed to send email:', error)
+  } else {
+    console.error('✗ Failed to send email (see the [Resend] error above)')
     process.exit(1)
   }
 }

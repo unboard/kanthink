@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { render } from '@react-email/render'
 import { DynamicEmail, type EmailConfig } from '@/lib/emails/dynamicRenderer'
-import { sendTransactionalEmail } from '@/lib/customerio'
+import { sendTransactionalEmail } from '@/lib/resend'
 import React from 'react'
 
 /**

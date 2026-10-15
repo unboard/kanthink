@@ -77,7 +77,7 @@ async function main() {
   if (cmd === 'send') {
     const { sendEmail } = await import('../lib/studio/people')
     const sent = await sendEmail(owner.id, arg)
-    out({ status: sent.status, deliveryId: sent.cioDeliveryId, sentAt: sent.sentAt })
+    out({ status: sent.status, deliveryId: sent.deliveryId, sentAt: sent.sentAt })
   }
 
   if (cmd === 'email') {

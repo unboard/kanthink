@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createHmac } from 'crypto'
 import { personStage, stageEvents } from '../lib/studio/stage'
-import { verifyCioSignature, parseCioEvent, eventUpdates } from '../lib/studio/cio'
+import { verifyResendSignature, parseResendEvent, eventUpdates } from '../lib/studio/emailEvents'
 import { nextFollowUp, NUDGE_AFTER_DAYS, type FollowUpInput } from '../lib/studio/followUps'
 import { pickSpark, sparkMessage, SPARK_MAX_AGE_DAYS } from '../lib/studio/spark'
 
@@ -29,34 +29,39 @@ describe('person stage', () => {
   })
 })
 
-describe('Customer.IO reporting webhook', () => {
-  const key = 'signing-key'
-  const body = JSON.stringify({ object_type: 'email', metric: 'opened', timestamp: 1760000000, data: { delivery_id: 'abc' } })
-  const sign = (ts: string, raw: string) => createHmac('sha256', key).update(`v0:${ts}:${raw}`).digest('hex')
+describe('Resend webhook', () => {
+  const secret = 'whsec_' + Buffer.from('signing-secret').toString('base64')
+  const body = JSON.stringify({ type: 'email.opened', created_at: '2026-10-14T12:00:00.000Z', data: { email_id: 'abc' } })
+  const sign = (id: string, ts: string, raw: string) =>
+    'v1,' + createHmac('sha256', Buffer.from('signing-secret')).update(`${id}.${ts}.${raw}`).digest('base64')
+  const base = { secret, id: 'msg_1', timestamp: '1760000000', rawBody: body, now: 1760000100 }
 
-  it('accepts a correctly signed, recent request', () => {
-    expect(verifyCioSignature({ signingKey: key, timestamp: '1760000000', signature: sign('1760000000', body), rawBody: body, now: 1760000100 })).toBe(true)
+  it('accepts a correctly signed, recent request, among several signatures', () => {
+    expect(verifyResendSignature({ ...base, signature: sign('msg_1', '1760000000', body) })).toBe(true)
+    expect(verifyResendSignature({ ...base, signature: `v1,bm9wZQ== ${sign('msg_1', '1760000000', body)}` })).toBe(true)
   })
 
-  it('rejects a wrong signature, a tampered body and an old request', () => {
-    expect(verifyCioSignature({ signingKey: key, timestamp: '1760000000', signature: 'deadbeef', rawBody: body, now: 1760000100 })).toBe(false)
-    expect(verifyCioSignature({ signingKey: key, timestamp: '1760000000', signature: sign('1760000000', body), rawBody: body + ' ', now: 1760000100 })).toBe(false)
-    expect(verifyCioSignature({ signingKey: key, timestamp: '1760000000', signature: sign('1760000000', body), rawBody: body, now: 1760000000 + 2 * 3600 })).toBe(false)
-    expect(verifyCioSignature({ signingKey: '', timestamp: '1', signature: 'x', rawBody: body })).toBe(false)
+  it('rejects a wrong signature, a tampered body, another id and an old request', () => {
+    const good = sign('msg_1', '1760000000', body)
+    expect(verifyResendSignature({ ...base, signature: 'v1,deadbeef' })).toBe(false)
+    expect(verifyResendSignature({ ...base, signature: good, rawBody: body + ' ' })).toBe(false)
+    expect(verifyResendSignature({ ...base, signature: good, id: 'msg_2' })).toBe(false)
+    expect(verifyResendSignature({ ...base, signature: good, now: 1760000000 + 3600 })).toBe(false)
+    expect(verifyResendSignature({ ...base, signature: good, secret: '' })).toBe(false)
   })
 
-  it('maps tracked metrics and ignores the rest', () => {
-    expect(parseCioEvent(JSON.parse(body))).toMatchObject({ deliveryId: 'abc', column: 'openedAt' })
-    expect(parseCioEvent({ object_type: 'email', metric: 'clicked', data: { delivery_id: 'x' } })?.column).toBe('clickedAt')
-    expect(parseCioEvent({ object_type: 'email', metric: 'bounced', data: { delivery_id: 'x' } })?.column).toBe('bouncedAt')
-    expect(parseCioEvent({ object_type: 'email', metric: 'sent', data: { delivery_id: 'x' } })).toBeNull()
-    expect(parseCioEvent({ object_type: 'sms', metric: 'delivered', data: { delivery_id: 'x' } })).toBeNull()
-    expect(parseCioEvent({ object_type: 'email', metric: 'opened', data: {} })).toBeNull()
+  it('maps tracked events and ignores the rest', () => {
+    expect(parseResendEvent(JSON.parse(body))).toMatchObject({ deliveryId: 'abc', column: 'openedAt', at: new Date('2026-10-14T12:00:00.000Z') })
+    expect(parseResendEvent({ type: 'email.clicked', data: { email_id: 'x' } })?.column).toBe('clickedAt')
+    expect(parseResendEvent({ type: 'email.bounced', data: { email_id: 'x' } })?.column).toBe('bouncedAt')
+    expect(parseResendEvent({ type: 'email.sent', data: { email_id: 'x' } })).toBeNull()
+    expect(parseResendEvent({ type: 'contact.created', data: { id: 'x' } })).toBeNull()
+    expect(parseResendEvent({ type: 'email.opened', data: {} })).toBeNull()
   })
 
   it('records only the first of each event, and a click implies an open and a delivery', () => {
     const at = daysAgo(0)
-    const click = { deliveryId: 'x', column: 'clickedAt' as const, at, metric: 'clicked' }
+    const click = { deliveryId: 'x', column: 'clickedAt' as const, at, type: 'email.clicked' }
     expect(eventUpdates({}, click)).toEqual({ clickedAt: at, openedAt: at, deliveredAt: at })
     expect(eventUpdates({ openedAt: daysAgo(1), deliveredAt: daysAgo(1) }, click)).toEqual({ clickedAt: at })
     expect(eventUpdates({ openedAt: daysAgo(1) }, { ...click, column: 'openedAt' })).toEqual({ deliveredAt: at })

@@ -1,5 +1,5 @@
 /**
- * Smoke test: send an EPUB file to a Kindle email address via Customer.IO.
+ * Smoke test: send an EPUB file to a Kindle email address via Resend.
  *
  * Usage:
  *   npx tsx scripts/send-kindle-test.ts <kindle-email> <path-to-epub>
@@ -12,10 +12,8 @@
  *      https://www.amazon.com/hz/mycd/myx#/home/settings/payment
  *
  * Env vars (from .env.local):
- *   CUSTOMERIO_TRANSACTIONAL_API_KEY
- *   CUSTOMERIO_SITE_ID
- *   CUSTOMERIO_FROM_EMAIL (defaults to kan@kanthink.com)
- *   CUSTOMERIO_TRANSACTIONAL_MESSAGE_ID (defaults to kanthink_email)
+ *   RESEND_API_KEY
+ *   RESEND_FROM_EMAIL (defaults to Kan <kan@kanthink.com>)
  */
 import { readFileSync, statSync } from 'fs'
 import { basename } from 'path'
@@ -44,7 +42,7 @@ async function main() {
   const result = await sendToKindleEmail({ to: kindleEmail, filename, data })
 
   if (result.ok) {
-    console.log('OK — handed off to Customer.IO. Check Kindle library in 1-5 min.')
+    console.log('OK — handed off to Resend. Check Kindle library in 1-5 min.')
     console.log('If nothing arrives: check spam in the forwarding inbox for an Amazon rejection notice.')
   } else {
     console.error('FAILED:', result.reason)

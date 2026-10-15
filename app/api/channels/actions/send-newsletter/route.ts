@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { RegionUS, APIClient, SendEmailRequest } from 'customerio-node';
+import { sendTrackedEmail } from '@/lib/resend';
 
 export async function POST(request: Request) {
   try {
@@ -33,38 +33,10 @@ export async function POST(request: Request) {
 
     const subject = `${channelName || 'Kanthink'} Newsletter`;
 
-    // Try all available CIO keys (same approach as bug report script)
-    const apiKey = process.env.CUSTOMERIO_TRANSACTIONAL_API_KEY;
-    const siteId = process.env.CUSTOMERIO_SITE_ID;
-    const trackingKey = process.env.CUSTOMERIO_TRACKING_API_KEY || process.env.CUSTOMERIO_API_KEY;
-
-    if (!apiKey) {
-      console.error('[SendNewsletter] No CUSTOMERIO_TRANSACTIONAL_API_KEY found. Available CIO env vars:', {
-        hasSiteId: !!siteId,
-        hasTrackingKey: !!trackingKey,
-        hasTransactionalKey: !!apiKey,
-      });
-      return NextResponse.json(
-        { error: 'Email service not configured — CUSTOMERIO_TRANSACTIONAL_API_KEY is missing from environment.' },
-        { status: 500 }
-      );
+    const sent = await sendTrackedEmail({ to, subject, html: emailHtml });
+    if (!sent.ok) {
+      return NextResponse.json({ error: sent.error || 'Failed to send email' }, { status: 500 });
     }
-
-    const cioApi = new APIClient(apiKey, { region: RegionUS });
-    const messageId = process.env.CUSTOMERIO_TRANSACTIONAL_MESSAGE_ID || 'kanthink_email';
-
-    const emailRequest = new SendEmailRequest({
-      transactional_message_id: messageId,
-      to,
-      from: process.env.CUSTOMERIO_FROM_EMAIL || 'kan@kanthink.com',
-      subject,
-      body: emailHtml,
-      identifiers: { email: to },
-      message_data: { subject, body: emailHtml },
-      disable_message_retention: false,
-    });
-
-    await cioApi.sendEmail(emailRequest);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

@@ -4,7 +4,7 @@ import React from 'react'
 import { db } from '@/lib/db'
 import { appEmails, appMessages, appOrders, appUsers, personNotes, playgroundApps } from '@/lib/db/schema'
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
-import { sendTrackedEmail } from '@/lib/customerio'
+import { sendTrackedEmail } from '@/lib/resend'
 import { PersonEmail } from '@/lib/emails/PersonEmail'
 import { formatAppPrice } from '@/lib/playground/appAccess'
 import { personStage, stageEvents, type PersonStage } from './stage'
@@ -300,7 +300,7 @@ export async function sendEmail(ownerId: string, emailId: string, edits?: { subj
     subject,
     body,
     status: result.ok ? 'sent' : 'failed',
-    cioDeliveryId: result.deliveryId,
+    deliveryId: result.deliveryId,
     sentAt: result.ok ? now : null,
     updatedAt: now,
   }).where(eq(appEmails.id, email.id))

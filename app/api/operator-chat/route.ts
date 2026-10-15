@@ -338,7 +338,7 @@ Available actions:
   - Requires: taskId, status
 
 **Email:**
-- **send_email**: Draft and send an email via Customer.io.
+- **send_email**: Draft and send an email via Resend.
   - Requires: to (email address), subject, body (clean prose, NOT markdown). Optional: style (professional/casual/newsletter/update, default professional), recipientName, ctaText, ctaUrl
   - Do NOT ask about email style — infer it from context. Just draft and send.
 

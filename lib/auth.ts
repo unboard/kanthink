@@ -5,7 +5,7 @@ import { db } from './db'
 import { users, accounts, sessions, verificationTokens } from './db/schema'
 import { eq } from 'drizzle-orm'
 import { convertPendingInvites } from './api/permissions'
-import { identifyUser } from './customerio'
+import { identifyUser } from './resend'
 import { sendWelcomeEmail } from './emails/send'
 
 /**
@@ -69,7 +69,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           console.error('Failed to convert pending invites:', e)
         }
 
-        // Identify user in Customer.IO on every sign-in
+        // Add user to the Resend audience on every sign-in (no-op without RESEND_AUDIENCE_ID)
         identifyUser({
           id: user.id,
           email: user.email,

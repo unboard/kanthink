@@ -543,7 +543,7 @@ async function emailCustomer(order: OrderRow, jobs: JobRow[], kind: 'received' |
   if (!customer.email) return
   const partner = await getPartner(order.userId)
   const { customerEmail } = await import('./emails')
-  const { sendTransactionalEmail } = await import('@/lib/customerio')
+  const { sendTransactionalEmail } = await import('@/lib/resend')
   const mail = customerEmail({ kind, order, jobs, customer, brand: partner.brand, baseUrl: baseUrl(), text })
   await sendTransactionalEmail({ to: customer.email, subject: mail.subject, html: mail.html, replyTo: partner.brand.email ?? null })
 }
@@ -563,7 +563,7 @@ async function alertPrinter(job: JobRow, order: OrderRow, what: string): Promise
   const owner = await db.query.users.findFirst({ where: eq(users.id, job.userId), columns: { email: true } })
   if (!owner?.email) return
   const { printerEmail } = await import('./emails')
-  const { sendTransactionalEmail } = await import('@/lib/customerio')
+  const { sendTransactionalEmail } = await import('@/lib/resend')
   const mail = printerEmail({ who, what, job, order, link })
   await sendTransactionalEmail({ to: owner.email, subject: mail.subject, html: mail.html })
 }
