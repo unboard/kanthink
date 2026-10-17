@@ -28,3 +28,29 @@ export function stripOptimistic<T extends { id?: unknown }>(messages: unknown): 
   if (!Array.isArray(messages)) return [];
   return (messages as T[]).filter(m => !isOptimisticId(m?.id));
 }
+
+/**
+ * Drop images a message repeats from earlier in the thread.
+ *
+ * Builds used to stamp every image the generator was shown — the whole thread's,
+ * plus the source card's on a first build — onto the request message they wrote,
+ * so each Update copied every earlier picture forward once more. Like
+ * stripOptimistic, this heals the stored damage the next time the thread is
+ * written rather than needing a migration. A picture keeps its first appearance.
+ */
+export function dedupeThreadImages<T extends { imageUrls?: unknown }>(messages: T[]): T[] {
+  const seen = new Set<string>();
+  return messages.map((m) => {
+    if (!Array.isArray(m?.imageUrls)) return m;
+    const urls = (m.imageUrls as unknown[]).filter((u): u is string => typeof u === 'string');
+    const fresh = urls.filter((u) => !seen.has(u));
+    urls.forEach((u) => seen.add(u));
+    if (fresh.length === urls.length) return m;
+    return { ...m, imageUrls: fresh.length > 0 ? fresh : undefined };
+  });
+}
+
+/** The thread as stored, minus client placeholders and repeated images. */
+export function cleanThread<T extends { id?: unknown; imageUrls?: unknown }>(messages: unknown): T[] {
+  return dedupeThreadImages(stripOptimistic<T>(messages));
+}

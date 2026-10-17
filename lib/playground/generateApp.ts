@@ -37,7 +37,7 @@ import {
   MAX_RUNTIME_DEPS,
   type ResolvedDep,
 } from '@/lib/playground/runtime';
-import { stripOptimistic } from '@/lib/playground/thread';
+import { cleanThread, stripOptimistic } from '@/lib/playground/thread';
 import { normalizeStyle, resolveStyle, stylePrompt, type AppStyle } from '@/lib/playground/style/tokens';
 import { pickStyle } from '@/lib/playground/style/autoPick';
 import { isStylePass, passPrompt, PASS_LABEL, type StylePass } from '@/lib/playground/style/passes';
@@ -830,6 +830,11 @@ export async function generatePlaygroundApp(
   const attachedImages = Array.from(
     new Set([...cardCover, ...sourceCardImages, ...threadImages, ...(body.imageUrls || [])])
   ).slice(-6);
+  // What THIS turn attached, which is all the request message in the thread should
+  // carry. attachedImages is what the model is shown — the thread's pictures are
+  // already on their own messages, so writing them onto this one too copied every
+  // earlier image forward again on each build.
+  const turnImages = (body.imageUrls || []).filter((u): u is string => typeof u === 'string');
 
   const imageNote = attachedImages.length > 0
     ? `\n\n${attachedImages.length} image${attachedImages.length === 1 ? '' : 's'} ${attachedImages.length === 1 ? 'is' : 'are'} attached below — from this thread${isIteration ? '' : ' and the source card'}. Use them as visual reference for style, layout, color and content.`
@@ -942,12 +947,12 @@ export async function generatePlaygroundApp(
         ? `What I can build instead: ${offer}\n\nSay the word and I'll build that, or tell me to go ahead anyway and I'll make the rest work with the limitation clearly marked in the app.`
         : `Tell me which part matters most and I'll build as much of it as actually works.`);
 
-    const existingForUnsupported = stripOptimistic(app.messages);
+    const existingForUnsupported = cleanThread(app.messages);
     const askUserMessage = {
       id: nanoid(),
       type: 'question' as const,
       content: body.prompt,
-      imageUrls: attachedImages.length > 0 ? attachedImages : undefined,
+      imageUrls: turnImages.length > 0 ? turnImages : undefined,
       authorId: session.user.id,
       createdAt: new Date().toISOString(),
     };
@@ -978,12 +983,12 @@ export async function generatePlaygroundApp(
       ? `Quick question before I make this change: ${preflight.questions[0]}`
       : `Quick questions before I make this change:\n\n${preflight.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}`;
 
-    const existingMessagesForAsk = stripOptimistic(app.messages);
+    const existingMessagesForAsk = cleanThread(app.messages);
     const userMessageObj = {
       id: nanoid(),
       type: 'question' as const,
       content: body.prompt,
-      imageUrls: attachedImages.length > 0 ? attachedImages : undefined,
+      imageUrls: turnImages.length > 0 ? turnImages : undefined,
       authorId: session.user.id,
       createdAt: new Date().toISOString(),
     };
@@ -1405,12 +1410,12 @@ ${body.prompt}${imageNote}${iterationReminder}`;
   // the thread can already contain a copy of the prompt we're about to append —
   // which is how user messages ended up rendering twice. The server owns the
   // canonical thread; client placeholders never belong in it.
-  const existingMessages = stripOptimistic(app.messages);
+  const existingMessages = cleanThread(app.messages);
   const userMessageObj = {
     id: nanoid(),
     type: 'question' as const,
     content: body.prompt,
-    imageUrls: attachedImages.length > 0 ? attachedImages : undefined,
+    imageUrls: turnImages.length > 0 ? turnImages : undefined,
     authorId: session.user.id,
     createdAt: new Date().toISOString(),
   };

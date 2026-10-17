@@ -8,7 +8,7 @@ import { requirePermission, PermissionError } from '@/lib/api/permissions'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { getLLMClientForUser, type LLMContentPart, type LLMMessage } from '@/lib/ai/llm'
 import { recordUsage } from '@/lib/usage'
-import { stripOptimistic } from '@/lib/playground/thread'
+import { cleanThread, stripOptimistic } from '@/lib/playground/thread'
 import { detectImageGenerationIntent, extractImagePrompt } from '@/lib/ai/imageDetection'
 
 export const runtime = 'nodejs'
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ app
     }
     await requirePermission(app.channelId, session.user.id, 'edit')
 
-    let history = stripOptimistic<ThreadMessage>(app.messages)
+    let history = cleanThread<ThreadMessage>(app.messages)
 
     let userMessage: Record<string, unknown> = {
       id: nanoid(),
