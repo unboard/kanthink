@@ -15,7 +15,7 @@ export interface Toast {
 
 interface ToastState {
   toasts: Toast[];
-  addToast: (message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number, action?: ToastAction) => void;
+  addToast: (message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number, action?: ToastAction) => string;
   removeToast: (id: string) => void;
 }
 
@@ -38,6 +38,7 @@ export const useToastStore = create<ToastState>((set) => ({
         }));
       }, duration);
     }
+    return id;
   },
 
   removeToast: (id) => {

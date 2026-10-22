@@ -392,15 +392,26 @@ export function CardDetailDrawer({ card, isOpen, onClose, autoFocusTitle, fullPa
   }, [isOpen, autoFocusTitle]);
 
   // Auto-save title when it changes (debounced)
+  //
+  // Keyed on the card's id and title, not the card object, and clean once saved.
+  // Every save gives the card a new updatedAt, so depending on the whole card while
+  // the title stayed dirty re-ran this after its own save: three PATCHes a second,
+  // for as long as the drawer was open, after a single title edit. A dropped
+  // connection then turned each one into its own "Failed to update card" toast.
+  const savedTitleCardId = card?.id;
+  const savedTitle = card?.title;
   useEffect(() => {
-    if (!card || !isTitleDirty || !title.trim()) return;
+    if (!savedTitleCardId || !isTitleDirty) return;
+    const next = title.trim();
+    if (!next || next === savedTitle) return;
 
     const timer = setTimeout(() => {
-      updateCard(card.id, { title: title.trim() });
+      updateCard(savedTitleCardId, { title: next });
+      setIsTitleDirty(false);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [title, card, isTitleDirty, updateCard]);
+  }, [title, savedTitleCardId, savedTitle, isTitleDirty, updateCard]);
 
   const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle);

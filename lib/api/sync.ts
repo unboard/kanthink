@@ -103,21 +103,46 @@ function syncInBackground(fn: () => Promise<void>, label?: string, onFinalFailur
       onFinalFailure?.()
       console.error(`[Sync] ${label || 'Background sync'} failed after all retries:`, err)
 
-      // Show error toast with retry action
-      const friendlyLabel = label || 'save'
-      useToastStore.getState().addToast(
-        `Failed to ${friendlyLabel} — changes may be lost. Check your connection.`,
-        'error',
-        0, // Don't auto-dismiss errors
-        {
-          label: 'Retry',
-          onClick: () => syncInBackground(fn, label),
-        }
-      )
+      reportFailure(fn, label)
     }
   }
 
   attempt(3, 1000)
+}
+
+/**
+ * Failed syncs, one toast per kind of failure, holding every job that failed.
+ *
+ * A dropped connection fails everything in flight at once — a column reorder alone
+ * is one save per card — and a toast each buried the screen in identical red
+ * boxes. Now a failure joins the open toast for its label, and Retry replays the
+ * lot in the order they failed.
+ */
+const failedSyncs = new Map<string, { toastId: string; jobs: Array<() => Promise<void>> }>()
+
+function reportFailure(fn: () => Promise<void>, label?: string) {
+  const friendlyLabel = label || 'save'
+  const toasts = useToastStore.getState()
+  const open = failedSyncs.get(friendlyLabel)
+  if (open && toasts.toasts.some(t => t.id === open.toastId)) {
+    open.jobs.push(fn)
+    return
+  }
+
+  const group = { toastId: '', jobs: [fn] }
+  failedSyncs.set(friendlyLabel, group)
+  group.toastId = toasts.addToast(
+    `Failed to ${friendlyLabel} — changes may be lost. Check your connection.`,
+    'error',
+    0, // Don't auto-dismiss errors
+    {
+      label: 'Retry',
+      onClick: () => {
+        if (failedSyncs.get(friendlyLabel) === group) failedSyncs.delete(friendlyLabel)
+        for (const job of group.jobs) syncInBackground(job, label)
+      },
+    }
+  )
 }
 
 // ===== CHANNEL SYNC =====
