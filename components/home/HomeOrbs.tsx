@@ -102,7 +102,7 @@ export function HomeOrbs({ onOpenCard }: { onOpenCard: (cardId: string) => void 
     title: 'Spark ideas',
     subtitle: 'approving one puts up its test page',
     approveLabel: 'Approve, put up a test page',
-    empty: 'No sparks waiting. The scout brings new ones each morning.',
+    empty: 'No sparks waiting. New ones arrive each morning.',
   }), [sparksColumn]);
 
   const shroomGroups = usePendingGroups(shroomScope);

@@ -552,19 +552,16 @@ async function runStudioAction(action: OperatorAction, userId: string): Promise<
     if (action.type === 'setup_studio') {
       const { ensureStudio } = await import('@/lib/studio/setup');
       const { studio, created } = await ensureStudio(userId);
-      if (created && studio.scoutShroomId) {
+      if (created) {
         const { after } = await import('next/server');
-        const { rowToInstructionCard, runShroomServerSide } = await import('@/lib/shrooms/runServerSide');
-        const { instructionCards } = await import('@/lib/db/schema');
-        const scoutId = studio.scoutShroomId;
         after(async () => {
-          const row = await db.query.instructionCards.findFirst({ where: eq(instructionCards.id, scoutId) });
-          if (row) await runShroomServerSide({ instruction: rowToInstructionCard(row), triggerType: 'manual' }).catch(() => {});
+          const { runSparkEngine } = await import('@/lib/studio/sparkEngine');
+          await runSparkEngine(studio).catch(() => {});
         });
       }
       return {
         type: action.type, success: true, channelId: studio.channelId,
-        description: created ? 'Studio is set up. The scout is out looking for the first sparks now.' : 'You already have a Studio.',
+        description: created ? 'Studio is set up. Kan is reading through your saves and reads for the first sparks now.' : 'You already have a Studio.',
       };
     }
     if (!action.cardId) return { type: action.type, success: false, description: 'Which card?' };

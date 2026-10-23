@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { appEmails, appPurchases, cards, instructionCards, playgroundApps, studioSettings } from '@/lib/db/schema'
+import { appEmails, appPurchases, cards, playgroundApps, studioSettings } from '@/lib/db/schema'
 import { and, eq, gte, inArray } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { ensureStudio, getStudio } from '@/lib/studio/setup'
-import { rowToInstructionCard, runShroomServerSide } from '@/lib/shrooms/runServerSide'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -69,12 +68,11 @@ export async function POST() {
   await ensureSchema()
   const { studio, created } = await ensureStudio(g.userId)
 
-  // The first spark shouldn't wait for tomorrow's cron.
-  if (created && studio.scoutShroomId) {
-    const scoutId = studio.scoutShroomId
+  // The first sparks shouldn't wait for tomorrow's morning.
+  if (created) {
     after(async () => {
-      const row = await db.query.instructionCards.findFirst({ where: eq(instructionCards.id, scoutId) })
-      if (row) await runShroomServerSide({ instruction: rowToInstructionCard(row), triggerType: 'manual' }).catch((e) => console.error('[studio] first scout run failed:', e))
+      const { runSparkEngine } = await import('@/lib/studio/sparkEngine')
+      await runSparkEngine(studio).catch((e) => console.error('[studio] first sparks failed:', e))
     })
   }
   return NextResponse.json({ channelId: studio.channelId, created })

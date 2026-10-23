@@ -1,10 +1,8 @@
 import { render } from '@react-email/render'
 import React from 'react'
 import { db } from '@/lib/db'
-import { appEmails, cards, channels, instructionCards, studioSettings, users } from '@/lib/db/schema'
+import { appEmails, cards, instructionCards, studioSettings, users } from '@/lib/db/schema'
 import { isValidTimeZone, zoneDay, zoneParts } from '@/lib/time/zone'
-import { scheduleNextRun } from '@/lib/automationSafeguards'
-import type { ScheduledTrigger } from '@/lib/types'
 import { and, eq, gte } from 'drizzle-orm'
 import { sendTransactionalEmail } from '@/lib/resend'
 import { SparkEmail } from '@/lib/emails/SparkEmail'
@@ -12,7 +10,6 @@ import { getStudio, type StudioRow } from './setup'
 import { pickSpark, plainForEmail, sparkBody, sparkMessage } from './spark'
 import { runFollowUps } from './people'
 import { baseUrl } from './pipeline'
-import { lookInList, scoutFocus } from './scoutFocus'
 
 /**
  * The morning: which spark is waiting, and the once-a-day pass that drafts
@@ -82,48 +79,27 @@ export async function morningDue(studio: StudioRow, now = new Date()): Promise<b
   return now.getTime() >= slotToday + 3600e3
 }
 
-/**
- * Make sure the scout has run today, and run it now if it hasn't. The scout's own
- * schedule should have taken care of it; this is the guarantee that a missed or
- * failed scheduled run never means a morning with nothing in it.
- */
-async function ensureScoutRan(studio: StudioRow, now: Date): Promise<string> {
-  if (!studio.scoutShroomId) return 'no scout'
-  const row = await db.query.instructionCards.findFirst({ where: eq(instructionCards.id, studio.scoutShroomId) })
-  if (!row || !row.isEnabled) return 'scout off'
-  if (row.lastExecutedAt && now.getTime() - row.lastExecutedAt.getTime() < 20 * 3600e3) return 'already ran'
-  const { rowToInstructionCard, runShroomServerSide } = await import('@/lib/shrooms/runServerSide')
-  const instruction = rowToInstructionCard(row)
-  const scheduled = (instruction.triggers ?? []).find((t) => t.type === 'scheduled') as ScheduledTrigger | undefined
-  const result = await runShroomServerSide({
-    instruction,
-    triggerType: 'scheduled',
-    nextScheduledRun: scheduled ? scheduleNextRun(scheduled, instruction.nextScheduledRun, await ownerZone(studio.userId), now) : undefined,
-  })
-  return `ran: ${result.status}${result.detail ? ` (${result.detail})` : ''}`
-}
-
 /** The once-a-day pass for one person. Returns what happened, for the cron's log. */
 export async function runStudioMorning(studio: StudioRow, now = new Date()) {
-  const result = { userId: studio.userId, scout: '', drafted: 0, sent: 0, sparkEmailed: false }
+  const result = { userId: studio.userId, scout: '', nudges: 0, drafted: 0, sent: 0, sparkEmailed: false }
 
   // Marked first, so an hourly cron can't start a second morning while this one
   // is still waiting on the scout.
   await db.update(studioSettings).set({ lastMorningAt: now, updatedAt: now }).where(eq(studioSettings.userId, studio.userId))
 
-  result.scout = await ensureScoutRan(studio, now).catch((e) => `failed: ${e instanceof Error ? e.message : e}`)
+  // This morning's sparks, from what you've been reading, saving and working on.
+  const { runSparkEngine } = await import('./sparkEngine')
+  result.scout = await runSparkEngine(studio, now)
+    .then((r) => `${r.created} spark(s): ${r.detail}`)
+    .catch((e) => `failed: ${e instanceof Error ? e.message : e}`)
 
-  // Point tomorrow's scout at the next three groups on the brief's "Look in:" line.
-  if (studio.scoutShroomId) {
-    const channel = await db.query.channels.findFirst({ where: eq(channels.id, studio.channelId), columns: { aiInstructions: true } })
-    const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000)
-    const focus = scoutFocus(lookInList(channel?.aiInstructions), tomorrow)
-    await db.update(instructionCards).set({ webAccess: { mode: 'always', focus }, updatedAt: now }).where(eq(instructionCards.id, studio.scoutShroomId))
-  }
-
-  // Anything the scout wrote that hasn't been checked yet is checked before it's emailed.
-  const { auditStudioSparks } = await import('./audit')
-  await auditStudioSparks(studio, now).catch((e) => console.error('[studio] audit failed:', e))
+  // And the ideas already moving: the one thing that would move each of them again.
+  const { runMomentum } = await import('./momentum')
+  const nudges = await runMomentum(studio, now).catch((e) => {
+    console.error('[studio] momentum failed:', e)
+    return [] as { cardId: string; text: string }[]
+  })
+  result.nudges = nudges.length
 
   const followUps = await runFollowUps(studio.userId, { mode: studio.followUpMode === 'auto' ? 'auto' : 'ask', now })
   result.drafted = followUps.drafted
@@ -132,7 +108,7 @@ export async function runStudioMorning(studio: StudioRow, now = new Date()) {
   if (studio.sparkEmail && !(studio.lastSparkEmailAt && sameUtcDay(studio.lastSparkEmailAt, now))) {
     const card = pickSpark(await sparkCards(studio), studio.handledSparkIds ?? [], now)
     const owner = await db.query.users.findFirst({ where: eq(users.id, studio.userId), columns: { email: true } })
-    if (card && owner?.email) {
+    if ((card || nudges.length) && owner?.email) {
       const waiting = await db.query.appEmails.findMany({
         where: and(eq(appEmails.ownerId, studio.userId), eq(appEmails.status, 'draft'), gte(appEmails.createdAt, new Date(now.getTime() - 36 * 3600 * 1000))),
         columns: { id: true },
@@ -142,17 +118,19 @@ export async function runStudioMorning(studio: StudioRow, now = new Date()) {
         waiting.length ? `${waiting.length} ${waiting.length === 1 ? 'email draft is' : 'email drafts are'} waiting in People` : '',
       ].filter(Boolean).join(', and ')
       const html = await render(React.createElement(SparkEmail, {
-        title: card.title,
-        body: plainForEmail(sparkBody(card)),
+        title: card?.title,
+        body: card ? plainForEmail(sparkBody(card)) : '',
+        nudges: nudges.map((n) => n.text),
         overnight: overnight ? `${overnight}.` : undefined,
         homeUrl: `${baseUrl()}/`,
         settingsUrl: `${baseUrl()}/people?settings=1`,
       }))
-      const ok = await sendTransactionalEmail({ to: owner.email, subject: `A spark: ${card.title}`, html })
+      const subject = card ? `A spark: ${card.title}` : `Moving: ${nudges.length === 1 ? 'one idea needs you' : `${nudges.length} ideas need you`}`
+      const ok = await sendTransactionalEmail({ to: owner.email, subject, html })
       if (ok) {
         await db.update(studioSettings).set({ lastSparkEmailAt: now, updatedAt: now }).where(eq(studioSettings.userId, studio.userId))
         // Emailed once; tomorrow's email is about a different spark.
-        await markSparkHandled(studio.userId, card.id)
+        if (card) await markSparkHandled(studio.userId, card.id)
         result.sparkEmailed = true
       }
     }

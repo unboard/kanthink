@@ -35,6 +35,13 @@ export const PRODUCT_UPDATE_KIND_LABELS: Record<ProductUpdateKind, string> = {
 
 export const PRODUCT_UPDATES: ProductUpdate[] = [
   {
+    id: 'studio-sparks-from-your-interests',
+    date: '2026-10-23',
+    kind: 'automation',
+    title: 'Sparks come from what you read and save',
+    body: 'Each morning the Studio turns your Kanwatch reads, bookmarks, boards and where your hours go into three money ideas, each showing what set it off, why you, a price to test and a first move as tasks. Ideas already moving get one nudge a morning: share the test page (with the post written), build it once people reserve, ship it, or drop it.',
+  },
+  {
     id: 'print-products-from-templates',
     date: '2026-10-09',
     kind: 'capability',

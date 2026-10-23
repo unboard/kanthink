@@ -29,7 +29,7 @@ export function pickSpark(cards: SparkCandidate[], handled: string[], now: Date)
   return fresh[0] ?? null
 }
 
-/** The scout's write-up, as plain text: the first message, else the summary. */
+/** The spark's write-up, as plain text: the first message, else the summary. */
 export function sparkBody(card: SparkCandidate): string {
   const first = (card.messages ?? []).find((m) => (m.content || '').trim())
   return ((first?.content || card.summary || '').trim())
@@ -74,9 +74,9 @@ function clip(text: string, max: number) {
 export function sparkMessage(card: SparkCandidate): string {
   const body = sparkBody(card)
   return [
-    `Morning. Something the scouts found: **${card.title}**`,
+    `Morning. An idea from what you've been into: **${card.title}**`,
     body ? linkifySources(clip(body, 1400)) : '',
-    'Want me to put up a test page for it? Or tell me what you’d change, or pass.',
+    'Want the test page up so you can do the first move today? Or tell me what you’d change, or pass.',
   ].filter(Boolean).join('\n\n')
 }
 

@@ -13,7 +13,7 @@ import { cardApp } from './pipeline'
 export async function buildStudioContext(userId: string): Promise<string> {
   const studio = await getStudio(userId)
   if (!studio) {
-    return `\n\n## STUDIO\nThe user has no Studio yet. A Studio is a channel where a crew of shrooms finds small app ideas on the web each morning, tests them with a Reserve page, and helps build, ship and sell them. If they ask to start one — or ask for agents that find and sell app ideas — use **setup_studio** (no fields).`
+    return `\n\n## STUDIO\nThe user has no Studio yet. A Studio is a channel where Kan turns what they read, save and work on into money ideas each morning, tests each with a Reserve page, keeps them moving with nudges, and helps build, ship and sell them. If they ask to start one — or ask for help finding ideas that make money — use **setup_studio** (no fields).`
   }
 
   const [channel, cols, studioCards, drafts] = await Promise.all([
@@ -33,17 +33,17 @@ export async function buildStudioContext(userId: string): Promise<string> {
   return `
 
 ## STUDIO
-The user's Studio is the channel "${channel?.name ?? 'Studio'}" (id ${studio.channelId}). Each card is one spark: an app idea the scouts found. Columns, in order: ${cols.map((c) => c.name).join(' → ')}.
+The user's Studio is the channel "${channel?.name ?? 'Studio'}" (id ${studio.channelId}). Each card is one spark: a money idea Kan found in what the user reads, saves and works on, with a first move and next steps as its tasks. Each morning Kan also nudges the ideas already moving (share the test page, build it, ship it, or drop it). Columns, in order: ${cols.map((c) => c.name).join(' → ')}.
 ${drafts.length ? `${drafts.length} email ${drafts.length === 1 ? 'draft is' : 'drafts are'} waiting for the user in People (/people).\n` : ''}
 Cards:
-${lines.join('\n') || '(none yet — the scout runs every morning)'}
+${lines.join('\n') || '(none yet — new sparks arrive every morning)'}
 
 The brief (the channel's standing instructions):
 """
 ${(channel?.aiInstructions || '').slice(0, 2500)}
 """
 
-New sparks wait for review in the Sparks column and show on Home as cards; approving one in its card drawer puts up its test page, and rejecting it with a reason teaches the scout. If the user talks about a spark here instead, act on it:
+New sparks wait for review in the Sparks column and show on Home as cards; approving one in its card drawer puts up its test page, and rejecting it with a reason teaches the next morning's sparks. If the user talks about a spark here instead, act on it:
 - **start_test_page**: put up a test page with a Reserve button. Requires: cardId. Optional: headline (the promise, one line), pitch (2–3 sentences, who it's for and what it does), priceLabel (e.g. "$5 a plan", "first plan free, then $5"), bullets (up to 3 short lines). Apply anything they asked for ("make the first one free") to these fields. Your reply is written before the page exists, so its link appears under your reply on its own — never write a placeholder like "[link]". Offer a short post they could share where the demand was found, written so the link can go at the end.
 - **drop_spark**: pass on it. Requires: cardId. Optional: reason (their words). Use for "pass", "no", "not this one".
 - **build_app** on a Studio card builds into the card's own app, so people who reserved carry over. Use it when they say "build it". It moves the card through Building to Ready for you.

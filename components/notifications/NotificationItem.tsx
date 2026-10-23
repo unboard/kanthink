@@ -87,7 +87,8 @@ export function getNavigationUrl(notification: NotificationData, tasks: Record<s
     notification.type === 'card_assigned' ||
     notification.type === 'card_added_by_other' ||
     notification.type === 'card_moved_by_other' ||
-    notification.type === 'mentioned_in_card'
+    notification.type === 'mentioned_in_card' ||
+    notification.type === 'studio_nudge'
   )) {
     return `/channel/${channelId}/card/${data.cardId}`
   }
@@ -143,6 +144,7 @@ function getTypeLabel(notification: NotificationData): string | null {
     case 'ai_clarifying_questions': return 'Insights'
     case 'drift_detected': return 'Drift'
     case 'kanwatch_idea': return 'Idea'
+    case 'studio_nudge': return 'Nudge'
     case 'automation_completed': return 'Auto'
     case 'threshold_fired': return 'Threshold'
     case 'safeguard_tripped': return 'Safeguard'
