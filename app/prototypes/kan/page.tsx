@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { signIn } from 'next-auth/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowUp, ArrowUpRight, Brain, Check, Globe, Loader2, Plus, Square, X } from 'lucide-react';
@@ -169,6 +170,7 @@ export default function KanAgentPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [cardIds, setCardIds] = useState<string[]>([]);
   const [now, setNow] = useState<{ items: NowItem[]; name: string | null } | null>(null);
+  const [signedOut, setSignedOut] = useState(false);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(() => Date.now());
@@ -181,7 +183,13 @@ export default function KanAgentPage() {
     // A turn that was mid-flight when the page closed can't resume; close it honestly.
     setTurns(saved.turns.map((t) => (t.role === 'kan' && !t.endedAt ? { ...t, endedAt: Date.now(), error: t.text ? undefined : 'Interrupted' } : t)));
     setCardIds(saved.cardIds);
-    fetch('/api/prototypes/kan/now').then((r) => (r.ok ? r.json() : null)).then((d) => d && setNow(d)).catch(() => {});
+    fetch('/api/prototypes/kan/now')
+      .then((r) => {
+        if (r.status === 401) setSignedOut(true);
+        return r.ok ? r.json() : { items: [], name: null };
+      })
+      .then(setNow)
+      .catch(() => setNow({ items: [], name: null }));
   }, []);
 
   useEffect(() => { if (turns.length) save(STORE_KEY, { turns: turns.slice(-60), cardIds }); }, [turns, cardIds]);
@@ -225,8 +233,9 @@ export default function KanAgentPage() {
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
+        if (res.status === 401) setSignedOut(true);
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Kan couldn't answer (${res.status})`);
+        throw new Error(res.status === 401 ? 'Sign in first' : data.error || `Kan couldn't answer (${res.status})`);
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -318,7 +327,17 @@ export default function KanAgentPage() {
             <div className="pt-[12vh]">
               <h1 className="text-[26px] font-semibold tracking-tight text-neutral-100">{greeting(now?.name ?? null)}</h1>
               <div className="mt-8">
-                {!now ? (
+                {signedOut ? (
+                  <div>
+                    <p className="text-sm text-neutral-400">Sign in so Kan can see your channels.</p>
+                    <button
+                      onClick={() => void signIn('google', { callbackUrl: '/prototypes/kan' })}
+                      className="mt-3 rounded-full bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500"
+                    >
+                      Sign in with Google
+                    </button>
+                  </div>
+                ) : !now ? (
                   <Trace><TraceLine status="running"><TraceTitle>Checking what’s waiting on you</TraceTitle></TraceLine></Trace>
                 ) : now.items.length === 0 ? (
                   <p className="text-sm text-neutral-500">Nothing’s waiting on you. What are you thinking about?</p>
