@@ -24,6 +24,7 @@ import { SnoozePicker } from './SnoozePicker';
 import { useSelectionStore } from '@/lib/selectionStore';
 import { MobileMenuDrawer, useIsMobile } from './MobileMenuDrawer';
 import { Pin } from 'lucide-react';
+import { TraceLine, TraceTitle } from '@/components/ui/Trace';
 
 class CardDrawerErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -300,9 +301,9 @@ export function Card({ card }: CardProps) {
             />
             {/* Status text — upper left */}
             <div className="px-3 pt-2 pb-0">
-              <span className="text-[10px] font-medium text-violet-500 dark:text-violet-400">
-                {card.processingStatus || 'Working...'}
-              </span>
+              <TraceLine status="running" className="!text-[10px] font-medium !text-violet-500 dark:!text-violet-400">
+                <TraceTitle>{(card.processingStatus || 'Working').replace(/\.{3}$|…$/, '')}</TraceTitle>
+              </TraceLine>
             </div>
           </>
         )}

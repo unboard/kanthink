@@ -13,6 +13,7 @@ import { BacksideTask } from './BacksideTask';
 import { ColumnMenu } from './ColumnMenu';
 import { ColumnDetailDrawer } from './ColumnDetailDrawer';
 import { SkeletonCard } from './SkeletonCard';
+import { ColumnGenerationTrace } from './ColumnGenerationTrace';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { ColumnTaskItem } from './ColumnTaskItem';
 import { TaskDrawer } from './TaskDrawer';
@@ -502,6 +503,7 @@ export function Column({ column, channelId, columnCount, dragHandleProps }: Colu
               })}
             </SortableContext>
             {/* Skeleton cards while AI is generating */}
+            {skeletonCount > 0 && <ColumnGenerationTrace count={skeletonCount} />}
             {skeletonCount > 0 && (
               Array.from({ length: skeletonCount }).map((_, i) => (
                 <SkeletonCard key={`skeleton-${i}`} className="h-20" />

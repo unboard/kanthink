@@ -1,5 +1,4 @@
 'use client';
-import { MyceliumWeb } from '@/components/kan/KanThinking';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
@@ -16,6 +15,7 @@ import { Drawer } from '@/components/ui';
 import { AssigneeAvatars } from './AssigneeAvatars';
 import { AssigneePicker } from './AssigneePicker';
 import { nanoid } from 'nanoid';
+import { KanWorking } from '@/components/kan/KanTrace';
 
 const WhiteboardEditor = dynamic(
   () => import('./WhiteboardEditor').then(mod => ({ default: mod.WhiteboardEditor })),
@@ -733,15 +733,7 @@ export function TaskDrawer({
 
             {/* AI Loading indicator */}
             {isAILoading && (
-              <div className="pl-3 relative">
-                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-violet-400 dark:bg-violet-500 rounded-full" />
-                <div className="rounded-lg px-3 py-2 bg-violet-50 dark:bg-violet-950/30">
-                  <div className="flex items-center gap-2 text-sm text-violet-600 dark:text-violet-400">
-                    <MyceliumWeb size={18} />
-                    Kan is thinking
-                  </div>
-                </div>
-              </div>
+              <KanWorking label="Writing a reply" className="px-1 py-1" />
             )}
 
             {/* Your latest note, if you forgot to address it to Kan. Task notes carry no

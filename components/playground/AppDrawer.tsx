@@ -9,6 +9,7 @@ import { ChatInput } from '@/components/board/ChatInput';
 import { AskKanChip, UsageLimitNotice } from '@/components/board/AskKanChip';
 import { messageToAskKanAbout, USAGE_LIMIT_CODE } from '@/lib/chat/askKan';
 import { useChannelMembers } from '@/lib/hooks/useChannelMembers';
+import { KanTrace, KanWorking } from '@/components/kan/KanTrace';
 import { useStore } from '@/lib/store';
 import { buildPlaygroundDoc } from './buildPlaygroundDoc';
 import { isFromFrame } from '@/lib/playground/useAppStorage';
@@ -98,6 +99,9 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, init
 
   const [isBuilding, setIsBuilding] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
+  /** The running build's phases, as the status poll reports them. */
+  const [buildSteps, setBuildSteps] = useState<{ label: string; status: 'running' | 'done' | 'error'; at: number }[]>([]);
+  const [buildStartedAt, setBuildStartedAt] = useState(0);
   const [error, setError] = useState<string | null>(null);
   /** The last reply failed because this month's AI requests are used up. */
   const [limitReached, setLimitReached] = useState(false);
@@ -268,6 +272,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, init
   useEffect(() => {
     if (!isBuilding) {
       buildStartCount.current = null;
+      setBuildSteps([]);
       return;
     }
     if (buildStartCount.current === null) buildStartCount.current = generationCount;
@@ -285,6 +290,7 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, init
         if (!res.ok) return;
         const data = await res.json();
         const fresh = data.app as PlaygroundApp | undefined;
+        if (!stopped && Array.isArray(data.progress?.steps)) setBuildSteps(data.progress.steps);
         if (fresh && fresh.generationCount > (buildStartCount.current ?? 0)) {
           applyApp(fresh);
           setOptimistic([]);
@@ -298,11 +304,14 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, init
       }
     };
 
-    const interval = setInterval(poll, 4000);
+    // Quick enough that each phase shows up while it's the one running.
+    const first = setTimeout(poll, 1200);
+    const interval = setInterval(poll, 2500);
     const onVisibility = () => { if (document.visibilityState === 'visible') void poll(); };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       stopped = true;
+      clearTimeout(first);
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
     };
@@ -463,6 +472,8 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, init
       ? 'Update the app based on everything discussed in this thread.'
       : 'Build the app described in this thread and on the source card.');
     setError(null);
+    setBuildSteps([]);
+    setBuildStartedAt(Date.now());
     setIsBuilding(true);
     setPane('thread');
     pushOptimistic(trimmed);
@@ -681,11 +692,21 @@ export function AppDrawer({ appId, card, isOpen, onClose, onOpenSourceCard, init
               </div>
 
               {busy && (
-                <div className="flex items-center gap-2 px-1 py-3 text-sm text-neutral-500 dark:text-neutral-400">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {isBuilding
-                    ? `Building with ${selectedModel.label.replace('Gemini ', '')}…`
-                    : 'Kan is thinking…'}
+                <div className="px-1 py-3">
+                  {isBuilding ? (
+                    <KanTrace
+                      startedAt={buildStartedAt}
+                      steps={buildSteps.length
+                        ? buildSteps.map((s) => ({
+                            label: s.label,
+                            status: s.status === 'done' ? undefined : s.status,
+                            startedAt: s.at,
+                          }))
+                        : [{ label: `Starting the build with ${selectedModel.label}`, status: 'running' }]}
+                    />
+                  ) : (
+                    <KanWorking label="Writing a reply" />
+                  )}
                 </div>
               )}
               <div ref={messagesEndRef} />

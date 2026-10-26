@@ -1,5 +1,4 @@
 'use client';
-import { MyceliumWeb } from '@/components/kan/KanThinking';
 
 import { useRef, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
@@ -23,6 +22,7 @@ import { ChatInput, useKeyboardOffset } from './ChatInput';
 import { ChannelActionSnippet, resolveColumnId, resolveCardId } from './ChannelActionSnippet';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { buildVoiceSystemPrompt } from '@/lib/ai/voicePrompt';
+import { KanWorking } from '@/components/kan/KanTrace';
 
 interface ChannelChatThreadProps {
   thread: ThreadType;
@@ -396,10 +396,7 @@ export function ChannelChatThread({ thread, channel, onBack, onThreadUpdate, hea
         ))}
 
         {isLoading && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/50">
-            <MyceliumWeb size={20} className="text-violet-400" />
-            <span className="text-xs text-neutral-400">Kan is thinking</span>
-          </div>
+          <KanWorking label="Reading the channel" className="px-1 py-2" />
         )}
 
         {error && (

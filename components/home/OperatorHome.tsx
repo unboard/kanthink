@@ -11,7 +11,6 @@ import { ChannelPreview } from '@/components/board/ChannelPreview';
 import type { ChannelConfig } from '@/lib/channelCreation/extractChannelConfig';
 import remarkGfm from 'remark-gfm';
 import { KanChart, parseChartDirectives } from '@/components/charts/KanChart';
-import { MyceliumWeb } from '@/components/kan/KanThinking';
 import { AudioLines, Mic } from 'lucide-react';
 import { Drawer } from '@/components/ui/Drawer';
 import { LiveVoiceMode } from '@/components/voice/LiveVoiceMode';
@@ -23,6 +22,7 @@ import { ChannelPreviewDrawer } from '@/components/home/ChannelPreviewDrawer';
 import { PeekPreview, type PeekTarget } from '@/components/home/PeekPreview';
 import { CardDetailDrawer } from '@/components/board/CardDetailDrawer';
 import { TaskDrawer } from '@/components/board/TaskDrawer';
+import { KanWorking } from '@/components/kan/KanTrace';
 
 interface ActionResult {
   type: string;
@@ -743,12 +743,10 @@ export function OperatorHome() {
               {/* Thinking indicator */}
               {isLoading && (
                 <div className="flex gap-3">
-                  <div className="mt-1 flex-shrink-0">
+                  <div className="mt-0.5 flex-shrink-0">
                     <KanthinkIcon size={20} className="text-violet-400" />
                   </div>
-                  <div className="rounded-2xl bg-neutral-900 border border-neutral-800 px-4 py-3">
-                    <MyceliumWeb size={22} className="text-violet-400" />
-                  </div>
+                  <KanWorking label="Thinking" />
                 </div>
               )}
 

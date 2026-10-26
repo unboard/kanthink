@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   const since = Number(req.nextUrl.searchParams.get('since') ?? '-1');
   const head = await db.query.playgroundApps.findFirst({
     where: eq(playgroundApps.id, appId),
-    columns: { id: true, channelId: true, generationCount: true, updatedAt: true },
+    columns: { id: true, channelId: true, generationCount: true, updatedAt: true, buildProgress: true },
   });
   if (!head) {
     return NextResponse.json({ error: 'App not found' }, { status: 404 });
@@ -55,7 +55,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
   }
 
   if (Number.isFinite(since) && head.generationCount <= since) {
-    return NextResponse.json({ generationCount: head.generationCount, pending: true });
+    // The build's steps so far, for the drawer's trace.
+    return NextResponse.json({ generationCount: head.generationCount, pending: true, progress: head.buildProgress ?? null });
   }
 
   const app = await db.query.playgroundApps.findFirst({ where: eq(playgroundApps.id, appId) });

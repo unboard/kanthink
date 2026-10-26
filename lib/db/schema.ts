@@ -391,6 +391,15 @@ export const playgroundApps = sqliteTable('playground_apps', {
   /** Kan's notes from the most recent build, shown under the preview. */
   lastNotes: text('last_notes'),
   /**
+   * The build in flight, step by step, for the trace in the app drawer. Written by
+   * the generator as it moves through its phases and cleared when it returns, so a
+   * value here only means anything while a build is running.
+   */
+  buildProgress: text('build_progress', { mode: 'json' }).$type<{
+    startedAt: number
+    steps: { label: string; status: 'running' | 'done' | 'error'; at: number }[]
+  } | null>(),
+  /**
    * Runtime dependency declarations in lib/playground/runtime grammar, as declared
    * by the model. Stored as declarations rather than resolved URLs so resolution
    * rules can change without rewriting rows — always re-resolved via resolveDeps.

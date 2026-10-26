@@ -23,6 +23,7 @@ import {
 } from '@/lib/playground/models';
 import { signAppToken, signDraftAppToken } from '@/lib/playground/appToken';
 import { runPreflight, type PreflightResult } from '@/lib/playground/preflight';
+import { buildTracker, type BuildTracker } from '@/lib/playground/buildProgress';
 import { applyCodeEdits, shouldPatch, type CodeEdit } from '@/lib/playground/applyEdits';
 import {
   capabilitiesLost,
@@ -644,14 +645,33 @@ async function fetchImageAsInlineData(
   }
 }
 
+type GenerateOptions = {
+  skipPreflight?: boolean;
+  /** Force a full rewrite. Used when a caller needs the whole file regenerated. */
+  skipPatch?: boolean;
+};
+
 export async function generatePlaygroundApp(
   body: GenerateRequest,
   session: { user: { id: string } },
-  options: {
-    skipPreflight?: boolean;
-    /** Force a full rewrite. Used when a caller needs the whole file regenerated. */
-    skipPatch?: boolean;
-  } = {}
+  options: GenerateOptions = {}
+): Promise<NextResponse> {
+  // Each phase is written to the app row as it starts, so the drawer can show the
+  // build as a trace. Cleared on every way out — a stale step would read as a
+  // build still running.
+  const progress = body.appId ? buildTracker(body.appId) : undefined;
+  try {
+    return await runGeneration(body, session, options, progress);
+  } finally {
+    await progress?.clear();
+  }
+}
+
+async function runGeneration(
+  body: GenerateRequest,
+  session: { user: { id: string } },
+  options: GenerateOptions,
+  progress: BuildTracker | undefined
 ): Promise<NextResponse> {
   await ensureSchema();
   const pass = isStylePass(body.pass) ? body.pass : null;
@@ -876,6 +896,7 @@ export async function generatePlaygroundApp(
           apiKey: preflightKey,
         })
       : Promise.resolve(null);
+  await progress?.step(isIteration ? 'Working out what to change' : 'Reading the brief');
   const preflight: PreflightResult = !options.skipPreflight && preflightKey
     ? await runPreflight({
         apiKey: preflightKey,
@@ -1182,6 +1203,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
 
   try {
     if (patchMode && currentCode) {
+      await progress?.step(`Writing the change with ${model.label}`);
       const patchResponse = await runStructured({
         model,
         apiKey,
@@ -1254,6 +1276,11 @@ ${body.prompt}${imageNote}${iterationReminder}`;
     }
 
     if (!parsed) {
+      await progress?.step(
+        patchOutcome ? 'The small edit didn’t fit — rewriting the file'
+          : isIteration ? `Rewriting the app with ${model.label}`
+          : `Building the app with ${model.label}`
+      );
       const response = await runStructured({
         model,
         apiKey,
@@ -1295,6 +1322,7 @@ ${body.prompt}${imageNote}${iterationReminder}`;
 
         if (capabilityLoss) {
           console.warn('[playground] rewrite dropped capabilities, retrying:', capabilityLoss.ids.join(', '));
+          await progress?.step(`Putting back ${capabilityLoss.labels.join(', ')}`);
           const retry = await runStructured({
             model,
             apiKey,
@@ -1363,6 +1391,8 @@ ${body.prompt}${imageNote}${iterationReminder}`;
       { status: 409 }
     );
   }
+
+  await progress?.step('Checking and saving');
 
   // Persist the build onto the app row, and append the turn to the app's thread.
   const inputTokens = usage.promptTokenCount;

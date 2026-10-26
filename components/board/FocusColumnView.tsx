@@ -25,6 +25,7 @@ import { BacksideCard } from './BacksideCard';
 import { ReviewCard } from './ReviewCard';
 import { BacksideTask } from './BacksideTask';
 import { SkeletonCard } from './SkeletonCard';
+import { ColumnGenerationTrace } from './ColumnGenerationTrace';
 import { CardDetailDrawer } from './CardDetailDrawer';
 import { ColumnMenu } from './ColumnMenu';
 import { ColumnDetailDrawer } from './ColumnDetailDrawer';
@@ -349,6 +350,7 @@ export function FocusColumnView({ column, channelId, onExitFocus }: FocusColumnV
               </DndContext>
 
               {/* Skeleton cards while AI is generating */}
+              {skeletonCount > 0 && <ColumnGenerationTrace count={skeletonCount} />}
               {skeletonCount > 0 &&
                 Array.from({ length: skeletonCount }).map((_, i) => (
                   <SkeletonCard key={`skeleton-${i}`} className="h-20" />

@@ -1,5 +1,4 @@
 'use client';
-import { MyceliumWeb } from '@/components/kan/KanThinking';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Channel, InstructionCard, InstructionAction, InstructionTarget, ShroomChatMessage, ShroomStep, ShroomEmailConfig, ShroomCapabilities, ShroomInputRequirements } from '@/lib/types';
@@ -7,6 +6,7 @@ import { useStore } from '@/lib/store';
 import { Drawer } from '@/components/ui/Drawer';
 import { ShroomPreview } from './ShroomPreview';
 import { useAutoResizeTextarea } from '@/lib/hooks/useAutoResizeTextarea';
+import { KanWorking } from '@/components/kan/KanTrace';
 
 interface ShroomConfigStep {
   action: InstructionAction;
@@ -447,16 +447,7 @@ export function ShroomChatDrawer({
 
           {/* Loading indicator */}
           {isLoading && (
-            <div className="flex gap-2.5 justify-start">
-              <img
-                src="https://res.cloudinary.com/dcht3dytz/image/upload/v1769532115/kanthink-icon_pbne7q.svg"
-                alt="Kan"
-                className="w-7 h-7 flex-shrink-0 mt-0.5 animate-pulse"
-              />
-              <div className="bg-neutral-100 dark:bg-neutral-800 rounded-2xl rounded-bl-md px-4 py-3">
-                <MyceliumWeb size={20} className="text-violet-500 dark:text-violet-400" />
-              </div>
-            </div>
+            <KanWorking label="Shaping the shroom" className="px-1 py-1" />
           )}
 
           {/* Error message */}

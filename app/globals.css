@@ -729,3 +729,26 @@ body {
   .kan-switch-knob { transition-duration: 0.01ms; }
 }
 
+
+/* --- Trace (components/ui/Trace.tsx) ---
+   A running step's title shimmers: a light band sweeps through the text itself. */
+@keyframes trace-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.trace-line[data-status='running'] > .trace-title {
+  background-image: linear-gradient(90deg, currentColor 0%, currentColor 40%, #c4b5fd 50%, currentColor 60%, currentColor 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: trace-shimmer 1.8s linear infinite;
+}
+.trace-title ~ .trace-icon { margin-left: -0.25rem; }
+@media (prefers-reduced-motion: reduce) {
+  .trace-line[data-status='running'] > .trace-title {
+    animation: none;
+    -webkit-text-fill-color: currentColor;
+    background-image: none;
+  }
+}
