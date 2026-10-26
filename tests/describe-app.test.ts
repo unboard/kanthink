@@ -150,13 +150,13 @@ describe('the tool is reachable from the places that were blind', () => {
   const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
 
   it('show_card reports the apps built from the card', () => {
-    const src = read('app/api/voice/action/route.ts')
+    const src = read('lib/voice/runAction.ts')
     expect(src).toMatch(/case 'show_card'/)
     expect(src).toMatch(/describeAppRow\(cardApp/)
   })
 
   it('show_app exists as an action', () => {
-    expect(read('app/api/voice/action/route.ts')).toMatch(/case 'show_app'/)
+    expect(read('lib/voice/runAction.ts')).toMatch(/case 'show_app'/)
   })
 
   it('show_app is declared to the live voice model (lib/voice/tools.ts)', () => {

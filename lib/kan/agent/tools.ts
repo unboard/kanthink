@@ -1,12 +1,14 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { VOICE_TOOLS } from '@/lib/voice/tools'
+import { runVoiceAction } from '@/lib/voice/runAction'
 import { gatherNow } from './now'
+import { pastTense } from './events'
 
 /**
  * Everything the Kan agent can do, as Claude tools.
  *
  * Most of it already existed: voice mode's ~20 actions (cards, tasks, apps, Kanwatch,
- * Mixpanel, channels, builds) behind /api/voice/action. Those are converted from
+ * Mixpanel, channels, builds), run through runVoiceAction. Those are converted from
  * their Gemini declarations rather than rewritten, so voice and the agent can't drift.
  * Added on top: the Studio's money moves, handing a big build to Claude Code, what
  * needs you now, web search, and `suggest` — the proactive part, which offers a next
@@ -19,10 +21,10 @@ import { gatherNow } from './now'
 export interface ToolContext {
   userId: string
   isAdmin: boolean
+  name?: string | null
   readable: string[]
-  /** Origin of this request, for calling the shared action route as the same user. */
-  origin: string
-  cookie: string
+  /** A channel bot's own channel: voice actions can't reach past it. */
+  scope?: string[]
   /** Cards this conversation made, so a second mention folds into the first. */
   sessionCardIds: string[]
   recentTurns: { role: 'user' | 'kan'; text: string }[]
@@ -51,7 +53,7 @@ export interface AgentTool {
   run: (input: Record<string, unknown>, ctx: ToolContext) => Promise<ToolOutcome>
 }
 
-const WORK_CHANNEL_ID = '64eQst0Zx_iYYN4QJLWw3'
+export const WORK_CHANNEL_ID = '64eQst0Zx_iYYN4QJLWw3'
 
 // --- Gemini declarations → JSON Schema -----------------------------------------
 
@@ -102,23 +104,42 @@ const VOICE_ONLY = new Set(['draft_email', 'generate_image'])
 
 type ActionResponse = { result?: string; modelResult?: string; cardId?: string; channelId?: string; error?: string }
 
-async function callAction(action: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ActionResponse> {
-  // The action route takes strings, except where a declaration says array.
-  const flat: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(args)) flat[k] = Array.isArray(v) ? v.map(str) : str(v)
-  const res = await fetch(`${ctx.origin}/api/voice/action`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: ctx.cookie },
-    body: JSON.stringify({ action, args: flat, sessionCardIds: ctx.sessionCardIds, recentTurns: ctx.recentTurns }),
-  })
+export async function callAction(action: string, args: Record<string, unknown>, ctx: ToolContext, scope = ctx.scope): Promise<ActionResponse> {
+  // Voice actions take strings, except where a declaration says array.
+  const flat: Record<string, string> = {}
+  for (const [k, v] of Object.entries(args)) flat[k] = (Array.isArray(v) ? v.map(str) : str(v)) as string
+  const res = await runVoiceAction(
+    { id: ctx.userId, isAdmin: ctx.isAdmin, name: ctx.name, scope },
+    { action, args: flat, sessionCardIds: ctx.sessionCardIds, recentTurns: ctx.recentTurns },
+  )
   const data = (await res.json().catch(() => ({}))) as ActionResponse
   if (!res.ok) return { result: data.error || `That didn't work (${res.status}).`, error: data.error || String(res.status) }
   return data
 }
 
+/** The model passes ids; the trace should say which card or channel in words. */
+async function titledLabel(running: string, input: Record<string, unknown>, cardId?: string): Promise<string | undefined> {
+  const { db } = await import('@/lib/db')
+  const { cards, channels } = await import('@/lib/db/schema')
+  const { eq } = await import('drizzle-orm')
+  let label = pastTense(running)
+  let named = false
+  const cardRef = str(input.cardId)
+  if (cardRef) {
+    const card = await db.query.cards.findFirst({ where: eq(cards.id, cardId || cardRef), columns: { title: true } })
+    if (card) { label = label.replace(quote(cardRef), quote(card.title)); named = true }
+  }
+  const channelRef = str(input.channelId)
+  if (channelRef && label.includes(channelRef)) {
+    const channel = await db.query.channels.findFirst({ where: eq(channels.id, channelRef), columns: { name: true } })
+    if (channel) { label = label.replace(channelRef, channel.name); named = true }
+  }
+  return named ? label : undefined
+}
+
 const cardHref = (channelId?: string, cardId?: string) => (channelId && cardId ? `/channel/${channelId}/card/${cardId}` : channelId ? `/channel/${channelId}` : undefined)
 
-function voiceTools(): AgentTool[] {
+export function voiceTools(): AgentTool[] {
   const declarations = (VOICE_TOOLS[0] as unknown as { functionDeclarations: { name: string; description: string; parameters: GeminiSchema }[] }).functionDeclarations
   return declarations
     .filter((d) => !VOICE_ONLY.has(d.name))
@@ -137,6 +158,7 @@ function voiceTools(): AgentTool[] {
           const text = data.modelResult || data.result || 'Done.'
           return {
             content: text.slice(0, 24_000),
+            label: await titledLabel(running(input), input, data.cardId),
             isError: Boolean(data.error),
             cardId: data.cardId,
             href: cardHref(data.channelId, data.cardId),
@@ -195,7 +217,7 @@ const suggestTool: AgentTool = {
   },
 }
 
-const claudeCodeTool: AgentTool = {
+export const claudeCodeTool: AgentTool = {
   name: 'hand_to_claude_code',
   description: 'Hand work to Claude Code by putting a card in the Work channel\'s "Do these" column, where Claude Code picks it up. Use this for anything bigger than the app playground can do well: a real multi-screen product, 3D, a game, a change to Kanthink itself, an integration, anything needing a server, a database or many files. (The /mow, /catlife, /print and /wildwood "super apps" were all built this way because the playground would have struggled.) Use build_app only for a single-screen tool or a quick prototype. Write the brief so Claude Code can start without asking: the goal, who it is for, what done looks like, and every requirement the user gave. Only when the user asks for it to be built or handed off.',
   input_schema: {
@@ -209,7 +231,8 @@ const claudeCodeTool: AgentTool = {
   kind: 'write',
   running: (i) => `Handing ${quote(i.title)} to Claude Code`,
   async run(input, ctx) {
-    const data = await callAction('create_card', { channelId: WORK_CHANNEL_ID, columnName: 'Do these', title: input.title, content: input.brief, distinct: 'true' }, ctx)
+    // A bot is scoped to its own channel; the hand-off is the one place it may write outside it.
+    const data = await callAction('create_card', { channelId: WORK_CHANNEL_ID, columnName: 'Do these', title: input.title, content: input.brief, distinct: 'true' }, ctx, ctx.scope ? [WORK_CHANNEL_ID] : undefined)
     return {
       content: data.result || 'Card created in Work → Do these.',
       label: data.error ? undefined : `Handed ${quote(input.title)} to Claude Code`,
@@ -220,7 +243,7 @@ const claudeCodeTool: AgentTool = {
   },
 }
 
-function studioTools(): AgentTool[] {
+export function studioTools(): AgentTool[] {
   const card = { cardId: { type: 'string', description: 'The Studio card id' } }
   return [
     {

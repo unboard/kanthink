@@ -2012,3 +2012,58 @@ export const personNotes = sqliteTable('person_notes', {
 }, (table) => [
   index('person_notes_user_idx').on(table.appUserId, table.createdAt),
 ])
+
+/**
+ * A channel that runs itself. The bot acts as the channel's owner, on a schedule,
+ * with everything the channel can do (research, build, deploy, price, talk to the
+ * people using its apps), and keeps notes to itself between runs.
+ *
+ * Every run is logged in bot_runs; there's no approval step, by the owner's choice,
+ * so the log and the daily budget are the guardrails.
+ */
+export const channelBots = sqliteTable('channel_bots', {
+  channelId: text('channel_id').primaryKey().references(() => channels.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  enabled: integer('enabled', { mode: 'boolean' }).default(false),
+  /** Hours between scheduled runs. */
+  everyHours: integer('every_hours').default(24),
+  /** What the bot may spend on its own thinking per day, in cents. */
+  dailyBudgetCents: integer('daily_budget_cents').default(200),
+  /** The bot's notes to itself: what it's working on and what to do next run. */
+  memory: text('memory'),
+  lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
+  nextRunAt: integer('next_run_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+export interface BotStepJson {
+  id: string
+  label: string
+  status: 'running' | 'done' | 'error'
+  write?: boolean
+  href?: string
+  detail?: string
+}
+
+/** One run of a channel bot: its trace, what it changed, what it spent and what it said. */
+export const botRuns = sqliteTable('bot_runs', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id').notNull(),
+  trigger: text('trigger').$type<'scheduled' | 'manual' | 'rehearsal'>().notNull(),
+  status: text('status').$type<'running' | 'done' | 'error' | 'over_budget'>().notNull(),
+  steps: safeJsonText<BotStepJson[]>([])('steps').default([]),
+  /** The run's report to the owner, in the bot's words. */
+  summary: text('summary'),
+  /** Things only the owner can do (a missing key, an account to connect). */
+  asks: safeJsonText<string[]>([])('asks').default([]),
+  costMillicents: integer('cost_millicents').default(0),
+  model: text('model'),
+  error: text('error'),
+  startedAt: integer('started_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  endedAt: integer('ended_at', { mode: 'timestamp' }),
+}, (table) => [
+  index('bot_runs_channel_idx').on(table.channelId, table.startedAt),
+  index('bot_runs_owner_idx').on(table.ownerId, table.startedAt),
+])

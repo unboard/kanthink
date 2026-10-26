@@ -26,16 +26,48 @@ export interface RunOptions {
   send: (e: AgentEvent) => void
   signal?: AbortSignal
   model?: string
+  /** Asked between rounds with the tokens spent so far; true stops the loop (a bot's budget). */
+  shouldStop?: (usage: Usage) => boolean
+  /** Rounds of tool calls before the loop gives up. A bot doing a whole run needs more than a chat turn. */
+  maxRounds?: number
+}
+
+export interface Usage {
+  inputTokens: number
+  outputTokens: number
+}
+
+export interface RunResult {
+  did: string[]
+  madeCards: string[]
+  usage: Usage
+  model: string
+  /** The reply text, as the model wrote it. */
+  text: string
+  /** True when shouldStop ended the loop early. */
+  stopped: boolean
 }
 
 type RunTool = (id: string, name: string, input: Record<string, unknown>) => Promise<{ content: string; isError?: boolean }>
 
+/** What each provider loop fills in as it goes. */
+interface Tally {
+  usage: Usage
+  text: string
+  stopped: boolean
+}
+
 /** Claude when there's an Anthropic key, otherwise OpenAI. The tools and the trace are the same either way. */
-export async function runAgent(opts: RunOptions): Promise<{ did: string[]; madeCards: string[] }> {
-  const { tools, ctx, send } = opts
+export async function runAgent(opts: RunOptions): Promise<RunResult> {
+  const { tools, ctx } = opts
   const byName = new Map(tools.map((t) => [t.name, t]))
   const did: string[] = []
   const madeCards: string[] = []
+  const tally: Tally = { usage: { inputTokens: 0, outputTokens: 0 }, text: '', stopped: false }
+  const send = (e: AgentEvent) => {
+    if (e.t === 'text') tally.text += e.delta
+    opts.send(e)
+  }
 
   // One tool call, start to finish: the running line, the work, the done line.
   const runTool: RunTool = async (id, name, input) => {
@@ -61,18 +93,21 @@ export async function runAgent(opts: RunOptions): Promise<{ did: string[]; madeC
     }
   }
 
-  if (opts.provider === 'openai') await runOpenAI(opts, runTool, did)
-  else await runClaude(opts, runTool, did)
-  return { did, madeCards }
+  const model = opts.model ?? (opts.provider === 'openai' ? OPENAI_AGENT_MODEL : AGENT_MODEL)
+  const run = { ...opts, send, model }
+  if (opts.provider === 'openai') await runOpenAI(run, runTool, did, tally)
+  else await runClaude(run, runTool, did, tally)
+  return { did, madeCards, usage: tally.usage, model, text: tally.text, stopped: tally.stopped }
 }
 
-async function runClaude(opts: RunOptions, runTool: RunTool, did: string[]) {
+async function runClaude(opts: RunOptions, runTool: RunTool, did: string[], tally: Tally) {
   const { tools, send } = opts
   const model = opts.model ?? AGENT_MODEL
   const client = new Anthropic({ apiKey: opts.apiKey })
   const messages: Anthropic.Beta.BetaMessageParam[] = opts.history.map((m) => ({ role: m.role, content: m.content }))
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
+  for (let round = 0; round < (opts.maxRounds ?? MAX_ROUNDS); round++) {
+    if (round > 0 && opts.shouldStop?.(tally.usage)) { tally.stopped = true; break }
     if (round > 0) send({ t: 'break' })
     const live = client.beta.messages.stream(
       {
@@ -133,6 +168,8 @@ async function runClaude(opts: RunOptions, runTool: RunTool, did: string[]) {
     }
 
     const final = await live.finalMessage()
+    tally.usage.inputTokens += final.usage.input_tokens + (final.usage.cache_read_input_tokens ?? 0) + (final.usage.cache_creation_input_tokens ?? 0)
+    tally.usage.outputTokens += final.usage.output_tokens
     messages.push({ role: 'assistant', content: final.content as Anthropic.Beta.BetaContentBlockParam[] })
     if (final.stop_reason === 'pause_turn') continue
     if (final.stop_reason !== 'tool_use') break
@@ -152,7 +189,7 @@ async function runClaude(opts: RunOptions, runTool: RunTool, did: string[]) {
  * which today includes Kanthink's own owner keys. Reasoning summaries stand in for
  * thinking, and OpenAI's web search for Claude's.
  */
-async function runOpenAI(opts: RunOptions, runTool: RunTool, did: string[]) {
+async function runOpenAI(opts: RunOptions, runTool: RunTool, did: string[], tally: Tally) {
   const { tools, send } = opts
   const model = opts.model ?? OPENAI_AGENT_MODEL
   const client = new OpenAI({ apiKey: opts.apiKey })
@@ -164,7 +201,8 @@ async function runOpenAI(opts: RunOptions, runTool: RunTool, did: string[]) {
     { type: 'web_search' },
   ]
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
+  for (let round = 0; round < (opts.maxRounds ?? MAX_ROUNDS); round++) {
+    if (round > 0 && opts.shouldStop?.(tally.usage)) { tally.stopped = true; break }
     if (round > 0) send({ t: 'break' })
     const stream = await client.responses.create(
       {
@@ -220,6 +258,8 @@ async function runOpenAI(opts: RunOptions, runTool: RunTool, did: string[]) {
       }
     }
     if (!final) break
+    tally.usage.inputTokens += final.usage?.input_tokens ?? 0
+    tally.usage.outputTokens += final.usage?.output_tokens ?? 0
 
     input.push(...(final.output as OpenAI.Responses.ResponseInputItem[]))
     const calls = final.output.filter((o): o is OpenAI.Responses.ResponseFunctionToolCall => o.type === 'function_call')

@@ -82,6 +82,9 @@ export function getNavigationUrl(notification: NotificationData, tasks: Record<s
   const channelId = data.channelId as string | undefined
   if (!channelId) return null
 
+  // A bot's report opens that bot's log.
+  if (notification.type === 'bot_run') return `/prototypes/kan/bots?channel=${channelId}`
+
   // Card notifications → open card detail
   if (data.cardId && (
     notification.type === 'card_assigned' ||
@@ -145,6 +148,7 @@ function getTypeLabel(notification: NotificationData): string | null {
     case 'drift_detected': return 'Drift'
     case 'kanwatch_idea': return 'Idea'
     case 'studio_nudge': return 'Nudge'
+    case 'bot_run': return 'Bot'
     case 'automation_completed': return 'Auto'
     case 'threshold_fired': return 'Threshold'
     case 'safeguard_tripped': return 'Safeguard'

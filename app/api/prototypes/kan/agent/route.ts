@@ -46,9 +46,8 @@ export async function POST(request: Request) {
   const ctx: ToolContext = {
     userId,
     isAdmin: Boolean(session.user.isAdmin),
+    name: session.user.name,
     readable: access.readable,
-    origin: new URL(request.url).origin,
-    cookie: request.headers.get('cookie') || '',
     sessionCardIds: (body.sessionCardIds || []).slice(-10),
     recentTurns: history.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'kan', text: m.content.slice(0, 600) })),
   }

@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/print-orders",
       "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/bots",
+      "schedule": "40 * * * *"
     }
   ]
 }

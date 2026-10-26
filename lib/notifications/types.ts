@@ -17,6 +17,7 @@ export type NotificationType =
   | 'drift_detected'
   | 'kanwatch_idea'
   | 'studio_nudge'
+  | 'bot_run'
   // Automation
   | 'automation_completed'
   | 'threshold_fired'
@@ -43,7 +44,7 @@ export const NOTIFICATION_CATEGORIES: Record<NotificationCategory, { label: stri
   ai: {
     label: 'AI & Shrooms',
     description: 'Card generation, instruction suggestions, and channel analysis from Kan',
-    types: ['shroom_completed', 'shroom_failed', 'shroom_report', 'ai_generation_completed', 'ai_instruction_refinement', 'ai_clarifying_questions', 'drift_detected', 'kanwatch_idea', 'studio_nudge'],
+    types: ['shroom_completed', 'shroom_failed', 'shroom_report', 'ai_generation_completed', 'ai_instruction_refinement', 'ai_clarifying_questions', 'drift_detected', 'kanwatch_idea', 'studio_nudge', 'bot_run'],
   },
   automation: {
     label: 'Automation',
