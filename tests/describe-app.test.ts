@@ -159,8 +159,8 @@ describe('the tool is reachable from the places that were blind', () => {
     expect(read('app/api/voice/action/route.ts')).toMatch(/case 'show_app'/)
   })
 
-  it('show_app is declared to the live voice model', () => {
-    const src = read('components/voice/LiveVoiceMode.tsx')
+  it('show_app is declared to the live voice model (lib/voice/tools.ts)', () => {
+    const src = read('lib/voice/tools.ts')
     expect(src).toMatch(/name: 'show_app'/)
     // The distinction that was missing — drafts have to be named explicitly.
     expect(src).toMatch(/draft, published, or unpublished/)

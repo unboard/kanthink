@@ -9,11 +9,17 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
  */
 const PROTOTYPES: { slug: string; name: string; blurb: string; status?: string }[] = [
   {
+    slug: 'kan',
+    name: 'Kan, without the board',
+    blurb:
+      'A working agent on your real data. One column: what’s waiting on you, the conversation, a composer. Kan searches, reads, checks analytics and the web, and acts across cards, apps, Studio and Kanwatch — every step shown as a live trace. It changes things only when you ask, offers the rest as one-tap next steps, and hands anything too big for the playground to Claude Code.',
+    status: 'newest',
+  },
+  {
     slug: 'people',
     name: 'People: one person, two conversations',
     blurb:
       'Everyone who reserved, used or bought one of your apps, marked as a prospect, user or customer. Open someone to see their conversation (in-app messages, the emails you sent, and whether each was opened or clicked) and, beside it, a private conversation with Kan they never see. Kan and the shrooms draft there, every email is a preview with Send, and nothing reaches the customer until you press it.',
-    status: 'newest',
   },
   {
     slug: 'studio',
