@@ -1,7 +1,7 @@
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { botRuns, channels } from '@/lib/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { afterResponse } from '@/lib/afterResponse'
 import { runBot } from '@/lib/kan/bots/run'
@@ -24,7 +24,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ channel
   }
 
   const running = await db.query.botRuns.findFirst({
-    where: and(eq(botRuns.channelId, channelId), eq(botRuns.status, 'running')),
+    // An approved build running on its own doesn't stop the bot from running.
+    where: and(eq(botRuns.channelId, channelId), eq(botRuns.status, 'running'), ne(botRuns.trigger, 'build')),
     columns: { id: true, startedAt: true },
   })
   // A run older than the function ceiling was cut off; it mustn't block new runs forever.

@@ -245,6 +245,7 @@ export const VOICE_TOOLS = [
           properties: {
             cardId: { type: 'STRING', description: 'Card ID or card title to build from' },
             prompt: { type: 'STRING', description: 'Optional extra direction beyond what the thread already says' },
+            modelId: { type: 'STRING', description: 'Optional model to build with; leave empty for Auto. gemini-3.1-pro-preview is the strong cheap default (a new app is about $0.10), gemini-3.8-flash the fastest, gpt-5.6-sol for complex apps (about $0.25), gpt-6-astra only for hard apps where quality beats cost (about $0.80, up to $1.70). Claude models need an Anthropic key. Only pick one when the user names a model or the app clearly needs more than the default.' },
           },
           required: ['cardId'],
         },

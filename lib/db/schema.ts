@@ -2051,7 +2051,7 @@ export const botRuns = sqliteTable('bot_runs', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
   ownerId: text('owner_id').notNull(),
-  trigger: text('trigger').$type<'scheduled' | 'manual' | 'rehearsal'>().notNull(),
+  trigger: text('trigger').$type<'scheduled' | 'manual' | 'rehearsal' | 'build'>().notNull(),
   status: text('status').$type<'running' | 'done' | 'error' | 'over_budget'>().notNull(),
   steps: safeJsonText<BotStepJson[]>([])('steps').default([]),
   /** The run's report to the owner, in the bot's words. */
@@ -2093,3 +2093,40 @@ export const botSpendLimits = sqliteTable('bot_spend_limits', {
   capNotifiedAt: integer('cap_notified_at', { mode: 'timestamp' }),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
+
+/**
+ * Something a bot wants to do that waits for the owner: today an app build, with
+ * its purpose, model and estimated cost. The owner approves or rejects with a
+ * reason, and the bot reads the decision on its next run. Built for any action
+ * that should ask first, not just builds.
+ */
+export const botApprovals = sqliteTable('bot_approvals', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  ownerId: text('owner_id').notNull(),
+  /** The run that asked. */
+  runId: text('run_id'),
+  kind: text('kind').$type<'build_app'>().notNull(),
+  status: text('status').$type<'pending' | 'approved' | 'rejected' | 'done' | 'failed'>().notNull().default('pending'),
+  cardId: text('card_id'),
+  /** What it is, in a few words. */
+  title: text('title').notNull(),
+  /** Why the bot wants it. */
+  purpose: text('purpose'),
+  /** Direction for the builder, beyond the card's thread. */
+  brief: text('brief'),
+  modelId: text('model_id'),
+  likelyMillicents: integer('likely_millicents'),
+  maxMillicents: integer('max_millicents'),
+  /** What it actually cost, once done. */
+  costMillicents: integer('cost_millicents'),
+  /** The owner's reason, when rejected. */
+  reason: text('reason'),
+  /** What came of it: a build's result, or why it failed. */
+  outcome: text('outcome'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  decidedAt: integer('decided_at', { mode: 'timestamp' }),
+}, (table) => [
+  index('bot_approvals_owner_idx').on(table.ownerId, table.status),
+  index('bot_approvals_channel_idx').on(table.channelId, table.createdAt),
+])

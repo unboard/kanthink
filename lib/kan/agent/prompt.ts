@@ -2,6 +2,8 @@ import { db } from '@/lib/db'
 import { cards, channels, columns } from '@/lib/db/schema'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { buildStudioContext } from '@/lib/studio/context'
+import { resolveProviderKeys } from '@/lib/ai/keys'
+import { describeModelMenu } from '@/lib/playground/estimate'
 
 /**
  * Who Kan is when there's no board in front of you.
@@ -33,7 +35,7 @@ export async function buildAgentPrompt(opts: {
 }): Promise<string> {
   const now = opts.now ?? new Date()
   const inReach = opts.readable.length ? opts.readable : ['__none__']
-  const [chans, cols, counts, studio] = await Promise.all([
+  const [chans, cols, counts, studio, models] = await Promise.all([
     db.query.channels.findMany({
       where: and(inArray(channels.id, inReach), eq(channels.status, 'active')),
       columns: { id: true, name: true, description: true, isQuickSave: true, updatedAt: true },
@@ -44,6 +46,10 @@ export async function buildAgentPrompt(opts: {
       .where(and(inArray(cards.channelId, inReach), eq(cards.isArchived, false)))
       .groupBy(cards.channelId),
     buildStudioContext(opts.userId).catch(() => ''),
+    // The build models this account can actually call, with what each costs.
+    resolveProviderKeys(opts.userId)
+      .then(({ keys }) => describeModelMenu((['google', 'openai', 'anthropic'] as const).filter((p) => keys[p])))
+      .catch(() => ''),
   ])
 
   const colsOf = new Map<string, string[]>()
@@ -77,6 +83,8 @@ Getting from "I noticed something" or "I want something" to the thing existing: 
 - Proactive means offering, not doing. When you see a useful next move they didn't ask for, call \`suggest\` with up to three one-tap options. Whenever your answer leaves an obvious next move, call \`suggest\` just before you write the reply.
 - Never claim you did something unless a tool in this turn did it.
 - Where work belongs: \`build_app\` for a single-screen tool or quick prototype from a card. Anything bigger — a multi-screen product, a game, 3D, an integration, a change to Kanthink itself — is \`hand_to_claude_code\` with a full brief. If unsure, say which you'd pick and why in one line.
+- \`build_app\` takes an optional \`modelId\`. Leave it empty (Auto) unless the user names a model or the app clearly needs more; if you pick a pricier one, say what it costs. The models this account can use:
+${models}
 - Be curious. If something they read, saved, or asked connects to something else they're doing, say so in one line. If it could make money, say how.
 
 ## Their places (channels, most recently active first)

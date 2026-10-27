@@ -3,6 +3,8 @@ import { appEmails, appMessages, appUsers, channelBots, playgroundApps } from '@
 import { and, desc, eq, gt, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { BUILD_RESERVE_MILLICENTS } from './spend'
+import { proposeBuildTool } from './approvals'
+import type { PlaygroundProvider } from '@/lib/playground/models'
 import { claudeCodeTool, studioTools, voiceTools, type AgentTool, type ToolContext } from '@/lib/kan/agent/tools'
 
 /**
@@ -30,6 +32,8 @@ export interface BotContext extends ToolContext {
   rehearsal?: boolean
   /** Questions only the owner can answer, gathered over the run. */
   asks: string[]
+  /** The run doing this, so what it asks the owner can point back to it. */
+  runId?: string
   /**
    * What the run has caused beyond its own thinking, and how much room is left under
    * every ceiling. Set by the runner; a test may leave it out.
@@ -44,13 +48,14 @@ const BOARD: Record<string, BotArea> = {
   search_cards: 'board', show_card: 'board', create_card: 'board', add_note: 'board',
   create_task: 'board', complete_task: 'board', update_task_status: 'board', update_task: 'board',
   move_card: 'board', archive_card: 'board', unarchive_card: 'board', update_channel: 'self',
-  show_app: 'build', app_audience: 'people', build_app: 'build',
+  // build_app is deliberately absent: bots propose builds (./approvals) and the owner approves.
+  show_app: 'build', app_audience: 'people',
   query_mixpanel: 'research', kanwatch_lookup: 'research',
 }
 
 /** Per run, so one bad decision can't repeat itself twenty times before anyone looks. */
 export const PER_RUN_LIMITS: Record<string, number> = {
-  build_app: 1, ship_app: 1, publish_app: 1, set_price: 2, start_test_page: 2,
+  build_app: 1, propose_build: 2, ship_app: 1, publish_app: 1, set_price: 2, start_test_page: 2,
   email_person: 5, reply_to_person: 10, hand_to_claude_code: 1, drop_spark: 3,
 }
 
@@ -280,7 +285,7 @@ const selfTools: BotTool[] = [
 ]
 
 /** Every tool a bot in this channel gets. */
-export function botTools(opts: { isAdmin: boolean; isStudio: boolean; canHandOff: boolean }): BotTool[] {
+export function botTools(opts: { isAdmin: boolean; isStudio: boolean; canHandOff: boolean; providers?: PlaygroundProvider[] }): BotTool[] {
   const board = voiceTools()
     .filter((t) => BOARD[t.name] && (opts.isAdmin || (t.name !== 'query_mixpanel' && t.name !== 'kanwatch_lookup')))
     .map((t) => ({ ...t, area: BOARD[t.name] }))
@@ -288,7 +293,8 @@ export function botTools(opts: { isAdmin: boolean; isStudio: boolean; canHandOff
   const ownWord = (d: string) => d.replace(/\s*Only when[^.]*\./g, '')
   const studio = opts.isStudio ? studioTools().map((t) => ({ ...t, description: ownWord(t.description), area: 'money' as BotArea })) : []
   const handOff = opts.canHandOff ? [{ ...claudeCodeTool, description: ownWord(claudeCodeTool.description), area: 'build' as BotArea }] : []
-  return [...board, ...peopleTools, ...moneyTools, ...studio, ...handOff, ...selfTools]
+  const propose = proposeBuildTool(opts.providers ?? ['google', 'openai'])
+  return [...board, propose, ...peopleTools, ...moneyTools, ...studio, ...handOff, ...selfTools]
 }
 
 /**

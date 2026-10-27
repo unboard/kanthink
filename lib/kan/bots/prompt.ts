@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { botRuns, cards, channels, columns, instructionCards, playgroundApps } from '@/lib/db/schema'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import type { BotArea, BotTool } from './tools'
+import { approvalsContext } from './approvals'
 
 /**
  * Who a channel bot is, what it can do, and what's in front of it this run.
@@ -51,7 +52,7 @@ export async function buildBotPrompt(opts: {
   now?: Date
 }): Promise<string> {
   const now = opts.now ?? new Date()
-  const [channel, cols, cardRows, shrooms, apps, runs] = await Promise.all([
+  const [channel, cols, cardRows, shrooms, apps, runs, proposals] = await Promise.all([
     db.query.channels.findFirst({ where: eq(channels.id, opts.channelId), columns: { name: true, description: true, aiInstructions: true } }),
     db.query.columns.findMany({ where: eq(columns.channelId, opts.channelId), orderBy: [asc(columns.position)], columns: { id: true, name: true } }),
     db.query.cards.findMany({
@@ -63,6 +64,7 @@ export async function buildBotPrompt(opts: {
     db.query.instructionCards.findMany({ where: eq(instructionCards.channelId, opts.channelId), columns: { title: true, action: true, runMode: true, isEnabled: true, lastExecutedAt: true } }),
     db.query.playgroundApps.findMany({ where: eq(playgroundApps.channelId, opts.channelId), columns: { id: true, title: true, cardId: true } }),
     db.query.botRuns.findMany({ where: eq(botRuns.channelId, opts.channelId), orderBy: [desc(botRuns.startedAt)], limit: 4, columns: { startedAt: true, summary: true, status: true, trigger: true } }),
+    approvalsContext(opts.channelId).catch(() => ''),
   ])
   const colName = new Map(cols.map((c) => [c.id, c.name]))
   const appOf = new Map(apps.map((a) => [a.cardId, a]))
@@ -97,19 +99,19 @@ ${(channel?.aiInstructions || '(none written — infer the goal from the channel
 If this channel has apps, it is a small business and your job is to make it work: people find the apps, use them, come back and pay. Otherwise your job is to move the channel's goal forward.
 
 ## Everything you can do
-You have full permission for all of it. Don't ask for permission and don't wait for approval; do the work and report it.
+You have full permission for all of it but one: app builds. Propose those with propose_build and the owner decides, because a build costs real money. Everything else, don't ask and don't wait; do the work and report it.
 
 ${capabilityList(opts.tools)}
 
 ## How to run
 1. Start from your notes. Then look: the scoreboard (app_numbers) and the people (list_people) when there are apps, and the cards.
 2. Anyone who wrote in gets an answer first, every run. Read their history before replying.
-3. Pick the one to three moves most likely to move the goal today, and do each one completely. Research before building or pricing; check a build with show_app before publishing it.
+3. Pick the one to three moves most likely to move the goal today, and do each one completely. Research before proposing a build or setting a price; check a build with show_app before publishing it.
 4. Act on evidence and say what the evidence was. Never invent results, numbers or quotes.
 5. Be a good neighbor to customers: short, warm, written as ${opts.ownerName || 'the owner'}, never mention a bot or AI, never email someone twice in three days unless they wrote in, never email anyone who unsubscribed.
 6. A run where nothing would help is fine. Don't make busywork.
 7. Use ask_owner only for what you truly can't do yourself (an account to connect, a key, a legal or personal call).
-8. Spend carefully: you have about $${(opts.budgetLeftCents / 100).toFixed(2)} left today, and a build you start comes out of it (one costs roughly $0.30–0.75). Don't reread what you already know; a run that does one thing well beats one that reads everything.
+8. Spend carefully: you have about $${(opts.budgetLeftCents / 100).toFixed(2)} of thinking left today. An approved build is charged to you too, so propose one only when it's clearly worth it, on the cheapest model that will do it well. Don't reread what you already know; a run that does one thing well beats one that reads everything.
 9. Finish with **remember** (complete notes for your next run), then write your report: 2–5 plain sentences on what you did and what you're watching. No headers, no lists unless you did many things.
 
 ## Your notes from last run
@@ -117,6 +119,7 @@ ${opts.memory?.trim() || '(none — this is your first run. Get to know the chan
 
 ## Your recent reports
 ${pastRuns.join('\n') || '(none yet)'}
+${proposals ? `\n## Builds you proposed, and what the owner decided\n${proposals}\n` : ''}
 
 ## What's in the channel now
 Columns: ${cols.map((c) => c.name).join(' → ') || 'none'}

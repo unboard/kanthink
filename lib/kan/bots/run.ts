@@ -102,12 +102,14 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
     channelId,
     rehearsal,
     asks: [],
+    runId,
   }
   let thinking = 0
   let lastRound = 0
   const spend = { builds: 0, handoffs: 0, left: () => room.left - thinking - spend.builds }
   ctx.spend = spend
-  const all = botTools({ isAdmin: admin, isStudio, canHandOff: access.readable.includes(WORK_CHANNEL_ID) })
+  const providers = (['google', 'openai', 'anthropic'] as const).filter((p) => keys[p])
+  const all = botTools({ isAdmin: admin, isStudio, canHandOff: access.readable.includes(WORK_CHANNEL_ID), providers })
   const tools = guardTools(all, ctx)
   const system = await buildBotPrompt({
     channelId, ownerId: owner.id, ownerName: owner.name, tools: all, memory: bot.memory, everyHours: bot.everyHours ?? 24,

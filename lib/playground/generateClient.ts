@@ -88,33 +88,46 @@ async function runGemini(request: StructuredRequest): Promise<StructuredResponse
     // returns truncated JSON with this reason.
     truncated: response.candidates?.[0]?.finishReason === 'MAX_TOKENS',
     inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
-    outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+    // Thinking is billed at the output rate but reported apart from the answer.
+    outputTokens: (response.usageMetadata?.candidatesTokenCount ?? 0) + (response.usageMetadata?.thoughtsTokenCount ?? 0),
   };
 }
 
-async function runOpenAI(request: StructuredRequest): Promise<StructuredResponse> {
-  const client = new OpenAI({ apiKey: request.apiKey });
+/** How often a background build is checked on. */
+const POLL_MS = 2_000;
 
-  const response = await client.chat.completions.create(
+/**
+ * OpenAI builds run as background responses, polled until done.
+ *
+ * A build used to be one request held open until the whole app was written. The
+ * flagship models can think for minutes, and Node's fetch gives up on a response
+ * with no headers after 300s; the SDK then retried the same build twice, so a long
+ * GPT-6 build ended at the generator's deadline, having been paid for up to three
+ * times. A background response returns at once and every poll is short, so the
+ * only limit left is our own deadline.
+ */
+async function runOpenAI(request: StructuredRequest): Promise<StructuredResponse> {
+  // No silent retries: a retried build is a second bill for the same app.
+  const client = new OpenAI({ apiKey: request.apiKey, maxRetries: 0 });
+
+  let response = await client.responses.create(
     {
       model: request.model.id,
-      messages: [
-        { role: 'system', content: request.systemInstruction },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: request.userText },
-            ...request.images.map((image) => ({
-              type: 'image_url' as const,
-              // The SDK takes images as data URLs rather than as separate parts.
-              image_url: { url: `data:${image.mimeType};base64,${image.data}` },
-            })),
-          ],
-        },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
+      instructions: request.systemInstruction,
+      input: [{
+        role: 'user',
+        content: [
+          { type: 'input_text', text: request.userText },
+          ...request.images.map((image) => ({
+            type: 'input_image' as const,
+            detail: 'auto' as const,
+            image_url: `data:${image.mimeType};base64,${image.data}`,
+          })),
+        ],
+      }],
+      text: {
+        format: {
+          type: 'json_schema',
           name: request.schemaName,
           // Non-strict on purpose. Strict mode requires every property to be
           // required and additionalProperties false throughout, and these schemas
@@ -123,17 +136,36 @@ async function runOpenAI(request: StructuredRequest): Promise<StructuredResponse
           schema: request.schema,
         },
       },
-      max_completion_tokens: request.maxOutputTokens,
-      reasoning_effort: request.model.reasoningEffort ?? 'medium',
+      max_output_tokens: request.maxOutputTokens,
+      reasoning: { effort: request.model.reasoningEffort ?? 'medium' },
+      background: true,
+      // Background mode keeps the response on OpenAI's side so it can be polled.
+      store: true,
     },
     { signal: request.signal },
   );
 
-  const choice = response.choices[0];
+  // Past the deadline, stop the work on OpenAI's side too, not just our wait for it.
+  const cancel = () => { client.responses.cancel(response.id).catch(() => {}); };
+  request.signal.addEventListener('abort', cancel, { once: true });
+  try {
+    while (response.status === 'queued' || response.status === 'in_progress') {
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+      request.signal.throwIfAborted();
+      response = await client.responses.retrieve(response.id, {}, { signal: request.signal });
+    }
+  } finally {
+    request.signal.removeEventListener('abort', cancel);
+  }
+
+  if (response.status === 'failed' || response.status === 'cancelled') {
+    throw new Error(response.error?.message || `OpenAI build ${response.status}`);
+  }
+
   return {
-    text: choice?.message?.content ?? null,
-    truncated: choice?.finish_reason === 'length',
-    inputTokens: response.usage?.prompt_tokens ?? 0,
-    outputTokens: response.usage?.completion_tokens ?? 0,
+    text: response.output_text || null,
+    truncated: response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens',
+    inputTokens: response.usage?.input_tokens ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
   };
 }

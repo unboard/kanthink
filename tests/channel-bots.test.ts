@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { botTools, guardTools, PER_RUN_LIMITS, type BotContext, type BotTool } from '@/lib/kan/bots/tools'
 import { capabilityList } from '@/lib/kan/bots/prompt'
 import { nextRunAfter } from '@/lib/kan/bots/run'
+import { buildModelMenu, estimateBuildCost } from '@/lib/playground/estimate'
 import { BUILD_RESERVE_MILLICENTS, roomLeft, shouldStopRun, thinkingCost } from '@/lib/kan/bots/spend'
 
 const ctx = (over: Partial<BotContext> = {}): BotContext => ({
@@ -104,5 +105,35 @@ describe('channel bots', () => {
     const out = await p.run({}, ctx())
     expect(out.isError).toBe(true)
     expect(poor.calls).toBe(0)
+  })
+
+  it('never builds on its own: builds are proposed, priced, for the owner to approve', () => {
+    const names = botTools({ isAdmin: true, isStudio: true, canHandOff: true, providers: ['google', 'openai'] }).map((t) => t.name)
+    expect(names).toContain('propose_build')
+    expect(names).not.toContain('build_app')
+    const propose = botTools({ isAdmin: false, isStudio: false, canHandOff: false, providers: ['google'] }).find((t) => t.name === 'propose_build')!
+    // Only models the account can call are offered.
+    const models = (propose.input_schema.properties as Record<string, { enum?: string[] }>).modelId.enum!
+    expect(models.every((m) => m.startsWith('gemini'))).toBe(true)
+    expect(propose.description).toMatch(/at most \$/)
+  })
+
+  it('estimates a build within reach of what real builds cost, and bounds the worst case', () => {
+    // Real: an Astra first build cost $0.78; a Gemini 3.1 Pro first build about $0.06 of code plus thinking.
+    const astra = estimateBuildCost({ modelId: 'gpt-6-astra', briefChars: 2_000 })
+    expect(astra.likelyUsd).toBeGreaterThan(0.5)
+    expect(astra.likelyUsd).toBeLessThan(1.1)
+    const gemini = estimateBuildCost({ modelId: 'gemini-3.1-pro-preview', briefChars: 2_000 })
+    expect(gemini.likelyUsd).toBeLessThan(0.2)
+    // A rebuild can make three calls, so its ceiling is well above a first build's.
+    const rebuild = estimateBuildCost({ modelId: 'gpt-6-astra', briefChars: 2_000, existingCodeChars: 35_000 })
+    expect(rebuild.maxUsd).toBeGreaterThan(astra.maxUsd * 2)
+    for (const e of [astra, gemini, rebuild]) expect(e.maxUsd).toBeGreaterThanOrEqual(e.likelyUsd)
+  })
+
+  it('lists only models the account holds a key for', () => {
+    expect(buildModelMenu(['google']).every((m) => m.id.startsWith('gemini'))).toBe(true)
+    expect(buildModelMenu(['google', 'openai']).map((m) => m.id)).toContain('gpt-6-astra')
+    expect(buildModelMenu(['google', 'openai']).some((m) => m.id.startsWith('claude'))).toBe(false)
   })
 })

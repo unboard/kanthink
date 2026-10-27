@@ -40,7 +40,7 @@ interface Step { id: string; label: string; status: 'running' | 'done' | 'error'
 
 interface Run {
   id: string;
-  trigger: 'scheduled' | 'manual' | 'rehearsal';
+  trigger: 'scheduled' | 'manual' | 'rehearsal' | 'build';
   status: 'running' | 'done' | 'error' | 'over_budget';
   steps: Step[];
   summary: string | null;
@@ -85,6 +85,25 @@ interface Spend {
   totals: { day: Tally; week: Tally; month: Tally };
   bots: SpendBot[];
   history: { date: string; byBot: Record<string, number> }[];
+}
+
+interface Approval {
+  id: string;
+  channelId: string;
+  channelName: string;
+  kind: 'build_app';
+  status: 'pending' | 'approved' | 'rejected' | 'done' | 'failed';
+  cardId: string | null;
+  title: string;
+  purpose: string | null;
+  modelId: string | null;
+  likelyMillicents: number | null;
+  maxMillicents: number | null;
+  costMillicents: number | null;
+  reason: string | null;
+  outcome: string | null;
+  createdAt: string;
+  models: { id: string; label: string; when: string; likelyUsd: number; maxUsd: number }[];
 }
 
 const DAY_CAPS = [0, 100, 200, 500, 1000, 2000, 5000];
@@ -140,6 +159,7 @@ function RunEntry({ run, first }: { run: Run; first: boolean }) {
         <span>{when}</span>
         {run.trigger === 'rehearsal' && <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-neutral-400">Rehearsal — nothing changed</span>}
         {run.trigger === 'manual' && <span>· run by you</span>}
+        {run.trigger === 'build' && <span>· a build you approved</span>}
         {run.status === 'over_budget' && <span className="text-amber-400">· over budget</span>}
         {run.status === 'error' && <span className="text-red-400">· failed</span>}
       </div>
@@ -180,6 +200,76 @@ function RunEntry({ run, first }: { run: Run; first: boolean }) {
       )}
       {first && running && <p className="mt-2 text-xs text-neutral-600">Running now — this updates as it works.</p>}
     </article>
+  );
+}
+
+/** One thing a bot is waiting on you for: what, why, which model, what it'll cost. */
+function ApprovalCard({ a, showBot, onDecide }: { a: Approval; showBot?: boolean; onDecide: (id: string, d: { approve: boolean; reason?: string; modelId?: string }) => Promise<void> }) {
+  const [modelId, setModelId] = useState(a.modelId ?? a.models[0]?.id ?? '');
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+  const [sending, setSending] = useState(false);
+  const est = a.models.find((m) => m.id === modelId);
+  const likely = est ? est.likelyUsd : (a.likelyMillicents ?? 0) / 100_000;
+  const max = est ? est.maxUsd : (a.maxMillicents ?? 0) / 100_000;
+  const decide = async (d: { approve: boolean; reason?: string; modelId?: string }) => {
+    setSending(true);
+    try { await onDecide(a.id, d); } finally { setSending(false); }
+  };
+
+  if (a.status !== 'pending') {
+    return (
+      <div className="rounded-xl border border-neutral-900 px-4 py-3 text-[13px]">
+        <p className="text-neutral-300">
+          {showBot && <span className="text-neutral-500">{a.channelName} · </span>}
+          {a.status === 'approved' && <><Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin text-violet-400" />Building “{a.title}”…</>}
+          {a.status === 'done' && <>Built “{a.title}” for {usd(a.costMillicents ?? 0)} <span className="text-neutral-600">(estimated {usd(a.likelyMillicents ?? 0)})</span></>}
+          {a.status === 'failed' && <span className="text-red-400">Build of “{a.title}” failed: {a.outcome}</span>}
+          {a.status === 'rejected' && <span className="text-neutral-500">You passed on “{a.title}”{a.reason ? `: ${a.reason}` : ''}</span>}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 px-4 py-3">
+      <p className="text-xs text-violet-300">{showBot ? `${a.channelName} wants to build` : 'Wants to build'}</p>
+      <p className="mt-0.5 text-[15px] font-medium text-neutral-100">{a.title}</p>
+      {a.purpose && <p className="mt-1 text-sm leading-relaxed text-neutral-300">{a.purpose}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-neutral-400">
+        <select value={modelId} onChange={(e) => setModelId(e.target.value)} className="rounded-md bg-neutral-900 px-1.5 py-1 text-neutral-200" title={est?.when}>
+          {a.models.map((m) => <option key={m.id} value={m.id}>{m.label} · ~${m.likelyUsd.toFixed(2)}</option>)}
+        </select>
+        <span>About <span className="text-neutral-100">${likely.toFixed(2)}</span>, at most ${max.toFixed(2)}</span>
+      </div>
+      {rejecting ? (
+        <div className="mt-3">
+          <textarea
+            autoFocus
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={`Why not? ${a.channelName} learns from this.`}
+            rows={2}
+            className="w-full resize-none rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-600 focus:border-violet-500/60 focus:outline-none"
+          />
+          <div className="mt-2 flex gap-2">
+            <button disabled={sending} onClick={() => void decide({ approve: false, reason })} className="rounded-full bg-neutral-800 px-4 py-1.5 text-sm text-neutral-100 hover:bg-neutral-700 disabled:opacity-50">Reject</button>
+            <button onClick={() => setRejecting(false)} className="rounded-full px-3 py-1.5 text-sm text-neutral-500 hover:text-neutral-200">Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <button
+            disabled={sending}
+            onClick={() => void decide({ approve: true, modelId: modelId !== a.modelId ? modelId : undefined })}
+            className="flex items-center gap-1.5 rounded-full bg-violet-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+          >
+            {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Build it
+          </button>
+          <button onClick={() => setRejecting(true)} className="rounded-full border border-neutral-800 px-4 py-1.5 text-sm text-neutral-300 hover:bg-neutral-900">Not now</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -314,11 +404,37 @@ export default function BotsPage() {
   const [starting, setStarting] = useState(false);
   const [spend, setSpend] = useState<Spend | null>(null);
   const onSpend = selected === 'spend';
+  const onWaiting = selected === 'waiting';
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const waiting = approvals.filter((a) => a.status === 'pending');
+  const building = approvals.some((a) => a.status === 'approved');
+
+  const loadApprovals = useCallback(async () => {
+    const r = await fetch('/api/prototypes/kan/bots/approvals');
+    if (r.ok) setApprovals((await r.json()).approvals ?? []);
+  }, []);
+
+  const decide = async (id: string, d: { approve: boolean; reason?: string; modelId?: string }) => {
+    const r = await fetch(`/api/prototypes/kan/bots/approvals/${id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) });
+    if (r.ok) {
+      const { approval } = await r.json();
+      setApprovals((list) => list.map((a) => (a.id === id ? { ...a, ...approval } : a)));
+    }
+    void loadApprovals();
+  };
+
 
   const loadSpend = useCallback(async () => {
     const r = await fetch('/api/prototypes/kan/bots/spend');
     if (r.ok) setSpend(await r.json());
   }, []);
+
+  // A build you approved runs for a minute or more; follow it until it lands.
+  useEffect(() => {
+    if (!building) return;
+    const t = setInterval(() => { void loadApprovals(); void loadSpend(); }, 4000);
+    return () => clearInterval(t);
+  }, [building, loadApprovals, loadSpend]);
 
   const saveLimits = async (l: Partial<Spend['limits']>) => {
     setSpend((s) => (s ? { ...s, limits: { ...s.limits, ...l } } : s));
@@ -342,22 +458,23 @@ export default function BotsPage() {
   useEffect(() => {
     void loadList();
     void loadSpend();
+    void loadApprovals();
     const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.has('spend') ? 'spend' : params.get('channel');
+    const fromUrl = params.has('spend') ? 'spend' : params.has('waiting') ? 'waiting' : params.get('channel');
     if (fromUrl) setSelected(fromUrl);
-  }, [loadList, loadSpend]);
+  }, [loadList, loadSpend, loadApprovals]);
 
   useEffect(() => {
     setDetail(null);
     if (!selected) return;
-    if (selected === 'spend') {
-      void loadSpend();
-      try { window.history.replaceState(null, '', '/prototypes/kan/bots?spend'); } catch { /* fine */ }
+    if (selected === 'spend' || selected === 'waiting') {
+      void (selected === 'spend' ? loadSpend() : loadApprovals());
+      try { window.history.replaceState(null, '', `/prototypes/kan/bots?${selected}`); } catch { /* fine */ }
       return;
     }
     void loadDetail(selected);
     try { window.history.replaceState(null, '', `/prototypes/kan/bots?channel=${selected}`); } catch { /* fine */ }
-  }, [selected, loadDetail, loadSpend]);
+  }, [selected, loadDetail, loadSpend, loadApprovals]);
 
   // Follow a run while it works.
   const live = detail?.runs.some((r) => r.status === 'running');
@@ -366,7 +483,7 @@ export default function BotsPage() {
     const t = setInterval(() => { void loadDetail(selected); }, 2000);
     return () => clearInterval(t);
   }, [live, selected, loadDetail]);
-  useEffect(() => { if (!live && selected) { void loadList(); void loadSpend(); } }, [live, selected, loadList, loadSpend]);
+  useEffect(() => { if (!live && selected) { void loadList(); void loadSpend(); void loadApprovals(); } }, [live, selected, loadList, loadSpend, loadApprovals]);
 
   const patch = async (body: Partial<{ enabled: boolean; everyHours: number; dailyBudgetCents: number }>) => {
     if (!selected || !detail) return;
@@ -394,6 +511,16 @@ export default function BotsPage() {
         <p className="px-4 py-3 text-sm text-neutral-500">You don’t own any channels yet.</p>
       ) : (
         [
+          (waiting.length > 0 || building) && (
+            <button
+              key="waiting"
+              onClick={() => setSelected('waiting')}
+              className={`flex items-center justify-between gap-3 border-b border-neutral-900 px-4 py-3 text-left hover:bg-neutral-900/60 ${onWaiting ? 'bg-neutral-900' : ''}`}
+            >
+              <span className="text-[15px] text-violet-300">Waiting on you</span>
+              <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[12px] text-violet-200">{waiting.length || <Loader2 className="h-3 w-3 animate-spin" />}</span>
+            </button>
+          ),
           <button
             key="spend"
             onClick={() => setSelected('spend')}
@@ -491,6 +618,10 @@ export default function BotsPage() {
           </button>
         </div>
 
+        {approvals.filter((a) => a.channelId === detail.channel.id && (a.status === 'pending' || a.status === 'approved')).map((a) => (
+          <div key={a.id} className="mt-6"><ApprovalCard a={a} onDecide={decide} /></div>
+        ))}
+
         {latestAsks.length > 0 && (
           <div className="mt-6 rounded-xl border border-violet-500/30 bg-violet-500/5 px-4 py-3">
             <p className="mb-1 text-xs font-medium text-violet-300">Needs you</p>
@@ -552,7 +683,18 @@ export default function BotsPage() {
       <div className="flex min-h-0 flex-1">
         <aside className={`w-full flex-shrink-0 overflow-y-auto border-neutral-900 md:block md:w-[300px] md:border-r ${selected ? 'hidden' : 'block'}`}>{list}</aside>
         <main className={`min-h-0 flex-1 overflow-y-auto ${selected ? 'block' : 'hidden md:block'}`}>
-          {onSpend ? (
+          {onWaiting ? (
+            <div className="mx-auto w-full max-w-[680px] px-4 pb-16 pt-6 md:px-8">
+              <button onClick={() => setSelected(null)} className="mb-4 flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-200 md:hidden">
+                <ArrowLeft className="h-3.5 w-3.5" /> Bots
+              </button>
+              <h1 className="text-[24px] font-semibold tracking-tight text-neutral-100">Waiting on you</h1>
+              <p className="mt-1 text-sm text-neutral-500">Builds cost real money, so bots ask first. Nothing is built until you say so.</p>
+              <div className="mt-6 space-y-3">
+                {approvals.length === 0 ? <p className="text-sm text-neutral-500">Nothing right now.</p> : approvals.map((a) => <ApprovalCard key={a.id} a={a} showBot onDecide={decide} />)}
+              </div>
+            </div>
+          ) : onSpend ? (
             spend ? (
               <SpendPane spend={spend} onLimits={(l) => void saveLimits(l)} onOpen={setSelected} onBack={() => setSelected(null)} />
             ) : (
