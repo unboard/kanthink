@@ -1,29 +1,28 @@
 import { db } from '@/lib/db'
 import { botRuns, channelBots, channels, users, type BotStepJson } from '@/lib/db/schema'
-import { and, eq, gt } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { resolveProviderKeys } from '@/lib/ai/keys'
 import { recordUsage } from '@/lib/usage'
-import { actualCostMillicents } from '@/lib/playground/aiPricing'
 import { loadAccess } from '@/lib/voice/resolveReference'
 import { AGENT_MODEL, OPENAI_AGENT_MODEL, runAgent } from '@/lib/kan/agent/run'
 import { WORK_CHANNEL_ID } from '@/lib/kan/agent/tools'
 import type { AgentEvent } from '@/lib/kan/agent/events'
 import { botTools, guardTools, type BotContext } from './tools'
 import { buildBotPrompt } from './prompt'
+import { MILLICENTS_PER_CENT, roomFor, saveLimits, shouldStopRun, spentByBot, thinkingCost, type Room } from './spend'
 
 /**
  * One run of a channel bot, start to finish, with no one at the keyboard.
  *
  * It acts as the channel's owner with every tool scoped to the channel, logs each
  * step to bot_runs as it happens (so the log page can watch a run live), stops at
- * the day's budget, and tells the owner what it did when it changed anything.
+ * the lowest spending ceiling (see ./spend), and tells the owner what it did when it
+ * changed anything.
  * Never throws: a failed run is a logged run.
  */
 
 export type BotRow = typeof channelBots.$inferSelect
 
-const MILLICENTS_PER_CENT = 1000
-const DAY_MS = 86400_000
 
 /** A bot row for a channel, made with defaults (off) the first time it's asked for. */
 export async function ensureBot(channelId: string, ownerId: string): Promise<BotRow> {
@@ -33,14 +32,8 @@ export async function ensureBot(channelId: string, ownerId: string): Promise<Bot
   return (await db.query.channelBots.findFirst({ where: eq(channelBots.channelId, channelId) }))!
 }
 
-/** What this bot has spent on its own thinking in the last 24 hours. */
-export async function spentToday(channelId: string, now = new Date()): Promise<number> {
-  const rows = await db.query.botRuns.findMany({
-    where: and(eq(botRuns.channelId, channelId), gt(botRuns.startedAt, new Date(now.getTime() - DAY_MS))),
-    columns: { costMillicents: true },
-  })
-  return rows.reduce((n, r) => n + (r.costMillicents ?? 0), 0)
-}
+/** What this bot has spent, builds included, in the last 24 hours. */
+export const spentToday = spentByBot
 
 export function nextRunAfter(bot: Pick<BotRow, 'everyHours'>, from: Date): Date {
   return new Date(from.getTime() + Math.max(1, bot.everyHours ?? 24) * 3600_000)
@@ -56,6 +49,15 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
   const bot = await ensureBot(channelId, channel.ownerId)
   const owner = await db.query.users.findFirst({ where: eq(users.id, bot.ownerId), columns: { id: true, name: true, email: true, timezone: true } })
 
+  // Out of room on a schedule: no run row (an hourly "skipped" line would bury the
+  // log), just try again in an hour, and tell the owner once if their own ceiling did it.
+  const { room, limits } = await roomFor(bot, now)
+  if (room.left <= 0 && opts.trigger === 'scheduled') {
+    await db.update(channelBots).set({ nextRunAt: new Date(now.getTime() + 3600_000), updatedAt: new Date() }).where(eq(channelBots.channelId, channelId))
+    if (room.limitedBy !== 'bot') await tellCeiling(bot.ownerId, room, limits.capNotifiedAt, now)
+    return { runId, status: 'over_budget' }
+  }
+
   const finish = async (status: 'done' | 'error' | 'over_budget', fields: Partial<typeof botRuns.$inferInsert>) => {
     await db.update(botRuns).set({ status, endedAt: new Date(), ...fields }).where(eq(botRuns.id, runId))
     if (!rehearsal) {
@@ -70,11 +72,8 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
 
   if (!owner) return finish('error', { error: 'The channel’s owner is gone.' })
 
-  const budget = (bot.dailyBudgetCents ?? 200) * MILLICENTS_PER_CENT
-  const spent = await spentToday(channelId, now)
-  if (spent >= budget) {
-    return finish('over_budget', { summary: `Skipped: today’s budget ($${((bot.dailyBudgetCents ?? 200) / 100).toFixed(2)}) is spent.` })
-  }
+  if (room.left <= 0) return finish('over_budget', { summary: `Skipped: ${room.message}.` })
+  const runCap = limits.perRunCapCents * MILLICENTS_PER_CENT
 
   const { keys, error: keyError, quotaMessage } = await resolveProviderKeys(owner.id)
   const provider = keys.anthropic ? ('anthropic' as const) : keys.openai ? ('openai' as const) : null
@@ -104,11 +103,15 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
     rehearsal,
     asks: [],
   }
+  let thinking = 0
+  let lastRound = 0
+  const spend = { builds: 0, handoffs: 0, left: () => room.left - thinking - spend.builds }
+  ctx.spend = spend
   const all = botTools({ isAdmin: admin, isStudio, canHandOff: access.readable.includes(WORK_CHANNEL_ID) })
   const tools = guardTools(all, ctx)
   const system = await buildBotPrompt({
     channelId, ownerId: owner.id, ownerName: owner.name, tools: all, memory: bot.memory, everyHours: bot.everyHours ?? 24,
-    budgetLeftCents: Math.floor((budget - spent) / MILLICENTS_PER_CENT), isStudio, rehearsal, timeZone: owner.timezone, now,
+    budgetLeftCents: Math.floor(room.left / MILLICENTS_PER_CENT), isStudio, rehearsal, timeZone: owner.timezone, now,
   })
 
   // The trace, written through to the row so the log page can follow along.
@@ -132,7 +135,6 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
   }
 
   const plannedModel = provider === 'openai' ? OPENAI_AGENT_MODEL : AGENT_MODEL
-  const costOf = (m: string, usage: { inputTokens: number; outputTokens: number }) => actualCostMillicents(m, 'text', usage)
   try {
     const result = await runAgent({
       provider,
@@ -143,14 +145,25 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
       ctx,
       send,
       maxRounds: 24,
-      shouldStop: (usage) => spent + costOf(plannedModel, usage) >= budget,
+      onUsage: (usage) => {
+        const total = thinkingCost(plannedModel, usage)
+        lastRound = total - thinking
+        thinking = total
+      },
+      // Thinking is held to the run cap; builds are held by count and by the room left.
+      shouldStop: () => shouldStopRun({ spent: thinking, lastRound, runCap, room: room.left - spend.builds }),
     })
     flush(true)
     await flushing
-    const cost = costOf(result.model, result.usage)
+    const cost = thinkingCost(result.model, result.usage) + spend.builds
     if (key.source !== 'byok') await recordUsage(owner.id, 'channel-bot').catch(() => {})
-    const summary = (result.text.trim() || 'Finished without a report.') + (result.stopped ? '\n\nStopped early: today’s budget ran out.' : '')
-    const out = await finish('done', { steps, summary, asks: ctx.asks, costMillicents: cost, model: result.model })
+    const why = thinking + lastRound >= runCap ? `this run reached its cap ($${(runCap / 100_000).toFixed(2)})` : room.message
+    const summary = (result.text.trim() || 'Finished without a report.') + (result.stopped ? `\n\nStopped early: ${why}.` : '')
+    const out = await finish('done', {
+      steps, summary, asks: ctx.asks, costMillicents: cost, buildMillicents: spend.builds, model: result.model,
+      inputTokens: result.usage.inputTokens, cachedTokens: result.usage.cachedInputTokens ?? 0, outputTokens: result.usage.outputTokens,
+      handoffs: spend.handoffs,
+    })
 
     const changed = steps.filter((s) => s.write && s.status === 'done' && !s.label.startsWith('Wrote notes'))
     if (!rehearsal && (changed.length || ctx.asks.length)) {
@@ -169,8 +182,23 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
     await flushing
     const message = err instanceof Error ? err.message : 'Something went wrong'
     console.error('[bot]', channel.name, message)
-    return finish('error', { steps, error: message.slice(0, 500), asks: ctx.asks })
+    // Whatever it spent before failing still counts.
+    return finish('error', { steps, error: message.slice(0, 500), asks: ctx.asks, costMillicents: thinking + spend.builds, buildMillicents: spend.builds, handoffs: spend.handoffs })
   }
+}
+
+/** One notification a day when the owner's own ceiling stops their bots. */
+async function tellCeiling(ownerId: string, room: Room, notifiedAt: Date | null, now: Date) {
+  if (notifiedAt && now.getTime() - notifiedAt.getTime() < 86400_000) return
+  await saveLimits(ownerId, { capNotifiedAt: now })
+  const { createNotification } = await import('@/lib/notifications/createNotification')
+  await createNotification({
+    userId: ownerId,
+    type: 'bot_run',
+    title: 'Your bots paused',
+    body: `They’ll start again when there’s room: ${room.message}. You can raise it on the Spend page.`,
+    data: { spend: true },
+  }).catch(() => {})
 }
 
 /** Every enabled bot that's due, one after another. For the cron. */

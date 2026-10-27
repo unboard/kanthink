@@ -1042,6 +1042,8 @@ export async function runVoiceAction(actor: VoiceActor, body: ActionRequest) {
         return NextResponse.json({
           result: `Built "${payload?.snapshot?.title || card.title}" on "${card.title}". It's on the card's Apps tab.`,
           cardId: card.id,
+          // What the build cost, so a bot that started it can charge it to its budget.
+          costUsd: payload?.lastUsage?.costUsd,
         });
       }
 

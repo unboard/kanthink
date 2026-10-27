@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { botTools, guardTools, PER_RUN_LIMITS, type BotContext, type BotTool } from '@/lib/kan/bots/tools'
 import { capabilityList } from '@/lib/kan/bots/prompt'
 import { nextRunAfter } from '@/lib/kan/bots/run'
+import { BUILD_RESERVE_MILLICENTS, roomLeft, shouldStopRun, thinkingCost } from '@/lib/kan/bots/spend'
 
 const ctx = (over: Partial<BotContext> = {}): BotContext => ({
   userId: 'u1', isAdmin: false, readable: ['c1'], scope: ['c1'], sessionCardIds: [], recentTurns: [],
@@ -65,5 +66,43 @@ describe('channel bots', () => {
     const from = new Date('2026-10-26T12:00:00Z')
     expect(nextRunAfter({ everyHours: 6 }, from).toISOString()).toBe('2026-10-26T18:00:00.000Z')
     expect(nextRunAfter({ everyHours: 0 }, from).toISOString()).toBe('2026-10-26T13:00:00.000Z')
+  })
+
+  it('prices cached input at a tenth, so a long run is not billed as if every round were new', () => {
+    // gpt-5.6-sol: $4 in, $20 out per million.
+    const fresh = thinkingCost('gpt-5.6-sol', { inputTokens: 100_000, outputTokens: 5_000 })
+    const cached = thinkingCost('gpt-5.6-sol', { inputTokens: 100_000, outputTokens: 5_000, cachedInputTokens: 80_000 })
+    expect(fresh).toBe(50_000) // $0.40 + $0.10
+    expect(cached).toBe(21_200) // 20k at $4 + 80k at $0.40 + $0.10
+  })
+
+  it('takes the lowest ceiling and says which one it is', () => {
+    const base = { botBudget: 200_000, botSpent: 0, dayCap: 500_000, daySpent: 0, monthCap: 5_000_000, monthSpent: 0 }
+    expect(roomLeft(base)).toMatchObject({ left: 200_000, limitedBy: 'bot' })
+    expect(roomLeft({ ...base, daySpent: 450_000 })).toMatchObject({ left: 50_000, limitedBy: 'day' })
+    expect(roomLeft({ ...base, monthSpent: 5_100_000 })).toMatchObject({ left: 0, limitedBy: 'month' })
+    // A paused ceiling ($0) stops everything.
+    expect(roomLeft({ ...base, dayCap: 0 }).left).toBe(0)
+  })
+
+  it('stops before a round that would cross the cap, not after', () => {
+    expect(shouldStopRun({ spent: 60_000, lastRound: 10_000, runCap: 75_000, room: 200_000 })).toBe(false)
+    expect(shouldStopRun({ spent: 66_000, lastRound: 10_000, runCap: 75_000, room: 200_000 })).toBe(true)
+    expect(shouldStopRun({ spent: 20_000, lastRound: 10_000, runCap: 75_000, room: 25_000 })).toBe(true)
+  })
+
+  it('charges a build to the bot, and refuses one there is no room for', async () => {
+    const build = fake('build_app', 'write')
+    build.run = async () => { build.calls++; return { content: 'built', costMillicents: 42_000 } }
+    const spend = { builds: 0, handoffs: 0, left: () => 500_000 }
+    const [g] = guardTools([build], ctx({ spend }))
+    await g.run({}, ctx())
+    expect(spend.builds).toBe(42_000)
+
+    const poor = fake('build_app', 'write')
+    const [p] = guardTools([poor], ctx({ spend: { builds: 0, handoffs: 0, left: () => BUILD_RESERVE_MILLICENTS - 1 } }))
+    const out = await p.run({}, ctx())
+    expect(out.isError).toBe(true)
+    expect(poor.calls).toBe(0)
   })
 })

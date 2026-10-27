@@ -2058,7 +2058,16 @@ export const botRuns = sqliteTable('bot_runs', {
   summary: text('summary'),
   /** Things only the owner can do (a missing key, an account to connect). */
   asks: safeJsonText<string[]>([])('asks').default([]),
+  /** Everything the run cost: its own thinking plus any app build it started. */
   costMillicents: integer('cost_millicents').default(0),
+  /** The part of costMillicents spent on app builds. The rest is thinking. */
+  buildMillicents: integer('build_millicents').default(0),
+  inputTokens: integer('input_tokens').default(0),
+  /** Of inputTokens, the part read back from the prompt cache at a discount. */
+  cachedTokens: integer('cached_tokens').default(0),
+  outputTokens: integer('output_tokens').default(0),
+  /** Work handed to Claude Code, which runs on the owner's Claude plan and isn't priced here. */
+  handoffs: integer('handoffs').default(0),
   model: text('model'),
   error: text('error'),
   startedAt: integer('started_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -2067,3 +2076,20 @@ export const botRuns = sqliteTable('bot_runs', {
   index('bot_runs_channel_idx').on(table.channelId, table.startedAt),
   index('bot_runs_owner_idx').on(table.ownerId, table.startedAt),
 ])
+
+/**
+ * The owner's ceiling over all their bots together. Each bot's daily budget sits
+ * inside it; whichever runs out first stops the run.
+ */
+export const botSpendLimits = sqliteTable('bot_spend_limits', {
+  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  /** All bots together, over the last 24 hours. */
+  dailyCapCents: integer('daily_cap_cents').default(500),
+  /** All bots together, this calendar month (UTC). */
+  monthlyCapCents: integer('monthly_cap_cents').default(5000),
+  /** One run, start to finish. */
+  perRunCapCents: integer('per_run_cap_cents').default(75),
+  /** When the owner was last told a ceiling stopped their bots, so they're told once, not hourly. */
+  capNotifiedAt: integer('cap_notified_at', { mode: 'timestamp' }),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})

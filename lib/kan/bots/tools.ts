@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { appEmails, appMessages, appUsers, channelBots, playgroundApps } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
+import { BUILD_RESERVE_MILLICENTS } from './spend'
 import { claudeCodeTool, studioTools, voiceTools, type AgentTool, type ToolContext } from '@/lib/kan/agent/tools'
 
 /**
@@ -29,6 +30,11 @@ export interface BotContext extends ToolContext {
   rehearsal?: boolean
   /** Questions only the owner can answer, gathered over the run. */
   asks: string[]
+  /**
+   * What the run has caused beyond its own thinking, and how much room is left under
+   * every ceiling. Set by the runner; a test may leave it out.
+   */
+  spend?: { builds: number; handoffs: number; left: () => number }
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v))
@@ -298,10 +304,20 @@ export function guardTools(tools: BotTool[], ctx: BotContext): BotTool[] {
       const n = used.get(t.name) ?? 0
       if (limit != null && n >= limit) return { content: `You've used ${t.name} ${limit} time${limit === 1 ? '' : 's'} this run, which is the limit. Note it for next run.`, isError: true }
       used.set(t.name, n + 1)
+      if (t.name === 'build_app' && ctx.spend && ctx.spend.left() < BUILD_RESERVE_MILLICENTS) {
+        used.set(t.name, n)
+        return { content: `Not enough budget left for a build (it needs about $${(BUILD_RESERVE_MILLICENTS / 100_000).toFixed(2)} set aside). Leave the build for a later run and say so in your report.`, isError: true, label: 'Skipped a build: not enough budget left' }
+      }
       if (ctx.rehearsal && t.kind === 'write') {
         return { content: `Rehearsal: this would have run ${t.name} with ${JSON.stringify(input).slice(0, 300)}. Nothing changed. Carry on as if it worked.`, label: `Would: ${t.running(input)}` }
       }
-      return t.run(input, c)
+      const out = await t.run(input, c)
+      if (ctx.spend) {
+        // A build the bot started is the bot's spend.
+        ctx.spend.builds += out.costMillicents ?? 0
+        if (t.name === 'hand_to_claude_code' && !out.isError) ctx.spend.handoffs++
+      }
+      return out
     },
   }))
 }

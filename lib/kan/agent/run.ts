@@ -28,13 +28,20 @@ export interface RunOptions {
   model?: string
   /** Asked between rounds with the tokens spent so far; true stops the loop (a bot's budget). */
   shouldStop?: (usage: Usage) => boolean
+  /** Told the running total after every model call, so tools can see what the run has spent. */
+  onUsage?: (usage: Usage) => void
   /** Rounds of tool calls before the loop gives up. A bot doing a whole run needs more than a chat turn. */
   maxRounds?: number
 }
 
 export interface Usage {
+  /** Every input token, cached or not. */
   inputTokens: number
   outputTokens: number
+  /** The part of inputTokens read back from the provider's prompt cache, billed at a fraction. */
+  cachedInputTokens?: number
+  /** Anthropic only: input written to the cache this turn, billed at a premium. */
+  cacheWriteTokens?: number
 }
 
 export interface RunResult {
@@ -63,7 +70,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const byName = new Map(tools.map((t) => [t.name, t]))
   const did: string[] = []
   const madeCards: string[] = []
-  const tally: Tally = { usage: { inputTokens: 0, outputTokens: 0 }, text: '', stopped: false }
+  const tally: Tally = { usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0 }, text: '', stopped: false }
   const send = (e: AgentEvent) => {
     if (e.t === 'text') tally.text += e.delta
     opts.send(e)
@@ -170,6 +177,9 @@ async function runClaude(opts: RunOptions, runTool: RunTool, did: string[], tall
     const final = await live.finalMessage()
     tally.usage.inputTokens += final.usage.input_tokens + (final.usage.cache_read_input_tokens ?? 0) + (final.usage.cache_creation_input_tokens ?? 0)
     tally.usage.outputTokens += final.usage.output_tokens
+    tally.usage.cachedInputTokens = (tally.usage.cachedInputTokens ?? 0) + (final.usage.cache_read_input_tokens ?? 0)
+    tally.usage.cacheWriteTokens = (tally.usage.cacheWriteTokens ?? 0) + (final.usage.cache_creation_input_tokens ?? 0)
+    opts.onUsage?.(tally.usage)
     messages.push({ role: 'assistant', content: final.content as Anthropic.Beta.BetaContentBlockParam[] })
     if (final.stop_reason === 'pause_turn') continue
     if (final.stop_reason !== 'tool_use') break
@@ -260,6 +270,8 @@ async function runOpenAI(opts: RunOptions, runTool: RunTool, did: string[], tall
     if (!final) break
     tally.usage.inputTokens += final.usage?.input_tokens ?? 0
     tally.usage.outputTokens += final.usage?.output_tokens ?? 0
+    tally.usage.cachedInputTokens = (tally.usage.cachedInputTokens ?? 0) + (final.usage?.input_tokens_details?.cached_tokens ?? 0)
+    opts.onUsage?.(tally.usage)
 
     input.push(...(final.output as OpenAI.Responses.ResponseInputItem[]))
     const calls = final.output.filter((o): o is OpenAI.Responses.ResponseFunctionToolCall => o.type === 'function_call')

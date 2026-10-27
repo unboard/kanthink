@@ -79,11 +79,13 @@ export function getNavigationUrl(notification: NotificationData, tasks: Record<s
     return data.jobId ? `/print/jobs/${data.jobId}` : '/print/orders'
   }
 
+  // A bot's report opens that bot's log; a paused-bots notice opens Spend.
+  if (notification.type === 'bot_run') {
+    return data.spend ? '/prototypes/kan/bots?spend' : `/prototypes/kan/bots?channel=${data.channelId}`
+  }
+
   const channelId = data.channelId as string | undefined
   if (!channelId) return null
-
-  // A bot's report opens that bot's log.
-  if (notification.type === 'bot_run') return `/prototypes/kan/bots?channel=${channelId}`
 
   // Card notifications → open card detail
   if (data.cardId && (

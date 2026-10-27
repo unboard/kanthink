@@ -41,6 +41,8 @@ export interface ToolOutcome {
   cardId?: string
   /** For `suggest`: the taps to offer under the reply. */
   suggestions?: { label: string; prompt: string }[]
+  /** What the tool itself spent on AI (an app build), so a bot's budget can count it. */
+  costMillicents?: number
 }
 
 export interface AgentTool {
@@ -102,7 +104,7 @@ const VOICE_LABELS: Record<string, [kind: 'read' | 'write', running: (i: Record<
 /** Voice mode reads these aloud or draws them on its own screen; the agent leaves them out. */
 const VOICE_ONLY = new Set(['draft_email', 'generate_image'])
 
-type ActionResponse = { result?: string; modelResult?: string; cardId?: string; channelId?: string; error?: string }
+type ActionResponse = { result?: string; modelResult?: string; cardId?: string; channelId?: string; error?: string; costUsd?: number }
 
 export async function callAction(action: string, args: Record<string, unknown>, ctx: ToolContext, scope = ctx.scope): Promise<ActionResponse> {
   // Voice actions take strings, except where a declaration says array.
@@ -162,6 +164,7 @@ export function voiceTools(): AgentTool[] {
             isError: Boolean(data.error),
             cardId: data.cardId,
             href: cardHref(data.channelId, data.cardId),
+            costMillicents: typeof data.costUsd === 'number' ? Math.ceil(data.costUsd * 100_000) : undefined,
           }
         },
       }

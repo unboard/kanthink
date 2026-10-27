@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { botRuns, channelBots, channels } from '@/lib/db/schema'
 import { desc, eq } from 'drizzle-orm'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { ensureBot, spentToday } from '@/lib/kan/bots/run'
+import { ensureBot } from '@/lib/kan/bots/run'
+import { roomFor } from '@/lib/kan/bots/spend'
 import { botTools } from '@/lib/kan/bots/tools'
 
 async function ownedChannel(channelId: string) {
@@ -27,9 +28,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ channel
   if ('error' in found) return found.error
   const { channel, session } = found
   const bot = await ensureBot(channelId, channel.ownerId)
-  const [runs, spent] = await Promise.all([
+  const [runs, { room, botSpent }] = await Promise.all([
     db.query.botRuns.findMany({ where: eq(botRuns.channelId, channelId), orderBy: [desc(botRuns.startedAt)], limit: 25 }),
-    spentToday(channelId),
+    roomFor(bot),
   ])
   const { getStudioByChannel } = await import('@/lib/studio/setup')
   const tools = botTools({ isAdmin: Boolean(session.user.isAdmin), isStudio: Boolean(await getStudioByChannel(channelId)), canHandOff: true })
@@ -44,7 +45,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ channel
       memory: bot.memory,
       lastRunAt: bot.lastRunAt,
       nextRunAt: bot.nextRunAt,
-      spentTodayCents: Math.round(spent / 1000),
+      spentTodayCents: Math.round(botSpent / 1000),
+      // What it may still spend under every ceiling, and which ceiling that is.
+      roomCents: Math.floor(room.left / 1000),
+      limitedBy: room.limitedBy,
+      limitMessage: room.message,
     },
     can,
     runs,
