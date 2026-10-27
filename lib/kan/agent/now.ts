@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { appMessages, cards, channels, notifications, playgroundApps } from '@/lib/db/schema'
+import { appMessages, botApprovals, cards, channels, notifications, playgroundApps } from '@/lib/db/schema'
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm'
 import { getStudio, columnFor } from '@/lib/studio/setup'
 
@@ -36,7 +36,7 @@ export async function gatherNow(userId: string, readable: string[], now = new Da
   const inReach = readable.length ? readable : ['__none__']
   const workReadable = readable.includes(WORK_CHANNEL_ID)
 
-  const [unreadPeople, workCards, studio, nudges, saves] = await Promise.all([
+  const [unreadPeople, workCards, studio, nudges, saves, asks] = await Promise.all([
     // People who wrote in your apps and haven't heard back.
     db.select({ appId: appMessages.appId, title: playgroundApps.title, n: sql<number>`count(*)` })
       .from(appMessages)
@@ -65,6 +65,13 @@ export async function gatherNow(userId: string, readable: string[], now = new Da
       .from(cards)
       .innerJoin(channels, eq(channels.id, cards.channelId))
       .where(and(eq(channels.ownerId, userId), eq(channels.isQuickSave, true), inArray(channels.id, inReach), gte(cards.createdAt, new Date(now.getTime() - 7 * DAY)))),
+    // Builds your bots asked you to approve.
+    db.select({ id: botApprovals.id, title: botApprovals.title, likely: botApprovals.likelyMillicents, bot: channels.name })
+      .from(botApprovals)
+      .innerJoin(channels, eq(channels.id, botApprovals.channelId))
+      .where(and(eq(botApprovals.ownerId, userId), eq(botApprovals.status, 'pending')))
+      .orderBy(desc(botApprovals.createdAt))
+      .limit(5),
   ])
 
   // 1. People first. Someone waiting on you outranks anything Kan made.
@@ -78,7 +85,18 @@ export async function gatherNow(userId: string, readable: string[], now = new Da
     })
   }
 
-  // 2. Claude Code: a question waiting on you, then what it finished.
+  // 2. A bot waiting on your yes to spend money on a build.
+  if (asks.length) {
+    const a = asks[0]
+    items.push({
+      id: 'bot-approvals',
+      title: asks.length === 1 ? `${a.bot} wants to build “${a.title}”` : `${asks.length} builds are waiting on you`,
+      why: asks.length === 1 ? `About $${((a.likely ?? 0) / 100_000).toFixed(2)}. Nothing is built until you say so` : 'Your bots asked before spending on them',
+      prompt: asks.length === 1 ? `${a.bot} wants to build "${a.title}". What is it for, and is it worth it?` : 'What do my bots want to build? Walk me through each one.',
+    })
+  }
+
+  // 3. Claude Code: a question waiting on you, then what it finished.
   const asking = workCards.filter((c) => (c.tags ?? []).some((t) => t.toLowerCase() === 'question'))
   if (asking.length) {
     items.push({
@@ -98,7 +116,7 @@ export async function gatherNow(userId: string, readable: string[], now = new Da
     })
   }
 
-  // 3. Ideas waiting on a yes, or moving and nudged.
+  // 4. Ideas waiting on a yes, or moving and nudged.
   if (studio) {
     const sparks = await db.query.cards.findMany({
       where: and(eq(cards.channelId, studio.channelId), eq(cards.columnId, columnFor(studio, 'sparks')), eq(cards.isArchived, false)),
@@ -121,7 +139,7 @@ export async function gatherNow(userId: string, readable: string[], now = new Da
     }
   }
 
-  // 4. What your saves add up to. The curious one.
+  // 5. What your saves add up to. The curious one.
   const saved = Number(saves[0]?.n ?? 0)
   if (saved >= 3) {
     items.push({

@@ -2031,6 +2031,17 @@ export const channelBots = sqliteTable('channel_bots', {
   dailyBudgetCents: integer('daily_budget_cents').default(200),
   /** The bot's notes to itself: what it's working on and what to do next run. */
   memory: text('memory'),
+  /**
+   * How much of Kan's attention this area gets, set by the attention loop from what
+   * the owner keeps feeding it. Null until Kan has judged it. Muted areas don't run
+   * or come up; they wake when input about them returns.
+   */
+  attention: text('attention').$type<'active' | 'quiet' | 'muted'>(),
+  /** Kan's one-line reason for the attention level, in words it would say to the owner. */
+  attentionWhy: text('attention_why'),
+  attentionAt: integer('attention_at', { mode: 'timestamp' }),
+  /** Kan started this area itself, from patterns in the owner's input. */
+  startedByKan: integer('started_by_kan', { mode: 'boolean' }).default(false),
   lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
   nextRunAt: integer('next_run_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -2129,4 +2140,51 @@ export const botApprovals = sqliteTable('bot_approvals', {
 }, (table) => [
   index('bot_approvals_owner_idx').on(table.ownerId, table.status),
   index('bot_approvals_channel_idx').on(table.channelId, table.createdAt),
+])
+
+export interface AttentionDecisionJson {
+  /** What Kan says to the owner about this pass, in conversation. */
+  note: string
+  areas: {
+    /** Null when Kan would start this area. */
+    channelId: string | null
+    name: string
+    attention: 'active' | 'quiet' | 'muted'
+    /** Why, in a sentence Kan would say to the owner. */
+    why: string
+    /** What changes: start, reshape, quiet, mute, wake, or keep. */
+    change: 'start' | 'reshape' | 'quiet' | 'mute' | 'wake' | 'keep'
+    purpose?: string
+    /** The columns it should have, when starting or reshaping. */
+    columns?: string[]
+    /** Whether its bot should run, and how often. */
+    bot?: { on: boolean; everyHours?: number }
+  }[]
+  /** Input Kan would file into an area, as a card or a note on one. */
+  filings: { input: string; area: string; as: 'card' | 'note'; title: string; cardId?: string }[]
+}
+
+/**
+ * One pass of the attention loop: Kan reading everything new the owner gave it and
+ * deciding where it belongs, which areas to start, reshape, quiet or wake. A
+ * rehearsal decides and changes nothing, so its judgment can be read first.
+ */
+export const attentionPasses = sqliteTable('attention_passes', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mode: text('mode').$type<'rehearsal' | 'live'>().notNull(),
+  status: text('status').$type<'running' | 'done' | 'error'>().notNull(),
+  /** How many of each input it read, e.g. { chat: 12, shares: 3, kanwatch: 40 }. */
+  inputs: text('inputs', { mode: 'json' }).$type<Record<string, number>>(),
+  decisions: text('decisions', { mode: 'json' }).$type<AttentionDecisionJson | null>(),
+  costMillicents: integer('cost_millicents').default(0),
+  model: text('model'),
+  error: text('error'),
+  /** When the owner (or the daily pass) carried it out, and what was done, line by line. */
+  appliedAt: integer('applied_at', { mode: 'timestamp' }),
+  appliedLog: text('applied_log', { mode: 'json' }).$type<string[] | null>(),
+  startedAt: integer('started_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  endedAt: integer('ended_at', { mode: 'timestamp' }),
+}, (table) => [
+  index('attention_passes_owner_idx').on(table.ownerId, table.startedAt),
 ])

@@ -305,8 +305,55 @@ export function studioTools(): AgentTool[] {
   ]
 }
 
+/** Builds the user's bots asked to make: read them, and decide when the user says. */
+export const approvalTools: AgentTool[] = [
+  {
+    name: 'bot_build_requests',
+    description: 'Builds the user’s channel bots have asked them to approve: what each app is, why the bot wants it, the model, and the estimated cost (likely and at most). Use when they ask what their bots want, or before deciding one.',
+    input_schema: { type: 'object', properties: {} },
+    kind: 'read',
+    running: () => 'Checking what your bots want to build',
+    async run(_input, ctx) {
+      const { pendingApprovals } = await import('@/lib/kan/bots/approvals')
+      const rows = (await pendingApprovals(ctx.userId)).filter((r) => r.status === 'pending')
+      if (!rows.length) return { content: 'No builds are waiting on them.', label: 'Nothing waiting' }
+      const lines = rows.map((r) => `- [${r.id}] "${r.title}" (channelId:${r.channelId}) with ${r.modelId}: about $${((r.likelyMillicents ?? 0) / 100_000).toFixed(2)}, at most $${((r.maxMillicents ?? 0) / 100_000).toFixed(2)}. Why: ${r.purpose ?? '(none given)'}`)
+      return { content: lines.join('\n'), label: `${rows.length} build${rows.length === 1 ? '' : 's'} waiting on you` }
+    },
+  },
+  {
+    name: 'decide_bot_build',
+    description: 'Approve or reject a build a bot asked for. Only on the user’s clear word ("build it", "no, because…"). On a reject, pass their reason in their words; the bot learns from it. Approving starts the build at once and charges it to that bot.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        requestId: { type: 'string', description: 'The id from bot_build_requests' },
+        approve: { type: 'boolean' },
+        reason: { type: 'string', description: 'Why not, when rejecting' },
+        modelId: { type: 'string', description: 'A different model, if the user asked for one' },
+      },
+      required: ['requestId', 'approve'],
+    },
+    kind: 'write',
+    running: (i) => (i.approve ? 'Approving the build' : 'Passing on the build'),
+    async run(input, ctx) {
+      const { decideApproval, runApprovedBuild } = await import('@/lib/kan/bots/approvals')
+      const r = await decideApproval(str(input.requestId), ctx.userId, {
+        approve: Boolean(input.approve), reason: input.reason ? str(input.reason) : undefined, modelId: input.modelId ? str(input.modelId) : undefined,
+      })
+      if ('error' in r) return { content: String(r.error), isError: true }
+      if (r.row.status === 'approved') {
+        const { afterResponse } = await import('@/lib/afterResponse')
+        afterResponse(() => runApprovedBuild(r.row.id))
+        return { content: `Approved. "${r.row.title}" is building now with ${r.row.modelId} (about $${((r.row.likelyMillicents ?? 0) / 100_000).toFixed(2)}); it lands on the card's Apps tab in a minute or two.`, label: `Approved “${r.row.title}”` }
+      }
+      return { content: `Passed on "${r.row.title}". The bot will read the reason next run.`, label: `Passed on “${r.row.title}”` }
+    },
+  },
+]
+
 export function agentTools(ctx: Pick<ToolContext, 'readable' | 'isAdmin'>): AgentTool[] {
-  const tools = [nowTool, ...voiceTools(), ...studioTools(), suggestTool]
+  const tools = [nowTool, ...voiceTools(), ...studioTools(), ...approvalTools, suggestTool]
   if (ctx.readable.includes(WORK_CHANNEL_ID)) tools.splice(1, 0, claudeCodeTool)
   return ctx.isAdmin ? tools : tools.filter((t) => t.name !== 'query_mixpanel')
 }
