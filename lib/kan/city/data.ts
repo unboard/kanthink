@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import {
   attentionPasses, botApprovals, botRuns, cards, channelActivityLog, channelBots, channels, columns, folders,
-  instructionCards, instructionRuns, playgroundApps, playgroundAppVersions, userChannelOrg, type AttentionDecisionJson,
+  instructionCards, instructionRuns, kanwatchEpisodes, playgroundApps, playgroundAppVersions, userChannelOrg, type AttentionDecisionJson,
 } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm'
 import { gatherAreas, gatherInputs, type InputItem } from '@/lib/kan/attention/inputs'
@@ -113,6 +113,32 @@ export async function cityFor(userId: string) {
     limitsFor(userId),
     spentByOwner(userId, dayAgo),
   ])
+  // Where your own attention went in the last day, as Kanwatch read it: only which
+  // channel and for how long, never the pages. A guess counts when Jev was fairly
+  // sure; what you corrected always wins, and anything you said wasn't work is out.
+  const episodes = await db.query.kanwatchEpisodes.findMany({
+    where: and(eq(kanwatchEpisodes.userId, userId), gt(kanwatchEpisodes.endedAt, dayAgo)),
+    columns: { activeSeconds: true, guessChannelId: true, guessProbability: true, verdict: true, verdictChannelId: true, activityMode: true, verdictMode: true, endedAt: true },
+  }).catch(() => [])
+  const focus = new Map<string, { seconds: number; modes: Map<string, number>; last: number }>()
+  for (const e of episodes) {
+    if (e.verdict === 'not_work') continue
+    const ch = e.verdictChannelId ?? ((e.guessProbability ?? 0) >= 55 ? e.guessChannelId : null)
+    if (!ch || !ids.includes(ch)) continue
+    const f = focus.get(ch) ?? { seconds: 0, modes: new Map(), last: 0 }
+    f.seconds += e.activeSeconds ?? 0
+    const mode = e.verdictMode ?? e.activityMode
+    if (mode) f.modes.set(mode, (f.modes.get(mode) ?? 0) + (e.activeSeconds ?? 0))
+    f.last = Math.max(f.last, +(e.endedAt ?? 0))
+    focus.set(ch, f)
+  }
+  const focusOf = (id: string) => {
+    const f = focus.get(id)
+    if (!f || f.seconds < 120) return null
+    const mode = [...f.modes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+    return { minutes: Math.round(f.seconds / 60), mode, lastAt: f.last }
+  }
+
   const made = await db.query.channels.findMany({ where: inArray(channels.id, ids), columns: { id: true, createdAt: true } })
   const madeAt = new Map(made.map((c) => [c.id, ms(c.createdAt)]))
   // Everything since the last pass Kan finished is new to it.
@@ -207,6 +233,8 @@ export async function cityFor(userId: string) {
         asks,
       },
       building: appBuilding.get(p.channelId) ?? (building.has(p.channelId) ? 'an app you approved' : null),
+      // Your own time here in the last day, from Kanwatch.
+      yourTime: focusOf(p.channelId),
       waiting: waiting.map((w) => ({ id: w.id, title: w.title })),
     }
   })
@@ -263,6 +291,10 @@ export async function cityFor(userId: string) {
     feed.push({ at: +(p.endedAt ?? p.startedAt ?? 0), kind: 'kan', channelId: null, text: 'Kan looked over everything you gave it' })
     if (p.appliedAt) feed.push({ at: +p.appliedAt, kind: 'kan', channelId: null, text: `Kan rearranged the city: ${(p.appliedLog ?? []).length} changes` })
   }
+  for (const [ch] of focus) {
+    const f = focusOf(ch)
+    if (f) feed.push({ at: f.lastAt, kind: 'you', channelId: ch, text: `You spent ${f.minutes >= 60 ? `${Math.floor(f.minutes / 60)}h ${f.minutes % 60}m` : `${f.minutes}m`}${f.mode ? ` (${f.mode})` : ''}` })
+  }
   for (const a of arrivals.slice(0, 12)) feed.push({ at: +a.at, kind: 'in', channelId: a.channelId ?? null, text: `${ARRIVAL_WORD[a.kind]} ${clip(a.text, 110)}` })
   feed.sort((a, b) => b.at - a.at)
 
@@ -294,6 +326,7 @@ export async function cityFor(userId: string) {
       recent: arrivals.slice(0, 8).map((a) => ({ kind: a.kind, text: clip(a.text, 120), at: +a.at })),
     },
     feed: feed.slice(0, 80),
+    yourDay: { minutes: [...focus.values()].reduce((n, f) => n + Math.round(f.seconds / 60), 0) },
     done,
     spend: { todayCents: Math.round(spent / 1000), dayCapCents: limits.dailyCapCents },
     names: Object.fromEntries(areaName),

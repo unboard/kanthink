@@ -80,11 +80,22 @@ interface PlotView {
   crane: (Built & { jib: THREE.Group }) | null;
   shrooms: { obj: THREE.Object3D; hop: boolean; phase: number }[];
   importance: number;
+  /** A warm glow on the lawn where you spent time today. */
+  yours: THREE.Mesh | null;
 }
 
 export interface EngineCallbacks {
   onPick(p: Pick | null): void;
+  /** In drive or fly mode: the building you're next to, so the page can offer to go in. */
+  onNear?(p: { id: string; name: string } | null): void;
+  /** Escape out of drive or fly mode. */
+  onExitMode?(): void;
 }
+
+/** How you see the city: the map from above, or first-person behind the wheel or the wings. */
+export type ViewMode = 'map' | 'drive' | 'fly';
+
+const FOG: Record<Sky, string> = { dawn: '#f2c3b4', day: '#d7ecfa', dusk: '#b98aa9', night: '#2a2150' };
 
 export class CityEngine {
   private renderer: THREE.WebGLRenderer;
@@ -134,6 +145,14 @@ export class CityEngine {
   private parcels: { group: THREE.Group; label: HTMLDivElement; count: number } | null = null;
   /** Plots picked for a new neighborhood. */
   private marked = new Set<string>();
+  private mode: ViewMode = 'map';
+  private persp = new THREE.PerspectiveCamera(62, 1, 0.5, 2500);
+  private player: { obj: THREE.Group; x: number; y: number; z: number; heading: number; speed: number; roll: number } | null = null;
+  private keys = new Set<string>();
+  private stick = { x: 0, y: 0 };
+  private near: string | null = null;
+  /** How tall what stands on each cell is, so a flyer can't go through it. */
+  private tops = new Map<string, number>();
 
   constructor(private host: HTMLDivElement, private labels: HTMLDivElement, private cb: EngineCallbacks) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -180,6 +199,9 @@ export class CityEngine {
     this.resizeObs = new ResizeObserver(() => this.resize());
     this.resizeObs.observe(host);
     document.addEventListener('visibilitychange', this.onVisibility);
+    window.addEventListener('keydown', this.onKey);
+    window.addEventListener('keyup', this.onKey);
+    window.addEventListener('blur', this.onBlur);
     this.resize();
     this.loop();
     if (process.env.NODE_ENV !== 'production') (window as unknown as { __kanCity?: CityEngine }).__kanCity = this;
@@ -205,6 +227,7 @@ export class CityEngine {
     for (const m of windowMaterials) m.emissiveIntensity = L.windows;
     for (const m of nightGlows) m.emissiveIntensity = L.glows;
     for (const v of this.plots.values()) this.lightPlot(v);
+    if (this.scene.fog) (this.scene.fog as THREE.Fog).color.set(FOG[sky]);
   }
 
   setData(data: CityData) {
@@ -231,7 +254,7 @@ export class CityEngine {
       const big = p?.kind === 'townhall' || p?.kind === 'park';
       this.selectRing.scale.setScalar(big ? 2.05 : 1);
       this.selectRing.position.set(pos.x, GROUND_Y + 0.08, pos.z);
-      if (focus) this.focus(pos, big ? 1.5 : 2.1);
+      if (focus && this.mode === 'map') this.focus(pos, big ? 1.5 : 2.1);
     }
   }
 
@@ -246,7 +269,9 @@ export class CityEngine {
   frameAll() {
     if (!this.grid) return;
     this.controls.target.set(0, 0, 0);
-    this.camera.zoom = 0.9;
+    // A tall phone screen fits the city's width, which leaves it small; lean in.
+    const aspect = (this.host.clientWidth || 1) / (this.host.clientHeight || 1);
+    this.camera.zoom = aspect < 0.8 ? 1.45 : 0.9;
     this.placeCamera();
     this.camera.updateProjectionMatrix();
   }
@@ -262,6 +287,41 @@ export class CityEngine {
     this.camera.zoom = THREE.MathUtils.clamp(this.camera.zoom * f, this.controls.minZoom, this.controls.maxZoom);
     this.camera.updateProjectionMatrix();
   }
+
+  /**
+   * Get in and drive the streets, or take off and fly over the rooftops. The map
+   * camera waits where you left it.
+   */
+  setMode(mode: ViewMode) {
+    if (mode === this.mode || !this.grid || !this.data) return;
+    if (this.player) { this.player.obj.removeFromParent(); this.player = null; }
+    this.mode = mode;
+    this.controls.enabled = mode === 'map';
+    this.near = null;
+    this.cb.onNear?.(null);
+    this.focusAnim = null;
+    if (mode === 'map') {
+      this.scene.fog = null;
+      this.selectRing.visible = Boolean(this.selected);
+      return;
+    }
+    this.selectRing.visible = false;
+    this.scene.fog = new THREE.Fog(FOG[this.sky], 90, 380);
+    const start = this.townHallSpot(-2);
+    const obj = mode === 'drive' ? this.makeDriver() : this.makeFlyer();
+    this.scene.add(obj);
+    // Pointed away from Kan, who waits outside Town Hall.
+    this.player = { obj, x: start.x, y: mode === 'fly' ? 26 : 0.1, z: start.z, heading: -Math.PI / 2, speed: mode === 'fly' ? 16 : 0, roll: 0 };
+    // Start the chase camera right behind, not swooping in from the map.
+    const f = this.forward(this.player.heading);
+    this.persp.position.set(start.x - f.x * 14, this.player.y + 7, start.z - f.z * 14);
+    this.persp.lookAt(start.x, this.player.y, start.z);
+  }
+
+  getMode() { return this.mode; }
+
+  /** The on-screen joystick, -1 to 1 each way; up is +y. */
+  setStick(x: number, y: number) { this.stick = { x, y }; }
 
   /** Highlight plots, e.g. the ones you're gathering into a neighborhood. */
   mark(ids: string[]) { this.marked = new Set(ids); }
@@ -341,6 +401,9 @@ export class CityEngine {
     cancelAnimationFrame(this.raf);
     this.resizeObs.disconnect();
     document.removeEventListener('visibilitychange', this.onVisibility);
+    window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('keyup', this.onKey);
+    window.removeEventListener('blur', this.onBlur);
     this.controls.dispose();
     this.clearCity();
     this.renderer.dispose();
@@ -430,6 +493,8 @@ export class CityEngine {
     this.addPickable(th.group, { kind: 'townhall' });
     this.city.add(th.group);
     if (th.tick) this.ticks.push(th.tick);
+    this.tops.clear();
+    for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) this.tops.set(`${L.townHall.cx + dx},${L.townHall.cz + dz}`, th.top + 1);
     this.fixedLabels.push({ el: this.makeLabel('Town Hall', 'townhall', () => this.cb.onPick({ kind: 'townhall' })), pos: new THREE.Vector3(thc.x, GROUND_Y + th.top, thc.z - 3.4), always: true });
 
     const pk = centralPark();
@@ -638,6 +703,7 @@ export class CityEngine {
     built.group.rotation.y = d.facing === -1 ? Math.PI : 0;
     this.addPickable(built.group, { kind: 'plot', id: p.channelId });
     this.city.add(built.group);
+    this.tops.set(`${p.cx},${p.cz}`, built.top);
     if (built.tick) this.ticks.push(built.tick);
 
     // A beam of light over a building whose bot is at work.
@@ -651,7 +717,7 @@ export class CityEngine {
 
     const label = this.makeLabel(p.name, 'plot', () => this.cb.onPick({ kind: 'plot', id: p.channelId }));
     const importance = (p.recentActivity * 4) + Math.log2(1 + p.cards) + (p.apps ? 2 : 0) + (p.lastActivityAt ? Math.max(0, 6 - (Date.now() - p.lastActivityAt) / (5 * 86400_000)) : 0) - (p.attention === 'muted' ? 20 : 0);
-    const view: PlotView = { plot: p, center: c, facing: d.facing, built, label, beacon, crane: null, shrooms: [], importance };
+    const view: PlotView = { plot: p, center: c, facing: d.facing, built, label, beacon, crane: null, shrooms: [], importance, yours: null };
     this.plots.set(p.channelId, view);
   }
 
@@ -699,6 +765,19 @@ export class CityEngine {
         v.crane.group.removeFromParent();
         v.crane = null;
       }
+      // Where your own time went today (Kanwatch): a warm ring, brighter the longer you stayed.
+      const mins = p.yourTime?.minutes ?? 0;
+      if (mins && !v.yours) {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(5.2, 6.4, 40),
+          new THREE.MeshBasicMaterial({ color: '#fbbf24', transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(v.center.x, GROUND_Y + 0.06, v.center.z);
+        this.city.add(ring);
+        v.yours = ring;
+      } else if (!mins && v.yours) { v.yours.removeFromParent(); v.yours = null; }
+      if (v.yours) (v.yours.material as THREE.MeshBasicMaterial).opacity = Math.min(0.75, 0.25 + mins / 120);
       const badge = p.waiting.length + p.bot.asks.length;
       v.label.querySelector('.kc-name')!.textContent = p.name;
       const b = v.label.querySelector('.kc-badge') as HTMLSpanElement;
@@ -991,8 +1070,10 @@ export class CityEngine {
       this.camera.updateProjectionMatrix();
       if (f.t >= 1) this.focusAnim = null;
     }
-    this.controls.update();
-    this.clampTarget();
+    if (this.mode === 'map') {
+      this.controls.update();
+      this.clampTarget();
+    } else this.stepPlayer(dt);
     for (const f of this.ticks) f(t, dt);
 
     const r = Math.random;
@@ -1069,7 +1150,7 @@ export class CityEngine {
     }
     if (this.kanNote && this.kanNote.until < performance.now()) { this.kanNote = null; this.renderKanBubble(); }
 
-    this.renderer.render(this.scene, this.camera);
+    this.renderer.render(this.scene, this.view);
     this.placeLabels();
   };
 
@@ -1107,6 +1188,154 @@ export class CityEngine {
     return moving;
   }
 
+  // ---------- Driving and flying ----------
+
+  private get view(): THREE.Camera { return this.mode === 'map' ? this.camera : this.persp; }
+
+  private forward(heading: number) { return { x: Math.sin(heading), z: Math.cos(heading) }; }
+
+  /** A little car with Kan at the wheel. */
+  private makeDriver(): THREE.Group {
+    const g = car(5);
+    g.traverse((o) => { o.castShadow = true; });
+    const k = kanFigure();
+    k.scale.setScalar(0.3);
+    k.position.set(-0.15, 0.6, 0);
+    k.rotation.y = Math.PI / 2;
+    g.add(k);
+    g.scale.setScalar(1.6);
+    return g;
+  }
+
+  /** A violet glider with Kan riding on top. */
+  private makeFlyer(): THREE.Group {
+    const g = new THREE.Group();
+    g.userData.dynamic = true;
+    const body = mat('#7c3aed', { rough: 0.45 });
+    const wing = mat('#c4b5fd', { rough: 0.5 });
+    const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      g.add(mesh);
+      return mesh;
+    };
+    const fuselage = add(new THREE.CapsuleGeometry(0.42, 2.6, 4, 10), body, 0, 0, 0);
+    fuselage.rotation.x = Math.PI / 2;
+    add(new THREE.BoxGeometry(7.2, 0.12, 1.3), wing, 0, 0.1, 0.25);
+    add(new THREE.BoxGeometry(2.6, 0.1, 0.7), wing, 0, 0.15, -1.7);
+    add(new THREE.BoxGeometry(0.1, 0.9, 0.7), body, 0, 0.55, -1.75);
+    for (const x of [-3.5, 3.5]) add(new THREE.BoxGeometry(0.16, 0.5, 0.9), body, x, 0.3, 0.25);
+    const k = kanFigure();
+    k.scale.setScalar(0.5);
+    k.position.set(0, 0.32, 0.55);
+    g.add(k);
+    g.scale.setScalar(1.3);
+    return g;
+  }
+
+  /** Inside a block: lawns and buildings, off the road. */
+  private onBlock(x: number, z: number, pad: number) {
+    const g = this.grid!;
+    const lx = x + g.width / 2 - ROAD, lz = z + g.depth / 2 - ROAD;
+    const bx = Math.floor(lx / PITCH), bz = Math.floor(lz / PITCH);
+    if (bx < 0 || bz < 0 || bx >= g.blocksX || bz >= g.blocksZ) return null;
+    const ox = lx - bx * PITCH, oz = lz - bz * PITCH;
+    if (ox < -pad || ox > BLOCK + pad || oz < -pad || oz > BLOCK + pad) return null;
+    const cx = bx * 2 + (ox > CELL + GAP / 2 ? 1 : 0), cz = bz * 2 + (oz > CELL + GAP / 2 ? 1 : 0);
+    return { cx, cz };
+  }
+
+  private stepPlayer(dt: number) {
+    const p = this.player, g = this.grid;
+    if (!p || !g) return;
+    const k = this.keys;
+    const steer = THREE.MathUtils.clamp((k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0) + this.stick.x, -1, 1);
+    const push = THREE.MathUtils.clamp((k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0) + this.stick.y, -1, 1);
+    const boost = k.has('shift');
+    const edge = Math.max(g.width, g.depth) / 2;
+
+    if (this.mode === 'drive') {
+      const top = boost ? 36 : 24;
+      if (push > 0) p.speed = Math.min(top, p.speed + push * 26 * dt);
+      else if (push < 0) p.speed = Math.max(-9, p.speed + push * (p.speed > 0 ? 40 : 16) * dt);
+      else p.speed -= Math.sign(p.speed) * Math.min(Math.abs(p.speed), 9 * dt);
+      p.heading -= steer * 2.3 * dt * THREE.MathUtils.clamp(Math.abs(p.speed) / 7, 0, 1) * Math.sign(p.speed || 1);
+      const f = this.forward(p.heading);
+      const nx = p.x + f.x * p.speed * dt, nz = p.z + f.z * p.speed * dt;
+      // Streets only: slide along a curb rather than stop dead, and stay on the island.
+      const blocked = (x: number, z: number) => Math.abs(x) > g.width / 2 - 1.2 || Math.abs(z) > g.depth / 2 - 1.2 || this.onBlock(x, z, 1.3) !== null;
+      if (!blocked(nx, nz)) { p.x = nx; p.z = nz; }
+      else if (!blocked(nx, p.z)) { p.x = nx; p.speed *= 1 - 2 * dt; }
+      else if (!blocked(p.x, nz)) { p.z = nz; p.speed *= 1 - 2 * dt; }
+      else p.speed *= -0.25;
+      p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 20) * 0.08 - p.roll) * Math.min(1, dt * 6);
+      p.obj.position.set(p.x, 0.12, p.z);
+      p.obj.rotation.set(0, p.heading - Math.PI / 2, 0);
+      p.obj.rotateX(p.roll);
+      // Chase camera, low and close.
+      const want = new THREE.Vector3(p.x - f.x * 13, 6.2, p.z - f.z * 13);
+      this.persp.position.lerp(want, 1 - Math.exp(-dt * 5));
+      this.persp.lookAt(p.x + f.x * 8, 1.6, p.z + f.z * 8);
+    } else {
+      // Always flying forward; up on the stick (or W) climbs, A and D bank and turn.
+      const target = boost ? 46 : 22;
+      p.speed += (target - p.speed) * Math.min(1, dt * 1.5);
+      p.heading -= steer * 1.35 * dt;
+      p.y += push * 15 * dt;
+      const cell = this.onBlock(p.x, p.z, 0);
+      const floor = (cell ? this.tops.get(`${cell.cx},${cell.cz}`) ?? 0.5 : 0.5) + GROUND_Y + 3;
+      p.y = THREE.MathUtils.clamp(p.y, floor, 150);
+      const f = this.forward(p.heading);
+      p.x += f.x * p.speed * dt;
+      p.z += f.z * p.speed * dt;
+      // Past the edge of town, it banks you back toward the middle.
+      const out = Math.hypot(p.x, p.z) - (edge + 70);
+      if (out > 0) {
+        const home = Math.atan2(-p.x, -p.z);
+        let d = home - p.heading;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        p.heading += Math.sign(d) * Math.min(Math.abs(d), dt * 1.2);
+      }
+      p.roll += (steer * 0.55 - p.roll) * Math.min(1, dt * 4);
+      p.obj.position.set(p.x, p.y, p.z);
+      p.obj.rotation.set(0, p.heading, 0);
+      p.obj.rotateZ(p.roll);
+      p.obj.rotateX(-push * 0.18);
+      const want = new THREE.Vector3(p.x - f.x * 15, p.y + 5.5, p.z - f.z * 15);
+      this.persp.position.lerp(want, 1 - Math.exp(-dt * 4));
+      this.persp.lookAt(p.x + f.x * 10, p.y - 1, p.z + f.z * 10);
+    }
+
+    // What you're next to: a door when driving, a rooftop when flying.
+    let best: PlotView | null = null, bestD = Infinity;
+    for (const v of this.plots.values()) {
+      const d = Math.hypot(v.center.x - p.x, v.center.z - p.z);
+      const reach = this.mode === 'drive' ? 11 : 13 + Math.max(0, p.y - v.built.top) * 0.15;
+      if (d < reach && d < bestD && (this.mode === 'drive' || p.y < v.built.top + 30)) { best = v; bestD = d; }
+    }
+    const id = best?.plot.channelId ?? null;
+    if (id !== this.near) {
+      this.near = id;
+      this.cb.onNear?.(best ? { id: best.plot.channelId, name: best.plot.name } : null);
+    }
+  }
+
+  private onKey = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (this.mode === 'map') return;
+    const key = e.key.toLowerCase();
+    if (e.type === 'keydown') {
+      if (key === 'escape') { this.cb.onExitMode?.(); return; }
+      if ((key === 'e' || key === 'enter') && this.near) { this.cb.onPick({ kind: 'plot', id: this.near }); return; }
+      this.keys.add(key);
+      if (key.startsWith('arrow') || key === ' ') e.preventDefault();
+    } else this.keys.delete(key);
+  };
+
+  private onBlur = () => { this.keys.clear(); };
+
   // ---------- Labels ----------
 
   private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals', onClick: () => void) {
@@ -1132,34 +1361,40 @@ export class CityEngine {
     const v = new THREE.Vector3();
     const put = (el: HTMLElement, pos: THREE.Vector3, show: boolean, dy = 0) => {
       if (!show) { if (el.style.display !== 'none') el.style.display = 'none'; return; }
-      v.copy(pos).project(this.camera);
+      v.copy(pos).project(this.view);
       const x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h + dy;
-      const off = x < -80 || x > w + 80 || y < -40 || y > h + 40;
+      // Behind a first-person camera counts as off screen; so does too far to read.
+      const far = fpv && (v.z > 1 || pos.distanceTo(this.persp.position) > 150);
+      const off = far || x < -80 || x > w + 80 || y < -40 || y > h + 40;
       el.style.display = off ? 'none' : '';
       if (!off) el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
     };
-    const zoom = this.camera.zoom;
+    const fpv = this.mode !== 'map';
+    // Up close in first person, everything nearby says its name.
+    const zoom = fpv ? 3 : this.camera.zoom;
     // The busiest buildings always say their names; the rest appear as you zoom in.
     const ranked = [...this.plots.values()].sort((a, b) => b.importance - a.importance);
-    const shown = Math.round(7 * zoom * zoom);
+    // A phone has room for far fewer names than a desktop.
+    const room = Math.max(0.3, Math.min(1, w / 1100));
+    const shown = Math.round(7 * zoom * zoom * room);
     const sel = this.selected?.kind === 'plot' ? this.selected.id : null;
     ranked.forEach((pv, i) => {
       const p = pv.plot;
       const marked = this.marked.has(p.channelId);
       const loud = marked || p.bot.status === 'working' || p.waiting.length > 0 || Boolean(p.building) || sel === p.channelId || this.hovered === p.name;
-      const show = loud || (i < shown && (p.attention !== 'muted' || zoom > 2.2));
+      const show = fpv ? Math.hypot(pv.center.x - this.persp.position.x, pv.center.z - this.persp.position.z) < 95 : loud || (i < shown && (p.attention !== 'muted' || zoom > 2.2));
       put(pv.label, v.set(pv.center.x, GROUND_Y + pv.built.top + 0.6, pv.center.z).clone(), show);
       pv.label.dataset.selected = sel === p.channelId || marked ? '1' : '';
     });
     for (const f of this.fixedLabels) {
       const isKan = f.el.dataset.follow === '1';
       put(f.el, isKan ? f.pos.clone().setY(GROUND_Y + 4.4) : f.pos, f.always || zoom > 1);
-      if (f.el.classList.contains('kc-district')) f.el.style.opacity = zoom < 1.6 ? '1' : '0';
+      if (f.el.classList.contains('kc-district')) f.el.style.opacity = !fpv && zoom < 1.6 ? '1' : '0';
     }
     for (const c of this.citizens.values()) {
       const visible = c.walker.obj.visible && !c.walker.inside;
       const pos = c.walker.obj.position.clone().setY(GROUND_Y + 3.4);
-      put(c.label, pos, visible && zoom > 1.25);
+      put(c.label, pos, visible && (fpv ? pos.distanceTo(this.persp.position) < 45 : zoom > (w < 640 ? 2.4 : 1.25)));
       put(c.bubble, pos.clone().setY(GROUND_Y + 2.4), visible && c.status === 'needs' && c.bubble.childElementCount > 0, -4);
     }
     if (this.kan && this.kanBubble) put(this.kanBubble, this.kan.obj.position.clone().setY(GROUND_Y + 4.6), this.kanSays, -30);
@@ -1192,7 +1427,7 @@ export class CityEngine {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new THREE.Raycaster();
-    ray.setFromCamera(ndc, this.camera);
+    ray.setFromCamera(ndc, this.view);
     const hits = ray.intersectObjects(this.pickables, false);
     return (hits[0]?.object.userData.pick as Pick | undefined) ?? null;
   }
@@ -1240,6 +1475,8 @@ export class CityEngine {
     this.camera.top = halfH;
     this.camera.bottom = -halfH;
     this.camera.updateProjectionMatrix();
+    this.persp.aspect = aspect;
+    this.persp.updateProjectionMatrix();
   }
 
   private placeCamera() {

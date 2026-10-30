@@ -275,7 +275,7 @@ export const CityChat = forwardRef<CityChatHandle, {
           </div>
         )}
 
-        {!showThread && glance && (
+        {!showThread && !compact && glance && (
           <button
             onClick={() => setOpen(true)}
             className="mx-auto mb-2 flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-neutral-950/80 px-3.5 py-1.5 text-[13px] text-neutral-200 shadow-lg backdrop-blur-xl hover:bg-neutral-900/90"
@@ -333,7 +333,7 @@ export const CityChat = forwardRef<CityChatHandle, {
                 if (e.key === 'Escape') setOpen(false);
               }}
               rows={1}
-              placeholder={focus?.name ? `Ask about ${focus.name}, or tell its bot what to do` : 'Ask Kan, or tell your bots what to do'}
+              placeholder={focus?.name ? `Ask about ${focus.name}…` : 'Ask Kan, or tell your bots…'}
               className="block max-h-[160px] min-h-[24px] w-full resize-none bg-transparent px-1.5 py-2 text-[15px] text-neutral-100 placeholder:text-neutral-500 focus:outline-none"
             />
           </div>

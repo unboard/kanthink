@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowUpRight, ChevronDown, ChevronLeft, Inbox, LayoutGrid, Loader2, Maximize2, Menu, Moon, Package, Play, Plus,
+  ArrowUpRight, Car, ChevronDown, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { CityEngine, SKY_CSS, skyFor, type Sky } from '@/components/kan/city/engine';
+import { CityEngine, SKY_CSS, skyFor, type Sky, type ViewMode } from '@/components/kan/city/engine';
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
@@ -99,6 +99,23 @@ const day = (ms: number) => new Date(ms).toLocaleDateString('en-US', { weekday: 
 const usd = (millicents: number | null | undefined) => `$${((millicents ?? 0) / 100_000).toFixed(2)}`;
 const channelOfHref = (href?: string) => href?.match(/^\/channel\/([^/?#]+)/)?.[1] ?? null;
 
+function minutes(m: number) {
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60 ? `${m % 60}m` : ''}`.trim() : `${m}m`;
+}
+
+/** A touch device, where drive and fly get a joystick. */
+function useCoarse() {
+  const [coarse, setCoarse] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia('(pointer: coarse)');
+    const on = () => setCoarse(m.matches);
+    on();
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, []);
+  return coarse;
+}
+
 function useWide() {
   const [wide, setWide] = useState(false);
   useEffect(() => {
@@ -132,6 +149,10 @@ export default function CityPage() {
   const [chatH, setChatH] = useState(72);
   /** Gathering plots into a new neighborhood. */
   const [gather, setGather] = useState<{ name: string; ids: string[] } | null>(null);
+  /** Map from above, or first person: driving the streets or flying over them. */
+  const [mode, setMode] = useState<ViewMode>('map');
+  const [near, setNear] = useState<{ id: string; name: string } | null>(null);
+  const coarse = useCoarse();
 
   useEffect(() => { setPreview(new URLSearchParams(window.location.search).has('preview')); }, []);
   useEffect(() => {
@@ -184,7 +205,11 @@ export default function CityPage() {
 
   useEffect(() => {
     if (state !== 'ready' || engine.current || !host.current || !labels.current) return;
-    engine.current = new CityEngine(host.current, labels.current, { onPick: (p) => onPickRef.current(p) });
+    engine.current = new CityEngine(host.current, labels.current, {
+      onPick: (p) => onPickRef.current(p),
+      onNear: setNear,
+      onExitMode: () => setMode('map'),
+    });
     engine.current.setSky(sky);
     return undefined;
   }, [state, sky]);
@@ -193,13 +218,17 @@ export default function CityPage() {
   useEffect(() => { if (shown) engine.current?.setData(shown); }, [shown, state]);
   useEffect(() => { engine.current?.setSky(sky); }, [sky]);
   useEffect(() => { engine.current?.mark(gather?.ids ?? []); }, [gather]);
+  useEffect(() => {
+    engine.current?.setMode(mode);
+    if (mode !== 'map') { setMenu(false); if (!wide) setSide(null); }
+  }, [mode, state, wide]);
 
   // What covers the city, so the camera keeps what you picked in the open part.
   const panelOpen = Boolean(pick || board);
   const leftW = wide && side === 'citizens' ? 312 : 0;
   const rightW = wide ? (panelOpen ? 444 : side === 'feed' ? 352 : 0) : 0;
   useEffect(() => {
-    const bottom = wide ? chatH : panelOpen ? window.innerHeight * 0.72 : chatH;
+    const bottom = wide ? chatH : panelOpen ? window.innerHeight * 0.78 : chatH;
     engine.current?.setInsets(rightW - leftW, bottom);
   }, [wide, rightW, leftW, panelOpen, chatH]);
   useEffect(() => { engine.current?.select(pick ?? (board ? { kind: 'plot', id: board } : null), true); }, [pick, board, rightW, leftW]);
@@ -220,7 +249,8 @@ export default function CityPage() {
   const selectedPlot = pick?.kind === 'plot' ? plotOf.get(pick.id) ?? null : null;
   const focus = selectedPlot ? { channelId: selectedPlot.channelId, name: selectedPlot.name }
     : board && plotOf.get(board) ? { channelId: board, name: plotOf.get(board)!.name }
-    : pick?.kind === 'townhall' ? { kind: 'townhall', name: 'Town Hall' } : null;
+    : pick?.kind === 'townhall' ? { kind: 'townhall', name: 'Town Hall' }
+    : near ? { channelId: near.id, name: near.name } : null;
 
   // Starters that fit what's on screen.
   const starters = useMemo(() => {
@@ -307,7 +337,7 @@ export default function CityPage() {
   const latest = data?.feed[0];
 
   return (
-    <div className="fixed inset-0 z-[5] overflow-hidden text-neutral-100" style={{ background: SKY_CSS[sky] }}>
+    <div className="fixed inset-0 z-[5] overflow-hidden text-neutral-100" style={{ background: SKY_CSS[sky], ['--chat-h' as string]: `${chatH}px` }}>
       <style dangerouslySetInnerHTML={{ __html: LABEL_CSS }} />
       <div ref={host} className="absolute inset-0" />
       <div ref={labels} className="kc-labels pointer-events-none absolute inset-0 overflow-hidden" />
@@ -344,12 +374,26 @@ export default function CityPage() {
           {counts.building > 0 && <Chip tone="sky" n={counts.building} label="being built" />}
           {data && data.arrivals.count > 0 && <Chip tone="orange" n={data.arrivals.count} label="new for Kan" onClick={() => onPickRef.current({ kind: 'arrivals' })} />}
           {data && <Chip n={data.done.bots + data.done.shrooms + data.done.you} label="done today" onClick={() => setSide((s) => (s === 'feed' ? null : 'feed'))} />}
+          {data && data.yourDay.minutes > 0 && <Chip tone="gold" label={`${minutes(data.yourDay.minutes)} of your time`} onClick={() => setSide((s) => (s === 'feed' ? null : 'feed'))} />}
           {data && <Chip label={`$${(data.spend.todayCents / 100).toFixed(2)} today`} href="/prototypes/kan/bots?spend" />}
+        </div>
+        {/* On a phone it sits under the chips, on the right, so the chips get the row. */}
+        <div className="pointer-events-auto absolute right-3 top-[calc(max(10px,env(safe-area-inset-top))+40px)] flex flex-shrink-0 flex-col items-center gap-0.5 rounded-full border border-white/10 bg-neutral-950/75 p-0.5 shadow-lg backdrop-blur-xl sm:static sm:flex-row">
+          {([['map', MapIcon, 'Map'], ['drive', Car, 'Drive'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); if (m !== 'map') { setPick(null); setBoard(null); } }}
+              title={label}
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] ${mode === m ? 'bg-violet-500 text-white' : 'text-neutral-400 hover:text-white'}`}
+            >
+              <Icon className="h-3.5 w-3.5" /><span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
       {/* The latest thing that happened, as a ticker. Tap for the whole feed. */}
-      {latest && side !== 'feed' && !panelOpen && !gather && (
+      {latest && side !== 'feed' && !panelOpen && !gather && mode === 'map' && (
         <button
           onClick={() => setSide('feed')}
           className="absolute left-1/2 top-[calc(max(10px,env(safe-area-inset-top))+44px)] z-10 flex max-w-[min(560px,calc(100%-24px))] -translate-x-1/2 items-center gap-2 rounded-full bg-neutral-950/55 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur-xl hover:bg-neutral-950/75"
@@ -360,7 +404,7 @@ export default function CityPage() {
         </button>
       )}
 
-      {preview && <div className="absolute left-3 z-10 rounded-full bg-amber-400 px-3 py-1 text-[12px] font-semibold text-neutral-950 shadow" style={{ bottom: chatH + 12, left: leftW + 12 }}>Preview: pretend bots</div>}
+      {preview && mode === 'map' && <div className="absolute left-3 z-10 rounded-full bg-amber-400 px-3 py-1 text-[12px] font-semibold text-neutral-950 shadow" style={{ bottom: chatH + 12, left: leftW + 12 }}>Preview: pretend bots</div>}
 
       {note && (
         <div className="absolute left-1/2 top-[calc(max(10px,env(safe-area-inset-top))+76px)] z-20 flex max-w-[90%] -translate-x-1/2 items-center gap-2 rounded-full bg-neutral-950/90 px-4 py-2 text-[13px] text-neutral-100 shadow-lg backdrop-blur">
@@ -403,8 +447,30 @@ export default function CityPage() {
         </div>
       )}
 
+      {/* Behind the wheel or the wings. */}
+      {mode !== 'map' && (
+        <>
+          {near && !panelOpen && (
+            <button
+              onClick={() => onPickRef.current({ kind: 'plot', id: near.id })}
+              className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50"
+              style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}
+            >
+              <DoorOpen className="h-4 w-4 text-violet-600" /> Go into {near.name}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
+            </button>
+          )}
+          {(coarse || !wide) ? (
+            <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint={mode === 'drive' ? 'Drive' : 'Steer · climb'} />
+          ) : (
+            <p className="absolute left-1/2 top-[60px] z-10 -translate-x-1/2 rounded-full bg-neutral-950/60 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur">
+              {mode === 'drive' ? 'W A S D or arrows to drive · Shift for speed' : 'A D to turn · W S to climb and dive · Shift for speed'} · Esc for the map
+            </p>
+          )}
+        </>
+      )}
+
       {/* Camera controls, out of the way. */}
-      <div className="absolute z-10 hidden flex-col gap-1 rounded-full bg-black/35 p-1 backdrop-blur lg:flex" style={{ right: rightW + 12, bottom: chatH + 12 }}>
+      <div className={`absolute z-10 hidden flex-col gap-1 rounded-full bg-black/35 p-1 backdrop-blur ${mode === 'map' ? 'lg:flex' : ''}`} style={{ right: rightW + 12, bottom: chatH + 12 }}>
         <IconBtn title="Zoom in" onClick={() => engine.current?.zoomBy(1.3)}><ZoomIn className="h-4 w-4" /></IconBtn>
         <IconBtn title="Zoom out" onClick={() => engine.current?.zoomBy(1 / 1.3)}><ZoomOut className="h-4 w-4" /></IconBtn>
         <IconBtn title="Turn left" onClick={() => engine.current?.rotate(-1)}><RotateCcw className="h-4 w-4" /></IconBtn>
@@ -483,7 +549,11 @@ export default function CityPage() {
         focus={focus}
         onClearFocus={() => { setPick(null); setBoard(null); }}
         onStep={onStep}
-        onTurnStart={() => engine.current?.kanSay('Listening…', 'Kan', 4000)}
+        onTurnStart={() => {
+          engine.current?.kanSay('Listening…', 'Kan', 4000);
+          // On a phone the sheet steps aside so you can see Kan answer; the chat keeps what you were looking at.
+          if (!wide) { setPick(null); setBoard(null); setSide(null); }
+        }}
         onTurnEnd={reloadSoon}
         starters={starters}
         leftInset={leftW}
@@ -504,8 +574,8 @@ function MenuItem({ children, onClick, href }: { children: React.ReactNode; onCl
   return href ? <Link href={href} className={cls}>{children}</Link> : <button onClick={onClick} className={cls}>{children}</button>;
 }
 
-function Chip({ n, label, tone, dot, onClick, href }: { n?: number; label: string; tone?: 'amber' | 'sky' | 'orange'; dot?: string; onClick?: () => void; href?: string }) {
-  const ring = tone === 'amber' ? 'border-amber-300 bg-amber-400' : tone === 'sky' ? 'border-sky-400/50 bg-neutral-950/70' : tone === 'orange' ? 'border-orange-300/60 bg-neutral-950/70' : 'border-white/10 bg-neutral-950/70';
+function Chip({ n, label, tone, dot, onClick, href }: { n?: number; label: string; tone?: 'amber' | 'sky' | 'orange' | 'gold'; dot?: string; onClick?: () => void; href?: string }) {
+  const ring = tone === 'amber' ? 'border-amber-300 bg-amber-400' : tone === 'sky' ? 'border-sky-400/50 bg-neutral-950/70' : tone === 'orange' ? 'border-orange-300/60 bg-neutral-950/70' : tone === 'gold' ? 'border-yellow-300/60 bg-neutral-950/70' : 'border-white/10 bg-neutral-950/70';
   const num = tone === 'amber' ? 'text-neutral-950' : tone === 'sky' ? 'text-sky-300' : tone === 'orange' ? 'text-orange-200' : 'text-white';
   const body = (
     <>
@@ -519,6 +589,45 @@ function Chip({ n, label, tone, dot, onClick, href }: { n?: number; label: strin
   return onClick ? <button onClick={onClick} className={cls}>{body}</button> : <div className={cls}>{body}</div>;
 }
 
+/** A thumb stick for driving and flying on a phone. Up is forward (or climb). */
+function Stick({ onMove, bottom, hint }: { onMove(x: number, y: number): void; bottom: number; hint: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const active = useRef<number | null>(null);
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const send = useRef(onMove);
+  useEffect(() => { send.current = onMove; });
+  const move = (e: React.PointerEvent) => {
+    const r = ref.current!.getBoundingClientRect();
+    const R = r.width / 2;
+    let dx = (e.clientX - (r.left + R)) / R, dy = (e.clientY - (r.top + R)) / R;
+    const m = Math.hypot(dx, dy);
+    if (m > 1) { dx /= m; dy /= m; }
+    setKnob({ x: dx, y: dy });
+    send.current(Math.abs(dx) < 0.12 ? 0 : dx, Math.abs(dy) < 0.12 ? 0 : -dy);
+  };
+  const end = () => { active.current = null; setKnob({ x: 0, y: 0 }); send.current(0, 0); };
+  // Let go of the stick when it goes away.
+  useEffect(() => () => send.current(0, 0), []);
+  return (
+    <div className="absolute left-5 z-20 flex flex-col items-center gap-1" style={{ bottom }}>
+      <div
+        ref={ref}
+        onPointerDown={(e) => { active.current = e.pointerId; e.currentTarget.setPointerCapture(e.pointerId); move(e); }}
+        onPointerMove={(e) => { if (active.current === e.pointerId) move(e); }}
+        onPointerUp={end}
+        onPointerCancel={end}
+        className="relative h-32 w-32 touch-none select-none rounded-full border border-white/20 bg-neutral-950/40 shadow-2xl backdrop-blur"
+      >
+        <div
+          className="absolute left-1/2 top-1/2 h-14 w-14 rounded-full bg-violet-500/90 shadow-lg ring-2 ring-white/40"
+          style={{ transform: `translate(calc(-50% + ${knob.x * 40}px), calc(-50% + ${knob.y * 40}px))` }}
+        />
+      </div>
+      <span className="text-[11px] font-medium text-white/80 drop-shadow">{hint}</span>
+    </div>
+  );
+}
+
 function IconBtn({ children, onClick, title }: { children: React.ReactNode; onClick: () => void; title: string }) {
   return <button onClick={onClick} title={title} className="rounded-full p-1.5 text-white/70 hover:bg-white/15 hover:text-white">{children}</button>;
 }
@@ -527,10 +636,10 @@ function IconBtn({ children, onClick, title }: { children: React.ReactNode; onCl
 function SidePanel({ children, side, onClose, wide }: { children: React.ReactNode; side: 'left' | 'right'; onClose: () => void; wide: boolean }) {
   if (!wide) {
     return (
-      <div className="fixed inset-x-0 bottom-0 z-40 flex max-h-[72dvh] flex-col rounded-t-3xl border border-white/10 bg-neutral-950/92 shadow-2xl backdrop-blur-xl">
+      <div className="fixed inset-x-2 bottom-[var(--chat-h)] z-40 flex max-h-[calc(78dvh-var(--chat-h))] flex-col rounded-3xl border border-white/10 bg-neutral-950/92 shadow-2xl backdrop-blur-xl">
         <div className="mx-auto mt-2 h-1 w-10 flex-shrink-0 rounded-full bg-white/20" />
         <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 rounded-full p-1.5 text-neutral-400 hover:bg-white/10"><X className="h-4 w-4" /></button>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-2">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2">{children}</div>
       </div>
     );
   }
@@ -552,10 +661,10 @@ function PickSheet({ children, onClose }: { children: React.ReactNode; onClose: 
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return (
-    <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-40 flex max-h-[72dvh] flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-neutral-950/92 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:max-h-none lg:w-[420px] lg:rounded-2xl">
+    <div className="pointer-events-auto fixed inset-x-2 bottom-[var(--chat-h)] z-40 flex max-h-[calc(78dvh-var(--chat-h))] flex-col overflow-hidden rounded-3xl border border-white/10 bg-neutral-950/92 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:max-h-none lg:w-[420px] lg:rounded-2xl">
       <div className="mx-auto mt-2 h-1 w-10 flex-shrink-0 rounded-full bg-white/20 lg:hidden" />
       <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-neutral-400 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[max(16px,env(safe-area-inset-bottom))]">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
     </div>
   );
 }
@@ -712,6 +821,13 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
       <p className="pr-8 text-[11px] uppercase tracking-wider text-neutral-500">{p.kind} · {p.district}</p>
       <h3 className="mt-0.5 pr-8 text-[19px] font-semibold leading-tight text-neutral-50">{p.name}</h3>
       {p.description && <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-neutral-400">{p.description}</p>}
+      {p.yourTime && (
+        <p className="mt-2 flex items-center gap-2 rounded-lg bg-yellow-400/10 px-2.5 py-1.5 text-[12px] text-yellow-100">
+          <span className="h-2 w-2 flex-shrink-0 rounded-full bg-yellow-300" />
+          You spent {minutes(p.yourTime.minutes)} here in the last day{p.yourTime.mode ? `, mostly ${p.yourTime.mode}` : ''}.
+          <span className="ml-auto text-[10px] text-yellow-200/60">Kanwatch</span>
+        </p>
+      )}
       {p.attentionWhy && (
         <p className="mt-2 flex gap-2 text-[13px] leading-relaxed text-neutral-300">
           <KanthinkIcon size={14} className="mt-0.5 flex-shrink-0 text-violet-400" />
