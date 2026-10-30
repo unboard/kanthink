@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { botRuns, cards, channels, columns, instructionCards, playgroundApps } from '@/lib/db/schema'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import type { BotArea, BotTool } from './tools'
 import { approvalsContext } from './approvals'
 
@@ -50,8 +50,14 @@ export async function buildBotPrompt(opts: {
   rehearsal?: boolean
   timeZone?: string | null
   now?: Date
+  /** The channels it may help in besides its own: the rest of its neighborhood. */
+  neighborhood?: { name: string; channelIds: string[] }
 }): Promise<string> {
   const now = opts.now ?? new Date()
+  const neighborIds = (opts.neighborhood?.channelIds ?? []).filter((id) => id !== opts.channelId)
+  const neighbors = neighborIds.length
+    ? await db.query.channels.findMany({ where: inArray(channels.id, neighborIds), columns: { id: true, name: true, description: true } })
+    : []
   const [channel, cols, cardRows, shrooms, apps, runs, proposals] = await Promise.all([
     db.query.channels.findFirst({ where: eq(channels.id, opts.channelId), columns: { name: true, description: true, aiInstructions: true } }),
     db.query.columns.findMany({ where: eq(columns.channelId, opts.channelId), orderBy: [asc(columns.position)], columns: { id: true, name: true } }),
@@ -128,6 +134,10 @@ Cards (most recently touched first):
 ${cardLines.join('\n') || '(none)'}
 
 ${shroomLines.length ? `Shrooms (automations) here:\n${shroomLines.join('\n')}\n` : ''}${studio}
-
+${neighbors.length ? `
+## Your neighborhood: ${opts.neighborhood!.name}
+${opts.ownerName || 'The owner'} put these channels in the same neighborhood as yours, so you may help there too: search them, read their cards, add a card or a note when something you found belongs there. Your own channel is still your job; help a neighbor only when it clearly serves them, and say so in your report. You can't reach any channel outside this neighborhood.
+${neighbors.map((n) => `- ${n.name} (channelId:${n.id})${n.description ? ` — ${n.description.replace(/\s+/g, ' ').slice(0, 120)}` : ''}`).join('\n')}
+` : ''}
 American spelling.`
 }

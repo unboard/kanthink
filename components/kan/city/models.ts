@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Archetype } from '@/lib/kan/city/layout';
 import { rng } from './grid';
+import { botLook, type BotLook } from './look';
 
 /**
  * Low-poly models for Kan City: a building for every kind of channel, Town Hall,
@@ -954,27 +955,213 @@ function bake(g: THREE.Group): THREE.Group {
   return out;
 }
 
-const BOT_COLORS = ['#2fd3b0', '#ff5d8f', '#ff9f1c', '#8b5cf6', '#3b82f6', '#22c55e', '#06b6d4', '#f43f5e', '#eab308', '#a855f7'];
+// ---------- Bots ----------
 
-/** A bot: a soft blob with two eyes, in its own color. */
-export function botFigure(seed: number): { group: THREE.Group; body: THREE.Mesh; color: string } {
-  const g = dyn(new THREE.Group());
-  const color = BOT_COLORS[seed % BOT_COLORS.length];
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.75, 14, 10), new THREE.MeshStandardMaterial({ color, roughness: 0.45, emissive: new THREE.Color(color), emissiveIntensity: 0.15 }));
-  body.scale.set(1, 0.95, 0.9);
-  body.position.y = 0.8;
-  body.castShadow = true;
-  g.add(body);
-  for (const x of [-0.24, 0.24]) {
-    const eye = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.18, 3, 6), mat('#ffffff', { emissive: '#ffffff', intensity: 0.4 }));
-    eye.position.set(x, 0.95, 0.66);
-    g.add(eye);
+const smoothCache = new Map<string, THREE.MeshStandardMaterial>();
+/** Bots are soft toys, not buildings: smooth shading, cached per color. */
+function soft(color: string, rough = 0.85) {
+  const key = `${color}|${rough}`;
+  let m = smoothCache.get(key);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color, roughness: rough, emissive: new THREE.Color(color), emissiveIntensity: 0.08 });
+    smoothCache.set(key, m);
   }
+  return m;
+}
+
+const capTexCache = new Map<string, THREE.CanvasTexture>();
+
+/**
+ * The cap's pattern, drawn as seen from straight above (the cap's UVs are a top-down
+ * projection), so it reads from the city's high camera the way the icon reads flat.
+ */
+function capTexture(look: BotLook): THREE.CanvasTexture {
+  const key = `${look.cap}|${look.pattern}|${look.patternColor}`;
+  const hit = capTexCache.get(key);
+  if (hit) return hit;
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const C = S / 2;
+  g.fillStyle = look.cap;
+  g.fillRect(0, 0, S, S);
+  g.fillStyle = look.patternColor;
+  g.strokeStyle = look.patternColor;
+  g.lineCap = 'round';
+  const dot = (x: number, y: number, r: number) => { g.beginPath(); g.arc(C + x * C, C + y * C, r * C, 0, Math.PI * 2); g.fill(); };
+  const heart = (x: number, y: number, s: number) => {
+    const X = C + x * C, Y = C + y * C, k = s * C;
+    g.beginPath();
+    g.moveTo(X, Y + k * 0.9);
+    g.bezierCurveTo(X - k * 1.6, Y - k * 0.1, X - k * 0.9, Y - k * 1.3, X, Y - k * 0.45);
+    g.bezierCurveTo(X + k * 0.9, Y - k * 1.3, X + k * 1.6, Y - k * 0.1, X, Y + k * 0.9);
+    g.fill();
+  };
+  const star = (x: number, y: number, r: number) => {
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rr = (i % 2 ? r * 0.48 : r) * C;
+      g.lineTo(C + x * C + Math.cos(a) * rr, C + y * C + Math.sin(a) * rr);
+    }
+    g.closePath();
+    g.fill();
+  };
+  switch (look.pattern) {
+    case 'spots':
+      dot(0, -0.05, 0.16); dot(-0.48, -0.3, 0.13); dot(0.46, -0.36, 0.11); dot(0.5, 0.34, 0.14); dot(-0.38, 0.46, 0.12); dot(0.02, 0.55, 0.09); dot(-0.66, 0.08, 0.09);
+      break;
+    case 'stripes':
+      // Wedges from the crown, like segments of a beach ball.
+      for (let i = 0; i < 6; i += 2) {
+        g.beginPath();
+        g.moveTo(C, C);
+        g.arc(C, C, C * 1.5, (i * Math.PI) / 3 - 0.32, (i * Math.PI) / 3 + 0.32);
+        g.closePath();
+        g.fill();
+      }
+      break;
+    case 'rings':
+      g.lineWidth = C * 0.13;
+      for (const r of [0.28, 0.66]) { g.beginPath(); g.arc(C, C, r * C, 0, Math.PI * 2); g.stroke(); }
+      break;
+    case 'freckles':
+      for (let i = 0; i < 22; i++) {
+        const a = i * 2.4, r = 0.18 + ((i * 37) % 70) / 100;
+        dot(Math.cos(a) * r, Math.sin(a) * r, i % 3 ? 0.045 : 0.06);
+      }
+      break;
+    case 'band': {
+      g.lineWidth = C * 0.2;
+      g.beginPath();
+      for (let i = 0; i <= 64; i++) {
+        const a = (i / 64) * Math.PI * 2, r = (0.55 + Math.sin(a * 8) * 0.04) * C;
+        g.lineTo(C + Math.cos(a) * r, C + Math.sin(a) * r);
+      }
+      g.stroke();
+      break;
+    }
+    case 'hearts':
+      heart(0, 0, 0.17); heart(-0.5, -0.32, 0.13); heart(0.52, -0.25, 0.13); heart(0.36, 0.48, 0.13); heart(-0.42, 0.46, 0.12);
+      break;
+    case 'stars':
+      star(0, 0, 0.22); star(-0.52, -0.3, 0.16); star(0.5, -0.32, 0.15); star(0.4, 0.46, 0.16); star(-0.42, 0.48, 0.14);
+      break;
+    case 'swirl':
+      g.lineWidth = C * 0.11;
+      g.beginPath();
+      for (let i = 0; i <= 120; i++) {
+        const a = (i / 120) * Math.PI * 5, r = (0.04 + (i / 120) * 0.68) * C;
+        g.lineTo(C + Math.cos(a) * r, C + Math.sin(a) * r);
+      }
+      g.stroke();
+      break;
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  capTexCache.set(key, tex);
+  return tex;
+}
+
+const botGeo: Record<string, THREE.BufferGeometry> = {};
+function geo<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
+  return (botGeo[key] ??= make()) as T;
+}
+
+const CAP_R = 0.76;
+
+/** A hemisphere whose UVs look straight down on it, so a flat pattern lies on the crown. */
+function capGeometry() {
+  const g = new THREE.SphereGeometry(CAP_R, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const pos = g.attributes.position;
+  const uv = g.attributes.uv;
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, 0.5 + pos.getX(i) / (2 * CAP_R), 0.5 - pos.getZ(i) / (2 * CAP_R));
+  uv.needsUpdate = true;
+  return g;
+}
+
+/**
+ * A bot: a patterned mushroom cap on a little clay stump with fins, and a face.
+ * The same character as the ShroomBot icon (look.ts). `body` is everything above the
+ * shadow, pivoting at 0.8 so the engine can bob and breathe it.
+ */
+export function botFigure(seed: number): { group: THREE.Group; body: THREE.Group; color: string } {
+  const look = botLook(seed);
+  const g = dyn(new THREE.Group());
+  const body = new THREE.Group();
+  body.position.y = 0.8;
+  g.add(body);
+  const inner = new THREE.Group();
+  inner.position.y = -0.8;
+  body.add(inner);
+
+  // Stump.
+  const stump = new THREE.Mesh(geo('stump', () => new THREE.CapsuleGeometry(0.38, 0.52, 4, 12)), soft(look.stump, 0.9));
+  stump.scale.set(1, 1, 0.9);
+  stump.position.y = 0.66;
+  stump.castShadow = true;
+  inner.add(stump);
+
+  // Fins: little flippers on each side, tipped out and down.
+  for (const side of [-1, 1]) {
+    const fin = new THREE.Mesh(geo('fin', () => new THREE.SphereGeometry(0.2, 10, 6)), soft(look.fin, 0.9));
+    fin.scale.set(1.35, 0.5, 0.85);
+    fin.position.set(side * 0.43, 0.52, 0.04);
+    fin.rotation.z = side * -0.5;
+    inner.add(fin);
+  }
+
+  // Face on the stump's front.
+  const dark = soft('#3a2418', 0.5);
+  const white = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(geo('eye', () => new THREE.CapsuleGeometry(0.06, 0.09, 3, 8)), dark);
+    eye.position.set(side * 0.14, 0.8, 0.32);
+    inner.add(eye);
+    const glint = new THREE.Mesh(geo('glint', () => new THREE.SphereGeometry(0.024, 6, 4)), white);
+    glint.position.set(side * 0.14 + 0.025, 0.84, 0.375);
+    inner.add(glint);
+    const cheek = new THREE.Mesh(
+      geo('cheek', () => new THREE.CircleGeometry(0.07, 12)),
+      new THREE.MeshBasicMaterial({ color: look.cheek, transparent: true, opacity: 0.6 }),
+    );
+    cheek.scale.y = 0.65;
+    cheek.position.set(side * 0.24, 0.68, 0.27);
+    cheek.rotation.y = side * 0.55;
+    inner.add(cheek);
+  }
+  const smile = new THREE.Mesh(geo('smile', () => new THREE.TorusGeometry(0.06, 0.016, 4, 10, Math.PI)), dark);
+  smile.rotation.z = Math.PI;
+  smile.position.set(0, 0.7, 0.345);
+  inner.add(smile);
+
+  // Cap: the patterned dome, a darker rim, and the gills under it.
+  const capTop = 1.1;
+  const tex = capTexture(look);
+  const cap = new THREE.Mesh(
+    geo('cap', capGeometry),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, emissive: new THREE.Color('#ffffff'), emissiveMap: tex, emissiveIntensity: 0.14 }),
+  );
+  cap.scale.set(1, 0.64, 1);
+  cap.position.y = capTop;
+  cap.castShadow = true;
+  inner.add(cap);
+  const rim = new THREE.Mesh(geo('rim', () => new THREE.TorusGeometry(CAP_R - 0.05, 0.075, 6, 24)), soft(look.capDark, 0.6));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = capTop;
+  inner.add(rim);
+  const gills = new THREE.Mesh(geo('gills', () => new THREE.CircleGeometry(CAP_R - 0.04, 20)), soft(look.capDark, 0.8));
+  gills.rotation.x = Math.PI / 2;
+  gills.position.y = capTop - 0.01;
+  inner.add(gills);
+
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.7, 14), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.18 }));
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = 0.03;
   g.add(shadow);
-  return { group: g, body, color };
+  return { group: g, body, color: look.cap };
 }
 
 /** Kan: the mushroom, violet cap with spots. */

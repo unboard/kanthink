@@ -6,6 +6,7 @@ import { buildAgentPrompt } from '@/lib/kan/agent/prompt'
 import { agentTools, type ToolContext } from '@/lib/kan/agent/tools'
 import { runAgent } from '@/lib/kan/agent/run'
 import type { AgentEvent } from '@/lib/kan/agent/events'
+import { cityPrompt, cityTools } from '@/lib/kan/city/tools'
 
 /**
  * The Kan agent, streamed as newline-delimited JSON events (lib/kan/agent/events.ts):
@@ -13,7 +14,8 @@ import type { AgentEvent } from '@/lib/kan/agent/events'
  * and a closing memo of what this turn did. The client sends the memo back with the
  * next turn, so Kan remembers its own actions without the server keeping a thread.
  *
- * Prototype — /prototypes/kan is the only caller.
+ * Prototype — /prototypes/kan and Kan City are the callers. From the city, Kan also
+ * gets the tools to run the town and knows which plot the user is looking at.
  */
 
 export const runtime = 'nodejs'
@@ -23,6 +25,7 @@ interface AgentRequest {
   messages: { role: 'user' | 'assistant'; content: string }[]
   sessionCardIds?: string[]
   timeZone?: string
+  city?: { focus?: { channelId?: string; name?: string; kind?: string } | null }
 }
 
 export async function POST(request: Request) {
@@ -52,6 +55,10 @@ export async function POST(request: Request) {
     recentTurns: history.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'kan', text: m.content.slice(0, 600) })),
   }
   const system = await buildAgentPrompt({ userId, name: session.user.name, readable: access.readable, timeZone: body.timeZone })
+    + (body.city ? cityPrompt(body.city) : '')
+  const tools = agentTools(ctx)
+  // The city's own tools go before `suggest`, which is always last.
+  if (body.city) tools.splice(tools.length - 1, 0, ...cityTools)
   const encoder = new TextEncoder()
 
   const stream = new ReadableStream<Uint8Array>({
@@ -60,7 +67,7 @@ export async function POST(request: Request) {
         try { controller.enqueue(encoder.encode(JSON.stringify(e) + '\n')) } catch { /* client went away */ }
       }
       try {
-        const { did, madeCards } = await runAgent({ provider, apiKey: key.apiKey, system, history, tools: agentTools(ctx), ctx, send, signal: request.signal })
+        const { did, madeCards } = await runAgent({ provider, apiKey: key.apiKey, system, history, tools, ctx, send, signal: request.signal })
         if (key.source !== 'byok') await recordUsage(userId, 'kan-agent').catch(() => {})
         send({ t: 'done', memo: did.length ? did.join('\n') : undefined, cardIds: madeCards })
       } catch (err) {

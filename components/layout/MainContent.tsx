@@ -30,7 +30,8 @@ export function MainContent({ children }: MainContentProps) {
     pathname.startsWith('/rescue') ||
     pathname.startsWith('/print') ||
     pathname.startsWith('/proof') ||
-    pathname.startsWith('/catlife');
+    pathname.startsWith('/catlife') ||
+    pathname.startsWith('/prototypes/kan/city');
   const needsBottomPadding = isMobile && !isCardPage && !isFullViewport;
 
   return (

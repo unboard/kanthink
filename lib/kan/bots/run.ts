@@ -91,12 +91,16 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
   // Loaded here, not at the top: next-auth pulls in next/server, which scripts and tests can't load.
   const { isAdmin } = await import('@/lib/auth')
   const admin = isAdmin(owner.email)
+  // Its reach is its neighborhood: the channels the owner put in the same folder.
+  const { neighborhoodOf } = await import('@/lib/kan/city/neighborhoods')
+  const hood = await neighborhoodOf(owner.id, channelId)
+  const reach = hood.channelIds.filter((id) => id === channelId || access.writable.has(id))
   const ctx: BotContext = {
     userId: owner.id,
     isAdmin: admin,
     name: owner.name,
-    readable: [channelId],
-    scope: [channelId],
+    readable: reach,
+    scope: reach,
     sessionCardIds: [],
     recentTurns: [],
     channelId,
@@ -114,6 +118,7 @@ export async function runBot(channelId: string, opts: { trigger: 'scheduled' | '
   const system = await buildBotPrompt({
     channelId, ownerId: owner.id, ownerName: owner.name, tools: all, memory: bot.memory, everyHours: bot.everyHours ?? 24,
     budgetLeftCents: Math.floor(room.left / MILLICENTS_PER_CENT), isStudio, rehearsal, timeZone: owner.timezone, now,
+    neighborhood: { name: hood.name, channelIds: reach },
   })
 
   // The trace, written through to the row so the log page can follow along.

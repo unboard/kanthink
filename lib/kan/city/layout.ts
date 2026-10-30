@@ -96,6 +96,8 @@ export interface PlotInput {
   cards: number
   lastActivityAt: number | null
   attention: 'active' | 'quiet' | 'muted' | null
+  /** When the channel was made: older channels claim their lots first. */
+  createdAt?: number | null
   isShareInbox?: boolean
   isStudio?: boolean
 }
@@ -141,103 +143,103 @@ export function sizeFor(cards: number): number {
 }
 
 /**
- * Lay the city out. Town Hall and the park take the two middle blocks; districts
- * grow outward from seeds around them, the busiest channels nearest the center and
- * the muted ones on the edge of town. A few lots stay free for what comes next.
+ * Lay the city out. It has no edge: Town Hall and the park sit at the middle, and
+ * every channel claims a lot in the order it was made, so a new channel only ever
+ * adds a building at the edge of its district and never moves one you know. Each
+ * folder's district grows from its own spot around Town Hall (picked from its name,
+ * so it's always in the same direction); channels with no folder fill Downtown.
+ * Muted channels are placed last, out on the edge of town.
  */
 export function layoutCity(inputs: PlotInput[], opts: { freeLots?: number } = {}): CityLayout {
   const freeLots = opts.freeLots ?? 3
-  const need = inputs.length + 8 + freeLots // + town hall block + park block
-  // As few blocks as fit, a little wider than deep so it suits a screen.
-  let bx = Math.max(3, Math.ceil(Math.sqrt(need / 4)))
-  const bz = bx
-  while ((bx * bz - 2) * 4 < need) bx++
-  if ((bx - 1) * bz * 4 - 8 >= need && bx > bz) bx--
-  const blocks = Math.max(bx, bz)
-  const cols = bx * 2
-  const rows = bz * 2
-  const mx = Math.floor((bx - 1) / 2), mz = Math.floor((bz - 2) / 2)
-  const townHall = { cx: mx * 2, cz: mz * 2 }
-  const park = { cx: mx * 2, cz: (mz + 1) * 2 }
-
-  const taken = new Set<string>()
   const key = (cx: number, cz: number) => `${cx},${cz}`
+  const taken = new Set<string>()
+  // Town Hall's block and the park's block, one above the other.
+  let townHall = { cx: 0, cz: 0 }
+  let park = { cx: 0, cz: 2 }
   for (const b of [townHall, park]) for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) taken.add(key(b.cx + dx, b.cz + dz))
-
-  const center = { x: townHall.cx + 1, z: townHall.cz + 1 }
+  const center = { x: 1, z: 2 }
   const dist = (cx: number, cz: number) => Math.hypot(cx + 0.5 - center.x, cz + 0.5 - center.z)
 
-  // Districts: folders in order of size, Downtown (no folder) first so it gets the middle.
-  const groups = new Map<string, PlotInput[]>()
-  for (const p of inputs) {
-    const d = p.district ?? DOWNTOWN
-    groups.set(d, [...(groups.get(d) ?? []), p])
-  }
-  // Folders claim their neighborhoods first, out toward the edges; Downtown (no
-  // folder) fills in around Town Hall last, so it ends up in the middle.
-  const names = [...groups.keys()].sort((a, b) => (a === DOWNTOWN ? 1 : b === DOWNTOWN ? -1 : (groups.get(b)!.length - groups.get(a)!.length) || a.localeCompare(b)))
+  // Oldest first, muted last; ids break ties so the order never depends on the input order.
+  const ordered = [...inputs].sort((a, b) =>
+    Number(a.attention === 'muted') - Number(b.attention === 'muted')
+    || (a.createdAt ?? 0) - (b.createdAt ?? 0)
+    || a.channelId.localeCompare(b.channelId))
 
-  // A seed for each district, spread around the middle by angle.
-  const radius = blocks * 0.8
-  let angle = -Math.PI / 2
+  // Every district's seed: Downtown at the middle, folders out in a direction of their own.
   const seeds = new Map<string, { x: number; z: number }>()
-  const folderCount = names.filter((n) => n !== DOWNTOWN).length || 1
-  for (const n of names) {
-    const share = n === DOWNTOWN ? 0 : 1 / folderCount
-    const a = angle + share * Math.PI
-    angle += share * Math.PI * 2
-    const r = n === DOWNTOWN ? 0 : radius
-    seeds.set(n, { x: center.x + Math.cos(a) * r, z: center.z + Math.sin(a) * r })
+  const seedOf = (n: string) => {
+    let s = seeds.get(n)
+    if (!s) {
+      const a = (hash(`district:${n}`) / 2 ** 32) * Math.PI * 2
+      const r = n === DOWNTOWN ? 0 : 4.5
+      s = { x: center.x + Math.cos(a) * r, z: center.z + Math.sin(a) * r }
+      seeds.set(n, s)
+    }
+    return s
   }
 
-  const all: { cx: number; cz: number }[] = []
-  for (let cz = 0; cz < rows; cz++) for (let cx = 0; cx < cols; cx++) if (!taken.has(key(cx, cz))) all.push({ cx, cz })
+  // The land there is to build on. It's bigger than will ever be needed, and the
+  // nearest free cell always wins, so how far it reaches never changes a choice.
+  const reach = Math.ceil(Math.sqrt(inputs.length + 8 + freeLots) * 1.5) + 10
+  const land: { cx: number; cz: number }[] = []
+  for (let cz = -reach; cz <= reach; cz++) for (let cx = -reach; cx <= reach; cx++) if (!taken.has(key(cx, cz))) land.push({ cx, cz })
 
+  const cellsOf = new Map<string, { cx: number; cz: number }[]>()
+  const districtNames: string[] = []
   const plots: Plot[] = []
-  const districts: District[] = []
-  names.forEach((n, di) => {
-    const members = [...groups.get(n)!]
-    // Busy first, muted last: they take the cells nearest the center of their district.
-    const weight = (p: PlotInput) => (p.attention === 'muted' ? -1e15 : 0) + (p.attention === 'quiet' ? -1e14 : 0) + (p.lastActivityAt ?? 0)
-    members.sort((a, b) => weight(b) - weight(a) || a.channelId.localeCompare(b.channelId))
-    const seed = seeds.get(n)!
-    const cells: { cx: number; cz: number }[] = []
-    // Grow from the seed: always take the free cell that's closest to what we have,
-    // leaning toward the middle of town, so a district stays in one piece.
-    const grow = () => {
-      let best: { cx: number; cz: number } | null = null
-      let bestScore = Infinity
-      for (const c of all) {
-        if (taken.has(key(c.cx, c.cz))) continue
-        const toSeed = Math.hypot(c.cx + 0.5 - seed.x, c.cz + 0.5 - seed.z)
-        const touching = cells.length === 0 || cells.some((o) => Math.abs(o.cx - c.cx) + Math.abs(o.cz - c.cz) === 1)
-        const score = toSeed + dist(c.cx, c.cz) * 0.25 + (touching ? 0 : 40)
-        if (score < bestScore) { bestScore = score; best = c }
-      }
-      if (best) { taken.add(key(best.cx, best.cz)); cells.push(best) }
-      return best
+  for (const m of ordered) {
+    const n = m.district ?? DOWNTOWN
+    if (!cellsOf.has(n)) { cellsOf.set(n, []); districtNames.push(n) }
+    const cells = cellsOf.get(n)!
+    const seed = seedOf(n)
+    // The free cell closest to the seed, leaning toward the middle of town, and
+    // touching the district so it stays in one piece.
+    let best: { cx: number; cz: number } | null = null
+    let bestScore = Infinity
+    for (const c of land) {
+      if (taken.has(key(c.cx, c.cz))) continue
+      const toSeed = Math.hypot(c.cx + 0.5 - seed.x, c.cz + 0.5 - seed.z)
+      const touching = cells.length === 0 || cells.some((o) => Math.abs(o.cx - c.cx) + Math.abs(o.cz - c.cz) === 1)
+      const score = toSeed + dist(c.cx, c.cz) * 0.25 + (touching ? 0 : 40)
+      if (score < bestScore) { bestScore = score; best = c }
     }
-    for (let i = 0; i < members.length; i++) if (!grow()) break
-    // Hand out the cells: nearest the center of town to the busiest channel.
-    const order = [...cells].sort((a, b) => dist(a.cx, a.cz) - dist(b.cx, b.cz))
-    members.forEach((m, i) => {
-      const c = order[i]
-      if (!c) return
-      plots.push({
-        channelId: m.channelId,
-        name: m.name,
-        archetype: archetypeFor({ id: m.channelId, name: m.name, description: m.description, isShareInbox: m.isShareInbox, isStudio: m.isStudio }),
-        cx: c.cx,
-        cz: c.cz,
-        district: n,
-        size: sizeFor(m.cards),
-      })
+    if (!best) continue
+    taken.add(key(best.cx, best.cz))
+    cells.push(best)
+    plots.push({
+      channelId: m.channelId,
+      name: m.name,
+      archetype: archetypeFor({ id: m.channelId, name: m.name, description: m.description, isShareInbox: m.isShareInbox, isStudio: m.isStudio }),
+      cx: best.cx,
+      cz: best.cz,
+      district: n,
+      size: sizeFor(m.cards),
     })
-    districts.push({ name: n, tint: di, cells })
-  })
+  }
 
-  // Free lots: the empty cells nearest the middle, so new things get built close in.
-  const free = all.filter((c) => !taken.has(key(c.cx, c.cz))).sort((a, b) => dist(a.cx, a.cz) - dist(b.cx, b.cz)).slice(0, Math.max(freeLots, 0) + 6)
+  // Free lots: empty cells at the edge of what's built, nearest the middle first,
+  // so new things go up close in and the city grows outward.
+  const built = (cx: number, cz: number) => taken.has(key(cx, cz))
+  let free = land
+    .filter((c) => !built(c.cx, c.cz) && (built(c.cx + 1, c.cz) || built(c.cx - 1, c.cz) || built(c.cx, c.cz + 1) || built(c.cx, c.cz - 1)))
+    .sort((a, b) => dist(a.cx, a.cz) - dist(b.cx, b.cz))
+    .slice(0, Math.max(freeLots, 0) + 6)
 
-  return { cols, rows, plots, districts, townHall, park, free }
+  // Shift it all so the corner cell is 0,0, by whole blocks so blocks stay whole.
+  const every = [...plots, ...free, townHall, { cx: park.cx + 1, cz: park.cz + 1 }]
+  const ox = Math.floor(Math.min(...every.map((c) => c.cx)) / 2) * 2
+  const oz = Math.floor(Math.min(...every.map((c) => c.cz)) / 2) * 2
+  const move = <T extends { cx: number; cz: number }>(c: T): T => ({ ...c, cx: c.cx - ox, cz: c.cz - oz })
+  const placed = plots.map(move)
+  free = free.map(move)
+  townHall = move(townHall)
+  park = move(park)
+  const even = (n: number) => n + (n % 2)
+  const cols = even(Math.max(...[...placed, ...free, townHall, park].map((c) => c.cx)) + 2)
+  const rows = even(Math.max(...[...placed, ...free, townHall, park].map((c) => c.cz)) + 2)
+
+  const districts: District[] = districtNames.map((name, tint) => ({ name, tint, cells: cellsOf.get(name)!.map(move) }))
+  return { cols, rows, plots: placed, districts, townHall, park, free }
 }

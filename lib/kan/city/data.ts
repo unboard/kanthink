@@ -1,10 +1,10 @@
 import { db } from '@/lib/db'
 import {
-  attentionPasses, botApprovals, botRuns, cards, channelActivityLog, channelBots, columns, folders,
+  attentionPasses, botApprovals, botRuns, cards, channelActivityLog, channelBots, channels, columns, folders,
   instructionCards, instructionRuns, playgroundApps, playgroundAppVersions, userChannelOrg, type AttentionDecisionJson,
 } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm'
-import { gatherAreas } from '@/lib/kan/attention/inputs'
+import { gatherAreas, gatherInputs, type InputItem } from '@/lib/kan/attention/inputs'
 import { layoutCity, ARCHETYPE_LABEL } from '@/lib/kan/city/layout'
 import { limitsFor, spentByOwner } from '@/lib/kan/bots/spend'
 
@@ -26,9 +26,24 @@ const ms = (d: Date | null | undefined) => (d ? +d : null)
 
 export interface FeedItem {
   at: number
-  kind: 'bot' | 'shroom' | 'app' | 'you' | 'kan' | 'ask'
+  kind: 'bot' | 'shroom' | 'app' | 'you' | 'kan' | 'ask' | 'in'
   channelId: string | null
   text: string
+}
+
+// What came in since Kan last looked. It reads chats, notes, shares and browsing,
+// so it's cached for a minute rather than run on every poll.
+const arrivalsCache = new Map<string, { at: number; since: number; items: InputItem[] }>()
+async function arrivalsFor(userId: string, since: Date): Promise<InputItem[]> {
+  const hit = arrivalsCache.get(userId)
+  if (hit && hit.since === +since && Date.now() - hit.at < 60_000) return hit.items
+  const items = await gatherInputs(userId, since).catch(() => [] as InputItem[])
+  arrivalsCache.set(userId, { at: Date.now(), since: +since, items })
+  return items
+}
+
+const ARRIVAL_WORD: Record<InputItem['kind'], string> = {
+  share: 'You shared', chat: 'You asked Kan', voice: 'You told Kan', note: 'You noted', browsing: 'You spent time on', read: 'You read',
 }
 
 export async function cityFor(userId: string) {
@@ -98,9 +113,15 @@ export async function cityFor(userId: string) {
     limitsFor(userId),
     spentByOwner(userId, dayAgo),
   ])
+  const made = await db.query.channels.findMany({ where: inArray(channels.id, ids), columns: { id: true, createdAt: true } })
+  const madeAt = new Map(made.map((c) => [c.id, ms(c.createdAt)]))
+  // Everything since the last pass Kan finished is new to it.
+  const lastLook = passes.find((p) => p.status === 'done')
+  const arrivals = await arrivalsFor(userId, lastLook?.startedAt ?? new Date(now - 3 * 24 * HOUR))
 
   const folderName = new Map(folderRows.map((f) => [f.id, f.name]))
   const folderOf = new Map(org.map((o) => [o.channelId, o.folderId ? folderName.get(o.folderId) ?? null : null]))
+  const folderIdOf = new Map(org.map((o) => [o.channelId, o.folderId && folderName.has(o.folderId) ? o.folderId : null]))
   const botOf = new Map(bots.map((b) => [b.channelId, b]))
   const countOfCol = new Map(colCounts.map((c) => [c.columnId, Number(c.n)]))
   const colName = new Map(cols.map((c) => [c.id, c.name]))
@@ -114,6 +135,7 @@ export async function cityFor(userId: string) {
     cards: a.cards,
     lastActivityAt: ms(a.lastActivityAt),
     attention: a.attention,
+    createdAt: madeAt.get(a.channelId) ?? null,
     isShareInbox: a.isShareInbox,
     isStudio: Boolean(a.fixed?.includes('Studio')),
   })))
@@ -158,6 +180,7 @@ export async function cityFor(userId: string) {
     return {
       ...p,
       kind: ARCHETYPE_LABEL[p.archetype],
+      folderId: folderIdOf.get(p.channelId) ?? null,
       description: a.description,
       cards: a.cards,
       recentActivity: a.recentActivity,
@@ -240,6 +263,7 @@ export async function cityFor(userId: string) {
     feed.push({ at: +(p.endedAt ?? p.startedAt ?? 0), kind: 'kan', channelId: null, text: 'Kan looked over everything you gave it' })
     if (p.appliedAt) feed.push({ at: +p.appliedAt, kind: 'kan', channelId: null, text: `Kan rearranged the city: ${(p.appliedLog ?? []).length} changes` })
   }
+  for (const a of arrivals.slice(0, 12)) feed.push({ at: +a.at, kind: 'in', channelId: a.channelId ?? null, text: `${ARRIVAL_WORD[a.kind]} ${clip(a.text, 110)}` })
   feed.sort((a, b) => b.at - a.at)
 
   // What got done in the last day, by bots and shrooms and you.
@@ -260,6 +284,15 @@ export async function cityFor(userId: string) {
       passRunning,
     },
     proposals,
+    // Neighborhoods are folders; bots help each other inside one and never outside it.
+    neighborhoods: folderRows.map((f) => ({ id: f.id, name: f.name, plots: plots.filter((p) => p.folderId === f.id).length })),
+    // New context waiting for Kan to sort into the city.
+    arrivals: {
+      count: arrivals.length,
+      since: ms(lastLook?.startedAt),
+      kinds: arrivals.reduce<Record<string, number>>((m, a) => ({ ...m, [a.kind]: (m[a.kind] ?? 0) + 1 }), {}),
+      recent: arrivals.slice(0, 8).map((a) => ({ kind: a.kind, text: clip(a.text, 120), at: +a.at })),
+    },
     feed: feed.slice(0, 80),
     done,
     spend: { todayCents: Math.round(spent / 1000), dayCapCents: limits.dailyCapCents },

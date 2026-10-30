@@ -123,6 +123,17 @@ export class CityEngine {
   private fpsSamples: number[] = [];
   private lowPower = false;
   private disposed = false;
+  /** Screen space the page covers with panels, so focusing keeps the thing in view. */
+  private insets = { right: 0, bottom: 0 };
+  /** Short-lived effects: pulses where Kan just did something, buildings going up. */
+  private effects: { t: number; life: number; update: (k: number, dt: number) => void; done?: () => void }[] = [];
+  /** Plots seen before and where, so a new or moved building rises instead of just appearing. */
+  private knownPlots: Map<string, string> | null = null;
+  private kanNote: { text: string; kicker: string; until: number } | null = null;
+  private kanVisitUntil = 0;
+  private parcels: { group: THREE.Group; label: HTMLDivElement; count: number } | null = null;
+  /** Plots picked for a new neighborhood. */
+  private marked = new Set<string>();
 
   constructor(private host: HTMLDivElement, private labels: HTMLDivElement, private cb: EngineCallbacks) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -207,7 +218,8 @@ export class CityEngine {
     this.syncProposals(data);
     this.syncPlots(data);
     this.syncCitizens(data, first);
-    this.syncKan(data);
+    this.syncKan();
+    this.syncArrivals(data, first);
     if (first) this.frameAll();
   }
 
@@ -251,6 +263,79 @@ export class CityEngine {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Highlight plots, e.g. the ones you're gathering into a neighborhood. */
+  mark(ids: string[]) { this.marked = new Set(ids); }
+
+  /** How much of the canvas the page's panels cover, in px. */
+  setInsets(right: number, bottom: number) {
+    this.insets = { right: Math.max(0, right), bottom: Math.max(0, bottom) };
+  }
+
+  /**
+   * Show that something just happened at a place: a ring and sparks rise from it.
+   * `where` is a channel id, or 'townhall'. Kan walks over when it was Kan's doing.
+   */
+  pulse(where: string, opts: { tone?: 'write' | 'read'; kanGoes?: boolean } = {}) {
+    if (!this.grid || !this.data) return;
+    const L = this.data.layout;
+    const v = this.plots.get(where);
+    const at = v ? v.center : where === 'townhall' ? this.grid.blockCenter(L.townHall.cx, L.townHall.cz) : null;
+    if (!at) return;
+    const color = opts.tone === 'read' ? '#7dd3fc' : '#a78bfa';
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(2.4, 3, 48),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(at.x, GROUND_Y + 0.15, at.z);
+    this.scene.add(ring);
+    const sparks: THREE.Mesh[] = [];
+    const top = v ? v.built.top : 8;
+    const sm = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending });
+    const sg = new THREE.OctahedronGeometry(0.42, 0);
+    for (let i = 0; i < 10; i++) {
+      const sp = new THREE.Mesh(sg, sm);
+      const a = (i / 10) * Math.PI * 2;
+      sp.userData.v = new THREE.Vector3(Math.cos(a) * (1.5 + Math.random()), 5 + Math.random() * 5, Math.sin(a) * (1.5 + Math.random()));
+      sp.position.set(at.x, GROUND_Y + top * 0.6, at.z);
+      this.scene.add(sp);
+      sparks.push(sp);
+    }
+    const lit = Boolean(v && opts.tone !== 'read');
+    if (v && lit) v.beacon.visible = true;
+    this.effects.push({
+      t: 0, life: 1.8,
+      update: (k, dt) => {
+        ring.scale.setScalar(1 + k * 3.2);
+        (ring.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - k);
+        for (const sp of sparks) {
+          const vel = sp.userData.v as THREE.Vector3;
+          vel.y -= 9 * dt;
+          sp.position.addScaledVector(vel, dt);
+          sp.rotation.y += dt * 4;
+        }
+        sm.opacity = 1 - k * k;
+        if (v && lit) (v.beacon.material as THREE.MeshBasicMaterial).opacity = 0.35 * (1 - k) + 0.05;
+      },
+      done: () => {
+        ring.removeFromParent(); ring.geometry.dispose(); (ring.material as THREE.Material).dispose();
+        for (const sp of sparks) sp.removeFromParent();
+        sg.dispose(); sm.dispose();
+        if (v) v.beacon.visible = v.plot.bot.status === 'working';
+      },
+    });
+    if (opts.kanGoes && this.kan) {
+      const door = v ? this.doorOf(where) : this.townHallSpot(-4);
+      if (door) { this.walkTo(this.kan, door); this.kan.wait = 9; this.kanVisitUntil = performance.now() + 12_000; }
+    }
+  }
+
+  /** Put words in Kan's mouth for a little while: what it's doing for you right now. */
+  kanSay(text: string | null, kicker = 'Kan', ms = 6000) {
+    this.kanNote = text ? { text, kicker, until: performance.now() + ms } : null;
+    this.renderKanBubble();
+  }
+
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
@@ -283,6 +368,7 @@ export class CityEngine {
     this.pickGroup.clear();
     this.fixedLabels = [];
     this.proposalLots.clear();
+    this.parcels = null;
     this.kan = null;
     this.labels.innerHTML = '';
   }
@@ -353,8 +439,12 @@ export class CityEngine {
     this.city.add(pk.group);
     this.fixedLabels.push({ el: this.makeLabel('Central Park', 'park', () => this.cb.onPick({ kind: 'park' })), pos: new THREE.Vector3(pkc.x, GROUND_Y + pk.top, pkc.z), always: true });
 
-    // Every channel's building.
-    for (const p of data.plots) this.addPlot(grid, p);
+    // Every channel's building. One that wasn't here last time rises out of the ground.
+    // So does one that just moved to another neighborhood.
+    const known = this.knownPlots;
+    const fresh = new Set(known ? data.plots.filter((p) => known.get(p.channelId) !== p.district).map((p) => p.channelId) : []);
+    this.knownPlots = new Map(data.plots.map((p) => [p.channelId, p.district]));
+    for (const p of data.plots) this.addPlot(grid, p, fresh.has(p.channelId));
 
     // Free lots: the first few that no proposal takes.
     const proposed = new Set(data.proposals.filter((p) => p.lot).map((p) => `${p.lot!.cx},${p.lot!.cz}`));
@@ -527,9 +617,21 @@ export class CityEngine {
     return Math.min(0.85, base + recent * 0.35 + Math.min(0.15, p.recentActivity * 0.03));
   }
 
-  private addPlot(grid: Grid, p: CityPlot) {
+  private addPlot(grid: Grid, p: CityPlot, rise = false) {
     const seed = hash(p.channelId);
     const built = building(p.archetype, { size: p.size, seed, lit: this.litFor(p), muted: p.attention === 'muted' });
+    if (rise) {
+      // Kept out of the merge so it can grow.
+      built.group.userData.dynamic = true;
+      built.group.scale.set(1, 0.02, 1);
+      const g = built.group;
+      this.effects.push({ t: -0.3, life: 1.8, update: (k) => {
+        // Ease out with a little overshoot, like it popped up.
+        const e = k <= 0 ? 0.02 : 1 + 2.70158 * Math.pow(k - 1, 3) + 1.70158 * Math.pow(k - 1, 2);
+        g.scale.set(1, Math.max(0.02, e), 1);
+      } });
+      setTimeout(() => this.pulse(p.channelId, { kanGoes: true }), 700);
+    }
     const c = grid.cellCenter(p.cx, p.cz);
     const d = grid.door(p.cx, p.cz);
     built.group.position.set(c.x, GROUND_Y, c.z);
@@ -745,7 +847,7 @@ export class CityEngine {
     this.cabs.push(entry);
   }
 
-  private syncKan(data: CityData) {
+  private syncKan() {
     if (!this.grid) return;
     if (!this.kan) {
       const obj = kanFigure();
@@ -762,22 +864,97 @@ export class CityEngine {
       this.fixedLabels.push({ el: lab, pos: obj.position, always: true });
       lab.dataset.follow = '1';
     }
-    const b = this.kanBubble!;
+    this.renderKanBubble();
+  }
+
+  /** What Kan's bubble says: what you just asked it to do, else what's waiting. */
+  private renderKanBubble() {
+    const b = this.kanBubble;
+    const data = this.data;
+    if (!b || !data) return;
+    const note = this.kanNote && this.kanNote.until > performance.now() ? this.kanNote : null;
     const th = data.townHall;
-    b.innerHTML = '';
-    let text = '';
-    if (th.passRunning) text = 'Reading everything you gave me…';
+    let kicker = 'Kan', text = '';
+    if (note) { kicker = note.kicker; text = note.text; }
+    else if (th.passRunning) { kicker = 'Kan is thinking'; text = 'Reading everything you gave me…'; }
     else if (th.pass) text = 'I noticed a few things. Come see?';
+    b.innerHTML = '';
     if (text) {
       const k = document.createElement('div');
       k.className = 'kc-bubble-kicker';
-      k.textContent = th.passRunning ? 'Kan is thinking' : 'Kan';
+      k.textContent = kicker;
       const t = document.createElement('div');
       t.textContent = text;
       b.append(k, t);
     }
-    // A bot in line at Town Hall speaks first; Kan waits.
-    this.kanSays = Boolean(text) && !data.plots.some((p) => p.bot.status === 'needs');
+    // A bot in line at Town Hall speaks first; Kan waits, unless you're talking to it.
+    this.kanSays = Boolean(text) && (Boolean(note) || !data.plots.some((p) => p.bot.status === 'needs'));
+  }
+
+  /**
+   * What came in since Kan last looked waits in a pile of parcels by Town Hall. When
+   * more arrives, a van brings it.
+   */
+  private syncArrivals(data: CityData, first: boolean) {
+    if (!this.grid) return;
+    const n = data.arrivals.count;
+    if (this.parcels?.count === n) return;
+    const prev = this.parcels?.count ?? n;
+    const L = data.layout;
+    const o = this.grid.blockOrigin(Math.floor(L.townHall.cx / 2), Math.floor(L.townHall.cz / 2));
+    const spot = { x: o.x + 1.6, z: o.z + BLOCK - 1.6 };
+    const draw = () => {
+      if (this.parcels) {
+        const old = this.parcels;
+        old.group.removeFromParent();
+        old.label.remove();
+        this.fixedLabels = this.fixedLabels.filter((f) => f.el !== old.label);
+        this.parcels = null;
+      }
+      if (!n) return;
+      const g = new THREE.Group();
+      g.userData.dynamic = true;
+      const tones = ['#c89b63', '#d9ae73', '#b98a55'];
+      const shown = Math.min(n, 9);
+      for (let i = 0; i < shown; i++) {
+        const sz = 0.9 + ((i * 37) % 5) * 0.12;
+        const box = new THREE.Mesh(new THREE.BoxGeometry(sz, sz * 0.8, sz), mat(tones[i % 3]));
+        const layer = i < 4 ? 0 : i < 7 ? 1 : 2;
+        const j = layer === 0 ? i : layer === 1 ? i - 4 : i - 7;
+        box.position.set((j % 2) * 1.05 - 0.5 + layer * 0.25, 0.4 + layer * 0.78, Math.floor(j / 2) * 1.05 - 0.5 + layer * 0.2);
+        box.rotation.y = ((i * 53) % 7) * 0.12;
+        box.castShadow = true;
+        const tape = new THREE.Mesh(new THREE.BoxGeometry(sz * 1.02, 0.08, 0.18), mat('#f4e3c0'));
+        tape.position.y = sz * 0.4;
+        box.add(tape);
+        g.add(box);
+      }
+      g.position.set(spot.x, GROUND_Y, spot.z);
+      this.city.add(g);
+      this.addPickable(g, { kind: 'arrivals' });
+      const label = this.makeLabel(`${n} new for Kan`, 'arrivals', () => this.cb.onPick({ kind: 'arrivals' }));
+      this.fixedLabels.push({ el: label, pos: new THREE.Vector3(spot.x, GROUND_Y + 3.2, spot.z), always: true });
+      this.parcels = { group: g, label, count: n };
+    };
+    if (n > prev && !first && this.parcels) {
+      // A van pulls up with the new things, then the pile grows.
+      this.parcels.count = n;
+      const g = this.grid;
+      const van = this.noShadows(car(3));
+      van.scale.setScalar(1.25);
+      const near = g.nearestNode(spot);
+      const start = g.node(0, near.m);
+      const stop = { x: g.node(near.k, near.m).x, z: start.z };
+      this.city.add(van);
+      const walker: Walker = { obj: van, pos: { x: start.x - 14, z: start.z }, off: { x: 0, z: 0 }, isCar: true, path: [{ x: start.x, z: start.z }, stop], speed: 13, lateral: 1.25, wait: 0, phase: 0 };
+      const entry = { walker, leaving: false, onArrive: () => {
+        draw();
+        this.pulse('townhall', { tone: 'read' });
+        walker.path = [{ x: g.lineX(g.blocksX) + 14, z: stop.z }];
+        entry.leaving = true;
+      } };
+      this.cabs.push(entry);
+    } else draw();
   }
 
   /** Kan's rounds: Town Hall, then wherever things happened lately, then the post office. */
@@ -828,8 +1005,10 @@ export class CityEngine {
         if (c.goal.startsWith('wander')) {
           w.wait -= dt;
           if (w.wait <= 0) {
-            const plots = [...this.plots.values()].filter((v) => v.plot.attention !== 'muted');
-            const pick = r() < 0.45 ? this.parkSpot(r) : r() < 0.5 ? this.doorOf(c.plotId)! : this.doorOf(plots[Math.floor(r() * plots.length)].plot.channelId)!;
+            // Bots visit their own neighborhood, never another one. Downtown bots keep to home and the park.
+            const own = this.plots.get(c.plotId)?.plot;
+            const plots = own?.folderId ? [...this.plots.values()].filter((v) => v.plot.folderId === own.folderId && v.plot.attention !== 'muted') : [];
+            const pick = r() < 0.4 ? this.parkSpot(r) : r() < 0.5 || !plots.length ? this.doorOf(c.plotId)! : this.doorOf(plots[Math.floor(r() * plots.length)].plot.channelId)!;
             this.walkTo(w, pick);
             w.wait = 3 + r() * 6;
           }
@@ -846,7 +1025,7 @@ export class CityEngine {
       const moving = this.step(w, dt, GROUND_Y);
       if (!moving && !w.path.length) {
         w.wait -= dt;
-        if (w.wait <= 0) { this.walkTo(w, this.nextKanStop(r)); w.wait = 4 + r() * 6; }
+        if (w.wait <= 0 && performance.now() > this.kanVisitUntil) { this.walkTo(w, this.nextKanStop(r)); w.wait = 4 + r() * 6; }
       }
       w.obj.position.y = GROUND_Y + (moving ? Math.abs(Math.sin(t * 8)) * 0.15 : Math.abs(Math.sin(t * 1.5)) * 0.05);
     }
@@ -881,6 +1060,14 @@ export class CityEngine {
       if (v.beacon.visible) (v.beacon.material as THREE.MeshBasicMaterial).opacity = 0.14 + Math.sin(t * 3) * 0.06;
     }
     this.selectRing.rotation.z = t * 0.3;
+    if (this.effects.length) {
+      for (const e of [...this.effects]) {
+        e.t += dt / e.life;
+        e.update(Math.min(1, e.t), dt);
+        if (e.t >= 1) { e.done?.(); this.effects = this.effects.filter((x) => x !== e); }
+      }
+    }
+    if (this.kanNote && this.kanNote.until < performance.now()) { this.kanNote = null; this.renderKanBubble(); }
 
     this.renderer.render(this.scene, this.camera);
     this.placeLabels();
@@ -922,7 +1109,7 @@ export class CityEngine {
 
   // ---------- Labels ----------
 
-  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal', onClick: () => void) {
+  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals', onClick: () => void) {
     const el = document.createElement('div');
     el.className = `kc-label kc-${kind}`;
     const dot = document.createElement('span');
@@ -958,10 +1145,11 @@ export class CityEngine {
     const sel = this.selected?.kind === 'plot' ? this.selected.id : null;
     ranked.forEach((pv, i) => {
       const p = pv.plot;
-      const loud = p.bot.status === 'working' || p.waiting.length > 0 || Boolean(p.building) || sel === p.channelId || this.hovered === p.name;
+      const marked = this.marked.has(p.channelId);
+      const loud = marked || p.bot.status === 'working' || p.waiting.length > 0 || Boolean(p.building) || sel === p.channelId || this.hovered === p.name;
       const show = loud || (i < shown && (p.attention !== 'muted' || zoom > 2.2));
       put(pv.label, v.set(pv.center.x, GROUND_Y + pv.built.top + 0.6, pv.center.z).clone(), show);
-      pv.label.dataset.selected = sel === p.channelId ? '1' : '';
+      pv.label.dataset.selected = sel === p.channelId || marked ? '1' : '';
     });
     for (const f of this.fixedLabels) {
       const isKan = f.el.dataset.follow === '1';
@@ -1065,7 +1253,7 @@ export class CityEngine {
   private clampTarget() {
     if (!this.grid) return;
     const t = this.controls.target;
-    const lx = this.grid.width / 2, lz = this.grid.depth / 2;
+    const lx = this.grid.width / 2 + 30, lz = this.grid.depth / 2 + 30;
     const cx = THREE.MathUtils.clamp(t.x, -lx, lx), cz = THREE.MathUtils.clamp(t.z, -lz, lz);
     if (cx !== t.x || cz !== t.z) {
       const dx = cx - t.x, dz = cz - t.z;
@@ -1077,14 +1265,23 @@ export class CityEngine {
   }
 
   private focus(p: Vec, zoom: number) {
-    this.focusAnim = { from: this.controls.target.clone(), to: new THREE.Vector3(p.x, 0, p.z), z0: this.camera.zoom, z1: Math.max(this.camera.zoom, zoom), t: 0 };
+    const z1 = Math.max(this.camera.zoom, zoom);
+    // Aim off-center so what you picked sits in the part of the screen you can see.
+    const w = this.host.clientWidth || 1;
+    const perPx = (this.camera.right - this.camera.left) / z1 / w;
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0).setY(0).normalize();
+    const fwd = this.controls.target.clone().sub(this.camera.position).setY(0).normalize();
+    const to = new THREE.Vector3(p.x, 0, p.z)
+      .addScaledVector(right, (this.insets.right / 2) * perPx)
+      .addScaledVector(fwd, -((this.insets.bottom / 2) * perPx) / Math.cos(0.96));
+    this.focusAnim = { from: this.controls.target.clone(), to, z0: this.camera.zoom, z1, t: 0 };
   }
 
   private pickPosition(p: Pick): Vec | null {
     if (!this.grid || !this.data) return null;
     const L = this.data.layout;
     if (p.kind === 'plot') { const v = this.plots.get(p.id); return v ? v.center : null; }
-    if (p.kind === 'townhall') return this.grid.blockCenter(L.townHall.cx, L.townHall.cz);
+    if (p.kind === 'townhall' || p.kind === 'arrivals') return this.grid.blockCenter(L.townHall.cx, L.townHall.cz);
     if (p.kind === 'park') return this.grid.blockCenter(L.park.cx, L.park.cz);
     if (p.kind === 'proposal') {
       const lot = this.data.proposals.find((x) => x.name === p.name)?.lot;

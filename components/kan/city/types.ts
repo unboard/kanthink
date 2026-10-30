@@ -11,4 +11,5 @@ export type Pick =
   | { kind: 'townhall' }
   | { kind: 'park' }
   | { kind: 'proposal'; name: string }
-  | { kind: 'free' };
+  | { kind: 'free' }
+  | { kind: 'arrivals' };

@@ -43,6 +43,16 @@ describe('Kan City', () => {
     expect(layoutCity(inputs)).toEqual(layoutCity([...inputs].reverse()))
   })
 
+  it('grows without moving what is already built', () => {
+    const inputs = Array.from({ length: 30 }, (_, i) => plot('c' + i, 'Channel ' + i, ['A', 'B', null][i % 3], { createdAt: i }))
+    const rel = (L: ReturnType<typeof layoutCity>) => Object.fromEntries(L.plots.map((p) => [p.channelId, [p.cx - L.townHall.cx, p.cz - L.townHall.cz]]))
+    const before = rel(layoutCity(inputs))
+    const more = [...inputs, ...Array.from({ length: 40 }, (_, i) => plot('n' + i, 'New ' + i, ['A', 'D', null][i % 3], { createdAt: 100 + i }))]
+    const after = rel(layoutCity(more))
+    for (const [id, at] of Object.entries(before)) expect(after[id]).toEqual(at)
+    expect(Object.keys(after)).toHaveLength(70)
+  })
+
   it('routes along the streets to a door', () => {
     const g = new Grid(8, 8)
     const from = g.door(0, 0)
