@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import {
-  attentionPasses, botApprovals, botRuns, cards, channelActivityLog, channelBots, channels, columns, folders,
+  appOrders, appPurchases, appUsers, attentionPasses, botApprovals, botRuns, cards, channelActivityLog, channelBots, channels, columns, folders,
   instructionCards, instructionRuns, kanwatchEpisodes, playgroundApps, playgroundAppVersions, userChannelOrg, type AttentionDecisionJson,
 } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm'
@@ -91,7 +91,11 @@ export async function cityFor(userId: string) {
     }),
     db.query.playgroundApps.findMany({
       where: inArray(playgroundApps.channelId, ids),
-      columns: { id: true, channelId: true, title: true, buildProgress: true, updatedAt: true, shareToken: true },
+      columns: {
+        id: true, channelId: true, title: true, buildProgress: true, updatedAt: true, shareToken: true, isPublic: true, isArchived: true,
+        generationCount: true, tagline: true, summary: true, thumbnailUrl: true, viewCount: true, paywallEnabled: true, paywallMode: true,
+        priceAmount: true, priceCurrency: true, priceInterval: true, reserveMode: true, reservePage: true, createdAt: true,
+      },
     }),
     db.query.playgroundAppVersions.findMany({
       where: gt(playgroundAppVersions.publishedAt, twoDaysAgo),
@@ -138,6 +142,19 @@ export async function cityFor(userId: string) {
     const mode = [...f.modes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
     return { minutes: Math.round(f.seconds / 60), mode, lastAt: f.last }
   }
+
+  // The Strip: every app you've built, and what each one earns.
+  const builtApps = apps.filter((a) => !a.isArchived && a.generationCount > 0)
+  const appIds = builtApps.map((a) => a.id)
+  const [purchases, orders, people] = appIds.length ? await Promise.all([
+    db.query.appPurchases.findMany({ where: inArray(appPurchases.appId, appIds), columns: { appId: true, amount: true, status: true } }),
+    db.query.appOrders.findMany({ where: inArray(appOrders.appId, appIds), columns: { appId: true, amount: true, status: true, isTest: true } }),
+    db.select({ appId: appUsers.appId, n: sql<number>`count(*)` }).from(appUsers).where(inArray(appUsers.appId, appIds)).groupBy(appUsers.appId),
+  ]) : [[], [], []]
+  const earned = new Map<string, number>()
+  for (const p of purchases) if (p.status === 'active' && p.amount) earned.set(p.appId, (earned.get(p.appId) ?? 0) + p.amount)
+  for (const o of orders) if (!o.isTest && (o.status === 'paid' || o.status === 'fulfilled')) earned.set(o.appId, (earned.get(o.appId) ?? 0) + o.amount)
+  const peopleOf = new Map(people.map((p) => [p.appId, Number(p.n)]))
 
   const made = await db.query.channels.findMany({ where: inArray(channels.id, ids), columns: { id: true, createdAt: true } })
   const madeAt = new Map(made.map((c) => [c.id, ms(c.createdAt)]))
@@ -206,6 +223,8 @@ export async function cityFor(userId: string) {
     return {
       ...p,
       kind: ARCHETYPE_LABEL[p.archetype],
+      // Went up in the last three days: it wears a "New" badge and always says its name.
+      isNew: (madeAt.get(p.channelId) ?? 0) > now - 3 * 24 * HOUR,
       folderId: folderIdOf.get(p.channelId) ?? null,
       description: a.description,
       cards: a.cards,
@@ -326,6 +345,28 @@ export async function cityFor(userId: string) {
       recent: arrivals.slice(0, 8).map((a) => ({ kind: a.kind, text: clip(a.text, 120), at: +a.at })),
     },
     feed: feed.slice(0, 80),
+    // Money first: what earns gets the best lots on the Strip, then what's for sale, then
+    // the rest, oldest first, so a lot only changes hands when the money does.
+    apps: builtApps.map((a) => {
+      const cents = earned.get(a.id) ?? 0
+      const price = a.paywallEnabled && a.priceAmount ? `$${(a.priceAmount / 100).toFixed(a.priceAmount % 100 ? 2 : 0)}${a.priceInterval === 'month' ? '/mo' : a.priceInterval === 'year' ? '/yr' : ''}` : a.reserveMode ? a.reservePage?.priceLabel ?? 'Taking reservations' : null
+      const tier = cents > 0 ? 'earning' as const : price ? 'selling' as const : 'free' as const
+      return {
+        id: a.id,
+        channelId: a.channelId,
+        title: clip(a.title, 40),
+        tagline: clip(a.tagline || a.summary, 140) || null,
+        thumbnail: a.thumbnailUrl,
+        href: a.isPublic && a.shareToken ? `/play/${a.shareToken}` : `/play/preview/${a.id}`,
+        isPublic: Boolean(a.isPublic),
+        tier,
+        price,
+        earnedCents: cents,
+        people: peopleOf.get(a.id) ?? 0,
+        views: a.viewCount ?? 0,
+        at: ms(a.createdAt),
+      }
+    }).sort((a, b) => ({ earning: 0, selling: 1, free: 2 }[a.tier] - { earning: 0, selling: 1, free: 2 }[b.tier]) || b.earnedCents - a.earnedCents || (a.at ?? 0) - (b.at ?? 0) || a.id.localeCompare(b.id)),
     yourDay: { minutes: [...focus.values()].reduce((n, f) => n + Math.round(f.seconds / 60), 0) },
     done,
     spend: { todayCents: Math.round(spent / 1000), dayCapCents: limits.dailyCapCents },

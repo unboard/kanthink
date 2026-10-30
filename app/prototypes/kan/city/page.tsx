@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowUpRight, Car, ChevronDown, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
+  ArrowUpRight, Car, ChevronDown, CircleDollarSign, Footprints, Sparkles, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
-import { CityEngine, SKY_CSS, skyFor, type Sky, type ViewMode } from '@/components/kan/city/engine';
+import { CityEngine, SKY_CSS, skyFor, type Near, type Sky, type ViewMode } from '@/components/kan/city/engine';
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
@@ -151,7 +151,9 @@ export default function CityPage() {
   const [gather, setGather] = useState<{ name: string; ids: string[] } | null>(null);
   /** Map from above, or first person: driving the streets or flying over them. */
   const [mode, setMode] = useState<ViewMode>('map');
-  const [near, setNear] = useState<{ id: string; name: string } | null>(null);
+  const [near, setNear] = useState<Near | null>(null);
+  /** An app opened full screen, right in the city. */
+  const [viewing, setViewing] = useState<{ title: string; href: string } | null>(null);
   const coarse = useCoarse();
 
   useEffect(() => { setPreview(new URLSearchParams(window.location.search).has('preview')); }, []);
@@ -247,10 +249,16 @@ export default function CityPage() {
     .slice(0, 3), [plots]);
 
   const selectedPlot = pick?.kind === 'plot' ? plotOf.get(pick.id) ?? null : null;
+  const selectedApp = pick?.kind === 'app' ? data?.apps.find((a) => a.id === pick.id) ?? null : null;
+  const strip = useMemo(() => {
+    const apps = data?.apps ?? [];
+    return { n: apps.length, earned: apps.reduce((n, a) => n + a.earnedCents, 0), selling: apps.filter((a) => a.tier !== 'free').length };
+  }, [data]);
   const focus = selectedPlot ? { channelId: selectedPlot.channelId, name: selectedPlot.name }
+    : selectedApp ? { channelId: selectedApp.channelId, name: `the app ${selectedApp.title}`, kind: 'app' }
     : board && plotOf.get(board) ? { channelId: board, name: plotOf.get(board)!.name }
     : pick?.kind === 'townhall' ? { kind: 'townhall', name: 'Town Hall' }
-    : near ? { channelId: near.id, name: near.name } : null;
+    : near?.kind === 'plot' ? { channelId: near.id, name: near.name } : null;
 
   // Starters that fit what's on screen.
   const starters = useMemo(() => {
@@ -295,6 +303,8 @@ export default function CityPage() {
   const decide = (id: string, approve: boolean, extra: { reason?: string; modelId?: string } = {}) =>
     act(`ap:${id}`, () => fetch(`/api/prototypes/kan/bots/approvals/${id}`, json('POST', { approve, ...extra })), approve ? 'Approved. The crane’s going up.' : 'Passed. The bot will read why.', approvals.find((a) => a.id === id)?.channelId);
   const look = () => act('look', () => fetch('/api/prototypes/kan/attention', { method: 'POST' }), 'Reading everything you’ve given me. A minute or two.', 'townhall');
+  const buildOne = (passId: string, name: string) =>
+    act('apply', () => fetch('/api/prototypes/kan/city/build', json('POST', { passId, name })), `Putting up ${name}. Watch it rise.`, 'townhall');
   const applyPass = (id: string) => act('apply', () => fetch(`/api/prototypes/kan/attention/${id}/apply`, { method: 'POST' }), 'Done. I rearranged the city.', 'townhall');
   const moveTo = (channelId: string, folderId: string | null) =>
     act(`mv:${channelId}`, () => fetch('/api/prototypes/kan/city/neighborhoods', json('POST', { action: 'move', channelId, folderId })), folderId ? 'Moved. Its bot has new neighbors.' : 'Moved Downtown. Its bot keeps to itself now.');
@@ -374,12 +384,19 @@ export default function CityPage() {
           {counts.building > 0 && <Chip tone="sky" n={counts.building} label="being built" />}
           {data && data.arrivals.count > 0 && <Chip tone="orange" n={data.arrivals.count} label="new for Kan" onClick={() => onPickRef.current({ kind: 'arrivals' })} />}
           {data && <Chip n={data.done.bots + data.done.shrooms + data.done.you} label="done today" onClick={() => setSide((s) => (s === 'feed' ? null : 'feed'))} />}
+          {strip.n > 0 && (
+            <Chip
+              tone={strip.earned ? 'gold' : undefined}
+              label={`🎰 ${strip.n} apps on the Strip${strip.earned ? ` · $${Math.round(strip.earned / 100).toLocaleString()} earned` : ''}`}
+              onClick={() => { setMode('map'); setPick(null); setBoard(null); setTimeout(() => engine.current?.focusStrip(), 0); }}
+            />
+          )}
           {data && data.yourDay.minutes > 0 && <Chip tone="gold" label={`${minutes(data.yourDay.minutes)} of your time`} onClick={() => setSide((s) => (s === 'feed' ? null : 'feed'))} />}
           {data && <Chip label={`$${(data.spend.todayCents / 100).toFixed(2)} today`} href="/prototypes/kan/bots?spend" />}
         </div>
         {/* On a phone it sits under the chips, on the right, so the chips get the row. */}
         <div className="pointer-events-auto absolute right-3 top-[calc(max(10px,env(safe-area-inset-top))+40px)] flex flex-shrink-0 flex-col items-center gap-0.5 rounded-full border border-white/10 bg-neutral-950/75 p-0.5 shadow-lg backdrop-blur-xl sm:static sm:flex-row">
-          {([['map', MapIcon, 'Map'], ['drive', Car, 'Drive'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
+          {([['map', MapIcon, 'Map'], ['walk', Footprints, 'Walk'], ['drive', Car, 'Drive'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
             <button
               key={m}
               onClick={() => { setMode(m); if (m !== 'map') { setPick(null); setBoard(null); } }}
@@ -452,7 +469,7 @@ export default function CityPage() {
         <>
           {near && !panelOpen && (
             <button
-              onClick={() => onPickRef.current({ kind: 'plot', id: near.id })}
+              onClick={() => onPickRef.current(near.kind === 'app' ? { kind: 'app', id: near.id } : { kind: 'plot', id: near.id })}
               className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50"
               style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}
             >
@@ -460,10 +477,10 @@ export default function CityPage() {
             </button>
           )}
           {(coarse || !wide) ? (
-            <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint={mode === 'drive' ? 'Drive' : 'Steer · climb'} />
+            <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint={mode === 'drive' ? 'Drive' : mode === 'walk' ? 'Walk' : 'Steer · climb'} />
           ) : (
             <p className="absolute left-1/2 top-[60px] z-10 -translate-x-1/2 rounded-full bg-neutral-950/60 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur">
-              {mode === 'drive' ? 'W A S D or arrows to drive · Shift for speed' : 'A D to turn · W S to climb and dive · Shift for speed'} · Esc for the map
+              {mode === 'fly' ? 'A D to turn · W S to climb and dive · Shift for speed' : `W A S D or arrows to ${mode} · Shift to ${mode === 'walk' ? 'run' : 'speed up'}`} · E to go in · Esc for the map
             </p>
           )}
         </>
@@ -535,13 +552,26 @@ export default function CityPage() {
           ) : pick.kind === 'park' ? (
             <ParkPanel plots={plots} onGo={(id) => onPickRef.current({ kind: 'plot', id })} />
           ) : pick.kind === 'proposal' ? (
-            <ProposalPanel data={data} name={pick.name} busy={busy} onApply={(id) => void applyPass(id)} onAsk={ask} />
+            <ProposalPanel data={data} name={pick.name} busy={busy} onBuild={(id, name) => { setPick(null); void buildOne(id, name); }} onAsk={ask} />
+          ) : pick.kind === 'app' ? (
+            selectedApp ? <AppPanel app={selectedApp} channel={data.names[selectedApp.channelId] ?? ''} onOpen={() => setViewing({ title: selectedApp.title, href: selectedApp.href })} onAsk={ask} /> : <p className="text-[13px] text-neutral-400">That app has moved on.</p>
           ) : pick.kind === 'arrivals' ? (
             <ArrivalsPanel data={data} running={data.townHall.passRunning} onSort={() => ask('Sort what came in since you last looked.')} />
           ) : (
             <FreePanel running={data.townHall.passRunning} onAsk={ask} />
           )}
         </PickSheet>
+      )}
+
+      {viewing && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-neutral-950">
+          <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2 pt-[max(8px,env(safe-area-inset-top))]">
+            <button onClick={() => setViewing(null)} className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[13px] text-neutral-300 hover:bg-white/10"><ChevronLeft className="h-4 w-4" /> Back to the Strip</button>
+            <span className="min-w-0 flex-1 truncate text-center text-[14px] font-semibold">{viewing.title}</span>
+            <a href={viewing.href} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] text-neutral-500 hover:text-neutral-200">New tab <ArrowUpRight className="h-3.5 w-3.5" /></a>
+          </div>
+          <iframe src={viewing.href} title={viewing.title} className="min-h-0 flex-1 bg-white" allow="clipboard-write; microphone; camera" />
+        </div>
       )}
 
       <CityChat
@@ -1074,7 +1104,7 @@ function ParkPanel({ plots, onGo }: { plots: CityPlot[]; onGo: (id: string) => v
   );
 }
 
-function ProposalPanel({ data, name, busy, onApply, onAsk }: { data: CityData; name: string; busy: string | null; onApply: (id: string) => void; onAsk: (prompt: string) => void }) {
+function ProposalPanel({ data, name, busy, onBuild, onAsk }: { data: CityData; name: string; busy: string | null; onBuild: (passId: string, name: string) => void; onAsk: (prompt: string) => void }) {
   const p = data.proposals.find((x) => x.name === name);
   const pass = data.townHall.pass;
   if (!p) return <p className="text-[13px] text-neutral-400">That plan has moved on.</p>;
@@ -1084,13 +1114,47 @@ function ProposalPanel({ data, name, busy, onApply, onAsk }: { data: CityData; n
       <h3 className="mt-0.5 pr-8 text-[19px] font-semibold text-neutral-50">{p.name}</h3>
       <p className="mt-1.5 text-[13px] leading-relaxed text-neutral-300">{p.why}</p>
       {p.columns.length > 0 && <p className="mt-2 text-[12px] text-neutral-500">{p.columns.join(' → ')}</p>}
-      <p className="mt-3 text-[12px] leading-relaxed text-neutral-500">This is part of what Kan noticed. Building it carries out the whole plan: this, plus the other changes and filings it decided on.</p>
+      <p className="mt-3 text-[12px] leading-relaxed text-neutral-500">Kan proposed this from what you’ve been sharing, saying and reading. Building it starts the channel and files what Kan meant to put there. The rest of Kan’s plan keeps waiting at Town Hall.</p>
       {pass && (
         <div className="mt-3 flex flex-wrap gap-2">
-          <button onClick={() => onAsk(`Tell me more about the ${p.name} channel you want to start, and what else your plan changes.`)} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500">Talk it over</button>
-          <button disabled={busy !== null} onClick={() => onApply(pass.id)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5 disabled:opacity-50">{busy === 'apply' ? 'Building…' : 'Build it'}</button>
+          <button disabled={busy !== null} onClick={() => onBuild(pass.id, p.name)} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50">{busy === 'apply' ? 'Building…' : 'Build it'}</button>
+          <button onClick={() => onAsk(`Tell me more about the ${p.name} channel you want to start. What would go in it?`)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5">Talk it over</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function AppPanel({ app, channel, onOpen, onAsk }: { app: CityData['apps'][number]; channel: string; onOpen(): void; onAsk(prompt: string, prefill?: boolean): void }) {
+  const tier = app.tier === 'earning'
+    ? { label: 'Making money', cls: 'bg-yellow-400 text-neutral-950', Icon: CircleDollarSign }
+    : app.tier === 'selling' ? { label: 'For sale', cls: 'bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/50', Icon: CircleDollarSign }
+    : { label: 'Free', cls: 'bg-white/10 text-neutral-300', Icon: Sparkles };
+  return (
+    <div>
+      <p className="pr-8 text-[11px] uppercase tracking-wider text-neutral-500">The Strip · from {channel}</p>
+      <h3 className="mt-0.5 pr-8 text-[19px] font-semibold leading-tight text-neutral-50">{app.title}</h3>
+      <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] font-medium ${tier.cls}`}><tier.Icon className="h-3.5 w-3.5" /> {tier.label}</span>
+      {app.tagline && <p className="mt-2 text-[13px] leading-relaxed text-neutral-400">{app.tagline}</p>}
+      {app.thumbnail && (
+        <button onClick={onOpen} className="mt-3 block w-full overflow-hidden rounded-xl border border-white/10">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={app.thumbnail} alt="" className="aspect-video w-full object-cover" />
+        </button>
+      )}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <Stat n={app.earnedCents ? `$${Math.round(app.earnedCents / 100).toLocaleString()}` : '—'} label="earned" />
+        <Stat n={app.price ?? 'Free'} label="price" />
+        <Stat n={app.people || app.views} label={app.people ? 'people' : 'views'} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button onClick={onOpen} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500">Go inside</button>
+        {app.tier !== 'earning' && (
+          <button onClick={() => onAsk(`How could the app “${app.title}” start making money? Look at it and its channel and give me the one best move.`)} className="rounded-full border border-yellow-400/40 px-3.5 py-1.5 text-xs text-yellow-100 hover:bg-yellow-400/10">How could it earn?</button>
+        )}
+        <button onClick={() => onAsk(`About the app “${app.title}”: `, true)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5">Ask Kan</button>
+      </div>
+      {!app.isPublic && <p className="mt-2 text-[11px] text-neutral-600">Not published yet, so only you can go in.</p>}
     </div>
   );
 }
@@ -1120,7 +1184,7 @@ function ArrivalsPanel({ data, running, onSort }: { data: CityData; running: boo
       <button disabled={running || !a.count} onClick={onSort} className="mt-4 rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50">
         {running ? 'Kan is sorting…' : 'Have Kan sort them'}
       </button>
-      <p className="mt-2 text-[11px] text-neutral-600">Sorting costs a few cents. Kan proposes; nothing changes until you say so.</p>
+      <p className="mt-2 text-[11px] text-neutral-600">Sorting costs about 20¢. Kan also does it on its own when things pile up, at most twice a day. It only proposes; nothing changes until you say so.</p>
     </div>
   );
 }
@@ -1160,6 +1224,12 @@ const LABEL_CSS = `
 .kc-badge[data-tone="needs"] { background: #f59e0b; }
 .kc-badge[data-tone="working"] { background: transparent; color: #10b981; font-size: 14px; min-width: 0; padding: 0; }
 .kc-badge[data-tone="building"] { background: transparent; color: #0ea5e9; font-size: 12px; min-width: 0; padding: 0; }
+.kc-app { font-size: 11px; padding: 3px 9px 3px 8px; background: rgba(20,13,34,0.88); color: #fdf4ff; box-shadow: 0 0 0 1px rgba(255,60,172,.5), 0 4px 14px rgba(255,60,172,.25); }
+.kc-app[data-tier="earning"] { background: #fff4cc; color: #6b4300; box-shadow: 0 0 0 2px #ffcc33, 0 4px 18px rgba(255,190,40,.55); }
+.kc-strip { background: #1a0f2e; color: #ffd23f; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; box-shadow: 0 0 0 2px #ff3cac, 0 4px 18px rgba(255,60,172,.45); }
+.kc-badge[data-tone="gold"] { background: #ffcc33; color: #5a3a00; padding: 0 7px; }
+.kc-badge[data-tone="selling"] { background: #ff3cac; padding: 0 7px; }
+.kc-badge[data-tone="new"] { background: #10b981; padding: 0 7px; }
 .kc-badge[data-tone="proposal"] { background: #7c3aed; font-weight: 600; padding: 0 8px; }
 .kc-proposal { box-shadow: 0 0 0 2px rgba(167,139,250,.8), 0 4px 14px rgba(20,10,40,0.35); }
 .kc-district { pointer-events: none; transform-origin: center; color: rgba(255,255,255,0.92); font: 800 11px/1 ui-sans-serif, system-ui, sans-serif;

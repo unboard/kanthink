@@ -8,6 +8,7 @@ import {
   nightGlows, sharedMaterials, shroomFigure, townHall, windowMaterials, type Built,
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
+import { buildStrip, inRect, type Strip } from './strip';
 
 /**
  * Kan City's scene. It draws the city once per layout and then only moves what the
@@ -87,13 +88,16 @@ interface PlotView {
 export interface EngineCallbacks {
   onPick(p: Pick | null): void;
   /** In drive or fly mode: the building you're next to, so the page can offer to go in. */
-  onNear?(p: { id: string; name: string } | null): void;
+  onNear?(p: Near | null): void;
   /** Escape out of drive or fly mode. */
   onExitMode?(): void;
 }
 
-/** How you see the city: the map from above, or first-person behind the wheel or the wings. */
-export type ViewMode = 'map' | 'drive' | 'fly';
+/** How you see the city: the map from above, or first person on foot, at the wheel or on the wings. */
+export type ViewMode = 'map' | 'walk' | 'drive' | 'fly';
+
+/** The place you're next to in first person: a building, or an app on the Strip. */
+export interface Near { kind: 'plot' | 'app'; id: string; name: string }
 
 const FOG: Record<Sky, string> = { dawn: '#f2c3b4', day: '#d7ecfa', dusk: '#b98aa9', night: '#2a2150' };
 
@@ -139,7 +143,7 @@ export class CityEngine {
   /** Short-lived effects: pulses where Kan just did something, buildings going up. */
   private effects: { t: number; life: number; update: (k: number, dt: number) => void; done?: () => void }[] = [];
   /** Plots seen before and where, so a new or moved building rises instead of just appearing. */
-  private knownPlots: Map<string, string> | null = null;
+  private knownPlots: Map<string, { district: string; size: number; top: number }> | null = null;
   private kanNote: { text: string; kicker: string; until: number } | null = null;
   private kanVisitUntil = 0;
   private parcels: { group: THREE.Group; label: HTMLDivElement; count: number } | null = null;
@@ -150,7 +154,9 @@ export class CityEngine {
   private player: { obj: THREE.Group; x: number; y: number; z: number; heading: number; speed: number; roll: number } | null = null;
   private keys = new Set<string>();
   private stick = { x: 0, y: 0 };
-  private near: string | null = null;
+  private near: Near | null = null;
+  private strip: Strip | null = null;
+  private appLabels = new Map<string, HTMLDivElement>();
   /** How tall what stands on each cell is, so a flyer can't go through it. */
   private tops = new Map<string, number>();
 
@@ -231,7 +237,7 @@ export class CityEngine {
   }
 
   setData(data: CityData) {
-    const key = JSON.stringify([data.layout.cols, data.layout.rows, data.plots.map((p) => [p.channelId, p.archetype, p.cx, p.cz, p.size, p.attention]), data.proposals.map((p) => p.name)]);
+    const key = JSON.stringify([data.layout.cols, data.layout.rows, data.plots.map((p) => [p.channelId, p.archetype, p.cx, p.cz, p.size, p.attention]), data.proposals.map((p) => p.name), data.apps.map((a) => [a.id, a.tier, a.title, a.price, Math.round(a.earnedCents / 100)])]);
     const first = !this.grid;
     if (key !== this.layoutKey) {
       this.layoutKey = key;
@@ -307,11 +313,12 @@ export class CityEngine {
     }
     this.selectRing.visible = false;
     this.scene.fog = new THREE.Fog(FOG[this.sky], 90, 380);
-    const start = this.townHallSpot(-2);
-    const obj = mode === 'drive' ? this.makeDriver() : this.makeFlyer();
+    // Out on the street in front of Town Hall, with Kan behind you rather than in the way.
+    const start = this.townHallSpot(1);
+    const obj = mode === 'drive' ? this.makeDriver() : mode === 'walk' ? this.makeWalker() : this.makeFlyer();
     this.scene.add(obj);
     // Pointed away from Kan, who waits outside Town Hall.
-    this.player = { obj, x: start.x, y: mode === 'fly' ? 26 : 0.1, z: start.z, heading: -Math.PI / 2, speed: mode === 'fly' ? 16 : 0, roll: 0 };
+    this.player = { obj, x: start.x, y: mode === 'fly' ? 26 : mode === 'walk' ? GROUND_Y : 0.1, z: start.z, heading: -Math.PI / 2, speed: mode === 'fly' ? 16 : 0, roll: 0 };
     // Start the chase camera right behind, not swooping in from the map.
     const f = this.forward(this.player.heading);
     this.persp.position.set(start.x - f.x * 14, this.player.y + 7, start.z - f.z * 14);
@@ -319,6 +326,13 @@ export class CityEngine {
   }
 
   getMode() { return this.mode; }
+
+  /** Swing over to the Strip. */
+  focusStrip() {
+    if (!this.strip || this.mode !== 'map') return;
+    const b = this.strip.bounds;
+    this.focus({ x: 0, z: (b.z0 + Math.min(b.z1, b.z0 + 70)) / 2 }, 1.5);
+  }
 
   /** The on-screen joystick, -1 to 1 each way; up is +y. */
   setStick(x: number, y: number) { this.stick = { x, y }; }
@@ -506,10 +520,24 @@ export class CityEngine {
 
     // Every channel's building. One that wasn't here last time rises out of the ground.
     // So does one that just moved to another neighborhood.
+    // One that got bigger grows up from the height it was.
     const known = this.knownPlots;
-    const fresh = new Set(known ? data.plots.filter((p) => known.get(p.channelId) !== p.district).map((p) => p.channelId) : []);
-    this.knownPlots = new Map(data.plots.map((p) => [p.channelId, p.district]));
-    for (const p of data.plots) this.addPlot(grid, p, fresh.has(p.channelId));
+    const next = new Map<string, { district: string; size: number; top: number }>();
+    let newest: string | null = null;
+    for (const p of data.plots) {
+      const was = known?.get(p.channelId);
+      const rise = Boolean(known && (!was || was.district !== p.district));
+      const grow = !rise && was && p.size > was.size ? was.top : null;
+      const top = this.addPlot(grid, p, rise, grow);
+      next.set(p.channelId, { district: p.district, size: p.size, top });
+      if (known && !was) newest = p.channelId;
+    }
+    this.knownPlots = next;
+    // A brand-new building: go and watch it go up.
+    if (newest && this.mode === 'map') {
+      const v = this.plots.get(newest);
+      if (v) setTimeout(() => this.focus(v.center, 2), 50);
+    }
 
     // Free lots: the first few that no proposal takes.
     const proposed = new Set(data.proposals.filter((p) => p.lot).map((p) => `${p.lot!.cx},${p.lot!.cz}`));
@@ -584,7 +612,28 @@ export class CityEngine {
       });
     }
 
-    const shadowSize = Math.max(W, D) * 0.72;
+    // The Strip, off the near edge of town.
+    this.strip = buildStrip(grid, data.apps);
+    this.appLabels.clear();
+    if (this.strip) {
+      this.city.add(this.strip.group);
+      this.ticks.push(...this.strip.ticks);
+      for (const lot of this.strip.lots) {
+        this.addPickable(lot.group, { kind: 'app', id: lot.app.id });
+        const label = this.makeLabel(lot.app.title, 'app', () => this.cb.onPick({ kind: 'app', id: lot.app.id }));
+        const b = label.querySelector('.kc-badge') as HTMLSpanElement;
+        const money = lot.app.earnedCents > 0 ? `$${Math.round(lot.app.earnedCents / 100).toLocaleString()} earned` : lot.app.price ?? '';
+        b.textContent = money;
+        b.dataset.tone = lot.app.tier === 'earning' ? 'gold' : lot.app.tier === 'selling' ? 'selling' : '';
+        b.style.display = money ? '' : 'none';
+        label.dataset.tier = lot.app.tier;
+        this.appLabels.set(lot.app.id, label);
+      }
+      const gl = this.makeLabel('The Strip', 'strip', () => this.focusStrip());
+      this.fixedLabels.push({ el: gl, pos: new THREE.Vector3(this.strip.gate.x, 10.5, this.strip.gate.z), always: true });
+    }
+    const reachZ = this.strip ? this.strip.bounds.z1 * 2 : D;
+    const shadowSize = Math.max(W, D, reachZ) * 0.72;
     const sc = this.sun.shadow.camera;
     sc.left = -shadowSize; sc.right = shadowSize; sc.top = shadowSize; sc.bottom = -shadowSize;
     sc.near = 1; sc.far = 400;
@@ -682,9 +731,21 @@ export class CityEngine {
     return Math.min(0.85, base + recent * 0.35 + Math.min(0.15, p.recentActivity * 0.03));
   }
 
-  private addPlot(grid: Grid, p: CityPlot, rise = false) {
+  private addPlot(grid: Grid, p: CityPlot, rise = false, grewFrom: number | null = null): number {
     const seed = hash(p.channelId);
     const built = building(p.archetype, { size: p.size, seed, lit: this.litFor(p), muted: p.attention === 'muted' });
+    if (grewFrom !== null && built.top > 0) {
+      // It got bigger: build it up from where it was, with a pulse when it tops out.
+      built.group.userData.dynamic = true;
+      const g = built.group;
+      const from = Math.min(1, Math.max(0.1, grewFrom / built.top));
+      g.scale.set(1, from, 1);
+      this.effects.push({ t: -0.2, life: 2.4, update: (k) => {
+        const e = k <= 0 ? 0 : 1 - Math.pow(1 - k, 3);
+        g.scale.set(1, from + (1 - from) * e, 1);
+      } });
+      setTimeout(() => this.pulse(p.channelId), 1800);
+    }
     if (rise) {
       // Kept out of the merge so it can grow.
       built.group.userData.dynamic = true;
@@ -719,6 +780,7 @@ export class CityEngine {
     const importance = (p.recentActivity * 4) + Math.log2(1 + p.cards) + (p.apps ? 2 : 0) + (p.lastActivityAt ? Math.max(0, 6 - (Date.now() - p.lastActivityAt) / (5 * 86400_000)) : 0) - (p.attention === 'muted' ? 20 : 0);
     const view: PlotView = { plot: p, center: c, facing: d.facing, built, label, beacon, crane: null, shrooms: [], importance, yours: null };
     this.plots.set(p.channelId, view);
+    return built.top;
   }
 
   /** Shrooms live in the front yard, a few steps from the street. */
@@ -781,8 +843,8 @@ export class CityEngine {
       const badge = p.waiting.length + p.bot.asks.length;
       v.label.querySelector('.kc-name')!.textContent = p.name;
       const b = v.label.querySelector('.kc-badge') as HTMLSpanElement;
-      b.textContent = badge ? String(badge) : working ? '●' : p.building ? '◆' : '';
-      b.dataset.tone = badge ? 'needs' : working ? 'working' : p.building ? 'building' : '';
+      b.textContent = badge ? String(badge) : working ? '●' : p.building ? '◆' : p.isNew ? 'New' : '';
+      b.dataset.tone = badge ? 'needs' : working ? 'working' : p.building ? 'building' : p.isNew ? 'new' : '';
       b.style.display = b.textContent ? '' : 'none';
       v.label.dataset.muted = p.attention === 'muted' ? '1' : '';
     }
@@ -1194,6 +1256,14 @@ export class CityEngine {
 
   private forward(heading: number) { return { x: Math.sin(heading), z: Math.cos(heading) }; }
 
+  /** You, as a mushroom: your own cap, a clay stump with fins, out for a walk. */
+  private makeWalker(): THREE.Group {
+    const fig = botFigure(hash('you, the owner'));
+    fig.group.scale.setScalar(1.9);
+    fig.group.userData.body = fig.body;
+    return fig.group;
+  }
+
   /** A little car with Kan at the wheel. */
   private makeDriver(): THREE.Group {
     const g = car(5);
@@ -1246,6 +1316,29 @@ export class CityEngine {
     return { cx, cz };
   }
 
+  /** Driving: on a street in town, or a road on the Strip. */
+  private drivable(x: number, z: number) {
+    const g = this.grid!;
+    if (this.strip && this.strip.roads.some((r) => inRect(r, x, z, -0.9))) return true;
+    return Math.abs(x) <= g.width / 2 - 1.2 && Math.abs(z) <= g.depth / 2 - 1.2 && this.onBlock(x, z, 1.3) === null;
+  }
+
+  /** Walking: anywhere on the island or the Strip that isn't inside a building. */
+  private walkable(x: number, z: number) {
+    const g = this.grid!;
+    if (this.strip && inRect(this.strip.bounds, x, z, -0.8)) return !this.strip.lots.some((l) => inRect(l.footprint, x, z, 0.4));
+    if (this.strip && this.strip.roads.some((r) => inRect(r, x, z, -0.5))) return true;
+    if (Math.abs(x) > g.width / 2 + 2.2 || Math.abs(z) > g.depth / 2 + 2.2) return false;
+    const cell = this.onBlock(x, z, 0);
+    if (!cell) return true;
+    const L = this.data!.layout;
+    // The park is for walking in; Town Hall and every building are solid.
+    if (cell.cx >= L.park.cx && cell.cx <= L.park.cx + 1 && cell.cz >= L.park.cz && cell.cz <= L.park.cz + 1) return true;
+    if (!this.tops.has(`${cell.cx},${cell.cz}`)) return true;
+    const c = g.cellCenter(cell.cx, cell.cz);
+    return Math.abs(x - c.x) > 3.9 || Math.abs(z - c.z) > 3.9;
+  }
+
   private stepPlayer(dt: number) {
     const p = this.player, g = this.grid;
     if (!p || !g) return;
@@ -1253,30 +1346,52 @@ export class CityEngine {
     const steer = THREE.MathUtils.clamp((k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0) + this.stick.x, -1, 1);
     const push = THREE.MathUtils.clamp((k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0) + this.stick.y, -1, 1);
     const boost = k.has('shift');
-    const edge = Math.max(g.width, g.depth) / 2;
+    const edge = Math.max(g.width, g.depth, (this.strip?.bounds.z1 ?? 0) * 2) / 2;
 
-    if (this.mode === 'drive') {
-      const top = boost ? 36 : 24;
-      if (push > 0) p.speed = Math.min(top, p.speed + push * 26 * dt);
-      else if (push < 0) p.speed = Math.max(-9, p.speed + push * (p.speed > 0 ? 40 : 16) * dt);
-      else p.speed -= Math.sign(p.speed) * Math.min(Math.abs(p.speed), 9 * dt);
-      p.heading -= steer * 2.3 * dt * THREE.MathUtils.clamp(Math.abs(p.speed) / 7, 0, 1) * Math.sign(p.speed || 1);
+    if (this.mode === 'drive' || this.mode === 'walk') {
+      const walking = this.mode === 'walk';
+      const ok = (x: number, z: number) => (walking ? this.walkable(x, z) : this.drivable(x, z));
+      if (walking) {
+        // Walking: no momentum to speak of, and turning on the spot.
+        p.speed += ((boost ? 14 : 7.5) * push - p.speed) * Math.min(1, dt * 10);
+        p.heading -= steer * 2.8 * dt;
+      } else {
+        const top = boost ? 36 : 24;
+        if (push > 0) p.speed = Math.min(top, p.speed + push * 26 * dt);
+        else if (push < 0) p.speed = Math.max(-9, p.speed + push * (p.speed > 0 ? 40 : 16) * dt);
+        else p.speed -= Math.sign(p.speed) * Math.min(Math.abs(p.speed), 9 * dt);
+        p.heading -= steer * 2.3 * dt * THREE.MathUtils.clamp(Math.abs(p.speed) / 7, 0, 1) * Math.sign(p.speed || 1);
+      }
       const f = this.forward(p.heading);
       const nx = p.x + f.x * p.speed * dt, nz = p.z + f.z * p.speed * dt;
-      // Streets only: slide along a curb rather than stop dead, and stay on the island.
-      const blocked = (x: number, z: number) => Math.abs(x) > g.width / 2 - 1.2 || Math.abs(z) > g.depth / 2 - 1.2 || this.onBlock(x, z, 1.3) !== null;
-      if (!blocked(nx, nz)) { p.x = nx; p.z = nz; }
-      else if (!blocked(nx, p.z)) { p.x = nx; p.speed *= 1 - 2 * dt; }
-      else if (!blocked(p.x, nz)) { p.z = nz; p.speed *= 1 - 2 * dt; }
-      else p.speed *= -0.25;
-      p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 20) * 0.08 - p.roll) * Math.min(1, dt * 6);
-      p.obj.position.set(p.x, 0.12, p.z);
-      p.obj.rotation.set(0, p.heading - Math.PI / 2, 0);
-      p.obj.rotateX(p.roll);
-      // Chase camera, low and close.
-      const want = new THREE.Vector3(p.x - f.x * 13, 6.2, p.z - f.z * 13);
-      this.persp.position.lerp(want, 1 - Math.exp(-dt * 5));
-      this.persp.lookAt(p.x + f.x * 8, 1.6, p.z + f.z * 8);
+      // Slide along a curb or a wall rather than stop dead.
+      if (ok(nx, nz)) { p.x = nx; p.z = nz; }
+      else if (ok(nx, p.z)) { p.x = nx; p.speed *= 1 - 2 * dt; }
+      else if (ok(p.x, nz)) { p.z = nz; p.speed *= 1 - 2 * dt; }
+      else p.speed *= walking ? 0 : -0.25;
+      if (walking) {
+        const moving = Math.abs(p.speed) > 0.3;
+        this.elapsedWalk += dt * Math.abs(p.speed);
+        const body = p.obj.userData.body as THREE.Object3D | undefined;
+        if (body) {
+          body.position.y = 0.8 + (moving ? Math.abs(Math.sin(this.elapsedWalk * 1.4)) * 0.18 : Math.sin(performance.now() / 600) * 0.03);
+          body.rotation.z = moving ? Math.sin(this.elapsedWalk * 1.4) * 0.08 : 0;
+        }
+        p.obj.position.set(p.x, GROUND_Y, p.z);
+        p.obj.rotation.set(0, p.heading, 0);
+        // Over the shoulder, close enough to feel small in a big town.
+        const want = new THREE.Vector3(p.x - f.x * 8.5, 4.6, p.z - f.z * 8.5);
+        this.persp.position.lerp(want, 1 - Math.exp(-dt * 6));
+        this.persp.lookAt(p.x + f.x * 5, 2.2, p.z + f.z * 5);
+      } else {
+        p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 20) * 0.08 - p.roll) * Math.min(1, dt * 6);
+        p.obj.position.set(p.x, 0.12, p.z);
+        p.obj.rotation.set(0, p.heading - Math.PI / 2, 0);
+        p.obj.rotateX(p.roll);
+        const want = new THREE.Vector3(p.x - f.x * 13, 6.2, p.z - f.z * 13);
+        this.persp.position.lerp(want, 1 - Math.exp(-dt * 5));
+        this.persp.lookAt(p.x + f.x * 8, 1.6, p.z + f.z * 8);
+      }
     } else {
       // Always flying forward; up on the stick (or W) climbs, A and D bank and turn.
       const target = boost ? 46 : 22;
@@ -1284,7 +1399,9 @@ export class CityEngine {
       p.heading -= steer * 1.35 * dt;
       p.y += push * 15 * dt;
       const cell = this.onBlock(p.x, p.z, 0);
-      const floor = (cell ? this.tops.get(`${cell.cx},${cell.cz}`) ?? 0.5 : 0.5) + GROUND_Y + 3;
+      let floor = (cell ? this.tops.get(`${cell.cx},${cell.cz}`) ?? 0.5 : 0.5) + GROUND_Y + 3;
+      const lot = this.strip?.lots.find((l) => inRect(l.footprint, p.x, p.z, 1));
+      if (lot) floor = Math.max(floor, lot.top + 3);
       p.y = THREE.MathUtils.clamp(p.y, floor, 150);
       const f = this.forward(p.heading);
       p.x += f.x * p.speed * dt;
@@ -1307,19 +1424,26 @@ export class CityEngine {
       this.persp.lookAt(p.x + f.x * 10, p.y - 1, p.z + f.z * 10);
     }
 
-    // What you're next to: a door when driving, a rooftop when flying.
-    let best: PlotView | null = null, bestD = Infinity;
+    // What you're next to: a door on foot or in the car, a rooftop on the wing.
+    let best: Near | null = null, bestD = Infinity;
+    const flying = this.mode === 'fly';
     for (const v of this.plots.values()) {
       const d = Math.hypot(v.center.x - p.x, v.center.z - p.z);
-      const reach = this.mode === 'drive' ? 11 : 13 + Math.max(0, p.y - v.built.top) * 0.15;
-      if (d < reach && d < bestD && (this.mode === 'drive' || p.y < v.built.top + 30)) { best = v; bestD = d; }
+      const reach = this.mode === 'walk' ? 8.5 : this.mode === 'drive' ? 11 : 13 + Math.max(0, p.y - v.built.top) * 0.15;
+      if (d < reach && d < bestD && (!flying || p.y < v.built.top + 30)) { best = { kind: 'plot', id: v.plot.channelId, name: v.plot.name }; bestD = d; }
     }
-    const id = best?.plot.channelId ?? null;
-    if (id !== this.near) {
-      this.near = id;
-      this.cb.onNear?.(best ? { id: best.plot.channelId, name: best.plot.name } : null);
+    for (const l of this.strip?.lots ?? []) {
+      const d = Math.min(Math.hypot(l.door.x - p.x, l.door.z - p.z), Math.hypot(l.center.x - p.x, l.center.z - p.z) + 2);
+      const reach = this.mode === 'walk' ? 5.5 : this.mode === 'drive' ? 8 : 12;
+      if (d < reach && d < bestD && (!flying || p.y < l.top + 30)) { best = { kind: 'app', id: l.app.id, name: l.app.title }; bestD = d; }
+    }
+    if (best?.id !== this.near?.id) {
+      this.near = best;
+      this.cb.onNear?.(best);
     }
   }
+
+  private elapsedWalk = 0;
 
   private onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
@@ -1328,7 +1452,10 @@ export class CityEngine {
     const key = e.key.toLowerCase();
     if (e.type === 'keydown') {
       if (key === 'escape') { this.cb.onExitMode?.(); return; }
-      if ((key === 'e' || key === 'enter') && this.near) { this.cb.onPick({ kind: 'plot', id: this.near }); return; }
+      if ((key === 'e' || key === 'enter') && this.near) {
+        this.cb.onPick(this.near.kind === 'app' ? { kind: 'app', id: this.near.id } : { kind: 'plot', id: this.near.id });
+        return;
+      }
       this.keys.add(key);
       if (key.startsWith('arrow') || key === ' ') e.preventDefault();
     } else this.keys.delete(key);
@@ -1338,7 +1465,7 @@ export class CityEngine {
 
   // ---------- Labels ----------
 
-  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals', onClick: () => void) {
+  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals' | 'app' | 'strip', onClick: () => void) {
     const el = document.createElement('div');
     el.className = `kc-label kc-${kind}`;
     const dot = document.createElement('span');
@@ -1381,7 +1508,7 @@ export class CityEngine {
     ranked.forEach((pv, i) => {
       const p = pv.plot;
       const marked = this.marked.has(p.channelId);
-      const loud = marked || p.bot.status === 'working' || p.waiting.length > 0 || Boolean(p.building) || sel === p.channelId || this.hovered === p.name;
+      const loud = marked || p.isNew || p.bot.status === 'working' || p.waiting.length > 0 || Boolean(p.building) || sel === p.channelId || this.hovered === p.name;
       const show = fpv ? Math.hypot(pv.center.x - this.persp.position.x, pv.center.z - this.persp.position.z) < 95 : loud || (i < shown && (p.attention !== 'muted' || zoom > 2.2));
       put(pv.label, v.set(pv.center.x, GROUND_Y + pv.built.top + 0.6, pv.center.z).clone(), show);
       pv.label.dataset.selected = sel === p.channelId || marked ? '1' : '';
@@ -1390,6 +1517,16 @@ export class CityEngine {
       const isKan = f.el.dataset.follow === '1';
       put(f.el, isKan ? f.pos.clone().setY(GROUND_Y + 4.4) : f.pos, f.always || zoom > 1);
       if (f.el.classList.contains('kc-district')) f.el.style.opacity = !fpv && zoom < 1.6 ? '1' : '0';
+    }
+    if (this.strip) {
+      for (const lot of this.strip.lots) {
+        const el = this.appLabels.get(lot.app.id);
+        if (!el) continue;
+        const pos = new THREE.Vector3(lot.center.x, lot.top + 1, lot.center.z);
+        const show = fpv ? pos.distanceTo(this.persp.position) < (this.mode === 'walk' ? 32 : 55) : sel === lot.app.id || this.selected?.kind === 'app' && this.selected.id === lot.app.id || (lot.app.tier !== 'free' ? zoom > 0.9 : zoom > 1.9 * (w < 640 ? 1.3 : 1));
+        put(el, pos, show);
+        el.dataset.selected = this.selected?.kind === 'app' && this.selected.id === lot.app.id ? '1' : '';
+      }
     }
     for (const c of this.citizens.values()) {
       const visible = c.walker.obj.visible && !c.walker.inside;
@@ -1467,6 +1604,7 @@ export class CityEngine {
     this.renderer.domElement.style.width = `${w}px`;
     this.renderer.domElement.style.height = `${h}px`;
     const span = this.grid ? Math.max(this.grid.width, this.grid.depth) * 0.8 : 100;
+    // (The Strip hangs off the edge; framing the town is what matters, and you can pan to it.)
     const aspect = w / h;
     // Fit the whole island whichever way the screen is shaped.
     const halfH = aspect > 1.2 ? span * 0.5 : (span * 0.62) / aspect;
@@ -1490,7 +1628,7 @@ export class CityEngine {
   private clampTarget() {
     if (!this.grid) return;
     const t = this.controls.target;
-    const lx = this.grid.width / 2 + 30, lz = this.grid.depth / 2 + 30;
+    const lx = this.grid.width / 2 + 30, lz = Math.max(this.grid.depth / 2, this.strip?.bounds.z1 ?? 0) + 30;
     const cx = THREE.MathUtils.clamp(t.x, -lx, lx), cz = THREE.MathUtils.clamp(t.z, -lz, lz);
     if (cx !== t.x || cz !== t.z) {
       const dx = cx - t.x, dz = cz - t.z;
@@ -1519,6 +1657,7 @@ export class CityEngine {
     const L = this.data.layout;
     if (p.kind === 'plot') { const v = this.plots.get(p.id); return v ? v.center : null; }
     if (p.kind === 'townhall' || p.kind === 'arrivals') return this.grid.blockCenter(L.townHall.cx, L.townHall.cz);
+    if (p.kind === 'app') { const lot = this.strip?.lots.find((l) => l.app.id === p.id); return lot ? lot.center : null; }
     if (p.kind === 'park') return this.grid.blockCenter(L.park.cx, L.park.cz);
     if (p.kind === 'proposal') {
       const lot = this.data.proposals.find((x) => x.name === p.name)?.lot;

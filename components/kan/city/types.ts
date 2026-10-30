@@ -12,4 +12,5 @@ export type Pick =
   | { kind: 'park' }
   | { kind: 'proposal'; name: string }
   | { kind: 'free' }
-  | { kind: 'arrivals' };
+  | { kind: 'arrivals' }
+  | { kind: 'app'; id: string };
