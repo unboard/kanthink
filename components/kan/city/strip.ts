@@ -56,6 +56,19 @@ function box(g: THREE.Object3D, w: number, h: number, d: number, m: THREE.Materi
   return mesh;
 }
 
+/**
+ * A neon frame around a roof's edge. Four strips standing just outside the walls,
+ * never a slab: a slab level with the roof fights it for the same pixels and the
+ * roof shimmers as you pan.
+ */
+function rim(g: THREE.Object3D, w: number, y: number, m: THREE.Material, t = 0.22, hgt = 0.26) {
+  const o = w / 2 + t / 2 + 0.02;
+  box(g, w + 2 * t + 0.04, hgt, t, m, 0, y, o);
+  box(g, w + 2 * t + 0.04, hgt, t, m, 0, y, -o);
+  box(g, t, hgt, w, m, o, y, 0);
+  box(g, t, hgt, w, m, -o, y, 0);
+}
+
 function palm(g: THREE.Object3D, x: number, z: number) {
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 4.2, 6), mat('#8b6a45'));
   trunk.position.set(x, 2.1, z);
@@ -116,7 +129,7 @@ function casino(app: StripApp, bulbs: [THREE.Material, THREE.Material], ticks: S
     g.add(body);
     const n = neonMat(neon, 1.8);
     for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(g, 0.22, h, 0.22, n, (x * w) / 2, 0.2, (z * w) / 2);
-    box(g, w + 0.3, 0.25, w + 0.3, n, 0, 0.2 + h - 0.25, 0);
+    rim(g, w, 0.2 + h - 0.2, n);
     // A neon dollar sign that turns slowly on the roof.
     const spin = dyn(new THREE.Group());
     for (const side of [1, -1]) {
@@ -132,10 +145,10 @@ function casino(app: StripApp, bulbs: [THREE.Material, THREE.Material], ticks: S
   } else {
     w = 6.8;
     h = 4.5 + (seed % 3) * 0.9;
-    const body = windowBox(w, h, w, PASTEL[seed % PASTEL.length], '#ece6f4', 0.45, 'shop');
+    const body = windowBox(w, h, w, PASTEL[seed % PASTEL.length], PASTEL[(seed + 3) % PASTEL.length], 0.45, 'shop');
     body.position.y = 0.2 + h / 2;
     g.add(body);
-    box(g, w + 0.25, 0.2, w + 0.25, neonMat(neon, 1.3), 0, 0.2 + h - 0.2, 0);
+    rim(g, w, 0.2 + h - 0.18, neonMat(neon, 1.3), 0.18, 0.22);
     top = h;
   }
 
