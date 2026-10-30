@@ -114,7 +114,10 @@ export default function AttentionPage() {
           <ChevronRight className="h-3.5 w-3.5 text-neutral-700" />
           <span className="text-sm text-neutral-400">What I noticed</span>
         </Link>
-        <Link href="/prototypes/kan/bots" className="rounded-full px-2.5 py-1.5 text-xs text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200">Bots</Link>
+        <nav className="flex items-center gap-1">
+          <Link href="/prototypes/kan/city" className="rounded-full px-2.5 py-1.5 text-xs text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200">City</Link>
+          <Link href="/prototypes/kan/bots" className="rounded-full px-2.5 py-1.5 text-xs text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200">Bots</Link>
+        </nav>
       </header>
 
       <main className="mx-auto w-full max-w-[680px] px-4 pb-20 pt-8 md:px-8">

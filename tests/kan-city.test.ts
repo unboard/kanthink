@@ -1,0 +1,56 @@
+import { describe, expect, it } from 'vitest'
+import { archetypeFor, layoutCity, sizeFor, type PlotInput } from '@/lib/kan/city/layout'
+import { Grid } from '@/components/kan/city/grid'
+
+const plot = (id: string, name: string, district: string | null = null, extra: Partial<PlotInput> = {}): PlotInput =>
+  ({ channelId: id, name, district, cards: 5, lastActivityAt: null, attention: null, ...extra })
+
+describe('Kan City', () => {
+  it('gives each channel a building that fits its topic', () => {
+    const kind = (name: string, description = '') => archetypeFor({ id: name, name, description })
+    expect(kind('Espresso Bean Log')).toBe('cafe')
+    expect(kind("Scarlett's Learning Apps")).toBe('school')
+    expect(kind('Backyard Birds')).toBe('park')
+    expect(kind('Backyard Pond')).toBe('pond')
+    expect(kind('Flyer Design UX Labs')).toBe('printshop')
+    expect(kind('Grok')).toBe('depot')
+    expect(kind('Work')).toBe('tower')
+    expect(archetypeFor({ id: 'x', name: 'Kan Bookmarks', isShareInbox: true })).toBe('postoffice')
+    // A name that says nothing still gets the same building every time.
+    expect(kind('Zzyzx')).toBe(kind('Zzyzx'))
+  })
+
+  it('keeps building size sane at both ends', () => {
+    expect(sizeFor(0)).toBe(1)
+    expect(sizeFor(500)).toBeLessThanOrEqual(8)
+    expect(sizeFor(20)).toBeGreaterThan(sizeFor(2))
+  })
+
+  it('lays out every channel on its own lot, off Town Hall and the park', () => {
+    const inputs = Array.from({ length: 37 }, (_, i) => plot(`c${i}`, `Channel ${i}`, ['A', 'B', null, 'C'][i % 4], { lastActivityAt: i * 1000 }))
+    const L = layoutCity(inputs)
+    expect(L.plots).toHaveLength(37)
+    const cells = new Set(L.plots.map((p) => `${p.cx},${p.cz}`))
+    expect(cells.size).toBe(37)
+    for (const b of [L.townHall, L.park]) for (let dx = 0; dx < 2; dx++) for (let dz = 0; dz < 2; dz++) expect(cells.has(`${b.cx + dx},${b.cz + dz}`)).toBe(false)
+    for (const p of L.plots) { expect(p.cx).toBeLessThan(L.cols); expect(p.cz).toBeLessThan(L.rows) }
+    for (const f of L.free) expect(cells.has(`${f.cx},${f.cz}`)).toBe(false)
+    expect(L.free.length).toBeGreaterThan(0)
+  })
+
+  it('is stable: the same channels make the same city', () => {
+    const inputs = [plot('a', 'Recipes', 'Home'), plot('b', 'Work'), plot('c', 'Birds', 'Home')]
+    expect(layoutCity(inputs)).toEqual(layoutCity([...inputs].reverse()))
+  })
+
+  it('routes along the streets to a door', () => {
+    const g = new Grid(8, 8)
+    const from = g.door(0, 0)
+    const to = g.door(5, 5)
+    const path = g.route(from, to)
+    expect(path.at(-1)).toEqual({ x: to.x, z: to.z })
+    // Every leg is straight: along x or along z, never diagonal.
+    let prev = { x: from.x, z: from.z }
+    for (const p of path) { expect(p.x === prev.x || p.z === prev.z).toBe(true); prev = p }
+  })
+})

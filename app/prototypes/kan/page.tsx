@@ -317,6 +317,7 @@ export default function KanAgentPage() {
               <Plus className="h-3.5 w-3.5" /> New
             </button>
           )}
+          <Link href="/prototypes/kan/city" className="rounded-full px-2.5 py-1.5 hover:bg-neutral-900 hover:text-neutral-200">City</Link>
           <Link href="/prototypes/kan/attention" className="rounded-full px-2.5 py-1.5 hover:bg-neutral-900 hover:text-neutral-200">Noticed</Link>
           <Link href="/prototypes/kan/bots" className="rounded-full px-2.5 py-1.5 hover:bg-neutral-900 hover:text-neutral-200">Bots</Link>
           <Link href="/" className="rounded-full px-2.5 py-1.5 hover:bg-neutral-900 hover:text-neutral-200">Board</Link>
