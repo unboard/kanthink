@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { hash } from '@/lib/kan/city/layout';
 import { BLOCK, CELL, GAP, Grid, PITCH, ROAD, rng, type Vec } from './grid';
 import {
-  botFigure, building, car, centralPark, constructionSite, crane, freeLot, grove, kanFigure, lamp, mat, sportsCar, ufo,
+  botFigure, building, car, centralPark, constructionSite, crane, freeLot, grove, kanFigure, lamp, mat, moped, sportsCar, ufo,
   nightGlows, sharedMaterials, shroomFigure, townHall, windowMaterials, type Built,
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
@@ -117,7 +117,7 @@ export interface EngineCallbacks {
 }
 
 /** How you see the city: the map from above, or first person on foot, at the wheel or on the wings. */
-export type ViewMode = 'map' | 'walk' | 'drive' | 'fly';
+export type ViewMode = 'map' | 'walk' | 'drive' | 'ride' | 'fly';
 
 /** The place you're next to in first person: a building, or an app on the Strip. */
 export interface Near { kind: 'plot' | 'app' | 'bot' | 'car'; id: string; name: string }
@@ -140,8 +140,8 @@ export class CityEngine {
   private plots = new Map<string, PlotView>();
   private citizens = new Map<string, Citizen>();
   private kanUfo: ReturnType<typeof ufo> | null = null;
-  /** The car you got out of, waiting where you left it. */
-  private parked: { obj: THREE.Group; x: number; z: number; heading: number } | null = null;
+  /** The car (or moped) you got out of, waiting where you left it. */
+  private parked: { obj: THREE.Group; x: number; z: number; heading: number; kind: 'drive' | 'ride' } | null = null;
   /** The plot being moved, while you pick its new lot. */
   private placing: string | null = null;
   /** The building you're inside, if any: its own scene, drawn instead of the city. */
@@ -411,9 +411,9 @@ export class CityEngine {
     if (!door || !v) return;
     // Whatever you came in, you come out walking; a car waits where you left it.
     const p = this.player;
-    if (p && this.mode === 'drive') {
+    if (p && (this.mode === 'drive' || this.mode === 'ride')) {
       (p.obj.userData.driver as THREE.Object3D | undefined)?.removeFromParent();
-      this.parked = { obj: p.obj, x: p.x, z: p.z, heading: p.heading };
+      this.parked = { obj: p.obj, x: p.x, z: p.z, heading: p.heading, kind: this.mode };
     } else p?.obj.removeFromParent();
     const walker = this.makeWalker();
     this.scene.add(walker);
@@ -531,7 +531,7 @@ export class CityEngine {
     this.scene.fog = new THREE.Fog(FOG[this.sky], 90, 380);
     // Out on the street in front of Town Hall, with Kan behind you rather than in the way.
     const start = this.townHallSpot(1);
-    const obj = mode === 'drive' ? this.makeDriver() : mode === 'walk' ? this.makeWalker() : this.makeFlyer();
+    const obj = mode === 'drive' ? this.makeDriver() : mode === 'ride' ? this.makeMoped() : mode === 'walk' ? this.makeWalker() : this.makeFlyer();
     this.scene.add(obj);
     // Pointed away from Kan, who waits outside Town Hall.
     this.player = { obj, x: start.x, y: mode === 'fly' ? 26 : mode === 'walk' ? GROUND_Y : 0.1, z: start.z, heading: -Math.PI / 2, speed: mode === 'fly' ? 16 : 0, roll: 0 };
@@ -563,13 +563,13 @@ export class CityEngine {
     this.cb.onModeChange?.('walk');
   }
 
-  /** Pull over and get out: the car stays parked and you carry on on foot. */
+  /** Pull over and get out: the car (or moped) stays parked and you carry on on foot. */
   getOut() {
     const p = this.player;
-    if (this.mode !== 'drive' || !p) return;
+    if ((this.mode !== 'drive' && this.mode !== 'ride') || !p) return;
     const car = p.obj;
     (car.userData.driver as THREE.Object3D | undefined)?.removeFromParent();
-    this.parked = { obj: car, x: p.x, z: p.z, heading: p.heading };
+    this.parked = { obj: car, x: p.x, z: p.z, heading: p.heading, kind: this.mode };
     // Out the driver's side, or wherever there's room.
     const f = this.forward(p.heading);
     let spot = { x: p.x + f.z * 2.6, z: p.z - f.x * 2.6 };
@@ -583,23 +583,18 @@ export class CityEngine {
     this.cb.onModeChange?.('walk');
   }
 
-  /** Back in the car you parked. */
+  /** Back in the car (or on the moped) you parked. */
   getIn() {
     const p = this.player, car = this.parked;
     if (this.mode !== 'walk' || !p || !car) return;
     p.obj.removeFromParent();
-    const me = botFigure(hash('you, the owner'));
-    me.group.scale.setScalar(0.78);
-    me.group.rotation.y = Math.PI / 2;
-    const seat = (car.obj.userData.seat as THREE.Object3D | undefined) ?? car.obj;
-    seat.add(me.group);
-    car.obj.userData.driver = me.group;
+    this.seatYou(car.obj, (car.obj.userData.seat as THREE.Object3D | undefined) ?? car.obj);
     this.player = { obj: car.obj, x: car.x, y: 0.1, z: car.z, heading: car.heading, speed: 0, roll: 0 };
     this.parked = null;
-    this.mode = 'drive';
+    this.mode = car.kind;
     this.near = null;
     this.cb.onNear?.(null);
-    this.cb.onModeChange?.('drive');
+    this.cb.onModeChange?.(car.kind);
   }
 
   private endChute() {
@@ -1610,16 +1605,32 @@ export class CityEngine {
   /** Your convertible, with you (the mushroom) at the wheel, cap sticking out the top. */
   private makeDriver(): THREE.Group {
     const c = sportsCar();
+    c.group.userData.wheels = c.wheels;
+    c.group.userData.glow = c.glow;
+    c.group.userData.seat = c.seat;
+    this.seatYou(c.group, c.seat);
+    c.group.scale.setScalar(1.6);
+    return c.group;
+  }
+
+  /** Your moped, with you perched on it facing the road. */
+  private makeMoped(): THREE.Group {
+    const m = moped();
+    m.group.userData.wheels = m.wheels;
+    m.group.userData.pool = m.glow;
+    m.group.userData.seat = m.seat;
+    this.seatYou(m.group, m.seat);
+    m.group.scale.setScalar(1.6);
+    return m.group;
+  }
+
+  /** You, the mushroom, in the seat of whatever you're riding. */
+  private seatYou(vehicle: THREE.Object3D, seat: THREE.Object3D) {
     const me = botFigure(hash('you, the owner'));
     me.group.scale.setScalar(0.78);
     me.group.rotation.y = Math.PI / 2;
-    c.seat.add(me.group);
-    c.group.userData.wheels = c.wheels;
-    c.group.userData.glow = c.glow;
-    c.group.userData.driver = me.group;
-    c.group.userData.seat = c.seat;
-    c.group.scale.setScalar(1.6);
-    return c.group;
+    seat.add(me.group);
+    vehicle.userData.driver = me.group;
   }
 
   /** A violet glider with Kan riding on top. */
@@ -1807,13 +1818,21 @@ export class CityEngine {
     const { steer, push, boost } = this.input();
     const edge = Math.max(g.width, g.depth, (this.strip?.bounds.z1 ?? 0) * 2) / 2;
 
-    if (this.mode === 'drive' || this.mode === 'walk') {
-      const walking = this.mode === 'walk';
-      const ok = (x: number, z: number) => (walking ? this.walkable(x, z) : this.drivable(x, z));
+    if (this.mode === 'drive' || this.mode === 'ride' || this.mode === 'walk') {
+      const walking = this.mode === 'walk', riding = this.mode === 'ride';
+      // A moped goes anywhere a car can, and up on the sidewalks and plazas too.
+      const ok = (x: number, z: number) => (walking ? this.walkable(x, z) : this.drivable(x, z) || (riding && this.walkable(x, z)));
       if (walking) {
         // Walking: no momentum to speak of, and turning on the spot.
         p.speed += ((boost ? 14 : 7.5) * push - p.speed) * Math.min(1, dt * 10);
         p.heading -= steer * 2.8 * dt;
+      } else if (riding) {
+        // Zippy off the line, a lower top speed, and it turns nearly on the spot.
+        const top = boost ? 30 : 19;
+        if (push > 0) p.speed = Math.min(top, p.speed + push * 34 * dt);
+        else if (push < 0) p.speed = Math.max(-5, p.speed + push * (p.speed > 0 ? 44 : 12) * dt);
+        else p.speed -= Math.sign(p.speed) * Math.min(Math.abs(p.speed), 11 * dt);
+        p.heading -= steer * 3.1 * dt * THREE.MathUtils.clamp(Math.abs(p.speed) / 3.5, 0, 1) * Math.sign(p.speed || 1);
       } else {
         const top = boost ? 36 : 24;
         if (push > 0) p.speed = Math.min(top, p.speed + push * 26 * dt);
@@ -1842,6 +1861,18 @@ export class CityEngine {
         const want = new THREE.Vector3(p.x - f.x * 8.5, 4.6, p.z - f.z * 8.5);
         this.persp.position.lerp(want, 1 - Math.exp(-dt * 6));
         this.persp.lookAt(p.x + f.x * 5, 2.2, p.z + f.z * 5);
+      } else if (riding) {
+        // Lean into the turns.
+        p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 12) * 0.38 - p.roll) * Math.min(1, dt * 5);
+        for (const w of (p.obj.userData.wheels as THREE.Object3D[] | undefined) ?? []) w.rotation.y -= (p.speed * dt) / 0.38;
+        const pool = p.obj.userData.pool as THREE.Mesh | undefined;
+        if (pool) (pool.material as THREE.MeshBasicMaterial).opacity = this.sky === 'night' ? 0.5 : this.sky === 'day' ? 0.12 : 0.3;
+        p.obj.position.set(p.x, 0.12, p.z);
+        p.obj.rotation.set(0, p.heading - Math.PI / 2, 0);
+        p.obj.rotateX(p.roll);
+        const want = new THREE.Vector3(p.x - f.x * 9.5, 4.4, p.z - f.z * 9.5);
+        this.persp.position.lerp(want, 1 - Math.exp(-dt * 5.5));
+        this.persp.lookAt(p.x + f.x * 6, 1.8, p.z + f.z * 6);
       } else {
         p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 20) * 0.08 - p.roll) * Math.min(1, dt * 6);
         for (const w of (p.obj.userData.wheels as THREE.Object3D[] | undefined) ?? []) w.rotation.y -= (p.speed * dt) / 0.48;
@@ -1891,11 +1922,11 @@ export class CityEngine {
     const flying = this.mode === 'fly';
     for (const v of this.plots.values()) {
       const d = Math.hypot(v.center.x - p.x, v.center.z - p.z);
-      const reach = this.mode === 'walk' ? 8.5 : this.mode === 'drive' ? 11 : 13 + Math.max(0, p.y - v.built.top) * 0.15;
+      const reach = this.mode === 'walk' ? 8.5 : this.mode === 'drive' ? 11 : this.mode === 'ride' ? 9.5 : 13 + Math.max(0, p.y - v.built.top) * 0.15;
       if (d < reach && d < bestD && (!flying || p.y < v.built.top + 30)) { best = { kind: 'plot', id: v.plot.channelId, name: v.plot.name }; bestD = d; }
     }
     if (this.mode === 'walk' && this.parked && Math.hypot(this.parked.x - p.x, this.parked.z - p.z) < 5) {
-      best = { kind: 'car', id: 'car', name: 'your car' };
+      best = { kind: 'car', id: 'car', name: this.parked.kind === 'ride' ? 'your moped' : 'your car' };
       bestD = -10;
     }
     if (this.mode === 'walk') {
@@ -1908,7 +1939,7 @@ export class CityEngine {
     }
     for (const l of this.strip?.lots ?? []) {
       const d = Math.min(Math.hypot(l.door.x - p.x, l.door.z - p.z), Math.hypot(l.center.x - p.x, l.center.z - p.z) + 2);
-      const reach = this.mode === 'walk' ? 5.5 : this.mode === 'drive' ? 8 : 12;
+      const reach = this.mode === 'walk' ? 5.5 : this.mode === 'drive' || this.mode === 'ride' ? 8 : 12;
       if (d < reach && d < bestD && (!flying || p.y < l.top + 30)) { best = { kind: 'app', id: l.app.id, name: l.app.title }; bestD = d; }
     }
     if (best?.id !== this.near?.id) {
@@ -1937,7 +1968,7 @@ export class CityEngine {
     if (e.type === 'keydown') {
       if (key === 'escape') { this.cb.onExitMode?.(); return; }
       if (key === ' ' && this.mode === 'fly') { e.preventDefault(); this.jump(); return; }
-      if (key === 'f' && this.mode === 'drive') { this.getOut(); return; }
+      if (key === 'f' && (this.mode === 'drive' || this.mode === 'ride')) { this.getOut(); return; }
       if ((key === 'f' || key === 'e') && this.near?.kind === 'car') { this.getIn(); return; }
       if ((key === 'e' || key === 'enter') && this.near && !this.chute) {
         this.cb.onPick({ kind: this.near.kind, id: this.near.id } as Pick);

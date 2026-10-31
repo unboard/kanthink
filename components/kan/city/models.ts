@@ -1306,6 +1306,73 @@ export function sportsCar(): { group: THREE.Group; wheels: THREE.Object3D[]; glo
   return { group: g, wheels, glow: under, seat };
 }
 
+/**
+ * A Vespa-ish moped in mint and cream, nose toward +x like the car: a step-through
+ * floorboard, round rear cowl, a top box, and one big round headlamp.
+ */
+export function moped(): { group: THREE.Group; wheels: THREE.Object3D[]; glow: THREE.Mesh; seat: THREE.Group } {
+  const g = dyn(new THREE.Group());
+  const paint = mat('#5eead4', { rough: 0.3, metal: 0.3 });
+  const cream = mat('#fdf4e3', { rough: 0.45 });
+  const trim = mat('#1b1530', { rough: 0.5 });
+  const chrome = mat('#e5e7eb', { rough: 0.2, metal: 0.8 });
+  const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = g) => {
+    const mesh = new THREE.Mesh(geo, m);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    parent.add(mesh);
+    return mesh;
+  };
+  // Floorboard, and the rounded cowl over the back wheel.
+  add(new THREE.BoxGeometry(0.72, 0.08, 0.36), cream, 0.06, 0.3, 0);
+  const cowl = add(new THREE.SphereGeometry(0.34, 14, 10), paint, -0.42, 0.5, 0);
+  cowl.scale.set(1.45, 0.85, 0.72);
+  // Seat, and a top box behind it.
+  add(new THREE.BoxGeometry(0.62, 0.1, 0.3), trim, -0.36, 0.78, 0);
+  add(new THREE.BoxGeometry(0.3, 0.24, 0.34), cream, -0.8, 0.88, 0);
+  // Leg shield, raked back, and the steering column up to the bars.
+  const shield = add(new THREE.BoxGeometry(0.1, 0.66, 0.4), paint, 0.46, 0.6, 0);
+  shield.rotation.z = -0.18;
+  const column = add(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8), chrome, 0.56, 0.98, 0);
+  column.rotation.z = -0.18;
+  add(new THREE.BoxGeometry(0.16, 0.12, 0.26), paint, 0.6, 1.26, 0);
+  add(new THREE.BoxGeometry(0.05, 0.05, 0.78), chrome, 0.58, 1.3, 0);
+  for (const z of [-0.37, 0.37]) add(new THREE.BoxGeometry(0.06, 0.07, 0.1), trim, 0.58, 1.3, z);
+  // Front fender over the wheel.
+  const fender = add(new THREE.SphereGeometry(0.22, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), paint, 0.66, 0.3, 0);
+  fender.scale.set(1.2, 0.8, 0.7);
+  // Lamps: a big round headlamp, a little red tail.
+  const lamp = add(new THREE.CylinderGeometry(0.1, 0.1, 0.06, 14), glow('#fff6d0', 1.8), 0.69, 1.24, 0);
+  lamp.rotation.z = Math.PI / 2;
+  add(new THREE.BoxGeometry(0.04, 0.07, 0.18), glow('#ff2d55', 1.4), -0.96, 0.86, 0);
+  // Wheels, small and fat, with a spoke so you see them turn.
+  const wheels: THREE.Object3D[] = [];
+  const tire = mat('#141414', { rough: 0.8 });
+  for (const x of [0.66, -0.56]) {
+    const w = new THREE.Group();
+    w.position.set(x, 0.24, 0);
+    w.rotation.x = Math.PI / 2;
+    add(new THREE.CylinderGeometry(0.24, 0.24, 0.14, 14), tire, 0, 0, 0, w);
+    add(new THREE.CylinderGeometry(0.13, 0.13, 0.15, 10), chrome, 0, 0, 0, w);
+    add(new THREE.BoxGeometry(0.26, 0.16, 0.04), chrome, 0, 0, 0, w);
+    g.add(w);
+    wheels.push(w);
+  }
+  // A soft headlamp pool on the road ahead.
+  const pool = new THREE.Mesh(
+    new THREE.CircleGeometry(0.9, 20),
+    new THREE.MeshBasicMaterial({ color: '#fff3c4', transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
+  );
+  pool.rotation.x = -Math.PI / 2;
+  pool.scale.set(1.6, 1, 1);
+  pool.position.set(1.7, 0.04, 0);
+  g.add(pool);
+  const seat = new THREE.Group();
+  seat.position.set(-0.3, 0.42, 0);
+  g.add(seat);
+  return { group: g, wheels, glow: pool, seat };
+}
+
 /** A little shroom that lives in a yard. Automatic ones glow. */
 export function shroomFigure(seed: number, automatic: boolean): THREE.Group {
   const g = dyn(new THREE.Group());

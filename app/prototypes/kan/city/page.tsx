@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowUpRight, BookOpen, Car, ChevronRight, Power, Tv, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
+  ArrowUpRight, BookOpen, Car, ChevronRight, Power, Tv, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus, Scooter,
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -571,7 +571,7 @@ export default function CityPage() {
         </div>
         {/* On a phone it sits under the chips, on the right, so the chips get the row. */}
         <div className={`pointer-events-auto absolute right-3 top-[calc(max(10px,env(safe-area-inset-top))+40px)] flex-shrink-0 flex-col items-center gap-0.5 rounded-full border border-white/10 bg-neutral-950/75 p-0.5 shadow-lg backdrop-blur-xl sm:static sm:flex-row ${inside ? 'hidden' : 'flex'}`}>
-          {([['map', MapIcon, 'Map'], ['walk', Footprints, 'Walk'], ['drive', Car, 'Drive'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
+          {([['map', MapIcon, 'Map'], ['walk', Footprints, 'Walk'], ['drive', Car, 'Drive'], ['ride', Scooter, 'Moped'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
             <button
               key={m}
               onClick={() => { setMode(m); if (m !== 'map') { setPick(null); setBoard(null); } }}
@@ -655,16 +655,16 @@ export default function CityPage() {
               className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50"
               style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}
             >
-              {near.kind === 'bot' ? <MessageCircle className="h-4 w-4 text-violet-600" /> : <DoorOpen className="h-4 w-4 text-violet-600" />} {near.kind === 'bot' ? 'Talk to' : near.kind === 'car' ? 'Get in' : 'Go into'} {near.kind === 'car' ? '' : near.name}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
+              {near.kind === 'bot' ? <MessageCircle className="h-4 w-4 text-violet-600" /> : <DoorOpen className="h-4 w-4 text-violet-600" />} {near.kind === 'bot' ? 'Talk to' : near.kind === 'car' ? (near.name === 'your moped' ? 'Hop on' : 'Get in') : 'Go into'} {near.kind === 'car' ? '' : near.name}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
             </button>
           )}
-          {mode === 'drive' && (
+          {(mode === 'drive' || mode === 'ride') && (
             <button
               onClick={() => engine.current?.getOut()}
               className="absolute z-20 flex items-center gap-1.5 rounded-full bg-white/90 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-white active:scale-95"
               style={{ right: (coarse || !wide) ? 16 : rightW + 16, bottom: chatH + ((coarse || !wide) ? 40 : 20) }}
             >
-              <LogOut className="h-4 w-4" /> Get out{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">F</span>}
+              <LogOut className="h-4 w-4" /> {mode === 'ride' ? 'Hop off' : 'Get out'}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">F</span>}
             </button>
           )}
           {mode === 'fly' && (
@@ -677,10 +677,10 @@ export default function CityPage() {
             </button>
           )}
           {(coarse || !wide) ? (
-            <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint={mode === 'drive' ? 'Drive' : mode === 'walk' ? 'Walk' : 'Steer · climb'} />
+            <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint={mode === 'drive' ? 'Drive' : mode === 'ride' ? 'Ride' : mode === 'walk' ? 'Walk' : 'Steer · climb'} />
           ) : (
             <p className="absolute left-1/2 top-[60px] z-10 -translate-x-1/2 rounded-full bg-neutral-950/60 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur">
-              {mode === 'fly' ? 'A D to turn · W S to climb and dive · Shift for speed · Space to parachute out' : `W A S D or arrows to ${mode} · Shift to ${mode === 'walk' ? 'run' : 'speed up'}${mode === 'drive' ? ' · F to get out' : ''}`} · E to go in · Esc for the map
+              {mode === 'fly' ? 'A D to turn · W S to climb and dive · Shift for speed · Space to parachute out' : `W A S D or arrows to ${mode} · Shift to ${mode === 'walk' ? 'run' : 'speed up'}${mode === 'drive' ? ' · F to get out' : mode === 'ride' ? ' · Sidewalks are fair game · F to hop off' : ''}`} · E to go in · Esc for the map
             </p>
           )}
         </>
