@@ -90,3 +90,46 @@ describe('plot styles', () => {
     expect(parseStyle(null)).toEqual({})
   })
 })
+
+describe('building interiors', () => {
+  const cols = [
+    { id: 'a', name: 'Inbox', cards: 12 },
+    { id: 'b', name: 'Doing', cards: 3 },
+    { id: 'c', name: 'Done', cards: 60 },
+  ]
+
+  it('keeps only known, well-formed layout choices', async () => {
+    const { cleanInterior } = await import('@/lib/kan/city/interior')
+    expect(cleanInterior({ plan: 'open', floor: 'lava', light: 'party', walls: 'red', features: ['fireplace', 'moat', 'fireplace'], rooms: { ' Done ': { display: 'shelves', color: '#ABCDEF' }, x: { display: 'nope' } }, order: ['Done', 3] }))
+      .toEqual({ plan: 'open', light: 'party', features: ['fireplace'], rooms: { done: { display: 'shelves', color: '#abcdef' } }, order: ['done'] })
+    expect(cleanInterior('nonsense')).toEqual({})
+  })
+
+  for (const plan of ['hallway', 'open', 'atrium'] as const) {
+    it(`gives every column a room with its cards on the walls (${plan})`, async () => {
+      const { planInterior, roomAt } = await import('@/lib/kan/city/interior')
+      const p = planInterior({ columns: cols, apps: 2, style: { plan } })
+      const rooms = p.rooms.filter((r) => r.kind === 'column')
+      expect(rooms.map((r) => r.name).sort()).toEqual(['Doing', 'Done', 'Inbox'])
+      expect(p.rooms.some((r) => r.kind === 'arcade' && r.slots.length >= 2)).toBe(true)
+      for (const r of rooms) {
+        expect(r.shown).toBe(Math.min(r.count, 40, r.slots.length * r.perSlot))
+        expect(r.shown).toBeGreaterThan(0)
+        // A slot sits on a real wall.
+        for (const s of r.slots) expect(p.walls.some((w) => (w.z0 === w.z1 ? s.z === w.z0 && s.x > w.x0 && s.x < w.x1 : s.x === w.x0 && s.z > w.z0 && s.z < w.z1))).toBe(true)
+        expect(roomAt(p, (r.rect.x0 + r.rect.x1) / 2, (r.rect.z0 + r.rect.z1) / 2)?.id).toBe(r.id)
+      }
+      // The front door is open.
+      expect(p.walls.some((w) => w.z0 === w.z1 && w.z0 === p.entrance.z && w.x0 < p.entrance.x && w.x1 > p.entrance.x)).toBe(false)
+    })
+  }
+
+  it('puts rooms in the order asked and shows a column the way asked', async () => {
+    const { planInterior } = await import('@/lib/kan/city/interior')
+    const p = planInterior({ columns: cols, apps: 0, style: { order: ['done'], rooms: { inbox: { display: 'gallery' } } } })
+    const rooms = p.rooms.filter((r) => r.kind === 'column')
+    expect(rooms[0].name).toBe('Done')
+    expect(rooms.find((r) => r.name === 'Inbox')?.display).toBe('gallery')
+    expect(rooms.find((r) => r.name === 'Done')?.display).toBe('shelves')
+  })
+})

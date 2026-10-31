@@ -2054,6 +2054,8 @@ export const channelBots = sqliteTable('channel_bots', {
   plotStyle: text('plot_style'),
   /** Where the owner moved its plot: "cx,cz" in the layout's own (unshifted) cells. Null lets the layout place it. */
   plotPin: text('plot_pin'),
+  /** How the inside of its building is laid out when the owner asked for something else: JSON, read through lib/kan/city/interior. */
+  interiorStyle: text('interior_style'),
   lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
   nextRunAt: integer('next_run_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),

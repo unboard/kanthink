@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowUpRight, Car, ChevronDown, CircleDollarSign, Footprints, LogOut, MessageCircle, Move as MoveIcon, Sparkles, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
+  ArrowUpRight, BookOpen, Car, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -12,6 +12,10 @@ import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/c
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
 import { BotChat } from '@/components/kan/city/BotChat';
+import { Redecorate } from '@/components/kan/city/Redecorate';
+import type { InsideNear, InsidePick } from '@/components/kan/city/inside';
+import type { ChannelBoard } from '@/lib/kan/city/channel';
+import type { InteriorStyle } from '@/lib/kan/city/interior';
 import { hash } from '@/lib/kan/city/layout';
 import type { CityData, CityPlot, Pick } from '@/components/kan/city/types';
 
@@ -159,6 +163,15 @@ export default function CityPage() {
   const [moving, setMoving] = useState<string | null>(null);
   /** An app playing in the drawer, with the city still beside it. */
   const [playing, setPlaying] = useState<string | null>(null);
+  /** The building you're inside, with its board. */
+  const [inside, setInside] = useState<{ id: string; board: ChannelBoard } | null>(null);
+  const [entering, setEntering] = useState<string | null>(null);
+  const [inNear, setInNear] = useState<InsideNear | null>(null);
+  const [inRoom, setInRoom] = useState<{ name: string; count: number | null; kind: string } | null>(null);
+  const [inPanel, setInPanel] = useState<'redecorate' | 'invite' | null>(null);
+  const [decorating, setDecorating] = useState(false);
+  /** A card to open the board at, when you tapped it on a wall inside. */
+  const [boardCard, setBoardCard] = useState<string | null>(null);
   const coarse = useCoarse();
 
   useEffect(() => { setPreview(new URLSearchParams(window.location.search).has('preview')); }, []);
@@ -221,6 +234,87 @@ export default function CityPage() {
     return () => window.removeEventListener('keydown', k);
   }, [moving]);
 
+  // ---------- Inside a building ----------
+
+  const appsOf = useCallback((id: string) => (data?.apps ?? []).filter((a) => a.channelId === id).map((a) => ({ id: a.id, title: a.title, thumbnail: a.thumbnail })), [data]);
+  const fetchBoard = async (id: string): Promise<ChannelBoard | null> => {
+    const r = await fetch(`/api/prototypes/kan/city/channel/${id}`).catch(() => null);
+    return r?.ok ? r.json() : null;
+  };
+  const enterBuilding = async (id: string) => {
+    const p = plotOf.get(id);
+    if (!p || !data || entering) return;
+    setEntering(id);
+    setPick(null); setBoard(null); setPlaying(null); setMoving(null);
+    const b = await fetchBoard(id);
+    if (!b) { setEntering(null); setNote('The door’s stuck. Try again in a moment.'); return; }
+    try {
+      engine.current?.enter({ channelId: id, name: p.name, resident: p.resident.name, theme: p.style.theme ?? null, walls: p.style.walls ?? null, style: p.interior }, b, appsOf(id), data.boss);
+    } catch (err) {
+      console.error('[city] enter', err);
+      engine.current?.leave();
+      setEntering(null);
+      setNote('Couldn’t get inside that one. Try again in a moment.');
+      return;
+    }
+    setInside({ id, board: b });
+    setInRoom(null);
+    setInPanel(null);
+    // A moment for the first frame to draw before the door swings open.
+    setTimeout(() => setEntering(null), 250);
+  };
+  const leaveBuilding = useCallback(() => {
+    engine.current?.leave();
+    setInside(null); setInNear(null); setInRoom(null); setInPanel(null);
+    setPick(null); setBoard(null); setBoardCard(null); setPlaying(null);
+  }, []);
+  const refreshInside = useCallback(async () => {
+    const id = inside?.id;
+    if (!id) return;
+    const b = await fetchBoard(id);
+    if (b) setInside((s) => (s && s.id === id ? { ...s, board: b } : s));
+  }, [inside?.id]);
+  const insidePlot = inside ? data?.plots.find((x) => x.channelId === inside.id) ?? null : null;
+  // New cards, apps or a new layout: the rooms catch up.
+  useEffect(() => {
+    if (!inside || !insidePlot) return;
+    engine.current?.updateInside(inside.board, appsOf(inside.id), insidePlot.interior, insidePlot.style.theme ?? null, insidePlot.style.walls ?? null);
+  }, [inside, insidePlot, appsOf]);
+  // The board changed elsewhere (a bot, Kan, another tab): fetch it again.
+  const insideStamp = insidePlot ? `${insidePlot.cards}|${insidePlot.lastActivityAt}|${insidePlot.apps}` : '';
+  useEffect(() => { if (insideStamp) void refreshInside(); }, [insideStamp, refreshInside]);
+  useEffect(() => { if (inside && data && !insidePlot) leaveBuilding(); }, [inside, data, insidePlot, leaveBuilding]);
+
+  const onInsidePickRef = useRef<(p: InsidePick) => void>(() => {});
+  onInsidePickRef.current = (p) => {
+    if (!inside) return;
+    setInPanel(null);
+    if (p.kind === 'exit') { leaveBuilding(); return; }
+    if (p.kind === 'card') { setPick(null); setBoardCard(p.id); setBoard(inside.id); return; }
+    if (p.kind === 'app') { setBoard(null); setPick({ kind: 'app', id: p.id }); setPlaying(p.id); return; }
+    onPickRef.current({ kind: 'bot', id: p.id });
+  };
+  const onLeaveRef = useRef<() => void>(() => {});
+  // Escape closes whatever's open first; with nothing open, it's the way out.
+  onLeaveRef.current = () => { if (!pick && !board && !inPanel) leaveBuilding(); };
+
+  const redecorate = async (body: { style?: InteriorStyle; ask?: string }) => {
+    if (!inside) return;
+    if (preview) { setNote('This is a preview with pretend bots, so buttons don’t do anything here.'); return; }
+    const e = engine.current;
+    setDecorating(true);
+    e?.kanInside(body.ask ? 'Let me see what I can do…' : 'Moving things around…', 30_000);
+    const r = await fetch('/api/prototypes/kan/city/interior', {
+      method: body.ask ? 'POST' : 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channelId: inside.id, ...body }),
+    }).catch(() => null);
+    const j = await r?.json().catch(() => ({})) ?? {};
+    await load();
+    setDecorating(false);
+    e?.kanInside(r?.ok ? (j.said ?? 'There you go!') : (j.error ?? 'That didn’t work.'), 5000);
+  };
+
   // Picks go through a ref so the engine's callback always sees the current mode.
   const onPickRef = useRef<(p: Pick | null) => void>(() => {});
   onPickRef.current = (p) => {
@@ -241,6 +335,10 @@ export default function CityPage() {
       onExitMode: () => setMode('map'),
       onModeChange: setMode,
       onCell: (c) => onCellRef.current(c),
+      onInsidePick: (p) => onInsidePickRef.current(p),
+      onInsideNear: setInNear,
+      onInsideRoom: setInRoom,
+      onLeave: () => onLeaveRef.current(),
     });
     engine.current.setSky(sky);
     return undefined;
@@ -289,7 +387,8 @@ export default function CityPage() {
     const apps = data?.apps ?? [];
     return { n: apps.length, earned: apps.reduce((n, a) => n + a.earnedCents, 0), selling: apps.filter((a) => a.tier !== 'free').length };
   }, [data]);
-  const focus = selectedPlot ? { channelId: selectedPlot.channelId, name: selectedPlot.name }
+  const focus = insidePlot && !selectedBot ? { channelId: insidePlot.channelId, name: insidePlot.name, kind: 'inside' }
+    : selectedPlot ? { channelId: selectedPlot.channelId, name: selectedPlot.name }
     : selectedBot ? { channelId: selectedBot.channelId, name: selectedBot.name }
     : selectedApp ? { channelId: selectedApp.channelId, name: `the app ${selectedApp.title}`, kind: 'app' }
     : board && plotOf.get(board) ? { channelId: board, name: plotOf.get(board)!.name }
@@ -298,6 +397,13 @@ export default function CityPage() {
 
   // Starters that fit what's on screen.
   const starters = useMemo(() => {
+    if (insidePlot) {
+      return [
+        { label: 'Rearrange it', prompt: `Rearrange the inside of ${insidePlot.name}: ` },
+        { label: 'What’s in here?', prompt: `Walk me through what’s in ${insidePlot.name} right now. What matters most?` },
+        { label: 'Add a card', prompt: `Add a card to ${insidePlot.name}: ` },
+      ];
+    }
     if (selectedPlot) {
       const p = selectedPlot;
       return [
@@ -313,7 +419,7 @@ export default function CityPage() {
     if (!counts.bots) s.push({ label: 'Which bots should I hire?', prompt: 'Which channels would a bot help most, and what would each one do?' });
     s.push({ label: 'Make a neighborhood', prompt: 'Help me group my channels into neighborhoods. Suggest a few, and wait for me to say yes.' });
     return s.slice(0, 4);
-  }, [selectedPlot, counts, data]);
+  }, [selectedPlot, insidePlot, counts, data]);
 
   // ---------- Actions ----------
 
@@ -354,8 +460,9 @@ export default function CityPage() {
     const e = engine.current;
     if (!e) return;
     const where = channelOfHref(s.href);
-    if (s.status === 'running' && s.write) e.kanSay(s.label, 'Kan is on it', 20_000);
+    if (s.status === 'running' && s.write) { e.kanSay(s.label, 'Kan is on it', 20_000); e.kanInside(s.label, 20_000); }
     if (s.status === 'done') {
+      if (s.write) e.kanInside(s.label, 5000);
       if (where) e.pulse(where, { tone: s.write ? 'write' : 'read', kanGoes: s.write });
       else if (s.write) e.pulse('townhall', { kanGoes: true });
       if (s.write) { e.kanSay(s.label, 'Kan', 6000); reloadSoon(); }
@@ -431,7 +538,7 @@ export default function CityPage() {
           {data && <Chip label={`$${(data.spend.todayCents / 100).toFixed(2)} today`} href="/prototypes/kan/bots?spend" />}
         </div>
         {/* On a phone it sits under the chips, on the right, so the chips get the row. */}
-        <div className="pointer-events-auto absolute right-3 top-[calc(max(10px,env(safe-area-inset-top))+40px)] flex flex-shrink-0 flex-col items-center gap-0.5 rounded-full border border-white/10 bg-neutral-950/75 p-0.5 shadow-lg backdrop-blur-xl sm:static sm:flex-row">
+        <div className={`pointer-events-auto absolute right-3 top-[calc(max(10px,env(safe-area-inset-top))+40px)] flex-shrink-0 flex-col items-center gap-0.5 rounded-full border border-white/10 bg-neutral-950/75 p-0.5 shadow-lg backdrop-blur-xl sm:static sm:flex-row ${inside ? 'hidden' : 'flex'}`}>
           {([['map', MapIcon, 'Map'], ['walk', Footprints, 'Walk'], ['drive', Car, 'Drive'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
             <button
               key={m}
@@ -446,7 +553,7 @@ export default function CityPage() {
       </div>
 
       {/* The latest thing that happened, as a ticker. Tap for the whole feed. */}
-      {latest && side !== 'feed' && !panelOpen && !gather && mode === 'map' && (
+      {latest && side !== 'feed' && !panelOpen && !gather && mode === 'map' && !inside && (
         <button
           onClick={() => setSide('feed')}
           className="absolute left-1/2 top-[calc(max(10px,env(safe-area-inset-top))+44px)] z-10 flex max-w-[min(560px,calc(100%-24px))] -translate-x-1/2 items-center gap-2 rounded-full bg-neutral-950/55 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur-xl hover:bg-neutral-950/75"
@@ -508,11 +615,11 @@ export default function CityPage() {
       )}
 
       {/* Behind the wheel or the wings. */}
-      {mode !== 'map' && (
+      {mode !== 'map' && !inside && (
         <>
           {near && !panelOpen && (
             <button
-              onClick={() => (near.kind === 'car' ? engine.current?.getIn() : onPickRef.current({ kind: near.kind, id: near.id } as Pick))}
+              onClick={() => (near.kind === 'car' ? engine.current?.getIn() : near.kind === 'plot' ? void enterBuilding(near.id) : onPickRef.current({ kind: near.kind, id: near.id } as Pick))}
               className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50"
               style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}
             >
@@ -547,8 +654,49 @@ export default function CityPage() {
         </>
       )}
 
+      {/* Inside a building. */}
+      {inside && insidePlot && (
+        <>
+          <div className="absolute left-1/2 top-[calc(max(10px,env(safe-area-inset-top))+46px)] z-20 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-neutral-950/80 p-1 shadow-2xl backdrop-blur-xl">
+            <button onClick={leaveBuilding} className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-white/20"><DoorOpen className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Leave</span></button>
+            <span className="min-w-0 truncate px-2 text-[13px] text-neutral-200">
+              <b className="font-semibold text-white">{inRoom && inRoom.kind !== 'lobby' ? inRoom.name : insidePlot.name}</b>
+              {inRoom?.count != null && <span className="text-neutral-400"> · {inRoom.count} {inRoom.kind === 'arcade' ? (inRoom.count === 1 ? 'app' : 'apps') : inRoom.count === 1 ? 'card' : 'cards'}</span>}
+            </span>
+            <IconBtn title="The board" onClick={() => { setInPanel(null); setBoardCard(null); setBoard(inside.id); }}><BookOpen className="h-4 w-4" /></IconBtn>
+            <IconBtn title="Invite someone over" onClick={() => { setPick(null); setBoard(null); setInPanel((x) => (x === 'invite' ? null : 'invite')); }}><UserPlus className="h-4 w-4" /></IconBtn>
+            <IconBtn title="Redecorate" onClick={() => { setPick(null); setBoard(null); setInPanel((x) => (x === 'redecorate' ? null : 'redecorate')); }}><Paintbrush className="h-4 w-4" /></IconBtn>
+            <IconBtn title="Turn left" onClick={() => engine.current?.turnInside(Math.PI / 4)}><RotateCcw className="h-4 w-4" /></IconBtn>
+            <IconBtn title="Turn right" onClick={() => engine.current?.turnInside(-Math.PI / 4)}><RotateCw className="h-4 w-4" /></IconBtn>
+          </div>
+          {inNear && !panelOpen && !inPanel && (
+            <button
+              onClick={() => onInsidePickRef.current(inNear.kind === 'exit' ? { kind: 'exit' } : { kind: inNear.kind, id: inNear.id })}
+              className="absolute left-1/2 z-20 flex max-w-[min(420px,calc(100%-24px))] -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50"
+              style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}
+            >
+              {inNear.kind === 'bot' ? <MessageCircle className="h-4 w-4 flex-shrink-0 text-violet-600" /> : inNear.kind === 'app' ? <Gamepad2 className="h-4 w-4 flex-shrink-0 text-pink-600" /> : inNear.kind === 'exit' ? <DoorOpen className="h-4 w-4 flex-shrink-0 text-emerald-600" /> : <BookOpen className="h-4 w-4 flex-shrink-0 text-violet-600" />}
+              <span className="truncate">{inNear.kind === 'bot' ? `Talk to ${inNear.name}` : inNear.kind === 'app' ? `Play ${inNear.name}` : inNear.kind === 'exit' ? 'Head outside' : `Read “${inNear.name}”`}</span>
+              {!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
+            </button>
+          )}
+          {(coarse || !wide) ? (
+            <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint="Walk" />
+          ) : (
+            <p className="absolute left-1/2 z-10 -translate-x-1/2 rounded-full bg-neutral-950/60 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur" style={{ bottom: chatH + 8 }}>
+              W A S D to walk · tap the floor to go there · drag to look around · E to use · Esc to leave
+            </p>
+          )}
+        </>
+      )}
+      {entering && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-neutral-950/85 backdrop-blur-sm">
+          <p className="flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-[13px] text-white"><DoorOpen className="h-4 w-4 animate-pulse" /> Going into {plotOf.get(entering)?.name}…</p>
+        </div>
+      )}
+
       {/* Camera controls, out of the way. */}
-      <div className={`absolute z-10 hidden flex-col gap-1 rounded-full bg-black/35 p-1 backdrop-blur ${mode === 'map' ? 'lg:flex' : ''}`} style={{ right: rightW + 12, bottom: chatH + 12 }}>
+      <div className={`absolute z-10 hidden flex-col gap-1 rounded-full bg-black/35 p-1 backdrop-blur ${mode === 'map' && !inside ? 'lg:flex' : ''}`} style={{ right: rightW + 12, bottom: chatH + 12 }}>
         <IconBtn title="Zoom in" onClick={() => engine.current?.zoomBy(1.3)}><ZoomIn className="h-4 w-4" /></IconBtn>
         <IconBtn title="Zoom out" onClick={() => engine.current?.zoomBy(1 / 1.3)}><ZoomOut className="h-4 w-4" /></IconBtn>
         <IconBtn title="Turn left" onClick={() => engine.current?.rotate(-1)}><RotateCcw className="h-4 w-4" /></IconBtn>
@@ -586,8 +734,9 @@ export default function CityPage() {
           name={plotOf.get(board)!.name}
           accent={STATUS_ACCENT}
           preview={preview}
-          onClose={() => { setBoard(null); setPick({ kind: 'plot', id: board }); }}
-          onChanged={() => { engine.current?.pulse(board); reloadSoon(); }}
+          openCard={boardCard}
+          onClose={() => { setBoard(null); setBoardCard(null); if (inside) void refreshInside(); else setPick({ kind: 'plot', id: board }); }}
+          onChanged={() => { engine.current?.pulse(board); reloadSoon(); if (inside) void refreshInside(); }}
           onAsk={(prompt) => ask(prompt, true)}
         />
       )}
@@ -631,6 +780,7 @@ export default function CityPage() {
               onGo={(id) => onPickRef.current({ kind: 'plot', id })}
               onTalk={() => onPickRef.current({ kind: 'bot', id: selectedPlot.channelId })}
               onRelocate={() => { setMoving(selectedPlot.channelId); setPick(null); if (mode !== 'map') setMode('map'); }}
+              onEnter={() => void enterBuilding(selectedPlot.channelId)}
             />
           ) : pick.kind === 'townhall' ? (
             <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onApply={(id) => void applyPass(id)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
@@ -644,6 +794,30 @@ export default function CityPage() {
             <ArrivalsPanel data={data} running={data.townHall.passRunning} onSort={() => ask('Sort what came in since you last looked.')} />
           ) : (
             <FreePanel running={data.townHall.passRunning} onAsk={ask} />
+          )}
+        </PickSheet>
+      )}
+
+      {inPanel && inside && insidePlot && !pick && !board && data && (
+        <PickSheet onClose={() => setInPanel(null)}>
+          {inPanel === 'redecorate' ? (
+            <Redecorate
+              name={insidePlot.name}
+              columns={inside.board.columns.map((c) => ({ id: c.id, name: c.name, cards: c.total }))}
+              apps={appsOf(inside.id).length}
+              style={insidePlot.interior}
+              canEdit={inside.board.channel.canEdit}
+              busy={decorating}
+              onSave={(style) => void redecorate({ style })}
+              onAsk={(ask) => void redecorate({ ask })}
+            />
+          ) : (
+            <InvitePanel
+              host={insidePlot}
+              plots={plots}
+              here={engine.current?.guests() ?? []}
+              onInvite={(id) => { engine.current?.invite(id); setInPanel(null); }}
+            />
           )}
         </PickSheet>
       )}
@@ -917,7 +1091,7 @@ function Feed({ data, onGo }: { data: CityData; onGo(id: string): void }) {
   );
 }
 
-function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onBoard, onMove, onNewHood, onGo, onTalk, onRelocate }: {
+function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onBoard, onMove, onNewHood, onGo, onTalk, onRelocate, onEnter }: {
   p: CityPlot;
   data: CityData;
   approvals: Approval[];
@@ -932,6 +1106,7 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
   onGo(id: string): void;
   onTalk(): void;
   onRelocate(): void;
+  onEnter(): void;
 }) {
   const maxCol = Math.max(1, ...p.columns.map((c) => c.cards));
   const s = STATUS[p.bot.status];
@@ -954,6 +1129,11 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
           <span><span className="text-neutral-500">{p.attention === 'muted' ? 'Muted' : p.attention === 'quiet' ? 'Quiet' : 'Active'}.</span> {p.attentionWhy}</span>
         </p>
       )}
+
+      {/* Walk in: every column is a room. */}
+      <button onClick={onEnter} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-3 py-2.5 text-[14px] font-semibold text-white shadow-lg hover:bg-violet-500">
+        <DoorOpen className="h-4 w-4" /> Go inside
+      </button>
 
       {/* The board, right here. */}
       <button onClick={onBoard} className="group mt-3 block w-full rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left hover:border-violet-400/50">
@@ -1083,6 +1263,40 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Someone to have over: neighbors first, then everyone else in town. */
+function InvitePanel({ host, plots, here, onInvite }: { host: CityPlot; plots: CityPlot[]; here: string[]; onInvite(id: string): void }) {
+  const others = plots.filter((p) => p.channelId !== host.channelId);
+  const neighbors = host.folderId ? others.filter((p) => p.folderId === host.folderId) : [];
+  const rest = others.filter((p) => !neighbors.includes(p)).sort((a, b) => a.resident.name.localeCompare(b.resident.name));
+  const row = (p: CityPlot) => (
+    <li key={p.channelId} className="flex items-center gap-2.5 py-1">
+      <ShroomBot seed={hash(p.channelId)} status={p.bot.status} size={28} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium text-neutral-100">{p.resident.name}</span>
+        <span className="block truncate text-[11px] text-neutral-500">from {p.name}</span>
+      </span>
+      {here.includes(p.channelId)
+        ? <span className="flex-shrink-0 text-[11px] text-emerald-300">Here</span>
+        : <button onClick={() => onInvite(p.channelId)} className="flex-shrink-0 rounded-full bg-violet-600 px-3 py-1 text-[12px] font-medium text-white hover:bg-violet-500">Invite</button>}
+    </li>
+  );
+  return (
+    <div>
+      <p className="pr-8 text-[11px] uppercase tracking-wider text-neutral-500">Have someone over</p>
+      <h3 className="mt-0.5 pr-8 text-[19px] font-semibold leading-tight text-neutral-50">Invite a bot into {host.name}</h3>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-neutral-400">They come in the front door and find you. Tap them to talk, here among {host.resident.name}’s things.</p>
+      {neighbors.length > 0 && (
+        <>
+          <p className="mb-1 mt-3 text-[11px] uppercase tracking-wider text-neutral-500">Neighbors</p>
+          <ul>{neighbors.map(row)}</ul>
+        </>
+      )}
+      <p className="mb-1 mt-3 text-[11px] uppercase tracking-wider text-neutral-500">{neighbors.length ? 'Around town' : 'Everyone in town'}</p>
+      <ul>{rest.map(row)}</ul>
     </div>
   );
 }
@@ -1352,4 +1566,7 @@ const LABEL_CSS = `
 .kc-bubble-kan { background: #f1eaff; color: #24163f; }
 .kc-bubble-kan::after { border-top-color: #f1eaff; }
 .kc-bubble-kan .kc-bubble-kicker { color: #6d28d9; }
+.kc-labels.kc-inside > :not(.kc-in-labels) { display: none !important; }
+.kc-in-labels .kc-card { pointer-events: none; width: max-content; max-width: 260px; white-space: normal; text-align: center; font-size: 12px; }
+.kc-in-labels .kc-bubble { width: max-content; }
 `;

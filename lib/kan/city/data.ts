@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import {
   appOrders, appPurchases, appUsers, attentionPasses, botApprovals, botRuns, cards, channelActivityLog, channelBots, channels, columns, folders,
-  instructionCards, instructionRuns, kanwatchEpisodes, playgroundApps, playgroundAppVersions, userChannelOrg, type AttentionDecisionJson,
+  instructionCards, instructionRuns, kanwatchEpisodes, playgroundApps, playgroundAppVersions, userChannelOrg, users, type AttentionDecisionJson,
 } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import { gatherAreas, gatherInputs, type InputItem } from '@/lib/kan/attention/inputs'
@@ -9,6 +9,8 @@ import { layoutCity, ARCHETYPE_LABEL } from '@/lib/kan/city/layout'
 import { limitsFor, spentByOwner } from '@/lib/kan/bots/spend'
 import { residentOf } from './residents'
 import { parseStyle } from './style'
+import { parseInterior } from './interior'
+import { callName } from './talk'
 
 /**
  * Your channels as a city, and what's happening in it right now: which bots
@@ -257,6 +259,8 @@ export async function cityFor(userId: string) {
       pinned: Boolean(pinOf(bot, userId)),
       // A look the owner asked Kan for: a theme, a kind of building, colors.
       style: parseStyle(bot?.plotStyle),
+      // How the inside is laid out, when someone rearranged it.
+      interior: parseInterior(bot?.interiorStyle),
       bot: {
         on: Boolean(bot?.enabled),
         everyHours: bot?.everyHours ?? 24,
@@ -390,5 +394,7 @@ export async function cityFor(userId: string) {
     done,
     spend: { todayCents: Math.round(spent / 1000), dayCapCents: limits.dailyCapCents },
     names: Object.fromEntries(areaName),
+    // What the residents call you.
+    boss: callName(await db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } })),
   }
 }

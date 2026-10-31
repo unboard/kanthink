@@ -4,6 +4,7 @@ import { and, desc, eq, gt, inArray, ne } from 'drizzle-orm'
 import type { AgentTool, ToolContext } from '@/lib/kan/agent/tools'
 import { ARCHETYPE_LABEL } from './layout'
 import { cleanStyle, parseStyle, PLOT_BUILDINGS, PLOT_THEMES, type PlotStyle } from './style'
+import { FEATURES, FLOORS, INTERIOR_PLANS, LIGHTS, parseInterior, ROOM_DISPLAYS, roomKey, type InteriorStyle } from './interior'
 
 /**
  * What Kan can do from Kan City, on top of everything the agent already does: run
@@ -32,6 +33,71 @@ async function findOwnChannel(ref: string, ctx: ToolContext) {
 }
 
 export const cityTools: AgentTool[] = [
+  {
+    name: 'arrange_interior',
+    description: 'Rearrange the inside of a channel’s building, which they can walk around: each column is a room with its cards on the walls, apps are arcade cabinets. Change the floor plan, how a room shows its cards, the floor, the lights, the wall color, lobby features, room accent colors, and which rooms come first. Only what you pass changes; cards, columns and the bot are untouched. Set reset to go back to the default layout.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string', description: 'The channel’s id or name' },
+        plan: { type: 'string', enum: Object.keys(INTERIOR_PLANS), description: Object.entries(INTERIOR_PLANS).map(([k, v]) => `${k}: ${v}`).join('; ') },
+        floor: { type: 'string', enum: Object.keys(FLOORS) },
+        light: { type: 'string', enum: Object.keys(LIGHTS), description: Object.entries(LIGHTS).map(([k, v]) => `${k}: ${v}`).join('; ') },
+        walls: { type: 'string', description: 'Wall color as #rrggbb' },
+        features: { type: 'array', items: { type: 'string', enum: Object.keys(FEATURES) }, description: `The full list of lobby features to have (replaces the current list; a lobby starts with plants, sofa and lamps): ${Object.entries(FEATURES).map(([k, v]) => `${k} (${v})`).join('; ')}` },
+        rooms: {
+          type: 'array',
+          description: 'Per-room changes, by column name',
+          items: {
+            type: 'object',
+            properties: {
+              column: { type: 'string', description: 'The column’s name' },
+              display: { type: 'string', enum: Object.keys(ROOM_DISPLAYS), description: Object.entries(ROOM_DISPLAYS).map(([k, v]) => `${k}: ${v}`).join('; ') },
+              color: { type: 'string', description: 'Accent color as #rrggbb' },
+            },
+            required: ['column'],
+          },
+        },
+        order: { type: 'array', items: { type: 'string' }, description: 'Column names, the room to put first first' },
+        reset: { type: 'boolean', description: 'Back to the default layout' },
+      },
+      required: ['channel'],
+    },
+    kind: 'write',
+    running: (i) => `Rearranging inside ${str(i.channel) || 'a building'}`,
+    async run(input, ctx) {
+      const ch = await findOwnChannel(str(input.channel), ctx)
+      if (!ch) return { content: `No channel of theirs called "${str(input.channel)}".`, isError: true }
+      const { ensureBot } = await import('@/lib/kan/bots/run')
+      const { saveInterior } = await import('./redecorate')
+      const bot = await ensureBot(ch.id, ch.ownerId)
+      const now: InteriorStyle = input.reset === true ? {} : parseInterior(bot.interiorStyle)
+      const next: Record<string, unknown> = { ...now }
+      if (input.reset !== true) {
+        for (const k of ['plan', 'floor', 'light', 'walls', 'features'] as const) if (input[k] != null) next[k] = input[k]
+        if (Array.isArray(input.order)) next.order = input.order
+        if (Array.isArray(input.rooms)) {
+          const rooms = { ...(now.rooms ?? {}) } as Record<string, Record<string, unknown>>
+          for (const r of input.rooms as Record<string, unknown>[]) {
+            const key = roomKey(str(r?.column))
+            if (!key) continue
+            rooms[key] = { ...(rooms[key] ?? {}), ...(r.display ? { display: r.display } : {}), ...(r.color ? { color: r.color } : {}) }
+          }
+          next.rooms = rooms
+        }
+      }
+      const out = await saveInterior(ctx.userId, ch.id, next)
+      if ('error' in out) return { content: out.error, isError: true }
+      const s = out.style
+      const desc = [s.plan && `${s.plan} plan`, s.floor && `${s.floor} floor`, s.light && `${s.light} light`, s.features?.length && s.features.join(', '),
+        ...Object.entries(s.rooms ?? {}).map(([k, v]) => `${k}: ${[v.display, v.color].filter(Boolean).join(' ')}`)].filter(Boolean).join('; ')
+      return {
+        content: desc ? `Inside ${ch.name} is now: ${desc}. It rearranges itself while they watch.` : `Inside ${ch.name} is back to its default layout.`,
+        label: `Rearranged inside ${ch.name}`,
+        href: channelHref(ch.id),
+      }
+    },
+  },
   {
     name: 'move_plot',
     description: 'Move a channel’s building to a different spot in the city, right next to another channel’s building ("put Lennon next to Scarlett"). It goes on the same block when there’s room, else across the road; if the lot is taken, the two swap. Nothing else moves, and the channel itself is untouched. Moving a channel into a neighborhood (arrange_neighborhood) moves it to that district instead.',
@@ -362,7 +428,9 @@ export const cityTools: AgentTool[] = [
 /** What Kan knows about where the user is standing, appended to its prompt. */
 export function cityPrompt(city: { focus?: { channelId?: string; name?: string; kind?: string } | null }): string {
   const f = city.focus
-  const here = f?.channelId
+  const here = f?.kind === 'inside' && f.channelId
+    ? `They are inside the ${f.name} building (channelId:${f.channelId}), walking its rooms: each column is a room with its cards on the walls, its apps are arcade cabinets, and its resident works the front desk. "This", "here" and "in here" mean that channel. If they want the rooms changed (a library, a fireplace, different lights, the Done room first), use arrange_interior.`
+    : f?.channelId
     ? `They are looking at ${f.name} (channelId:${f.channelId}) right now, so "this", "here" and "its bot" mean that channel.`
     : f?.kind === 'townhall' ? 'They are looking at Town Hall, where approvals, bot questions and Kan’s plan wait.' : 'They are looking at the whole city.'
   return `
@@ -375,5 +443,6 @@ They are talking to you from Kan City: a map of their channels as a town. Each c
 - A new channel is a new building: when you make one, put it in the neighborhood it belongs to (arrange_neighborhood) if one fits, and say where it went up.
 - They can move any building next to another just by asking: use move_plot. They can also tap Move on a building and pick a lot.
 - They can change how any building looks just by asking ("make Lennon's building cat themed"): use restyle_plot. It only changes the look.
+- Every building has an inside they can walk around. They can change it just by asking ("make the Ideas room a gallery", "open plan with party lights"): use arrange_interior.
 - The city redraws as you act, so keep replies short; they can see the change happen.`
 }

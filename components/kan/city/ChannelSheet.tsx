@@ -23,8 +23,10 @@ export function ChannelSheet(props: {
   onClose(): void;
   onChanged?(): void;
   onAsk?(prompt: string): void;
+  /** Open straight to this card, e.g. one you tapped on a wall inside the building. */
+  openCard?: string | null;
 }) {
-  const { channelId, name, accent = '#8b5cf6', preview, onClose, onChanged, onAsk } = props;
+  const { channelId, name, accent = '#8b5cf6', preview, onClose, onChanged, onAsk, openCard } = props;
   const [board, setBoard] = useState<ChannelBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [colId, setColId] = useState<string | null>(null);
@@ -46,10 +48,10 @@ export function ChannelSheet(props: {
 
   useEffect(() => {
     setBoard(null);
-    setOpenId(null);
+    setOpenId(openCard ?? null);
     setColId(null);
     void load();
-  }, [load]);
+  }, [load, openCard]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

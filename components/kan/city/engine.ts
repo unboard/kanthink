@@ -10,6 +10,10 @@ import {
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
 import { decorate, THEME_COLORS } from './themes';
+import { Inside, type InsideApp, type InsideNear, type InsideOf, type InsidePick } from './inside';
+import type { ChannelBoard } from '@/lib/kan/city/channel';
+import type { InteriorStyle } from '@/lib/kan/city/interior';
+import type { PlotTheme } from '@/lib/kan/city/style';
 
 /**
  * Kan City's scene. It draws the city once per layout and then only moves what the
@@ -102,6 +106,14 @@ export interface EngineCallbacks {
   onCell?(c: { cx: number; cz: number }): void;
   /** The engine changed mode on its own, e.g. you parachuted out of the glider and are on foot now. */
   onModeChange?(mode: ViewMode): void;
+  /** Inside a building: you tapped (or pressed E at) a card, an app, someone, or the way out. */
+  onInsidePick?(p: InsidePick): void;
+  /** Inside a building: what you're standing next to. */
+  onInsideNear?(n: InsideNear | null): void;
+  /** Inside a building: the room you walked into. */
+  onInsideRoom?(r: { name: string; count: number | null; kind: string }): void;
+  /** You asked to leave the building (Escape). */
+  onLeave?(): void;
 }
 
 /** How you see the city: the map from above, or first person on foot, at the wheel or on the wings. */
@@ -132,6 +144,10 @@ export class CityEngine {
   private parked: { obj: THREE.Group; x: number; z: number; heading: number } | null = null;
   /** The plot being moved, while you pick its new lot. */
   private placing: string | null = null;
+  /** The building you're inside, if any: its own scene, drawn instead of the city. */
+  private inside: Inside | null = null;
+  private insideId: string | null = null;
+  private dragX = 0;
   /** The resident you're talking with. */
   private talking: string | null = null;
   private kanLean = 0;
@@ -296,6 +312,7 @@ export class CityEngine {
    * is, turns to face you, and stays until you're done.
    */
   talkTo(plotId: string | null) {
+    this.inside?.talkTo(plotId);
     const prev = this.talking ? this.citizens.get(this.talking) : null;
     this.talking = plotId;
     if (prev && prev.plotId !== plotId) this.release(prev);
@@ -310,6 +327,7 @@ export class CityEngine {
 
   /** A line over a resident's head, for a few seconds or as long as it takes to read. */
   botSay(plotId: string, text: string, kicker?: string) {
+    this.inside?.say(plotId, text);
     const c = this.citizens.get(plotId);
     if (!c) return;
     c.bubble.innerHTML = '';
@@ -353,6 +371,78 @@ export class CityEngine {
     c.goal = '';
     const p = this.plots.get(c.plotId)?.plot;
     if (p) this.route(c, p, -1);
+  }
+
+  /**
+   * Go into a building. The city keeps its place (and your car, or wherever you
+   * were), and the building's rooms are drawn instead until you leave.
+   */
+  enter(of: InsideOf, board: ChannelBoard, apps: InsideApp[], boss: string) {
+    this.leaveInside();
+    this.endChute();
+    this.keys.clear();
+    this.inside = new Inside(of, board, apps, this.labels, {
+      onPick: (p) => this.cb.onInsidePick?.(p),
+      onNear: (n) => this.cb.onInsideNear?.(n),
+      onRoom: (r) => this.cb.onInsideRoom?.(r),
+    }, boss);
+    this.insideId = of.channelId;
+    this.inside.resize((this.host.clientWidth || 1) / (this.host.clientHeight || 1));
+    this.labels.classList.add('kc-inside');
+    this.controls.enabled = false;
+    this.near = null;
+    this.cb.onNear?.(null);
+    this.renderer.domElement.style.cursor = 'grab';
+  }
+
+  /** Fresh cards, apps or layout for the building you're in. */
+  updateInside(board: ChannelBoard, apps: InsideApp[], style: InteriorStyle, theme: PlotTheme | null, walls: string | null) {
+    this.inside?.update(board, apps, style, theme, walls);
+  }
+
+  /** Out the front door: on foot outside it, or back to the map if that's where you came from. */
+  leave() {
+    const id = this.insideId;
+    this.leaveInside();
+    this.controls.enabled = this.mode === 'map';
+    if (!id || this.mode === 'map' || !this.grid) return;
+    const door = this.doorOf(id);
+    const v = this.plots.get(id);
+    if (!door || !v) return;
+    // Whatever you came in, you come out walking; a car waits where you left it.
+    const p = this.player;
+    if (p && this.mode === 'drive') {
+      (p.obj.userData.driver as THREE.Object3D | undefined)?.removeFromParent();
+      this.parked = { obj: p.obj, x: p.x, z: p.z, heading: p.heading };
+    } else p?.obj.removeFromParent();
+    const walker = this.makeWalker();
+    this.scene.add(walker);
+    const spot = this.walkable(door.x, door.z) ? { x: door.x, z: door.z } : this.nearestWalkable(door.x, door.z);
+    const heading = Math.atan2(spot.x - v.center.x, spot.z - v.center.z);
+    this.player = { obj: walker, x: spot.x, y: GROUND_Y, z: spot.z, heading, speed: 0, roll: 0 };
+    const f = this.forward(heading);
+    this.persp.position.set(spot.x - f.x * 8.5, 4.6, spot.z - f.z * 8.5);
+    this.persp.lookAt(spot.x + f.x * 5, 2.2, spot.z + f.z * 5);
+    if (this.mode !== 'walk') { this.mode = 'walk'; this.cb.onModeChange?.('walk'); }
+  }
+
+  isInside() { return this.insideId; }
+  /** Another resident comes over to the building you're in. */
+  invite(id: string) {
+    const v = this.plots.get(id);
+    if (v) this.inside?.invite(id, v.plot.resident.name, hash(id));
+  }
+  guests() { return this.inside?.guests() ?? []; }
+  kanInside(text: string | null, ms?: number) { this.inside?.kanHere(text, ms); }
+  turnInside(by: number) { this.inside?.turn(by); }
+
+  private leaveInside() {
+    if (!this.inside) return;
+    this.inside.dispose();
+    this.inside = null;
+    this.insideId = null;
+    this.labels.classList.remove('kc-inside');
+    this.cb.onInsideNear?.(null);
   }
 
   /**
@@ -611,6 +701,7 @@ export class CityEngine {
     window.removeEventListener('keyup', this.onKey);
     window.removeEventListener('blur', this.onBlur);
     this.controls.dispose();
+    this.leaveInside();
     this.clearCity();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -1332,6 +1423,14 @@ export class CityEngine {
     const t = this.elapsed;
     this.watchFps(raw);
 
+    if (this.inside) {
+      // Inside a building, only the building is drawn; the city waits as it was.
+      this.inside.step(dt, this.input());
+      this.renderer.render(this.inside.scene, this.inside.camera);
+      this.inside.placeLabels(this.host.clientWidth, this.host.clientHeight);
+      return;
+    }
+
     if (this.focusAnim) {
       const f = this.focusAnim;
       f.t = Math.min(1, f.t + dt * 1.8);
@@ -1819,8 +1918,18 @@ export class CityEngine {
   private onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-    if (this.mode === 'map') return;
     const key = e.key.toLowerCase();
+    if (this.inside) {
+      if (e.type === 'keydown') {
+        if (key === 'escape') { this.cb.onLeave?.(); return; }
+        if (key === 'q' || key === '[') { this.inside.turn(Math.PI / 4); return; }
+        if (key === ']') { this.inside.turn(-Math.PI / 4); return; }
+        this.keys.add(key);
+        if (key.startsWith('arrow') || key === ' ') e.preventDefault();
+      } else this.keys.delete(key);
+      return;
+    }
+    if (this.mode === 'map') return;
     if (e.type === 'keydown') {
       if (key === 'escape') { this.cb.onExitMode?.(); return; }
       if (key === ' ' && this.mode === 'fly') { e.preventDefault(); this.jump(); return; }
@@ -1951,12 +2060,21 @@ export class CityEngine {
     return (hits[0]?.object.userData.pick as Pick | undefined) ?? null;
   }
 
-  private onDown = (e: PointerEvent) => { this.down = { x: e.clientX, y: e.clientY }; this.focusAnim = null; };
+  private onDown = (e: PointerEvent) => { this.down = { x: e.clientX, y: e.clientY }; this.dragX = e.clientX; this.focusAnim = null; };
+  private ndc(clientX: number, clientY: number) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    return new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+  }
   private onUp = (e: PointerEvent) => {
     if (!this.down) return;
     const moved = Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y);
     this.down = null;
     if (moved > 6) return;
+    if (this.inside) {
+      const p = this.inside.tap(this.ndc(e.clientX, e.clientY));
+      if (p) this.cb.onInsidePick?.(p);
+      return;
+    }
     if (this.placing) {
       const c = this.cellAt(e.clientX, e.clientY);
       if (c) this.cb.onCell?.(c);
@@ -1966,10 +2084,17 @@ export class CityEngine {
   };
   private hoverQueued = false;
   private onMove = (e: PointerEvent) => {
+    if (this.inside && this.down) {
+      // Dragging inside turns the camera around you.
+      this.inside.turn(-(e.clientX - this.dragX) * 0.008);
+      this.dragX = e.clientX;
+      return;
+    }
     if (this.down || this.hoverQueued || e.pointerType !== 'mouse') return;
     this.hoverQueued = true;
     requestAnimationFrame(() => {
       this.hoverQueued = false;
+      if (this.inside) { this.renderer.domElement.style.cursor = this.inside.hover(this.ndc(e.clientX, e.clientY)) ? 'pointer' : 'grab'; return; }
       if (this.placing) { this.showPlacing(this.cellAt(e.clientX, e.clientY)); return; }
       const p = this.pickAt(e.clientX, e.clientY);
       const name = p?.kind === 'plot' ? this.plots.get(p.id)?.plot.name ?? null : null;
@@ -2003,6 +2128,7 @@ export class CityEngine {
     this.camera.updateProjectionMatrix();
     this.persp.aspect = aspect;
     this.persp.updateProjectionMatrix();
+    this.inside?.resize(aspect);
   }
 
   private placeCamera() {
