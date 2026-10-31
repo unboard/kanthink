@@ -64,3 +64,13 @@ describe('Kan City', () => {
     for (const p of path) { expect(p.x === prev.x || p.z === prev.z).toBe(true); prev = p }
   })
 })
+
+describe('plot styles', () => {
+  it('keeps only known themes, buildings and hex colors', async () => {
+    const { cleanStyle, parseStyle } = await import('@/lib/kan/city/style')
+    expect(cleanStyle({ theme: 'cat', building: 'house', walls: '#FBE3C8', roof: '#f28fae' })).toEqual({ theme: 'cat', building: 'house', walls: '#fbe3c8', roof: '#f28fae' })
+    expect(cleanStyle({ theme: 'dragons', building: 'volcano', walls: 'red', roof: 'url(x)' })).toEqual({})
+    expect(parseStyle('{not json')).toEqual({})
+    expect(parseStyle(null)).toEqual({})
+  })
+})

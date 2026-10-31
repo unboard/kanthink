@@ -247,6 +247,9 @@ export interface BuildOpts {
   /** 0 to 1: share of windows lit. */
   lit: number;
   muted: boolean;
+  /** Colors the owner chose (a theme's, or their own), instead of a random pick. */
+  wall?: string;
+  roof?: string;
 }
 
 export interface Built {
@@ -292,8 +295,11 @@ function smoke(g: THREE.Object3D, x: number, y: number, z: number, color = '#e9e
 export function building(kind: Archetype, o: BuildOpts): Built {
   const g = new THREE.Group();
   const r = rng(o.seed);
-  const wall = o.muted ? '#c9c6cf' : WALLS[Math.floor(r() * WALLS.length)];
-  const roof = o.muted ? '#8d8a96' : ROOFS[Math.floor(r() * ROOFS.length)];
+  // Drawn either way, so a chosen color doesn't shift the rest of the building's dice.
+  const pickedWall = WALLS[Math.floor(r() * WALLS.length)];
+  const pickedRoof = ROOFS[Math.floor(r() * ROOFS.length)];
+  const wall = o.muted ? '#c9c6cf' : o.wall ?? pickedWall;
+  const roof = o.muted ? '#8d8a96' : o.roof ?? pickedRoof;
   const lit = o.muted ? 0 : o.lit;
   const s = o.size;
   let top = 4;

@@ -2,6 +2,8 @@ import { db } from '@/lib/db'
 import { attentionPasses, botRuns, channelBots, channels, folders, userChannelOrg } from '@/lib/db/schema'
 import { and, desc, eq, gt, inArray, ne } from 'drizzle-orm'
 import type { AgentTool, ToolContext } from '@/lib/kan/agent/tools'
+import { ARCHETYPE_LABEL } from './layout'
+import { cleanStyle, parseStyle, PLOT_BUILDINGS, PLOT_THEMES, type PlotStyle } from './style'
 
 /**
  * What Kan can do from Kan City, on top of everything the agent already does: run
@@ -20,7 +22,55 @@ async function ownChannel(channelId: string, ctx: ToolContext) {
 
 const NOT_YOURS = { content: 'That channel isn’t one they own, so its bot can’t be changed from here.', isError: true }
 
+/** A channel of theirs by id, or failing that by name. */
+async function findOwnChannel(ref: string, ctx: ToolContext) {
+  const byId = await ownChannel(ref, ctx)
+  if (byId) return byId
+  const mine = await db.query.channels.findMany({ where: and(eq(channels.ownerId, ctx.userId), eq(channels.status, 'active')), columns: { id: true, name: true, ownerId: true } })
+  const q = ref.toLowerCase().trim()
+  return mine.find((c) => c.name.toLowerCase() === q) ?? mine.find((c) => c.name.toLowerCase().includes(q)) ?? null
+}
+
 export const cityTools: AgentTool[] = [
+  {
+    name: 'restyle_plot',
+    description: 'Change how a channel’s building looks in the city: a theme (decorations and colors), the kind of building, and/or its wall and roof colors. Only the look changes; the channel, its cards and its bot are untouched. Pick a building kind that suits the theme when the current one doesn’t (a cat theme reads best on a house, cafe or studio). Set reset to go back to how Kan drew it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string', description: 'The channel’s id or name' },
+        theme: { type: 'string', enum: [...Object.keys(PLOT_THEMES), 'none'], description: `One of: ${Object.entries(PLOT_THEMES).map(([k, v]) => `${k} (${v.split(':')[1]?.trim()})`).join('; ')}. "none" removes the theme.` },
+        building: { type: 'string', enum: PLOT_BUILDINGS, description: 'The kind of building' },
+        walls: { type: 'string', description: 'Wall color as #rrggbb' },
+        roof: { type: 'string', description: 'Roof color as #rrggbb' },
+        reset: { type: 'boolean', description: 'Back to Kan’s own look' },
+      },
+      required: ['channel'],
+    },
+    kind: 'write',
+    running: (i) => `Restyling ${str(i.channel) || 'a building'}`,
+    async run(input, ctx) {
+      const ch = await findOwnChannel(str(input.channel), ctx)
+      if (!ch) return { content: `No channel of theirs called "${str(input.channel)}". Check city_bots for the name.`, isError: true }
+      const { ensureBot } = await import('@/lib/kan/bots/run')
+      const bot = await ensureBot(ch.id, ch.ownerId)
+      let next: PlotStyle = input.reset === true ? {} : parseStyle(bot.plotStyle)
+      if (input.reset !== true) {
+        const asked = cleanStyle({ theme: input.theme, building: input.building, walls: input.walls, roof: input.roof })
+        next = { ...next, ...asked }
+        if (input.theme === 'none') delete next.theme
+        const bad = (['walls', 'roof'] as const).filter((k) => input[k] != null && !asked[k])
+        if (bad.length) return { content: `${bad.join(' and ')} must be a hex color like #f28fae. Nothing changed.`, isError: true }
+      }
+      await db.update(channelBots).set({ plotStyle: Object.keys(next).length ? JSON.stringify(next) : null, updatedAt: new Date() }).where(eq(channelBots.channelId, ch.id))
+      const desc = [next.theme && `${next.theme} theme`, next.building && ARCHETYPE_LABEL[next.building]?.toLowerCase(), next.walls && `${next.walls} walls`, next.roof && `${next.roof} roof`].filter(Boolean).join(', ')
+      return {
+        content: desc ? `${ch.name} now looks like: ${desc}. The city redraws it now.` : `${ch.name} is back to the way Kan drew it.`,
+        label: desc ? `Restyled ${ch.name}: ${desc}` : `${ch.name} back to its own look`,
+        href: channelHref(ch.id),
+      }
+    },
+  },
   {
     name: 'city_bots',
     description: 'Every channel in their city by neighborhood, with its bot: on or off, how often it works, what it last did, whether it is at work now. Use before changing bots or neighborhoods, or when they ask who is doing what.',
@@ -297,5 +347,6 @@ They are talking to you from Kan City: a map of their channels as a town. Each c
 - Neighborhoods are folders and fences: bots help each other inside one and never reach outside it. Downtown (no folder) bots keep to their own channel.
 - Never ask which channel something is in: find it with find_cards. To move cards between channels use move_cards_to_channel (move_card only changes columns).
 - A new channel is a new building: when you make one, put it in the neighborhood it belongs to (arrange_neighborhood) if one fits, and say where it went up.
+- They can change how any building looks just by asking ("make Lennon's building cat themed"): use restyle_plot. It only changes the look.
 - The city redraws as you act, so keep replies short; they can see the change happen.`
 }

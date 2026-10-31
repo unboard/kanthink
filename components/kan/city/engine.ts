@@ -9,6 +9,7 @@ import {
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
+import { decorate, THEME_COLORS } from './themes';
 
 /**
  * Kan City's scene. It draws the city once per layout and then only moves what the
@@ -259,7 +260,7 @@ export class CityEngine {
   }
 
   setData(data: CityData) {
-    const key = JSON.stringify([data.layout.cols, data.layout.rows, data.plots.map((p) => [p.channelId, p.archetype, p.cx, p.cz, p.size, p.attention]), data.proposals.map((p) => p.name), data.apps.map((a) => [a.id, a.tier, a.title, a.price, Math.round(a.earnedCents / 100)])]);
+    const key = JSON.stringify([data.layout.cols, data.layout.rows, data.plots.map((p) => [p.channelId, p.archetype, p.cx, p.cz, p.size, p.attention, p.style]), data.proposals.map((p) => p.name), data.apps.map((a) => [a.id, a.tier, a.title, a.price, Math.round(a.earnedCents / 100)])]);
     const first = !this.grid;
     if (key !== this.layoutKey) {
       this.layoutKey = key;
@@ -891,7 +892,20 @@ export class CityEngine {
 
   private addPlot(grid: Grid, p: CityPlot, rise = false, grewFrom: number | null = null): number {
     const seed = hash(p.channelId);
-    const built = building(p.archetype, { size: p.size, seed, lit: this.litFor(p), muted: p.attention === 'muted' });
+    const style = p.style ?? {};
+    const themed = style.theme ? THEME_COLORS[style.theme] : null;
+    const built = building(style.building ?? p.archetype, {
+      size: p.size, seed, lit: this.litFor(p), muted: p.attention === 'muted',
+      wall: style.walls ?? themed?.walls, roof: style.roof ?? themed?.roof,
+    });
+    if (style.theme) {
+      // A theme's decorations go on before the building's placed, in its own coordinates.
+      const tick = decorate(style.theme, built.group, built.top, seed);
+      if (tick) {
+        const prev = built.tick;
+        built.tick = prev ? (t, dt) => { prev(t, dt); tick(t, dt); } : tick;
+      }
+    }
     if (grewFrom !== null && built.top > 0) {
       // It got bigger: build it up from where it was, with a pulse when it tops out.
       built.group.userData.dynamic = true;

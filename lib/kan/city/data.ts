@@ -8,6 +8,7 @@ import { gatherAreas, gatherInputs, type InputItem } from '@/lib/kan/attention/i
 import { layoutCity, ARCHETYPE_LABEL } from '@/lib/kan/city/layout'
 import { limitsFor, spentByOwner } from '@/lib/kan/bots/spend'
 import { residentOf } from './residents'
+import { parseStyle } from './style'
 
 /**
  * Your channels as a city, and what's happening in it right now: which bots
@@ -224,7 +225,7 @@ export async function cityFor(userId: string) {
     const waiting = pending.filter((x) => x.channelId === p.channelId)
     return {
       ...p,
-      kind: ARCHETYPE_LABEL[p.archetype],
+      kind: ARCHETYPE_LABEL[parseStyle(bot?.plotStyle).building ?? p.archetype],
       // Went up in the last three days: it wears a "New" badge and always says its name.
       isNew: (madeAt.get(p.channelId) ?? 0) > now - 3 * 24 * HOUR,
       folderId: folderIdOf.get(p.channelId) ?? null,
@@ -243,6 +244,8 @@ export async function cityFor(userId: string) {
       // The mushroom who lives here: its name, voice and personality, for talking with it.
       resident: residentOf({ id: p.channelId, name: p.name }, bot),
       named: Boolean(bot?.name),
+      // A look the owner asked Kan for: a theme, a kind of building, colors.
+      style: parseStyle(bot?.plotStyle),
       bot: {
         on: Boolean(bot?.enabled),
         everyHours: bot?.everyHours ?? 24,

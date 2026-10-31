@@ -2050,6 +2050,8 @@ export const channelBots = sqliteTable('channel_bots', {
   personality: text('personality'),
   /** The card whose thread holds the conversation you're having with it now. */
   chatCardId: text('chat_card_id'),
+  /** How its plot looks when the owner asked for something else: JSON, read through lib/kan/city/style. */
+  plotStyle: text('plot_style'),
   lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
   nextRunAt: integer('next_run_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
