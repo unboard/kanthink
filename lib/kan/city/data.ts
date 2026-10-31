@@ -104,7 +104,7 @@ export async function cityFor(userId: string) {
     db.query.playgroundApps.findMany({
       where: inArray(playgroundApps.channelId, ids),
       columns: {
-        id: true, channelId: true, title: true, buildProgress: true, updatedAt: true, shareToken: true, isPublic: true, isArchived: true,
+        id: true, channelId: true, cardId: true, title: true, buildProgress: true, updatedAt: true, shareToken: true, isPublic: true, isArchived: true,
         generationCount: true, tagline: true, summary: true, thumbnailUrl: true, viewCount: true, paywallEnabled: true, paywallMode: true,
         priceAmount: true, priceCurrency: true, priceInterval: true, reserveMode: true, reservePage: true, createdAt: true,
       },
@@ -377,6 +377,8 @@ export async function cityFor(userId: string) {
       return {
         id: a.id,
         channelId: a.channelId,
+        // Where you edit it: the app open in its card's drawer (pricing, publishing, its thread).
+        editHref: `/channel/${a.channelId}/card/${a.cardId}?app=${a.id}`,
         title: clip(a.title, 40),
         tagline: clip(a.tagline || a.summary, 140) || null,
         thumbnail: a.thumbnailUrl,

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowUpRight, BookOpen, Car, ChevronRight, Power, Tv, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus, Scooter,
+  ArrowUpRight, BookOpen, Car, ChevronRight, Power, Tv, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Pencil, Plane, Play, Plus, Scooter,
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -1484,11 +1484,16 @@ function ProposalPanel({ data, name, busy, onBuild, onAsk }: { data: CityData; n
   );
 }
 
-function AppPanel({ app, channel, onOpen, onFull, onAsk }: { app: CityData['apps'][number]; channel: string; onOpen(): void; onFull(): void; onAsk(prompt: string, prefill?: boolean): void }) {
-  const tier = app.tier === 'earning'
+/** How an app makes (or doesn't make) money, as a pill. */
+function tierOf(app: CityData['apps'][number]) {
+  return app.tier === 'earning'
     ? { label: 'Making money', cls: 'bg-yellow-400 text-neutral-950', Icon: CircleDollarSign }
     : app.tier === 'selling' ? { label: 'For sale', cls: 'bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/50', Icon: CircleDollarSign }
     : { label: 'Free', cls: 'bg-white/10 text-neutral-300', Icon: Sparkles };
+}
+
+function AppPanel({ app, channel, onOpen, onFull, onAsk }: { app: CityData['apps'][number]; channel: string; onOpen(): void; onFull(): void; onAsk(prompt: string, prefill?: boolean): void }) {
+  const tier = tierOf(app);
   return (
     <div>
       <p className="pr-8 text-[11px] uppercase tracking-wider text-neutral-500">The Strip · from {channel}</p>
@@ -1509,6 +1514,7 @@ function AppPanel({ app, channel, onOpen, onFull, onAsk }: { app: CityData['apps
       <div className="mt-3 flex flex-wrap gap-2">
         <button onClick={onOpen} className="flex items-center gap-1.5 rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500"><Play className="h-3.5 w-3.5" /> Play here</button>
         <button onClick={onFull} className="flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5"><Maximize2 className="h-3.5 w-3.5" /> Full screen</button>
+        <a href={app.editHref} className="flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5"><Pencil className="h-3.5 w-3.5" /> Edit app</a>
         {app.tier !== 'earning' && (
           <button onClick={() => onAsk(`How could the app “${app.title}” start making money? Look at it and its channel and give me the one best move.`)} className="rounded-full border border-yellow-400/40 px-3.5 py-1.5 text-xs text-yellow-100 hover:bg-yellow-400/10">How could it earn?</button>
         )}
@@ -1521,12 +1527,18 @@ function AppPanel({ app, channel, onOpen, onFull, onAsk }: { app: CityData['apps
 
 /** An app playing in the drawer, the city still there beside it. */
 function AppPlayer({ app, onBack, onFull }: { app: CityData['apps'][number]; onBack(): void; onFull(): void }) {
+  const tier = tierOf(app);
   return (
     <div className="-m-4 flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-shrink-0 items-center gap-1 border-b border-white/10 py-2 pl-2 pr-12">
-        <button onClick={onBack} className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/10 hover:text-white"><ChevronLeft className="h-4 w-4" /> Back</button>
-        <span className="min-w-0 flex-1 truncate text-center text-[14px] font-semibold text-neutral-100">{app.title}</span>
-        <button onClick={onFull} title="Full screen" className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/10 hover:text-white"><Maximize2 className="h-3.5 w-3.5" /> Full</button>
+      <div className="flex flex-shrink-0 items-center gap-1.5 border-b border-white/10 py-2 pl-2 pr-12">
+        <button onClick={onBack} title="Details" className="flex items-center gap-0.5 rounded-full px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/10 hover:text-white"><ChevronLeft className="h-4 w-4" /> Details</button>
+        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold text-neutral-100">{app.title}</span>
+        {/* How it's priced, at a glance; tap it for the details. */}
+        <button onClick={onBack} className={`flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${tier.cls}`}>
+          <tier.Icon className="h-3 w-3" /> {app.price ?? tier.label}
+        </button>
+        <a href={app.editHref} title="Edit: pricing, publishing and its thread" className="flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[12px] text-neutral-300 hover:bg-white/10 hover:text-white"><Pencil className="h-3.5 w-3.5" /> Edit</a>
+        <button onClick={onFull} title="Full screen" className="flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/10 hover:text-white"><Maximize2 className="h-3.5 w-3.5" /></button>
       </div>
       <iframe src={app.href} title={app.title} className="min-h-0 w-full flex-1 bg-white" allow="clipboard-write; microphone; camera" />
     </div>
