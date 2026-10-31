@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { cards, channels, columns, playgroundApps, tasks, users } from '@/lib/db/schema'
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { inBucket } from '@/lib/db/cardBuckets'
+import { videosIn } from './watch'
 
 /**
  * A channel's board, lean enough to draw in a sheet over Kan City.
@@ -54,6 +55,8 @@ export async function channelBoard(channelId: string, canEdit: boolean) {
 
   return {
     channel: { ...channel, canEdit },
+    // YouTube videos shared to the channel, for the TV in its building.
+    videos: videosIn(rows),
     columns: cols.map((c) => {
       const list = byColumn.get(c.id) ?? []
       return {

@@ -133,3 +133,17 @@ describe('building interiors', () => {
     expect(rooms.find((r) => r.name === 'Done')?.display).toBe('shelves')
   })
 })
+
+describe('the TV', () => {
+  it('finds YouTube videos on cards, newest card first, each once', async () => {
+    const { videosIn, youtubeIds } = await import('@/lib/kan/city/watch')
+    expect(youtubeIds('see https://youtu.be/dQw4w9WgXcQ and https://www.youtube.com/watch?si=x&v=abcdefghijk, again youtu.be/dQw4w9WgXcQ; shorts: youtube.com/shorts/ZZZZZZZZZZZ'))
+      .toEqual(['dQw4w9WgXcQ', 'abcdefghijk', 'ZZZZZZZZZZZ'])
+    const v = videosIn([
+      { id: 'old', title: 'Old', messages: [{ content: 'https://youtu.be/dQw4w9WgXcQ' }], updatedAt: new Date(1000) },
+      { id: 'new', title: 'New https://youtu.be/dQw4w9WgXcQ', messages: [{ content: 'notes', watched: 'dQw4w9WgXcQ' }], updatedAt: new Date(2000) },
+      { id: 'none', title: 'No video', messages: [], updatedAt: new Date(3000) },
+    ])
+    expect(v).toEqual([{ videoId: 'dQw4w9WgXcQ', cardId: 'new', cardTitle: 'New https://youtu.be/dQw4w9WgXcQ', watched: true }])
+  })
+})

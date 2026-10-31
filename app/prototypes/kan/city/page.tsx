@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowUpRight, BookOpen, Car, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
+  ArrowUpRight, BookOpen, Car, ChevronRight, Power, Tv, ChevronDown, CircleDollarSign, Footprints, Gamepad2, LogOut, MessageCircle, Move as MoveIcon, Paintbrush, Sparkles, UserPlus, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -172,6 +172,10 @@ export default function CityPage() {
   const [decorating, setDecorating] = useState(false);
   /** A card to open the board at, when you tapped it on a wall inside. */
   const [boardCard, setBoardCard] = useState<string | null>(null);
+  /** The TV inside: which shared video is on, and whether it's playing. */
+  const [tv, setTv] = useState<{ i: number; on: boolean }>({ i: 0, on: false });
+  /** The resident watching along, per video. */
+  const [watching, setWatching] = useState<Record<string, 'watching' | 'done' | 'error'>>({});
   const coarse = useCoarse();
 
   useEffect(() => { setPreview(new URLSearchParams(window.location.search).has('preview')); }, []);
@@ -260,6 +264,7 @@ export default function CityPage() {
     setInside({ id, board: b });
     setInRoom(null);
     setInPanel(null);
+    setTv({ i: 0, on: false });
     // A moment for the first frame to draw before the door swings open.
     setTimeout(() => setEntering(null), 250);
   };
@@ -267,6 +272,7 @@ export default function CityPage() {
     engine.current?.leave();
     setInside(null); setInNear(null); setInRoom(null); setInPanel(null);
     setPick(null); setBoard(null); setBoardCard(null); setPlaying(null);
+    setTv({ i: 0, on: false });
   }, []);
   const refreshInside = useCallback(async () => {
     const id = inside?.id;
@@ -285,11 +291,37 @@ export default function CityPage() {
   useEffect(() => { if (insideStamp) void refreshInside(); }, [insideStamp, refreshInside]);
   useEffect(() => { if (inside && data && !insidePlot) leaveBuilding(); }, [inside, data, insidePlot, leaveBuilding]);
 
+  // The TV: the channel's shared videos, one at a time.
+  const videos = useMemo(() => inside?.board.videos ?? [], [inside]);
+  const onTv = videos.length ? videos[Math.min(tv.i, videos.length - 1)] : null;
+  useEffect(() => {
+    engine.current?.setTv(onTv ? { videoId: onTv.videoId, title: onTv.cardTitle, index: Math.min(tv.i, videos.length - 1), count: videos.length, on: tv.on } : null);
+  }, [onTv, tv, videos.length, inside]);
+  const flip = (by: number) => setTv((t) => ({ i: (t.i + by + videos.length) % videos.length, on: true }));
+  const watchAlong = useCallback(async (v: { videoId: string; cardId: string }) => {
+    if (!inside || preview) return;
+    const resident = insidePlot?.resident.name ?? 'Your bot';
+    setWatching((w) => ({ ...w, [v.videoId]: 'watching' }));
+    engine.current?.botSay(inside.id, 'Ooh, I’m watching this with you. Taking notes!');
+    const r = await fetch('/api/prototypes/kan/city/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channelId: inside.id, cardId: v.cardId, videoId: v.videoId }) }).catch(() => null);
+    const j = await r?.json().catch(() => ({})) ?? {};
+    setWatching((w) => ({ ...w, [v.videoId]: r?.ok ? 'done' : 'error' }));
+    engine.current?.botSay(inside.id, r?.ok ? j.said : (j.error ?? `${resident} couldn’t watch that one.`));
+    if (r?.ok) void refreshInside();
+  }, [inside, insidePlot, preview, refreshInside]);
+  // Once a video has been on for a bit, the resident has watched enough to take it in.
+  useEffect(() => {
+    if (!tv.on || !onTv || onTv.watched || watching[onTv.videoId]) return;
+    const t = setTimeout(() => void watchAlong(onTv), 25_000);
+    return () => clearTimeout(t);
+  }, [tv.on, onTv, watching, watchAlong]);
+
   const onInsidePickRef = useRef<(p: InsidePick) => void>(() => {});
   onInsidePickRef.current = (p) => {
     if (!inside) return;
     setInPanel(null);
     if (p.kind === 'exit') { leaveBuilding(); return; }
+    if (p.kind === 'tv') { if (videos.length) { setTv((t) => ({ ...t, on: true })); engine.current?.watchTv(); } return; }
     if (p.kind === 'card') { setPick(null); setBoardCard(p.id); setBoard(inside.id); return; }
     if (p.kind === 'app') { setBoard(null); setPick({ kind: 'app', id: p.id }); setPlaying(p.id); return; }
     onPickRef.current({ kind: 'bot', id: p.id });
@@ -669,14 +701,31 @@ export default function CityPage() {
             <IconBtn title="Turn left" onClick={() => engine.current?.turnInside(Math.PI / 4)}><RotateCcw className="h-4 w-4" /></IconBtn>
             <IconBtn title="Turn right" onClick={() => engine.current?.turnInside(-Math.PI / 4)}><RotateCw className="h-4 w-4" /></IconBtn>
           </div>
-          {inNear && !panelOpen && !inPanel && (
+          {tv.on && onTv && !panelOpen && !inPanel && (
+            <div className="absolute left-1/2 z-20 flex w-[min(560px,calc(100%-24px))] -translate-x-1/2 items-center gap-1.5 rounded-2xl border border-white/10 bg-neutral-950/90 p-1.5 shadow-2xl backdrop-blur-xl" style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}>
+              <IconBtn title="Previous video" onClick={() => flip(-1)}><ChevronLeft className="h-4 w-4" /></IconBtn>
+              <div className="min-w-0 flex-1 px-1">
+                <p className="flex items-center gap-1.5 truncate text-[13px] font-medium text-white"><Tv className="h-3.5 w-3.5 flex-shrink-0 text-red-400" /> <span className="truncate">{onTv.cardTitle}</span></p>
+                <p className="truncate text-[11px] text-neutral-400">
+                  Channel {Math.min(tv.i, videos.length - 1) + 1} of {videos.length} · {onTv.watched || watching[onTv.videoId] === 'done'
+                    ? `✓ ${insidePlot?.resident.name ?? 'Your bot'} watched this`
+                    : watching[onTv.videoId] === 'watching' ? `${insidePlot?.resident.name ?? 'Your bot'} is watching along…`
+                    : watching[onTv.videoId] === 'error' ? 'Couldn’t watch along'
+                    : <button onClick={() => void watchAlong(onTv)} className="text-violet-300 hover:text-violet-200">Have {insidePlot?.resident.name ?? 'your bot'} watch along</button>}
+                </p>
+              </div>
+              <IconBtn title="Next video" onClick={() => flip(1)}><ChevronRight className="h-4 w-4" /></IconBtn>
+              <IconBtn title="Turn it off" onClick={() => setTv((t) => ({ ...t, on: false }))}><Power className="h-4 w-4" /></IconBtn>
+            </div>
+          )}
+          {inNear && !panelOpen && !inPanel && !tv.on && (
             <button
               onClick={() => onInsidePickRef.current(inNear.kind === 'exit' ? { kind: 'exit' } : { kind: inNear.kind, id: inNear.id })}
               className="absolute left-1/2 z-20 flex max-w-[min(420px,calc(100%-24px))] -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50"
               style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}
             >
-              {inNear.kind === 'bot' ? <MessageCircle className="h-4 w-4 flex-shrink-0 text-violet-600" /> : inNear.kind === 'app' ? <Gamepad2 className="h-4 w-4 flex-shrink-0 text-pink-600" /> : inNear.kind === 'exit' ? <DoorOpen className="h-4 w-4 flex-shrink-0 text-emerald-600" /> : <BookOpen className="h-4 w-4 flex-shrink-0 text-violet-600" />}
-              <span className="truncate">{inNear.kind === 'bot' ? `Talk to ${inNear.name}` : inNear.kind === 'app' ? `Play ${inNear.name}` : inNear.kind === 'exit' ? 'Head outside' : `Read “${inNear.name}”`}</span>
+              {inNear.kind === 'tv' ? <Tv className="h-4 w-4 flex-shrink-0 text-red-600" /> : inNear.kind === 'bot' ? <MessageCircle className="h-4 w-4 flex-shrink-0 text-violet-600" /> : inNear.kind === 'app' ? <Gamepad2 className="h-4 w-4 flex-shrink-0 text-pink-600" /> : inNear.kind === 'exit' ? <DoorOpen className="h-4 w-4 flex-shrink-0 text-emerald-600" /> : <BookOpen className="h-4 w-4 flex-shrink-0 text-violet-600" />}
+              <span className="truncate">{inNear.kind === 'tv' ? (videos.length ? `Watch TV · ${videos.length} video${videos.length === 1 ? '' : 's'}` : 'Nothing on TV yet') : inNear.kind === 'bot' ? `Talk to ${inNear.name}` : inNear.kind === 'app' ? `Play ${inNear.name}` : inNear.kind === 'exit' ? 'Head outside' : `Read “${inNear.name}”`}</span>
               {!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
             </button>
           )}

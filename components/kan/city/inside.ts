@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 import { hash as signedHash } from '@/lib/kan/city/layout';
 import { DEFAULT_FEATURES, planInterior, roomAt, type Feature, type Floor, type InteriorStyle, type Plan, type PlanRoom, type Seg, type Slot } from '@/lib/kan/city/interior';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
@@ -20,8 +21,10 @@ import { THEME_COLORS } from './themes';
  * face), or tap the floor and you walk there by yourself. Drag to turn the camera.
  */
 
-export type InsidePick = { kind: 'card'; id: string } | { kind: 'app'; id: string } | { kind: 'bot'; id: string } | { kind: 'exit' };
-export interface InsideNear { kind: 'card' | 'app' | 'bot' | 'exit'; id: string; name: string }
+export type InsidePick = { kind: 'card'; id: string } | { kind: 'app'; id: string } | { kind: 'bot'; id: string } | { kind: 'exit' } | { kind: 'tv' };
+export interface InsideNear { kind: 'card' | 'app' | 'bot' | 'exit' | 'tv'; id: string; name: string }
+/** What's on the TV: a video shared to the channel, and whether it's playing. */
+export interface TvShow { videoId: string; title: string; index: number; count: number; on: boolean }
 export interface InsideApp { id: string; title: string; thumbnail: string | null }
 export interface InsideOf {
   channelId: string;
@@ -391,6 +394,18 @@ export class Inside {
   private lights: THREE.Object3D[] = [];
   private party: THREE.PointLight[] = [];
   private textures: THREE.Texture[] = [];
+  /**
+   * The TV is a real YouTube player, hung on the lobby wall with CSS3D so it plays in
+   * the room. It's made once and only moved on a rebuild, so a refresh never stops
+   * the video you're watching.
+   */
+  private css = new CSS3DRenderer();
+  private cssScene = new THREE.Scene();
+  private tvEl: HTMLDivElement;
+  private tvObj: CSS3DObject;
+  private tvAt: { x: number; z: number; nx: number; nz: number; wall: Wall | null } | null = null;
+  private tvShow: TvShow | null = null;
+  private cssSize = '';
 
   constructor(
     private of: InsideOf,
@@ -405,6 +420,16 @@ export class Inside {
     this.layer = document.createElement('div');
     this.layer.className = 'kc-in-labels';
     labels.appendChild(this.layer);
+    const cssEl = this.css.domElement;
+    Object.assign(cssEl.style, { position: 'absolute', left: '0', top: '0', pointerEvents: 'none' });
+    this.layer.appendChild(cssEl);
+    this.tvEl = document.createElement('div');
+    Object.assign(this.tvEl.style, { width: '800px', height: '450px', background: '#050308', borderRadius: '10px', overflow: 'hidden', pointerEvents: 'auto', cursor: 'pointer', position: 'relative' });
+    this.tvEl.addEventListener('click', () => { if (!this.tvShow?.on) this.cb.onPick({ kind: 'tv' }); });
+    this.tvObj = new CSS3DObject(this.tvEl);
+    this.tvObj.scale.setScalar(2.2 / 800);
+    this.cssScene.add(this.tvObj);
+    this.renderTv();
     this.hoverLabel = this.makeLabel('', 'kc-label kc-card');
     this.hoverLabel.style.display = 'none';
     const fig = botFigure(hash('you, the owner'));
@@ -497,6 +522,8 @@ export class Inside {
 
   dispose() {
     this.clear();
+    this.tvEl.innerHTML = '';
+    this.css.domElement.remove();
     this.player.fig.group.removeFromParent();
     for (const m of this.movers.values()) { m.label.remove(); m.bubble.remove(); }
     this.kan?.bubble.remove();
@@ -646,6 +673,7 @@ export class Inside {
       }
     }
     this.fillLobby(plan, features, obstacles, rects, tick);
+    this.placeTv(plan);
 
     // Light.
     const L = style.light ?? (this.of.theme === 'spooky' ? 'cozy' : 'warm');
@@ -969,6 +997,69 @@ export class Inside {
     const w = this.wallFor({ x, z, nx: 0, nz: 1 });
     o.position.set(x, y, z + out);
     if (w) { o.position.sub(w.group.position); w.attach.add(o); } else this.root.add(o);
+  }
+
+  /** The TV on the lobby's right-hand wall, over the piano's corner, facing in. */
+  private placeTv(plan: Plan) {
+    const lobby = plan.rooms.find((r) => r.kind === 'lobby')!.rect;
+    const at = { x: lobby.x1, z: 2.4, nx: -1, nz: 0 };
+    const wall = this.wallFor(at);
+    this.tvAt = { ...at, wall };
+    const frame = new THREE.Group();
+    frame.position.set(at.x - 0.12, 1.85, at.z);
+    box(frame, 0.1, 1.42, 2.42, mat('#141018', { rough: 0.4 }), 0, 0, 0);
+    // A little shelf under it with a glowing box, like any TV corner.
+    box(frame, 0.32, 0.06, 1.4, mat('#6b4a2b'), -0.14, -0.95, 0);
+    box(frame, 0.2, 0.12, 0.4, glow('#38bdf8', 0.5), -0.14, -0.86, 0.3);
+    if (wall) { frame.position.sub(wall.group.position); wall.attach.add(frame); } else this.root.add(frame);
+    this.tvObj.position.set(at.x - 0.18, 1.85, at.z);
+    this.tvObj.rotation.set(0, -Math.PI / 2, 0);
+  }
+
+  /** What's on: a video and whether it's playing, or null for nothing shared yet. */
+  setTv(show: TvShow | null) {
+    const was = this.tvShow;
+    this.tvShow = show;
+    if (was?.videoId === show?.videoId && was?.on === show?.on && was?.index === show?.index && was?.count === show?.count) return;
+    this.renderTv();
+  }
+
+  /** Walk over to the TV and turn to it; the resident comes and watches too. */
+  watchTv() {
+    const t = this.tvAt;
+    if (!t) return;
+    const seat = this.nearestOpen(t.x + t.nx * 3.2, t.z + t.nz * 3.2);
+    this.player.path = this.route(this.player, seat);
+    this.faceWall = { nx: t.nx, nz: t.nz };
+    const r = this.movers.get(this.of.channelId);
+    // Beside you, along the wall, so it's not standing between you and the screen.
+    if (r) { r.path = this.route(r, this.nearestOpen(seat.x - t.nz * 1.6, seat.z + t.nx * 1.6)); r.wait = 60; }
+  }
+
+  private renderTv() {
+    const el = this.tvEl;
+    const s = this.tvShow;
+    const playing = el.querySelector('iframe');
+    if (s?.on && playing?.dataset.video === s.videoId) return;
+    el.innerHTML = '';
+    if (!s) {
+      el.innerHTML = `<div style="display:flex;height:100%;align-items:center;justify-content:center;text-align:center;padding:40px;color:#c4b5fd;font:600 30px/1.35 ui-sans-serif,system-ui,sans-serif;background:radial-gradient(circle at 50% 40%,#2a1d4a,#050308)">📺<br/>Share a YouTube link to ${escapeHtml(this.of.name)}<br/>and it plays here.</div>`;
+      return;
+    }
+    if (s.on) {
+      const f = document.createElement('iframe');
+      f.dataset.video = s.videoId;
+      f.src = `https://www.youtube-nocookie.com/embed/${s.videoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`;
+      f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+      Object.assign(f.style, { width: '100%', height: '100%', border: '0' });
+      el.appendChild(f);
+      return;
+    }
+    el.innerHTML = `<img src="https://i.ytimg.com/vi/${s.videoId}/hqdefault.jpg" style="width:100%;height:100%;object-fit:cover;opacity:.85" alt=""/>`
+      + `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:linear-gradient(transparent 40%,rgba(5,3,8,.85));color:#fff;font:700 30px/1.25 ui-sans-serif,system-ui,sans-serif;text-align:center;padding:30px">`
+      + `<div style="width:96px;height:96px;border-radius:50%;background:rgba(255,0,0,.9);display:flex;align-items:center;justify-content:center;font-size:44px">▶</div>`
+      + `<div style="max-width:90%">${escapeHtml(s.title)}</div>`
+      + `<div style="font-size:20px;color:#c4b5fd">Channel ${s.index + 1} of ${s.count}</div></div>`;
   }
 
   private wallFor(s: Slot): Wall | null {
@@ -1377,6 +1468,7 @@ export class Inside {
     for (const m of this.movers.values()) consider({ kind: 'bot', id: m.id, name: m.name }, m.x, m.z, 2.2);
     const e = this.plan.entrance;
     consider({ kind: 'exit', id: 'exit', name: 'outside' }, e.x, e.z - 0.4, 1.8);
+    if (this.tvAt && !this.tvShow?.on) consider({ kind: 'tv', id: 'tv', name: 'the TV' }, this.tvAt.x + this.tvAt.nx * 2.2, this.tvAt.z + this.tvAt.nz * 2.2, 2.2);
     const b = best as InsideNear | null;
     if (b?.kind !== this.near?.kind || b?.id !== this.near?.id) {
       this.near = b;
@@ -1385,6 +1477,16 @@ export class Inside {
   }
 
   placeLabels(w: number, h: number) {
+    // The TV: drawn when its wall is standing and you're on its side of it.
+    const size = `${w}x${h}`;
+    if (size !== this.cssSize) { this.css.setSize(w, h); this.cssSize = size; }
+    const t = this.tvAt;
+    if (t) {
+      const cx = this.camera.position.x - t.x, cz = this.camera.position.z - t.z;
+      const facing = (cx * t.nx + cz * t.nz) / (Math.hypot(cx, cz) || 1) > 0.15;
+      this.tvObj.visible = facing && (t.wall ? t.wall.attach.visible : true) && Math.hypot(cx, cz) < 34;
+      this.css.render(this.cssScene, this.camera);
+    }
     const v = new THREE.Vector3();
     const put = (el: HTMLElement, pos: THREE.Vector3, show: boolean, dy = 0) => {
       if (!show) { if (el.style.display !== 'none') el.style.display = 'none'; return; }
@@ -1410,6 +1512,10 @@ export class Inside {
       put(this.hoverLabel, at.add(new THREE.Vector3(0, 0.45, 0)), shown(th.obj));
     } else put(this.hoverLabel, v, false);
   }
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
 function shown(o: THREE.Object3D) {

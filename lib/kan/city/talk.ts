@@ -114,12 +114,12 @@ async function addCard(channelId: string, title: string, messages: Msg[]) {
   return id
 }
 
-function botMsg(name: string, text: string): Msg {
+export function botMsg(name: string, text: string): Msg {
   return { id: nanoid(), type: 'ai_response', content: text, authorName: name, createdAt: new Date().toISOString() }
 }
 
 /** Notes a bot keeps between runs and chats, appended to rather than replaced. */
-async function noteFor(channelId: string, line: string) {
+export async function noteFor(channelId: string, line: string) {
   const row = await db.query.channelBots.findFirst({ where: eq(channelBots.channelId, channelId), columns: { memory: true } })
   const day = new Date().toISOString().slice(0, 10)
   const memory = `${row?.memory ?? ''}\n- ${day}: ${line.trim()}`.trim().slice(-4000)

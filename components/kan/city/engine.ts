@@ -10,7 +10,7 @@ import {
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
 import { decorate, THEME_COLORS } from './themes';
-import { Inside, type InsideApp, type InsideNear, type InsideOf, type InsidePick } from './inside';
+import { Inside, type InsideApp, type InsideNear, type InsideOf, type InsidePick, type TvShow } from './inside';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
 import type { InteriorStyle } from '@/lib/kan/city/interior';
 import type { PlotTheme } from '@/lib/kan/city/style';
@@ -435,6 +435,10 @@ export class CityEngine {
   guests() { return this.inside?.guests() ?? []; }
   kanInside(text: string | null, ms?: number) { this.inside?.kanHere(text, ms); }
   turnInside(by: number) { this.inside?.turn(by); }
+  /** What's on the TV in the building you're in. */
+  setTv(show: TvShow | null) { this.inside?.setTv(show); }
+  /** Go sit in front of the TV. */
+  watchTv() { this.inside?.watchTv(); }
 
   private leaveInside() {
     if (!this.inside) return;
