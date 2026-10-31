@@ -357,7 +357,7 @@ export default function CityPage() {
   const latest = data?.feed[0];
 
   return (
-    <div className="fixed inset-0 z-[5] overflow-hidden text-neutral-100" style={{ background: SKY_CSS[sky], ['--chat-h' as string]: `${chatH}px` }}>
+    <div className="fixed inset-0 z-[5] overflow-hidden text-neutral-100" style={{ background: SKY_CSS[sky], ['--chat-h' as string]: `${selectedBot ? 8 : chatH}px` }}>
       <style dangerouslySetInnerHTML={{ __html: LABEL_CSS }} />
       <div ref={host} className="absolute inset-0" />
       <div ref={labels} className="kc-labels pointer-events-none absolute inset-0 overflow-hidden" />
@@ -618,6 +618,8 @@ export default function CityPage() {
         </div>
       )}
 
+      {/* Talking with a bot, its own composer is the only one: Kan's steps aside (kept, not closed). */}
+      <div className={selectedBot ? 'hidden' : undefined}>
       <CityChat
         ref={chat}
         focus={focus}
@@ -635,6 +637,7 @@ export default function CityPage() {
         compact={!wide && panelOpen}
         onHeight={setChatH}
       />
+      </div>
     </div>
   );
 }
