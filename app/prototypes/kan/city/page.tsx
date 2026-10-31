@@ -547,7 +547,7 @@ export default function CityPage() {
               <MenuItem onClick={() => { setMenu(false); setGather({ name: '', ids: [] }); setPick(null); setBoard(null); }}><Plus className="h-4 w-4" /> New neighborhood</MenuItem>
               <MenuItem href={preview ? '/prototypes/kan/city' : '/prototypes/kan/city?preview'}><Play className="h-4 w-4" /> {preview ? 'Show the real city' : 'Preview with pretend bots'}</MenuItem>
               <div className="my-1 border-t border-white/5" />
-              <MenuItem href="/"><LayoutGrid className="h-4 w-4" /> The board</MenuItem>
+              <MenuItem href="/?home"><LayoutGrid className="h-4 w-4" /> The board</MenuItem>
               <MenuItem href="/prototypes/kan/bots"><Users className="h-4 w-4" /> Bot logs and spend</MenuItem>
             </div>
           )}

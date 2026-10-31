@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useStore } from '@/lib/store';
 import { useServerSync } from '@/components/providers/ServerSyncProvider';
 import { ConversationalWelcome, type ConversationalWelcomeResultData } from '@/app/prototypes/overlays/ConversationalWelcome';
@@ -31,6 +32,17 @@ export default function Home() {
   const status = useStableSessionStatus();
   const { isLoading: isServerLoading } = useServerSync();
   const [welcomeDone, setWelcomeDone] = useState(false);
+  // The admin lives in Kan City: home opens the city, unless they asked for this
+  // page by name (/?home, which is where the city's "The board" link points).
+  const { data: session } = useSession();
+  const admin = status === 'authenticated' && Boolean(session?.user?.isAdmin);
+  const [stayHome, setStayHome] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!admin) return;
+    const stay = new URLSearchParams(window.location.search).has('home');
+    setStayHome(stay);
+    if (!stay) router.replace('/prototypes/kan/city');
+  }, [admin, router]);
 
   const createChannel = useStore((s) => s.createChannel);
   const createChannelWithStructure = useStore((s) => s.createChannelWithStructure);
@@ -71,6 +83,14 @@ export default function Home() {
         });
     router.push(`/channel/${channel.id}`);
   };
+
+  if (admin && !stayHome) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-violet-500" />
+      </div>
+    );
+  }
 
   if (status === 'authenticated') {
     return (
