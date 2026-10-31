@@ -116,7 +116,7 @@ export async function cardDetail(channelId: string, cardId: string) {
       id: m.id,
       type: m.type,
       content: m.content,
-      author: m.type === 'ai_response' ? 'Kan' : m.authorName || (m.authorId ? nameOf.get(m.authorId) : null) || 'You',
+      author: m.type === 'ai_response' ? m.authorName || 'Kan' : m.authorName || (m.authorId ? nameOf.get(m.authorId) : null) || 'You',
       createdAt: m.createdAt,
     })),
     tasks: taskRows.map((t) => ({ id: t.id, title: t.title, done: t.status === 'done' })),

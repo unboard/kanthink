@@ -13,4 +13,6 @@ export type Pick =
   | { kind: 'proposal'; name: string }
   | { kind: 'free' }
   | { kind: 'arrivals' }
-  | { kind: 'app'; id: string };
+  | { kind: 'app'; id: string }
+  /** A resident: the mushroom who lives on a channel's plot, to talk with. */
+  | { kind: 'bot'; id: string };

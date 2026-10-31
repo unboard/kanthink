@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { hash } from '@/lib/kan/city/layout';
 import { BLOCK, CELL, GAP, Grid, PITCH, ROAD, rng, type Vec } from './grid';
 import {
-  botFigure, building, car, centralPark, constructionSite, crane, freeLot, grove, kanFigure, lamp, mat,
+  botFigure, building, car, centralPark, constructionSite, crane, freeLot, grove, kanFigure, lamp, mat, sportsCar, ufo,
   nightGlows, sharedMaterials, shroomFigure, townHall, windowMaterials, type Built,
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
@@ -21,6 +21,8 @@ import { buildStrip, inRect, type Strip } from './strip';
  */
 
 const GROUND_Y = 0.36;
+/** How high Kan's saucer flies: over the cars, under most rooftops. */
+const KAN_HOVER = 7;
 const LAWNS = ['#c3e2a8', '#b5dccd', '#e6d6aa', '#d2c5ea', '#f0cfc9', '#c6dcef', '#dfe8b8', '#e9c8dc'];
 
 export type Sky = 'day' | 'dusk' | 'night' | 'dawn';
@@ -69,6 +71,10 @@ interface Citizen {
   label: HTMLDivElement;
   bubble: HTMLDivElement;
   arrivedBy?: THREE.Object3D;
+  /** Busy with you or a neighbor until then (performance.now ms): it doesn't wander off. */
+  hold: number;
+  /** Showing a line it said until then. */
+  sayUntil: number;
 }
 
 interface PlotView {
@@ -99,7 +105,7 @@ export interface EngineCallbacks {
 export type ViewMode = 'map' | 'walk' | 'drive' | 'fly';
 
 /** The place you're next to in first person: a building, or an app on the Strip. */
-export interface Near { kind: 'plot' | 'app'; id: string; name: string }
+export interface Near { kind: 'plot' | 'app' | 'bot' | 'car'; id: string; name: string }
 
 const FOG: Record<Sky, string> = { dawn: '#f2c3b4', day: '#d7ecfa', dusk: '#b98aa9', night: '#2a2150' };
 
@@ -118,6 +124,12 @@ export class CityEngine {
   private city = new THREE.Group();
   private plots = new Map<string, PlotView>();
   private citizens = new Map<string, Citizen>();
+  private kanUfo: ReturnType<typeof ufo> | null = null;
+  /** The car you got out of, waiting where you left it. */
+  private parked: { obj: THREE.Group; x: number; z: number; heading: number } | null = null;
+  /** The resident you're talking with. */
+  private talking: string | null = null;
+  private kanLean = 0;
   private kan: Walker | null = null;
   private kanBubble: HTMLDivElement | null = null;
   private cars: (Walker & { k: number; m: number; pk: number; pm: number })[] = [];
@@ -274,6 +286,70 @@ export class CityEngine {
     }
   }
 
+  /**
+   * You're talking with this resident (or with nobody, for null). It stops where it
+   * is, turns to face you, and stays until you're done.
+   */
+  talkTo(plotId: string | null) {
+    const prev = this.talking ? this.citizens.get(this.talking) : null;
+    this.talking = plotId;
+    if (prev && prev.plotId !== plotId) this.release(prev);
+    const c = plotId ? this.citizens.get(plotId) : null;
+    if (!c) return;
+    c.walker.path = [];
+    c.walker.inside = false;
+    c.walker.obj.visible = true;
+    c.goal = 'talk';
+    c.hold = performance.now() + 30 * 60_000;
+  }
+
+  /** A line over a resident's head, for a few seconds or as long as it takes to read. */
+  botSay(plotId: string, text: string, kicker?: string) {
+    const c = this.citizens.get(plotId);
+    if (!c) return;
+    c.bubble.innerHTML = '';
+    if (kicker) {
+      const k = document.createElement('div');
+      k.className = 'kc-bubble-kicker';
+      k.textContent = kicker;
+      c.bubble.append(k);
+    }
+    const b = document.createElement('div');
+    b.textContent = text.length > 140 ? `${text.slice(0, 137)}…` : text;
+    c.bubble.append(b);
+    c.sayUntil = performance.now() + Math.min(14_000, 3500 + text.length * 55);
+  }
+
+  /** One resident walks over to another's door to talk something through. */
+  visit(fromId: string, toId: string) {
+    const c = this.citizens.get(fromId);
+    const door = this.doorOf(toId);
+    if (!c || !door) return;
+    const other = this.citizens.get(toId);
+    c.walker.inside = false;
+    c.walker.obj.visible = true;
+    c.goal = 'visit';
+    this.walkTo(c.walker, door);
+    c.hold = performance.now() + 40_000;
+    const to = this.plots.get(toId)?.plot.resident.name ?? 'a neighbor';
+    this.botSay(fromId, `Off to see ${to}!`);
+    if (other) {
+      // The neighbor waits out front for the visitor.
+      other.walker.inside = false;
+      other.walker.obj.visible = true;
+      other.goal = 'visit';
+      this.walkTo(other.walker, door);
+      other.hold = performance.now() + 40_000;
+    }
+  }
+
+  private release(c: Citizen) {
+    c.hold = 0;
+    c.goal = '';
+    const p = this.plots.get(c.plotId)?.plot;
+    if (p) this.route(c, p, -1);
+  }
+
   /** Follow a bot: look at wherever it is right now. */
   focusBot(plotId: string) {
     const c = this.citizens.get(plotId);
@@ -311,6 +387,7 @@ export class CityEngine {
   setMode(mode: ViewMode) {
     if (mode === this.mode || !this.grid || !this.data) return;
     this.endChute();
+    if (this.parked) { this.parked.obj.removeFromParent(); this.parked = null; }
     if (this.player) { this.player.obj.removeFromParent(); this.player = null; }
     this.mode = mode;
     this.controls.enabled = mode === 'map';
@@ -356,6 +433,45 @@ export class CityEngine {
     this.near = null;
     this.cb.onNear?.(null);
     this.cb.onModeChange?.('walk');
+  }
+
+  /** Pull over and get out: the car stays parked and you carry on on foot. */
+  getOut() {
+    const p = this.player;
+    if (this.mode !== 'drive' || !p) return;
+    const car = p.obj;
+    (car.userData.driver as THREE.Object3D | undefined)?.removeFromParent();
+    this.parked = { obj: car, x: p.x, z: p.z, heading: p.heading };
+    // Out the driver's side, or wherever there's room.
+    const f = this.forward(p.heading);
+    let spot = { x: p.x + f.z * 2.6, z: p.z - f.x * 2.6 };
+    if (!this.walkable(spot.x, spot.z)) spot = this.nearestWalkable(p.x, p.z);
+    const walker = this.makeWalker();
+    this.scene.add(walker);
+    this.player = { obj: walker, x: spot.x, y: GROUND_Y, z: spot.z, heading: p.heading, speed: 0, roll: 0 };
+    this.mode = 'walk';
+    this.near = null;
+    this.cb.onNear?.(null);
+    this.cb.onModeChange?.('walk');
+  }
+
+  /** Back in the car you parked. */
+  getIn() {
+    const p = this.player, car = this.parked;
+    if (this.mode !== 'walk' || !p || !car) return;
+    p.obj.removeFromParent();
+    const me = botFigure(hash('you, the owner'));
+    me.group.scale.setScalar(0.78);
+    me.group.rotation.y = Math.PI / 2;
+    const seat = (car.obj.userData.seat as THREE.Object3D | undefined) ?? car.obj;
+    seat.add(me.group);
+    car.obj.userData.driver = me.group;
+    this.player = { obj: car.obj, x: car.x, y: 0.1, z: car.z, heading: car.heading, speed: 0, roll: 0 };
+    this.parked = null;
+    this.mode = 'drive';
+    this.near = null;
+    this.cb.onNear?.(null);
+    this.cb.onModeChange?.('drive');
   }
 
   private endChute() {
@@ -940,7 +1056,7 @@ export class CityEngine {
     const present = new Set<string>();
     const queue = data.plots.filter((p) => p.bot.status === 'needs');
     for (const p of data.plots) {
-      if (p.bot.status === 'off' && !p.waiting.length) continue;
+      // Every channel has a resident. One whose bot is off stays home, by the door, ready to chat.
       present.add(p.channelId);
       let c = this.citizens.get(p.channelId);
       if (!c) {
@@ -949,19 +1065,22 @@ export class CityEngine {
         const home = this.doorOf(p.channelId)!;
         fig.group.position.set(home.x, GROUND_Y, home.z);
         this.city.add(fig.group);
-        const label = this.makeLabel(p.name.split(/[\s:&]+/)[0], 'bot', () => this.cb.onPick({ kind: 'plot', id: p.channelId }));
+        const label = this.makeLabel(p.resident.name, 'bot', () => this.cb.onPick({ kind: 'bot', id: p.channelId }));
         label.style.setProperty('--dot', fig.color);
         const bubble = document.createElement('div');
         bubble.className = 'kc-bubble';
         bubble.addEventListener('click', () => this.cb.onPick({ kind: 'townhall' }));
         this.labels.appendChild(bubble);
-        c = { plotId: p.channelId, status: p.bot.status, fig, label, bubble, goal: '', walker: { obj: fig.group, pos: { x: home.x, z: home.z }, off: { x: 0, z: 0 }, path: [], speed: 4.2 + (hash(p.channelId) % 10) / 10, lateral: ((hash(p.channelId) % 7) - 3) * 0.45, wait: 0, phase: Math.random() * 6 } };
+        c = { plotId: p.channelId, status: p.bot.status, fig, label, bubble, goal: '', hold: 0, sayUntil: 0, walker: { obj: fig.group, pos: { x: home.x, z: home.z }, off: { x: 0, z: 0 }, path: [], speed: 4.2 + (hash(p.channelId) % 10) / 10, lateral: ((hash(p.channelId) % 7) - 3) * 0.45, wait: 0, phase: Math.random() * 6 } };
         this.citizens.set(p.channelId, c);
         // A bot that just joined arrives by cab.
         if (!first) this.arriveByCab(c, home);
       }
       c.status = p.bot.status;
+      const nameEl = c.label.querySelector('.kc-name');
+      if (nameEl && nameEl.textContent !== p.resident.name) nameEl.textContent = p.resident.name;
       this.route(c, p, queue.findIndex((q) => q.channelId === p.channelId));
+      if (performance.now() < c.sayUntil) continue;
       c.bubble.innerHTML = '';
       // Only the bot at the front of the line speaks up; the rest wait their turn.
       if (p.bot.status === 'needs' && queue[0]?.channelId === p.channelId) {
@@ -984,12 +1103,12 @@ export class CityEngine {
 
   private route(c: Citizen, p: CityPlot, queueIndex: number) {
     const home = this.doorOf(p.channelId);
-    if (!home) return;
+    if (!home || performance.now() < c.hold) return;
     let goal = '';
     let to: (Vec & { m: number }) | null = null;
     if (p.bot.status === 'working') { goal = 'work'; to = home; }
     else if (p.bot.status === 'needs') { goal = `hall:${queueIndex}`; to = this.townHallSpot(Math.max(0, queueIndex)); }
-    else if (p.bot.status === 'paused') { goal = 'home'; to = home; }
+    else if (p.bot.status === 'paused' || p.bot.status === 'off') { goal = 'home'; to = home; }
     else { goal = c.goal.startsWith('wander') ? c.goal : 'wander'; }
     if (goal === c.goal) return;
     c.goal = goal;
@@ -1033,12 +1152,16 @@ export class CityEngine {
   private syncKan() {
     if (!this.grid) return;
     if (!this.kan) {
-      const obj = kanFigure();
-      obj.scale.setScalar(1.9);
+      // Kan gets around town in a flying saucer, low over the streets.
+      const saucer = ufo();
+      const obj = saucer.group;
+      obj.scale.setScalar(1.5);
+      obj.rotation.order = 'YXZ';
       const s = this.townHallSpot(-4);
-      obj.position.set(s.x, GROUND_Y, s.z);
+      obj.position.set(s.x, KAN_HOVER, s.z);
       this.city.add(obj);
-      this.kan = { obj, pos: { x: s.x, z: s.z }, off: { x: 0, z: 0 }, path: [], speed: 3.6, lateral: 0, wait: 2, phase: 0 };
+      this.kanUfo = saucer;
+      this.kan = { obj, pos: { x: s.x, z: s.z }, off: { x: 0, z: 0 }, path: [], speed: 7, lateral: 0, wait: 2, phase: 0 };
       this.kanBubble = document.createElement('div');
       this.kanBubble.className = 'kc-bubble kc-bubble-kan';
       this.kanBubble.addEventListener('click', () => this.cb.onPick({ kind: 'townhall' }));
@@ -1185,7 +1308,16 @@ export class CityEngine {
     for (const c of this.citizens.values()) {
       const w = c.walker;
       const moving = this.step(w, dt, GROUND_Y);
-      if (!moving && !w.path.length) {
+      if (c.hold && performance.now() > c.hold) this.release(c);
+      if (this.talking === c.plotId && !moving) {
+        // Turn to face you: your mushroom on foot, else the camera.
+        const at = this.player && this.mode === 'walk' ? { x: this.player.x, z: this.player.z } : { x: this.view.position.x, z: this.view.position.z };
+        const want = Math.atan2(at.x - w.pos.x, at.z - w.pos.z);
+        let d = want - w.obj.rotation.y;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        w.obj.rotation.y += d * Math.min(1, dt * 5);
+      }
+      if (!moving && !w.path.length && performance.now() > c.hold) {
         if (c.goal === 'work' && !w.inside) { w.inside = true; w.obj.visible = false; }
         if (c.goal.startsWith('wander')) {
           w.wait -= dt;
@@ -1207,12 +1339,31 @@ export class CityEngine {
     // Kan.
     if (this.kan) {
       const w = this.kan;
-      const moving = this.step(w, dt, GROUND_Y);
+      const heading = w.obj.rotation.y;
+      const moving = this.step(w, dt, KAN_HOVER);
       if (!moving && !w.path.length) {
         w.wait -= dt;
         if (w.wait <= 0 && performance.now() > this.kanVisitUntil) { this.walkTo(w, this.nextKanStop(r)); w.wait = 4 + r() * 6; }
       }
-      w.obj.position.y = GROUND_Y + (moving ? Math.abs(Math.sin(t * 8)) * 0.15 : Math.abs(Math.sin(t * 1.5)) * 0.05);
+      // A slow hover, a lean into the turns, and the saucer itself spinning gently under Kan.
+      const u = this.kanUfo;
+      w.obj.position.y = KAN_HOVER + Math.sin(t * 1.3) * 0.35;
+      let turn = w.obj.rotation.y - heading;
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+      this.kanLean += ((moving ? 0.12 : 0) - this.kanLean) * Math.min(1, dt * 3);
+      w.obj.rotation.x = this.kanLean;
+      w.obj.rotation.z = THREE.MathUtils.clamp(-turn * 4, -0.3, 0.3);
+      if (u) {
+        u.kan.rotation.y = Math.sin(t * 0.7) * 0.4;
+        const body = u.kan.userData.body as THREE.Object3D | undefined;
+        if (body) body.position.y = 0.8 + Math.abs(Math.sin(t * 2.2)) * 0.05;
+        u.lights.forEach((l, i) => { (l.material as THREE.MeshBasicMaterial).color.set(Math.floor(t * 4 + i) % 3 === 0 ? '#ffffff' : l.userData.color); });
+        // The beam comes on when Kan's busy or stopped to look at something.
+        const beamOn = this.kanSays || !moving;
+        const bm = u.beam.material as THREE.MeshBasicMaterial;
+        bm.opacity += ((beamOn ? 0.18 : 0) - bm.opacity) * Math.min(1, dt * 3);
+        u.beam.visible = bm.opacity > 0.01;
+      }
     }
     // Cars wander the grid, one intersection at a time.
     if (this.grid) {
@@ -1306,17 +1457,19 @@ export class CityEngine {
     return fig.group;
   }
 
-  /** A little car with Kan at the wheel. */
+  /** Your convertible, with you (the mushroom) at the wheel, cap sticking out the top. */
   private makeDriver(): THREE.Group {
-    const g = car(5);
-    g.traverse((o) => { o.castShadow = true; });
-    const k = kanFigure();
-    k.scale.setScalar(0.3);
-    k.position.set(-0.15, 0.6, 0);
-    k.rotation.y = Math.PI / 2;
-    g.add(k);
-    g.scale.setScalar(1.6);
-    return g;
+    const c = sportsCar();
+    const me = botFigure(hash('you, the owner'));
+    me.group.scale.setScalar(0.78);
+    me.group.rotation.y = Math.PI / 2;
+    c.seat.add(me.group);
+    c.group.userData.wheels = c.wheels;
+    c.group.userData.glow = c.glow;
+    c.group.userData.driver = me.group;
+    c.group.userData.seat = c.seat;
+    c.group.scale.setScalar(1.6);
+    return c.group;
   }
 
   /** A violet glider with Kan riding on top. */
@@ -1541,6 +1694,9 @@ export class CityEngine {
         this.persp.lookAt(p.x + f.x * 5, 2.2, p.z + f.z * 5);
       } else {
         p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 20) * 0.08 - p.roll) * Math.min(1, dt * 6);
+        for (const w of (p.obj.userData.wheels as THREE.Object3D[] | undefined) ?? []) w.rotation.y -= (p.speed * dt) / 0.48;
+        const glowMesh = p.obj.userData.glow as THREE.Mesh | undefined;
+        if (glowMesh) (glowMesh.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.sin(performance.now() / 260) * 0.12 + Math.min(0.2, Math.abs(p.speed) / 120);
         p.obj.position.set(p.x, 0.12, p.z);
         p.obj.rotation.set(0, p.heading - Math.PI / 2, 0);
         p.obj.rotateX(p.roll);
@@ -1588,6 +1744,18 @@ export class CityEngine {
       const reach = this.mode === 'walk' ? 8.5 : this.mode === 'drive' ? 11 : 13 + Math.max(0, p.y - v.built.top) * 0.15;
       if (d < reach && d < bestD && (!flying || p.y < v.built.top + 30)) { best = { kind: 'plot', id: v.plot.channelId, name: v.plot.name }; bestD = d; }
     }
+    if (this.mode === 'walk' && this.parked && Math.hypot(this.parked.x - p.x, this.parked.z - p.z) < 5) {
+      best = { kind: 'car', id: 'car', name: 'your car' };
+      bestD = -10;
+    }
+    if (this.mode === 'walk') {
+      for (const c of this.citizens.values()) {
+        if (!c.walker.obj.visible || c.walker.inside) continue;
+        const d = Math.hypot(c.walker.pos.x - p.x, c.walker.pos.z - p.z);
+        // Someone right in front of you comes before the building behind them.
+        if (d < 4.5 && d - 4 < bestD) { best = { kind: 'bot', id: c.plotId, name: this.plots.get(c.plotId)?.plot.resident.name ?? 'Bot' }; bestD = d - 4; }
+      }
+    }
     for (const l of this.strip?.lots ?? []) {
       const d = Math.min(Math.hypot(l.door.x - p.x, l.door.z - p.z), Math.hypot(l.center.x - p.x, l.center.z - p.z) + 2);
       const reach = this.mode === 'walk' ? 5.5 : this.mode === 'drive' ? 8 : 12;
@@ -1609,8 +1777,10 @@ export class CityEngine {
     if (e.type === 'keydown') {
       if (key === 'escape') { this.cb.onExitMode?.(); return; }
       if (key === ' ' && this.mode === 'fly') { e.preventDefault(); this.jump(); return; }
+      if (key === 'f' && this.mode === 'drive') { this.getOut(); return; }
+      if ((key === 'f' || key === 'e') && this.near?.kind === 'car') { this.getIn(); return; }
       if ((key === 'e' || key === 'enter') && this.near && !this.chute) {
-        this.cb.onPick(this.near.kind === 'app' ? { kind: 'app', id: this.near.id } : { kind: 'plot', id: this.near.id });
+        this.cb.onPick({ kind: this.near.kind, id: this.near.id } as Pick);
         return;
       }
       this.keys.add(key);
@@ -1689,9 +1859,10 @@ export class CityEngine {
       const visible = c.walker.obj.visible && !c.walker.inside;
       const pos = c.walker.obj.position.clone().setY(GROUND_Y + 3.4);
       put(c.label, pos, visible && (fpv ? pos.distanceTo(this.persp.position) < 45 : zoom > (w < 640 ? 2.4 : 1.25)));
-      put(c.bubble, pos.clone().setY(GROUND_Y + 2.4), visible && c.status === 'needs' && c.bubble.childElementCount > 0, -4);
+      const saying = performance.now() < c.sayUntil;
+      put(c.bubble, pos.clone().setY(GROUND_Y + 2.4), visible && (saying || c.status === 'needs') && c.bubble.childElementCount > 0, -4);
     }
-    if (this.kan && this.kanBubble) put(this.kanBubble, this.kan.obj.position.clone().setY(GROUND_Y + 4.6), this.kanSays, -30);
+    if (this.kan && this.kanBubble) put(this.kanBubble, this.kan.obj.position.clone().setY(this.kan.obj.position.y + 4.2), this.kanSays, -30);
   }
 
   // ---------- Input ----------
@@ -1722,6 +1893,13 @@ export class CityEngine {
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.view);
+    // Residents first: they're small and in front of the buildings they live in.
+    const bots = [...this.citizens.values()].filter((c) => c.walker.obj.visible && !c.walker.inside);
+    const botHit = ray.intersectObjects(bots.map((c) => c.fig.group), true)[0];
+    if (botHit) {
+      const c = bots.find((b) => { let o: THREE.Object3D | null = botHit.object; while (o) { if (o === b.fig.group) return true; o = o.parent; } return false; });
+      if (c) return { kind: 'bot', id: c.plotId };
+    }
     const hits = ray.intersectObjects(this.pickables, false);
     return (hits[0]?.object.userData.pick as Pick | undefined) ?? null;
   }
@@ -1813,6 +1991,7 @@ export class CityEngine {
     if (!this.grid || !this.data) return null;
     const L = this.data.layout;
     if (p.kind === 'plot') { const v = this.plots.get(p.id); return v ? v.center : null; }
+    if (p.kind === 'bot') { const c = this.citizens.get(p.id); return c ? { ...c.walker.pos } : null; }
     if (p.kind === 'townhall' || p.kind === 'arrivals') return this.grid.blockCenter(L.townHall.cx, L.townHall.cz);
     if (p.kind === 'app') { const lot = this.strip?.lots.find((l) => l.app.id === p.id); return lot ? lot.center : null; }
     if (p.kind === 'park') return this.grid.blockCenter(L.park.cx, L.park.cz);

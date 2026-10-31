@@ -6,6 +6,12 @@ import { recordUsage } from '@/lib/usage';
 
 export const runtime = 'nodejs';
 
+/** OpenAI voice names (what city bots are given) mapped to the nearest Gemini voice. */
+const GEMINI_VOICE: Record<string, string> = {
+  alloy: 'Zephyr', ash: 'Orus', coral: 'Leda', echo: 'Charon', fable: 'Puck',
+  nova: 'Aoede', onyx: 'Fenrir', sage: 'Kore', shimmer: 'Leda',
+};
+
 export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -53,7 +59,7 @@ export async function POST(request: Request) {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: voice || 'Kore',
+                voiceName: GEMINI_VOICE[voice as string] || voice || 'Kore',
               },
             },
           },

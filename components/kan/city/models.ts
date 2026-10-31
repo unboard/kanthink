@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Archetype } from '@/lib/kan/city/layout';
 import { rng } from './grid';
-import { botLook, type BotLook } from './look';
+import { botLook, KAN_LOOK, type BotLook } from './look';
 
 /**
  * Low-poly models for Kan City: a building for every kind of channel, Town Hall,
@@ -1087,8 +1087,7 @@ function capGeometry() {
  * The same character as the ShroomBot icon (look.ts). `body` is everything above the
  * shadow, pivoting at 0.8 so the engine can bob and breathe it.
  */
-export function botFigure(seed: number): { group: THREE.Group; body: THREE.Group; color: string } {
-  const look = botLook(seed);
+export function botFigure(seed: number, look: BotLook = botLook(seed)): { group: THREE.Group; body: THREE.Group; color: string } {
   const g = dyn(new THREE.Group());
   const body = new THREE.Group();
   body.position.y = 0.8;
@@ -1164,33 +1163,141 @@ export function botFigure(seed: number): { group: THREE.Group; body: THREE.Group
   return { group: g, body, color: look.cap };
 }
 
-/** Kan: the mushroom, violet cap with spots. */
+/** Kan: a mushroom like every bot, in Kan's own violet with white spots, wearing a gold crown. */
 export function kanFigure(): THREE.Group {
+  const fig = botFigure(0, KAN_LOOK);
+  const gold = new THREE.MeshStandardMaterial({ color: '#ffcc33', roughness: 0.3, metalness: 0.65, emissive: new THREE.Color('#ffb000'), emissiveIntensity: 0.3, flatShading: true });
+  const crown = new THREE.Group();
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.18, 10), gold);
+  crown.add(band);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const point = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.24, 5), gold);
+    point.position.set(Math.sin(a) * 0.29, 0.19, Math.cos(a) * 0.29);
+    crown.add(point);
+    const gem = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 4), new THREE.MeshBasicMaterial({ color: i % 2 ? '#ff4d8d' : '#38bdf8' }));
+    gem.position.set(Math.sin(a) * 0.335, 0.01, Math.cos(a) * 0.335);
+    crown.add(gem);
+  }
+  crown.position.y = 0.76;
+  crown.rotation.z = -0.12;
+  crown.traverse((o) => { o.castShadow = true; });
+  fig.body.add(crown);
+  fig.group.userData.body = fig.body;
+  return fig.group;
+}
+
+/**
+ * Kan's ride around town: a silver saucer with a glass dome, running lights round
+ * the rim and a soft beam underneath. `kan` stands inside; `lights` and `beam` are
+ * for the engine to animate.
+ */
+export function ufo(): { group: THREE.Group; kan: THREE.Group; lights: THREE.Mesh[]; beam: THREE.Mesh } {
   const g = dyn(new THREE.Group());
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.55, 1.1, 12), mat('#f6ecd9', { rough: 0.6 }));
-  stem.position.y = 0.55;
-  stem.castShadow = true;
-  g.add(stem);
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(1.05, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#8b5cf6', roughness: 0.5, emissive: new THREE.Color('#8b5cf6'), emissiveIntensity: 0.25 }));
-  cap.scale.set(1, 0.75, 1);
-  cap.position.y = 1.05;
-  cap.castShadow = true;
-  g.add(cap);
-  for (const [x, y, z] of [[0.4, 1.6, 0.5], [-0.5, 1.5, 0.45], [0, 1.78, -0.2], [0.65, 1.4, -0.45]]) {
-    const s = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 5), mat('#ffffff'));
-    s.position.set(x, y, z);
-    g.add(s);
+  const hull = new THREE.MeshStandardMaterial({ color: '#d9dee8', roughness: 0.28, metalness: 0.75, flatShading: true });
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(2.1, 24, 10), hull);
+  belly.scale.set(1, 0.26, 1);
+  belly.castShadow = true;
+  g.add(belly);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(2.05, 0.16, 8, 32), new THREE.MeshStandardMaterial({ color: '#8b5cf6', roughness: 0.4, metalness: 0.5, emissive: new THREE.Color('#6d28d9'), emissiveIntensity: 0.35 }));
+  rim.rotation.x = Math.PI / 2;
+  g.add(rim);
+  const lights: THREE.Mesh[] = [];
+  const colors = ['#ffcc33', '#ff4d8d', '#38bdf8', '#5fd38d'];
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), new THREE.MeshBasicMaterial({ color: colors[i % colors.length] }));
+    l.position.set(Math.sin(a) * 2.05, -0.06, Math.cos(a) * 2.05);
+    l.userData.color = colors[i % colors.length];
+    g.add(l);
+    lights.push(l);
   }
-  for (const x of [-0.16, 0.16]) {
-    const eye = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.12, 3, 6), mat('#2b2140'));
-    eye.position.set(x, 0.7, 0.44);
-    g.add(eye);
+  const kan = kanFigure();
+  kan.scale.setScalar(0.95);
+  kan.position.y = 0.32;
+  g.add(kan);
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(1.25, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: '#c4f1ff', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.28, depthWrite: false }),
+  );
+  dome.scale.y = 1.45;
+  dome.position.y = 0.3;
+  g.add(dome);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 2.2, 6, 24, 1, true),
+    new THREE.MeshBasicMaterial({ color: '#fff3b0', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
+  );
+  beam.position.y = -3.2;
+  g.add(beam);
+  return { group: g, kan, lights, beam };
+}
+
+/**
+ * Your car: a low violet convertible with racing stripes, a spoiler, neon under-glow
+ * and an open top, so the driver's mushroom head pokes out. Faces +x like every car.
+ * `wheels` spin and `glow` pulses (the engine does both); `seat` is where a driver sits.
+ */
+export function sportsCar(): { group: THREE.Group; wheels: THREE.Object3D[]; glow: THREE.Mesh; seat: THREE.Group } {
+  const g = dyn(new THREE.Group());
+  const paint = mat('#7c3aed', { rough: 0.25, metal: 0.45 });
+  const trim = mat('#1b1530', { rough: 0.5 });
+  const stripe = mat('#fdf4ff', { rough: 0.4 });
+  const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = g) => {
+    const mesh = new THREE.Mesh(geo, m);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    parent.add(mesh);
+    return mesh;
+  };
+  // Body: a long low tub, a sloped nose, side skirts, the cockpit open on top.
+  add(new THREE.BoxGeometry(2.7, 0.34, 1.32), paint, 0, 0.38, 0);
+  const nose = add(new THREE.BoxGeometry(0.8, 0.2, 1.26), paint, 1.1, 0.5, 0);
+  nose.rotation.z = -0.22;
+  add(new THREE.BoxGeometry(0.95, 0.22, 1.32), paint, -0.9, 0.62, 0);
+  for (const z of [-0.6, 0.6]) add(new THREE.BoxGeometry(1.2, 0.2, 0.12), paint, 0.15, 0.62, z);
+  add(new THREE.BoxGeometry(2.5, 0.1, 1.42), trim, 0, 0.22, 0);
+  for (const z of [-0.17, 0.17]) {
+    add(new THREE.BoxGeometry(0.95, 0.02, 0.12), stripe, -0.9, 0.735, z);
+    const s2 = add(new THREE.BoxGeometry(0.82, 0.02, 0.12), stripe, 1.1, 0.61, z);
+    s2.rotation.z = -0.22;
   }
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.8, 14), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.18 }));
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.03;
-  g.add(shadow);
-  return g;
+  // Raked windshield.
+  const glass = add(new THREE.BoxGeometry(0.06, 0.34, 1.1), new THREE.MeshStandardMaterial({ color: '#bfe9ff', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.45 }), 0.62, 0.78, 0);
+  glass.rotation.z = 0.75;
+  // Spoiler on two struts.
+  add(new THREE.BoxGeometry(0.34, 0.05, 1.46), mat('#fdf4ff', { rough: 0.35 }), -1.3, 1.02, 0);
+  for (const z of [-0.45, 0.45]) add(new THREE.BoxGeometry(0.08, 0.32, 0.06), trim, -1.25, 0.84, z);
+  // Lights.
+  for (const z of [-0.45, 0.45]) {
+    add(new THREE.BoxGeometry(0.05, 0.1, 0.3), glow('#fff6d0', 1.6), 1.48, 0.46, z);
+    add(new THREE.BoxGeometry(0.05, 0.1, 0.36), glow('#ff2d55', 1.4), -1.37, 0.5, z);
+  }
+  // Wheels, with a spoke so you can see them turn.
+  const wheels: THREE.Object3D[] = [];
+  const tire = mat('#141414', { rough: 0.8 });
+  const rimMat = mat('#e5e7eb', { rough: 0.2, metal: 0.8 });
+  for (const [x, z] of [[0.88, 0.66], [0.88, -0.66], [-0.88, 0.66], [-0.88, -0.66]]) {
+    const w = new THREE.Group();
+    w.position.set(x, 0.3, z);
+    w.rotation.x = Math.PI / 2;
+    add(new THREE.CylinderGeometry(0.3, 0.3, 0.26, 14), tire, 0, 0, 0, w);
+    add(new THREE.CylinderGeometry(0.18, 0.18, 0.27, 10), rimMat, 0, 0, 0, w);
+    add(new THREE.BoxGeometry(0.34, 0.28, 0.06), rimMat, 0, 0, 0, w);
+    g.add(w);
+    wheels.push(w);
+  }
+  // Neon under-glow.
+  const under = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.1, 1.9),
+    new THREE.MeshBasicMaterial({ color: '#ff3cac', transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending }),
+  );
+  under.rotation.x = -Math.PI / 2;
+  under.position.y = 0.04;
+  g.add(under);
+  const seat = new THREE.Group();
+  seat.position.set(-0.15, 0.3, 0);
+  g.add(seat);
+  return { group: g, wheels, glow: under, seat };
 }
 
 /** A little shroom that lives in a yard. Automatic ones glow. */

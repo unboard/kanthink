@@ -29,6 +29,11 @@ export async function GET() {
   await ensureSchema()
   const userId = session.user.id
   const city = await cityFor(userId)
+  // Name any resident who doesn't have a name yet, after the response, so the city never waits on it.
+  if (!('empty' in city) && city.plots.some((p) => !p.named)) {
+    const { nameResidents } = await import('@/lib/kan/city/residents')
+    afterResponse(() => nameResidents(userId).then(() => undefined))
+  }
   if (!('empty' in city) && city.arrivals.count >= PILE && !city.townHall.passRunning && Date.now() - (lastKick.get(userId) ?? 0) > EVERY_MS) {
     lastKick.set(userId, Date.now())
     const recent = await db.query.attentionPasses.findFirst({

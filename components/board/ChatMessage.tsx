@@ -449,7 +449,8 @@ export function ChatMessage({
           {isAI && (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
               <KanthinkIcon size={14} className="text-violet-500 dark:text-violet-400" />
-              Kan
+              {/* A city bot's chat carries its own name. */}
+              {message.authorName || 'Kan'}
             </span>
           )}
           {isUserMessage && <UserMessageHeader message={message} session={session} />}

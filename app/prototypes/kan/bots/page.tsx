@@ -40,7 +40,7 @@ interface Step { id: string; label: string; status: 'running' | 'done' | 'error'
 
 interface Run {
   id: string;
-  trigger: 'scheduled' | 'manual' | 'rehearsal' | 'build';
+  trigger: 'scheduled' | 'manual' | 'rehearsal' | 'build' | 'chat';
   status: 'running' | 'done' | 'error' | 'over_budget';
   steps: Step[];
   summary: string | null;

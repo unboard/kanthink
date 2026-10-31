@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowUpRight, Car, ChevronDown, CircleDollarSign, Footprints, Sparkles, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
+  ArrowUpRight, Car, ChevronDown, CircleDollarSign, Footprints, LogOut, MessageCircle, Sparkles, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -11,6 +11,7 @@ import { CityEngine, SKY_CSS, skyFor, type Near, type Sky, type ViewMode } from 
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
+import { BotChat } from '@/components/kan/city/BotChat';
 import { hash } from '@/lib/kan/city/layout';
 import type { CityData, CityPlot, Pick } from '@/components/kan/city/types';
 
@@ -154,6 +155,8 @@ export default function CityPage() {
   const [near, setNear] = useState<Near | null>(null);
   /** An app opened full screen, right in the city. */
   const [viewing, setViewing] = useState<{ title: string; href: string } | null>(null);
+  /** An app playing in the drawer, with the city still beside it. */
+  const [playing, setPlaying] = useState<string | null>(null);
   const coarse = useCoarse();
 
   useEffect(() => { setPreview(new URLSearchParams(window.location.search).has('preview')); }, []);
@@ -251,11 +254,17 @@ export default function CityPage() {
 
   const selectedPlot = pick?.kind === 'plot' ? plotOf.get(pick.id) ?? null : null;
   const selectedApp = pick?.kind === 'app' ? data?.apps.find((a) => a.id === pick.id) ?? null : null;
+  const selectedBot = pick?.kind === 'bot' ? plotOf.get(pick.id) ?? null : null;
+  const botNeighbors = useMemo(() => (selectedBot?.folderId ? plots.filter((x) => x.folderId === selectedBot.folderId && x.channelId !== selectedBot.channelId) : []), [selectedBot, plots]);
+  const talkingTo = selectedBot?.channelId ?? null;
+  useEffect(() => { engine.current?.talkTo(talkingTo); }, [talkingTo, state]);
+  const playingApp = selectedApp && playing === selectedApp.id ? selectedApp : null;
   const strip = useMemo(() => {
     const apps = data?.apps ?? [];
     return { n: apps.length, earned: apps.reduce((n, a) => n + a.earnedCents, 0), selling: apps.filter((a) => a.tier !== 'free').length };
   }, [data]);
   const focus = selectedPlot ? { channelId: selectedPlot.channelId, name: selectedPlot.name }
+    : selectedBot ? { channelId: selectedBot.channelId, name: selectedBot.name }
     : selectedApp ? { channelId: selectedApp.channelId, name: `the app ${selectedApp.title}`, kind: 'app' }
     : board && plotOf.get(board) ? { channelId: board, name: plotOf.get(board)!.name }
     : pick?.kind === 'townhall' ? { kind: 'townhall', name: 'Town Hall' }
@@ -470,11 +479,20 @@ export default function CityPage() {
         <>
           {near && !panelOpen && (
             <button
-              onClick={() => onPickRef.current(near.kind === 'app' ? { kind: 'app', id: near.id } : { kind: 'plot', id: near.id })}
+              onClick={() => (near.kind === 'car' ? engine.current?.getIn() : onPickRef.current({ kind: near.kind, id: near.id } as Pick))}
               className="absolute left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50"
               style={{ bottom: chatH + (coarse || !wide ? 150 : 20) }}
             >
-              <DoorOpen className="h-4 w-4 text-violet-600" /> Go into {near.name}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
+              {near.kind === 'bot' ? <MessageCircle className="h-4 w-4 text-violet-600" /> : <DoorOpen className="h-4 w-4 text-violet-600" />} {near.kind === 'bot' ? 'Talk to' : near.kind === 'car' ? 'Get in' : 'Go into'} {near.kind === 'car' ? '' : near.name}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
+            </button>
+          )}
+          {mode === 'drive' && (
+            <button
+              onClick={() => engine.current?.getOut()}
+              className="absolute z-20 flex items-center gap-1.5 rounded-full bg-white/90 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-white active:scale-95"
+              style={{ right: (coarse || !wide) ? 16 : rightW + 16, bottom: chatH + ((coarse || !wide) ? 40 : 20) }}
+            >
+              <LogOut className="h-4 w-4" /> Get out{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">F</span>}
             </button>
           )}
           {mode === 'fly' && (
@@ -490,7 +508,7 @@ export default function CityPage() {
             <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint={mode === 'drive' ? 'Drive' : mode === 'walk' ? 'Walk' : 'Steer · climb'} />
           ) : (
             <p className="absolute left-1/2 top-[60px] z-10 -translate-x-1/2 rounded-full bg-neutral-950/60 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur">
-              {mode === 'fly' ? 'A D to turn · W S to climb and dive · Shift for speed · Space to parachute out' : `W A S D or arrows to ${mode} · Shift to ${mode === 'walk' ? 'run' : 'speed up'}`} · E to go in · Esc for the map
+              {mode === 'fly' ? 'A D to turn · W S to climb and dive · Shift for speed · Space to parachute out' : `W A S D or arrows to ${mode} · Shift to ${mode === 'walk' ? 'run' : 'speed up'}${mode === 'drive' ? ' · F to get out' : ''}`} · E to go in · Esc for the map
             </p>
           )}
         </>
@@ -541,8 +559,23 @@ export default function CityPage() {
         />
       )}
       {pick && !board && data && (
-        <PickSheet onClose={() => setPick(null)}>
-          {selectedPlot ? (
+        <PickSheet onClose={() => { setPick(null); setPlaying(null); }} fill={Boolean(selectedBot || playingApp)} wide={Boolean(playingApp)}>
+          {selectedBot ? (
+            <BotChat
+              key={selectedBot.channelId}
+              plot={selectedBot}
+              neighbors={botNeighbors}
+              onSaid={(text) => engine.current?.botSay(selectedBot.channelId, text)}
+              onVisits={(vs) => { for (const v of vs) engine.current?.visit(v.from, v.to); reloadSoon(); }}
+              onBoard={() => setBoard(selectedBot.channelId)}
+            />
+          ) : playingApp ? (
+            <AppPlayer
+              app={playingApp}
+              onBack={() => setPlaying(null)}
+              onFull={() => { setViewing({ title: playingApp.title, href: playingApp.href }); setPlaying(null); }}
+            />
+          ) : selectedPlot ? (
             <PlotPanel
               p={selectedPlot}
               data={data}
@@ -556,6 +589,7 @@ export default function CityPage() {
               onMove={(folderId) => void moveTo(selectedPlot.channelId, folderId)}
               onNewHood={() => { setGather({ name: '', ids: [selectedPlot.channelId] }); setPick(null); }}
               onGo={(id) => onPickRef.current({ kind: 'plot', id })}
+              onTalk={() => onPickRef.current({ kind: 'bot', id: selectedPlot.channelId })}
             />
           ) : pick.kind === 'townhall' ? (
             <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onApply={(id) => void applyPass(id)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
@@ -564,7 +598,7 @@ export default function CityPage() {
           ) : pick.kind === 'proposal' ? (
             <ProposalPanel data={data} name={pick.name} busy={busy} onBuild={(id, name) => { setPick(null); void buildOne(id, name); }} onAsk={ask} />
           ) : pick.kind === 'app' ? (
-            selectedApp ? <AppPanel app={selectedApp} channel={data.names[selectedApp.channelId] ?? ''} onOpen={() => setViewing({ title: selectedApp.title, href: selectedApp.href })} onAsk={ask} /> : <p className="text-[13px] text-neutral-400">That app has moved on.</p>
+            selectedApp ? <AppPanel app={selectedApp} channel={data.names[selectedApp.channelId] ?? ''} onOpen={() => setPlaying(selectedApp.id)} onFull={() => setViewing({ title: selectedApp.title, href: selectedApp.href })} onAsk={ask} /> : <p className="text-[13px] text-neutral-400">That app has moved on.</p>
           ) : pick.kind === 'arrivals' ? (
             <ArrivalsPanel data={data} running={data.townHall.passRunning} onSort={() => ask('Sort what came in since you last looked.')} />
           ) : (
@@ -694,17 +728,17 @@ function SidePanel({ children, side, onClose, wide }: { children: React.ReactNod
 }
 
 /** Where a picked thing opens: the right side on a wide screen, a bottom sheet on a phone. */
-function PickSheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function PickSheet({ children, onClose, fill = false, wide = false }: { children: React.ReactNode; onClose: () => void; fill?: boolean; wide?: boolean }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return (
-    <div className="pointer-events-auto fixed inset-x-2 bottom-[var(--chat-h)] z-40 flex max-h-[calc(78dvh-var(--chat-h))] flex-col overflow-hidden rounded-3xl border border-white/10 bg-neutral-950/92 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:max-h-none lg:w-[420px] lg:rounded-2xl">
+    <div className={`pointer-events-auto fixed inset-x-2 bottom-[var(--chat-h)] z-40 flex max-h-[calc(78dvh-var(--chat-h))] flex-col overflow-hidden rounded-3xl border border-white/10 bg-neutral-950/92 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:max-h-none lg:rounded-2xl ${fill ? 'h-[calc(78dvh-var(--chat-h))] lg:h-auto' : ''} ${wide ? 'lg:w-[min(760px,58vw)]' : 'lg:w-[420px]'}`}>
       <div className="mx-auto mt-2 h-1 w-10 flex-shrink-0 rounded-full bg-white/20 lg:hidden" />
       <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-neutral-400 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+      <div className={`min-h-0 flex-1 p-4 ${fill ? 'flex flex-col' : 'overflow-y-auto'}`}>{children}</div>
     </div>
   );
 }
@@ -839,7 +873,7 @@ function Feed({ data, onGo }: { data: CityData; onGo(id: string): void }) {
   );
 }
 
-function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onBoard, onMove, onNewHood, onGo }: {
+function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onBoard, onMove, onNewHood, onGo, onTalk }: {
   p: CityPlot;
   data: CityData;
   approvals: Approval[];
@@ -852,6 +886,7 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
   onMove(folderId: string | null): void;
   onNewHood(): void;
   onGo(id: string): void;
+  onTalk(): void;
 }) {
   const maxCol = Math.max(1, ...p.columns.map((c) => c.cards));
   const s = STATUS[p.bot.status];
@@ -901,8 +936,8 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
         <div className="flex items-center gap-2.5">
           <ShroomBot seed={hash(p.channelId)} status={p.bot.status} size={40} />
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-medium text-neutral-200">{p.bot.on ? 'Its bot' : 'No bot lives here yet'}</p>
-            <p className="text-[12px] text-neutral-500">{p.bot.on ? `Every ${p.bot.everyHours}h${p.bot.lastRunAt ? ` · last ran ${ago(p.bot.lastRunAt)}` : ''}` : 'One would read this channel and work it on its own.'}</p>
+            <p className="text-[13px] font-medium text-neutral-200">{p.resident.name}</p>
+            <p className="text-[12px] text-neutral-500">{p.bot.on ? `Works every ${p.bot.everyHours}h${p.bot.lastRunAt ? ` · last ran ${ago(p.bot.lastRunAt)}` : ''}` : 'Lives here. Turn it on and it works the channel on its own.'}</p>
           </div>
           <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] ${s.pill}`}>{s.label}</span>
         </div>
@@ -911,9 +946,12 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
         {p.bot.asks.map((a, i) => <p key={i} className="mt-2 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-[13px] text-amber-100">{a}</p>)}
         {p.fixed && <p className="mt-2 text-[12px] text-neutral-500">Kan leaves this one’s layout alone: {p.fixed}.</p>}
         <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={onTalk} className="flex items-center gap-1.5 rounded-full border border-violet-400/40 px-3.5 py-1.5 text-xs font-medium text-violet-100 hover:bg-violet-500/15">
+            <MessageCircle className="h-3.5 w-3.5" /> Talk to {p.resident.name}
+          </button>
           {!p.bot.on ? (
             <button disabled={busy !== null} onClick={onOn} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50">
-              {busy?.startsWith('on:') ? 'Calling a cab…' : 'Move a bot in'}
+              {busy?.startsWith('on:') ? 'Getting to work…' : 'Put it to work'}
             </button>
           ) : (
             <>
@@ -1135,7 +1173,7 @@ function ProposalPanel({ data, name, busy, onBuild, onAsk }: { data: CityData; n
   );
 }
 
-function AppPanel({ app, channel, onOpen, onAsk }: { app: CityData['apps'][number]; channel: string; onOpen(): void; onAsk(prompt: string, prefill?: boolean): void }) {
+function AppPanel({ app, channel, onOpen, onFull, onAsk }: { app: CityData['apps'][number]; channel: string; onOpen(): void; onFull(): void; onAsk(prompt: string, prefill?: boolean): void }) {
   const tier = app.tier === 'earning'
     ? { label: 'Making money', cls: 'bg-yellow-400 text-neutral-950', Icon: CircleDollarSign }
     : app.tier === 'selling' ? { label: 'For sale', cls: 'bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/50', Icon: CircleDollarSign }
@@ -1158,13 +1196,28 @@ function AppPanel({ app, channel, onOpen, onAsk }: { app: CityData['apps'][numbe
         <Stat n={app.people || app.views} label={app.people ? 'people' : 'views'} />
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={onOpen} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500">Go inside</button>
+        <button onClick={onOpen} className="flex items-center gap-1.5 rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500"><Play className="h-3.5 w-3.5" /> Play here</button>
+        <button onClick={onFull} className="flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5"><Maximize2 className="h-3.5 w-3.5" /> Full screen</button>
         {app.tier !== 'earning' && (
           <button onClick={() => onAsk(`How could the app “${app.title}” start making money? Look at it and its channel and give me the one best move.`)} className="rounded-full border border-yellow-400/40 px-3.5 py-1.5 text-xs text-yellow-100 hover:bg-yellow-400/10">How could it earn?</button>
         )}
         <button onClick={() => onAsk(`About the app “${app.title}”: `, true)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5">Ask Kan</button>
       </div>
       {!app.isPublic && <p className="mt-2 text-[11px] text-neutral-600">Not published yet, so only you can go in.</p>}
+    </div>
+  );
+}
+
+/** An app playing in the drawer, the city still there beside it. */
+function AppPlayer({ app, onBack, onFull }: { app: CityData['apps'][number]; onBack(): void; onFull(): void }) {
+  return (
+    <div className="-m-4 flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-shrink-0 items-center gap-1 border-b border-white/10 py-2 pl-2 pr-12">
+        <button onClick={onBack} className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/10 hover:text-white"><ChevronLeft className="h-4 w-4" /> Back</button>
+        <span className="min-w-0 flex-1 truncate text-center text-[14px] font-semibold text-neutral-100">{app.title}</span>
+        <button onClick={onFull} title="Full screen" className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/10 hover:text-white"><Maximize2 className="h-3.5 w-3.5" /> Full</button>
+      </div>
+      <iframe src={app.href} title={app.title} className="min-h-0 w-full flex-1 bg-white" allow="clipboard-write; microphone; camera" />
     </div>
   );
 }

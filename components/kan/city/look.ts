@@ -57,3 +57,9 @@ export function botLook(seed: number): BotLook {
   const [stump, fin] = CLAYS[mix(s, 13) % CLAYS.length];
   return { cap, capDark, pattern, patternColor, stump, fin, cheek: '#ff8a8a' };
 }
+
+/** Kan: the violet cap with white spots that no bot gets, and a gold crown on top (in the 3D figure). */
+export const KAN_LOOK: BotLook = {
+  cap: '#8b5cf6', capDark: '#6d3fd6', pattern: 'spots', patternColor: '#ffffff',
+  stump: '#e0a47a', fin: '#c8865b', cheek: '#ff8a8a',
+};

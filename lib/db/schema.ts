@@ -2042,6 +2042,14 @@ export const channelBots = sqliteTable('channel_bots', {
   attentionAt: integer('attention_at', { mode: 'timestamp' }),
   /** Kan started this area itself, from patterns in the owner's input. */
   startedByKan: integer('started_by_kan', { mode: 'boolean' }).default(false),
+  /** What the bot is called in the city, picked to suit its channel. Null until Kan names it. */
+  name: text('name'),
+  /** The voice it speaks in, one of the TTS voices (lib/kan/city/residents). */
+  voice: text('voice'),
+  /** A line about who it is, so it sounds like itself in every chat. */
+  personality: text('personality'),
+  /** The card whose thread holds the conversation you're having with it now. */
+  chatCardId: text('chat_card_id'),
   lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
   nextRunAt: integer('next_run_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
@@ -2062,7 +2070,7 @@ export const botRuns = sqliteTable('bot_runs', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   channelId: text('channel_id').notNull().references(() => channels.id, { onDelete: 'cascade' }),
   ownerId: text('owner_id').notNull(),
-  trigger: text('trigger').$type<'scheduled' | 'manual' | 'rehearsal' | 'build'>().notNull(),
+  trigger: text('trigger').$type<'scheduled' | 'manual' | 'rehearsal' | 'build' | 'chat'>().notNull(),
   status: text('status').$type<'running' | 'done' | 'error' | 'over_budget'>().notNull(),
   steps: safeJsonText<BotStepJson[]>([])('steps').default([]),
   /** The run's report to the owner, in the bot's words. */

@@ -3,10 +3,11 @@ import {
   appOrders, appPurchases, appUsers, attentionPasses, botApprovals, botRuns, cards, channelActivityLog, channelBots, channels, columns, folders,
   instructionCards, instructionRuns, kanwatchEpisodes, playgroundApps, playgroundAppVersions, userChannelOrg, type AttentionDecisionJson,
 } from '@/lib/db/schema'
-import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import { gatherAreas, gatherInputs, type InputItem } from '@/lib/kan/attention/inputs'
 import { layoutCity, ARCHETYPE_LABEL } from '@/lib/kan/city/layout'
 import { limitsFor, spentByOwner } from '@/lib/kan/bots/spend'
+import { residentOf } from './residents'
 
 /**
  * Your channels as a city, and what's happening in it right now: which bots
@@ -69,7 +70,8 @@ export async function cityFor(userId: string) {
       columns: { id: true, channelId: true, columnId: true, title: true, updatedAt: true, source: true },
     }),
     db.query.botRuns.findMany({
-      where: and(eq(botRuns.ownerId, userId), gt(botRuns.startedAt, new Date(now - 7 * 24 * HOUR))),
+      // Chats aren't work: they'd fill the feed with "checked in". Their cost still counts toward spend.
+      where: and(eq(botRuns.ownerId, userId), gt(botRuns.startedAt, new Date(now - 7 * 24 * HOUR)), ne(botRuns.trigger, 'chat')),
       orderBy: [desc(botRuns.startedAt)],
       limit: 120,
       columns: { id: true, channelId: true, trigger: true, status: true, steps: true, summary: true, asks: true, costMillicents: true, startedAt: true, endedAt: true },
@@ -238,6 +240,9 @@ export async function cityFor(userId: string) {
       columns: cols.filter((c) => c.channelId === p.channelId).map((c) => ({ name: c.name, cards: countOfCol.get(c.id) ?? 0 })),
       recentCards: (cardsIn.get(p.channelId) ?? []).map((c) => ({ id: c.id, title: clip(c.title, 90), column: colName.get(c.columnId) ?? '', at: ms(c.updatedAt), byKan: c.source === 'ai' })),
       shrooms: shroomsIn.get(p.channelId) ?? [],
+      // The mushroom who lives here: its name, voice and personality, for talking with it.
+      resident: residentOf({ id: p.channelId, name: p.name }, bot),
+      named: Boolean(bot?.name),
       bot: {
         on: Boolean(bot?.enabled),
         everyHours: bot?.everyHours ?? 24,
