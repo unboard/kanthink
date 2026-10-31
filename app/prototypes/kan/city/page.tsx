@@ -163,6 +163,8 @@ export default function CityPage() {
   const [moving, setMoving] = useState<string | null>(null);
   /** An app playing in the drawer, with the city still beside it. */
   const [playing, setPlaying] = useState<string | null>(null);
+  /** The Today pill, open under where it was tapped. */
+  const [today, setToday] = useState<{ x: number; y: number } | null>(null);
   /** The building you're inside, with its board. */
   const [inside, setInside] = useState<{ id: string; board: ChannelBoard } | null>(null);
   const [entering, setEntering] = useState<string | null>(null);
@@ -553,22 +555,44 @@ export default function CityPage() {
           )}
         </div>
         <div className="no-scrollbar pointer-events-auto flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1">
+          {/* Up here only what wants you; the rest of the day folds into one pill. */}
           {counts.needs > 0 && <Chip tone="amber" n={counts.needs} label="need you" onClick={() => onPickRef.current({ kind: 'townhall' })} />}
-          <Chip n={counts.working} label="working" dot="bg-emerald-400" onClick={() => setSide((s) => (s === 'citizens' ? null : 'citizens'))} />
-          <Chip n={counts.bots} label={counts.bots === 1 ? 'bot' : 'bots'} onClick={() => setSide((s) => (s === 'citizens' ? null : 'citizens'))} />
-          {counts.building > 0 && <Chip tone="sky" n={counts.building} label="being built" />}
           {data && data.arrivals.count > 0 && <Chip tone="orange" n={data.arrivals.count} label="new for Kan" onClick={() => onPickRef.current({ kind: 'arrivals' })} />}
-          {data && <Chip n={data.done.bots + data.done.shrooms + data.done.you} label="done today" onClick={() => setSide((s) => (s === 'feed' ? null : 'feed'))} />}
-          {strip.n > 0 && (
-            <Chip
-              tone={strip.earned ? 'gold' : undefined}
-              label={`🎰 ${strip.n} apps on the Strip${strip.earned ? ` · $${Math.round(strip.earned / 100).toLocaleString()} earned` : ''}`}
-              onClick={() => { setMode('map'); setPick(null); setBoard(null); setTimeout(() => engine.current?.focusStrip(), 0); }}
-            />
+          {counts.building > 0 && <Chip tone="sky" n={counts.building} label="being built" />}
+          {data && (
+            <button
+              onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setToday((t) => (t ? null : { x: r.left, y: r.bottom + 6 })); }}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] shadow-lg backdrop-blur-xl hover:border-white/30 ${today ? 'border-white/30 bg-neutral-900/90' : 'border-white/10 bg-neutral-950/70'}`}
+            >
+              {counts.working > 0 && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />}
+              <span className="font-medium text-white">Today</span>
+              <span className="text-neutral-400">
+                {counts.working > 0 ? `${counts.working} working` : `${data.done.bots + data.done.shrooms + data.done.you} done`}
+                {strip.earned > 0 && <span className="text-yellow-300"> · ${Math.round(strip.earned / 100).toLocaleString()}</span>}
+              </span>
+              <ChevronDown className={`h-3.5 w-3.5 text-neutral-500 transition-transform ${today ? 'rotate-180' : ''}`} />
+            </button>
           )}
-          {data && data.yourDay.minutes > 0 && <Chip tone="gold" label={`${minutes(data.yourDay.minutes)} of your time`} onClick={() => setSide((s) => (s === 'feed' ? null : 'feed'))} />}
-          {data && <Chip label={`$${(data.spend.todayCents / 100).toFixed(2)} today`} href="/prototypes/kan/bots?spend" />}
         </div>
+        {today && data && (
+          <>
+            <button aria-label="Close" className="pointer-events-auto fixed inset-0 z-30 cursor-default" onClick={() => setToday(null)} />
+            <div className="pointer-events-auto fixed z-40 w-64 rounded-2xl border border-white/10 bg-neutral-950/95 p-1.5 shadow-2xl backdrop-blur-xl" style={{ left: Math.min(today.x, window.innerWidth - 268), top: today.y }}>
+              <TodayRow icon={<span className={`h-2 w-2 rounded-full ${counts.working ? 'animate-pulse bg-emerald-400' : 'bg-neutral-600'}`} />} label="Bots working" value={counts.bots ? `${counts.working} of ${counts.bots}` : "None yet"} onClick={() => { setToday(null); setSide('citizens'); }} />
+              <TodayRow icon={<Sparkles className="h-3.5 w-3.5 text-violet-300" />} label="Done today" value={String(data.done.bots + data.done.shrooms + data.done.you)} onClick={() => { setToday(null); setSide('feed'); }} />
+              {data.yourDay.minutes > 0 && <TodayRow icon={<Footprints className="h-3.5 w-3.5 text-amber-300" />} label="Your time" value={minutes(data.yourDay.minutes)} onClick={() => { setToday(null); setSide('feed'); }} />}
+              {strip.n > 0 && (
+                <TodayRow
+                  icon={<CircleDollarSign className="h-3.5 w-3.5 text-yellow-300" />}
+                  label={`${strip.n} apps on the Strip`}
+                  value={strip.earned ? `$${Math.round(strip.earned / 100).toLocaleString()} earned` : 'Free'}
+                  onClick={() => { setToday(null); setMode('map'); setPick(null); setBoard(null); setTimeout(() => engine.current?.focusStrip(), 0); }}
+                />
+              )}
+              <TodayRow icon={<CircleDollarSign className="h-3.5 w-3.5 text-neutral-400" />} label="AI spend today" value={`$${(data.spend.todayCents / 100).toFixed(2)}`} href="/prototypes/kan/bots?spend" />
+            </div>
+          </>
+        )}
         {/* On a phone it sits under the chips, on the right, so the chips get the row. */}
         <div className={`pointer-events-auto absolute right-3 top-[calc(max(10px,env(safe-area-inset-top))+40px)] flex-shrink-0 flex-col items-center gap-0.5 rounded-full border border-white/10 bg-neutral-950/75 p-0.5 shadow-lg backdrop-blur-xl sm:static sm:flex-row ${inside ? 'hidden' : 'flex'}`}>
           {([['map', MapIcon, 'Map'], ['walk', Footprints, 'Walk'], ['drive', Car, 'Drive'], ['ride', Scooter, 'Moped'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
@@ -913,6 +937,19 @@ const STATUS_ACCENT = '#a78bfa';
 function MenuItem({ children, onClick, href }: { children: React.ReactNode; onClick?: () => void; href?: string }) {
   const cls = 'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-neutral-200 hover:bg-white/5';
   return href ? <Link href={href} className={cls}>{children}</Link> : <button onClick={onClick} className={cls}>{children}</button>;
+}
+
+/** One line of the Today pill: what, how much, and where it takes you. */
+function TodayRow({ icon, label, value, onClick, href }: { icon: React.ReactNode; label: string; value: string; onClick?: () => void; href?: string }) {
+  const cls = 'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[13px] hover:bg-white/5';
+  const body = (
+    <>
+      <span className="flex w-4 justify-center">{icon}</span>
+      <span className="min-w-0 flex-1 truncate text-neutral-300">{label}</span>
+      <span className="font-medium tabular-nums text-white">{value}</span>
+    </>
+  );
+  return href ? <Link href={href} className={cls}>{body}</Link> : <button onClick={onClick} className={cls}>{body}</button>;
 }
 
 function Chip({ n, label, tone, dot, onClick, href }: { n?: number; label: string; tone?: 'amber' | 'sky' | 'orange' | 'gold'; dot?: string; onClick?: () => void; href?: string }) {
