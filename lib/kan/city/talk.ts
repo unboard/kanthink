@@ -26,14 +26,19 @@ const CHAT_MODEL = 'claude-sonnet-5-5'
 const STALE_MS = 8 * 3600_000
 const HISTORY = 24
 
-type Msg = NonNullable<typeof cards.$inferSelect['messages']>[number] & { authorName?: string }
+/** What a message made, shown under it in the chat as things you can open. */
+interface Made {
+  apps?: { id: string; title: string; cardId: string }[]
+  cards?: { id: string; title: string }[]
+}
+type Msg = NonNullable<typeof cards.$inferSelect['messages']>[number] & { authorName?: string } & Made
 
 export interface ChatView {
   resident: Resident
   channelName: string
   cardId: string
   title: string
-  messages: { id: string; who: 'you' | 'bot' | 'other'; name: string; text: string; at: string }[]
+  messages: ({ id: string; who: 'you' | 'bot' | 'other'; name: string; text: string; at: string } & Made)[]
 }
 
 /** What the bots call the owner. The owner asked to be called Hodg. */
@@ -89,6 +94,8 @@ function view(resident: Resident, channelName: string, card: { id: string; title
       name: m.type === 'ai_response' ? m.authorName || resident.name : m.authorName || 'You',
       text: m.content,
       at: m.createdAt,
+      ...(m.apps?.length ? { apps: m.apps } : {}),
+      ...(m.cards?.length ? { cards: m.cards } : {}),
     })),
   }
 }
@@ -224,6 +231,7 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
   const neighborBots = neighborRows[0].map((c) => residentOf(c, neighborRows[1].find((b) => b.channelId === c.id)))
 
   const visits: Said['visits'] = []
+  const made: Required<Made> = { apps: [], cards: [] }
   const ctx: BotContext = {
     userId: ownerId, isAdmin: admin, name: owner.name, readable: [channelId], scope: [channelId],
     sessionCardIds: [], recentTurns: [], channelId, asks: [],
@@ -231,8 +239,11 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
   const { botTools, guardTools } = await import('@/lib/kan/bots/tools')
   const keep = new Set(['board'])
   const base = botTools({ isAdmin: admin, isStudio: false, canHandOff: false, providers: (['google', 'openai', 'anthropic'] as const).filter((p) => keys[p]) })
-    .filter((t) => keep.has(t.area) || t.name === 'propose_build' || t.name === 'app_numbers')
-  const tools: BotTool[] = [...guardTools(base, ctx), noteTool(channelId), visitTool({ ownerId, from: resident, boss, neighbors: neighborBots, hoodName: hood.name, visits })]
+    .filter((t) => keep.has(t.area) || t.name === 'app_numbers')
+  const tools: BotTool[] = [
+    ...guardTools(base, ctx), noteTool(channelId), visitTool({ ownerId, from: resident, boss, neighbors: neighborBots, hoodName: hood.name, visits }),
+    buildTool({ ownerId, channelId, resident, chatCardId: opened.cardId, made }),
+  ]
 
   const system = [
     `You are ${resident.name}, a little mushroom bot who lives in Kan City and runs the "${channel.name}" channel. ${resident.personality}`,
@@ -245,6 +256,7 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
     `- When ${boss} tells you something worth keeping (a preference, a goal, a decision), save it with note_to_self.`,
     `- When ${boss} asks for something you can do with your tools, do it, then say what you did in a few words. Never claim you did something you didn't.`,
     `- If ${boss} asks you to go talk to another bot, use visit_bot, then tell ${boss} what came of it.`,
+    `- When ${boss} says yes to trying an app idea ("let's try it", "build it", "go for it", "make it"), build it right away with build_app and a full brief. Don't just write the idea on a card: ${boss} wants something to open. Say it's building and that you'll tell them when it's ready.`,
     neighborBots.length
       ? `- You live in the ${hood.name} neighborhood. Your neighbors: ${neighborBots.map((b) => `${b.name} (runs ${neighborRows[0].find((c) => c.id === b.channelId)?.name})`).join(', ')}. Bots never leave their neighborhood.`
       : '- You live Downtown, with no neighbors to visit. Bots never leave their neighborhood; Kan can carry messages between neighborhoods.',
@@ -273,6 +285,12 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
     })
     reply = result.text.trim() || 'Hmm, I lost my thread there. Say that again?'
     did = result.did
+    // Cards it made are things to click too, unless they're the card an app is building on.
+    const fresh = result.madeCards.filter((id) => !made.apps.some((a) => a.cardId === id) && !made.cards.some((c) => c.id === id))
+    if (fresh.length) {
+      const rows = await db.query.cards.findMany({ where: inArray(cards.id, fresh), columns: { id: true, title: true } })
+      made.cards.push(...rows)
+    }
     await db.insert(botRuns).values({
       id: runId, channelId, ownerId, trigger: 'chat', status: 'done', startedAt, endedAt: new Date(),
       summary: reply.slice(0, 500), costMillicents: thinkingCost(result.model, result.usage), model: result.model,
@@ -282,11 +300,120 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
     console.error('[city] chat', err)
     reply = 'Sorry, my cap went fuzzy for a second. Try me again?'
   }
-  const answer = botMsg(resident.name, reply)
+  const answer: Msg = { ...botMsg(resident.name, reply), ...(made.apps.length ? { apps: made.apps } : {}), ...(made.cards.length ? { cards: made.cards } : {}) }
   const now = await db.query.cards.findFirst({ where: eq(cards.id, opened.cardId), columns: { id: true, title: true, messages: true } })
   const messages = [...((now?.messages ?? [...before, mine]) as Msg[]), answer]
   await db.update(cards).set({ messages: messages as never, updatedAt: new Date() }).where(eq(cards.id, opened.cardId))
   return { chat: view(resident, channel.name, { id: opened.cardId, title: now?.title ?? opened.title, messages }, ownerId), reply, did, visits }
+}
+
+/**
+ * Build an app from the chat. The app's row is made now, so the chat can show it at
+ * once; the build itself runs after the reply, and when it lands the bot says so in
+ * the thread. Building from the idea's card when there is one, so the app lives on it.
+ */
+function buildTool(o: { ownerId: string; channelId: string; resident: Resident; chatCardId: string; made: Required<Made> }): BotTool {
+  return {
+    name: 'build_app',
+    area: 'build',
+    description: 'Build a working single-screen app now, from an idea card in your channel (or a new one). Use when the boss says yes to trying an app. Write the brief so a builder can start without asking: who it is for, what it does, the screens and interactions, the feel. Takes a minute or two; the chat shows it building and lets the boss open it when it lands.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'The app’s name, short and fun' },
+        brief: { type: 'string', description: 'Everything the builder needs' },
+        card: { type: 'string', description: 'The id or title of the idea card to build on, if there is one' },
+      },
+      required: ['title', 'brief'],
+    },
+    kind: 'write',
+    running: (i) => `Starting to build ${String(i.title ?? 'the app')}`,
+    async run(i) {
+      if (o.made.apps.length) return { content: 'You already started a build this turn.', isError: true }
+      const title = String(i.title ?? '').trim().slice(0, 80) || 'New app'
+      const brief = String(i.brief ?? '').trim().slice(0, 6000)
+      if (!brief) return { content: 'Write a brief first.', isError: true }
+      // The idea's card: by id, else by title, else a new one holding the brief.
+      const ref = String(i.card ?? '').trim()
+      let card = ref ? await db.query.cards.findFirst({ where: and(eq(cards.id, ref), eq(cards.channelId, o.channelId)), columns: { id: true, title: true } }) : undefined
+      if (!card && (ref || title)) {
+        const rows = await db.query.cards.findMany({ where: and(eq(cards.channelId, o.channelId), inBucket('active')), orderBy: [desc(cards.updatedAt)], limit: 200, columns: { id: true, title: true } })
+        const q = (ref || title).toLowerCase()
+        card = rows.find((c) => c.title.toLowerCase() === q) ?? rows.find((c) => c.id !== o.chatCardId && (c.title.toLowerCase().includes(q) || q.includes(c.title.toLowerCase())))
+      }
+      if (!card) {
+        const id = await addCard(o.channelId, title, [botMsg(o.resident.name, brief)])
+        if (!id) return { content: 'Your channel has no columns to put the app’s card in.', isError: true }
+        card = { id, title }
+      } else {
+        // The builder reads the card's thread, so the brief goes there too.
+        const row = await db.query.cards.findFirst({ where: eq(cards.id, card.id), columns: { messages: true } })
+        await db.update(cards).set({ messages: [...((row?.messages ?? []) as Msg[]), botMsg(o.resident.name, `**Brief for ${title}**\n\n${brief}`)] as never, updatedAt: new Date() }).where(eq(cards.id, card.id))
+      }
+      const { resolveAppForAutomatedBuild } = await import('@/lib/playground/appRecord')
+      const app = await resolveAppForAutomatedBuild({ cardId: card.id, userId: o.ownerId, title })
+      if (!app) return { content: 'Couldn’t start an app on that card.', isError: true }
+      o.made.apps.push({ id: app.id, title: app.title || title, cardId: card.id })
+      const { afterResponse } = await import('@/lib/afterResponse')
+      afterResponse(() => runChatBuild({ ...o, appId: app.id, cardId: card!.id, title, brief }))
+      return { content: `The build of "${title}" has started on the card "${card.title}". It takes a minute or two; you'll announce it in the chat when it's ready.`, label: `Building ${title}`, cardId: card.id }
+    },
+  }
+}
+
+/** The build itself, after the reply: charged to the bot, and announced in the chat when done. */
+async function runChatBuild(o: { ownerId: string; channelId: string; resident: Resident; chatCardId: string; appId: string; cardId: string; title: string; brief: string }) {
+  const owner = await db.query.users.findFirst({ where: eq(users.id, o.ownerId), columns: { id: true, name: true, email: true } })
+  if (!owner) return
+  const { isAdmin } = await import('@/lib/auth')
+  const { callAction } = await import('@/lib/kan/agent/tools')
+  const runId = crypto.randomUUID()
+  await db.insert(botRuns).values({ id: runId, channelId: o.channelId, ownerId: o.ownerId, trigger: 'build', status: 'running', steps: [{ id: 'build', label: `Building “${o.title}”`, status: 'running', write: true }], startedAt: new Date() })
+  let line: string
+  let ok = false
+  let cost = 0
+  try {
+    const data = await callAction('build_app', { cardId: o.cardId, prompt: o.brief }, {
+      userId: owner.id, isAdmin: isAdmin(owner.email), name: owner.name,
+      readable: [o.channelId], scope: [o.channelId], sessionCardIds: [], recentTurns: [],
+    })
+    ok = !data.error && !/^(Failed|Couldn)/.test(data.result ?? '')
+    cost = typeof data.costUsd === 'number' ? Math.ceil(data.costUsd * 100_000) : 0
+    line = ok ? `${o.title} is ready! Tap it below to give it a try. 🎉` : `Hmm, the build of ${o.title} hit a snag: ${(data.result || data.error || 'no reason given').slice(0, 200)}. Want me to try again?`
+  } catch (err) {
+    line = `Hmm, the build of ${o.title} hit a snag. Want me to try again?`
+    console.error('[city] chat build', err)
+  }
+  await db.update(botRuns).set({
+    status: ok ? 'done' : 'error', endedAt: new Date(), costMillicents: cost, buildMillicents: cost,
+    steps: [{ id: 'build', label: ok ? `Built “${o.title}”` : `Build of “${o.title}” failed`, status: ok ? 'done' : 'error', write: true }],
+    summary: ok ? `Built **${o.title}** from a chat with you.` : `The build of **${o.title}** failed.`,
+  }).where(eq(botRuns.id, runId)).catch(() => {})
+  const row = await db.query.cards.findFirst({ where: eq(cards.id, o.chatCardId), columns: { messages: true } })
+  const msg: Msg = { ...botMsg(o.resident.name, line), apps: [{ id: o.appId, title: o.title, cardId: o.cardId }] }
+  await db.update(cards).set({ messages: [...((row?.messages ?? []) as Msg[]), msg] as never, updatedAt: new Date() }).where(eq(cards.id, o.chatCardId))
+}
+
+/** How an app from a chat is doing, for its tile in the chat. Only the channel's owner may ask. */
+export async function appStatus(ownerId: string, appId: string) {
+  const app = await db.query.playgroundApps.findFirst({
+    where: eq(playgroundApps.id, appId),
+    columns: { id: true, title: true, channelId: true, code: true, buildProgress: true, isPublic: true, shareToken: true, updatedAt: true, createdAt: true },
+  })
+  if (!app) return null
+  const ch = await db.query.channels.findFirst({ where: and(eq(channels.id, app.channelId), eq(channels.ownerId, ownerId)), columns: { id: true } })
+  if (!ch) return null
+  const building = Boolean(app.buildProgress)
+  const since = +(app.updatedAt ?? app.createdAt ?? 0)
+  const status = app.code && !building ? 'ready' : building || Date.now() - since < 12 * 60_000 ? 'building' : 'failed'
+  const step = app.buildProgress?.steps?.filter((x) => x.status === 'running').at(-1)?.label ?? null
+  return {
+    id: app.id,
+    title: app.title,
+    status,
+    step,
+    href: app.isPublic && app.shareToken ? `/play/${app.shareToken}` : `/play/preview/${app.id}`,
+  }
 }
 
 function noteTool(channelId: string): BotTool {

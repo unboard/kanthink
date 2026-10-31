@@ -568,6 +568,13 @@ export default function CityPage() {
               onSaid={(text) => engine.current?.botSay(selectedBot.channelId, text)}
               onVisits={(vs) => { for (const v of vs) engine.current?.visit(v.from, v.to); reloadSoon(); }}
               onBoard={() => setBoard(selectedBot.channelId)}
+              onOpenApp={(a) => {
+                // In the drawer when the city knows the app (it's on the Strip); otherwise, or when asked, full screen.
+                const known = data.apps.some((x) => x.id === a.id);
+                if (a.full || !known) { setViewing({ title: a.title, href: a.href }); if (!known) reloadSoon(); return; }
+                setPick({ kind: 'app', id: a.id });
+                setPlaying(a.id);
+              }}
             />
           ) : playingApp ? (
             <AppPlayer

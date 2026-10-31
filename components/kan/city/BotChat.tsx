@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { ArrowUp, AudioLines, Keyboard, Loader2, Mic, Plus, Square, Volume2 } from 'lucide-react';
+import { AppWindow, ArrowUp, AudioLines, Keyboard, Loader2, Maximize2, Mic, Play, Plus, Square, StickyNote, Volume2 } from 'lucide-react';
 import { ShroomBot } from './ShroomBot';
 import { hash } from '@/lib/kan/city/layout';
 import type { CityPlot } from './types';
@@ -17,7 +17,13 @@ import type { CityPlot } from './types';
  */
 
 type Mode = 'type' | 'speak' | 'talk';
-interface Line { id: string; who: 'you' | 'bot' | 'other'; name: string; text: string; at: string }
+interface Line {
+  id: string; who: 'you' | 'bot' | 'other'; name: string; text: string; at: string;
+  /** What it made: apps (building or ready) and cards, to open from the chat. */
+  apps?: { id: string; title: string; cardId: string }[];
+  cards?: { id: string; title: string }[];
+}
+export interface OpenApp { id: string; title: string; href: string; full?: boolean }
 interface Chat {
   resident: { channelId: string; name: string; voice: string; personality: string };
   channelName: string;
@@ -31,7 +37,7 @@ const readMode = (): Mode => {
   try { const m = localStorage.getItem(MODE_KEY); return m === 'speak' || m === 'talk' ? m : 'type'; } catch { return 'type'; }
 };
 
-export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard }: {
+export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp }: {
   plot: CityPlot;
   /** Residents next door, who this one can go and talk to. */
   neighbors: CityPlot[];
@@ -39,6 +45,8 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard }: {
   onSaid(text: string): void;
   onVisits(v: { from: string; to: string }[]): void;
   onBoard(): void;
+  /** Play an app it built: in the drawer, or full screen. */
+  onOpenApp(app: OpenApp): void;
 }) {
   const id = plot.channelId;
   const name = plot.resident.name;
@@ -140,6 +148,25 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard }: {
   }, [id]);
 
   useEffect(() => { void open(false); }, [open]);
+
+  /** Fetch the thread again without clearing it: a build landed and the bot said so. */
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/prototypes/kan/city/talk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channelId: id, action: 'open' }) });
+      if (!res.ok || !alive.current) return;
+      const j: Chat = await res.json();
+      setChat((c) => {
+        if (c && j.messages.length > c.messages.length) {
+          const last = j.messages.at(-1);
+          if (last?.who === 'bot') {
+            onSaid(last.text);
+            if (modeRef.current !== 'type') void speak(last.text);
+          }
+        }
+        return j;
+      });
+    } catch { /* next poll */ }
+  }, [id, onSaid, speak]);
   useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }); }, [chat?.messages.length, sending]);
 
   const status = ear.state === 'listening' ? 'Listening… just talk' : ear.state === 'hearing' ? 'Hearing you…' : ear.state === 'thinking' ? 'Writing down what you said…'
@@ -176,6 +203,16 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard }: {
             <div className={`max-w-[88%] rounded-2xl px-3 py-2 text-[14px] leading-relaxed ${m.who === 'you' ? 'rounded-br-md bg-violet-600 text-white' : m.who === 'other' ? 'bg-sky-500/10 text-sky-50' : 'rounded-bl-md bg-white/[0.06] text-neutral-100'}`}>
               {m.who !== 'you' && <p className="mb-0.5 text-[11px] font-medium text-violet-300">{m.name}</p>}
               <div className="prose prose-invert prose-sm max-w-none break-words prose-p:my-0.5"><ReactMarkdown>{m.text}</ReactMarkdown></div>
+              {m.apps?.map((a) => <AppTile key={`${m.id}-${a.id}`} app={a} onOpen={onOpenApp} onReady={refresh} />)}
+              {m.cards && m.cards.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {m.cards.map((c) => (
+                    <button key={c.id} onClick={onBoard} className="flex max-w-full items-center gap-1.5 rounded-lg bg-white/[0.06] px-2 py-1 text-left text-[12px] text-neutral-200 hover:bg-white/10">
+                      <StickyNote className="h-3.5 w-3.5 flex-shrink-0 text-amber-300" /> <span className="truncate">{c.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -216,6 +253,59 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard }: {
         <button onClick={onBoard} className="truncate hover:text-neutral-200">Saved as a card in {plot.name}</button>
         <button onClick={() => void open(true)} disabled={sending} className="flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-1 hover:bg-white/5 hover:text-neutral-200"><Plus className="h-3 w-3" /> New chat</button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * An app a bot built from the chat: building (with what the builder's doing now),
+ * then ready to play in the drawer or full screen.
+ */
+function AppTile({ app, onOpen, onReady }: { app: { id: string; title: string }; onOpen(a: OpenApp): void; onReady(): void }) {
+  const [s, setS] = useState<{ status: 'building' | 'ready' | 'failed'; step: string | null; href: string; title: string } | null>(null);
+  const was = useRef<string | null>(null);
+  useEffect(() => {
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/prototypes/kan/city/talk?app=${encodeURIComponent(app.id)}`);
+        if (res.ok && !stop) {
+          const j = await res.json();
+          setS(j);
+          // It just finished while we watched: the bot will have said so in the thread.
+          if (was.current === 'building' && j.status !== 'building') setTimeout(onReady, 1500);
+          was.current = j.status;
+          if (j.status !== 'building') return;
+        }
+      } catch { /* try again */ }
+      if (!stop) timer = setTimeout(poll, 4000);
+    };
+    void poll();
+    return () => { stop = true; if (timer) clearTimeout(timer); };
+  }, [app.id, onReady]);
+
+  const ready = s?.status === 'ready';
+  const title = s?.title || app.title;
+  return (
+    <div className={`mt-2 overflow-hidden rounded-xl border ${ready ? 'border-violet-400/50 bg-violet-500/10' : 'border-white/10 bg-black/20'}`}>
+      <div className="flex items-center gap-2.5 px-3 py-2.5">
+        <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${ready ? 'bg-violet-500 text-white' : 'bg-white/10 text-neutral-300'}`}>
+          {s && s.status === 'building' ? <Loader2 className="h-4 w-4 animate-spin" /> : <AppWindow className="h-4 w-4" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-semibold text-neutral-50">{title}</p>
+          <p className="truncate text-[11px] text-neutral-400">
+            {!s ? 'Checking…' : s.status === 'ready' ? 'Ready to play' : s.status === 'failed' ? 'The build didn’t finish' : s.step ?? 'Building… a minute or two'}
+          </p>
+        </div>
+      </div>
+      {ready && s && (
+        <div className="flex gap-1.5 border-t border-white/10 px-2 py-2">
+          <button onClick={() => onOpen({ id: app.id, title, href: s.href })} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-violet-500 px-2 py-1.5 text-[12px] font-medium text-white hover:bg-violet-400"><Play className="h-3.5 w-3.5" /> Play here</button>
+          <button onClick={() => onOpen({ id: app.id, title, href: s.href, full: true })} className="flex items-center justify-center gap-1.5 rounded-lg border border-white/15 px-2.5 py-1.5 text-[12px] text-neutral-200 hover:bg-white/5"><Maximize2 className="h-3.5 w-3.5" /> Full screen</button>
+        </div>
+      )}
     </div>
   );
 }

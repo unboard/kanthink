@@ -1,9 +1,20 @@
 import { auth } from '@/lib/auth'
 import { ensureSchema } from '@/lib/db/ensure-schema'
-import { openChat, say } from '@/lib/kan/city/talk'
+import { appStatus, openChat, say } from '@/lib/kan/city/talk'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+// A turn can start an app build, which finishes after the reply.
+export const maxDuration = 800
+
+/** GET ?app=ID — how an app a bot is building is doing. */
+export async function GET(req: Request) {
+  const session = await auth()
+  if (!session?.user?.id) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  const id = new URL(req.url).searchParams.get('app')
+  if (!id) return Response.json({ error: 'Which app?' }, { status: 400 })
+  const status = await appStatus(session.user.id, id)
+  return status ? Response.json(status) : Response.json({ error: 'No such app.' }, { status: 404 })
+}
 
 /**
  * POST — talk with a bot who lives in the city.
