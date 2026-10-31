@@ -100,6 +100,8 @@ export interface PlotInput {
   createdAt?: number | null
   isShareInbox?: boolean
   isStudio?: boolean
+  /** A lot the owner moved it to, in unshifted cells (see CityLayout.origin). Claimed before anything else is placed. */
+  pin?: { cx: number; cz: number } | null
 }
 
 export interface Plot {
@@ -133,6 +135,11 @@ export interface CityLayout {
   park: { cx: number; cz: number }
   /** Lots nobody has built on yet: room for what Kan starts next. */
   free: { cx: number; cz: number }[]
+  /**
+   * The shift applied so the corner is 0,0. It changes as the city grows, so a moved
+   * plot is stored unshifted: shown cell + origin.
+   */
+  origin: { cx: number; cz: number }
 }
 
 export const DOWNTOWN = 'Downtown'
@@ -186,6 +193,15 @@ export function layoutCity(inputs: PlotInput[], opts: { freeLots?: number } = {}
   const land: { cx: number; cz: number }[] = []
   for (let cz = -reach; cz <= reach; cz++) for (let cx = -reach; cx <= reach; cx++) if (!taken.has(key(cx, cz))) land.push({ cx, cz })
 
+  // Moved plots claim their lots first, oldest first; a pin on Town Hall, the park or
+  // another pin is ignored and that plot is placed as usual.
+  const pinned = new Map<string, { cx: number; cz: number }>()
+  for (const m of ordered) {
+    if (!m.pin || !Number.isInteger(m.pin.cx) || !Number.isInteger(m.pin.cz) || taken.has(key(m.pin.cx, m.pin.cz))) continue
+    taken.add(key(m.pin.cx, m.pin.cz))
+    pinned.set(m.channelId, { cx: m.pin.cx, cz: m.pin.cz })
+  }
+
   const cellsOf = new Map<string, { cx: number; cz: number }[]>()
   const districtNames: string[] = []
   const plots: Plot[] = []
@@ -196,9 +212,10 @@ export function layoutCity(inputs: PlotInput[], opts: { freeLots?: number } = {}
     const seed = seedOf(n)
     // The free cell closest to the seed, leaning toward the middle of town, and
     // touching the district so it stays in one piece.
-    let best: { cx: number; cz: number } | null = null
+    // A moved plot already has its lot.
+    let best: { cx: number; cz: number } | null = pinned.get(m.channelId) ?? null
     let bestScore = Infinity
-    for (const c of land) {
+    for (const c of best ? [] : land) {
       if (taken.has(key(c.cx, c.cz))) continue
       const toSeed = Math.hypot(c.cx + 0.5 - seed.x, c.cz + 0.5 - seed.z)
       const touching = cells.length === 0 || cells.some((o) => Math.abs(o.cx - c.cx) + Math.abs(o.cz - c.cz) === 1)
@@ -241,5 +258,5 @@ export function layoutCity(inputs: PlotInput[], opts: { freeLots?: number } = {}
   const rows = even(Math.max(...[...placed, ...free, townHall, park].map((c) => c.cz)) + 2)
 
   const districts: District[] = districtNames.map((name, tint) => ({ name, tint, cells: cellsOf.get(name)!.map(move) }))
-  return { cols, rows, plots: placed, districts, townHall, park, free }
+  return { cols, rows, plots: placed, districts, townHall, park, free, origin: { cx: ox, cz: oz } }
 }

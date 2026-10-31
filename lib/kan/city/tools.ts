@@ -33,6 +33,32 @@ async function findOwnChannel(ref: string, ctx: ToolContext) {
 
 export const cityTools: AgentTool[] = [
   {
+    name: 'move_plot',
+    description: 'Move a channel’s building to a different spot in the city, right next to another channel’s building ("put Lennon next to Scarlett"). It goes on the same block when there’s room, else across the road; if the lot is taken, the two swap. Nothing else moves, and the channel itself is untouched. Moving a channel into a neighborhood (arrange_neighborhood) moves it to that district instead.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        channel: { type: 'string', description: 'The channel to move: id or name' },
+        nextTo: { type: 'string', description: 'The channel to put it next to: id or name' },
+      },
+      required: ['channel', 'nextTo'],
+    },
+    kind: 'write',
+    running: (i) => `Moving ${str(i.channel)} next to ${str(i.nextTo)}`,
+    async run(input, ctx) {
+      const [a, b] = await Promise.all([findOwnChannel(str(input.channel), ctx), findOwnChannel(str(input.nextTo), ctx)])
+      if (!a || !b) return { content: `Couldn't find ${!a ? str(input.channel) : str(input.nextTo)} among their channels.`, isError: true }
+      const { movePlotNextTo } = await import('./move')
+      const out = await movePlotNextTo(ctx.userId, a.id, b.id)
+      if ('error' in out) return { content: out.error, isError: true }
+      return {
+        content: `${a.name} is now right next to ${b.name}${out.swappedWith ? ` (it swapped lots with ${out.swappedWith})` : ''}.`,
+        label: `Moved ${a.name} next to ${b.name}`,
+        href: channelHref(a.id),
+      }
+    },
+  },
+  {
     name: 'restyle_plot',
     description: 'Change how a channel’s building looks in the city: a theme (decorations and colors), the kind of building, and/or its wall and roof colors. Only the look changes; the channel, its cards and its bot are untouched. Pick a building kind that suits the theme when the current one doesn’t (a cat theme reads best on a house, cafe or studio). Set reset to go back to how Kan drew it.',
     input_schema: {
@@ -347,6 +373,7 @@ They are talking to you from Kan City: a map of their channels as a town. Each c
 - Neighborhoods are folders and fences: bots help each other inside one and never reach outside it. Downtown (no folder) bots keep to their own channel.
 - Never ask which channel something is in: find it with find_cards. To move cards between channels use move_cards_to_channel (move_card only changes columns).
 - A new channel is a new building: when you make one, put it in the neighborhood it belongs to (arrange_neighborhood) if one fits, and say where it went up.
+- They can move any building next to another just by asking: use move_plot. They can also tap Move on a building and pick a lot.
 - They can change how any building looks just by asking ("make Lennon's building cat themed"): use restyle_plot. It only changes the look.
 - The city redraws as you act, so keep replies short; they can see the change happen.`
 }

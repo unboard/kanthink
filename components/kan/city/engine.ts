@@ -98,6 +98,8 @@ export interface EngineCallbacks {
   onNear?(p: Near | null): void;
   /** Escape out of drive or fly mode. */
   onExitMode?(): void;
+  /** Placing a plot: the lot you tapped, in the layout's cells. */
+  onCell?(c: { cx: number; cz: number }): void;
   /** The engine changed mode on its own, e.g. you parachuted out of the glider and are on foot now. */
   onModeChange?(mode: ViewMode): void;
 }
@@ -128,6 +130,8 @@ export class CityEngine {
   private kanUfo: ReturnType<typeof ufo> | null = null;
   /** The car you got out of, waiting where you left it. */
   private parked: { obj: THREE.Group; x: number; z: number; heading: number } | null = null;
+  /** The plot being moved, while you pick its new lot. */
+  private placing: string | null = null;
   /** The resident you're talking with. */
   private talking: string | null = null;
   private kanLean = 0;
@@ -349,6 +353,35 @@ export class CityEngine {
     c.goal = '';
     const p = this.plots.get(c.plotId)?.plot;
     if (p) this.route(c, p, -1);
+  }
+
+  /**
+   * Moving a plot: taps pick a lot instead of a building, and the lot under the
+   * pointer is ringed. Pass null when done.
+   */
+  setPlacing(channelId: string | null) {
+    this.placing = channelId;
+    this.renderer.domElement.style.cursor = channelId ? 'crosshair' : 'grab';
+    if (!channelId) this.select(this.selected);
+  }
+
+  /** The lot (a cell) under a point on screen, or null over a road or nothing. */
+  private cellAt(clientX: number, clientY: number): { cx: number; cz: number } | null {
+    if (!this.grid) return null;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.view);
+    const hit = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -GROUND_Y), new THREE.Vector3());
+    return hit ? this.onBlock(hit.x, hit.z, 0) : null;
+  }
+
+  private showPlacing(c: { cx: number; cz: number } | null) {
+    if (!c || !this.grid) { this.selectRing.visible = false; return; }
+    const at = this.grid.cellCenter(c.cx, c.cz);
+    this.selectRing.visible = true;
+    this.selectRing.scale.setScalar(1);
+    this.selectRing.position.set(at.x, GROUND_Y + 0.08, at.z);
   }
 
   /** Follow a bot: look at wherever it is right now. */
@@ -1924,6 +1957,11 @@ export class CityEngine {
     const moved = Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y);
     this.down = null;
     if (moved > 6) return;
+    if (this.placing) {
+      const c = this.cellAt(e.clientX, e.clientY);
+      if (c) this.cb.onCell?.(c);
+      return;
+    }
     this.cb.onPick(this.pickAt(e.clientX, e.clientY));
   };
   private hoverQueued = false;
@@ -1932,6 +1970,7 @@ export class CityEngine {
     this.hoverQueued = true;
     requestAnimationFrame(() => {
       this.hoverQueued = false;
+      if (this.placing) { this.showPlacing(this.cellAt(e.clientX, e.clientY)); return; }
       const p = this.pickAt(e.clientX, e.clientY);
       const name = p?.kind === 'plot' ? this.plots.get(p.id)?.plot.name ?? null : null;
       this.setHover(name);

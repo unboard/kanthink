@@ -53,6 +53,22 @@ describe('Kan City', () => {
     expect(Object.keys(after)).toHaveLength(70)
   })
 
+  it('puts a moved plot on its pinned lot and keeps pins across growth', () => {
+    const inputs = Array.from({ length: 12 }, (_, i) => plot('c' + i, 'Channel ' + i, ['A', null][i % 2], { createdAt: i }))
+    const L = layoutCity(inputs)
+    const raw = (id: string, l: ReturnType<typeof layoutCity>) => { const p = l.plots.find((x) => x.channelId === id)!; return { cx: p.cx + l.origin.cx, cz: p.cz + l.origin.cz } }
+    // Out past everything, so it's certainly free.
+    const lot = { cx: 14, cz: -9 }
+    const moved = layoutCity(inputs.map((x) => (x.channelId === 'c7' ? { ...x, pin: lot } : x)))
+    expect(raw('c7', moved)).toEqual(lot)
+    // A pin on Town Hall is ignored rather than stacking two buildings.
+    const th = { cx: L.townHall.cx + L.origin.cx, cz: L.townHall.cz + L.origin.cz }
+    const bad = layoutCity(inputs.map((x) => (x.channelId === 'c7' ? { ...x, pin: th } : x)))
+    expect(raw('c7', bad)).not.toEqual(th)
+    const grown = layoutCity([...inputs.map((x) => (x.channelId === 'c7' ? { ...x, pin: lot } : x)), ...Array.from({ length: 20 }, (_, i) => plot('n' + i, 'New ' + i, 'B', { createdAt: 50 + i }))])
+    expect(raw('c7', grown)).toEqual(lot)
+  })
+
   it('routes along the streets to a door', () => {
     const g = new Grid(8, 8)
     const from = g.door(0, 0)

@@ -51,9 +51,14 @@ export async function moveToNeighborhood(userId: string, channelId: string, fold
   const [{ n }] = await db.select({ n: sql<number>`coalesce(max(${userChannelOrg.position}), -1)` }).from(userChannelOrg)
     .where(and(eq(userChannelOrg.userId, userId), folderId ? eq(userChannelOrg.folderId, folderId) : isNull(userChannelOrg.folderId)))
   const position = Number(n) + 1
-  const existing = await db.query.userChannelOrg.findFirst({ where: and(eq(userChannelOrg.userId, userId), eq(userChannelOrg.channelId, channelId)), columns: { id: true } })
+  const existing = await db.query.userChannelOrg.findFirst({ where: and(eq(userChannelOrg.userId, userId), eq(userChannelOrg.channelId, channelId)), columns: { id: true, folderId: true } })
   if (existing) await db.update(userChannelOrg).set({ folderId, position }).where(eq(userChannelOrg.id, existing.id))
   else await db.insert(userChannelOrg).values({ userId, channelId, folderId, position })
+  // A plot that was moved by hand goes to its new neighborhood when it joins one.
+  if ((existing?.folderId ?? null) !== folderId) {
+    const { channelBots } = await import('@/lib/db/schema')
+    await db.update(channelBots).set({ plotPin: null }).where(and(eq(channelBots.channelId, channelId), eq(channelBots.ownerId, userId)))
+  }
   return { ok: true }
 }
 

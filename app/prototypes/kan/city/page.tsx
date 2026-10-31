@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowUpRight, Car, ChevronDown, CircleDollarSign, Footprints, LogOut, MessageCircle, Sparkles, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
+  ArrowUpRight, Car, ChevronDown, CircleDollarSign, Footprints, LogOut, MessageCircle, Move as MoveIcon, Sparkles, ChevronLeft, DoorOpen, Inbox, LayoutGrid, Loader2, Map as MapIcon, Maximize2, Menu, Moon, Package, Plane, Play, Plus,
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
@@ -155,6 +155,8 @@ export default function CityPage() {
   const [near, setNear] = useState<Near | null>(null);
   /** An app opened full screen, right in the city. */
   const [viewing, setViewing] = useState<{ title: string; href: string } | null>(null);
+  /** A plot you're moving: the next lot you tap is where it goes. */
+  const [moving, setMoving] = useState<string | null>(null);
   /** An app playing in the drawer, with the city still beside it. */
   const [playing, setPlaying] = useState<string | null>(null);
   const coarse = useCoarse();
@@ -196,6 +198,29 @@ export default function CityPage() {
     refreshSoon.current = setTimeout(() => { void load(); void loadApprovals(); }, 600);
   }, [load, loadApprovals]);
 
+  // A lot tapped while moving a plot.
+  const onCellRef = useRef<(c: { cx: number; cz: number }) => void>(() => {});
+  onCellRef.current = (c) => {
+    const id = moving;
+    if (!id) return;
+    setMoving(null);
+    void (async () => {
+      const res = await fetch('/api/prototypes/kan/city/move', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channelId: id, to: c }) });
+      const j = await res.json().catch(() => ({}));
+      const name = plotOf.get(id)?.name ?? 'It';
+      if (!res.ok) { engine.current?.kanSay(j.error ?? 'Couldn’t move it there.', 'Kan', 5000); return; }
+      engine.current?.kanSay(j.swappedWith ? `${name} and ${j.swappedWith} swapped lots.` : `${name} moved.`, 'Kan', 4000);
+      reloadSoon();
+    })();
+  };
+  useEffect(() => { engine.current?.setPlacing(moving); }, [moving, state]);
+  useEffect(() => {
+    if (!moving) return;
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setMoving(null); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [moving]);
+
   // Picks go through a ref so the engine's callback always sees the current mode.
   const onPickRef = useRef<(p: Pick | null) => void>(() => {});
   onPickRef.current = (p) => {
@@ -215,6 +240,7 @@ export default function CityPage() {
       onNear: setNear,
       onExitMode: () => setMode('map'),
       onModeChange: setMode,
+      onCell: (c) => onCellRef.current(c),
     });
     engine.current.setSky(sky);
     return undefined;
@@ -474,6 +500,13 @@ export default function CityPage() {
         </div>
       )}
 
+      {moving && (
+        <div className="absolute left-1/2 top-[64px] z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-violet-600 py-1.5 pl-4 pr-1.5 text-[13px] font-medium text-white shadow-2xl">
+          <MoveIcon className="h-4 w-4" /> Tap a lot to move {plotOf.get(moving)?.name ?? 'it'} there
+          <button onClick={() => setMoving(null)} className="rounded-full bg-white/15 px-2.5 py-1 text-[12px] hover:bg-white/25">Cancel</button>
+        </div>
+      )}
+
       {/* Behind the wheel or the wings. */}
       {mode !== 'map' && (
         <>
@@ -597,6 +630,7 @@ export default function CityPage() {
               onNewHood={() => { setGather({ name: '', ids: [selectedPlot.channelId] }); setPick(null); }}
               onGo={(id) => onPickRef.current({ kind: 'plot', id })}
               onTalk={() => onPickRef.current({ kind: 'bot', id: selectedPlot.channelId })}
+              onRelocate={() => { setMoving(selectedPlot.channelId); setPick(null); if (mode !== 'map') setMode('map'); }}
             />
           ) : pick.kind === 'townhall' ? (
             <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onApply={(id) => void applyPass(id)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
@@ -883,7 +917,7 @@ function Feed({ data, onGo }: { data: CityData; onGo(id: string): void }) {
   );
 }
 
-function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onBoard, onMove, onNewHood, onGo, onTalk }: {
+function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onBoard, onMove, onNewHood, onGo, onTalk, onRelocate }: {
   p: CityPlot;
   data: CityData;
   approvals: Approval[];
@@ -897,6 +931,7 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
   onNewHood(): void;
   onGo(id: string): void;
   onTalk(): void;
+  onRelocate(): void;
 }) {
   const maxCol = Math.max(1, ...p.columns.map((c) => c.cards));
   const s = STATUS[p.bot.status];
@@ -1007,6 +1042,9 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
             ))}
           </div>
         )}
+        <button onClick={onRelocate} className="mt-2.5 flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-neutral-300 hover:bg-white/5">
+          <MoveIcon className="h-3.5 w-3.5" /> Move this building
+        </button>
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2">

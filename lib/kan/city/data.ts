@@ -48,6 +48,13 @@ const ARRIVAL_WORD: Record<InputItem['kind'], string> = {
   share: 'You shared', chat: 'You asked Kan', voice: 'You told Kan', note: 'You noted', browsing: 'You spent time on', read: 'You read',
 }
 
+/** A moved plot's lot, honored only on the viewer's own channels. */
+export function pinOf(bot: { plotPin?: string | null; ownerId?: string } | undefined, userId: string) {
+  if (!bot?.plotPin || bot.ownerId !== userId) return null
+  const [cx, cz] = bot.plotPin.split(',').map(Number)
+  return Number.isInteger(cx) && Number.isInteger(cz) ? { cx, cz } : null
+}
+
 export async function cityFor(userId: string) {
   const now = Date.now()
   const dayAgo = new Date(now - 24 * HOUR)
@@ -184,6 +191,7 @@ export async function cityFor(userId: string) {
     createdAt: madeAt.get(a.channelId) ?? null,
     isShareInbox: a.isShareInbox,
     isStudio: Boolean(a.fixed?.includes('Studio')),
+    pin: pinOf(botOf.get(a.channelId), userId),
   })))
 
   // Who's at work right now. A run older than the function ceiling was cut off.
@@ -244,6 +252,9 @@ export async function cityFor(userId: string) {
       // The mushroom who lives here: its name, voice and personality, for talking with it.
       resident: residentOf({ id: p.channelId, name: p.name }, bot),
       named: Boolean(bot?.name),
+      createdAt: madeAt.get(p.channelId) ?? null,
+      // Moved by the owner, so the layout keeps it where they put it.
+      pinned: Boolean(pinOf(bot, userId)),
       // A look the owner asked Kan for: a theme, a kind of building, colors.
       style: parseStyle(bot?.plotStyle),
       bot: {
@@ -334,7 +345,7 @@ export async function cityFor(userId: string) {
   }
 
   return {
-    layout: { cols: layout.cols, rows: layout.rows, districts: layout.districts, townHall: layout.townHall, park: layout.park, free: layout.free },
+    layout: { cols: layout.cols, rows: layout.rows, districts: layout.districts, townHall: layout.townHall, park: layout.park, free: layout.free, origin: layout.origin },
     plots,
     townHall: {
       approvals: pending.map((a) => ({ id: a.id, channelId: a.channelId, channelName: areaName.get(a.channelId) ?? '', title: a.title })),
