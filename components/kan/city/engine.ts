@@ -91,6 +91,8 @@ export interface EngineCallbacks {
   onNear?(p: Near | null): void;
   /** Escape out of drive or fly mode. */
   onExitMode?(): void;
+  /** The engine changed mode on its own, e.g. you parachuted out of the glider and are on foot now. */
+  onModeChange?(mode: ViewMode): void;
 }
 
 /** How you see the city: the map from above, or first person on foot, at the wheel or on the wings. */
@@ -155,6 +157,14 @@ export class CityEngine {
   private keys = new Set<string>();
   private stick = { x: 0, y: 0 };
   private near: Near | null = null;
+  /** Floating down after jumping out of the glider, which flies on without you for a moment. */
+  private chute: {
+    canopy: THREE.Group;
+    t: number;
+    /** Landed on a roof: where you hop down to. */
+    slide: { x: number; z: number } | null;
+    glider: { obj: THREE.Object3D; x: number; y: number; z: number; heading: number; speed: number; t: number } | null;
+  } | null = null;
   private strip: Strip | null = null;
   private appLabels = new Map<string, HTMLDivElement>();
   /** How tall what stands on each cell is, so a flyer can't go through it. */
@@ -300,6 +310,7 @@ export class CityEngine {
    */
   setMode(mode: ViewMode) {
     if (mode === this.mode || !this.grid || !this.data) return;
+    this.endChute();
     if (this.player) { this.player.obj.removeFromParent(); this.player = null; }
     this.mode = mode;
     this.controls.enabled = mode === 'map';
@@ -326,6 +337,37 @@ export class CityEngine {
   }
 
   getMode() { return this.mode; }
+
+  /**
+   * Mid-flight: hop out under a parachute, steer it down onto any street, lawn or
+   * plaza, and carry on walking from there. The quick way across town on foot.
+   */
+  jump() {
+    const p = this.player;
+    if (this.mode !== 'fly' || !p || this.chute) return;
+    const walker = this.makeWalker();
+    const canopy = this.makeCanopy();
+    canopy.scale.setScalar(0.15);
+    walker.add(canopy);
+    this.scene.add(walker);
+    this.chute = { canopy, t: 0, slide: null, glider: { obj: p.obj, x: p.x, y: p.y, z: p.z, heading: p.heading, speed: p.speed, t: 0 } };
+    this.player = { obj: walker, x: p.x, y: p.y - 1.2, z: p.z, heading: p.heading, speed: 0, roll: 0 };
+    this.mode = 'walk';
+    this.near = null;
+    this.cb.onNear?.(null);
+    this.cb.onModeChange?.('walk');
+  }
+
+  private endChute() {
+    const c = this.chute;
+    if (!c) return;
+    c.canopy.removeFromParent();
+    c.canopy.traverse((o) => {
+      if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); }
+    });
+    c.glider?.obj.removeFromParent();
+    this.chute = null;
+  }
 
   /** Swing over to the Strip. */
   focusStrip() {
@@ -1304,6 +1346,33 @@ export class CityEngine {
     return g;
   }
 
+  /** A striped canopy, in the walker's own units, so it rides along above your cap. */
+  private makeCanopy(): THREE.Group {
+    const g = new THREE.Group();
+    g.userData.dynamic = true;
+    const r = 1.9, cut = Math.PI / 2.5, cy = 2.5;
+    const colors = ['#a78bfa', '#fdf4ff', '#f472b6', '#fdf4ff'];
+    const gores = 8;
+    for (let i = 0; i < gores; i++) {
+      const m = new THREE.MeshStandardMaterial({ color: colors[i % colors.length], roughness: 0.7, side: THREE.DoubleSide, flatShading: true });
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 3, 6, (i / gores) * Math.PI * 2, (Math.PI * 2) / gores, 0, cut), m);
+      mesh.position.y = cy;
+      mesh.castShadow = true;
+      g.add(mesh);
+    }
+    // Lines from the rim down to your shoulders.
+    const rimY = cy + r * Math.cos(cut), rimR = r * Math.sin(cut);
+    const pts: number[] = [];
+    for (let i = 0; i < gores; i++) {
+      const a = (i / gores) * Math.PI * 2;
+      pts.push(Math.cos(a) * rimR, rimY, Math.sin(a) * rimR, Math.cos(a) * 0.25, 1.3, Math.sin(a) * 0.25);
+    }
+    const lines = new THREE.BufferGeometry();
+    lines.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    g.add(new THREE.LineSegments(lines, new THREE.LineBasicMaterial({ color: '#f5f3ff', transparent: true, opacity: 0.8 })));
+    return g;
+  }
+
   /** Inside a block: lawns and buildings, off the road. */
   private onBlock(x: number, z: number, pad: number) {
     const g = this.grid!;
@@ -1339,13 +1408,100 @@ export class CityEngine {
     return Math.abs(x - c.x) > 3.9 || Math.abs(z - c.z) > 3.9;
   }
 
+  /** Keys and the joystick together: steer is right +, push is forward +. */
+  private input() {
+    const k = this.keys;
+    return {
+      steer: THREE.MathUtils.clamp((k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0) + this.stick.x, -1, 1),
+      push: THREE.MathUtils.clamp((k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0) + this.stick.y, -1, 1),
+      boost: k.has('shift'),
+    };
+  }
+
+  /** What you'd stand on here: the ground, or the roof of whatever is in the way. */
+  private groundAt(x: number, z: number) {
+    if (this.walkable(x, z)) return GROUND_Y;
+    const lot = this.strip?.lots.find((l) => inRect(l.footprint, x, z, 0.4));
+    if (lot) return lot.top;
+    const cell = this.onBlock(x, z, 0);
+    return (cell ? this.tops.get(`${cell.cx},${cell.cz}`) ?? 0 : 0) + GROUND_Y;
+  }
+
+  /** The closest spot you can stand on, rings out from here. */
+  private nearestWalkable(x: number, z: number) {
+    for (let r = 1; r <= 60; r += 0.75) {
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        const nx = x + Math.cos(a) * r, nz = z + Math.sin(a) * r;
+        if (this.walkable(nx, nz)) return { x: nx, z: nz };
+      }
+    }
+    return this.townHallSpot(1);
+  }
+
+  /** Drifting down: A D turn, W glides farther, S spills air and drops faster. */
+  private stepChute(dt: number) {
+    const p = this.player!, c = this.chute!;
+    const { steer, push } = this.input();
+    c.t += dt;
+    const gl = c.glider;
+    if (gl) {
+      // The glider flies on, climbing away, then it's gone.
+      gl.t += dt;
+      const gf = this.forward(gl.heading);
+      gl.x += gf.x * gl.speed * dt;
+      gl.z += gf.z * gl.speed * dt;
+      gl.y += 5 * dt;
+      gl.obj.position.set(gl.x, gl.y, gl.z);
+      gl.obj.rotation.set(0, gl.heading, 0);
+      gl.obj.rotateX(-0.25);
+      if (gl.t > 4) { gl.obj.removeFromParent(); c.glider = null; }
+    }
+    c.canopy.scale.setScalar(Math.min(1, 0.15 + c.t * 2.2));
+
+    p.heading -= steer * 1.7 * dt;
+    const f = this.forward(p.heading);
+    if (c.slide) {
+      // Down off the roof to the nearest open ground.
+      const dx = c.slide.x - p.x, dz = c.slide.z - p.z, d = Math.hypot(dx, dz);
+      const stepLen = Math.min(d, 11 * dt);
+      if (d > 0.01) { p.x += (dx / d) * stepLen; p.z += (dz / d) * stepLen; }
+      if (d < 0.05) c.slide = null;
+    } else {
+      const drift = 6 + Math.max(0, push) * 7;
+      p.x += f.x * drift * dt;
+      p.z += f.z * drift * dt;
+    }
+    const fall = c.slide ? 6 : 4.5 + Math.max(0, -push) * 9;
+    const floor = this.groundAt(p.x, p.z);
+    p.y = Math.max(floor, p.y - fall * dt);
+    if (p.y <= floor + 0.01) {
+      if (floor <= GROUND_Y + 0.01 && this.walkable(p.x, p.z)) {
+        // Touchdown: the canopy goes and you're walking.
+        c.slide = null;
+        this.endChute();
+        p.y = GROUND_Y;
+        p.speed = 0;
+      } else if (!c.slide) c.slide = this.nearestWalkable(p.x, p.z);
+    }
+
+    // Swinging a little under the canopy.
+    p.roll += (steer * 0.3 - p.roll) * Math.min(1, dt * 3);
+    p.obj.position.set(p.x, p.y, p.z);
+    p.obj.rotation.set(0, p.heading, 0);
+    p.obj.rotateZ(-p.roll + Math.sin(c.t * 1.6) * 0.05);
+    const body = p.obj.userData.body as THREE.Object3D | undefined;
+    if (body) body.position.y = 0.8;
+    const want = new THREE.Vector3(p.x - f.x * 15, p.y + 4, p.z - f.z * 15);
+    this.persp.position.lerp(want, 1 - Math.exp(-dt * 4));
+    this.persp.lookAt(p.x + f.x * 6, p.y + 1, p.z + f.z * 6);
+  }
+
   private stepPlayer(dt: number) {
+    if (this.chute) { this.stepChute(dt); return; }
     const p = this.player, g = this.grid;
     if (!p || !g) return;
-    const k = this.keys;
-    const steer = THREE.MathUtils.clamp((k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0) + this.stick.x, -1, 1);
-    const push = THREE.MathUtils.clamp((k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0) + this.stick.y, -1, 1);
-    const boost = k.has('shift');
+    const { steer, push, boost } = this.input();
     const edge = Math.max(g.width, g.depth, (this.strip?.bounds.z1 ?? 0) * 2) / 2;
 
     if (this.mode === 'drive' || this.mode === 'walk') {
@@ -1452,7 +1608,8 @@ export class CityEngine {
     const key = e.key.toLowerCase();
     if (e.type === 'keydown') {
       if (key === 'escape') { this.cb.onExitMode?.(); return; }
-      if ((key === 'e' || key === 'enter') && this.near) {
+      if (key === ' ' && this.mode === 'fly') { e.preventDefault(); this.jump(); return; }
+      if ((key === 'e' || key === 'enter') && this.near && !this.chute) {
         this.cb.onPick(this.near.kind === 'app' ? { kind: 'app', id: this.near.id } : { kind: 'plot', id: this.near.id });
         return;
       }

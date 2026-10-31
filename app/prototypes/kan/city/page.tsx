@@ -211,6 +211,7 @@ export default function CityPage() {
       onPick: (p) => onPickRef.current(p),
       onNear: setNear,
       onExitMode: () => setMode('map'),
+      onModeChange: setMode,
     });
     engine.current.setSky(sky);
     return undefined;
@@ -476,11 +477,20 @@ export default function CityPage() {
               <DoorOpen className="h-4 w-4 text-violet-600" /> Go into {near.name}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">E</span>}
             </button>
           )}
+          {mode === 'fly' && (
+            <button
+              onClick={() => engine.current?.jump()}
+              className="absolute z-20 flex items-center gap-1.5 rounded-full bg-pink-500 px-4 py-2.5 text-[14px] font-semibold text-white shadow-2xl hover:bg-pink-400 active:scale-95"
+              style={{ right: (coarse || !wide) ? 16 : rightW + 16, bottom: chatH + ((coarse || !wide) ? 40 : 20) }}
+            >
+              🪂 Jump{!coarse && <span className="ml-1 rounded bg-white/25 px-1.5 text-[11px]">Space</span>}
+            </button>
+          )}
           {(coarse || !wide) ? (
             <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint={mode === 'drive' ? 'Drive' : mode === 'walk' ? 'Walk' : 'Steer · climb'} />
           ) : (
             <p className="absolute left-1/2 top-[60px] z-10 -translate-x-1/2 rounded-full bg-neutral-950/60 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur">
-              {mode === 'fly' ? 'A D to turn · W S to climb and dive · Shift for speed' : `W A S D or arrows to ${mode} · Shift to ${mode === 'walk' ? 'run' : 'speed up'}`} · E to go in · Esc for the map
+              {mode === 'fly' ? 'A D to turn · W S to climb and dive · Shift for speed · Space to parachute out' : `W A S D or arrows to ${mode} · Shift to ${mode === 'walk' ? 'run' : 'speed up'}`} · E to go in · Esc for the map
             </p>
           )}
         </>
