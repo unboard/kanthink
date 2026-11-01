@@ -399,6 +399,21 @@ export default function CityPage() {
 
   const plots = useMemo(() => shown?.plots ?? [], [shown]);
   const plotOf = useMemo(() => new Map(plots.map((p) => [p.channelId, p])), [plots]);
+  // A link from outside (the morning email) can open a card: ?channel=…&card=…
+  const linked = useRef(false);
+  useEffect(() => {
+    if (linked.current || !data) return;
+    linked.current = true;
+    const q = new URLSearchParams(window.location.search);
+    const ch = q.get('channel'), card = q.get('card');
+    if (!ch) return;
+    window.history.replaceState(null, '', window.location.pathname);
+    if (!plotOf.has(ch)) { window.location.href = card ? `/channel/${ch}/card/${card}` : `/channel/${ch}`; return; }
+    setPick(null);
+    setBoardCard(card);
+    setBoard(ch);
+    engine.current?.focusBot(ch);
+  }, [data, plotOf]);
   const counts = useMemo(() => ({
     working: plots.filter((p) => p.bot.status === 'working').length,
     needs: (data?.townHall.approvals.length ?? 0) + (data?.townHall.asks.length ?? 0) + (data?.townHall.pass ? 1 : 0),
@@ -1014,7 +1029,7 @@ function IconBtn({ children, onClick, title }: { children: React.ReactNode; onCl
 function SidePanel({ children, side, onClose, wide }: { children: React.ReactNode; side: 'left' | 'right'; onClose: () => void; wide: boolean }) {
   if (!wide) {
     return (
-      <div className="fixed inset-x-2 bottom-[var(--chat-h)] z-40 flex max-h-[calc(78dvh-var(--chat-h))] flex-col rounded-3xl border border-white/10 bg-neutral-950/92 shadow-2xl backdrop-blur-xl">
+      <div className="fixed inset-x-0 bottom-0 pb-[var(--chat-h)] rounded-t-3xl border-t border-white/10 z-40 flex max-h-[78dvh] flex-col bg-neutral-950/92 shadow-2xl backdrop-blur-xl">
         <div className="mx-auto mt-2 h-1 w-10 flex-shrink-0 rounded-full bg-white/20" />
         <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 rounded-full p-1.5 text-neutral-400 hover:bg-white/10"><X className="h-4 w-4" /></button>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2">{children}</div>
@@ -1039,7 +1054,7 @@ function PickSheet({ children, onClose, fill = false, wide = false }: { children
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return (
-    <div className={`pointer-events-auto fixed inset-x-2 bottom-[var(--chat-h)] z-40 flex max-h-[calc(78dvh-var(--chat-h))] flex-col overflow-hidden rounded-3xl border border-white/10 bg-neutral-950/92 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:max-h-none lg:rounded-2xl ${fill ? 'h-[calc(78dvh-var(--chat-h))] lg:h-auto' : ''} ${wide ? 'lg:w-[min(760px,58vw)]' : 'lg:w-[420px]'}`}>
+    <div className={`pointer-events-auto fixed inset-x-0 bottom-0 pb-[var(--chat-h)] rounded-t-3xl border-t border-white/10 z-40 flex max-h-[78dvh] flex-col overflow-hidden bg-neutral-950/92 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:max-h-none lg:rounded-2xl lg:border lg:pb-0 ${fill ? 'h-[78dvh] lg:h-auto' : ''} ${wide ? 'lg:w-[min(760px,58vw)]' : 'lg:w-[420px]'}`}>
       <div className="mx-auto mt-2 h-1 w-10 flex-shrink-0 rounded-full bg-white/20 lg:hidden" />
       <button onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-neutral-400 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
       <div className={`min-h-0 flex-1 p-4 ${fill ? 'flex flex-col' : 'overflow-y-auto'}`}>{children}</div>

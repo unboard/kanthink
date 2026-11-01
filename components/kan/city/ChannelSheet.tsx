@@ -117,7 +117,7 @@ export function ChannelSheet(props: {
 
   return (
     <div
-      className="pointer-events-auto fixed inset-x-2 bottom-[var(--chat-h,0px)] z-40 flex h-[calc(78dvh-var(--chat-h,0px))] flex-col overflow-hidden rounded-3xl border border-white/10 bg-neutral-950/90 text-neutral-100 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:h-auto lg:w-[420px] lg:rounded-2xl"
+      className="pointer-events-auto fixed inset-x-0 bottom-0 pb-[var(--chat-h,0px)] z-40 flex h-[78dvh] flex-col overflow-hidden rounded-t-3xl border-t border-white/10 bg-neutral-950/90 text-neutral-100 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:h-auto lg:w-[420px] lg:rounded-2xl lg:border lg:pb-0"
       role="dialog"
       aria-label={`${name} board`}
     >

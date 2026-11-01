@@ -122,7 +122,8 @@ export async function runStudioMorning(studio: StudioRow, now = new Date()) {
         body: card ? plainForEmail(sparkBody(card)) : '',
         nudges: nudges.map((n) => n.text),
         overnight: overnight ? `${overnight}.` : undefined,
-        homeUrl: `${baseUrl()}/`,
+        // Straight to the spark, open on its board in the city.
+        homeUrl: card ? `${baseUrl()}/prototypes/kan/city?channel=${studio.channelId}&card=${card.id}` : `${baseUrl()}/prototypes/kan/city`,
         settingsUrl: `${baseUrl()}/people?settings=1`,
       }))
       const subject = card ? `A spark: ${card.title}` : `Moving: ${nudges.length === 1 ? 'one idea needs you' : `${nudges.length} ideas need you`}`

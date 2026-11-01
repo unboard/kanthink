@@ -240,7 +240,7 @@ export const CityChat = forwardRef<CityChatHandle, {
   return (
     <div
       ref={rootRef}
-      className="pointer-events-none fixed bottom-0 z-30 flex flex-col items-center px-3 pb-[max(12px,env(safe-area-inset-bottom))]"
+      className="pointer-events-none fixed bottom-0 z-[41] flex lg:z-30 flex-col items-center px-3 pb-[max(12px,env(safe-area-inset-bottom))]"
       style={{ right: rightInset, left: leftInset }}
     >
       <div className="pointer-events-auto w-full max-w-[640px]">
