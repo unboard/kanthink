@@ -53,10 +53,31 @@ export const FEATURES = {
   sofa: 'A comfy sofa and coffee table',
   lamps: 'Floor lamps',
   disco: 'A disco ball',
+  cat_tower: 'A tall cat tower with perches; the pets climb it and nap on top',
+  toys: 'Balls and yarn on the floor that the pets chase and bat around',
 } as const
 export type Feature = keyof typeof FEATURES
 /** What a lobby has until someone says otherwise. */
 export const DEFAULT_FEATURES: Feature[] = ['plants', 'sofa', 'lamps']
+
+/** Animals that live in the building: they wander, play, climb the cat tower and come say hi. */
+export const PETS = {
+  cat: 'A cat',
+  kitten: 'A small, bouncy kitten',
+  dog: 'A dog',
+  puppy: 'A small, bouncy puppy',
+  bunny: 'A bunny that hops',
+} as const
+export type PetKind = keyof typeof PETS
+export interface Pet {
+  kind: PetKind
+  /** Fur, #rrggbb. Left out, it's picked from the name. */
+  color?: string
+  name?: string
+}
+export const MAX_PETS = 8
+/** Fur colors the panel offers. */
+export const PET_COLORS = ['#f2a65a', '#3a3a3a', '#e8e1d6', '#9a9aa2', '#c8783c', '#f5d6a8'] as const
 
 export interface RoomStyle {
   display?: RoomDisplay
@@ -71,6 +92,8 @@ export interface InteriorStyle {
   /** Wall color, #rrggbb. Defaults to the building's own. */
   walls?: string
   features?: Feature[]
+  /** The animals living here. A cat-themed building has two cats until someone says otherwise. */
+  pets?: Pet[]
   /** Per column, by its name (see roomKey). */
   rooms?: Record<string, RoomStyle>
   /** Column names, in the order their rooms come; any not named follow in board order. */
@@ -97,6 +120,18 @@ export function cleanInterior(raw: unknown): InteriorStyle {
   if (Array.isArray(r.features)) {
     const f = [...new Set(r.features.filter((x): x is Feature => has(FEATURES, x)))]
     if (f.length) out.features = f
+  }
+  if (Array.isArray(r.pets)) {
+    // An empty list is kept: it means no pets, even in a cat-themed building.
+    out.pets = r.pets.flatMap((v): Pet[] => {
+      if (!v || typeof v !== 'object') return []
+      const p = v as Record<string, unknown>
+      if (!has(PETS, p.kind)) return []
+      const pet: Pet = { kind: p.kind }
+      if (typeof p.color === 'string' && HEX.test(p.color)) pet.color = p.color.toLowerCase()
+      if (typeof p.name === 'string' && p.name.trim()) pet.name = p.name.trim().slice(0, 24)
+      return [pet]
+    }).slice(0, MAX_PETS)
   }
   if (r.rooms && typeof r.rooms === 'object' && !Array.isArray(r.rooms)) {
     const rooms: Record<string, RoomStyle> = {}
@@ -372,4 +407,9 @@ export function roomAt(plan: Plan, x: number, z: number): PlanRoom | null {
   const inside = (r: Rect) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1
   return plan.rooms.find((r) => (r.kind === 'column' || r.kind === 'arcade') && inside(r.rect))
     ?? plan.rooms.find((r) => inside(r.rect)) ?? null
+}
+
+/** Who lives here: what the owner picked, or two cats in a cat-themed building. */
+export function petsOf(style: InteriorStyle, theme: string | null | undefined): Pet[] {
+  return style.pets ?? (theme === 'cat' ? [{ kind: 'cat' }, { kind: 'kitten' }] : [])
 }

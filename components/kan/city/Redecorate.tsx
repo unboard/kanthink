@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowUp, Loader2, Send, Sparkles, Undo2 } from 'lucide-react';
+import { ArrowUp, Loader2, Plus, Send, Sparkles, Undo2, X } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import {
-  DEFAULT_FEATURES, FEATURES, FLOORS, INTERIOR_PLANS, LIGHTS, planInterior, ROOM_COLORS, ROOM_DISPLAYS, roomKey,
-  type Feature, type InteriorStyle, type RoomDisplay,
+  DEFAULT_FEATURES, FEATURES, FLOORS, INTERIOR_PLANS, LIGHTS, MAX_PETS, PET_COLORS, PETS, petsOf, planInterior, ROOM_COLORS, ROOM_DISPLAYS, roomKey,
+  type Feature, type InteriorStyle, type Pet, type PetKind, type RoomDisplay,
 } from '@/lib/kan/city/interior';
+import { petFur, petName, petSeed } from './pets';
 
 /**
  * Rearranging a building from the inside. The floor plan is a blueprint you can tap:
@@ -19,12 +20,15 @@ const PLAN_LABEL: Record<keyof typeof INTERIOR_PLANS, string> = { hallway: 'Hall
 const DISPLAY_LABEL: Record<RoomDisplay, string> = { board: '📌 Cork board', shelves: '📚 Library', gallery: '🖼️ Gallery' };
 const FLOOR_LABEL: Record<keyof typeof FLOORS, string> = { wood: 'Wood', tile: 'Tile', carpet: 'Carpet', marble: 'Marble', grass: 'Grass', checker: 'Checker' };
 const LIGHT_LABEL: Record<keyof typeof LIGHTS, string> = { warm: '☀️ Warm', daylight: '🌤️ Daylight', cozy: '🕯️ Cozy', party: '🪩 Party' };
-const FEATURE_LABEL: Record<Feature, string> = { fireplace: '🔥 Fireplace', plants: '🪴 Plants', fountain: '⛲ Fountain', piano: '🎹 Piano', aquarium: '🐠 Fish tank', sofa: '🛋️ Sofa', lamps: '💡 Lamps', disco: '🪩 Disco ball' };
+const FEATURE_LABEL: Record<Feature, string> = { fireplace: '🔥 Fireplace', plants: '🪴 Plants', fountain: '⛲ Fountain', piano: '🎹 Piano', aquarium: '🐠 Fish tank', sofa: '🛋️ Sofa', lamps: '💡 Lamps', disco: '🪩 Disco ball', cat_tower: '🐾 Cat tower', toys: '🧶 Toys' };
+const PET_LABEL: Record<PetKind, string> = { cat: '🐈 Cat', kitten: '🐱 Kitten', dog: '🐕 Dog', puppy: '🐶 Puppy', bunny: '🐇 Bunny' };
 
-const IDEAS = ['Make it cozy with a fireplace', 'Turn the done room into a library', 'Party time!', 'Make it feel like a museum'];
+const IDEAS = ['Make it cozy with a fireplace', 'Add a cat tower and toys for the cats', 'Turn the done room into a library', 'Party time!'];
 
-export function Redecorate({ name, columns, apps, style, canEdit, busy, onSave, onAsk }: {
+export function Redecorate({ channelId, name, columns, apps, style, theme, canEdit, busy, onSave, onAsk }: {
+  channelId: string;
   name: string;
+  theme: string | null;
   columns: { id: string; name: string; cards: number }[];
   apps: number;
   style: InteriorStyle;
@@ -41,6 +45,9 @@ export function Redecorate({ name, columns, apps, style, canEdit, busy, onSave, 
   const view = `${b.x0 - pad} ${b.z0 - pad} ${b.x1 - b.x0 + pad * 2} ${b.z1 - b.z0 + pad * 2 + 1.5}`;
   const picked = plan.rooms.find((r) => r.id === room && r.kind === 'column') ?? null;
   const features = style.features ?? DEFAULT_FEATURES;
+  const pets = petsOf(style, theme);
+  const [petAt, setPetAt] = useState<number | null>(null);
+  const setPets = (next: Pet[]) => onSave({ ...style, pets: next });
 
   const setRoomStyle = (colName: string, patch: { display?: RoomDisplay; color?: string }) => {
     const k = roomKey(colName);
@@ -159,6 +166,41 @@ export function Redecorate({ name, columns, apps, style, canEdit, busy, onSave, 
               return <Opt key={k} on={on} disabled={busy} onClick={() => onSave({ ...style, features: on ? features.filter((f) => f !== k) : [...features, k] })}>{FEATURE_LABEL[k]}</Opt>;
             })}
           </Row>
+          <Row label="Pets">
+            {pets.map((p, i) => {
+              const seed = petSeed(channelId, i, p.kind);
+              return (
+                <Opt key={i} on={petAt === i} disabled={busy} onClick={() => setPetAt(petAt === i ? null : i)}>
+                  <span className="h-2.5 w-2.5 rounded-full ring-1 ring-white/30" style={{ background: p.color ?? petFur(p.kind, seed) }} />
+                  {p.name ?? petName(p.kind, seed)}
+                </Opt>
+              );
+            })}
+            {pets.length < MAX_PETS && (Object.keys(PETS) as PetKind[]).map((k) => (
+              <Opt key={k} on={false} disabled={busy} onClick={() => setPets([...pets, { kind: k }])}><Plus className="h-3 w-3" /> {PET_LABEL[k]}</Opt>
+            ))}
+          </Row>
+          {petAt !== null && pets[petAt] && (
+            <div className="mt-2 rounded-xl bg-white/[0.04] p-2.5">
+              <div className="flex items-center gap-2">
+                <input
+                  key={petAt}
+                  defaultValue={pets[petAt].name ?? petName(pets[petAt].kind, petSeed(channelId, petAt, pets[petAt].kind))}
+                  onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== pets[petAt].name) setPets(pets.map((p, i) => (i === petAt ? { ...p, name: v } : p))); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                  disabled={busy}
+                  aria-label="Name"
+                  className="min-w-0 flex-1 rounded-lg bg-white/5 px-2 py-1 text-[13px] text-neutral-100 focus:outline-none focus:ring-1 focus:ring-violet-400/50"
+                />
+                <button disabled={busy} onClick={() => { setPets(pets.filter((_, i) => i !== petAt)); setPetAt(null); }} className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] text-neutral-400 hover:bg-white/10 hover:text-rose-300 disabled:opacity-40"><X className="h-3.5 w-3.5" /> Let go</button>
+              </div>
+              <div className="mt-2 flex gap-1.5">
+                {PET_COLORS.map((c) => (
+                  <button key={c} disabled={busy} onClick={() => setPets(pets.map((p, i) => (i === petAt ? { ...p, color: c } : p)))} className={`h-5 w-5 rounded-full ring-offset-2 ring-offset-neutral-950 ${pets[petAt].color === c ? 'ring-2 ring-white' : ''}`} style={{ background: c }} aria-label={c} />
+                ))}
+              </div>
+            </div>
+          )}
           {Object.keys(style).length > 0 && (
             <button disabled={busy} onClick={() => onSave({})} className="mt-4 flex items-center gap-1.5 text-[12px] text-neutral-500 hover:text-neutral-200 disabled:opacity-40">
               <Undo2 className="h-3.5 w-3.5" /> Back to how it started

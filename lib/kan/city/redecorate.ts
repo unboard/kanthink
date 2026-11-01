@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { channelBots, channels, columns } from '@/lib/db/schema'
 import { and, asc, eq } from 'drizzle-orm'
 import {
-  cleanInterior, DEFAULT_FEATURES, FEATURES, FLOORS, INTERIOR_PLANS, LIGHTS, parseInterior, ROOM_DISPLAYS, roomKey, type InteriorStyle,
+  cleanInterior, DEFAULT_FEATURES, FEATURES, MAX_PETS, PETS, petsOf, FLOORS, INTERIOR_PLANS, LIGHTS, parseInterior, ROOM_DISPLAYS, roomKey, type InteriorStyle,
 } from './interior'
 
 /**
@@ -35,6 +35,7 @@ export function interiorOptions() {
     `floor: ${list(FLOORS)}`,
     `light: ${list(LIGHTS)}`,
     `features (any of): ${list(FEATURES)}`,
+    `pets: the whole list of animals living here, each {"kind", "color"?: #rrggbb, "name"?}; kind is one of ${list(PETS)}. They walk around, chase toys, climb the cat tower, nap and come say hi. Up to ${MAX_PETS}; [] for none.`,
     'walls: a wall color as #rrggbb; rooms[column].color: a room’s accent as #rrggbb; order: column names, front room first',
   ].join('\n')
 }
@@ -47,10 +48,12 @@ export async function askInterior(userId: string, channelId: string, ask: string
   const ch = await ownChannel(userId, channelId)
   if (!ch) return { error: 'Only your own buildings can be rearranged.' }
   const [bot, cols] = await Promise.all([
-    db.query.channelBots.findFirst({ where: eq(channelBots.channelId, channelId), columns: { interiorStyle: true } }),
+    db.query.channelBots.findFirst({ where: eq(channelBots.channelId, channelId), columns: { interiorStyle: true, plotStyle: true } }),
     db.query.columns.findMany({ where: eq(columns.channelId, channelId), orderBy: [asc(columns.position)], columns: { name: true } }),
   ])
   const now = parseInterior(bot?.interiorStyle)
+  const { parseStyle } = await import('./style')
+  const pets = petsOf(now, parseStyle(bot?.plotStyle).theme)
   const { getLLMClientForUser } = await import('@/lib/ai/llm')
   const { client } = await getLLMClientForUser(userId)
   if (!client) return { error: 'Kan can’t think right now. Try the buttons instead.' }
@@ -61,7 +64,7 @@ export async function askInterior(userId: string, channelId: string, ask: string
       content: [
         `You are Kan, decorating the inside of the "${ch.name}" building in Kan City. Each column of the channel's board is a room; the cards are shown in it.`,
         `The rooms (columns), in board order: ${cols.map((c) => `"${c.name}"`).join(', ') || 'none yet'}`,
-        `How it's laid out now: ${JSON.stringify({ ...now, features: now.features ?? DEFAULT_FEATURES })}`,
+        `How it's laid out now: ${JSON.stringify({ ...now, features: now.features ?? DEFAULT_FEATURES, pets })}`,
         `\nWhat you can set:\n${interiorOptions()}`,
         `\nThe owner asked: "${ask.slice(0, 600)}"`,
         '\nGive only the fields that change; anything you leave out stays as it is. Set a field to null to put it back to the default. For rooms, give only the rooms that change, by column name exactly as listed. features is the whole list you want. If they ask for something that isn’t on the list, get as close as the options allow and say so.',

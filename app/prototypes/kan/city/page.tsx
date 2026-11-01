@@ -890,10 +890,12 @@ export default function CityPage() {
         <PickSheet onClose={() => setInPanel(null)}>
           {inPanel === 'redecorate' ? (
             <Redecorate
+              channelId={inside.id}
               name={insidePlot.name}
               columns={inside.board.columns.map((c) => ({ id: c.id, name: c.name, cards: c.total }))}
               apps={appsOf(inside.id).length}
               style={insidePlot.interior}
+              theme={insidePlot.style.theme ?? null}
               canEdit={inside.board.channel.canEdit}
               busy={decorating}
               onSave={(style) => void redecorate({ style })}

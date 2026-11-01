@@ -4,7 +4,7 @@ import { and, desc, eq, gt, inArray, ne } from 'drizzle-orm'
 import type { AgentTool, ToolContext } from '@/lib/kan/agent/tools'
 import { ARCHETYPE_LABEL } from './layout'
 import { cleanStyle, parseStyle, PLOT_BUILDINGS, PLOT_THEMES, type PlotStyle } from './style'
-import { FEATURES, FLOORS, INTERIOR_PLANS, LIGHTS, parseInterior, ROOM_DISPLAYS, roomKey, type InteriorStyle } from './interior'
+import { FEATURES, FLOORS, INTERIOR_PLANS, LIGHTS, MAX_PETS, parseInterior, PETS, petsOf, ROOM_DISPLAYS, roomKey, type InteriorStyle } from './interior'
 
 /**
  * What Kan can do from Kan City, on top of everything the agent already does: run
@@ -35,7 +35,7 @@ async function findOwnChannel(ref: string, ctx: ToolContext) {
 export const cityTools: AgentTool[] = [
   {
     name: 'arrange_interior',
-    description: 'Rearrange the inside of a channel’s building, which they can walk around: each column is a room with its cards on the walls, apps are arcade cabinets. Change the floor plan, how a room shows its cards, the floor, the lights, the wall color, lobby features, room accent colors, and which rooms come first. Only what you pass changes; cards, columns and the bot are untouched. Set reset to go back to the default layout.',
+    description: 'Rearrange the inside of a channel’s building, which they can walk around: each column is a room with its cards on the walls, apps are arcade cabinets. Change the floor plan, how a room shows its cards, the floor, the lights, the wall color, lobby features (including a cat tower and toys), the pets who live there, room accent colors, and which rooms come first. Pets are alive: they walk around, chase toys, climb the cat tower, nap, have faces, and come say hi. This is how anything inside a building gets made, so never hand a change inside a building to Claude Code; if something asked for isn’t on the list, do the closest thing and say what you did. Only what you pass changes; cards, columns and the bot are untouched. Set reset to go back to the default layout.',
     input_schema: {
       type: 'object',
       properties: {
@@ -44,7 +44,7 @@ export const cityTools: AgentTool[] = [
         floor: { type: 'string', enum: Object.keys(FLOORS) },
         light: { type: 'string', enum: Object.keys(LIGHTS), description: Object.entries(LIGHTS).map(([k, v]) => `${k}: ${v}`).join('; ') },
         walls: { type: 'string', description: 'Wall color as #rrggbb' },
-        features: { type: 'array', items: { type: 'string', enum: Object.keys(FEATURES) }, description: `The full list of lobby features to have (replaces the current list; a lobby starts with plants, sofa and lamps): ${Object.entries(FEATURES).map(([k, v]) => `${k} (${v})`).join('; ')}` },
+        features: { type: 'array', items: { type: 'string', enum: Object.keys(FEATURES) }, description: `The full list of lobby features to have, replacing the current list (a lobby starts with plants, sofa and lamps). To add or take away a few, use add_features / remove_features instead: ${Object.entries(FEATURES).map(([k, v]) => `${k} (${v})`).join('; ')}` },
         rooms: {
           type: 'array',
           description: 'Per-room changes, by column name',
@@ -57,6 +57,26 @@ export const cityTools: AgentTool[] = [
             },
             required: ['column'],
           },
+        },
+        pets: {
+          type: 'array',
+          description: `The full list of pets who live here (replaces the current list; up to ${MAX_PETS}; [] for none). A cat-themed building starts with a cat and a kitten. Keep the pets already there unless they ask to change them.`,
+          items: {
+            type: 'object',
+            properties: {
+              kind: { type: 'string', enum: Object.keys(PETS) },
+              color: { type: 'string', description: 'Fur color as #rrggbb' },
+              name: { type: 'string' },
+            },
+            required: ['kind'],
+          },
+        },
+        add_features: { type: 'array', items: { type: 'string', enum: Object.keys(FEATURES) }, description: 'Lobby features to add to what is already there (use this to add; use features only to replace the whole list)' },
+        remove_features: { type: 'array', items: { type: 'string', enum: Object.keys(FEATURES) }, description: 'Lobby features to take away' },
+        add_pets: {
+          type: 'array',
+          description: 'Pets to add to the ones already living here (use this to add; use pets only to replace the whole list)',
+          items: { type: 'object', properties: { kind: { type: 'string', enum: Object.keys(PETS) }, color: { type: 'string' }, name: { type: 'string' } }, required: ['kind'] },
         },
         order: { type: 'array', items: { type: 'string' }, description: 'Column names, the room to put first first' },
         reset: { type: 'boolean', description: 'Back to the default layout' },
@@ -76,6 +96,16 @@ export const cityTools: AgentTool[] = [
       if (input.reset !== true) {
         for (const k of ['plan', 'floor', 'light', 'walls', 'features'] as const) if (input[k] != null) next[k] = input[k]
         if (Array.isArray(input.order)) next.order = input.order
+        if (Array.isArray(input.pets)) next.pets = input.pets
+        if (Array.isArray(input.add_features) || Array.isArray(input.remove_features)) {
+          const { DEFAULT_FEATURES } = await import('./interior')
+          const drop = new Set((input.remove_features as string[] | undefined) ?? [])
+          next.features = [...new Set([...((next.features as string[] | undefined) ?? now.features ?? DEFAULT_FEATURES), ...((input.add_features as string[] | undefined) ?? [])])].filter((f) => !drop.has(f))
+        }
+        if (Array.isArray(input.add_pets)) {
+          const { parseStyle } = await import('./style')
+          next.pets = [...petsOf(now, parseStyle(bot.plotStyle).theme), ...input.add_pets]
+        }
         if (Array.isArray(input.rooms)) {
           const rooms = { ...(now.rooms ?? {}) } as Record<string, Record<string, unknown>>
           for (const r of input.rooms as Record<string, unknown>[]) {
@@ -89,7 +119,8 @@ export const cityTools: AgentTool[] = [
       const out = await saveInterior(ctx.userId, ch.id, next)
       if ('error' in out) return { content: out.error, isError: true }
       const s = out.style
-      const desc = [s.plan && `${s.plan} plan`, s.floor && `${s.floor} floor`, s.light && `${s.light} light`, s.features?.length && s.features.join(', '),
+      const pets = s.pets?.map((p) => [p.name, p.kind].filter(Boolean).join(' the ')).join(', ')
+      const desc = [s.plan && `${s.plan} plan`, pets && `pets: ${pets}`, s.floor && `${s.floor} floor`, s.light && `${s.light} light`, s.features?.length && s.features.join(', '),
         ...Object.entries(s.rooms ?? {}).map(([k, v]) => `${k}: ${[v.display, v.color].filter(Boolean).join(' ')}`)].filter(Boolean).join('; ')
       return {
         content: desc ? `Inside ${ch.name} is now: ${desc}. It rearranges itself while they watch.` : `Inside ${ch.name} is back to its default layout.`,
@@ -429,7 +460,7 @@ export const cityTools: AgentTool[] = [
 export function cityPrompt(city: { focus?: { channelId?: string; name?: string; kind?: string } | null }): string {
   const f = city.focus
   const here = f?.kind === 'inside' && f.channelId
-    ? `They are inside the ${f.name} building (channelId:${f.channelId}), walking its rooms: each column is a room with its cards on the walls, its apps are arcade cabinets, and its resident works the front desk. "This", "here" and "in here" mean that channel. If they want the rooms changed (a library, a fireplace, different lights, the Done room first), use arrange_interior.`
+    ? `They are inside the ${f.name} building (channelId:${f.channelId}), walking its rooms: each column is a room with its cards on the walls, its apps are arcade cabinets, and its resident works the front desk. "This", "here" and "in here" mean that channel. Anything they want changed in here (a library, a fireplace, different lights, the Done room first, pets that walk around and play, a cat tower, toys) is arrange_interior, and you do it yourself right now; never hand a change inside a building to Claude Code.`
     : f?.channelId
     ? `They are looking at ${f.name} (channelId:${f.channelId}) right now, so "this", "here" and "its bot" mean that channel.`
     : f?.kind === 'townhall' ? 'They are looking at Town Hall, where approvals, bot questions and Kan’s plan wait.' : 'They are looking at the whole city.'

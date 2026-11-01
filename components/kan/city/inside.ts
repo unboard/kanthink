@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRenderer.js';
 import { hash as signedHash } from '@/lib/kan/city/layout';
-import { DEFAULT_FEATURES, planInterior, roomAt, type Feature, type Floor, type InteriorStyle, type Plan, type PlanRoom, type Seg, type Slot } from '@/lib/kan/city/interior';
+import { DEFAULT_FEATURES, petsOf, planInterior, roomAt, type Feature, type Floor, type InteriorStyle, type Pet, type Plan, type PlanRoom, type Rect, type Seg, type Slot } from '@/lib/kan/city/interior';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
 import type { PlotTheme } from '@/lib/kan/city/style';
 import { botFigure, kanFigure, mat, sign } from './models';
 import { THEME_COLORS } from './themes';
+import { catTower, climbs, petFigure, petFur, petName, petSeed, toy, TOWER_PERCHES, type PetFig } from './pets';
 
 /**
  * Inside a building. Each column is a room with its cards on the walls (pinned up,
@@ -67,6 +68,29 @@ interface Mover {
   sayUntil: number;
   guest: boolean;
 }
+
+/** One of the building's animals, going about its day. */
+interface PetMover {
+  pet: Pet;
+  name: string;
+  seed: number;
+  fig: PetFig;
+  x: number; z: number; y: number; heading: number;
+  path: Vec[];
+  wait: number;
+  speed: number;
+  mode: 'idle' | 'sit' | 'nap' | 'perch' | 'play' | 'greet';
+  jump: { a: THREE.Vector3; b: THREE.Vector3; t: number; dur: number; then: 'perch' | 'idle' } | null;
+  goal: { kind: 'tower'; perch: number } | { kind: 'toy'; toy: number } | null;
+  perch: number;
+  /** How many more times it'll chase the toy it's playing with. */
+  chase: number;
+  phase: number;
+  blinkAt: number;
+  greeted: number;
+  label: HTMLDivElement;
+}
+interface Toy { obj: THREE.Group; x: number; z: number; from: Vec | null; to: Vec | null; t: number }
 
 // ---------- Textures ----------
 
@@ -296,6 +320,10 @@ function prop(kind: string, seed: number, tick: (f: (t: number) => void) => void
     ball(g, 0.18, fur, 0.26, 0.42, 0);
     for (const s of [-1, 1]) { const ear = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.12, 4), fur); ear.position.set(0.3, 0.6, s * 0.08); g.add(ear); }
     tick((t) => { body.scale.y = 0.75 + Math.sin(t * 1.6 + seed) * 0.04; });
+  } else if (kind === 'catbed') {
+    const bed = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.13, 8, 16), mat('#f28fae'));
+    bed.rotation.x = Math.PI / 2; bed.position.y = 0.13; g.add(bed);
+    cyl(g, 0.3, 0.3, 0.06, mat('#ffe4ee', { rough: 1 }), 0, 0.06, 0, 16);
   } else if (kind === 'yarn') {
     const y = ball(g, 0.26, mat('#ff6fa8'), 0, 0.26, 0);
     const line = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.02, 4, 18), mat('#ffd0e3'));
@@ -394,6 +422,11 @@ export class Inside {
   private lights: THREE.Object3D[] = [];
   private party: THREE.PointLight[] = [];
   private textures: THREE.Texture[] = [];
+  /** The animals, and what they climb and chase. Rebuilt with the rooms. */
+  private pets: PetMover[] = [];
+  private petRoot = new THREE.Group();
+  private tower: { x: number; z: number; base: Vec; perches: THREE.Vector3[]; taken: (string | null)[] } | null = null;
+  private toys: Toy[] = [];
   /**
    * The TV is a real YouTube player, hung on the lobby wall with CSS3D so it plays in
    * the room. It's made once and only moved on a rebuild, so a refresh never stops
@@ -417,6 +450,7 @@ export class Inside {
   ) {
     this.scene.background = new THREE.Color('#15111d');
     this.scene.add(this.root);
+    this.scene.add(this.petRoot);
     this.layer = document.createElement('div');
     this.layer.className = 'kc-in-labels';
     labels.appendChild(this.layer);
@@ -548,6 +582,11 @@ export class Inside {
     this.pickables = [];
     this.ticks = [];
     this.anims = [];
+    this.petRoot.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry) m.geometry.dispose(); });
+    this.petRoot.clear();
+    for (const q of this.pets) q.label.remove();
+    this.tower = null;
+    this.toys = [];
   }
 
   private build(animate: boolean) {
@@ -562,6 +601,8 @@ export class Inside {
     const floor = style.floor ?? (this.of.theme === 'garden' ? 'grass' : this.of.theme === 'castle' ? 'marble' : 'wood');
     const features = new Set<Feature>(style.features ?? DEFAULT_FEATURES);
     const tick = (f: (t: number) => void) => this.ticks.push((t) => f(t));
+    const was = this.pets.map((q) => ({ x: q.x, z: q.z, heading: q.heading }));
+    const petList = petsOf(style, this.of.theme);
 
     // Floors: the building's own, a rug in each room's color, grass in a courtyard.
     for (const r of plan.rooms) {
@@ -663,7 +704,8 @@ export class Inside {
             if (r.kind === 'lobby' && z > r.rect.z1 - 2) return; // keep the way in clear
             if (r.kind === 'lobby' && Math.abs(x) < 3) return;
             if (r.door && Math.hypot(x - r.door.x, z - r.door.z) < 2.2) return;
-            const p = prop(kinds[i % 2], hash(`${r.id}${i}`), tick);
+            const kind = kinds[i % 2] === 'cat' && petList.some((x) => climbs(x.kind)) ? 'catbed' : kinds[i % 2];
+            const p = prop(kind, hash(`${r.id}${i}`), tick);
             p.position.set(x, 0, z);
             p.rotation.y = Math.atan2((r.rect.x0 + r.rect.x1) / 2 - x, (r.rect.z0 + r.rect.z1) / 2 - z);
             this.root.add(p);
@@ -674,6 +716,7 @@ export class Inside {
     }
     this.fillLobby(plan, features, obstacles, rects, tick);
     this.placeTv(plan);
+    if (features.has('cat_tower')) this.placeTower(plan, obstacles, rects, tick);
 
     // Light.
     const L = style.light ?? (this.of.theme === 'spooky' ? 'cozy' : 'warm');
@@ -718,6 +761,8 @@ export class Inside {
     if (!this.open(this.player.x, this.player.z)) { const s = this.nearestOpen(this.player.x, this.player.z); this.player.x = s.x; this.player.z = s.z; }
     this.player.path = [];
     this.placeResident();
+    this.placeToys(features.has('toys'));
+    this.placePets(petList, was);
     for (const m of this.movers.values()) {
       if (!this.open(m.x, m.z)) { const s = this.nearestOpen(m.x, m.z); m.x = s.x; m.z = s.z; }
       m.path = [];
@@ -990,6 +1035,239 @@ export class Inside {
         obstacles.push({ x, z, r: 0.4 });
       }
     }
+  }
+
+  /**
+   * A clear patch of floor of radius r, close to a wall (so it doesn't block the
+   * room), away from doors and the way in. Lobby first, then the rooms.
+   */
+  private freeSpot(plan: Plan, r: number, obstacles: { x: number; z: number; r: number }[], rects: Rect[]): Vec | null {
+    const segs = [...plan.walls, ...plan.dividers];
+    const doors = plan.rooms.flatMap((x) => (x.door ? [x.door] : []));
+    const e = plan.entrance;
+    const order = [...plan.rooms.filter((x) => x.kind === 'lobby'), ...plan.rooms.filter((x) => x.kind === 'column' || x.kind === 'court')];
+    for (const room of order) {
+      let best: Vec | null = null, bestD = Infinity;
+      for (let x = room.rect.x0 + r + 0.3; x <= room.rect.x1 - r - 0.3; x += 0.25) {
+        for (let z = room.rect.z0 + r + 0.3; z <= room.rect.z1 - r - 0.3; z += 0.25) {
+          if (Math.abs(x - e.x) < 2.2 && z > e.z - 3.2) continue;
+          if (doors.some((d) => Math.hypot(x - d.x, z - d.z) < r + 1.6)) continue;
+          if (obstacles.some((o) => Math.hypot(x - o.x, z - o.z) < o.r + r + 0.2)) continue;
+          if (rects.some((q) => x > q.x0 - r - 0.2 && x < q.x1 + r + 0.2 && z > q.z0 - r - 0.2 && z < q.z1 + r + 0.2)) continue;
+          const wall = Math.min(...segs.map((sg) => distSeg(x, z, sg)));
+          if (wall < r + 0.15) continue;
+          if (wall < bestD) { bestD = wall; best = { x, z }; }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
+  private placeTower(plan: Plan, obstacles: { x: number; z: number; r: number }[], rects: Rect[], tick: (f: (t: number) => void) => void) {
+    const at = this.freeSpot(plan, 0.75, obstacles, rects);
+    if (!at) return;
+    const g = catTower(tick);
+    g.position.set(at.x, 0, at.z);
+    this.root.add(g);
+    obstacles.push({ x: at.x, z: at.z, r: 0.75 });
+    this.tower = { x: at.x, z: at.z, base: at, perches: TOWER_PERCHES.map(([x, y, z]) => new THREE.Vector3(at.x + x, y, at.z + z)), taken: TOWER_PERCHES.map(() => null) };
+  }
+
+  /** Toys go down once the floor is known, somewhere you can walk. */
+  private placeToys(on: boolean) {
+    if (this.tower) this.tower.base = this.nearestOpen(this.tower.x + 1.1, this.tower.z + 0.6);
+    if (!on) return;
+    const lobby = this.plan.rooms.find((x) => x.kind === 'lobby')!.rect;
+    const spots = [[-2.2, 5.6], [2.4, 6.0], [0.5, 2.4], [-3.4, 1.8]];
+    spots.slice(0, 3).forEach(([dx, dz], i) => {
+      const at = this.nearestOpen((lobby.x0 + lobby.x1) / 2 + dx, lobby.z0 + dz);
+      const obj = toy(i);
+      obj.position.set(at.x, 0, at.z);
+      this.petRoot.add(obj);
+      this.toys.push({ obj, x: at.x, z: at.z, from: null, to: null, t: 0 });
+    });
+  }
+
+  private placePets(list: Pet[], was: { x: number; z: number; heading: number }[]) {
+    const lobby = this.plan.rooms.find((x) => x.kind === 'lobby')!.rect;
+    this.pets = list.map((pet, i) => {
+      const seed = petSeed(this.of.channelId, i, pet.kind);
+      const color = pet.color ?? petFur(pet.kind, seed);
+      const fig = petFigure(pet.kind, color);
+      const prev = was[i];
+      const at = prev && this.open(prev.x, prev.z) ? prev : this.nearestOpen((lobby.x0 + lobby.x1) / 2 + ((seed % 7) - 3), lobby.z0 + 3 + (seed % 3));
+      fig.group.position.set(at.x, 0, at.z);
+      this.petRoot.add(fig.group);
+      const name = pet.name ?? petName(pet.kind, seed);
+      const label = this.makeLabel(name, 'kc-label');
+      label.style.setProperty('--dot', color);
+      return {
+        pet, name, seed, fig, x: at.x, z: at.z, y: 0, heading: prev?.heading ?? (seed % 6), path: [], wait: 1 + (seed % 4),
+        speed: pet.kind === 'dog' ? 2.6 : pet.kind === 'puppy' || pet.kind === 'kitten' ? 2.3 : pet.kind === 'bunny' ? 1.8 : 1.7,
+        mode: 'idle', jump: null, goal: null, perch: -1, chase: 0, phase: 0, blinkAt: 2 + (seed % 5), greeted: -99, label,
+      } satisfies PetMover;
+    });
+  }
+
+  /** Off the floor and up the tower, or after a toy, or a nap: what to do next. */
+  private choosePet(q: PetMover) {
+    const r = Math.random();
+    const t = this.tower;
+    if (t && climbs(q.pet.kind) && r < 0.4) {
+      const free = t.taken.findIndex((x) => x === null);
+      if (free >= 0) {
+        t.taken[free] = q.name;
+        q.goal = { kind: 'tower', perch: free };
+        q.path = this.route(q, t.base);
+        q.mode = 'idle';
+        return;
+      }
+    }
+    const playful = q.pet.kind === 'kitten' || q.pet.kind === 'puppy' || q.pet.kind === 'dog' ? 0.75 : 0.62;
+    if (this.toys.length && r < playful) {
+      const i = Math.floor(Math.random() * this.toys.length);
+      q.goal = { kind: 'toy', toy: i };
+      q.chase = 1 + Math.floor(Math.random() * 3);
+      q.path = this.route(q, this.toys[i]);
+      q.mode = 'idle';
+      return;
+    }
+    if (r < 0.8) {
+      q.mode = r < 0.72 ? 'sit' : 'nap';
+      q.wait = q.mode === 'nap' ? 9 + Math.random() * 9 : 3 + Math.random() * 4;
+      return;
+    }
+    q.path = this.route(q, this.nearestOpen(q.x + (Math.random() - 0.5) * 9, q.z + (Math.random() - 0.5) * 9));
+    q.mode = 'idle';
+    q.wait = 1 + Math.random() * 3;
+  }
+
+  private kickToy(i: number, q: PetMover) {
+    const toyAt = this.toys[i];
+    if (!toyAt) return;
+    const a = q.heading + (Math.random() - 0.5) * 1.4;
+    const d = 1.2 + Math.random() * 1.6;
+    toyAt.from = { x: toyAt.x, z: toyAt.z };
+    toyAt.to = this.nearestOpen(toyAt.x + Math.sin(a) * d, toyAt.z + Math.cos(a) * d);
+    toyAt.t = 0;
+  }
+
+  private stepPet(q: PetMover, dt: number, t: number) {
+    const p = this.player;
+    let walking = false;
+    if (q.jump) {
+      const j = q.jump;
+      j.t += dt;
+      const k = Math.min(1, j.t / j.dur);
+      q.x = j.a.x + (j.b.x - j.a.x) * k;
+      q.z = j.a.z + (j.b.z - j.a.z) * k;
+      q.y = j.a.y + (j.b.y - j.a.y) * k + Math.sin(k * Math.PI) * 0.6;
+      if (Math.hypot(j.b.x - j.a.x, j.b.z - j.a.z) > 0.01) q.heading = turnToward(q.heading, Math.atan2(j.b.x - j.a.x, j.b.z - j.a.z), dt * 10);
+      if (k >= 1) {
+        q.jump = null;
+        q.y = j.b.y;
+        q.mode = j.then;
+        q.wait = j.then === 'perch' ? 7 + Math.random() * 12 : 1 + Math.random() * 2;
+      }
+    } else if (q.path.length) {
+      walking = this.follow(q, q.path, q.mode === 'play' ? q.speed * 1.5 : q.speed, dt);
+      if (!q.path.length) {
+        const g = q.goal;
+        q.goal = null;
+        if (g?.kind === 'tower' && this.tower) {
+          q.jump = { a: new THREE.Vector3(q.x, 0, q.z), b: this.tower.perches[g.perch].clone(), t: 0, dur: 0.55, then: 'perch' };
+          q.perch = g.perch;
+        } else if (g?.kind === 'toy') {
+          q.mode = 'play';
+          q.wait = 1.2 + Math.random() * 1.5;
+          this.kickToy(g.toy, q);
+          if (q.chase-- > 0) q.goal = { kind: 'toy', toy: g.toy };
+        } else { q.mode = 'idle'; q.wait = 1 + Math.random() * 3; }
+      }
+    } else {
+      const dp = Math.hypot(p.x - q.x, p.z - q.z);
+      // Comes to say hi when you're close, now and then.
+      if ((q.mode === 'idle' || q.mode === 'sit') && dp < 2.6 && t - q.greeted > 25) { q.mode = 'greet'; q.wait = 3.5; q.greeted = t; }
+      if (q.mode === 'greet' || (q.mode === 'perch' && dp < 5)) q.heading = turnToward(q.heading, Math.atan2(p.x - q.x, p.z - q.z), dt * 5);
+      if (q.mode === 'play' && q.goal?.kind === 'toy') {
+        const toyAt = this.toys[q.goal.toy];
+        if (toyAt) q.heading = turnToward(q.heading, Math.atan2(toyAt.x - q.x, toyAt.z - q.z), dt * 8);
+      }
+      q.wait -= dt;
+      if (q.wait <= 0) {
+        if (q.mode === 'perch' && this.tower) {
+          // Down again.
+          this.tower.taken[q.perch] = null;
+          const b = this.tower.base;
+          q.jump = { a: new THREE.Vector3(q.x, q.y, q.z), b: new THREE.Vector3(b.x, 0, b.z), t: 0, dur: 0.6, then: 'idle' };
+          q.perch = -1;
+        } else if (q.mode === 'play' && q.goal?.kind === 'toy' && this.toys[q.goal.toy]) {
+          q.path = this.route(q, this.toys[q.goal.toy]);
+        } else {
+          q.goal = null;
+          this.choosePet(q);
+        }
+      }
+    }
+
+    // How it looks doing it.
+    const f = q.fig;
+    const bunny = q.pet.kind === 'bunny', dog = q.pet.kind === 'dog' || q.pet.kind === 'puppy';
+    f.rig.position.y = 0;
+    f.rig.rotation.x = 0;
+    f.head.rotation.set(0, 0, 0);
+    for (const l of f.legs) l.rotation.x = 0;
+    if (walking) {
+      q.phase += dt * (q.mode === 'play' ? 16 : 11);
+      if (bunny) {
+        f.rig.position.y = Math.abs(Math.sin(q.phase * 0.55)) * 0.22;
+        f.legs.forEach((l, i) => { l.rotation.x = (i < 2 ? -1 : 1) * Math.abs(Math.sin(q.phase * 0.55)) * 0.6; });
+      } else {
+        const sw = Math.sin(q.phase) * 0.65;
+        f.legs.forEach((l, i) => { l.rotation.x = i === 0 || i === 3 ? sw : -sw; });
+        f.rig.position.y = Math.abs(Math.sin(q.phase)) * 0.03;
+      }
+    } else if (q.jump) {
+      f.legs.forEach((l, i) => { l.rotation.x = i < 2 ? -0.8 : 0.8; });
+      f.rig.rotation.x = q.jump.b.y > q.jump.a.y ? -0.35 : 0.3;
+    } else if (q.mode === 'nap') {
+      f.rig.position.y = -0.14;
+      f.legs.forEach((l, i) => { l.rotation.x = i < 2 ? -1.35 : 1.35; });
+      f.head.rotation.x = 0.35;
+    } else if (q.mode === 'sit' || q.mode === 'perch' || q.mode === 'greet') {
+      f.rig.rotation.x = -0.32;
+      f.rig.position.y = -0.04;
+      f.legs[2].rotation.x = f.legs[3].rotation.x = 1.0;
+      f.legs[0].rotation.x = f.legs[1].rotation.x = 0.3;
+      if (q.mode === 'greet') {
+        f.head.rotation.z = Math.sin(t * 2.4) * 0.22;
+        if (dog || bunny) f.rig.position.y = Math.max(0, Math.sin(t * 7)) * 0.08;
+      }
+    } else if (q.mode === 'play') {
+      // Pounce.
+      const k = Math.max(0, Math.sin(t * 7 + q.seed));
+      f.rig.position.y = k * 0.14;
+      f.legs[0].rotation.x = f.legs[1].rotation.x = -k * 1.1;
+      f.rig.rotation.x = -k * 0.25;
+    }
+    // Looks at you when you're near.
+    const dx = p.x - q.x, dz = p.z - q.z;
+    if (q.mode !== 'nap' && Math.hypot(dx, dz) < 5) {
+      const rel = Math.atan2(Math.sin(Math.atan2(dx, dz) - q.heading), Math.cos(Math.atan2(dx, dz) - q.heading));
+      f.head.rotation.y = THREE.MathUtils.clamp(rel, -0.9, 0.9);
+    }
+    // Tails: a slow swish, a happy wag.
+    const happy = q.mode === 'greet' || q.mode === 'play';
+    if (dog) f.tail.rotation.z = Math.sin(t * (happy ? 18 : 4)) * (happy ? 0.7 : 0.25);
+    else if (!bunny) f.tail.rotation.z = Math.sin(t * (happy ? 4 : 1.4) + q.seed) * (happy ? 0.6 : 0.35);
+    // Blinks; eyes shut for a nap.
+    if (t > q.blinkAt + 0.14) q.blinkAt = t + 2 + Math.random() * 4;
+    const shut = q.mode === 'nap' || (t > q.blinkAt && t < q.blinkAt + 0.14);
+    for (const e of f.eyes) e.scale.y = shut ? 0.12 : 1;
+
+    f.group.position.set(q.x, q.y, q.z);
+    f.group.rotation.y = q.heading;
   }
 
   /** Hang something on the wall at (x, z), so it goes down with the wall when that's cut away. */
@@ -1365,6 +1643,18 @@ export class Inside {
       if (leaving && s < 0.02) { k.obj.removeFromParent(); k.pad.removeFromParent(); k.bubble.remove(); this.kan = null; }
     }
 
+    for (const q of this.pets) this.stepPet(q, dt, t);
+    for (const toyAt of this.toys) {
+      if (!toyAt.from || !toyAt.to) continue;
+      toyAt.t = Math.min(1, toyAt.t + dt / 0.7);
+      const e = 1 - Math.pow(1 - toyAt.t, 3);
+      toyAt.x = toyAt.from.x + (toyAt.to.x - toyAt.from.x) * e;
+      toyAt.z = toyAt.from.z + (toyAt.to.z - toyAt.from.z) * e;
+      toyAt.obj.position.set(toyAt.x, Math.sin(toyAt.t * Math.PI) * 0.18, toyAt.z);
+      toyAt.obj.rotation.y += dt * 9 * (1 - toyAt.t);
+      if (toyAt.t >= 1) { toyAt.from = null; toyAt.to = null; }
+    }
+
     for (const f of this.ticks) f(t, dt);
     for (const [i, pl] of this.party.entries()) {
       const b = this.plan.bounds;
@@ -1501,6 +1791,10 @@ export class Inside {
       const pos = new THREE.Vector3(m.x, 2.0, m.z);
       put(m.label, pos, true);
       put(m.bubble, new THREE.Vector3(m.x, 2.55, m.z), now < m.sayUntil && Boolean(m.bubble.textContent), -6);
+    }
+    for (const q of this.pets) {
+      const close = Math.hypot(this.player.x - q.x, this.player.z - q.z) < 3.2 || q.mode === 'greet';
+      put(q.label, new THREE.Vector3(q.x, q.y + 1.05 * q.fig.scale, q.z), close);
     }
     if (this.kan) put(this.kan.bubble, this.kan.obj.position.clone().setY(2.4), Boolean(this.kan.bubble.textContent));
     // The card under the mouse, or the one you're next to.
