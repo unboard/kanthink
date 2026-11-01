@@ -61,7 +61,7 @@ const STATUS: Record<CityPlot['bot']['status'], { label: string; pill: string }>
   needs: { label: 'Needs you', pill: 'text-amber-200 bg-amber-500/15 ring-1 ring-amber-400/50' },
   idle: { label: 'Idle', pill: 'text-neutral-300 bg-white/5' },
   paused: { label: 'Out of budget', pill: 'text-rose-200 bg-rose-500/10' },
-  off: { label: 'No bot yet', pill: 'text-neutral-500 bg-white/5' },
+  off: { label: 'Off duty', pill: 'text-neutral-500 bg-white/5' },
 };
 
 const FEED_DOT: Record<string, string> = {
@@ -1108,7 +1108,7 @@ function Citizens({ data, plots, hires, busy, onGo, onKan, onHire, onNewHood }: 
             {quiet.length > 0 && (
               <>
                 <button onClick={() => setOpenHood((o) => ({ ...o, [h.key]: !o[h.key] }))} className="flex w-full items-center gap-1 px-1 py-1 text-[12px] text-neutral-500 hover:text-neutral-300">
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} /> {quiet.length} without a bot
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} /> {quiet.length} off duty
                 </button>
                 {open && quiet.map((p) => (
                   <button key={p.channelId} onClick={() => onGo(p.channelId)} className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1 text-left text-[13px] text-neutral-400 hover:bg-white/5 hover:text-neutral-200">
@@ -1128,14 +1128,14 @@ function Citizens({ data, plots, hires, busy, onGo, onKan, onHire, onNewHood }: 
 
       {plots.every((p) => p.bot.status === 'off') && hires.length > 0 && (
         <div className="mt-4 rounded-xl bg-white/[0.04] p-3">
-          <p className="text-[12px] leading-relaxed text-neutral-400">No bots live here yet. Each one reads its channel, does the work, and comes to Town Hall when it needs you. Here’s where one would help most:</p>
+          <p className="text-[12px] leading-relaxed text-neutral-400">None of your bots are working yet. Put one to work and it reads its channel, does the work, and comes to Town Hall when it needs you. Here’s where one would help most:</p>
           <div className="mt-2 space-y-1.5">
             {hires.map((p) => (
               <div key={p.channelId} className="flex items-center gap-2">
                 <ShroomBot seed={hash(p.channelId)} size={22} />
                 <button onClick={() => onGo(p.channelId)} className="min-w-0 flex-1 truncate text-left text-[13px] text-neutral-200 hover:text-white">{p.name}</button>
                 <button disabled={busy !== null} onClick={() => onHire(p.channelId)} className="flex-shrink-0 rounded-full bg-violet-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-violet-500 disabled:opacity-50">
-                  {busy === `on:${p.channelId}` ? 'Calling a cab…' : 'Move one in'}
+                  {busy === `on:${p.channelId}` ? 'Starting…' : 'Put to work'}
                 </button>
               </div>
             ))}
@@ -1248,7 +1248,7 @@ function PlotPanel({ p, data, approvals, busy, onOn, onOff, onRun, onDecide, onB
           <ShroomBot seed={hash(p.channelId)} status={p.bot.status} size={40} />
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-medium text-neutral-200">{p.resident.name}</p>
-            <p className="text-[12px] text-neutral-500">{p.bot.on ? `Works every ${p.bot.everyHours}h${p.bot.lastRunAt ? ` · last ran ${ago(p.bot.lastRunAt)}` : ''}` : 'Lives here. Turn it on and it works the channel on its own.'}</p>
+            <p className="text-[12px] text-neutral-500">{p.bot.on ? `Works every ${p.bot.everyHours}h${p.bot.lastRunAt ? ` · last ran ${ago(p.bot.lastRunAt)}` : ''}` : 'Lives here, off duty. Put it to work and it runs the channel on its own.'}</p>
           </div>
           <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] ${s.pill}`}>{s.label}</span>
         </div>
