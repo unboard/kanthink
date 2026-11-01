@@ -2001,23 +2001,25 @@ export class CityEngine {
     return el;
   }
 
+  /** Each label's size on screen, re-measured now and then since badges come and go. */
+  private labelSizes = new WeakMap<HTMLElement, { w: number; h: number; at: number }>();
+
+  /**
+   * Labels are placed most important first, and one that would land on a label
+   * already placed waits until you zoom in and there's room. From up high you see
+   * the neighborhoods and whatever has something to say; names come in as you zoom.
+   */
   private placeLabels() {
     const w = this.host.clientWidth, h = this.host.clientHeight;
-    const v = new THREE.Vector3();
-    const put = (el: HTMLElement, pos: THREE.Vector3, show: boolean, dy = 0) => {
-      if (!show) { if (el.style.display !== 'none') el.style.display = 'none'; return; }
-      v.copy(pos).project(this.view);
-      const x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h + dy;
-      // Behind a first-person camera counts as off screen; so does too far to read.
-      const far = fpv && (v.z > 1 || pos.distanceTo(this.persp.position) > 150);
-      const off = far || x < -80 || x > w + 80 || y < -40 || y > h + 40;
-      el.style.display = off ? 'none' : '';
-      if (!off) el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
-    };
     const fpv = this.mode !== 'map';
     // Up close in first person, everything nearby says its name.
     const zoom = fpv ? 3 : this.camera.zoom;
-    // The busiest buildings always say their names; the rest appear as you zoom in.
+    // Zoomed out you read the neighborhoods; zoomed in, the buildings.
+    const close = fpv || zoom >= 1.6;
+    type Ask = { el: HTMLElement; pos: THREE.Vector3; show: boolean; prio: number; dy: number; force: boolean };
+    const asks: Ask[] = [];
+    const ask = (el: HTMLElement, pos: THREE.Vector3, show: boolean, prio: number, dy = 0, force = false) => asks.push({ el, pos, show, prio, dy, force });
+
     const ranked = [...this.plots.values()].sort((a, b) => b.importance - a.importance);
     // A phone has room for far fewer names than a desktop.
     const room = Math.max(0.3, Math.min(1, w / 1100));
@@ -2026,34 +2028,64 @@ export class CityEngine {
     ranked.forEach((pv, i) => {
       const p = pv.plot;
       const marked = this.marked.has(p.channelId);
-      const loud = marked || p.isNew || p.bot.status === 'working' || p.waiting.length > 0 || Boolean(p.building) || sel === p.channelId || this.hovered === p.name;
-      const show = fpv ? Math.hypot(pv.center.x - this.persp.position.x, pv.center.z - this.persp.position.z) < 95 : loud || (i < shown && (p.attention !== 'muted' || zoom > 2.2));
-      put(pv.label, v.set(pv.center.x, GROUND_Y + pv.built.top + 0.6, pv.center.z).clone(), show);
+      const picked = sel === p.channelId || marked || this.hovered === p.name;
+      // Loud: something going on that you'd want to see from anywhere.
+      const loud = picked || p.isNew || p.bot.status === 'working' || p.waiting.length > 0 || Boolean(p.building);
+      const near = fpv && Math.hypot(pv.center.x - this.persp.position.x, pv.center.z - this.persp.position.z) < 95;
+      const show = fpv ? near : loud || (close && i < shown && (p.attention !== 'muted' || zoom > 2.2));
       pv.label.dataset.selected = sel === p.channelId || marked ? '1' : '';
+      // A building with nothing to say is just its name on the map, not a pill.
+      pv.label.dataset.quiet = loud ? '' : '1';
+      ask(pv.label, new THREE.Vector3(pv.center.x, GROUND_Y + pv.built.top + 0.6, pv.center.z), show, picked ? 1 : loud ? 2 + i / 1000 : 4 + i / 1000, 0, picked);
     });
     for (const f of this.fixedLabels) {
       const isKan = f.el.dataset.follow === '1';
-      put(f.el, isKan ? f.pos.clone().setY(GROUND_Y + 4.4) : f.pos, f.always || zoom > 1);
-      if (f.el.classList.contains('kc-district')) f.el.style.opacity = !fpv && zoom < 1.6 ? '1' : '0';
+      const district = f.el.classList.contains('kc-district');
+      const pos = isKan ? f.pos.clone().setY(GROUND_Y + 4.4) : f.pos;
+      if (district) ask(f.el, pos, !close, 3.5);
+      else ask(f.el, pos, f.always || zoom > 1, 3);
     }
     if (this.strip) {
       for (const lot of this.strip.lots) {
         const el = this.appLabels.get(lot.app.id);
         if (!el) continue;
         const pos = new THREE.Vector3(lot.center.x, lot.top + 1, lot.center.z);
-        const show = fpv ? pos.distanceTo(this.persp.position) < (this.mode === 'walk' ? 32 : 55) : sel === lot.app.id || this.selected?.kind === 'app' && this.selected.id === lot.app.id || (lot.app.tier !== 'free' ? zoom > 0.9 : zoom > 1.9 * (w < 640 ? 1.3 : 1));
-        put(el, pos, show);
+        const picked = sel === lot.app.id || (this.selected?.kind === 'app' && this.selected.id === lot.app.id);
+        const show = fpv ? pos.distanceTo(this.persp.position) < (this.mode === 'walk' ? 32 : 55) : picked || (lot.app.tier !== 'free' ? zoom > 0.9 : zoom > 1.9 * (w < 640 ? 1.3 : 1));
         el.dataset.selected = this.selected?.kind === 'app' && this.selected.id === lot.app.id ? '1' : '';
+        ask(el, pos, show, picked ? 1 : lot.app.tier !== 'free' ? 5 : 6, 0, picked);
       }
     }
     for (const c of this.citizens.values()) {
       const visible = c.walker.obj.visible && !c.walker.inside;
       const pos = c.walker.obj.position.clone().setY(GROUND_Y + 3.4);
-      put(c.label, pos, visible && (fpv ? pos.distanceTo(this.persp.position) < 45 : zoom > (w < 640 ? 2.4 : 1.25)));
+      ask(c.label, pos, visible && (fpv ? pos.distanceTo(this.persp.position) < 45 : zoom > (w < 640 ? 2.4 : 1.25)), 7);
       const saying = performance.now() < c.sayUntil;
-      put(c.bubble, pos.clone().setY(GROUND_Y + 2.4), visible && (saying || c.status === 'needs') && c.bubble.childElementCount > 0, -4);
+      ask(c.bubble, pos.clone().setY(GROUND_Y + 2.4), visible && (saying || c.status === 'needs') && c.bubble.childElementCount > 0, 0, -4, true);
     }
-    if (this.kan && this.kanBubble) put(this.kanBubble, this.kan.obj.position.clone().setY(this.kan.obj.position.y + 4.2), this.kanSays, -30);
+    if (this.kan && this.kanBubble) ask(this.kanBubble, this.kan.obj.position.clone().setY(this.kan.obj.position.y + 4.2), this.kanSays, 0, -30, true);
+
+    asks.sort((a, b) => a.prio - b.prio);
+    const placed: [number, number, number, number][] = [];
+    const v = new THREE.Vector3();
+    const now = performance.now();
+    for (const a of asks) {
+      const el = a.el;
+      const hide = () => { if (el.style.display !== 'none') el.style.display = 'none'; };
+      if (!a.show) { hide(); continue; }
+      v.copy(a.pos).project(this.view);
+      const x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h + a.dy;
+      // Behind a first-person camera counts as off screen; so does too far to read.
+      const far = fpv && (v.z > 1 || a.pos.distanceTo(this.persp.position) > 150);
+      if (far || x < -80 || x > w + 80 || y < -40 || y > h + 40) { hide(); continue; }
+      if (el.style.display === 'none') el.style.display = '';
+      let size = this.labelSizes.get(el);
+      if (!size || now - size.at > 1500) { size = { w: el.offsetWidth, h: el.offsetHeight, at: now }; this.labelSizes.set(el, size); }
+      const r: [number, number, number, number] = [x - size.w / 2 - 3, y - size.h - 2, x + size.w / 2 + 3, y + 2];
+      if (!a.force && placed.some((q) => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1])) { hide(); continue; }
+      placed.push(r);
+      el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+    }
   }
 
   // ---------- Input ----------

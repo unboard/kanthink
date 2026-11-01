@@ -1635,6 +1635,11 @@ const LABEL_CSS = `
   font: 600 12px/1.2 ui-sans-serif, system-ui, sans-serif; box-shadow: 0 2px 10px rgba(20,10,40,0.25); transition: background .15s; }
 .kc-label:hover, .kc-label[data-selected="1"] { background: #fff; box-shadow: 0 0 0 2px #a78bfa, 0 4px 14px rgba(20,10,40,0.35); }
 .kc-label[data-muted="1"] { background: rgba(220,218,228,0.75); color: #5b5866; font-weight: 500; }
+/* A building with nothing going on: just its name, printed on the map. */
+.kc-label[data-quiet="1"] { background: none; box-shadow: none; padding: 2px 4px; color: #fff; font-weight: 600; font-size: 11.5px;
+  text-shadow: 0 1px 2px rgba(10,5,25,.9), 0 0 8px rgba(10,5,25,.55); }
+.kc-label[data-quiet="1"][data-muted="1"] { color: rgba(255,255,255,.7); }
+.kc-label[data-quiet="1"]:hover { background: rgba(255,255,255,.94); color: #1c1b22; text-shadow: none; box-shadow: 0 0 0 2px #a78bfa, 0 4px 14px rgba(20,10,40,0.35); }
 .kc-label .kc-dot { display: none; }
 .kc-bot { padding: 2px 8px 2px 6px; font-size: 11px; background: rgba(20,18,30,0.8); color: #f4f2ff; }
 .kc-bot .kc-dot { display: block; width: 7px; height: 7px; border-radius: 99px; background: var(--dot, #8b5cf6); }
