@@ -34,6 +34,8 @@ export interface InsideOf {
   theme: PlotTheme | null;
   walls: string | null;
   style: InteriorStyle;
+  /** Its bot is on duty, so the resident wears its sweatband at the desk too. */
+  onDuty?: boolean;
 }
 export interface InsideCallbacks {
   onPick(p: InsidePick): void;
@@ -1530,6 +1532,7 @@ export class Inside {
     const m = this.movers.get(this.of.channelId);
     if (m) { m.home = home; return; }
     const r = this.addMover(this.of.channelId, this.of.resident, hash(this.of.channelId), home, home, false);
+    r.fig.band.visible = Boolean(this.of.onDuty);
     r.heading = 0;
   }
 

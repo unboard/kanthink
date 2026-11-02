@@ -1214,6 +1214,8 @@ export class CityEngine {
         if (!first) this.arriveByCab(c, home);
       }
       c.status = p.bot.status;
+      // On duty, it wears its sweatband.
+      c.fig.band.visible = p.bot.status !== 'off';
       const nameEl = c.label.querySelector('.kc-name');
       if (nameEl && nameEl.textContent !== p.resident.name) nameEl.textContent = p.resident.name;
       this.route(c, p, queue.findIndex((q) => q.channelId === p.channelId));
@@ -1479,6 +1481,19 @@ export class CityEngine {
       // A waiting bot bounces, a little impatiently.
       const bounce = c.status === 'needs' && !moving ? Math.abs(Math.sin(t * 3 + w.phase)) * 0.35 : 0;
       c.fig.body.position.y = 0.8 + bounce + (moving ? Math.abs(Math.sin(t * 10 + w.phase)) * 0.12 : 0);
+      if (c.fig.band.visible) {
+        // The band's tails stream out behind a bot on the move and hang when it stops.
+        const lift = moving ? -1.05 + Math.sin(t * 14 + w.phase) * 0.18 : -0.5 + Math.sin(t * 1.5 + w.phase) * 0.05;
+        for (const [i, tail] of c.fig.tails.entries()) tail.rotation.x = lift + i * 0.08;
+        // Working hard: a bead of sweat rolls down, over and over.
+        const working = c.status === 'working';
+        c.fig.sweat.visible = working;
+        if (working) {
+          const k = ((t * 0.6 + w.phase) % 1);
+          c.fig.sweat.position.y = 0.9 - k * 0.3;
+          (c.fig.sweat.material as THREE.MeshStandardMaterial).opacity = 0.9 * (1 - k);
+        }
+      }
       c.fig.body.scale.y = 0.95 - (moving ? 0 : Math.sin(t * 2 + w.phase) * 0.03);
     }
     // Kan.

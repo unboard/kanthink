@@ -2183,6 +2183,26 @@ export interface AttentionDecisionJson {
 }
 
 /**
+ * Claude Code sessions open on the owner's computer, as its hooks report them
+ * (scripts/claude-presence.mjs): when one starts, works, goes idle and closes. The
+ * city reads this to say whether Claude Code is online right now.
+ */
+export const claudeSessions = sqliteTable('claude_sessions', {
+  /** Claude Code's own session id. */
+  id: text('id').primaryKey(),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  state: text('state').$type<'working' | 'idle' | 'closed'>().notNull(),
+  cwd: text('cwd'),
+  startedAt: integer('started_at', { mode: 'timestamp' }),
+  lastSeenAt: integer('last_seen_at', { mode: 'timestamp' }),
+  endedAt: integer('ended_at', { mode: 'timestamp' }),
+  /** Do these cards newer than this have been mentioned to the session. */
+  announcedAt: integer('announced_at', { mode: 'timestamp' }),
+}, (table) => [
+  index('claude_sessions_owner_idx').on(table.ownerId, table.lastSeenAt),
+])
+
+/**
  * What the owner has told Kan about a project or topic in their life, and what part
  * Kan plays in it: build it with them (help), know about it and stay curious but
  * never build or run anything for it (aware), or leave it out entirely (hands_off).

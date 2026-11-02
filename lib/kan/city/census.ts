@@ -6,6 +6,7 @@ import {
 import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm'
 import { residentOf } from './residents'
 import { listTopics, ROLE_LABEL } from '@/lib/kan/attention/topics'
+import { claudePresence, type ClaudePresence } from './claude'
 
 /**
  * Everyone who works for the owner, in one place: each channel's resident bot (its
@@ -49,6 +50,8 @@ export interface CensusStaff {
   doing: string
   week: { label: string; value: number }[]
   details: string[]
+  /** Claude Code only: whether a session is open on the owner's computer. */
+  presence?: ClaudePresence
 }
 
 export async function censusFor(userId: string): Promise<{ residents: CensusResident[]; staff: CensusStaff[]; at: number }> {
@@ -86,6 +89,7 @@ export async function censusFor(userId: string): Promise<{ residents: CensusResi
       : Promise.resolve([{ n: 0 }]),
     listTopics(userId),
   ])
+  const presence = await claudePresence(userId)
 
   const botOf = new Map(bots.map((b) => [b.channelId, b]))
   const folderName = new Map(folderRows.map((f) => [f.id, f.name]))
@@ -154,10 +158,11 @@ export async function censusFor(userId: string): Promise<{ residents: CensusResi
       details: [],
     },
     {
-      key: 'claude', name: 'Claude Code', role: 'Engineer',
-      doing: 'Works the Work channel from the cards you add on your phone: code changes to Kanthink, then deploys when you say so. Runs on your Claude plan, so it isn’t priced here.',
-      week: [{ label: 'cards finished', value: Number(workDone[0]?.n ?? 0) }, { label: 'handed over by bots', value: handoffs }],
+      key: 'claude', name: 'Claude Code', role: 'Engineer, works remotely',
+      doing: 'Doesn’t live in the city: it runs in a terminal on your computer, when a session is open. It works the Work channel (code changes to Kanthink, deploys when you say so). Notes you leave it go to Work → Do these; an open session hears about them on its next turn, a closed one finds them when you ask it to look. Runs on your Claude plan, so it isn’t priced here.',
+      week: [{ label: 'cards finished', value: Number(workDone[0]?.n ?? 0) }, { label: 'waiting in Do these', value: presence.waiting }, { label: 'handed over by bots', value: handoffs }],
       details: [],
+      presence,
     },
     {
       key: 'shrooms', name: 'Shrooms', role: 'Automations',

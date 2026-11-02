@@ -142,6 +142,17 @@ export function ShroomBot({ seed, size = 32, status, className }: { seed: number
       <ellipse cx="41" cy="50" rx="2.4" ry="1.6" fill={look.cheek} opacity="0.65" />
       {needs ? <ellipse cx="32" cy="52" rx="1.6" ry="1.9" fill="#3a2418" /> : <path d="M29.3 50.8 Q32 53.8 34.7 50.8" stroke="#3a2418" strokeWidth="1.5" fill="none" strokeLinecap="round" />}
 
+      {/* On duty: a sweatband (white terry, blue stripes, ties out the side), and sweat while it works. */}
+      {status && !off && (
+        <g>
+          <path d="M45 38.6 L51.5 36.2 L52.2 38 Z M45 40 L51 41.6 L50.2 43.1 Z" fill="#f7f4ee" stroke="#d9d4ca" strokeWidth="0.4" />
+          <rect x="18.4" y="37.4" width="27.2" height="4" rx="1.6" fill="#f7f4ee" />
+          <rect x="18.4" y="38" width="27.2" height="0.9" fill="#2563eb" />
+          <rect x="18.4" y="40" width="27.2" height="0.9" fill="#2563eb" />
+        </g>
+      )}
+      {status === 'working' && <path d="M43.2 42.4 Q41.6 45.2 43.2 46.3 Q44.8 45.2 43.2 42.4 Z" fill="#8fd3ff" opacity="0.9" />}
+
       {/* The cap. */}
       <path d="M9 36 Q32 42 55 36 L55 38 Q32 44 9 38 Z" fill={look.capDark} />
       <path d={CAP} fill={look.cap} />

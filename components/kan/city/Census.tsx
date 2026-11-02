@@ -136,6 +136,7 @@ export function Census({ onClose, onVisit, onTalk, onDuty }: {
                       </span>
                     </div>
                     <p className="mt-2 line-clamp-2 text-[12px] leading-snug text-neutral-400">{s.doing}</p>
+                    {s.presence && <p className="mt-2 flex items-center gap-1.5 text-[12px] text-neutral-300"><span className={`h-1.5 w-1.5 rounded-full ${presenceLine(s.presence).dot}`} />{s.presence.state === 'offline' ? 'Offline' : s.presence.state === 'working' ? 'Online, working' : 'Online'}</p>}
                     <p className="mt-2 text-[12px] text-neutral-300">{s.week.map((w) => `${w.value} ${w.label}`).join(' · ')}</p>
                   </button>
                 ))}
@@ -285,7 +286,38 @@ function ResidentFile({ r, busy, onVisit, onTalk, onToggle }: { r: CensusResiden
   );
 }
 
+function presenceLine(p: NonNullable<CensusStaff['presence']>) {
+  if (p.state === 'working') return { dot: 'animate-pulse bg-emerald-400', text: 'Online and working right now' };
+  if (p.state === 'idle') return { dot: 'bg-emerald-400', text: `Online: a session is open${p.sessions > 1 ? ` (${p.sessions})` : ''}, waiting for you` };
+  if (!p.wired) return { dot: 'bg-neutral-600', text: 'Can’t tell yet: its presence hooks aren’t set up on your computer' };
+  return { dot: 'bg-neutral-600', text: `Offline${p.lastSeenAt ? `, last seen ${when(p.lastSeenAt)}` : ''}` };
+}
+
+/** A note for Claude Code: a card in Work → Do these. */
+function NoteForClaude({ presence }: { presence: NonNullable<CensusStaff['presence']> }) {
+  const [text, setText] = useState('');
+  const [state, setState] = useState<'idle' | 'sending' | 'sent' | string>('idle');
+  const send = async () => {
+    setState('sending');
+    const r = await fetch('/api/prototypes/kan/city/claude', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) }).catch(() => null);
+    if (!r?.ok) { setState((await r?.json().catch(() => null))?.error ?? 'That didn’t send'); return; }
+    setText('');
+    setState('sent');
+  };
+  return (
+    <div>
+      <textarea value={text} onChange={(e) => { setText(e.target.value); if (state !== 'sending') setState('idle'); }} rows={4} placeholder="What should Claude Code do? The first line becomes the card’s title." className="w-full rounded-xl border border-white/10 bg-neutral-900 px-3 py-2 text-[13px] text-neutral-100 placeholder:text-neutral-600" />
+      <div className="mt-2 flex items-center gap-3">
+        <button disabled={!text.trim() || state === 'sending'} onClick={() => void send()} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-40">{state === 'sending' ? 'Leaving it…' : 'Leave in Do these'}</button>
+        {state === 'sent' && <span className="text-[12px] text-emerald-300">{presence.state === 'offline' ? 'Left in Do these. It’ll be there when you next ask Claude Code to look.' : 'Left in Do these. The open session hears about it on its next turn.'}</span>}
+        {state !== 'idle' && state !== 'sending' && state !== 'sent' && <span className="text-[12px] text-rose-300">{state}</span>}
+      </div>
+    </div>
+  );
+}
+
 function StaffFile({ s }: { s: CensusStaff }) {
+  const p = s.presence ? presenceLine(s.presence) : null;
   return (
     <div>
       <div className="mt-3 flex items-center gap-3">
@@ -295,9 +327,15 @@ function StaffFile({ s }: { s: CensusStaff }) {
           <p className="text-[13px] text-neutral-400">{s.role}</p>
         </div>
       </div>
+      {p && <p className="mt-3 flex items-center gap-2 text-[13px] text-neutral-200"><span className={`h-2 w-2 flex-shrink-0 rounded-full ${p.dot}`} />{p.text}</p>}
       <Section title="What it does">
         <p className="text-[13px] leading-relaxed text-neutral-200">{s.doing}</p>
       </Section>
+      {s.presence && (
+        <Section title="Leave it a note">
+          <NoteForClaude presence={s.presence} />
+        </Section>
+      )}
       <Section title="This week">
         <ul className="space-y-1">
           {s.week.map((w) => <li key={w.label} className="flex justify-between text-[13px]"><span className="text-neutral-400">{w.label}</span><span className="font-medium text-neutral-100">{w.value}</span></li>)}

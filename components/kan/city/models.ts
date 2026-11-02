@@ -1093,7 +1093,18 @@ function capGeometry() {
  * The same character as the ShroomBot icon (look.ts). `body` is everything above the
  * shadow, pivoting at 0.8 so the engine can bob and breathe it.
  */
-export function botFigure(seed: number, look: BotLook = botLook(seed)): { group: THREE.Group; body: THREE.Group; color: string } {
+export interface BotFig {
+  group: THREE.Group;
+  body: THREE.Group;
+  color: string;
+  /** The sweatband an on-duty bot wears: shown while it's on duty, its tails flutter as it moves. */
+  band: THREE.Group;
+  tails: THREE.Object3D[];
+  /** A bead of sweat, shown while it works. */
+  sweat: THREE.Mesh;
+}
+
+export function botFigure(seed: number, look: BotLook = botLook(seed)): BotFig {
   const g = dyn(new THREE.Group());
   const body = new THREE.Group();
   body.position.y = 0.8;
@@ -1162,11 +1173,54 @@ export function botFigure(seed: number, look: BotLook = botLook(seed)): { group:
   gills.position.y = capTop - 0.01;
   inner.add(gills);
 
+  // Sweatband: white terry with two wide blue stripes, worn around the cap (a mushroom's head)
+  // where the city's high camera can see it, tied at the back.
+  const band = new THREE.Group();
+  band.position.y = capTop + 0.27;
+  band.rotation.x = -0.12;
+  band.visible = false;
+  const terry = soft('#f7f4ee', 0.95);
+  const stripe = soft('#2563eb', 0.6);
+  const ring = new THREE.Mesh(geo('band', () => new THREE.TorusGeometry(0.64, 0.11, 8, 32)), terry);
+  ring.rotation.x = Math.PI / 2;
+  band.add(ring);
+  for (const [dy, rad] of [[-0.055, 0.722], [0.055, 0.722]] as const) {
+    const s = new THREE.Mesh(geo(`bandStripe${rad}`, () => new THREE.TorusGeometry(rad, 0.036, 6, 32)), stripe);
+    s.rotation.x = Math.PI / 2;
+    s.position.y = dy;
+    band.add(s);
+  }
+  const knot = new THREE.Mesh(geo('bandKnot', () => new THREE.SphereGeometry(0.09, 8, 6)), terry);
+  knot.position.set(0, 0, -0.71);
+  band.add(knot);
+  const tails: THREE.Object3D[] = [];
+  for (const side of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 0.04, 0, -0.74);
+    const tail = new THREE.Mesh(geo('bandTail', () => new THREE.BoxGeometry(0.09, 0.025, 0.34)), terry);
+    tail.position.z = -0.16;
+    pivot.rotation.set(-0.5, side * 0.35, 0);
+    pivot.add(tail);
+    band.add(pivot);
+    tails.push(pivot);
+  }
+  inner.add(band);
+
+  // A bead of sweat on the brow, for when it's working hard.
+  const sweat = new THREE.Mesh(
+    geo('sweat', () => new THREE.SphereGeometry(0.05, 8, 6)),
+    new THREE.MeshStandardMaterial({ color: '#8fd3ff', roughness: 0.1, transparent: true, opacity: 0.85 }),
+  );
+  sweat.scale.set(0.8, 1.25, 0.8);
+  sweat.position.set(0.24, 0.88, 0.3);
+  sweat.visible = false;
+  inner.add(sweat);
+
   const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.7, 14), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.18 }));
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = 0.03;
   g.add(shadow);
-  return { group: g, body, color: look.cap };
+  return { group: g, body, color: look.cap, band, tails, sweat };
 }
 
 /** Kan: a mushroom like every bot, in Kan's own violet with white spots, wearing a gold crown. */

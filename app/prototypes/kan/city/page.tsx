@@ -259,7 +259,7 @@ export default function CityPage() {
     const b = await fetchBoard(id);
     if (!b) { setEntering(null); setNote('The door’s stuck. Try again in a moment.'); return; }
     try {
-      engine.current?.enter({ channelId: id, name: p.name, resident: p.resident.name, theme: p.style.theme ?? null, walls: p.style.walls ?? null, style: p.interior }, b, appsOf(id), data.boss);
+      engine.current?.enter({ channelId: id, name: p.name, resident: p.resident.name, theme: p.style.theme ?? null, walls: p.style.walls ?? null, style: p.interior, onDuty: p.bot.status !== 'off' }, b, appsOf(id), data.boss);
     } catch (err) {
       console.error('[city] enter', err);
       engine.current?.leave();
