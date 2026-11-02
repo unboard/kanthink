@@ -496,6 +496,8 @@ export default function CityPage() {
   const look = () => act('look', () => fetch('/api/prototypes/kan/attention', { method: 'POST' }), 'Reading everything you’ve given me. A minute or two.', 'townhall');
   const buildOne = (passId: string, name: string) =>
     act('apply', () => fetch('/api/prototypes/kan/city/build', json('POST', { passId, name })), `Putting up ${name}. Watch it rise.`, 'townhall');
+  const remember = (name: string, role: TopicRole, note: string) =>
+    act(`topic:${name}`, () => fetch('/api/prototypes/kan/city/topic', json('POST', { name, role, note })), role === 'help' ? `Got it. I’ll help with ${name}.` : role === 'aware' ? `Got it. I’ll keep ${name} in mind and leave the building to you.` : `Got it. I’ll leave ${name} alone.`, 'townhall');
   const applyPass = (id: string) => act('apply', () => fetch(`/api/prototypes/kan/attention/${id}/apply`, { method: 'POST' }), 'Done. I rearranged the city.', 'townhall');
   const moveTo = (channelId: string, folderId: string | null) =>
     act(`mv:${channelId}`, () => fetch('/api/prototypes/kan/city/neighborhoods', json('POST', { action: 'move', channelId, folderId })), folderId ? 'Moved. Its bot has new neighbors.' : 'Moved Downtown. Its bot keeps to itself now.');
@@ -871,7 +873,7 @@ export default function CityPage() {
               onEnter={() => void enterBuilding(selectedPlot.channelId)}
             />
           ) : pick.kind === 'townhall' ? (
-            <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onApply={(id) => void applyPass(id)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
+            <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onApply={(id) => void applyPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
           ) : pick.kind === 'park' ? (
             <ParkPanel plots={plots} onGo={(id) => onPickRef.current({ kind: 'plot', id })} />
           ) : pick.kind === 'proposal' ? (
@@ -1441,13 +1443,57 @@ function ApprovalRow({ a, busy, onDecide, showWhere }: { a: Approval; busy: stri
   );
 }
 
-function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onGo, onAsk }: {
+type TopicRole = 'help' | 'aware' | 'hands_off';
+const CHANGE_VERB = { start: 'Start', reshape: 'Reshape', quiet: 'Quiet', mute: 'Mute', wake: 'Wake', keep: 'Keep' } as const;
+
+/** Telling Kan what something is and the part it plays: three answers and a line in your own words. */
+function TopicReply({ name, busy, onSave, onCancel, choices }: {
+  name: string;
+  busy: boolean;
+  onSave: (role: TopicRole, note: string) => void;
+  onCancel?: () => void;
+  choices: { role: TopicRole; label: string }[];
+}) {
+  const [note, setNote] = useState('');
+  return (
+    <div className="mt-2">
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder={`Tell Kan about ${name} (optional): what it is, where you work on it…`} className="w-full rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-[13px] text-neutral-100 placeholder:text-neutral-600" />
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {choices.map((c) => (
+          <button key={c.role} disabled={busy} onClick={() => onSave(c.role, note)} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-neutral-200 hover:bg-white/5 disabled:opacity-50">{c.label}</button>
+        ))}
+        {onCancel && <button onClick={onCancel} className="px-2 text-xs text-neutral-500">Back</button>}
+      </div>
+    </div>
+  );
+}
+
+function PlanItem({ item, busy, onRemember }: { item: { name: string; change: keyof typeof CHANGE_VERB; why: string }; busy: string | null; onRemember: (name: string, role: TopicRole, note: string) => void }) {
+  const [open, setOpen] = useState(false);
+  // Pushing back fits the changes that would build something; the rest are for the chat.
+  const builds = item.change === 'start' || item.change === 'reshape';
+  return (
+    <li className="py-1.5">
+      <div className="flex items-start gap-2">
+        <p className="flex-1 text-[13px] leading-snug text-neutral-200"><span className="text-neutral-400">{CHANGE_VERB[item.change]}</span> {item.name}<span className="block text-[12px] text-neutral-500">{item.why}</span></p>
+        {builds && !open && <button onClick={() => setOpen(true)} className="flex-shrink-0 rounded-full px-2 py-0.5 text-[12px] text-neutral-400 hover:bg-white/5 hover:text-neutral-200">Not this</button>}
+      </div>
+      {open && (
+        <TopicReply name={item.name} busy={busy !== null} onCancel={() => setOpen(false)} onSave={(role, note) => onRemember(item.name, role, note)}
+          choices={[{ role: 'aware', label: 'I build it elsewhere. Just know about it' }, { role: 'hands_off', label: 'Leave it out' }]} />
+      )}
+    </li>
+  );
+}
+
+function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onRemember, onGo, onAsk }: {
   data: CityData;
   approvals: Approval[];
   busy: string | null;
   onDecide: (id: string, ok: boolean, extra?: { reason?: string; modelId?: string }) => void;
   onLook: () => void;
   onApply: (id: string) => void;
+  onRemember: (name: string, role: TopicRole, note: string) => void;
   onGo: (id: string) => void;
   onAsk: (prompt: string, prefill?: boolean) => void;
 }) {
@@ -1461,7 +1507,17 @@ function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onGo,
       {th.pass && (
         <div className="mt-3 rounded-xl border border-violet-500/40 bg-violet-500/5 p-3">
           <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300"><KanthinkIcon size={12} /> Kan noticed</p>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-neutral-200">{th.pass.note}</p>
+          <p className={`mt-1.5 text-[13px] leading-relaxed ${th.pass.setAside.length ? 'text-neutral-400' : 'text-neutral-200'}`}>{th.pass.note}</p>
+          {th.pass.setAside.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5">
+              {th.pass.setAside.map((x, i) => <li key={i} className="text-[12px] text-neutral-500">Set aside {x.name}: {x.why}</li>)}
+            </ul>
+          )}
+          {th.pass.items.length > 0 && (
+            <ul className="mt-2 divide-y divide-white/5 border-t border-white/5">
+              {th.pass.items.map((it, i) => <PlanItem key={`${it.name}:${i}`} item={it} busy={busy} onRemember={onRemember} />)}
+            </ul>
+          )}
           <p className="mt-1.5 text-[12px] text-neutral-500">{th.pass.changes} change{th.pass.changes === 1 ? '' : 's'} to the city, {th.pass.filings} thing{th.pass.filings === 1 ? '' : 's'} to file{th.pass.at ? ` · ${ago(th.pass.at)}` : ''}.</p>
           <div className="mt-2.5 flex flex-wrap gap-2">
             <button onClick={() => onAsk('Walk me through your plan for the city, one change at a time.')} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500">Talk me through it</button>
@@ -1469,6 +1525,16 @@ function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onGo,
           </div>
         </div>
       )}
+
+      {th.pass?.questions.map((q) => (
+        <div key={q.topic} className="mt-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-sky-300"><KanthinkIcon size={12} /> Kan’s curious</p>
+          <p className="mt-1 text-[14px] leading-relaxed text-neutral-100">{q.ask}</p>
+          <p className="mt-0.5 text-[12px] text-neutral-500">{q.why}</p>
+          <TopicReply name={q.topic} busy={busy !== null} onSave={(role, note) => onRemember(q.topic, role, note)}
+            choices={[{ role: 'help', label: 'Help me with it' }, { role: 'aware', label: 'Just know about it' }, { role: 'hands_off', label: 'Leave it alone' }]} />
+        </div>
+      ))}
 
       {approvals.map((a) => <ApprovalRow key={a.id} a={a} busy={busy} onDecide={onDecide} showWhere />)}
 

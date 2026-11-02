@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid'
 import { callAction, type ToolContext } from '@/lib/kan/agent/tools'
 import { ensureBot } from '@/lib/kan/bots/run'
 import { gatherAreas, gatherInputs } from './inputs'
+import { fitDecisions, isAbout, listTopics } from './topics'
 
 /**
  * Carry out a pass's decisions. The rules that keep this safe live here, in code,
@@ -26,8 +27,10 @@ export async function applyAttentionPass(passId: string, ownerId: string): Promi
   const pass = await db.query.attentionPasses.findFirst({ where: eq(attentionPasses.id, passId) })
   if (!pass || pass.ownerId !== ownerId) return { error: 'Not found' }
   if (pass.appliedAt) return { error: 'Already done' }
-  const d = pass.decisions as AttentionDecisionJson | null
-  if (!d) return { error: 'Nothing to apply' }
+  const raw = pass.decisions as AttentionDecisionJson | null
+  if (!raw) return { error: 'Nothing to apply' }
+  // Anything they told Kan since the plan was made still wins.
+  const d = fitDecisions(raw, await listTopics(ownerId)).decisions
   // Claim it first, so two taps can't apply it twice.
   const [claimed] = await db.update(attentionPasses).set({ appliedAt: new Date() })
     .where(and(eq(attentionPasses.id, passId), sql`${attentionPasses.appliedAt} IS NULL`)).returning()
@@ -58,6 +61,7 @@ export async function applyAttentionPass(passId: string, ownerId: string): Promi
       } else {
         const area = areaOf.get(channelId)
         if (!area) { log.push(`Skipped “${a.name}”: it’s gone.`); continue }
+        if (area.fixed && (a.change === 'quiet' || a.change === 'mute')) { log.push(`Left “${a.name}” as it is: ${area.fixed}.`); continue }
         if (a.change === 'reshape' && !area.fixed) {
           const added = await addMissingColumns(channelId, a.columns ?? [])
           if (a.purpose) await db.update(channels).set({ description: a.purpose, updatedAt: new Date() }).where(eq(channels.id, channelId))
@@ -139,6 +143,8 @@ export async function buildProposedArea(passId: string, ownerId: string, name: s
   const key = name.trim().toLowerCase()
   const a = d?.areas.find((x) => x.change === 'start' && x.name.trim().toLowerCase() === key)
   if (!d || !a) return { error: 'Kan isn’t proposing that one any more' }
+  const limit = (await listTopics(ownerId)).find((t) => t.role !== 'help' && isAbout(a.name, t.name))
+  if (limit) return { error: `They told Kan ${limit.name} isn’t Kan’s to build${limit.note ? ` (“${limit.note}”)` : ''}` }
   // Take it out of the plan first, so two taps can't build it twice.
   const rest: AttentionDecisionJson = { ...d, areas: d.areas.filter((x) => x !== a), filings: d.filings.filter((f) => f.area.trim().toLowerCase() !== key) }
   const [claimed] = await db.update(attentionPasses).set({ decisions: rest })

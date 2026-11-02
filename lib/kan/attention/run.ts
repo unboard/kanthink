@@ -7,6 +7,7 @@ import { getPlaygroundModel } from '@/lib/playground/models'
 import { recordUsage } from '@/lib/usage'
 import { thinkingCost } from '@/lib/kan/bots/spend'
 import { gatherAreas, gatherInputs, type Area, type InputItem } from './inputs'
+import { describeTopics, fitDecisions, listTopics, type Topic } from './topics'
 
 /**
  * The attention loop: Kan reads everything new the owner gave it and decides what
@@ -54,6 +55,19 @@ const SCHEMA = {
         required: ['channelId', 'name', 'attention', 'change', 'why'],
       },
     },
+    questions: {
+      type: 'array',
+      description: 'Things clearly on their mind that you don’t yet know your part in. Asked, not acted on. At most 3; none when you know enough.',
+      items: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'What it is, as they would name it' },
+          ask: { type: 'string', description: 'One curious question, said to them: what it is, and what part (if any) they want you to play' },
+          why: { type: 'string', description: 'The evidence that made you ask, in a short phrase' },
+        },
+        required: ['topic', 'ask', 'why'],
+      },
+    },
     filings: {
       type: 'array',
       description: 'Input that belongs in an area and is not already there',
@@ -70,7 +84,7 @@ const SCHEMA = {
       },
     },
   },
-  required: ['note', 'areas', 'filings'],
+  required: ['note', 'areas', 'questions', 'filings'],
 }
 
 const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : 'never')
@@ -86,14 +100,14 @@ function describeArea(a: Area): string {
     a.botOn ? 'bot on' : null,
     a.startedByKan ? 'you started it' : null,
   ].filter(Boolean).join(' · ')
-  return `- [${a.channelId}] ${a.name} — ${bits}\n  columns: ${a.columns.join(' → ') || 'none'}${a.description ? `\n  ${a.description}` : ''}${a.fixed ? `\n  FIXED (${a.fixed}): never file into it, reshape it, or change its bot.` : ''}`
+  return `- [${a.channelId}] ${a.name} — ${bits}\n  columns: ${a.columns.join(' → ') || 'none'}${a.description ? `\n  ${a.description}` : ''}${a.fixed ? `\n  FIXED (${a.fixed}): never file into it, reshape, quiet or mute it, or change its bot.` : ''}`
 }
 
 function describeInput(i: InputItem): string {
   return `- [${i.id}] ${day(i.at)} ${i.kind.toUpperCase()}${i.channelId ? ` (in ${i.channelId})` : ''}: ${i.text}`
 }
 
-export function buildAttentionPrompt(opts: { ownerName: string | null; now: Date; areas: Area[]; inputs: InputItem[]; lastNote?: string | null }) {
+export function buildAttentionPrompt(opts: { ownerName: string | null; now: Date; areas: Area[]; inputs: InputItem[]; topics?: Topic[]; lastNote?: string | null }) {
   const system = `You are Kan, the mind behind ${opts.ownerName || 'the owner'}'s Kanthink. You keep the areas of their life organized for them, so they never have to: they talk to you, share things and live their day, and you decide where it all goes.
 
 Each area is a channel with columns and cards. The owner does not think in channels and should never have to manage one. That is your job, and this pass is how you do it.
@@ -104,6 +118,11 @@ Each area is a channel with columns and cards. The owner does not think in chann
 - **Reshape** an area when their relationship to the topic has changed, so the columns fit what they are doing now. Work is linear, like a pipeline. A hobby stays loose. A topic moves through stages: researching a camera has options and comparisons; once they own one it’s lenses, techniques and photos. Only with evidence, and never an area marked FIXED.
 - **Attention**, for every area you list: active (they are in it now; it gets a bot and a budget if it needs work done), quiet (alive but not now; checked rarely), muted (their attention left; nothing runs and it doesn't come up). Wake a muted or quiet area when input about it returns.
 - **Bot**: on only where there is real work a bot can do on its own (people using its apps, research to keep up, apps to make). Reference and hobby areas usually need no bot.
+- **Ask** when something is clearly on their mind (hours of browsing, repeated talk) and you don't know what part they want you to play in it. Much of what they spend time on they build or run elsewhere, with other tools; noticing it is good, taking it over is not. Be curious instead: what is it, where does it live, and is there any part they'd like from you? Don't start, reshape or put a bot on such a topic until they've told you; put the question in "questions" and say in the note that you're curious about it.
+
+## What they've told you about their work
+Respect these over any evidence. "Knows about it" means you understand it and can talk about it and connect ideas to it, but never start an area, run a bot, or build for it. "Leaves it alone" means it stays out of your plan.
+{TOPICS}
 
 ## Judgment
 - Evidence first: name it in "why". Recency and repetition of what they did and said count most; what you or automations produced counts for nothing.
@@ -113,7 +132,7 @@ Each area is a channel with columns and cards. The owner does not think in chann
 - They have explicitly said they don't want admin. Act like a chief of staff who just handles it and explains in one line.
 - The note is what you'd say to them in conversation today: what you noticed, what you're changing, plainly. No lists in the note, no jargon like "channel" or "attention level"; say "I’ve stopped comparing cameras now that you have one".
 
-American spelling.`
+American spelling.`.replace('{TOPICS}', opts.topics?.length ? describeTopics(opts.topics) : '(nothing yet)')
 
   const user = `Today is ${opts.now.toDateString()}.
 
@@ -143,12 +162,12 @@ export async function runAttentionPass(ownerId: string, opts: { mode: 'rehearsal
       orderBy: [desc(attentionPasses.startedAt)],
     })
     const since = last?.mode === 'live' && last.startedAt ? last.startedAt : new Date(now.getTime() - FIRST_WINDOW_DAYS * DAY_MS)
-    const [inputs, areas] = await Promise.all([gatherInputs(ownerId, since), gatherAreas(ownerId, since)])
+    const [inputs, areas, topics] = await Promise.all([gatherInputs(ownerId, since), gatherAreas(ownerId, since), listTopics(ownerId)])
 
     const { keys } = await resolveProviderKeys(ownerId)
     if (!keys.openai) return fail('Needs an OpenAI key')
     const model = getPlaygroundModel(MODEL_ID)
-    const { system, user } = buildAttentionPrompt({ ownerName: owner?.name ?? null, now, areas, inputs, lastNote: last?.decisions?.note })
+    const { system, user } = buildAttentionPrompt({ ownerName: owner?.name ?? null, now, areas, inputs, topics, lastNote: last?.decisions?.note })
 
     const r = await runStructured({
       model, apiKey: keys.openai.apiKey, systemInstruction: system, userText: user, images: [],
@@ -157,7 +176,12 @@ export async function runAttentionPass(ownerId: string, opts: { mode: 'rehearsal
     const cost = thinkingCost(model.id, { inputTokens: r.inputTokens, outputTokens: r.outputTokens })
     if (keys.openai.source !== 'byok') await recordUsage(ownerId, 'attention-pass').catch(() => {})
     if (r.truncated || !r.text) return fail('The decision came back incomplete')
-    const decisions = JSON.parse(r.text) as AttentionDecisionJson
+    // What they told Kan is enforced here too, not only asked for in the prompt.
+    const decided = JSON.parse(r.text) as AttentionDecisionJson
+    // Fixed areas are load-bearing elsewhere; they never go quiet.
+    const fixed = new Set(areas.filter((a) => a.fixed).map((a) => a.channelId))
+    decided.areas = decided.areas.filter((a) => !(a.channelId && fixed.has(a.channelId) && a.change !== 'keep' && a.change !== 'wake'))
+    const decisions = fitDecisions(decided, topics).decisions
 
     const counts: Record<string, number> = {}
     for (const i of inputs) counts[i.kind] = (counts[i.kind] ?? 0) + 1

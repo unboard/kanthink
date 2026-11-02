@@ -436,6 +436,62 @@ export const cityTools: AgentTool[] = [
     },
   },
   {
+    name: 'read_plan',
+    description: 'Read the plan waiting at Town Hall in full: what Kan noticed, each change it would make and why, what it would file where, what it is curious about, and what they already set aside. Use before talking them through it or changing it.',
+    input_schema: { type: 'object', properties: {} },
+    kind: 'read',
+    running: () => 'Reading the plan',
+    async run(_input, ctx) {
+      const pass = (await db.query.attentionPasses.findMany({
+        where: and(eq(attentionPasses.ownerId, ctx.userId), eq(attentionPasses.status, 'done')),
+        orderBy: [desc(attentionPasses.startedAt)],
+        limit: 3,
+      })).find((p) => !p.appliedAt)
+      const d = pass?.decisions
+      if (!pass || !d) return { content: 'There is no plan waiting at Town Hall.' }
+      const verb = { start: 'Start', reshape: 'Reshape', quiet: 'Quiet', mute: 'Mute', wake: 'Wake', keep: 'Keep' } as const
+      const filed = new Map<string, number>()
+      for (const f of d.filings) filed.set(f.area, (filed.get(f.area) ?? 0) + 1)
+      const name = new Map(d.areas.map((a) => [a.channelId ?? a.name, a.name]))
+      const lines = [
+        `What Kan told them: ${d.note}`,
+        '', 'Changes:',
+        ...d.areas.map((a) => `- ${verb[a.change]} “${a.name}”${a.bot ? ` (bot ${a.bot.on ? 'on' : 'off'})` : ''}: ${a.why}${a.purpose ? ` Purpose: ${a.purpose}` : ''}`),
+        ...(filed.size ? ['', 'Filing:', ...[...filed].map(([area, n]) => `- ${n} thing${n === 1 ? '' : 's'} into ${name.get(area) ?? area}`)] : []),
+        ...(d.questions?.length ? ['', 'Kan is curious about:', ...d.questions.map((q) => `- ${q.topic}: ${q.ask} (${q.why})`)] : []),
+        ...(d.setAside?.length ? ['', 'They set aside:', ...d.setAside.map((x) => `- ${x.name}: ${x.why}`)] : []),
+      ]
+      return { content: lines.join('\n'), label: 'Read the plan' }
+    },
+  },
+  {
+    name: 'remember_about_work',
+    description: 'Remember what they tell you about a project or topic in their life and the part you play in it, and take out of the waiting plan anything that goes against it. Use whenever they say what something is, that they build or run it elsewhere (“I’m building that in its own codebase”), that you should just know about it, help with it, or leave it alone. role: help (give it a space, bots, builds), aware (know about it, be curious and bring ideas, never build or run anything for it), hands_off (leave it out).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The project or topic, as they name it' },
+        role: { type: 'string', enum: ['help', 'aware', 'hands_off'] },
+        note: { type: 'string', description: 'What they told you about it, close to their words: what it is, where it lives, what they want from you' },
+      },
+      required: ['name', 'role'],
+    },
+    kind: 'write',
+    running: (i) => `Remembering ${str(i.name).slice(0, 40)}`,
+    async run(input, ctx) {
+      const role = str(input.role)
+      if (role !== 'help' && role !== 'aware' && role !== 'hands_off') return { content: 'role must be help, aware or hands_off', isError: true }
+      const name = str(input.name).trim()
+      if (!name) return { content: 'Name the project or topic.', isError: true }
+      const { rememberTopic, ROLE_LABEL } = await import('@/lib/kan/attention/topics')
+      const r = await rememberTopic(ctx.userId, { name, role, note: str(input.note) || null })
+      return {
+        content: `Remembered: ${name}, ${ROLE_LABEL[role].toLowerCase()}.${r.setAside.length ? ` Took out of the plan: ${r.setAside.join(', ')}.` : ''}${role !== 'hands_off' && !r.topic.note ? ' You know little about it yet: say what you took out, then ask one curious question about it (what it is, who it’s for, where it stands).' : ''}`,
+        label: `Remembered ${name}`,
+      }
+    },
+  },
+  {
     name: 'carry_out_plan',
     description: 'Carry out the plan Kan made at Town Hall: start the new channels it proposed, quiet or mute the ones it said, and file things where it said they belong. Only on their clear word ("do it", "go ahead").',
     input_schema: { type: 'object', properties: {} },
@@ -463,7 +519,7 @@ export function cityPrompt(city: { focus?: { channelId?: string; name?: string; 
     ? `They are inside the ${f.name} building (channelId:${f.channelId}), walking its rooms: each column is a room with its cards on the walls, its apps are arcade cabinets, and its resident works the front desk. "This", "here" and "in here" mean that channel. Anything they want changed in here (a library, a fireplace, different lights, the Done room first, pets that walk around and play, a cat tower, toys) is arrange_interior, and you do it yourself right now; never hand a change inside a building to Claude Code.`
     : f?.channelId
     ? `They are looking at ${f.name} (channelId:${f.channelId}) right now, so "this", "here" and "its bot" mean that channel.`
-    : f?.kind === 'townhall' ? 'They are looking at Town Hall, where approvals, bot questions and Kan’s plan wait.' : 'They are looking at the whole city.'
+    : f?.kind === 'townhall' ? 'They are looking at Town Hall, where approvals, bot questions and Kan’s plan wait. To talk about the plan, read_plan first.' : 'They are looking at the whole city.'
   return `
 
 ## Where they are
@@ -472,6 +528,7 @@ They are talking to you from Kan City: a map of their channels as a town. Each c
 - Neighborhoods are folders and fences: bots help each other inside one and never reach outside it. Downtown (no folder) bots keep to their own channel.
 - Never ask which channel something is in: find it with find_cards. To move cards between channels use move_cards_to_channel (move_card only changes columns).
 - A new channel is a new building: when you make one, put it in the neighborhood it belongs to (arrange_neighborhood) if one fits, and say where it went up.
+- Kan's plan is a draft they can change by talking. When they push back on part of it, or tell you what something is or where they work on it, use remember_about_work, then say what you took out. Be curious about what they're working on: knowing it is how you get useful, even when it isn't yours to build.
 - They can move any building next to another just by asking: use move_plot. They can also tap Move on a building and pick a lot.
 - They can change how any building looks just by asking ("make Lennon's building cat themed"): use restyle_plot. It only changes the look.
 - Every building has an inside they can walk around. They can change it just by asking ("make the Ideas room a gallery", "open plan with party lights"): use arrange_interior.

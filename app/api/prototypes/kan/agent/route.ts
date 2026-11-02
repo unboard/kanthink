@@ -54,8 +54,11 @@ export async function POST(request: Request) {
     sessionCardIds: (body.sessionCardIds || []).slice(-10),
     recentTurns: history.slice(-6).map((m) => ({ role: m.role === 'user' ? 'user' : 'kan', text: m.content.slice(0, 600) })),
   }
+  const { describeTopics, listTopics } = await import('@/lib/kan/attention/topics')
+  const topics = await listTopics(userId).catch(() => [])
   const system = await buildAgentPrompt({ userId, name: session.user.name, readable: access.readable, timeZone: body.timeZone })
     + (body.city ? cityPrompt(body.city) : '')
+    + (topics.length ? `\n\n## What they've told you about their work\nHonor these: never build or run anything for what you only know about.\n${describeTopics(topics)}` : '')
   const tools = agentTools(ctx)
   // The city's own tools go before `suggest`, which is always last.
   if (body.city) tools.splice(tools.length - 1, 0, ...cityTools)

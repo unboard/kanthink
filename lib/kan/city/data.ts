@@ -354,7 +354,13 @@ export async function cityFor(userId: string) {
     townHall: {
       approvals: pending.map((a) => ({ id: a.id, channelId: a.channelId, channelName: areaName.get(a.channelId) ?? '', title: a.title })),
       asks: plots.flatMap((p) => p.bot.asks.map((text) => ({ channelId: p.channelId, channelName: p.name, text }))),
-      pass: pass ? { id: pass.id, note: decisions?.note ?? '', changes: (decisions?.areas ?? []).filter((a) => a.change !== 'keep').length, filings: decisions?.filings.length ?? 0, at: ms(pass.endedAt ?? pass.startedAt) } : null,
+      pass: pass ? {
+        id: pass.id, note: decisions?.note ?? '', changes: (decisions?.areas ?? []).filter((a) => a.change !== 'keep').length, filings: decisions?.filings.length ?? 0, at: ms(pass.endedAt ?? pass.startedAt),
+        // Each change on its own, so they can push back on one.
+        items: (decisions?.areas ?? []).filter((a) => a.change !== 'keep').map((a) => ({ name: a.name, change: a.change, why: a.why })),
+        questions: decisions?.questions ?? [],
+        setAside: decisions?.setAside ?? [],
+      } : null,
       passRunning,
     },
     proposals,

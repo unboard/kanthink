@@ -2176,7 +2176,33 @@ export interface AttentionDecisionJson {
   }[]
   /** Input Kan would file into an area, as a card or a note on one. */
   filings: { input: string; area: string; as: 'card' | 'note'; title: string; cardId?: string }[]
+  /** Things on their mind Kan doesn't know its part in yet, asked rather than acted on. */
+  questions?: { topic: string; ask: string; why: string }[]
+  /** Parts of the plan the owner took out, and what they said. */
+  setAside?: { name: string; why: string }[]
 }
+
+/**
+ * What the owner has told Kan about a project or topic in their life, and what part
+ * Kan plays in it: build it with them (help), know about it and stay curious but
+ * never build or run anything for it (aware), or leave it out entirely (hands_off).
+ * The attention pass reads these before deciding, and code enforces them.
+ */
+export const kanTopics = sqliteTable('kan_topics', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  /** As they'd name it, e.g. "MyPrintSite". */
+  name: text('name').notNull(),
+  /** Lowercased, trimmed name; one row per topic. */
+  key: text('key').notNull(),
+  role: text('role').$type<'help' | 'aware' | 'hands_off'>().notNull(),
+  /** In their words: what it is, where it lives, what they want from Kan. */
+  note: text('note'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+}, (table) => [
+  uniqueIndex('kan_topics_owner_key_idx').on(table.ownerId, table.key),
+])
 
 /**
  * One pass of the attention loop: Kan reading everything new the owner gave it and
