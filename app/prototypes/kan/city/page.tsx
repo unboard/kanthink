@@ -10,6 +10,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { CityEngine, SKY_CSS, skyFor, type Near, type Sky, type ViewMode } from '@/components/kan/city/engine';
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
+import { Census } from '@/components/kan/city/Census';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
 import { BotChat } from '@/components/kan/city/BotChat';
 import { Redecorate } from '@/components/kan/city/Redecorate';
@@ -145,6 +146,7 @@ export default function CityPage() {
   const [board, setBoard] = useState<string | null>(null);
   const [side, setSide] = useState<Side>(null);
   const [menu, setMenu] = useState(false);
+  const [census, setCensus] = useState(false);
   const [sky, setSky] = useState<Sky>(() => skyFor(new Date().getHours()));
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -565,6 +567,7 @@ export default function CityPage() {
                 ))}
               </div>
               <MenuItem onClick={() => { setMenu(false); setPick(null); setBoard(null); engine.current?.frameAll(); }}><Maximize2 className="h-4 w-4" /> See the whole city</MenuItem>
+              <MenuItem onClick={() => { setMenu(false); setCensus(true); }}><Users className="h-4 w-4" /> Census: everyone who works for you</MenuItem>
               <MenuItem onClick={() => { setMenu(false); setGather({ name: '', ids: [] }); setPick(null); setBoard(null); }}><Plus className="h-4 w-4" /> New neighborhood</MenuItem>
               <MenuItem href={preview ? '/prototypes/kan/city' : '/prototypes/kan/city?preview'}><Play className="h-4 w-4" /> {preview ? 'Show the real city' : 'Preview with pretend bots'}</MenuItem>
               <div className="my-1 border-t border-white/5" />
@@ -796,6 +799,15 @@ export default function CityPage() {
       </div>
 
       {/* Left: the neighborhoods and who lives in them. */}
+      {census && (
+        <Census
+          onClose={() => setCensus(false)}
+          onVisit={(id) => { setCensus(false); onPickRef.current({ kind: 'plot', id }); engine.current?.focusBot(id); }}
+          onTalk={(id) => { setCensus(false); onPickRef.current({ kind: 'bot', id }); }}
+          onDuty={(id, on) => (on ? turnOn(id) : turnOff(id))}
+        />
+      )}
+
       {side === 'citizens' && data && (
         <SidePanel side="left" onClose={() => setSide(null)} wide={wide}>
           <Citizens
@@ -807,6 +819,7 @@ export default function CityPage() {
             onKan={() => { onPickRef.current({ kind: 'townhall' }); if (!wide) setSide(null); }}
             onHire={(id) => void turnOn(id)}
             onNewHood={() => { setGather({ name: '', ids: [] }); setPick(null); setBoard(null); if (!wide) setSide(null); }}
+            onCensus={() => { setCensus(true); if (!wide) setSide(null); }}
           />
         </SidePanel>
       )}
@@ -1085,9 +1098,9 @@ function botLine(p: CityPlot) {
     : p.bot.lastSummary ?? `Runs every ${p.bot.everyHours}h`;
 }
 
-function Citizens({ data, plots, hires, busy, onGo, onKan, onHire, onNewHood }: {
+function Citizens({ data, plots, hires, busy, onGo, onKan, onHire, onNewHood, onCensus }: {
   data: CityData; plots: CityPlot[]; hires: CityPlot[]; busy: string | null;
-  onGo(id: string): void; onKan(): void; onHire(id: string): void; onNewHood(): void;
+  onGo(id: string): void; onKan(): void; onHire(id: string): void; onNewHood(): void; onCensus(): void;
 }) {
   const order = { needs: 0, working: 1, paused: 2, idle: 3, off: 4 };
   // Every neighborhood, then Downtown; empty ones too, so you can see where to put things.
@@ -1104,6 +1117,9 @@ function Citizens({ data, plots, hires, busy, onGo, onKan, onHire, onNewHood }: 
           <span className="flex items-center gap-2"><span className="text-[14px] font-medium">Kan</span><span className="text-xs text-neutral-500">Mayor</span></span>
           <span className="block truncate text-[12px] text-neutral-400">{data.townHall.passRunning ? 'Reading everything you gave it' : data.townHall.pass ? 'Noticed some things. Waiting at Town Hall.' : 'Doing the rounds'}</span>
         </span>
+      </button>
+      <button onClick={onCensus} className="mt-1 flex w-full items-center gap-2 rounded-xl px-1 py-1.5 text-left text-[12px] text-violet-300 hover:bg-white/5 hover:text-violet-200">
+        <Users className="h-3.5 w-3.5" /> Census: everyone, their jobs and their week
       </button>
 
       {hoods.map((h) => {
