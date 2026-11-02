@@ -5,6 +5,8 @@ import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import { AppWindow, ArrowLeft, ArrowUpRight, Check, CheckSquare, Loader2, MessageSquare, Plus, Send, X } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { CardChat } from '@/components/board/CardChat';
+import { useStore } from '@/lib/store';
 import type { CardDetail, ChannelBoard } from '@/lib/kan/city/channel';
 
 /**
@@ -25,8 +27,10 @@ export function ChannelSheet(props: {
   onAsk?(prompt: string): void;
   /** Open straight to this card, e.g. one you tapped on a wall inside the building. */
   openCard?: string | null;
+  /** A card's thread is open: the sheet takes more room and brings its own composer. */
+  onThread?(open: boolean): void;
 }) {
-  const { channelId, name, accent = '#8b5cf6', preview, onClose, onChanged, onAsk, openCard } = props;
+  const { channelId, name, accent = '#8b5cf6', preview, onClose, onChanged, onAsk, openCard, onThread } = props;
   const [board, setBoard] = useState<ChannelBoard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [colId, setColId] = useState<string | null>(null);
@@ -62,6 +66,9 @@ export function ChannelSheet(props: {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [openId, onClose]);
+
+  useEffect(() => { onThread?.(Boolean(openId)); }, [openId, onThread]);
+  useEffect(() => () => onThread?.(false), [onThread]);
 
   const say = (text: string) => {
     setNote(text);
@@ -117,7 +124,7 @@ export function ChannelSheet(props: {
 
   return (
     <div
-      className="pointer-events-auto fixed inset-x-0 bottom-0 pb-[var(--chat-h,0px)] z-40 flex h-[78dvh] flex-col overflow-hidden rounded-t-3xl border-t border-white/10 bg-neutral-950/90 text-neutral-100 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:h-auto lg:w-[420px] lg:rounded-2xl lg:border lg:pb-0"
+      className={`pointer-events-auto fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-3xl border-t border-white/10 bg-neutral-950/90 text-neutral-100 shadow-2xl backdrop-blur-xl lg:inset-x-auto lg:bottom-3 lg:right-3 lg:top-3 lg:h-auto lg:rounded-2xl lg:border lg:pb-0 ${openId ? 'h-[94dvh] pb-0 lg:w-[560px]' : 'h-[78dvh] pb-[var(--chat-h,0px)] lg:w-[420px]'}`}
       role="dialog"
       aria-label={`${name} board`}
     >
@@ -322,6 +329,70 @@ function CardView(props: {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
     onChanged();
   };
+
+  // The board's own copy of the card, which the drawer thread runs on.
+  const storeCard = useStore((st) => st.cards[cardId]);
+  const storeChannel = useStore((st) => st.channels[channelId]);
+  const [showTasks, setShowTasks] = useState(false);
+
+  if (storeCard && board.channel.canEdit && !preview) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex-shrink-0 px-4 pb-2">
+          <button onClick={onBack} className="-ml-2 flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-400 hover:bg-white/5 hover:text-white">
+            <ArrowLeft className="h-3.5 w-3.5" /> {columnName ?? 'Back'}
+          </button>
+          <h3 className="mt-1 text-[16px] font-semibold leading-snug">{storeCard.title}</h3>
+          {/* Columns to move it to, then what else hangs off it, in one scrolling row. */}
+          <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+            {board.columns.map((c) => (
+              <button
+                key={c.id}
+                disabled={c.id === columnId}
+                onClick={() => onMove({ id: storeCard.id, title: storeCard.title }, c.id)}
+                className={`flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs ${c.id === columnId ? 'bg-violet-600/25 text-violet-200' : 'bg-white/5 text-neutral-300 hover:bg-white/10'}`}
+              >
+                {c.id === columnId && <Check className="h-3 w-3" />}
+                {c.name}
+              </button>
+            ))}
+            {card && card.tasks.length > 0 && (
+              <button onClick={() => setShowTasks((v) => !v)} className={`flex flex-shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs ${showTasks ? 'bg-white/15 text-white' : 'bg-white/5 text-neutral-300 hover:bg-white/10'}`}>
+                <CheckSquare className="h-3 w-3" /> {card.tasks.filter((t) => t.done).length}/{card.tasks.length}
+              </button>
+            )}
+            {card?.apps.map((a) => (
+              <Link key={a.id} href={a.url ?? `/channel/${channelId}/card/${card.id}`} target={a.url ? '_blank' : undefined} className="flex flex-shrink-0 items-center gap-1 rounded-full bg-violet-500/10 px-2.5 py-1 text-xs text-violet-200 hover:bg-violet-500/20">
+                <AppWindow className="h-3 w-3" />{a.title}
+              </Link>
+            ))}
+          </div>
+          {showTasks && card && (
+            <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+              {card.tasks.map((t) => (
+                <li key={t.id} className="flex items-start gap-2 text-[13px]">
+                  <span className={`mt-0.5 flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded border ${t.done ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300' : 'border-neutral-600'}`}>
+                    {t.done && <Check className="h-2.5 w-2.5" />}
+                  </span>
+                  <span className={t.done ? 'text-neutral-500 line-through' : 'text-neutral-200'}>{t.title}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {/* The same thread as the card drawer: notes, Ask Kan, images, voice, whiteboard. */}
+        <div className="relative flex min-h-0 flex-1 flex-col border-t border-white/5 bg-neutral-900">
+          <CardChat
+            card={storeCard}
+            channelName={storeChannel?.name ?? board.channel.name}
+            channelDescription={storeChannel?.description ?? ''}
+            tagDefinitions={storeChannel?.tagDefinitions ?? []}
+            hasApps={Boolean(card?.apps.length)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

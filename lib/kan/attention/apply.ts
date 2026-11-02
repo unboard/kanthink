@@ -172,6 +172,23 @@ export async function buildProposedArea(passId: string, ownerId: string, name: s
   return { channelId, log }
 }
 
+/**
+ * They just switched this area's bot on, so a waiting plan to quiet or mute it is
+ * out of date: take those changes out, so carrying out the plan doesn't undo them.
+ */
+export async function keepAwakeInPlan(ownerId: string, channelId: string): Promise<void> {
+  const pass = (await db.query.attentionPasses.findMany({
+    where: and(eq(attentionPasses.ownerId, ownerId), eq(attentionPasses.status, 'done')),
+    orderBy: [desc(attentionPasses.startedAt)],
+    limit: 3,
+  })).find((p) => !p.appliedAt)
+  const d = pass?.decisions as AttentionDecisionJson | null | undefined
+  if (!pass || !d) return
+  const areas = d.areas.filter((a) => !(a.channelId === channelId && (a.change === 'quiet' || a.change === 'mute' || a.attention === 'muted' || a.bot?.on === false)))
+  if (areas.length === d.areas.length) return
+  await db.update(attentionPasses).set({ decisions: { ...d, areas } }).where(eq(attentionPasses.id, pass.id))
+}
+
 async function startArea(ownerId: string, name: string, purpose: string, columnNames: string[]): Promise<string> {
   const id = nanoid()
   const now = new Date()

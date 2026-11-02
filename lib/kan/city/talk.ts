@@ -241,7 +241,7 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
   const base = botTools({ isAdmin: admin, isStudio: false, canHandOff: false, providers: (['google', 'openai', 'anthropic'] as const).filter((p) => keys[p]) })
     .filter((t) => keep.has(t.area) || t.name === 'app_numbers')
   const tools: BotTool[] = [
-    ...guardTools(base, ctx), noteTool(channelId), visitTool({ ownerId, from: resident, boss, neighbors: neighborBots, hoodName: hood.name, visits }),
+    ...guardTools(base, ctx), noteTool(channelId), scheduleTool(ownerId, channelId), jobTool(channelId), visitTool({ ownerId, from: resident, boss, neighbors: neighborBots, hoodName: hood.name, visits }),
     buildTool({ ownerId, channelId, resident, chatCardId: opened.cardId, made }),
   ]
 
@@ -260,6 +260,7 @@ export async function say(ownerId: string, channelId: string, text: string): Pro
     neighborBots.length
       ? `- You live in the ${hood.name} neighborhood. Your neighbors: ${neighborBots.map((b) => `${b.name} (runs ${neighborRows[0].find((c) => c.id === b.channelId)?.name})`).join(', ')}. Bots never leave their neighborhood.`
       : '- You live Downtown, with no neighbors to visit. Bots never leave their neighborhood; Kan can carry messages between neighborhoods.',
+    `- You also work on your own, with nobody watching: ${bot.enabled ? `right now every ${bot.everyHours ?? 24} hours` : 'right now you’re off duty, so you only work when someone talks to you'}. Each run follows the channel's standing instructions and your notes. When ${boss} wants something done regularly ("every week", "each morning"), put it in the standing instructions with set_my_job and set your hours with set_my_schedule. You can do this; never say you can't schedule work.`,
     bot.memory ? `\n## Your notes\n${bot.memory.slice(-2500)}` : '',
     `\n## Your channel\n${await channelBrief(channelId)}`,
   ].filter(Boolean).join('\n')
@@ -427,6 +428,76 @@ function noteTool(channelId: string): BotTool {
     async run(i) {
       await noteFor(channelId, String(i.note ?? '').slice(0, 500))
       return { content: 'Noted.', label: 'Wrote it down' }
+    },
+  }
+}
+
+/** When the bot works on its own: on or off, and the hours between runs (up to a week). */
+function scheduleTool(ownerId: string, channelId: string): BotTool {
+  return {
+    name: 'set_my_schedule',
+    area: 'self',
+    description: 'Go on or off duty, or change how often you work on your own (hours between runs: 24 is daily, 168 is weekly). Set runNow to also do a run right away. A run costs roughly $0.10–$0.30; say so when you go on duty.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        on: { type: 'boolean', description: 'true to go on duty, false to go off; leave out to keep' },
+        everyHours: { type: 'number', description: 'Hours between runs, 1–168' },
+        runNow: { type: 'boolean', description: 'true: also do a run now, on your own. false: no run now (e.g. you just did the work in this chat), so the first is a full interval away. Leave out: the first run comes within the hour.' },
+      },
+    },
+    kind: 'write',
+    running: () => 'Changing my hours',
+    async run(i) {
+      const bot = await db.query.channelBots.findFirst({ where: eq(channelBots.channelId, channelId) })
+      if (!bot) return { content: 'No bot for this channel yet.', isError: true }
+      const set: Partial<typeof channelBots.$inferInsert> = { updatedAt: new Date() }
+      if (typeof i.on === 'boolean') set.enabled = i.on
+      if (typeof i.everyHours === 'number') set.everyHours = Math.min(168, Math.max(1, Math.round(i.everyHours)))
+      const on = set.enabled ?? Boolean(bot.enabled)
+      const hours = set.everyHours ?? bot.everyHours ?? 24
+      // A run now, or just having done the work in this chat, puts the next a full interval away;
+      // otherwise the first comes within the hour.
+      if (i.runNow === true || i.runNow === false) set.nextRunAt = new Date(Date.now() + hours * 3600_000)
+      else if (set.enabled && !bot.enabled) set.nextRunAt = new Date()
+      await db.update(channelBots).set(set).where(eq(channelBots.channelId, channelId))
+      if (on) await (await import('@/lib/kan/attention/apply')).keepAwakeInPlan(ownerId, channelId)
+      if (i.runNow === true) {
+        const [{ afterResponse }, { runBot }] = await Promise.all([import('@/lib/afterResponse'), import('@/lib/kan/bots/run')])
+        afterResponse(async () => { await runBot(channelId, { trigger: 'manual' }) })
+      }
+      const when = hours === 168 ? 'weekly' : hours === 24 ? 'daily' : `every ${hours} hours`
+      return {
+        content: `${on ? `On duty, working ${when}` : 'Off duty'}${i.runNow === true ? '; a run started now' : ''}.`,
+        label: on ? `On duty, ${when}` : 'Off duty',
+      }
+    },
+  }
+}
+
+/** The channel's standing instructions: what every run of this bot sets out to do. */
+function jobTool(channelId: string): BotTool {
+  return {
+    name: 'set_my_job',
+    area: 'self',
+    description: 'Change the channel’s standing instructions, which every run you do on your own follows. Use append to add a requirement; use replace only when the boss wants the job rewritten. Write it in full, as instructions to yourself.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        append: { type: 'string', description: 'A requirement to add' },
+        replace: { type: 'string', description: 'The whole job, rewritten' },
+      },
+    },
+    kind: 'write',
+    running: () => 'Updating my job',
+    async run(i) {
+      const ch = await db.query.channels.findFirst({ where: eq(channels.id, channelId), columns: { aiInstructions: true } })
+      const replace = String(i.replace ?? '').trim()
+      const append = String(i.append ?? '').trim()
+      if (!replace && !append) return { content: 'Say what the job is.', isError: true }
+      const next = (replace || [ch?.aiInstructions?.trim(), append].filter(Boolean).join('\n\n')).slice(0, 8000)
+      await db.update(channels).set({ aiInstructions: next, updatedAt: new Date() }).where(eq(channels.id, channelId))
+      return { content: `Standing instructions now:\n${next}`, label: replace ? 'Rewrote my job' : 'Added to my job' }
     },
   }
 }

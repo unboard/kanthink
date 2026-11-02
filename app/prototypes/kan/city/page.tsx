@@ -174,6 +174,8 @@ export default function CityPage() {
   const [decorating, setDecorating] = useState(false);
   /** A card to open the board at, when you tapped it on a wall inside. */
   const [boardCard, setBoardCard] = useState<string | null>(null);
+  // A card's thread is open in the sheet: it gets more room and its own composer.
+  const [threadOpen, setThreadOpen] = useState(false);
   /** The TV inside: which shared video is on, and whether it's playing. */
   const [tv, setTv] = useState<{ i: number; on: boolean }>({ i: 0, on: false });
   /** The resident watching along, per video. */
@@ -390,7 +392,7 @@ export default function CityPage() {
   // What covers the city, so the camera keeps what you picked in the open part.
   const panelOpen = Boolean(pick || board);
   const leftW = wide && side === 'citizens' ? 312 : 0;
-  const rightW = wide ? (panelOpen ? 444 : side === 'feed' ? 352 : 0) : 0;
+  const rightW = wide ? (panelOpen ? (board && threadOpen ? 584 : 444) : side === 'feed' ? 352 : 0) : 0;
   useEffect(() => {
     const bottom = wide ? chatH : panelOpen ? window.innerHeight * 0.78 : chatH;
     engine.current?.setInsets(rightW - leftW, bottom);
@@ -825,6 +827,7 @@ export default function CityPage() {
           accent={STATUS_ACCENT}
           preview={preview}
           openCard={boardCard}
+          onThread={setThreadOpen}
           onClose={() => { setBoard(null); setBoardCard(null); if (inside) void refreshInside(); else setPick({ kind: 'plot', id: board }); }}
           onChanged={() => { engine.current?.pulse(board); reloadSoon(); if (inside) void refreshInside(); }}
           onAsk={(prompt) => ask(prompt, true)}
@@ -926,7 +929,8 @@ export default function CityPage() {
       )}
 
       {/* Talking with a bot, its own composer is the only one: Kan's steps aside (kept, not closed). */}
-      <div className={selectedBot ? 'hidden' : undefined}>
+      {/* On a phone, an open card thread brings its own composer, so Kan's steps aside too. */}
+      <div className={selectedBot ? 'hidden' : board && threadOpen ? 'max-lg:hidden' : undefined}>
       <CityChat
         ref={chat}
         focus={focus}

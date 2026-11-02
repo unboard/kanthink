@@ -260,6 +260,7 @@ export const cityTools: AgentTool[] = [
       if (typeof input.everyHours === 'number') set.everyHours = Math.min(168, Math.max(1, Math.round(input.everyHours)))
       if (typeof input.dailyBudgetCents === 'number') set.dailyBudgetCents = Math.min(5000, Math.max(10, Math.round(input.dailyBudgetCents)))
       await db.update(channelBots).set(set).where(eq(channelBots.channelId, channelId))
+      if (set.enabled) await (await import('@/lib/kan/attention/apply')).keepAwakeInPlan(ctx.userId, channelId)
       const on = set.enabled ?? bot.enabled
       const hours = set.everyHours ?? bot.everyHours ?? 24
       return {
