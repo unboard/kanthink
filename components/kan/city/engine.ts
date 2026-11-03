@@ -117,6 +117,17 @@ export interface EngineCallbacks {
   onLeave?(): void;
 }
 
+/** The models for you on foot, at the wheel, on the moped, on the wing and under the parachute. */
+export interface PlayerKit {
+  walker(): THREE.Group;
+  car(): THREE.Group;
+  moped(): THREE.Group;
+  flyer(): THREE.Group;
+  canopy(): THREE.Group;
+  /** Put you back in the seat of a parked car or moped. */
+  seat(vehicle: THREE.Object3D): void;
+}
+
 /** How you see the city: the map from above, or first person on foot, at the wheel or on the wings. */
 export type ViewMode = 'map' | 'walk' | 'drive' | 'ride' | 'fly';
 
@@ -1442,8 +1453,17 @@ export class CityEngine {
     if (!on) { this.last = performance.now(); this.loop(); }
   }
 
-  /** Your car, with you at the wheel, for another scene to drive. */
-  makeCar() { return this.makeDriver(); }
+  /** You, and everything you ride, for another scene (the Freeway) to move you around in. */
+  playerKit(): PlayerKit {
+    return {
+      walker: () => this.makeWalker(),
+      car: () => this.makeDriver(),
+      moped: () => this.makeMoped(),
+      flyer: () => this.makeFlyer(),
+      canopy: () => this.makeCanopy(),
+      seat: (vehicle) => this.seatYou(vehicle, (vehicle.userData.seat as THREE.Object3D | undefined) ?? vehicle),
+    };
+  }
 
   private loop = () => {
     if (this.disposed || this.paused) return;

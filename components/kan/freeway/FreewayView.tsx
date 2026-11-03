@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { ArrowLeft, ExternalLink, Loader2, RotateCcw, RotateCw, Send, Check, X, Undo2 } from 'lucide-react';
+import { ArrowLeft, Car, DoorOpen, ExternalLink, Footprints, Loader2, LogOut, Plane, RotateCcw, RotateCw, Scooter, Send, Check, X, Undo2 } from 'lucide-react';
 import type { Billboard, DayBoard, DayCard, FreewayDay } from '@/lib/kanwatch/freeway';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
 import { Inside, type InsideNear, type InsidePick } from '../city/inside';
 import { Stick } from '../city/Stick';
-import { Freeway, tierColor, type FreewayPick } from './scene';
+import type { PlayerKit } from '../city/engine';
+import { Freeway, tierColor, type FreewayMode, type FreewayNear, type FreewayPick } from './scene';
 
 /**
  * The Kanwatch Freeway, over the city: its own scene, drawn while the city waits.
@@ -39,8 +40,8 @@ function asChannelBoard(date: string, b: DayBoard): ChannelBoard {
   } as unknown as ChannelBoard;
 }
 
-export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
-  makeCar: () => THREE.Group;
+export function FreewayView({ kit, channels, boss, coarse, onExit }: {
+  kit: PlayerKit;
   channels: FreewayChannel[];
   boss: string;
   coarse: boolean;
@@ -50,7 +51,8 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
   const labels = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<{ days: FreewayDay[]; billboards: Billboard[] } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
-  const [near, setNear] = useState<{ kind: 'day'; date: string } | { kind: 'exit' } | null>(null);
+  const [near, setNear] = useState<FreewayNear | null>(null);
+  const [mode, setModeState] = useState<FreewayMode>('drive');
   const [at, setAt] = useState<{ date: string; progress: number }>({ date: '', progress: 0 });
   const [inside, setInside] = useState<{ date: string; board: DayBoard } | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
@@ -100,7 +102,8 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
       onPick: (p) => cb.current.pick(p),
       onNear: setNear,
       onDay: (date, progress) => setAt((a) => (a.date === date && Math.abs(a.progress - progress) < 0.002 ? a : { date, progress })),
-    }, makeCar, start);
+      onModeChange: setModeState,
+    }, kit, start);
     fw.current = road;
     const size = () => {
       const w = el.clientWidth || 1, h = el.clientHeight || 1;
@@ -190,7 +193,7 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [data, makeCar, coarse]);
+  }, [data, kit, coarse]);
 
   useEffect(() => {
     if (!at.date) return;
@@ -240,6 +243,14 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
     if (p.kind === 'billboard') { setBillboard(p.index); return; }
     void goIn(p.date);
   };
+  const goNear = useCallback((n: FreewayNear) => {
+    if (n.kind === 'car') fw.current?.getIn();
+    else if (n.kind === 'exit') onExit();
+    else if (n.kind === 'billboard') setBillboard(n.index);
+    else void goIn(n.date);
+  }, [goIn, onExit]);
+  const pickMode = (m: FreewayMode) => { fw.current?.setMode(m); setModeState(m); };
+
   cb.current.insidePick = (p) => {
     if (p.kind === 'exit') { goOut(); return; }
     if (p.kind === 'card') { setCard(p.id); return; }
@@ -261,15 +272,17 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
       if (ins.current && key === ']') { ins.current.turn(-Math.PI / 4); return; }
       if ((key === 'e' || key === 'enter') && !card) {
         if (ins.current && inNear) { cb.current.insidePick({ kind: inNear.kind, id: inNear.id } as InsidePick); return; }
-        if (!ins.current && near) { cb.current.pick(near.kind === 'exit' ? near : { kind: 'day', date: near.date }); return; }
+        if (!ins.current && near) { goNear(near); return; }
       }
+      if (!ins.current && key === 'f' && (fw.current?.getMode() === 'drive' || fw.current?.getMode() === 'ride')) { fw.current.getOut(); return; }
+      if (!ins.current && key === ' ' && fw.current?.getMode() === 'fly') { e.preventDefault(); fw.current.jump(); return; }
       keys.current.add(key);
       if (key.startsWith('arrow') || key === ' ') e.preventDefault();
     };
     window.addEventListener('keydown', k);
     window.addEventListener('keyup', k);
     return () => { window.removeEventListener('keydown', k); window.removeEventListener('keyup', k); };
-  }, [card, billboard, near, inNear, goOut, onExit]);
+  }, [card, billboard, near, inNear, goOut, onExit, goNear]);
 
   // ---------- A card ----------
 
@@ -355,14 +368,12 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
         </div>
       )}
 
-      {/* The prompt to go in, or what you're standing by inside */}
+      {/* The prompt to go in, or what you're next to */}
       {!inside && !opening && near && (
         <div className="absolute inset-x-0 z-20 flex justify-center px-4" style={{ bottom: coarse ? 196 : 112 }}>
-          {near.kind === 'exit' ? (
-            <button onClick={onExit} className="rounded-full bg-violet-600 px-5 py-2.5 text-sm font-semibold shadow-xl hover:bg-violet-500">Back to Kan City{!coarse && <span className="ml-2 text-white/60">E</span>}</button>
-          ) : nearDay && (
-            <button onClick={() => void goIn(nearDay.date)} className="max-w-md rounded-2xl bg-white px-4 py-2.5 text-left text-neutral-900 shadow-xl hover:bg-violet-50">
-              <span className="block text-sm font-semibold">Go inside {SHORT(nearDay.date)}{!coarse && <span className="ml-2 font-normal text-neutral-400">E</span>}</span>
+          {near.kind === 'day' && nearDay ? (
+            <button onClick={() => goNear(near)} className="max-w-md rounded-2xl bg-white px-4 py-2.5 text-left text-neutral-900 shadow-xl hover:bg-violet-50">
+              <span className="flex items-center gap-2 text-sm font-semibold"><DoorOpen className="h-4 w-4 text-violet-600" /> Go into {SHORT(nearDay.date)}{!coarse && <span className="rounded bg-neutral-200 px-1.5 text-[11px] font-normal text-neutral-600">E</span>}</span>
               {nearDay.headline && <span className="mt-0.5 line-clamp-2 block text-[12.5px] text-neutral-600">{nearDay.headline}</span>}
               <span className="mt-1 flex flex-wrap gap-1">
                 {nearDay.tiers.slice(0, 4).map((t) => (
@@ -371,6 +382,11 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
                   </span>
                 ))}
               </span>
+            </button>
+          ) : near.kind !== 'day' && (
+            <button onClick={() => goNear(near)} className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50">
+              {near.kind === 'exit' ? 'Back to Kan City' : near.kind === 'billboard' ? 'Read the billboard' : near.name === 'your moped' ? 'Hop on' : 'Get in'}
+              {!coarse && <span className="rounded bg-neutral-200 px-1.5 text-[11px] font-normal text-neutral-600">E</span>}
             </button>
           )}
         </div>
@@ -381,6 +397,28 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
             {inNear.kind === 'exit' ? 'Back to the road' : inNear.kind === 'card' ? `Look at “${inNear.name}”` : `Talk to ${inNear.name}`}{!coarse && <span className="ml-2 font-normal text-neutral-400">E</span>}
           </button>
         </div>
+      )}
+
+      {/* How you get about: as in the city */}
+      {!inside && data && (
+        <div className="absolute right-3 top-14 z-30 flex flex-col items-center gap-0.5 rounded-full border border-white/10 bg-neutral-950/75 p-0.5 shadow-lg backdrop-blur-xl sm:top-3 sm:flex-row">
+          {([['walk', Footprints, 'Walk'], ['drive', Car, 'Drive'], ['ride', Scooter, 'Moped'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
+            <button key={m} onClick={() => pickMode(m)} title={label}
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[12px] ${mode === m ? 'bg-violet-500 text-white' : 'text-neutral-400 hover:text-white'}`}>
+              <Icon className="h-3.5 w-3.5" /><span className="hidden sm:inline">{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {!inside && data && (mode === 'drive' || mode === 'ride') && (
+        <button onClick={() => fw.current?.getOut()} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-white/90 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-white active:scale-95" style={{ bottom: coarse ? 196 : 112 }}>
+          <LogOut className="h-4 w-4" /> {mode === 'ride' ? 'Hop off' : 'Get out'}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">F</span>}
+        </button>
+      )}
+      {!inside && data && mode === 'fly' && (
+        <button onClick={() => fw.current?.jump()} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-pink-500 px-4 py-2.5 text-[14px] font-semibold text-white shadow-2xl hover:bg-pink-400 active:scale-95" style={{ bottom: coarse ? 196 : 112 }}>
+          🪂 Jump{!coarse && <span className="ml-1 rounded bg-white/25 px-1.5 text-[11px]">Space</span>}
+        </button>
       )}
 
       {/* The timeline: every day on the road, tap one to go there */}
@@ -401,13 +439,13 @@ export function FreewayView({ makeCar, channels, boss, coarse, onExit }: {
             })}
           </div>
           <p className="mt-1 text-center text-[11px] text-white/55">
-            {coarse ? 'Push the stick up to drive, sideways to change lanes. Tap a day to jump there.' : 'W / ↑ to drive, S / ↓ to brake or back up, A / D to change lanes, Shift to speed. Tap a day to jump there.'}
+            {coarse ? 'Tap a day to go there.' : mode === 'fly' ? 'A D to turn · W S to climb and dive · Shift for speed · Space to parachute out · Tap a day to go there' : `W A S D or arrows to ${mode === 'ride' ? 'ride' : mode} · Shift to ${mode === 'walk' ? 'run' : 'speed up'}${mode === 'drive' || mode === 'ride' ? ' · F to get out' : ''} · E to go in · Tap a day to go there`}
           </p>
         </div>
       )}
 
       {coarse && !card && (
-        <Stick onMove={(x, y) => { stick.current = { x, y }; }} bottom={inside ? 24 : 108} hint={inside ? 'Walk' : 'Drive'} />
+        <Stick onMove={(x, y) => { stick.current = { x, y }; }} bottom={inside ? 24 : 108} hint={inside || mode === 'walk' ? 'Walk' : mode === 'drive' ? 'Drive' : mode === 'ride' ? 'Ride' : 'Steer · climb'} />
       )}
 
       {note && (

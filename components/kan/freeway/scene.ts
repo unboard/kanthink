@@ -3,6 +3,7 @@ import type { Billboard, FreewayDay } from '@/lib/kanwatch/freeway';
 import { hash as signedHash } from '@/lib/kan/city/layout';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { crane, windowBox } from '../city/models';
+import type { PlayerKit, ViewMode } from '../city/engine';
 
 /**
  * The Kanwatch Freeway: your days as a road through the country, oldest first.
@@ -13,10 +14,11 @@ import { crane, windowBox } from '../city/models';
  * road, billboards: each month's breakdown where the month begins, and between them
  * the things you kept coming back to. Weeks start under a green highway sign.
  *
- * Driving is on the road, never off it: forward is forward in time, the stick or the
- * arrow keys set your speed and your lane. The sky turns gold beside every building
- * and goes to dusk between them, so the road keeps a rhythm of days, and the trees
- * turn with the months. Pull up beside a day to go inside it.
+ * You get about the way you do in the city (on foot, by moped, in the car or on the
+ * glider with its parachute) with the same controls and the same cameras. The
+ * ground is level along the road so all of that just works; the hills rise beyond
+ * it. The sky holds still, turning only with the months, as the trees do. Pull up
+ * at a day's door to go inside it.
  */
 
 const hash = (s: string) => signedHash(s) >>> 0;
@@ -29,13 +31,20 @@ const SETBACK = 24;
 const BOARD_SIDE = 19;
 
 export type FreewayPick = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' };
+export type FreewayNear = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' } | { kind: 'car'; name: string };
+export type FreewayMode = Exclude<ViewMode, 'map'>;
 export interface FreewayCallbacks {
   onPick(p: FreewayPick): void;
-  /** The day you've pulled up beside (slow, and level with it), or the way out. */
-  onNear(n: { kind: 'day'; date: string } | { kind: 'exit' } | null): void;
+  /** What you're next to: a day's door, a billboard, your parked car, or the way out. */
+  onNear(n: FreewayNear | null): void;
   /** The day you're passing, for the timeline. */
   onDay(date: string, progress: number): void;
+  /** The scene changed mode on its own: out of the car, or down under the parachute. */
+  onModeChange(mode: FreewayMode): void;
 }
+
+/** The height a figure stands at, as in the city. */
+const GROUND_Y = 0.36;
 
 interface DayView {
   day: FreewayDay;
@@ -49,6 +58,11 @@ interface DayView {
   star: THREE.Mesh;
   top: number;
   pos: THREE.Vector3;
+  /** Its footprint, and the turn of its front toward the road. */
+  w: number;
+  d: number;
+  rot: number;
+  door: THREE.Vector3;
 }
 
 const PALETTE = ['#8b5cf6', '#f472b6', '#38bdf8', '#34d399', '#fbbf24', '#fb7185', '#818cf8', '#2dd4bf', '#f97316', '#a3e635', '#60a5fa', '#e879f9'];
@@ -110,7 +124,7 @@ function fit(x: CanvasRenderingContext2D, text: string, weight: number, size: nu
 
 export class Freeway {
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(58, 1, 0.5, 2400);
+  readonly camera = new THREE.PerspectiveCamera(62, 1, 0.5, 2500);
   private curve: THREE.CatmullRomCurve3;
   private length = 0;
   private views: DayView[] = [];
@@ -119,14 +133,20 @@ export class Freeway {
   private cullables: { s: number; objs: THREE.Object3D[] }[] = [];
   private ticks: ((t: number, dt: number) => void)[] = [];
   private layer: HTMLDivElement;
-  private car: THREE.Group;
-  private s = 0;
-  private v = 0;
-  private lane = 2.6;
   private time = 0;
-  private near: string | null = null;
+  private near: FreewayNear | null = null;
   private dayAt = '';
-  private warp: { from: number; to: number; t: number } | null = null;
+  /** Where you are along the road. */
+  private s = 0;
+  private mode: FreewayMode = 'drive';
+  private player!: { obj: THREE.Group; x: number; y: number; z: number; heading: number; speed: number; roll: number };
+  private parked: { obj: THREE.Group; x: number; z: number; heading: number; kind: 'drive' | 'ride' } | null = null;
+  private chute: { canopy: THREE.Group; t: number; slide: { x: number; z: number } | null; glider: { obj: THREE.Group; x: number; y: number; z: number; heading: number; speed: number; t: number } | null } | null = null;
+  private walkT = 0;
+  /** The road as points, for finding where on it anything is. */
+  private line: { x: Float32Array; z: Float32Array; rx: Float32Array; rz: Float32Array; s: Float32Array } | null = null;
+  private hint = 0;
+  private boardSpots: { index: number; x: number; z: number }[] = [];
   private sky: THREE.Mesh;
   private skyMat: THREE.ShaderMaterial;
   private stars: THREE.Points;
@@ -145,7 +165,7 @@ export class Freeway {
     private billboards: Billboard[],
     labels: HTMLDivElement,
     private cb: FreewayCallbacks,
-    makeCar: () => THREE.Group,
+    private kit: PlayerKit,
     start?: string,
   ) {
     this.layer = document.createElement('div');
@@ -158,7 +178,8 @@ export class Freeway {
     const count = days.length + LEAD * 2 + 1;
     for (let k = 0; k < count; k++) {
       heading = 0.55 * Math.sin(k * 0.23) + 0.28 * Math.sin(k * 0.61 + 1.3);
-      const y = 2.6 * Math.sin(k * 0.41) + 1.8 * Math.sin(k * 0.17 + 2);
+      // Level along the road, so walking and driving are as in the city.
+      const y = 0;
       pts.push(new THREE.Vector3(x, y, z));
       x += Math.sin(heading) * SEG;
       z += Math.cos(heading) * SEG;
@@ -169,6 +190,14 @@ export class Freeway {
     this.curve.updateArcLengths();
     this.length = this.curve.getLength();
     this.exits = [SEG * 0.9, this.length - SEG * 0.9];
+    const samples = Math.ceil(this.length / 2) + 1;
+    const line = { x: new Float32Array(samples), z: new Float32Array(samples), rx: new Float32Array(samples), rz: new Float32Array(samples), s: new Float32Array(samples) };
+    for (let k = 0; k < samples; k++) {
+      const ss = Math.min(this.length, k * 2);
+      const f = this.frame(ss);
+      line.x[k] = f.p.x; line.z[k] = f.p.z; line.rx[k] = f.r.x; line.rz[k] = f.r.z; line.s[k] = ss;
+    }
+    this.line = line;
 
     this.scene.fog = new THREE.Fog('#f0b48a', 140, 560);
     this.scene.add(this.sun, this.sun.target, this.hemi);
@@ -213,11 +242,8 @@ export class Freeway {
     this.fall = new THREE.Points(fg, new THREE.PointsMaterial({ color: '#e07b2e', size: 0.45, transparent: true, opacity: 0.9, depthWrite: false }));
     this.scene.add(this.fall);
 
-    this.car = makeCar();
-    this.scene.add(this.car);
     const from = start ? this.views.find((v) => v.day.date >= start) ?? this.views[this.views.length - 1] : this.views[Math.max(0, this.views.length - 7)];
-    this.s = from ? from.s - SEG * 0.08 : this.exits[0] + 4;
-    this.placeCar(0, true);
+    this.spawn('drive', from ? from.s - 14 : this.exits[0] + 4);
   }
 
   // ---------- The road ----------
@@ -235,11 +261,6 @@ export class Freeway {
   private dayIndexAt(s: number) {
     const f = (s / this.length) * (this.days.length + LEAD * 2) - LEAD - 0.5;
     return THREE.MathUtils.clamp(Math.round(f), 0, this.days.length - 1);
-  }
-  /** 0 at the boundary between two days, 1 level with a day's building. */
-  private beside(s: number) {
-    const f = (s / this.length) * (this.days.length + LEAD * 2) - LEAD - 0.5;
-    return 0.5 + 0.5 * Math.cos((f - Math.round(f)) * Math.PI * 2);
   }
 
   /** The ground: a broad valley along the road, rising into hills on both sides, in each month's colors. */
@@ -362,8 +383,9 @@ export class Freeway {
       if (t.season.pine || (!t.season.bare && i % 5 === 0)) {
         pines.setMatrixAt(pi, m);
         pines.setColorAt(pi++, t.season.pine ? c : c.multiplyScalar(0.8));
-      } else if (!t.season.bare || i % 3 === 0) {
-        if (t.season.bare) sc.setScalar(t.s * 0.55), m.compose(v, q, sc);
+      } else {
+        // Bare branches: a smaller, thinner crown in the wood's own color.
+        if (t.season.bare) { sc.set(t.s * 0.7, t.s * 0.85, t.s * 0.7); m.compose(v, q, sc); }
         crowns.setMatrixAt(ci, m);
         crowns.setColorAt(ci++, c);
       }
@@ -394,11 +416,6 @@ export class Freeway {
     }
     poles.count = heads.count = i;
     this.scene.add(poles, heads);
-    // Lamps come on as the light goes.
-    this.ticks.push(() => {
-      const night = 1 - this.beside(this.s);
-      headMat.color.setRGB(0.55 + night * 0.45, 0.5 + night * 0.39, 0.38 + night * 0.26);
-    });
   }
 
   // ---------- A day ----------
@@ -544,7 +561,8 @@ export class Freeway {
     label.className = 'kc-label kc-fw-day';
     label.addEventListener('click', () => this.cb.onPick({ kind: 'day', date: day.date }));
     this.layer.appendChild(label);
-    const view: DayView = { day, s, group: g, proxy, label, windows, beacon, beam, star, top, pos };
+    const doorAt = new THREE.Vector3(W / 2 - 1.6, 0, D / 2 + 1.2).applyAxisAngle(new THREE.Vector3(0, 1, 0), g.rotation.y).add(pos);
+    const view: DayView = { day, s, group: g, proxy, label, windows, beacon, beam, star, top, pos, w: W, d: D, rot: g.rotation.y, door: doorAt };
     this.views.push(view);
     this.paintDay(view);
   }
@@ -590,8 +608,7 @@ export class Freeway {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.8, 0.2), m('#4b5563'));
       leg.position.set(0.8, top + 0.4, 0);
       g.add(scr, leg);
-      const mm = scr.material as THREE.MeshBasicMaterial;
-      this.ticks.push((t) => { mm.color.setHSL(((t * 0.08 + seed * 0.001) % 1), 0.7, 0.6); });
+      (scr.material as THREE.MeshBasicMaterial).color.setHSL((seed % 360) / 360, 0.6, 0.6);
       return;
     }
     if (mode === 'shopping') {
@@ -612,7 +629,6 @@ export class Freeway {
     const tip = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 5), new THREE.MeshBasicMaterial({ color: '#ef4444' }));
     tip.position.set(1.6, top + 3.3, 0);
     g.add(rod, tip);
-    this.ticks.push((t) => { tip.visible = Math.sin(t * 3 + seed) > -0.2; });
   }
 
   private paintDay(v: DayView) {
@@ -718,6 +734,7 @@ export class Freeway {
     const face = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: tex }));
     face.position.set(0, lift + H / 2, 0.02);
     face.userData.pick = { kind: 'billboard', index } satisfies FreewayPick;
+    this.boardSpots.push({ index, x: g.position.x - r.x * 3, z: g.position.z - r.z * 3 });
     this.pickables.push(face);
     // Two lamps leaning over the top, for reading it after dark.
     for (const x of [-W * 0.3, W * 0.3]) {
@@ -836,7 +853,6 @@ export class Freeway {
     }
     this.scene.add(g);
     this.cullables.push({ s, objs: [g] });
-    this.ticks.push((time) => { neon.color.setHSL(0.83 + Math.sin(time * 1.4) * 0.04, 0.9, 0.62 + Math.sin(time * 3) * 0.06); });
   }
 
   /** The way back: a swirling ring across the road. */
@@ -865,7 +881,7 @@ export class Freeway {
     this.pickables.push(disc);
     g.add(ring, disc);
     this.scene.add(g);
-    this.ticks.push((time) => { disc.rotation.z = time * 0.8; ring.scale.setScalar(1 + Math.sin(time * 2) * 0.02); });
+    this.ticks.push((time) => { disc.rotation.z = time * 0.5; });
     const el = document.createElement('div');
     el.className = 'kc-label kc-townhall';
     el.textContent = label;
@@ -875,121 +891,391 @@ export class Freeway {
   }
   private portalLabels: { el: HTMLDivElement; pos: THREE.Vector3 }[] = [];
 
-  // ---------- Driving ----------
+  // ---------- Getting about ----------
 
-  /** Take the road to a day, quickly. */
+  private forward(h: number) { return { x: Math.sin(h), z: Math.cos(h) }; }
+
+  /** The nearest point of the road: how far along it, and how far to its side (right +). */
+  private nearRoad(x: number, z: number) {
+    const L = this.line!;
+    const n = L.x.length;
+    const look = (from: number, to: number) => {
+      let best = -1, bd = Infinity;
+      for (let k = Math.max(0, from); k < Math.min(n, to); k++) {
+        const dx = x - L.x[k], dz = z - L.z[k];
+        const d = dx * dx + dz * dz;
+        if (d < bd) { bd = d; best = k; }
+      }
+      return { best, bd };
+    };
+    let r = look(this.hint - 60, this.hint + 60);
+    if (r.bd > 50 * 50) r = look(0, n);
+    const k = r.best;
+    return { k, s: L.s[k], d: (x - L.x[k]) * L.rx[k] + (z - L.z[k]) * L.rz[k], x: L.x[k], z: L.z[k] };
+  }
+
+  /** The day building at this spot, if any (pad widens it). */
+  private buildingAt(x: number, z: number, s: number, pad: number) {
+    for (const v of this.views) {
+      if (Math.abs(v.s - s) > 50) continue;
+      const dx = x - v.pos.x, dz = z - v.pos.z;
+      const c = Math.cos(v.rot), sn = Math.sin(v.rot);
+      const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+      if (Math.abs(lx) < v.w / 2 + pad && Math.abs(lz) < v.d / 2 + pad) return v;
+    }
+    return null;
+  }
+
+  /** Off the road but on a day's driveway. */
+  private onDriveway(x: number, z: number, s: number) {
+    const len = SETBACK - 7.5 / 2 - ROAD_W;
+    for (const v of this.views) {
+      if (Math.abs(v.s - s) > 50) continue;
+      const dx = x - v.pos.x, dz = z - v.pos.z;
+      const c = Math.cos(v.rot), sn = Math.sin(v.rot);
+      const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+      if (Math.abs(lx - (v.w / 2 - 1.6)) < 2.3 && lz > v.d / 2 - 0.3 && lz < v.d / 2 + len + 1) return true;
+    }
+    return false;
+  }
+
+  private walkable(x: number, z: number) {
+    const n = this.nearRoad(x, z);
+    if (n.s < 3 || n.s > this.length - 3 || Math.abs(n.d) > 46) return false;
+    return !this.buildingAt(x, z, n.s, 0.4);
+  }
+  private drivable(x: number, z: number) {
+    const n = this.nearRoad(x, z);
+    if (n.s < 3 || n.s > this.length - 3) return false;
+    return Math.abs(n.d) <= ROAD_W + 2 || this.onDriveway(x, z, n.s);
+  }
+  private groundAt(x: number, z: number) {
+    const n = this.nearRoad(x, z);
+    const b = this.buildingAt(x, z, n.s, 0.4);
+    return b ? b.top + GROUND_Y : GROUND_Y;
+  }
+  private nearestWalkable(x: number, z: number) {
+    for (let r = 1; r <= 40; r += 0.75) {
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        const nx = x + Math.cos(a) * r, nz = z + Math.sin(a) * r;
+        if (this.walkable(nx, nz)) return { x: nx, z: nz };
+      }
+    }
+    const n = this.nearRoad(x, z);
+    return { x: n.x, z: n.z };
+  }
+
+  private makeFor(mode: FreewayMode) {
+    return mode === 'drive' ? this.kit.car() : mode === 'ride' ? this.kit.moped() : mode === 'walk' ? this.kit.walker() : this.kit.flyer();
+  }
+
+  /** Put you on the road at s, in the right-hand lane, facing the way the days go. */
+  private spawn(mode: FreewayMode, s: number) {
+    const { p, t, r } = this.frame(s);
+    const lane = mode === 'walk' ? ROAD_W + 1.2 : 2.6;
+    const x = p.x + r.x * lane, z = p.z + r.z * lane;
+    const heading = Math.atan2(t.x, t.z);
+    const obj = this.makeFor(mode);
+    this.scene.add(obj);
+    this.mode = mode;
+    this.player = { obj, x, y: mode === 'fly' ? 26 : mode === 'walk' ? GROUND_Y : 0.1, z, heading, speed: mode === 'fly' ? 16 : 0, roll: 0 };
+    this.s = s;
+    this.hint = Math.round(s / 2);
+    const f = this.forward(heading);
+    this.camera.position.set(x - f.x * 14, this.player.y + 7, z - f.z * 14);
+    this.camera.lookAt(x, this.player.y, z);
+  }
+
+  getMode() { return this.mode; }
+
+  /** Walk, ride, drive or fly, from wherever you are now. */
+  setMode(mode: FreewayMode) {
+    if (mode === this.mode && !this.chute) return;
+    this.endChute();
+    if (this.parked) { this.parked.obj.removeFromParent(); this.parked = null; }
+    const p = this.player;
+    p.obj.removeFromParent();
+    const ok = mode === 'walk' ? this.walkable(p.x, p.z) : mode === 'fly' ? true : this.drivable(p.x, p.z);
+    if (!ok) { this.spawn(mode, this.s); this.setNear(null); return; }
+    const obj = this.makeFor(mode);
+    this.scene.add(obj);
+    this.mode = mode;
+    this.player = { obj, x: p.x, y: mode === 'fly' ? Math.max(26, p.y) : mode === 'walk' ? GROUND_Y : 0.1, z: p.z, heading: p.heading, speed: mode === 'fly' ? 16 : 0, roll: 0 };
+    this.setNear(null);
+  }
+
+  /** Mid-flight: hop out under a parachute and come down beside the road. */
+  jump() {
+    const p = this.player;
+    if (this.mode !== 'fly' || this.chute) return;
+    const walker = this.kit.walker();
+    const canopy = this.kit.canopy();
+    canopy.scale.setScalar(0.15);
+    walker.add(canopy);
+    this.scene.add(walker);
+    this.chute = { canopy, t: 0, slide: null, glider: { obj: p.obj, x: p.x, y: p.y, z: p.z, heading: p.heading, speed: p.speed, t: 0 } };
+    this.player = { obj: walker, x: p.x, y: p.y - 1.2, z: p.z, heading: p.heading, speed: 0, roll: 0 };
+    this.mode = 'walk';
+    this.setNear(null);
+    this.cb.onModeChange('walk');
+  }
+
+  /** Pull over and get out: the car (or moped) stays parked and you walk. */
+  getOut() {
+    const p = this.player;
+    if (this.mode !== 'drive' && this.mode !== 'ride') return;
+    (p.obj.userData.driver as THREE.Object3D | undefined)?.removeFromParent();
+    this.parked = { obj: p.obj, x: p.x, z: p.z, heading: p.heading, kind: this.mode };
+    const f = this.forward(p.heading);
+    let spot = { x: p.x + f.z * 2.6, z: p.z - f.x * 2.6 };
+    if (!this.walkable(spot.x, spot.z)) spot = this.nearestWalkable(p.x, p.z);
+    const walker = this.kit.walker();
+    this.scene.add(walker);
+    this.player = { obj: walker, x: spot.x, y: GROUND_Y, z: spot.z, heading: p.heading, speed: 0, roll: 0 };
+    this.mode = 'walk';
+    this.setNear(null);
+    this.cb.onModeChange('walk');
+  }
+
+  /** Back in the car (or on the moped) you parked. */
+  getIn() {
+    const p = this.player, car = this.parked;
+    if (this.mode !== 'walk' || !car) return;
+    p.obj.removeFromParent();
+    this.kit.seat(car.obj);
+    this.player = { obj: car.obj, x: car.x, y: 0.1, z: car.z, heading: car.heading, speed: 0, roll: 0 };
+    this.parked = null;
+    this.mode = car.kind;
+    this.setNear(null);
+    this.cb.onModeChange(car.kind);
+  }
+
+  private endChute() {
+    const c = this.chute;
+    if (!c) return;
+    c.canopy.removeFromParent();
+    c.glider?.obj.removeFromParent();
+    this.chute = null;
+  }
+
+  /** Over to a day, the way you're getting about now. */
   jumpTo(date: string) {
     const v = this.views.find((x) => x.day.date === date);
     if (!v) return;
-    this.warp = { from: this.s, to: v.s - SEG * 0.08, t: 0 };
-    this.v = 0;
+    this.endChute();
+    if (this.parked) { this.parked.obj.removeFromParent(); this.parked = null; }
+    this.player.obj.removeFromParent();
+    this.spawn(this.mode, v.s - 14);
+    this.setNear(null);
   }
 
-  private placeCar(dt: number, snap = false) {
-    const { p, t, r } = this.frame(this.s);
-    const pos = p.clone().add(r.clone().multiplyScalar(this.lane));
-    pos.y += 0.06;
-    this.car.position.copy(pos);
-    // The car's nose is +x; turn it to face along the road.
-    this.car.rotation.set(0, Math.atan2(t.x, t.z) - Math.PI / 2, 0);
-    for (const w of (this.car.userData.wheels as THREE.Object3D[] | undefined) ?? []) w.rotation.y -= (this.v * dt) / 0.48;
+  private setNear(n: FreewayNear | null) {
+    const key = (x: FreewayNear | null) => (x ? JSON.stringify(x) : '');
+    if (key(n) === key(this.near)) return;
+    this.near = n;
+    this.cb.onNear(n);
+  }
 
-    // Behind and above, looking down the road; as you slow beside a day, the camera
-    // swings out to show its building.
-    const slow = 1 - Math.min(1, Math.abs(this.v) / 14);
-    const look = this.beside(this.s) * slow;
-    const back = t.clone().multiplyScalar(-(13 + look * 2));
-    const want = pos.clone().add(back).add(new THREE.Vector3(0, 5.6 + look * 2.4, 0)).add(r.clone().multiplyScalar(look * 7));
-    const target = pos.clone().add(t.clone().multiplyScalar(10 - look * 5)).add(r.clone().multiplyScalar(-look * 9)).add(new THREE.Vector3(0, 1.4 + look * 3, 0));
-    if (snap) { this.camera.position.copy(want); this.camTarget.copy(target); }
-    else {
-      const k = 1 - Math.exp(-dt * (this.warp ? 10 : 3.2));
-      this.camera.position.lerp(want, k);
-      this.camTarget.lerp(target, k);
+  /** Drifting down: A D turn, W glides farther, S spills air and drops faster. */
+  private stepChute(dt: number, input: { steer: number; push: number }) {
+    const p = this.player, c = this.chute!;
+    const { steer, push } = input;
+    c.t += dt;
+    const gl = c.glider;
+    if (gl) {
+      gl.t += dt;
+      const gf = this.forward(gl.heading);
+      gl.x += gf.x * gl.speed * dt;
+      gl.z += gf.z * gl.speed * dt;
+      gl.y += 5 * dt;
+      gl.obj.position.set(gl.x, gl.y, gl.z);
+      gl.obj.rotation.set(0, gl.heading, 0);
+      gl.obj.rotateX(-0.25);
+      if (gl.t > 4) { gl.obj.removeFromParent(); c.glider = null; }
     }
-    this.camera.lookAt(this.camTarget);
+    c.canopy.scale.setScalar(Math.min(1, 0.15 + c.t * 2.2));
+    p.heading -= steer * 1.7 * dt;
+    const f = this.forward(p.heading);
+    if (c.slide) {
+      const dx = c.slide.x - p.x, dz = c.slide.z - p.z, d = Math.hypot(dx, dz);
+      const stepLen = Math.min(d, 11 * dt);
+      if (d > 0.01) { p.x += (dx / d) * stepLen; p.z += (dz / d) * stepLen; }
+      if (d < 0.05) c.slide = null;
+    } else {
+      const drift = 6 + Math.max(0, push) * 7;
+      p.x += f.x * drift * dt;
+      p.z += f.z * drift * dt;
+    }
+    const fall = c.slide ? 6 : 4.5 + Math.max(0, -push) * 9;
+    const floor = this.groundAt(p.x, p.z);
+    p.y = Math.max(floor, p.y - fall * dt);
+    if (p.y <= floor + 0.01) {
+      if (floor <= GROUND_Y + 0.01 && this.walkable(p.x, p.z)) {
+        c.slide = null;
+        this.endChute();
+        p.y = GROUND_Y;
+        p.speed = 0;
+      } else if (!c.slide) c.slide = this.nearestWalkable(p.x, p.z);
+    }
+    p.roll += (steer * 0.3 - p.roll) * Math.min(1, dt * 3);
+    p.obj.position.set(p.x, p.y, p.z);
+    p.obj.rotation.set(0, p.heading, 0);
+    p.obj.rotateZ(-p.roll + Math.sin(c.t * 1.6) * 0.05);
+    const body = p.obj.userData.body as THREE.Object3D | undefined;
+    if (body) body.position.y = 0.8;
+    this.camera.position.lerp(new THREE.Vector3(p.x - f.x * 15, p.y + 4, p.z - f.z * 15), 1 - Math.exp(-dt * 4));
+    this.camera.lookAt(p.x + f.x * 6, p.y + 1, p.z + f.z * 6);
   }
-  private camTarget = new THREE.Vector3();
+
+  /** The city's own handling and cameras, mode for mode. */
+  private stepPlayer(dt: number, input: { steer: number; push: number; boost: boolean }) {
+    if (this.chute) { this.stepChute(dt, input); return; }
+    const p = this.player;
+    const { steer, push, boost } = input;
+    if (this.mode === 'fly') {
+      const target = boost ? 46 : 22;
+      p.speed += (target - p.speed) * Math.min(1, dt * 1.5);
+      p.heading -= steer * 1.35 * dt;
+      p.y += push * 15 * dt;
+      const n = this.nearRoad(p.x, p.z);
+      const b = this.buildingAt(p.x, p.z, n.s, 1);
+      p.y = THREE.MathUtils.clamp(p.y, (b ? b.top : 0.5) + GROUND_Y + 3, 150);
+      const f = this.forward(p.heading);
+      p.x += f.x * p.speed * dt;
+      p.z += f.z * p.speed * dt;
+      // Too far from the road (or past either end), it banks you back toward it.
+      const ahead = this.frame(THREE.MathUtils.clamp(n.s, SEG, this.length - SEG)).p;
+      if (Math.abs(n.d) > 150 || n.s < SEG * 0.5 || n.s > this.length - SEG * 0.5) {
+        const home = Math.atan2(ahead.x - p.x, ahead.z - p.z);
+        let d = home - p.heading;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        p.heading += Math.sign(d) * Math.min(Math.abs(d), dt * 1.2);
+      }
+      p.roll += (steer * 0.55 - p.roll) * Math.min(1, dt * 4);
+      p.obj.position.set(p.x, p.y, p.z);
+      p.obj.rotation.set(0, p.heading, 0);
+      p.obj.rotateZ(p.roll);
+      p.obj.rotateX(-push * 0.18);
+      this.camera.position.lerp(new THREE.Vector3(p.x - f.x * 15, p.y + 5.5, p.z - f.z * 15), 1 - Math.exp(-dt * 4));
+      this.camera.lookAt(p.x + f.x * 10, p.y - 1, p.z + f.z * 10);
+      return;
+    }
+    const walking = this.mode === 'walk', riding = this.mode === 'ride';
+    const ok = (x: number, z: number) => (walking ? this.walkable(x, z) : this.drivable(x, z) || (riding && this.walkable(x, z)));
+    if (walking) {
+      p.speed += ((boost ? 14 : 7.5) * push - p.speed) * Math.min(1, dt * 10);
+      p.heading -= steer * 2.8 * dt;
+    } else if (riding) {
+      const top = boost ? 30 : 19;
+      if (push > 0) p.speed = Math.min(top, p.speed + push * 34 * dt);
+      else if (push < 0) p.speed = Math.max(-5, p.speed + push * (p.speed > 0 ? 44 : 12) * dt);
+      else p.speed -= Math.sign(p.speed) * Math.min(Math.abs(p.speed), 11 * dt);
+      p.heading -= steer * 3.1 * dt * THREE.MathUtils.clamp(Math.abs(p.speed) / 3.5, 0, 1) * Math.sign(p.speed || 1);
+    } else {
+      const top = boost ? 36 : 24;
+      if (push > 0) p.speed = Math.min(top, p.speed + push * 26 * dt);
+      else if (push < 0) p.speed = Math.max(-9, p.speed + push * (p.speed > 0 ? 40 : 16) * dt);
+      else p.speed -= Math.sign(p.speed) * Math.min(Math.abs(p.speed), 9 * dt);
+      p.heading -= steer * 2.3 * dt * THREE.MathUtils.clamp(Math.abs(p.speed) / 7, 0, 1) * Math.sign(p.speed || 1);
+    }
+    const f = this.forward(p.heading);
+    const nx = p.x + f.x * p.speed * dt, nz = p.z + f.z * p.speed * dt;
+    if (ok(nx, nz)) { p.x = nx; p.z = nz; }
+    else if (ok(nx, p.z)) { p.x = nx; p.speed *= 1 - 2 * dt; }
+    else if (ok(p.x, nz)) { p.z = nz; p.speed *= 1 - 2 * dt; }
+    else p.speed *= walking ? 0 : -0.25;
+    if (walking) {
+      const moving = Math.abs(p.speed) > 0.3;
+      this.walkT += dt * Math.abs(p.speed);
+      const body = p.obj.userData.body as THREE.Object3D | undefined;
+      if (body) {
+        body.position.y = 0.8 + (moving ? Math.abs(Math.sin(this.walkT * 1.4)) * 0.18 : Math.sin(performance.now() / 600) * 0.03);
+        body.rotation.z = moving ? Math.sin(this.walkT * 1.4) * 0.08 : 0;
+      }
+      p.obj.position.set(p.x, GROUND_Y, p.z);
+      p.obj.rotation.set(0, p.heading, 0);
+      this.camera.position.lerp(new THREE.Vector3(p.x - f.x * 8.5, 4.6, p.z - f.z * 8.5), 1 - Math.exp(-dt * 6));
+      this.camera.lookAt(p.x + f.x * 5, 2.2, p.z + f.z * 5);
+    } else if (riding) {
+      p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 12) * 0.38 - p.roll) * Math.min(1, dt * 5);
+      for (const w of (p.obj.userData.wheels as THREE.Object3D[] | undefined) ?? []) w.rotation.y -= (p.speed * dt) / 0.38;
+      p.obj.position.set(p.x, 0.12, p.z);
+      p.obj.rotation.set(0, p.heading - Math.PI / 2, 0);
+      p.obj.rotateX(p.roll);
+      this.camera.position.lerp(new THREE.Vector3(p.x - f.x * 9.5, 4.4, p.z - f.z * 9.5), 1 - Math.exp(-dt * 5.5));
+      this.camera.lookAt(p.x + f.x * 6, 1.8, p.z + f.z * 6);
+    } else {
+      p.roll += (-steer * Math.min(1, Math.abs(p.speed) / 20) * 0.08 - p.roll) * Math.min(1, dt * 6);
+      for (const w of (p.obj.userData.wheels as THREE.Object3D[] | undefined) ?? []) w.rotation.y -= (p.speed * dt) / 0.48;
+      p.obj.position.set(p.x, 0.12, p.z);
+      p.obj.rotation.set(0, p.heading - Math.PI / 2, 0);
+      p.obj.rotateX(p.roll);
+      this.camera.position.lerp(new THREE.Vector3(p.x - f.x * 13, 6.2, p.z - f.z * 13), 1 - Math.exp(-dt * 5));
+      this.camera.lookAt(p.x + f.x * 8, 1.6, p.z + f.z * 8);
+    }
+  }
 
   step(dt: number, input: { steer: number; push: number; boost: boolean }) {
     if (this.disposed) return;
     this.time += dt;
     const t = this.time;
-    if (this.warp) {
-      const w = this.warp;
-      w.t = Math.min(1, w.t + dt * 0.9);
-      const e = w.t < 0.5 ? 4 * w.t ** 3 : 1 - Math.pow(-2 * w.t + 2, 3) / 2;
-      this.s = w.from + (w.to - w.from) * e;
-      this.camera.fov = 58 + Math.sin(w.t * Math.PI) * 22;
-      this.camera.updateProjectionMatrix();
-      if (w.t >= 1) { this.warp = null; this.camera.fov = 58; this.camera.updateProjectionMatrix(); }
-    } else {
-      const max = input.boost ? 62 : 34;
-      if (input.push !== 0) {
-        const braking = Math.sign(input.push) !== Math.sign(this.v) && Math.abs(this.v) > 0.5;
-        this.v += input.push * (braking ? 40 : input.boost ? 30 : 16) * dt;
-      } else {
-        this.v *= Math.exp(-dt * 1.1);
-        if (Math.abs(this.v) < 0.4) this.v = 0;
-      }
-      this.v = THREE.MathUtils.clamp(this.v, -16, max);
-      this.s += this.v * dt;
-      // Lanes: steer to change, settle back into the right-hand one.
-      if (input.steer !== 0) this.lane = THREE.MathUtils.clamp(this.lane + input.steer * dt * 7, -ROAD_W + 1.6, ROAD_W - 1.6);
-      else this.lane += (2.6 - this.lane) * Math.min(1, dt * 0.6);
-    }
-    const lo = this.exits[0] - SEG * 0.3, hi = this.exits[1] + SEG * 0.3;
-    if (this.s < lo) { this.s = lo; this.v = 0; }
-    if (this.s > hi) { this.s = hi; this.v = 0; }
-    this.placeCar(dt);
+    this.stepPlayer(dt, input);
+    const p = this.player;
+    const n = this.nearRoad(p.x, p.z);
+    this.hint = n.k;
+    this.s = n.s;
 
-    // Sky: gold beside a day, dusk between days; tinted by the month.
-    const b = this.beside(this.s);
+    // The sky holds still; only the month tints it, and that changes slowly.
     const i = this.dayIndexAt(this.s);
     const season = seasonOf(dateParts(this.days[i]?.date ?? '2026-10-15').month);
     this.seasonAt = season;
-    const cold = season.fall === 'snow' ? 0.35 : 0;
-    const top = new THREE.Color('#1d1640').lerp(new THREE.Color('#5b7fd6'), b).lerp(new THREE.Color('#7a8fb8'), cold * b);
-    const horizon = new THREE.Color('#9a5a9e').lerp(new THREE.Color('#ffc48a'), b).lerp(new THREE.Color('#dfe7f5'), cold * b);
-    this.skyMat.uniforms.top.value.copy(top);
-    this.skyMat.uniforms.horizon.value.copy(horizon);
-    (this.scene.fog as THREE.Fog).color.copy(horizon).lerp(top, 0.25);
-    (this.stars.material as THREE.PointsMaterial).opacity = Math.max(0, 0.9 - b * 1.6);
-    this.sun.intensity = 0.35 + b * 1.5;
-    this.sun.color.set('#ffb070').lerp(new THREE.Color('#fff1d6'), b * 0.5);
-    this.hemi.intensity = 0.45 + b * 0.6;
+    const cold = season.fall === 'snow' ? 0.4 : 0;
+    const k = 1 - Math.exp(-dt * 0.6);
+    this.skyMat.uniforms.top.value.lerp(this.skyTop.set('#5b7fd6').lerp(this.skyCold.set('#8094bd'), cold), k);
+    this.skyMat.uniforms.horizon.value.lerp(this.skyHorizon.set('#ffcf9e').lerp(this.skyCold.set('#e3e9f4'), cold), k);
+    (this.scene.fog as THREE.Fog).color.copy(this.skyMat.uniforms.horizon.value).lerp(this.skyMat.uniforms.top.value, 0.25);
     const cam = this.camera.position;
     this.sky.position.copy(cam);
     this.stars.position.copy(cam);
-    this.sun.position.copy(cam).add(new THREE.Vector3(-120, 90 + b * 60, -60));
+    this.sun.position.copy(cam).add(new THREE.Vector3(-120, 150, -60));
     this.sun.target.position.copy(cam);
+
     for (const c of this.cullables) {
       const d = c.s - this.s;
-      const show = d > -110 && d < 560;
+      const show = Math.abs(d) < 480;
       for (const o of c.objs) o.visible = show;
     }
-    for (const v of this.views) {
-      if (!v.group.visible) continue;
-      for (const m of v.windows) m.emissiveIntensity = 0.35 + (1 - b) * 1.5;
-      if (v.beam.visible) (v.beam.material as THREE.MeshBasicMaterial).opacity = 0.1 + (1 - b) * 0.18 + Math.sin(t * 2.4 + v.s) * 0.04;
-      v.beacon.scale.setScalar(1 + Math.sin(t * 3 + v.s) * 0.15);
-      if (v.star.visible) v.star.rotation.y = t * 1.2;
-    }
+    for (const v of this.views) if (v.group.visible && v.star.visible) v.star.rotation.y = t * 0.8;
     for (const f of this.ticks) f(t, dt);
     this.stepFall(dt);
 
-    // Where you are: the day you're passing, and the one you've pulled up beside.
     const day = this.days[i];
-    if (day && day.date !== this.dayAt) { this.dayAt = day.date; }
+    if (day && day.date !== this.dayAt) this.dayAt = day.date;
     this.cb.onDay(this.dayAt, this.s / this.length);
-    let near: string | null = null;
-    if (this.s < this.exits[0] || this.s > this.exits[1]) near = 'exit';
-    else if (day && Math.abs(this.views[i].s - this.s) < SEG * 0.4 && Math.abs(this.v) < 12 && !this.warp) near = day.date;
-    if (near !== this.near) {
-      this.near = near;
-      this.cb.onNear(near === 'exit' ? { kind: 'exit' } : near ? { kind: 'day', date: near } : null);
+
+    // What you're next to: a day's door, a billboard, your parked car, the way out.
+    let near: FreewayNear | null = null, best = Infinity;
+    const flying = this.mode === 'fly';
+    if (!this.chute) {
+      for (const v of this.views) {
+        if (Math.abs(v.s - this.s) > 60) continue;
+        const d = flying ? Math.hypot(v.pos.x - p.x, v.pos.z - p.z) : Math.hypot(v.door.x - p.x, v.door.z - p.z);
+        const reach = this.mode === 'walk' ? 5 : this.mode === 'drive' ? 10 : this.mode === 'ride' ? 8 : 16;
+        if (d < reach && d < best && (!flying || p.y < v.top + 30)) { near = { kind: 'day', date: v.day.date }; best = d; }
+      }
+      if (!flying) for (const b of this.boardSpots) {
+        const d = Math.hypot(b.x - p.x, b.z - p.z);
+        if (d < (this.mode === 'walk' ? 6 : 9) && d < best) { near = { kind: 'billboard', index: b.index }; best = d; }
+      }
+      if (this.mode === 'walk' && this.parked && Math.hypot(this.parked.x - p.x, this.parked.z - p.z) < 5) near = { kind: 'car', name: this.parked.kind === 'ride' ? 'your moped' : 'your car' };
+      if ((this.s < this.exits[0] || this.s > this.exits[1]) && !flying) near = { kind: 'exit' };
     }
+    this.setNear(near);
   }
+  private skyTop = new THREE.Color();
+  private skyHorizon = new THREE.Color();
+  private skyCold = new THREE.Color();
 
   private stepFall(dt: number) {
     const s = this.seasonAt;
@@ -999,7 +1285,7 @@ export class Freeway {
     mm.color.set(s.fallColors[Math.floor(this.time * 0.2) % s.fallColors.length]);
     mm.size = s.fall === 'snow' ? 0.32 : 0.5;
     const arr = (this.fall.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
-    const c = this.car.position;
+    const c = this.player.obj.position;
     for (let k = 0; k < this.fallVel.length; k++) {
       const v = this.fallVel[k];
       arr[k * 3 + 1] -= dt * (s.fall === 'snow' ? 2.2 : 3.2) * v;
@@ -1015,7 +1301,6 @@ export class Freeway {
     this.fall.geometry.attributes.position.needsUpdate = true;
   }
 
-  get speed() { return this.v; }
 
   // ---------- Picking and labels ----------
 

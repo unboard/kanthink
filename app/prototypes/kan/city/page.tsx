@@ -564,15 +564,15 @@ export default function CityPage() {
     const hood = new Map((data?.neighborhoods ?? []).map((n) => [n.id, n.name]));
     return plots.map((p) => ({ id: p.channelId, name: p.name, folder: p.folderId ? hood.get(p.folderId) ?? null : null }));
   }, [plots, data?.neighborhoods]);
-  const makeCar = useCallback(() => engine.current!.makeCar(), []);
+  const playerKit = useMemo(() => (freeway ? engine.current?.playerKit() ?? null : null), [freeway]);
   const leaveFreeway = useCallback(() => setFreeway(false), []);
   useEffect(() => { engine.current?.setPaused(freeway); }, [freeway]);
 
   return (
     <div className="fixed inset-0 z-[5] overflow-hidden text-neutral-100" style={{ background: SKY_CSS[sky], ['--chat-h' as string]: `${selectedBot ? 8 : chatH}px` }}>
       <style dangerouslySetInnerHTML={{ __html: LABEL_CSS }} />
-      {freeway && engine.current && data && (
-        <FreewayView makeCar={makeCar} channels={freewayChannels} boss={data.boss} coarse={coarse} onExit={leaveFreeway} />
+      {freeway && playerKit && data && (
+        <FreewayView kit={playerKit} channels={freewayChannels} boss={data.boss} coarse={coarse} onExit={leaveFreeway} />
       )}
       <div ref={host} className="absolute inset-0" />
       <div ref={labels} className="kc-labels pointer-events-none absolute inset-0 overflow-hidden" />
