@@ -282,7 +282,7 @@ export async function cityFor(userId: string) {
   })
 
   // Town Hall: everything waiting on you.
-  const pass = passes.find((p) => p.status === 'done' && !p.appliedAt) ?? null
+  const pass = passes.find((p) => p.status === 'done' && !p.appliedAt && !(p.decisions as AttentionDecisionJson | null)?.dismissed) ?? null
   const passRunning = passes.some((p) => p.status === 'running' && now - +(p.startedAt ?? 0) < 15 * 60_000)
   const decisions = pass?.decisions as AttentionDecisionJson | null
   const proposals = (decisions?.areas ?? []).filter((a) => a.change === 'start').map((a, i) => ({
@@ -355,9 +355,10 @@ export async function cityFor(userId: string) {
       approvals: pending.map((a) => ({ id: a.id, channelId: a.channelId, channelName: areaName.get(a.channelId) ?? '', title: a.title })),
       asks: plots.flatMap((p) => p.bot.asks.map((text) => ({ channelId: p.channelId, channelName: p.name, text }))),
       pass: pass ? {
-        id: pass.id, note: decisions?.note ?? '', changes: (decisions?.areas ?? []).filter((a) => a.change !== 'keep').length, filings: decisions?.filings.length ?? 0, at: ms(pass.endedAt ?? pass.startedAt),
-        // Each change on its own, so they can push back on one.
-        items: (decisions?.areas ?? []).filter((a) => a.change !== 'keep').map((a) => ({ name: a.name, change: a.change, why: a.why })),
+        id: pass.id, note: decisions?.note ?? '', changes: planItems(decisions?.areas ?? [], botOf).length, filings: decisions?.filings.length ?? 0, at: ms(pass.endedAt ?? pass.startedAt),
+        // Each change on its own, in plain words, so they know what yes means and can push back on one.
+        items: planItems(decisions?.areas ?? [], botOf),
+        filed: fileGroups(decisions?.filings ?? [], areaName),
         questions: decisions?.questions ?? [],
         setAside: decisions?.setAside ?? [],
       } : null,
@@ -405,4 +406,43 @@ export async function cityFor(userId: string) {
     // What the residents call you.
     boss: callName(await db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } })),
   }
+}
+
+type PlanArea = AttentionDecisionJson['areas'][number]
+type PlanChange = PlanArea['change']
+
+const hours = (h: number | undefined) => (!h || h === 24 ? 'once a day' : h === 168 ? 'once a week' : h < 24 ? `every ${h} hours` : `every ${Math.round(h / 24)} days`)
+
+/**
+ * The plan as a list of things that will happen, each in a line they can read
+ * without knowing what “reshape” means. A keep that switches a bot on or off is a
+ * change too, so it's listed rather than slipped in.
+ */
+function planItems(areas: PlanArea[], botOf: Map<string, { enabled: boolean | null; everyHours: number | null }>) {
+  const out: { name: string; change: PlanChange; what: string; why: string }[] = []
+  for (const a of areas) {
+    const bot = a.channelId ? botOf.get(a.channelId) : undefined
+    const wasOn = Boolean(bot?.enabled)
+    const willOn = a.attention === 'muted' ? false : a.bot ? a.bot.on : wasOn
+    const duty = willOn && !wasOn ? `, and puts its bot to work ${hours(a.bot?.everyHours)}` : !willOn && wasOn ? ', and takes its bot off duty' : ''
+    const what = a.change === 'start' ? `Makes a new space for this${willOn ? ` with a bot that works on it ${hours(a.bot?.everyHours)}` : ''}.`
+      : a.change === 'reshape' ? `Rewrites what this space is for${a.columns?.length ? ' and adds any missing columns' : ''}${duty}. Nothing in it is deleted.`
+      : a.change === 'wake' ? `Brings this space back to the front of the city${duty}.`
+      : a.change === 'quiet' ? `Lets this space go quiet in the city${duty}. Nothing in it is deleted.`
+      : a.change === 'mute' ? `Fades this space out of the city${duty}. Nothing in it is deleted.`
+      : duty ? `Leaves the space as it is${duty}.` : ''
+    if (!what) continue
+    out.push({ name: a.name, change: a.change, what, why: a.why })
+  }
+  return out
+}
+
+/** What would be filed, grouped by where it goes. */
+function fileGroups(filings: AttentionDecisionJson['filings'], areaName: Map<string, string>) {
+  const by = new Map<string, string[]>()
+  for (const f of filings) {
+    const to = areaName.get(f.area) ?? f.area
+    by.set(to, [...(by.get(to) ?? []), f.title])
+  }
+  return [...by].map(([to, titles]) => ({ to, titles }))
 }

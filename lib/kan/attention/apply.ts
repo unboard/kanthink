@@ -181,7 +181,7 @@ export async function keepAwakeInPlan(ownerId: string, channelId: string): Promi
     where: and(eq(attentionPasses.ownerId, ownerId), eq(attentionPasses.status, 'done')),
     orderBy: [desc(attentionPasses.startedAt)],
     limit: 3,
-  })).find((p) => !p.appliedAt)
+  })).find((p) => !p.appliedAt && !p.decisions?.dismissed)
   const d = pass?.decisions as AttentionDecisionJson | null | undefined
   if (!pass || !d) return
   const areas = d.areas.filter((a) => !(a.channelId === channelId && (a.change === 'quiet' || a.change === 'mute' || a.attention === 'muted' || a.bot?.on === false)))

@@ -425,7 +425,7 @@ export const cityTools: AgentTool[] = [
         orderBy: [desc(attentionPasses.startedAt)],
         limit: 3,
       })
-      const pass = passes.find((p) => !p.appliedAt)
+      const pass = passes.find((p) => !p.appliedAt && !p.decisions?.dismissed)
       if (!pass) return { content: 'Kan has nothing proposed right now.', isError: true }
       const { buildProposedArea } = await import('@/lib/kan/attention/apply')
       const r = await buildProposedArea(pass.id, ctx.userId, str(input.name))
@@ -447,7 +447,7 @@ export const cityTools: AgentTool[] = [
         where: and(eq(attentionPasses.ownerId, ctx.userId), eq(attentionPasses.status, 'done')),
         orderBy: [desc(attentionPasses.startedAt)],
         limit: 3,
-      })).find((p) => !p.appliedAt)
+      })).find((p) => !p.appliedAt && !p.decisions?.dismissed)
       const d = pass?.decisions
       if (!pass || !d) return { content: 'There is no plan waiting at Town Hall.' }
       const verb = { start: 'Start', reshape: 'Reshape', quiet: 'Quiet', mute: 'Mute', wake: 'Wake', keep: 'Keep' } as const
@@ -503,7 +503,7 @@ export const cityTools: AgentTool[] = [
         where: and(eq(attentionPasses.ownerId, ctx.userId), eq(attentionPasses.status, 'done')),
         orderBy: [desc(attentionPasses.startedAt)],
         limit: 3,
-      })).find((p) => !p.appliedAt)
+      })).find((p) => !p.appliedAt && !p.decisions?.dismissed)
       if (!pass) return { content: 'There is no plan waiting at Town Hall. Offer to have Kan sort what came in first.', isError: true }
       const { applyAttentionPass } = await import('@/lib/kan/attention/apply')
       const r = await applyAttentionPass(pass.id, ctx.userId)

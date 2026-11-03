@@ -503,6 +503,7 @@ export default function CityPage() {
   const remember = (name: string, role: TopicRole, note: string) =>
     act(`topic:${name}`, () => fetch('/api/prototypes/kan/city/topic', json('POST', { name, role, note })), role === 'help' ? `Got it. I’ll help with ${name}.` : role === 'aware' ? `Got it. I’ll keep ${name} in mind and leave the building to you.` : `Got it. I’ll leave ${name} alone.`, 'townhall');
   const applyPass = (id: string) => act('apply', () => fetch(`/api/prototypes/kan/attention/${id}/apply`, { method: 'POST' }), 'Done. I rearranged the city.', 'townhall');
+  const dismissPass = (id: string) => act('dismiss', () => fetch(`/api/prototypes/kan/attention/${id}/dismiss`, { method: 'POST' }), 'Okay, I’ll leave things as they are.', 'townhall');
   const moveTo = (channelId: string, folderId: string | null) =>
     act(`mv:${channelId}`, () => fetch('/api/prototypes/kan/city/neighborhoods', json('POST', { action: 'move', channelId, folderId })), folderId ? 'Moved. Its bot has new neighbors.' : 'Moved Downtown. Its bot keeps to itself now.');
   const makeNeighborhood = async (name: string, ids: string[]) => {
@@ -889,7 +890,7 @@ export default function CityPage() {
               onEnter={() => void enterBuilding(selectedPlot.channelId)}
             />
           ) : pick.kind === 'townhall' ? (
-            <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onApply={(id) => void applyPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
+            <TownHallPanel data={data} approvals={approvals} busy={busy} onDecide={(id, ok, extra) => void decide(id, ok, extra)} onLook={() => void look()} onApply={(id) => void applyPass(id)} onDismiss={(id) => void dismissPass(id)} onRemember={(n, role, note) => void remember(n, role, note)} onGo={(id) => onPickRef.current({ kind: 'plot', id })} onAsk={ask} />
           ) : pick.kind === 'park' ? (
             <ParkPanel plots={plots} onGo={(id) => onPickRef.current({ kind: 'plot', id })} />
           ) : pick.kind === 'proposal' ? (
@@ -1464,7 +1465,7 @@ function ApprovalRow({ a, busy, onDecide, showWhere }: { a: Approval; busy: stri
 }
 
 type TopicRole = 'help' | 'aware' | 'hands_off';
-const CHANGE_VERB = { start: 'Start', reshape: 'Reshape', quiet: 'Quiet', mute: 'Mute', wake: 'Wake', keep: 'Keep' } as const;
+const CHANGE_TITLE = { start: 'New space:', reshape: 'Rework', quiet: 'Quiet', mute: 'Fade out', wake: 'Wake up', keep: '' } as const;
 
 /** Telling Kan what something is and the part it plays: three answers and a line in your own words. */
 function TopicReply({ name, busy, onSave, onCancel, choices }: {
@@ -1488,14 +1489,18 @@ function TopicReply({ name, busy, onSave, onCancel, choices }: {
   );
 }
 
-function PlanItem({ item, busy, onRemember }: { item: { name: string; change: keyof typeof CHANGE_VERB; why: string }; busy: string | null; onRemember: (name: string, role: TopicRole, note: string) => void }) {
+function PlanItem({ item, busy, onRemember }: { item: { name: string; change: keyof typeof CHANGE_TITLE; what: string; why: string }; busy: string | null; onRemember: (name: string, role: TopicRole, note: string) => void }) {
   const [open, setOpen] = useState(false);
   // Pushing back fits the changes that would build something; the rest are for the chat.
   const builds = item.change === 'start' || item.change === 'reshape';
   return (
-    <li className="py-1.5">
+    <li className="py-2">
       <div className="flex items-start gap-2">
-        <p className="flex-1 text-[13px] leading-snug text-neutral-200"><span className="text-neutral-400">{CHANGE_VERB[item.change]}</span> {item.name}<span className="block text-[12px] text-neutral-500">{item.why}</span></p>
+        <div className="flex-1">
+          <p className="text-[13px] font-medium leading-snug text-neutral-100">{CHANGE_TITLE[item.change] ? `${CHANGE_TITLE[item.change]} ` : ''}{item.name}</p>
+          <p className="mt-0.5 text-[12.5px] leading-snug text-neutral-300">{item.what}</p>
+          <p className="mt-0.5 text-[12px] leading-snug text-neutral-500">Why: {item.why}</p>
+        </div>
         {builds && !open && <button onClick={() => setOpen(true)} className="flex-shrink-0 rounded-full px-2 py-0.5 text-[12px] text-neutral-400 hover:bg-white/5 hover:text-neutral-200">Not this</button>}
       </div>
       {open && (
@@ -1506,13 +1511,74 @@ function PlanItem({ item, busy, onRemember }: { item: { name: string; change: ke
   );
 }
 
-function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onRemember, onGo, onAsk }: {
+/** What Kan noticed, what saying yes would do, and the three ways to answer. */
+function PlanCard({ pass, busy, onApply, onDismiss, onRemember, onAsk }: {
+  pass: NonNullable<CityData['townHall']['pass']>;
+  busy: string | null;
+  onApply: (id: string) => void;
+  onDismiss: (id: string) => void;
+  onRemember: (name: string, role: TopicRole, note: string) => void;
+  onAsk: (prompt: string, prefill?: boolean) => void;
+}) {
+  const [more, setMore] = useState(false);
+  const [filedOpen, setFiledOpen] = useState(false);
+  const total = pass.items.length + pass.filings;
+  return (
+    <div className="mt-3 rounded-xl border border-violet-500/40 bg-violet-500/5 p-3">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300"><KanthinkIcon size={12} /> Kan noticed{pass.at ? <span className="font-normal normal-case tracking-normal text-neutral-500"> · {ago(pass.at)}</span> : null}</p>
+      <p className={`mt-1.5 text-[13px] leading-relaxed text-neutral-300 ${more ? '' : 'line-clamp-3'}`}>{pass.note}</p>
+      {pass.note.length > 180 && <button onClick={() => setMore(!more)} className="mt-0.5 text-[12px] text-violet-300 hover:text-violet-200">{more ? 'Less' : 'Read all'}</button>}
+      {pass.setAside.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {pass.setAside.map((x, i) => <li key={i} className="text-[12px] text-neutral-500">Set aside {x.name}: {x.why}</li>)}
+        </ul>
+      )}
+
+      {total > 0 && (
+        <>
+          <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">If you say yes</p>
+          <ul className="mt-0.5 divide-y divide-white/5">
+            {pass.items.map((it, i) => <PlanItem key={`${it.name}:${i}`} item={it} busy={busy} onRemember={onRemember} />)}
+            {pass.filings > 0 && (
+              <li className="py-2">
+                <button onClick={() => setFiledOpen(!filedOpen)} className="w-full text-left">
+                  <p className="text-[13px] font-medium leading-snug text-neutral-100">Turn {pass.filings} thing{pass.filings === 1 ? '' : 's'} you shared or read into cards <span className="font-normal text-violet-300">{filedOpen ? 'Hide' : 'See them'}</span></p>
+                  <p className="mt-0.5 text-[12.5px] leading-snug text-neutral-300">Into {pass.filed.map((g) => g.to).join(', ')}.</p>
+                </button>
+                {filedOpen && pass.filed.map((g) => (
+                  <div key={g.to} className="mt-1.5">
+                    <p className="text-[12px] text-neutral-400">{g.to}</p>
+                    <ul className="ml-3 list-disc text-[12px] leading-snug text-neutral-500">{g.titles.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                  </div>
+                ))}
+              </li>
+            )}
+          </ul>
+        </>
+      )}
+
+      <p className="mt-2 text-[12px] text-neutral-500">Nothing has changed yet. You can ask Kan to drop or change any one of these first.</p>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        {total > 0 && (
+          <button disabled={busy !== null} onClick={() => onApply(pass.id)} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+            {busy === 'apply' ? 'Doing it…' : total === 1 ? 'Yes, do this' : `Yes, do all ${total}`}
+          </button>
+        )}
+        <button onClick={() => onAsk('About your plan for the city: ', true)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5">Change something</button>
+        <button disabled={busy !== null} onClick={() => onDismiss(pass.id)} className="rounded-full px-3 py-1.5 text-xs text-neutral-400 hover:bg-white/5 hover:text-neutral-200 disabled:opacity-50">{busy === 'dismiss' ? 'Okay…' : 'No thanks'}</button>
+      </div>
+    </div>
+  );
+}
+
+function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onDismiss, onRemember, onGo, onAsk }: {
   data: CityData;
   approvals: Approval[];
   busy: string | null;
   onDecide: (id: string, ok: boolean, extra?: { reason?: string; modelId?: string }) => void;
   onLook: () => void;
   onApply: (id: string) => void;
+  onDismiss: (id: string) => void;
   onRemember: (name: string, role: TopicRole, note: string) => void;
   onGo: (id: string) => void;
   onAsk: (prompt: string, prefill?: boolean) => void;
@@ -1524,27 +1590,7 @@ function TownHallPanel({ data, approvals, busy, onDecide, onLook, onApply, onRem
       <p className="text-[11px] uppercase tracking-wider text-neutral-500">Town Hall · Kan’s office</p>
       <h3 className="mt-0.5 pr-8 text-[19px] font-semibold text-neutral-50">{nothing ? 'Nothing’s waiting on you' : 'Waiting on you'}</h3>
 
-      {th.pass && (
-        <div className="mt-3 rounded-xl border border-violet-500/40 bg-violet-500/5 p-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300"><KanthinkIcon size={12} /> Kan noticed</p>
-          <p className={`mt-1.5 text-[13px] leading-relaxed ${th.pass.setAside.length ? 'text-neutral-400' : 'text-neutral-200'}`}>{th.pass.note}</p>
-          {th.pass.setAside.length > 0 && (
-            <ul className="mt-1.5 space-y-0.5">
-              {th.pass.setAside.map((x, i) => <li key={i} className="text-[12px] text-neutral-500">Set aside {x.name}: {x.why}</li>)}
-            </ul>
-          )}
-          {th.pass.items.length > 0 && (
-            <ul className="mt-2 divide-y divide-white/5 border-t border-white/5">
-              {th.pass.items.map((it, i) => <PlanItem key={`${it.name}:${i}`} item={it} busy={busy} onRemember={onRemember} />)}
-            </ul>
-          )}
-          <p className="mt-1.5 text-[12px] text-neutral-500">{th.pass.changes} change{th.pass.changes === 1 ? '' : 's'} to the city, {th.pass.filings} thing{th.pass.filings === 1 ? '' : 's'} to file{th.pass.at ? ` · ${ago(th.pass.at)}` : ''}.</p>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            <button onClick={() => onAsk('Walk me through your plan for the city, one change at a time.')} className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-500">Talk me through it</button>
-            <button disabled={busy !== null} onClick={() => onApply(th.pass!.id)} className="rounded-full border border-white/15 px-3.5 py-1.5 text-xs text-neutral-200 hover:bg-white/5 disabled:opacity-50">{busy === 'apply' ? 'Doing it…' : 'Just do it'}</button>
-          </div>
-        </div>
-      )}
+      {th.pass && <PlanCard pass={th.pass} busy={busy} onApply={onApply} onDismiss={onDismiss} onRemember={onRemember} onAsk={onAsk} />}
 
       {th.pass?.questions.map((q) => (
         <div key={q.topic} className="mt-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">

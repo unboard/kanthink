@@ -2180,6 +2180,8 @@ export interface AttentionDecisionJson {
   questions?: { topic: string; ask: string; why: string }[]
   /** Parts of the plan the owner took out, and what they said. */
   setAside?: { name: string; why: string }[]
+  /** They passed on the whole plan; it stays on record but stops waiting on them. */
+  dismissed?: boolean
 }
 
 /**

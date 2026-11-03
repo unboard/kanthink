@@ -71,7 +71,7 @@ async function fitPlanToTopic(ownerId: string, topic: Topic): Promise<string[]> 
     where: and(eq(attentionPasses.ownerId, ownerId), eq(attentionPasses.status, 'done')),
     orderBy: [desc(attentionPasses.startedAt)],
     limit: 3,
-  })).find((p) => !p.appliedAt)
+  })).find((p) => !p.appliedAt && !p.decisions?.dismissed)
   const d = pass?.decisions as AttentionDecisionJson | null | undefined
   if (!pass || !d) return []
   const fitted = fitDecisions(d, [topic])
