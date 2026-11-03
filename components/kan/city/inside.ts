@@ -6,7 +6,7 @@ import type { ChannelBoard } from '@/lib/kan/city/channel';
 import type { PlotTheme } from '@/lib/kan/city/style';
 import { botFigure, kanFigure, mat, sign } from './models';
 import { THEME_COLORS } from './themes';
-import { catTower, climbs, petFigure, petFur, petName, petSeed, toy, TOWER_PERCHES, type PetFig } from './pets';
+import { ball as tennisBall, catTower, climbs, petFigure, petFur, petName, petProfile, petSeed, toy, TOWER_PERCHES, type PetFig, type PetProfile } from './pets';
 
 /**
  * Inside a building. Each column is a room with its cards on the walls (pinned up,
@@ -22,7 +22,9 @@ import { catTower, climbs, petFigure, petFur, petName, petSeed, toy, TOWER_PERCH
  * face), or tap the floor and you walk there by yourself. Drag to turn the camera.
  */
 
-export type InsidePick = { kind: 'card'; id: string } | { kind: 'app'; id: string } | { kind: 'bot'; id: string } | { kind: 'exit' } | { kind: 'tv' };
+export type InsidePick = { kind: 'card'; id: string } | { kind: 'app'; id: string } | { kind: 'bot'; id: string } | { kind: 'exit' } | { kind: 'tv' } | { kind: 'pet'; id: string };
+/** One of the animals, for the panel that opens when you tap it. */
+export interface InsidePet extends PetProfile { index: number; name: string; kind: Pet['kind']; color: string }
 export interface InsideNear { kind: 'card' | 'app' | 'bot' | 'exit' | 'tv'; id: string; name: string }
 /** What's on the TV: a video shared to the channel, and whether it's playing. */
 export interface TvShow { videoId: string; title: string; index: number; count: number; on: boolean }
@@ -42,6 +44,8 @@ export interface InsideCallbacks {
   onNear(n: InsideNear | null): void;
   /** The room you walked into: its name and how many cards it has. */
   onRoom(room: { name: string; count: number | null; kind: PlanRoom['kind'] }): void;
+  /** Who lives here, whenever the rooms are rebuilt. */
+  onPets?(pets: InsidePet[]): void;
 }
 
 /** Always a positive whole number, so it can index, shift and size things safely. */
@@ -81,9 +85,9 @@ interface PetMover {
   path: Vec[];
   wait: number;
   speed: number;
-  mode: 'idle' | 'sit' | 'nap' | 'perch' | 'play' | 'greet';
+  mode: 'idle' | 'sit' | 'nap' | 'perch' | 'play' | 'greet' | 'roll';
   jump: { a: THREE.Vector3; b: THREE.Vector3; t: number; dur: number; then: 'perch' | 'idle' } | null;
-  goal: { kind: 'tower'; perch: number } | { kind: 'toy'; toy: number } | null;
+  goal: { kind: 'tower'; perch: number } | { kind: 'toy'; toy: number } | { kind: 'fetch'; toy: number } | { kind: 'return'; toy: number } | null;
   perch: number;
   /** How many more times it'll chase the toy it's playing with. */
   chase: number;
@@ -91,8 +95,20 @@ interface PetMover {
   blinkAt: number;
   greeted: number;
   label: HTMLDivElement;
+  color: string;
+  /** Running off when you chase it: how many times lately, and when it last did. */
+  flees: number;
+  fledAt: number;
+  /** Running flat out (after the ball, or away from you). */
+  rush: boolean;
 }
-interface Toy { obj: THREE.Group; x: number; z: number; from: Vec | null; to: Vec | null; t: number }
+interface Toy {
+  obj: THREE.Group; x: number; z: number; from: Vec | null; to: Vec | null; t: number;
+  /** How high and how long its flight is: a throw goes higher and farther than a bat. */
+  arc?: number; dur?: number;
+  /** The ball you throw, and who has it in their mouth. */
+  ball?: boolean; carried?: PetMover | null;
+}
 
 // ---------- Textures ----------
 
@@ -429,6 +445,9 @@ export class Inside {
   private petRoot = new THREE.Group();
   private tower: { x: number; z: number; base: Vec; perches: THREE.Vector3[]; taken: (string | null)[] } | null = null;
   private toys: Toy[] = [];
+  /** Little hearts and words that float up off the animals. */
+  private fx: { el: HTMLDivElement; pos: THREE.Vector3; born: number; life: number }[] = [];
+  private playerMoving = false;
   /**
    * The TV is a real YouTube player, hung on the lobby wall with CSS3D so it plays in
    * the room. It's made once and only moved on a rebuild, so a refresh never stops
@@ -1094,7 +1113,7 @@ export class Inside {
   private placePets(list: Pet[], was: { x: number; z: number; heading: number }[]) {
     const lobby = this.plan.rooms.find((x) => x.kind === 'lobby')!.rect;
     this.pets = list.map((pet, i) => {
-      const seed = petSeed(this.of.channelId, i, pet.kind);
+      const seed = pet.seed ?? petSeed(this.of.channelId, i, pet.kind);
       const color = pet.color ?? petFur(pet.kind, seed);
       const fig = petFigure(pet.kind, color);
       const prev = was[i];
@@ -1108,8 +1127,94 @@ export class Inside {
         pet, name, seed, fig, x: at.x, z: at.z, y: 0, heading: prev?.heading ?? (seed % 6), path: [], wait: 1 + (seed % 4),
         speed: pet.kind === 'dog' ? 2.6 : pet.kind === 'puppy' || pet.kind === 'kitten' ? 2.3 : pet.kind === 'bunny' ? 1.8 : 1.7,
         mode: 'idle', jump: null, goal: null, perch: -1, chase: 0, phase: 0, blinkAt: 2 + (seed % 5), greeted: -99, label,
+        color, flees: 0, fledAt: -99, rush: false,
       } satisfies PetMover;
     });
+    this.pets.forEach((q, i) => {
+      q.label.addEventListener('click', (e) => { e.stopPropagation(); this.cb.onPick({ kind: 'pet', id: String(i) }); });
+      q.fig.group.traverse((o) => { o.userData.petIndex = i; });
+    });
+    this.cb.onPets?.(this.pets.map((q, i) => ({ index: i, name: q.name, kind: q.pet.kind, color: q.color, ...petProfile(q.pet.kind, q.seed) })));
+  }
+
+  // ---------- Playing with the animals ----------
+
+  /** Throw a ball from where you stand, the way you're facing; everyone awake runs for it. */
+  throwBall() {
+    if (!this.pets.length) return false;
+    const p = this.player;
+    let b = this.toys.find((x) => x.ball);
+    if (!b) {
+      const obj = tennisBall();
+      this.petRoot.add(obj);
+      b = { obj, x: p.x, z: p.z, from: null, to: null, t: 0, ball: true, carried: null };
+      this.toys.push(b);
+    }
+    if (b.carried) { b.carried.goal = null; b.carried = null; }
+    const d = 5 + Math.random() * 2.5;
+    b.from = { x: p.x + Math.sin(p.heading) * 0.5, z: p.z + Math.cos(p.heading) * 0.5 };
+    b.to = this.nearestOpen(p.x + Math.sin(p.heading) * d, p.z + Math.cos(p.heading) * d);
+    b.t = 0;
+    b.arc = 1.9;
+    b.dur = 0.95;
+    return true;
+  }
+
+  /** The ball's down: dogs fetch it, cats and bunnies go bat it about. */
+  private ballLanded(i: number) {
+    const b = this.toys[i];
+    b.arc = undefined;
+    b.dur = undefined;
+    for (const q of this.pets) {
+      if (q.jump || q.mode === 'perch' || (q.mode === 'nap' && Math.random() < 0.6)) continue;
+      const dog = q.pet.kind === 'dog' || q.pet.kind === 'puppy';
+      q.goal = dog ? { kind: 'fetch', toy: i } : { kind: 'toy', toy: i };
+      q.chase = dog ? 0 : 1 + Math.floor(Math.random() * 2);
+      q.path = this.route(q, b);
+      q.mode = 'idle';
+      q.rush = true;
+    }
+  }
+
+  /** A pat: it comes over, rolls over or sits for it, and hearts float up. */
+  petPet(i: number) {
+    const q = this.pets[i];
+    if (!q) return;
+    this.hearts(q, 5);
+    if (q.jump || q.mode === 'perch') return;
+    q.path = [];
+    q.goal = null;
+    q.mode = climbs(q.pet.kind) || q.pet.kind === 'puppy' ? 'roll' : 'greet';
+    q.wait = 3.5;
+    q.greeted = this.time;
+  }
+
+  /** What it's doing right now, in words. */
+  petMood(i: number) {
+    const q = this.pets[i];
+    if (!q) return '';
+    if (q.goal?.kind === 'fetch' || q.goal?.kind === 'return') return 'Fetching the ball';
+    if (q.rush) return 'Zooming around';
+    return ({ idle: 'Exploring', sit: 'Sitting pretty', nap: 'Napping', perch: 'Up on the cat tower', play: 'Playing', greet: 'Saying hi', roll: 'Rolling over for belly rubs' } as const)[q.mode];
+  }
+
+  private hearts(q: PetMover, n: number, word?: string) {
+    const now = this.time;
+    const make = (text: string, cls: string) => {
+      const el = document.createElement('div');
+      el.className = cls;
+      el.textContent = text;
+      el.style.position = 'absolute';
+      el.style.left = '0';
+      el.style.top = '0';
+      el.style.display = 'none';
+      this.layer.appendChild(el);
+      return el;
+    };
+    for (let k = 0; k < n; k++) {
+      this.fx.push({ el: make('\u2764', 'kc-heart'), pos: new THREE.Vector3(q.x + (Math.random() - 0.5) * 0.6, q.y + 0.8 * q.fig.scale, q.z + (Math.random() - 0.5) * 0.6), born: now + k * 0.12, life: 1.3 });
+    }
+    if (word) this.fx.push({ el: make(word, 'kc-heart kc-heart-word'), pos: new THREE.Vector3(q.x, q.y + 1.3 * q.fig.scale, q.z), born: now, life: 1.8 });
   }
 
   /** Off the floor and up the tower, or after a toy, or a nap: what to do next. */
@@ -1147,7 +1252,7 @@ export class Inside {
 
   private kickToy(i: number, q: PetMover) {
     const toyAt = this.toys[i];
-    if (!toyAt) return;
+    if (!toyAt || toyAt.carried || (toyAt.from && toyAt.to)) return;
     const a = q.heading + (Math.random() - 0.5) * 1.4;
     const d = 1.2 + Math.random() * 1.6;
     toyAt.from = { x: toyAt.x, z: toyAt.z };
@@ -1173,13 +1278,35 @@ export class Inside {
         q.wait = j.then === 'perch' ? 7 + Math.random() * 12 : 1 + Math.random() * 2;
       }
     } else if (q.path.length) {
-      walking = this.follow(q, q.path, q.mode === 'play' ? q.speed * 1.5 : q.speed, dt);
+      walking = this.follow(q, q.path, q.rush ? q.speed * 1.9 : q.mode === 'play' ? q.speed * 1.5 : q.speed, dt);
       if (!q.path.length) {
         const g = q.goal;
         q.goal = null;
+        q.rush = false;
         if (g?.kind === 'tower' && this.tower) {
           q.jump = { a: new THREE.Vector3(q.x, 0, q.z), b: this.tower.perches[g.perch].clone(), t: 0, dur: 0.55, then: 'perch' };
           q.perch = g.perch;
+        } else if (g?.kind === 'fetch') {
+          // Got it (if no one beat them to it): back to you with it.
+          const b = this.toys[g.toy];
+          if (b && !b.carried && !(b.from && b.to) && Math.hypot(b.x - q.x, b.z - q.z) < 1.2) {
+            b.carried = q;
+            q.goal = { kind: 'return', toy: g.toy };
+            q.path = this.route(q, this.nearestOpen(p.x + Math.sin(p.heading) * 1.1, p.z + Math.cos(p.heading) * 1.1));
+            q.rush = true;
+          } else { q.mode = 'idle'; q.wait = 0.5; }
+        } else if (g?.kind === 'return') {
+          const b = this.toys[g.toy];
+          if (b && b.carried === q) {
+            b.carried = null;
+            const at = this.nearestOpen(q.x + Math.sin(q.heading) * 0.45, q.z + Math.cos(q.heading) * 0.45);
+            b.x = at.x; b.z = at.z;
+            b.obj.position.set(at.x, 0, at.z);
+          }
+          q.mode = 'greet';
+          q.wait = 3;
+          q.greeted = t;
+          this.hearts(q, 3, 'Again?');
         } else if (g?.kind === 'toy') {
           q.mode = 'play';
           q.wait = 1.2 + Math.random() * 1.5;
@@ -1189,9 +1316,30 @@ export class Inside {
       }
     } else {
       const dp = Math.hypot(p.x - q.x, p.z - q.z);
+      // Run at it and it dashes off; corner it three times and it gives up and rolls over.
+      if (this.playerMoving && dp < 1.6 && (q.mode === 'idle' || q.mode === 'sit' || q.mode === 'greet' || q.mode === 'play')) {
+        if (t - q.fledAt > 10) q.flees = 0;
+        q.flees++;
+        q.fledAt = t;
+        if (q.flees >= 3) {
+          q.flees = 0;
+          q.mode = 'roll';
+          q.wait = 4;
+          q.goal = null;
+          this.hearts(q, 4, 'Caught you!');
+        } else {
+          const away = Math.atan2(q.x - p.x, q.z - p.z) + (Math.random() - 0.5) * 1.2;
+          const d = 4 + Math.random() * 2.5;
+          q.path = this.route(q, this.nearestOpen(q.x + Math.sin(away) * d, q.z + Math.cos(away) * d));
+          q.goal = null;
+          q.mode = 'idle';
+          q.rush = true;
+          q.wait = 0.6;
+        }
+      }
       // Comes to say hi when you're close, now and then.
-      if ((q.mode === 'idle' || q.mode === 'sit') && dp < 2.6 && t - q.greeted > 25) { q.mode = 'greet'; q.wait = 3.5; q.greeted = t; }
-      if (q.mode === 'greet' || (q.mode === 'perch' && dp < 5)) q.heading = turnToward(q.heading, Math.atan2(p.x - q.x, p.z - q.z), dt * 5);
+      else if ((q.mode === 'idle' || q.mode === 'sit') && dp < 2.6 && t - q.greeted > 25) { q.mode = 'greet'; q.wait = 3.5; q.greeted = t; }
+      if (q.mode === 'greet' || q.mode === 'roll' || (q.mode === 'perch' && dp < 5)) q.heading = turnToward(q.heading, Math.atan2(p.x - q.x, p.z - q.z), dt * 5);
       if (q.mode === 'play' && q.goal?.kind === 'toy') {
         const toyAt = this.toys[q.goal.toy];
         if (toyAt) q.heading = turnToward(q.heading, Math.atan2(toyAt.x - q.x, toyAt.z - q.z), dt * 8);
@@ -1218,6 +1366,7 @@ export class Inside {
     const bunny = q.pet.kind === 'bunny', dog = q.pet.kind === 'dog' || q.pet.kind === 'puppy';
     f.rig.position.y = 0;
     f.rig.rotation.x = 0;
+    f.rig.rotation.z = 0;
     f.head.rotation.set(0, 0, 0);
     for (const l of f.legs) l.rotation.x = 0;
     if (walking) {
@@ -1233,6 +1382,11 @@ export class Inside {
     } else if (q.jump) {
       f.legs.forEach((l, i) => { l.rotation.x = i < 2 ? -0.8 : 0.8; });
       f.rig.rotation.x = q.jump.b.y > q.jump.a.y ? -0.35 : 0.3;
+    } else if (q.mode === 'roll') {
+      // Over on its side, paws waving.
+      f.rig.rotation.z = 1.35 + Math.sin(t * 3) * 0.12;
+      f.rig.position.y = 0.06;
+      f.legs.forEach((l, i) => { l.rotation.x = Math.sin(t * 9 + i * 1.7) * 0.7; });
     } else if (q.mode === 'nap') {
       f.rig.position.y = -0.14;
       f.legs.forEach((l, i) => { l.rotation.x = i < 2 ? -1.35 : 1.35; });
@@ -1479,6 +1633,8 @@ export class Inside {
       const m = bots.find((b) => { let o: THREE.Object3D | null = botHit.object; while (o) { if (o === b.fig.group) return true; o = o.parent; } return false; });
       if (m) return { kind: 'bot', id: m.id };
     }
+    const petHit = ray.intersectObjects(this.pets.map((q) => q.fig.group), true)[0];
+    if (petHit && typeof petHit.object.userData.petIndex === 'number') return { kind: 'pet', id: String(petHit.object.userData.petIndex) };
     const hit = ray.intersectObjects(this.pickables, false).find((h) => shown(h.object));
     if (hit) {
       const p = hit.object.userData.pick as InsidePick;
@@ -1523,7 +1679,8 @@ export class Inside {
     const p = hit?.object.userData.pick as InsidePick | undefined;
     this.hovered = p && p.kind !== 'exit' ? this.things.find((t) => t.kind === p.kind && t.id === p.id) ?? null : null;
     const bot = ray.intersectObjects([...this.movers.values()].map((m) => m.fig.group), true).length > 0;
-    return Boolean(p || bot);
+    const pet = ray.intersectObjects(this.pets.map((q) => q.fig.group), true).length > 0;
+    return Boolean(p || bot || pet);
   }
 
   private placeResident() {
@@ -1600,6 +1757,7 @@ export class Inside {
       this.faceWall = null;
     }
     p.walk += moving ? dt * speed : 0;
+    this.playerMoving = moving;
     p.fig.group.position.set(p.x, 0, p.z);
     p.fig.group.rotation.y = p.heading;
     p.fig.body.position.y = 0.8 + (moving ? Math.abs(Math.sin(p.walk * 2.6)) * 0.1 : Math.sin(t * 1.8) * 0.02);
@@ -1648,14 +1806,27 @@ export class Inside {
 
     for (const q of this.pets) this.stepPet(q, dt, t);
     for (const toyAt of this.toys) {
+      if (toyAt.carried) {
+        // In its mouth, out in front of its face.
+        const q = toyAt.carried, sc = q.fig.scale;
+        toyAt.x = q.x + Math.sin(q.heading) * 0.42 * sc;
+        toyAt.z = q.z + Math.cos(q.heading) * 0.42 * sc;
+        toyAt.obj.position.set(toyAt.x, q.y + 0.3 * sc, toyAt.z);
+        continue;
+      }
       if (!toyAt.from || !toyAt.to) continue;
-      toyAt.t = Math.min(1, toyAt.t + dt / 0.7);
-      const e = 1 - Math.pow(1 - toyAt.t, 3);
+      const thrown = Boolean(toyAt.dur);
+      toyAt.t = Math.min(1, toyAt.t + dt / (toyAt.dur ?? 0.7));
+      const e = thrown ? toyAt.t : 1 - Math.pow(1 - toyAt.t, 3);
       toyAt.x = toyAt.from.x + (toyAt.to.x - toyAt.from.x) * e;
       toyAt.z = toyAt.from.z + (toyAt.to.z - toyAt.from.z) * e;
-      toyAt.obj.position.set(toyAt.x, Math.sin(toyAt.t * Math.PI) * 0.18, toyAt.z);
+      toyAt.obj.position.set(toyAt.x, Math.sin(toyAt.t * Math.PI) * (toyAt.arc ?? 0.18) + (thrown ? (1 - toyAt.t) * 0.9 : 0), toyAt.z);
       toyAt.obj.rotation.y += dt * 9 * (1 - toyAt.t);
-      if (toyAt.t >= 1) { toyAt.from = null; toyAt.to = null; }
+      if (toyAt.t >= 1) {
+        toyAt.from = null; toyAt.to = null;
+        toyAt.obj.position.y = 0;
+        if (thrown) this.ballLanded(this.toys.indexOf(toyAt));
+      }
     }
 
     for (const f of this.ticks) f(t, dt);
@@ -1800,6 +1971,13 @@ export class Inside {
       put(q.label, new THREE.Vector3(q.x, q.y + 1.05 * q.fig.scale, q.z), close);
     }
     if (this.kan) put(this.kan.bubble, this.kan.obj.position.clone().setY(2.4), Boolean(this.kan.bubble.textContent));
+    this.fx = this.fx.filter((f) => {
+      const age = this.time - f.born;
+      if (age > f.life) { f.el.remove(); return false; }
+      put(f.el, f.pos.clone().setY(f.pos.y + Math.max(0, age) * 0.9), age >= 0);
+      f.el.style.opacity = String(Math.max(0, 1 - Math.max(0, age) / f.life));
+      return true;
+    });
     // The card under the mouse, or the one you're next to.
     const th = this.hovered ?? (this.near && this.near.kind !== 'bot' && this.near.kind !== 'exit' ? this.things.find((x) => x.id === this.near!.id) : null) ?? null;
     if (th) {

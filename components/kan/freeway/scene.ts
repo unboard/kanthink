@@ -4,6 +4,8 @@ import { hash as signedHash } from '@/lib/kan/city/layout';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { crane, windowBox } from '../city/models';
 import type { PlayerKit, ViewMode } from '../city/engine';
+import { petFigure, type PetFig } from '../city/pets';
+import type { Stray } from './rescue';
 
 /**
  * The Kanwatch Freeway: your days as a road through the country, oldest first.
@@ -30,8 +32,8 @@ const ROAD_W = 6;
 const SETBACK = 24;
 const BOARD_SIDE = 19;
 
-export type FreewayPick = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' };
-export type FreewayNear = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' } | { kind: 'car'; name: string };
+export type FreewayPick = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' } | { kind: 'rescue' } | { kind: 'cat'; id: string };
+export type FreewayNear = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' } | { kind: 'car'; name: string } | { kind: 'cat'; id: string; name: string } | { kind: 'rescue' };
 export type FreewayMode = Exclude<ViewMode, 'map'>;
 export interface FreewayCallbacks {
   onPick(p: FreewayPick): void;
@@ -64,6 +66,13 @@ interface DayView {
   rot: number;
   door: THREE.Vector3;
 }
+
+/** Something standing beside the road that you can't walk or drive through. */
+type Block = Pick<DayView, 's' | 'pos' | 'rot' | 'w' | 'd' | 'top'>;
+
+/** A stray waiting by a day, and the cats walking along behind you. */
+interface StrayCat { s: Stray; fig: PetFig; at: number; x: number; z: number; home: { x: number; z: number }; to: { x: number; z: number } | null; heading: number; wait: number; phase: number; label: HTMLDivElement }
+interface Follower { fig: PetFig; x: number; z: number; heading: number; phase: number }
 
 const PALETTE = ['#8b5cf6', '#f472b6', '#38bdf8', '#34d399', '#fbbf24', '#fb7185', '#818cf8', '#2dd4bf', '#f97316', '#a3e635', '#60a5fa', '#e879f9'];
 export function tierColor(key: string) {
@@ -159,6 +168,11 @@ export class Freeway {
   private exits: [number, number];
   private hovered: DayView | null = null;
   private disposed = false;
+  /** The cat rescue at the end of the road, the strays, and who's following you. */
+  private rescue: (Block & { door: THREE.Vector3; label: HTMLDivElement }) | null = null;
+  private strays = new Map<string, StrayCat>();
+  private followers: Follower[] = [];
+  private trail: { x: number; z: number }[] = [];
 
   constructor(
     private days: FreewayDay[],
@@ -231,6 +245,8 @@ export class Freeway {
     billboards.forEach((b, i) => this.buildBillboard(b, i));
     this.buildPortal(this.exits[0] - SEG * 0.35, 'Back to Kan City');
     this.buildPortal(this.exits[1] + SEG * 0.35, 'Back to Kan City');
+    this.buildRescue();
+    this.allBlocks = this.rescue ? [...this.views, this.rescue] : this.views;
 
     // Falling leaves or snow, in a box that rides along with you.
     const n = 420;
@@ -915,8 +931,8 @@ export class Freeway {
   }
 
   /** The day building at this spot, if any (pad widens it). */
-  private buildingAt(x: number, z: number, s: number, pad: number) {
-    for (const v of this.views) {
+  private buildingAt(x: number, z: number, s: number, pad: number): Block | null {
+    for (const v of this.blocks()) {
       if (Math.abs(v.s - s) > 50) continue;
       const dx = x - v.pos.x, dz = z - v.pos.z;
       const c = Math.cos(v.rot), sn = Math.sin(v.rot);
@@ -928,8 +944,8 @@ export class Freeway {
 
   /** Off the road but on a day's driveway. */
   private onDriveway(x: number, z: number, s: number) {
-    const len = SETBACK - 7.5 / 2 - ROAD_W;
-    for (const v of this.views) {
+    for (const v of this.blocks()) {
+      const len = SETBACK - v.d / 2 - ROAD_W;
       if (Math.abs(v.s - s) > 50) continue;
       const dx = x - v.pos.x, dz = z - v.pos.z;
       const c = Math.cos(v.rot), sn = Math.sin(v.rot);
@@ -938,6 +954,9 @@ export class Freeway {
     }
     return false;
   }
+
+  private allBlocks: Block[] | null = null;
+  private blocks(): Block[] { return this.allBlocks ?? this.views; }
 
   private walkable(x: number, z: number) {
     const n = this.nearRoad(x, z);
@@ -1248,6 +1267,7 @@ export class Freeway {
     }
     for (const v of this.views) if (v.group.visible && v.star.visible) v.star.rotation.y = t * 0.8;
     for (const f of this.ticks) f(t, dt);
+    this.stepCats(dt, t);
     this.stepFall(dt);
 
     const day = this.days[i];
@@ -1267,6 +1287,15 @@ export class Freeway {
       if (!flying) for (const b of this.boardSpots) {
         const d = Math.hypot(b.x - p.x, b.z - p.z);
         if (d < (this.mode === 'walk' ? 6 : 9) && d < best) { near = { kind: 'billboard', index: b.index }; best = d; }
+      }
+      if (!flying && this.rescue && Math.abs(this.rescue.s - this.s) < 60) {
+        const d = Math.hypot(this.rescue.door.x - p.x, this.rescue.door.z - p.z);
+        if (d < (this.mode === 'walk' ? 5 : 10) && d < best) { near = { kind: 'rescue' }; best = d; }
+      }
+      if (!flying) for (const c of this.strays.values()) {
+        if (Math.abs(c.at - this.s) > 60) continue;
+        const d = Math.hypot(c.x - p.x, c.z - p.z);
+        if (d < (this.mode === 'walk' ? 3.2 : 7) && d < best + 2) { near = { kind: 'cat', id: c.s.id, name: c.s.name }; best = d; }
       }
       if (this.mode === 'walk' && this.parked && Math.hypot(this.parked.x - p.x, this.parked.z - p.z) < 5) near = { kind: 'car', name: this.parked.kind === 'ride' ? 'your moped' : 'your car' };
       if ((this.s < this.exits[0] || this.s > this.exits[1]) && !flying) near = { kind: 'exit' };
@@ -1302,6 +1331,238 @@ export class Freeway {
   }
 
 
+  // ---------- The cat rescue ----------
+
+  /** A cozy house with cat ears on the roof, past the last day, before the way out. */
+  private buildRescue() {
+    const s = this.dayS(this.days.length - 1) + SEG * 0.6;
+    const { p, r } = this.frame(s);
+    const W = 10, D = 8, H = 4.4;
+    const pos = new THREE.Vector3(p.x - r.x * SETBACK, 0, p.z - r.z * SETBACK);
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    g.rotation.y = Math.atan2(r.x, r.z);
+    const m = (c: string, o: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, ...o });
+    const box = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      mesh.position.set(x, y, z);
+      g.add(mesh);
+      return mesh;
+    };
+    box(W, H, D, m('#fbcfe8'), 0, H / 2, 0);
+    box(W + 0.4, 0.3, D + 0.4, m('#f9a8d4'), 0, 0.15, 0);
+    // A pitched roof, and two ears on it.
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(W, D) / 2 + 0.6, 3.2, 4), m('#be185d'));
+    roof.rotation.y = Math.PI / 4;
+    roof.scale.set(1, 1, D / W);
+    roof.position.y = H + 1.6;
+    g.add(roof);
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2, 4), m('#be185d'));
+      ear.position.set(side * 2.4, H + 2.6, 0.6);
+      ear.rotation.z = -side * 0.35;
+      g.add(ear);
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.2, 4), m('#fda4af'));
+      inner.position.set(side * 2.4, H + 2.5, 1.05);
+      inner.rotation.z = -side * 0.35;
+      g.add(inner);
+    }
+    // Door and windows, with a cat in one of them.
+    box(1.8, 2.8, 0.2, m('#7c2d12'), W / 2 - 1.6, 1.4, D / 2 + 0.05);
+    box(0.25, 0.25, 0.1, m('#fde047', { emissive: '#fde047', emissiveIntensity: 0.6 }), W / 2 - 1.0, 1.4, D / 2 + 0.2);
+    for (const x of [-3, -0.6]) box(1.6, 1.2, 0.15, m('#fef9c3', { emissive: '#fde68a', emissiveIntensity: 0.7 }), x, 1.9, D / 2 + 0.05);
+    // The sign over the door: a paw print and the name.
+    const tex = canvasTexture(1024, 256, (x) => {
+      x.fillStyle = '#fff1f2';
+      x.beginPath(); x.roundRect(8, 8, 1008, 240, 60); x.fill();
+      x.strokeStyle = '#be185d'; x.lineWidth = 12; x.stroke();
+      x.fillStyle = '#be185d';
+      const paw = (cx: number, cy: number, k: number) => {
+        x.beginPath(); x.ellipse(cx, cy + 18 * k, 34 * k, 28 * k, 0, 0, Math.PI * 2); x.fill();
+        for (const [dx, dy] of [[-38, -22], [-14, -44], [14, -44], [38, -22]]) { x.beginPath(); x.ellipse(cx + dx * k, cy + dy * k, 12 * k, 15 * k, 0, 0, Math.PI * 2); x.fill(); }
+      };
+      paw(120, 130, 1.3);
+      paw(904, 130, 1.3);
+      x.font = '800 92px ui-sans-serif, system-ui, sans-serif';
+      x.textAlign = 'center';
+      x.textBaseline = 'middle';
+      x.fillText('Kan Cat Rescue', 512, 132);
+    });
+    this.textures.push(tex);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 1.4), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    sign.position.set(-0.6, H - 0.85, D / 2 + 0.12);
+    g.add(sign);
+    const proxy = new THREE.Mesh(new THREE.BoxGeometry(W + 1, H + 5, D + 1), new THREE.MeshBasicMaterial({ visible: false }));
+    proxy.position.y = (H + 5) / 2;
+    proxy.userData.pick = { kind: 'rescue' } satisfies FreewayPick;
+    g.add(proxy);
+    this.pickables.push(proxy);
+    this.scene.add(g);
+    // Its driveway.
+    const len = SETBACK - D / 2 - ROAD_W;
+    const a = new THREE.Vector3(p.x - r.x * ROAD_W, 0.04, p.z - r.z * ROAD_W);
+    const dg = new THREE.Group();
+    dg.position.copy(a).add(r.clone().multiplyScalar(-len / 2));
+    dg.rotation.y = Math.atan2(r.x, r.z);
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(4.2, len), m('#5a5560', { roughness: 1 }));
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.x = W / 2 - 1.6;
+    dg.add(plane);
+    this.scene.add(dg);
+    this.cullables.push({ s, objs: [g, dg] });
+    const label = document.createElement('div');
+    label.className = 'kc-label kc-townhall';
+    label.addEventListener('click', () => this.cb.onPick({ kind: 'rescue' }));
+    this.layer.appendChild(label);
+    const door = new THREE.Vector3(W / 2 - 1.6, 0, D / 2 + 1.2).applyAxisAngle(new THREE.Vector3(0, 1, 0), g.rotation.y).add(pos);
+    this.rescue = { s, pos, rot: g.rotation.y, w: W, d: D, top: H + 3.2, door, label };
+    this.setRescueNews(0);
+  }
+
+  /** The rescue's sign says when there's good news waiting. */
+  setRescueNews(n: number) {
+    if (!this.rescue) return;
+    this.rescue.label.textContent = n > 0 ? `🐾 Kan Cat Rescue · 💌 ${n} good news` : '🐾 Kan Cat Rescue';
+  }
+
+  /** The strays waiting by the road (the ones not yet rescued). */
+  setStrays(list: Stray[]) {
+    for (const c of this.strays.values()) { c.fig.group.removeFromParent(); c.label.remove(); }
+    this.strays.clear();
+    for (const st of list) {
+      const i = this.days.findIndex((d) => d.date === st.date);
+      if (i < 0) continue;
+      const at = this.dayS(i) + ((st.seed % 2) ? 9 : -9) + ((st.seed >>> 4) % 5) - 2;
+      const { p, r } = this.frame(at);
+      const side = ROAD_W + 3.5 + ((st.seed >>> 6) % 4);
+      const spot = this.nearestWalkable(p.x - r.x * side, p.z - r.z * side);
+      const fig = petFigure(st.kind, st.color);
+      fig.group.scale.multiplyScalar(1.6);
+      fig.group.position.set(spot.x, GROUND_Y - 0.36, spot.z);
+      const proxy = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.4), new THREE.MeshBasicMaterial({ visible: false }));
+      proxy.position.y = 0.4;
+      proxy.userData.pick = { kind: 'cat', id: st.id } satisfies FreewayPick;
+      fig.group.add(proxy);
+      this.pickables.push(proxy);
+      this.scene.add(fig.group);
+      const label = document.createElement('div');
+      label.className = 'kc-label';
+      label.textContent = `🐱 ${st.name}`;
+      label.addEventListener('click', () => this.cb.onPick({ kind: 'cat', id: st.id }));
+      this.layer.appendChild(label);
+      this.strays.set(st.id, { s: st, fig, at, x: spot.x, z: spot.z, home: spot, to: null, heading: (st.seed % 628) / 100, wait: 1 + (st.seed % 5), phase: 0, label });
+    }
+  }
+
+  /** Scoop it up: it follows you (or rides along) until you reach the rescue. */
+  catchCat(id: string) {
+    const c = this.strays.get(id);
+    if (!c) return false;
+    this.strays.delete(id);
+    c.label.remove();
+    const proxy = c.fig.group.children.find((o) => o.userData.pick);
+    if (proxy) { this.pickables = this.pickables.filter((x) => x !== proxy); proxy.removeFromParent(); }
+    this.followers.push({ fig: c.fig, x: c.x, z: c.z, heading: c.heading, phase: 0 });
+    return true;
+  }
+
+  /** Into the rescue they go. */
+  dropOff() {
+    const n = this.followers.length;
+    for (const f of this.followers) f.fig.group.removeFromParent();
+    this.followers = [];
+    return n;
+  }
+
+  carrying() { return this.followers.length; }
+
+  /** Over to the rescue's door. */
+  jumpToRescue() {
+    if (!this.rescue) return;
+    this.endChute();
+    if (this.parked) { this.parked.obj.removeFromParent(); this.parked = null; }
+    this.player.obj.removeFromParent();
+    this.spawn(this.mode === 'fly' ? 'drive' : this.mode, this.rescue.s - 42);
+    if (this.mode !== 'drive') this.cb.onModeChange(this.mode);
+    this.setNear(null);
+  }
+
+  private stepCats(dt: number, t: number) {
+    const p = this.player;
+    // Strays: sit, wash, wander a few steps from where they live, and watch you come.
+    for (const c of this.strays.values()) {
+      const show = Math.abs(c.at - this.s) < 200;
+      c.fig.group.visible = show;
+      if (!show) continue;
+      let walking = false;
+      const dp = Math.hypot(p.x - c.x, p.z - c.z);
+      if (c.to) {
+        const dx = c.to.x - c.x, dz = c.to.z - c.z, d = Math.hypot(dx, dz);
+        if (d < 0.1) c.to = null;
+        else {
+          const k = Math.min(d, 1.6 * dt);
+          c.x += (dx / d) * k; c.z += (dz / d) * k;
+          c.heading = turn(c.heading, Math.atan2(dx, dz), dt * 6);
+          walking = true;
+        }
+      } else {
+        c.wait -= dt;
+        if (dp < 9) c.heading = turn(c.heading, Math.atan2(p.x - c.x, p.z - c.z), dt * 3);
+        if (c.wait <= 0) {
+          const a = Math.random() * Math.PI * 2, rr = Math.random() * 2.2;
+          const to = { x: c.home.x + Math.cos(a) * rr, z: c.home.z + Math.sin(a) * rr };
+          if (this.walkable(to.x, to.z)) c.to = to;
+          c.wait = 3 + Math.random() * 5;
+        }
+      }
+      this.poseCat(c.fig, walking, c, t, dp < 9);
+      c.fig.group.position.set(c.x, GROUND_Y - 0.36, c.z);
+      c.fig.group.rotation.y = c.heading;
+    }
+    // Followers: a little parade along the path you walked, out of sight while you drive.
+    const walking = this.mode === 'walk' && !this.chute;
+    const last = this.trail[this.trail.length - 1];
+    if (!last || Math.hypot(p.x - last.x, p.z - last.z) > 0.45) {
+      this.trail.push({ x: p.x, z: p.z });
+      if (this.trail.length > 120) this.trail.shift();
+    }
+    this.followers.forEach((f, i) => {
+      f.fig.group.visible = walking;
+      if (!walking) { f.x = p.x; f.z = p.z; return; }
+      const goal = this.trail[Math.max(0, this.trail.length - 1 - (i + 1) * 4)] ?? { x: p.x, z: p.z };
+      const dx = goal.x - f.x, dz = goal.z - f.z, d = Math.hypot(dx, dz);
+      const moving = d > 0.3;
+      if (d > 14) { f.x = goal.x; f.z = goal.z; }
+      else if (moving) {
+        const k = Math.min(d, Math.max(3, d * 3) * dt);
+        f.x += (dx / d) * k; f.z += (dz / d) * k;
+        f.heading = turn(f.heading, Math.atan2(dx, dz), dt * 8);
+      }
+      this.poseCat(f.fig, moving, f, t, false);
+      f.fig.group.position.set(f.x, GROUND_Y - 0.36, f.z);
+      f.fig.group.rotation.y = f.heading;
+    });
+  }
+
+  private poseCat(f: PetFig, walking: boolean, c: { phase: number }, t: number, watching: boolean) {
+    f.rig.position.y = 0;
+    f.rig.rotation.x = 0;
+    f.tail.rotation.z = Math.sin(t * 2.2 + c.phase) * 0.35;
+    if (walking) {
+      c.phase += 0.25;
+      const sw = Math.sin(c.phase) * 0.65;
+      f.legs.forEach((l, i) => { l.rotation.x = i === 0 || i === 3 ? sw : -sw; });
+      f.rig.position.y = Math.abs(Math.sin(c.phase)) * 0.03;
+    } else {
+      // Sitting, now and then lifting a paw to wash.
+      f.rig.rotation.x = -0.32;
+      f.rig.position.y = -0.04;
+      f.legs[2].rotation.x = f.legs[3].rotation.x = 1.0;
+      f.legs[0].rotation.x = watching ? 0.3 : 0.3 - Math.max(0, Math.sin(t * 1.3)) * 0.9;
+      f.legs[1].rotation.x = 0.3;
+    }
+  }
+
   // ---------- Picking and labels ----------
 
   private ray = new THREE.Raycaster();
@@ -1336,6 +1597,8 @@ export class Freeway {
       place(v.label, new THREE.Vector3(v.pos.x, v.pos.y + v.top + 4.5, v.pos.z), 260);
     }
     for (const l of this.portalLabels) place(l.el, l.pos, 220);
+    if (this.rescue) place(this.rescue.label, new THREE.Vector3(this.rescue.pos.x, this.rescue.top + 3, this.rescue.pos.z), 320);
+    for (const c of this.strays.values()) place(c.label, new THREE.Vector3(c.x, 1.6, c.z), 40);
   }
 
   resize(aspect: number) {
@@ -1354,6 +1617,11 @@ export class Freeway {
     });
     for (const t of this.textures) t.dispose();
   }
+}
+
+function turn(from: number, to: number, k: number) {
+  const d = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  return from + d * Math.min(1, k);
 }
 
 function starGeometry() {

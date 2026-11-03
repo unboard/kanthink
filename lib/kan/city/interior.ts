@@ -74,6 +74,8 @@ export interface Pet {
   /** Fur, #rrggbb. Left out, it's picked from the name. */
   color?: string
   name?: string
+  /** Keeps who it is (age, what it loves) the same wherever it lives; never stored. */
+  seed?: number
 }
 export const MAX_PETS = 8
 /** Fur colors the panel offers. */

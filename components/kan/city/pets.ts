@@ -196,3 +196,49 @@ export function toy(kind: number): THREE.Group {
   }
   return g;
 }
+
+/** The ball you throw: a tennis ball, so it reads as yours and not one of theirs. */
+export function ball(): THREE.Group {
+  const g = new THREE.Group();
+  add(g, sphere(0.13), mat('#d4f04a', { rough: 0.9 }), 0, 0.13, 0);
+  const seam = add(g, new THREE.TorusGeometry(0.13, 0.012, 4, 20), mat('#f8fafc'), 0, 0.13, 0);
+  seam.rotation.set(0.9, 0.3, 0);
+  return g;
+}
+
+/** What a pet is like: the same every visit, from its seed. Written for kids to read. */
+export interface PetProfile {
+  age: string;
+  personality: string;
+  loves: string;
+  trick: string;
+  secret: string;
+}
+const AGES: Record<PetKind, string[]> = {
+  cat: ['2 years old', '3 years old', '4 years old', '5 years old', '7 years old'],
+  kitten: ['8 weeks old', '10 weeks old', '3 months old', '4 months old', '5 months old'],
+  dog: ['2 years old', '3 years old', '5 years old', '6 years old'],
+  puppy: ['9 weeks old', '3 months old', '4 months old', '6 months old'],
+  bunny: ['1 year old', '2 years old', '3 years old'],
+};
+const PERSONALITY = ['Curious about everything', 'A big cuddler', 'Brave and bouncy', 'Shy at first, then your best friend', 'Silly and wiggly', 'Calm and sleepy', 'Very chatty', 'A little bit sneaky'];
+const LOVES: Record<PetKind, string[]> = {
+  cat: ['Sunny windowsills', 'Chasing the ball', 'Boxes, any size', 'Chin scratches', 'Sitting on keyboards', 'The very top of the cat tower'],
+  kitten: ['Pouncing on toes', 'Chasing the ball', 'Tiny jingle toys', 'Napping in laps', 'Climbing everything', 'String, string, string'],
+  dog: ['Fetch, forever', 'Belly rubs', 'Squeaky toys', 'Long walks', 'Snacks', 'Meeting new friends'],
+  puppy: ['Fetch!', 'Chewing socks', 'Zoomies', 'Belly rubs', 'Puddles', 'Being carried'],
+  bunny: ['Carrots', 'Big hops', 'Soft blankets', 'Nose wiggles', 'Hiding in tunnels', 'Dandelions'],
+};
+const TRICKS: Record<PetKind, string[]> = {
+  cat: ['Rolls over when you chase them', 'Bats the ball with one paw', 'Can jump to the top perch in one leap', 'Purrs as loud as a motor'],
+  kitten: ['Pounces sideways like a crab', 'Rolls over when you chase them', 'Falls asleep mid-play', 'Climbs the tower in two jumps'],
+  dog: ['Brings the ball right back', 'Sits for a treat', 'Spins in a circle', 'High fives'],
+  puppy: ['Brings the ball back (mostly)', 'Trips over its own ears', 'Tiny happy hops', 'Rolls over for belly rubs'],
+  bunny: ['Happy jumps called binkies', 'Flops over when relaxed', 'Thumps its foot', 'Wiggles its nose super fast'],
+};
+const SECRETS = ['Snores a tiny bit', 'Is scared of the vacuum', 'Likes to watch the TV', 'Has a favorite spot behind the sofa', 'Sneezes when happy', 'Hides one toy under the rug', 'Dreams about chasing birds', 'Thinks the lamp is a friend'];
+
+export function petProfile(kind: PetKind, seed: number): PetProfile {
+  const pick = <T,>(list: T[], k: number) => list[Math.floor(seed / k) % list.length];
+  return { age: pick(AGES[kind], 3), personality: pick(PERSONALITY, 7), loves: pick(LOVES[kind], 11), trick: pick(TRICKS[kind], 13), secret: pick(SECRETS, 17) };
+}

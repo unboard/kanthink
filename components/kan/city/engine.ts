@@ -11,7 +11,7 @@ import {
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
 import { decorate, THEME_COLORS } from './themes';
-import { Inside, type InsideApp, type InsideNear, type InsideOf, type InsidePick, type TvShow } from './inside';
+import { Inside, type InsideApp, type InsideNear, type InsideOf, type InsidePet, type InsidePick, type TvShow } from './inside';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
 import type { InteriorStyle } from '@/lib/kan/city/interior';
 import type { PlotTheme } from '@/lib/kan/city/style';
@@ -113,6 +113,8 @@ export interface EngineCallbacks {
   onInsideNear?(n: InsideNear | null): void;
   /** Inside a building: the room you walked into. */
   onInsideRoom?(r: { name: string; count: number | null; kind: string }): void;
+  /** Inside a building: the animals who live there. */
+  onInsidePets?(pets: InsidePet[]): void;
   /** You asked to leave the building (Escape). */
   onLeave?(): void;
 }
@@ -400,6 +402,7 @@ export class CityEngine {
       onPick: (p) => this.cb.onInsidePick?.(p),
       onNear: (n) => this.cb.onInsideNear?.(n),
       onRoom: (r) => this.cb.onInsideRoom?.(r),
+      onPets: (pets) => this.cb.onInsidePets?.(pets),
     }, boss);
     this.insideId = of.channelId;
     this.inside.resize((this.host.clientWidth || 1) / (this.host.clientHeight || 1));
@@ -454,6 +457,10 @@ export class CityEngine {
   setTv(show: TvShow | null) { this.inside?.setTv(show); }
   /** Go sit in front of the TV. */
   watchTv() { this.inside?.watchTv(); }
+  /** Playing with the animals in the building you're in. */
+  throwBall() { return this.inside?.throwBall() ?? false; }
+  petPet(i: number) { this.inside?.petPet(i); }
+  petMood(i: number) { return this.inside?.petMood(i) ?? ''; }
 
   private leaveInside() {
     if (!this.inside) return;
@@ -462,6 +469,7 @@ export class CityEngine {
     this.insideId = null;
     this.labels.classList.remove('kc-inside');
     this.cb.onInsideNear?.(null);
+    this.cb.onInsidePets?.([]);
   }
 
   /**
@@ -2031,6 +2039,7 @@ export class CityEngine {
         if (key === 'escape') { this.cb.onLeave?.(); return; }
         if (key === 'q' || key === '[') { this.inside.turn(Math.PI / 4); return; }
         if (key === ']') { this.inside.turn(-Math.PI / 4); return; }
+        if (key === 't') { this.inside.throwBall(); return; }
         this.keys.add(key);
         if (key.startsWith('arrow') || key === ' ') e.preventDefault();
       } else this.keys.delete(key);

@@ -5,7 +5,9 @@ import * as THREE from 'three';
 import { ArrowLeft, Car, DoorOpen, ExternalLink, Footprints, Loader2, LogOut, Plane, RotateCcw, RotateCw, Scooter, Send, Check, X, Undo2 } from 'lucide-react';
 import type { Billboard, DayBoard, DayCard, FreewayDay } from '@/lib/kanwatch/freeway';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
-import { Inside, type InsideNear, type InsidePick } from '../city/inside';
+import { Inside, type InsideNear, type InsidePet, type InsidePick } from '../city/inside';
+import { PET_CSS, PetSheet } from '../city/PetSheet';
+import { checkIn, isHome, loadRescue, newsFor, saveRescue, straysFor, homeStory, postcard, type RescuedCat, type Stray } from './rescue';
 import { Stick } from '../city/Stick';
 import type { PlayerKit } from '../city/engine';
 import { Freeway, tierColor, type FreewayMode, type FreewayNear, type FreewayPick } from './scene';
@@ -40,6 +42,23 @@ function asChannelBoard(date: string, b: DayBoard): ChannelBoard {
   } as unknown as ChannelBoard;
 }
 
+/** The rescue's walls: who's waiting, and who's found a home. */
+function rescueBoard(waiting: RescuedCat[], home: RescuedCat[]): ChannelBoard {
+  const card = (id: string, title: string, snippet: string) => ({ id, title, snippet, messageCount: 0, taskCount: 0, tasksDone: 0, hasApp: false, tags: [], source: 'manual', updatedAt: 0 });
+  return {
+    channel: { id: 'rescue', name: 'Kan Cat Rescue', description: 'Cats waiting for homes', canEdit: false },
+    videos: [],
+    columns: [
+      {
+        id: 'waiting', name: 'Looking for a home', total: waiting.length || 1,
+        cards: waiting.length ? waiting.map((c) => card(`cat:${c.id}`, c.name, `Found by the road on ${SHORT(c.date)}. Waiting for a family.`))
+          : [card('help', 'How the rescue works', 'Catch a stray by the road and bring it here.')],
+      },
+      { id: 'home', name: 'Found a home!', total: home.length, cards: home.map((c) => card(`cat:${c.id}`, `${c.name} 🏡`, homeStory(c))) },
+    ],
+  } as unknown as ChannelBoard;
+}
+
 export function FreewayView({ kit, channels, boss, coarse, onExit }: {
   kit: PlayerKit;
   channels: FreewayChannel[];
@@ -63,6 +82,21 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [flash, setFlash] = useState(true);
+  // The cat rescue: who's been brought in, who's following you now, and the rescue's own room.
+  const [rescued, setRescued] = useState<RescuedCat[]>([]);
+  const [carrying, setCarrying] = useState<Stray[]>([]);
+  const [rescueIn, setRescueIn] = useState(false);
+  const [roomPets, setRoomPets] = useState<InsidePet[]>([]);
+  const [petOpen, setPetOpen] = useState<number | null>(null);
+  const [rescueCard, setRescueCard] = useState<string | null>(null);
+  const [news, setNews] = useState<ReturnType<typeof newsFor>>([]);
+  const [clock, setClock] = useState(() => Date.now());
+  const indoors = Boolean(inside || rescueIn);
+  useEffect(() => {
+    setRescued(loadRescue());
+    const t = setInterval(() => setClock(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   const fw = useRef<Freeway | null>(null);
   const ins = useRef<Inside | null>(null);
@@ -105,6 +139,9 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       onModeChange: setModeState,
     }, kit, start);
     fw.current = road;
+    if (process.env.NODE_ENV !== 'production') (window as unknown as { __freeway?: Freeway }).__freeway = road;
+    road.setStrays(straysFor(data.days, loadRescue()));
+    setCarrying([]);
     const size = () => {
       const w = el.clientWidth || 1, h = el.clientHeight || 1;
       renderer.setSize(w, h, false);
@@ -195,6 +232,8 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     };
   }, [data, kit, coarse]);
 
+  useEffect(() => { fw.current?.setRescueNews(newsFor(rescued, clock).length); }, [rescued, clock, data]);
+
   useEffect(() => {
     if (!at.date) return;
     try { localStorage.setItem(LAST_DAY_KEY, at.date); } catch { /* fine */ }
@@ -218,6 +257,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
         onPick: (p) => cb.current.insidePick(p),
         onNear: setInNear,
         onRoom: (rm) => setRoom(rm.kind === 'column' ? rm.name : null),
+        onPets: setRoomPets,
       },
       boss,
     );
@@ -236,23 +276,103 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     ins.current = null;
     labels.current?.classList.remove('kc-inside');
     setInside(null); setInNear(null); setRoom(null); setCard(null);
+    setRescueIn(false); setRoomPets([]); setPetOpen(null); setRescueCard(null); setNews([]);
   }, []);
+
+  // ---------- The cat rescue ----------
+
+  const catchCat = useCallback((id: string) => {
+    const st = data ? straysFor(data.days, rescued).find((x) => x.id === id) : null;
+    if (!st || !fw.current?.catchCat(id)) return;
+    setCarrying((c) => [...c, st]);
+    setNote(`You caught ${st.name}! Bring ${st.kind === 'kitten' ? 'them' : 'them'} to the Kan Cat Rescue at the end of the road.`);
+  }, [data, rescued]);
+
+  /** Drop off whoever's following you, then go in and visit. */
+  const goRescue = useCallback(() => {
+    if (ins.current || !labels.current) return;
+    let list = rescued;
+    const brought = carrying.length;
+    if (brought) {
+      fw.current?.dropOff();
+      list = [...rescued, ...carrying.map((c) => checkIn(c))];
+      saveRescue(list);
+      setRescued(list);
+      setCarrying([]);
+    }
+    keys.current.clear();
+    setNote(null);
+    const now = Date.now();
+    const waiting = list.filter((c) => !isHome(c, now));
+    const home = list.filter((c) => isHome(c, now)).sort((a, b) => b.homeAt - a.homeAt);
+    const room = new Inside(
+      {
+        channelId: 'rescue', name: 'Kan Cat Rescue', resident: 'Pawla', theme: 'cat', walls: '#fde7f0',
+        style: { features: ['cat_tower', 'toys', 'plants', 'sofa', 'lamps'], light: 'warm', pets: waiting.slice(-8).map((c) => ({ kind: c.kind, color: c.color, name: c.name, seed: c.seed })) },
+      },
+      rescueBoard(waiting, home), [], labels.current,
+      {
+        onPick: (p) => cb.current.insidePick(p),
+        onNear: setInNear,
+        onRoom: (rm) => setRoom(rm.kind === 'column' ? rm.name : null),
+        onPets: setRoomPets,
+      },
+      boss,
+    );
+    const el = host.current;
+    if (el) room.resize((el.clientWidth || 1) / (el.clientHeight || 1));
+    labels.current.classList.add('kc-inside');
+    ins.current = room;
+    setRescueIn(true);
+    const n = newsFor(list, now);
+    setNews(n);
+    setTimeout(() => room.kanHere(
+      n.length ? `Good news! ${n.length === 1 ? `${n[0].cat.name} has news` : `${n.length} pieces of good news`} for you.`
+        : brought ? `Welcome in! I’ll find ${brought === 1 ? 'a home' : 'homes'} for ${brought === 1 ? carrying[0].name : `all ${brought}`}. Come back later for good news.`
+        : waiting.length ? 'Everyone here is waiting for a family. Come back later for good news!'
+        : 'No cats here yet. Strays wait beside some of the days on the road. Catch one and bring it here!',
+      8000), 600);
+  }, [rescued, carrying, boss]);
+
+  /** Heard it: mark it so it isn't told again, and on to the next. */
+  const heard = () => {
+    const [first, ...rest] = news;
+    if (!first) return;
+    const list = rescued.map((c) => (c.id !== first.cat.id ? c : first.kind === 'home' ? { ...c, heardHome: true } : { ...c, heardPostcard: true }));
+    saveRescue(list);
+    setRescued(list);
+    setNews(rest);
+  };
 
   cb.current.pick = (p) => {
     if (p.kind === 'exit') { onExit(); return; }
     if (p.kind === 'billboard') { setBillboard(p.index); return; }
+    if (p.kind === 'rescue') { goRescue(); return; }
+    if (p.kind === 'cat') {
+      if (near?.kind === 'cat' && near.id === p.id) catchCat(p.id);
+      else setNote('Walk up close to catch them.');
+      return;
+    }
     void goIn(p.date);
   };
   const goNear = useCallback((n: FreewayNear) => {
     if (n.kind === 'car') fw.current?.getIn();
     else if (n.kind === 'exit') onExit();
     else if (n.kind === 'billboard') setBillboard(n.index);
+    else if (n.kind === 'cat') catchCat(n.id);
+    else if (n.kind === 'rescue') goRescue();
     else void goIn(n.date);
-  }, [goIn, onExit]);
+  }, [goIn, onExit, catchCat, goRescue]);
   const pickMode = (m: FreewayMode) => { fw.current?.setMode(m); setModeState(m); };
 
   cb.current.insidePick = (p) => {
     if (p.kind === 'exit') { goOut(); return; }
+    if (p.kind === 'pet') { setPetOpen(Number(p.id)); return; }
+    if (rescueIn) {
+      if (p.kind === 'card') setRescueCard(p.id);
+      else if (p.kind === 'bot') ins.current?.kanHere(news.length ? 'There’s good news waiting for you!' : 'Every cat here is waiting for a family. Pet them, throw the ball, and come back later for good news!', 6000);
+      return;
+    }
     if (p.kind === 'card') { setCard(p.id); return; }
     if (p.kind === 'bot' && inside) ins.current?.kanHere(inside.board.headline || 'Here’s your day.', 7000);
   };
@@ -265,11 +385,12 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       const key = e.key.toLowerCase();
       if (e.type === 'keyup') { keys.current.delete(key); return; }
       if (key === 'escape') {
-        if (card) setCard(null); else if (billboard !== null) setBillboard(null); else if (ins.current) goOut(); else onExit();
+        if (card) setCard(null); else if (petOpen !== null) setPetOpen(null); else if (rescueCard) setRescueCard(null); else if (news.length) heard(); else if (billboard !== null) setBillboard(null); else if (ins.current) goOut(); else onExit();
         return;
       }
       if (ins.current && (key === 'q' || key === '[')) { ins.current.turn(Math.PI / 4); return; }
       if (ins.current && key === ']') { ins.current.turn(-Math.PI / 4); return; }
+      if (ins.current && key === 't') { ins.current.throwBall(); return; }
       if ((key === 'e' || key === 'enter') && !card) {
         if (ins.current && inNear) { cb.current.insidePick({ kind: inNear.kind, id: inNear.id } as InsidePick); return; }
         if (!ins.current && near) { goNear(near); return; }
@@ -282,7 +403,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     window.addEventListener('keydown', k);
     window.addEventListener('keyup', k);
     return () => { window.removeEventListener('keydown', k); window.removeEventListener('keyup', k); };
-  }, [card, billboard, near, inNear, goOut, onExit, goNear]);
+  }, [card, billboard, near, inNear, goOut, onExit, goNear, petOpen, rescueCard, news]);
 
   // ---------- A card ----------
 
@@ -315,7 +436,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
 
   return (
     <div className="fixed inset-0 z-[55] bg-[#1d1640] text-white">
-      <style>{FREEWAY_CSS}</style>
+      <style>{FREEWAY_CSS + PET_CSS}</style>
       <div ref={host} className="absolute inset-0 overflow-hidden">
         <div ref={labels} className="kc-labels pointer-events-none absolute inset-0" />
       </div>
@@ -323,15 +444,21 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
 
       {/* Top bar */}
       <div className="absolute left-3 right-3 top-3 z-30 flex items-center gap-2">
-        <button onClick={inside ? goOut : onExit} className="flex items-center gap-1.5 rounded-full bg-neutral-950/70 px-3 py-1.5 text-[13px] font-medium shadow-lg backdrop-blur hover:bg-neutral-900">
-          <ArrowLeft className="h-4 w-4" /> {inside ? 'Back to the road' : 'Kan City'}
+        <button onClick={indoors ? goOut : onExit} className="flex items-center gap-1.5 rounded-full bg-neutral-950/70 px-3 py-1.5 text-[13px] font-medium shadow-lg backdrop-blur hover:bg-neutral-900">
+          <ArrowLeft className="h-4 w-4" /> {indoors ? 'Back to the road' : 'Kan City'}
         </button>
         <div className="min-w-0 truncate rounded-full bg-neutral-950/60 px-3 py-1.5 text-[13px] shadow-lg backdrop-blur">
-          {inside ? <><span className="font-semibold">{DAY_WORDS(inside.date)}</span><span className="text-white/60"> · {inside.board.cards.filter((c) => c.state === 'open').length} to sort</span></>
+          {rescueIn ? <><span className="font-semibold">Kan Cat Rescue</span><span className="text-white/60"> · {rescued.filter((c) => !isHome(c, clock)).length} waiting for a home</span></>
+            : inside ? <><span className="font-semibold">{DAY_WORDS(inside.date)}</span><span className="text-white/60"> · {inside.board.cards.filter((c) => c.state === 'open').length} to sort</span></>
             : <><span className="font-semibold">Kanwatch Freeway</span>{at.date && <span className="text-white/60"> · {DAY_WORDS(at.date)}</span>}</>}
         </div>
-        {!inside && days.length > 0 && <div className="ml-auto hidden rounded-full bg-neutral-950/60 px-3 py-1.5 text-[12px] text-white/70 shadow-lg backdrop-blur sm:block">{sortedDays} of {days.length} days sorted</div>}
-        {inside && (
+        {!indoors && data && (
+          <button onClick={() => fw.current?.jumpToRescue()} className="flex flex-shrink-0 items-center gap-1 rounded-full bg-pink-500/90 px-3 py-1.5 text-[12px] font-semibold shadow-lg hover:bg-pink-400">
+            🐾 <span className="hidden sm:inline">Cat rescue</span>{newsFor(rescued, clock).length > 0 && <span className="rounded-full bg-white px-1.5 text-[11px] text-pink-600">{newsFor(rescued, clock).length}</span>}
+          </button>
+        )}
+        {!indoors && days.length > 0 && <div className="hidden rounded-full bg-neutral-950/60 px-3 py-1.5 text-[12px] text-white/70 shadow-lg backdrop-blur sm:block">{sortedDays} of {days.length} days sorted</div>}
+        {indoors && (
           <div className="ml-auto flex gap-1 rounded-full bg-neutral-950/60 p-1 shadow-lg backdrop-blur">
             <button title="Turn left" onClick={() => ins.current?.turn(Math.PI / 4)} className="rounded-full p-1.5 text-white/70 hover:bg-white/15"><RotateCcw className="h-4 w-4" /></button>
             <button title="Turn right" onClick={() => ins.current?.turn(-Math.PI / 4)} className="rounded-full p-1.5 text-white/70 hover:bg-white/15"><RotateCw className="h-4 w-4" /></button>
@@ -369,7 +496,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       )}
 
       {/* The prompt to go in, or what you're next to */}
-      {!inside && !opening && near && billboard === null && (
+      {!indoors && !opening && near && billboard === null && (
         <div className="absolute inset-x-0 z-20 flex justify-center px-4" style={{ bottom: coarse ? 196 : 112 }}>
           {near.kind === 'day' && nearDay ? (
             <button onClick={() => goNear(near)} className="max-w-md rounded-2xl bg-white px-4 py-2.5 text-left text-neutral-900 shadow-xl hover:bg-violet-50">
@@ -385,13 +512,13 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
             </button>
           ) : near.kind !== 'day' && (
             <button onClick={() => goNear(near)} className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50">
-              {near.kind === 'exit' ? 'Back to Kan City' : near.kind === 'billboard' ? 'Read the billboard' : near.name === 'your moped' ? 'Hop on' : 'Get in'}
+              {near.kind === 'exit' ? 'Back to Kan City' : near.kind === 'billboard' ? 'Read the billboard' : near.kind === 'cat' ? `🐱 Catch ${near.name}` : near.kind === 'rescue' ? (carrying.length ? `🐾 Bring ${carrying.length === 1 ? carrying[0].name : `${carrying.length} cats`} inside` : '🐾 Visit the rescue') : near.name === 'your moped' ? 'Hop on' : 'Get in'}
               {!coarse && <span className="rounded bg-neutral-200 px-1.5 text-[11px] font-normal text-neutral-600">E</span>}
             </button>
           )}
         </div>
       )}
-      {inside && inNear && !card && (
+      {indoors && inNear && !card && petOpen === null && !rescueCard && news.length === 0 && (
         <div className="absolute inset-x-0 z-20 flex justify-center px-4" style={{ bottom: coarse ? 190 : 28 }}>
           <button onClick={() => cb.current.insidePick({ kind: inNear.kind, id: inNear.id } as InsidePick)} className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-neutral-900 shadow-xl">
             {inNear.kind === 'exit' ? 'Back to the road' : inNear.kind === 'card' ? `Look at “${inNear.name}”` : `Talk to ${inNear.name}`}{!coarse && <span className="ml-2 font-normal text-neutral-400">E</span>}
@@ -400,7 +527,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       )}
 
       {/* How you get about: as in the city */}
-      {!inside && data && (
+      {!indoors && data && (
         <div className="absolute right-3 top-14 z-30 flex flex-col items-center gap-0.5 rounded-full border border-white/10 bg-neutral-950/75 p-0.5 shadow-lg backdrop-blur-xl sm:top-3 sm:flex-row">
           {([['walk', Footprints, 'Walk'], ['drive', Car, 'Drive'], ['ride', Scooter, 'Moped'], ['fly', Plane, 'Fly']] as const).map(([m, Icon, label]) => (
             <button key={m} onClick={() => pickMode(m)} title={label}
@@ -410,19 +537,24 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
           ))}
         </div>
       )}
-      {!inside && data && billboard === null && (mode === 'drive' || mode === 'ride') && (
+      {!indoors && data && billboard === null && (mode === 'drive' || mode === 'ride') && (
         <button onClick={() => fw.current?.getOut()} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-white/90 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-white active:scale-95" style={{ bottom: coarse ? 196 : 112 }}>
           <LogOut className="h-4 w-4" /> {mode === 'ride' ? 'Hop off' : 'Get out'}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">F</span>}
         </button>
       )}
-      {!inside && data && billboard === null && mode === 'fly' && (
+      {!indoors && data && billboard === null && mode === 'fly' && (
         <button onClick={() => fw.current?.jump()} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-pink-500 px-4 py-2.5 text-[14px] font-semibold text-white shadow-2xl hover:bg-pink-400 active:scale-95" style={{ bottom: coarse ? 196 : 112 }}>
           🪂 Jump{!coarse && <span className="ml-1 rounded bg-white/25 px-1.5 text-[11px]">Space</span>}
         </button>
       )}
 
       {/* The timeline: every day on the road, tap one to go there */}
-      {!inside && days.length > 0 && (
+      {!indoors && carrying.length > 0 && (
+        <div className="absolute left-3 z-20 rounded-full bg-pink-500/90 px-3 py-1.5 text-[13px] font-semibold shadow-xl" style={{ bottom: coarse ? 250 : 112 }}>
+          🐱 {carrying.map((c) => c.name).join(', ')} {carrying.length === 1 ? 'is' : 'are'} with you · take {carrying.length === 1 ? 'them' : 'them'} to the rescue
+        </div>
+      )}
+      {!indoors && days.length > 0 && (
         <div className="absolute inset-x-3 bottom-3 z-20 rounded-2xl bg-neutral-950/70 px-3 pb-2 pt-2.5 shadow-xl backdrop-blur">
           <div className="relative flex h-14 items-end gap-[2px]">
             {days.map((d, i) => {
@@ -445,7 +577,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       )}
 
       {coarse && !card && (
-        <Stick onMove={(x, y) => { stick.current = { x, y }; }} bottom={inside ? 24 : 108} hint={inside || mode === 'walk' ? 'Walk' : mode === 'drive' ? 'Drive' : mode === 'ride' ? 'Ride' : 'Steer · climb'} />
+        <Stick onMove={(x, y) => { stick.current = { x, y }; }} bottom={indoors ? 24 : 108} hint={indoors || mode === 'walk' ? 'Walk' : mode === 'drive' ? 'Drive' : mode === 'ride' ? 'Ride' : 'Steer · climb'} />
       )}
 
       {note && (
@@ -454,6 +586,53 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
 
       {openCard && inside && (
         <DayCardSheet card={openCard} board={inside.board} channels={channels} busy={busy} onClose={() => setCard(null)} onAct={(a, ch) => void act(openCard.id, a, ch)} />
+      )}
+      {indoors && roomPets.length > 0 && petOpen === null && !rescueCard && news.length === 0 && (
+        <button onClick={() => ins.current?.throwBall()} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-lime-400 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-lime-300 active:scale-95" style={{ bottom: coarse ? 190 : 28 }}>
+          🎾 Throw<span className="hidden sm:inline"> a ball</span>{!coarse && <span className="ml-1 rounded bg-neutral-900/15 px-1.5 text-[11px]">T</span>}
+        </button>
+      )}
+      {petOpen !== null && roomPets[petOpen] && (
+        <PetSheet pet={roomPets[petOpen]} mood={() => ins.current?.petMood(petOpen) ?? ''} onPat={() => ins.current?.petPet(petOpen)}
+          onThrow={() => { ins.current?.throwBall(); setPetOpen(null); }} onClose={() => setPetOpen(null)}>
+          {rescueIn && <p className="mt-3 rounded-xl bg-pink-500/15 px-3 py-2 text-[13px] text-pink-100">Waiting for a family. Pawla is looking for just the right one. Check back later for good news!</p>}
+        </PetSheet>
+      )}
+      {rescueIn && rescueCard && (() => {
+        const c = rescued.find((x) => `cat:${x.id}` === rescueCard);
+        return (
+          <Sheet onClose={() => setRescueCard(null)}>
+            {!c ? (
+              <>
+                <h3 className="text-[18px] font-semibold">How the rescue works</h3>
+                <p className="mt-2 text-[14px] leading-relaxed text-neutral-300">Stray cats wait beside some of the days on the road. Walk up close and catch one, and it follows you. Bring it here, and Pawla finds it a family. Come back later to hear the good news.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-[11px] uppercase tracking-wider text-neutral-500">{isHome(c, clock) ? 'Found a home' : 'Waiting for a home'}</p>
+                <h3 className="mt-1 text-[20px] font-semibold">{c.name}</h3>
+                <p className="mt-1 text-[13px] text-neutral-400">Found by the road on {SHORT(c.date)} · brought in {new Date(c.at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                {isHome(c, clock) ? (
+                  <>
+                    <p className="mt-3 text-[15px] leading-relaxed text-neutral-100">🏡 {homeStory(c)}</p>
+                    {clock >= c.postcardAt && <p className="mt-3 rounded-xl bg-amber-400/15 px-3 py-2 text-[14px] leading-relaxed text-amber-100">💌 {postcard(c)}</p>}
+                  </>
+                ) : <p className="mt-3 text-[14px] text-neutral-300">Pawla is looking for just the right family. Check back later!</p>}
+              </>
+            )}
+          </Sheet>
+        );
+      })()}
+      {rescueIn && news.length > 0 && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-neutral-950/50 p-5">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center text-neutral-900 shadow-2xl">
+            <p className="text-4xl">{news[0].kind === 'home' ? '🏡' : '💌'}</p>
+            <p className="mt-2 text-[12px] font-bold uppercase tracking-wider text-pink-600">{news[0].kind === 'home' ? 'Good news!' : 'A postcard!'}</p>
+            <h3 className="mt-1 text-[22px] font-bold">{news[0].kind === 'home' ? `${news[0].cat.name} found a home!` : `From ${news[0].cat.name}`}</h3>
+            <p className="mt-3 text-[15px] leading-relaxed text-neutral-700">{news[0].text}</p>
+            <button onClick={heard} className="mt-5 w-full rounded-full bg-pink-500 px-4 py-3 text-[15px] font-semibold text-white hover:bg-pink-400 active:scale-95">{news.length > 1 ? 'Yay! Next news' : 'Yay!'}</button>
+          </div>
+        </div>
       )}
       {bb && <BillboardSheet b={bb} onClose={() => setBillboard(null)} onGo={(date) => { setBillboard(null); fw.current?.jumpTo(date); }} />}
     </div>

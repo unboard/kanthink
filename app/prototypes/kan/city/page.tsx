@@ -17,7 +17,8 @@ import { Census } from '@/components/kan/city/Census';
 import { ShroomBot } from '@/components/kan/city/ShroomBot';
 import { BotChat } from '@/components/kan/city/BotChat';
 import { Redecorate } from '@/components/kan/city/Redecorate';
-import type { InsideNear, InsidePick } from '@/components/kan/city/inside';
+import type { InsideNear, InsidePet, InsidePick } from '@/components/kan/city/inside';
+import { PET_CSS, PetSheet } from '@/components/kan/city/PetSheet';
 import type { ChannelBoard } from '@/lib/kan/city/channel';
 import type { InteriorStyle } from '@/lib/kan/city/interior';
 import { hash } from '@/lib/kan/city/layout';
@@ -178,6 +179,8 @@ export default function CityPage() {
   const [inNear, setInNear] = useState<InsideNear | null>(null);
   const [inRoom, setInRoom] = useState<{ name: string; count: number | null; kind: string } | null>(null);
   const [inPanel, setInPanel] = useState<'redecorate' | 'invite' | null>(null);
+  const [insidePets, setInsidePets] = useState<InsidePet[]>([]);
+  const [petOpen, setPetOpen] = useState<number | null>(null);
   const [decorating, setDecorating] = useState(false);
   /** A card to open the board at, when you tapped it on a wall inside. */
   const [boardCard, setBoardCard] = useState<string | null>(null);
@@ -294,6 +297,7 @@ export default function CityPage() {
     setInside(null); setInNear(null); setInRoom(null); setInPanel(null);
     setPick(null); setBoard(null); setBoardCard(null); setPlaying(null);
     setTv({ i: 0, on: false });
+    setPetOpen(null);
   }, []);
   const refreshInside = useCallback(async () => {
     const id = inside?.id;
@@ -345,6 +349,7 @@ export default function CityPage() {
     if (p.kind === 'tv') { if (videos.length) { setTv((t) => ({ ...t, on: true })); engine.current?.watchTv(); } return; }
     if (p.kind === 'card') { setPick(null); setBoardCard(p.id); setBoard(inside.id); return; }
     if (p.kind === 'app') { setBoard(null); setPick({ kind: 'app', id: p.id }); setPlaying(p.id); return; }
+    if (p.kind === 'pet') { setPick(null); setBoard(null); setPetOpen(Number(p.id)); return; }
     onPickRef.current({ kind: 'bot', id: p.id });
   };
   const onLeaveRef = useRef<() => void>(() => {});
@@ -392,6 +397,7 @@ export default function CityPage() {
       onInsidePick: (p) => onInsidePickRef.current(p),
       onInsideNear: setInNear,
       onInsideRoom: setInRoom,
+      onInsidePets: setInsidePets,
       onLeave: () => onLeaveRef.current(),
     });
     engine.current.setSky(sky);
@@ -570,7 +576,7 @@ export default function CityPage() {
 
   return (
     <div className="fixed inset-0 z-[5] overflow-hidden text-neutral-100" style={{ background: SKY_CSS[sky], ['--chat-h' as string]: `${selectedBot ? 8 : chatH}px` }}>
-      <style dangerouslySetInnerHTML={{ __html: LABEL_CSS }} />
+      <style dangerouslySetInnerHTML={{ __html: LABEL_CSS + PET_CSS }} />
       {freeway && playerKit && data && (
         <FreewayView kit={playerKit} channels={freewayChannels} boss={data.boss} coarse={coarse} onExit={leaveFreeway} />
       )}
@@ -791,6 +797,25 @@ export default function CityPage() {
               <IconBtn title="Turn it off" onClick={() => setTv((t) => ({ ...t, on: false }))}><Power className="h-4 w-4" /></IconBtn>
             </div>
           )}
+          {insidePets.length > 0 && !panelOpen && !inPanel && !tv.on && (
+            <button
+              onClick={() => engine.current?.throwBall()}
+              title="Throw a ball for the animals (T)"
+              className="absolute right-3 z-20 flex items-center gap-1.5 rounded-full bg-lime-400 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-lime-300 active:scale-95"
+              style={{ bottom: chatH + (coarse || !wide ? 150 : 20) + (inNear ? 52 : 0) }}
+            >
+              🎾 Throw<span className="hidden sm:inline"> a ball</span>{!coarse && <span className="ml-1 rounded bg-neutral-900/15 px-1.5 text-[11px]">T</span>}
+            </button>
+          )}
+          {petOpen !== null && insidePets[petOpen] && (
+            <PetSheet
+              pet={insidePets[petOpen]}
+              mood={() => engine.current?.petMood(petOpen) ?? ''}
+              onPat={() => engine.current?.petPet(petOpen)}
+              onThrow={() => { engine.current?.throwBall(); setPetOpen(null); }}
+              onClose={() => setPetOpen(null)}
+            />
+          )}
           {inNear && !panelOpen && !inPanel && !tv.on && (
             <button
               onClick={() => onInsidePickRef.current(inNear.kind === 'exit' ? { kind: 'exit' } : { kind: inNear.kind, id: inNear.id })}
@@ -806,7 +831,7 @@ export default function CityPage() {
             <Stick onMove={(x, y) => engine.current?.setStick(x, y)} bottom={chatH + 14} hint="Walk" />
           ) : (
             <p className="absolute left-1/2 z-10 -translate-x-1/2 rounded-full bg-neutral-950/60 px-3 py-1 text-[12px] text-neutral-200 backdrop-blur" style={{ bottom: chatH + 8 }}>
-              W A S D to walk · tap the floor to go there · drag to look around · E to use · Esc to leave
+              W A S D to walk · tap the floor to go there · drag to look around · E to use · T to throw a ball · tap an animal to meet it · Esc to leave
             </p>
           )}
         </>
