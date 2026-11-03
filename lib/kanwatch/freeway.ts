@@ -44,7 +44,7 @@ export interface FreewayDay {
 }
 export type Billboard =
   | { kind: 'month'; at: string; month: string; hours: number; days: number; top: { label: string; hours: number }[]; busiest: { date: string; hours: number } | null }
-  | { kind: 'again'; at: string; label: string; days: number; hours: number; first: string; last: string }
+  | { kind: 'again'; at: string; label: string; days: number; hours: number; first: string; last: string; visits: { date: string; minutes: number }[] }
   | { kind: 'read'; at: string; title: string; site: string | null; tldr: string; url: string };
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -155,11 +155,13 @@ function billboardsFor(days: FreewayDay[], reads: { title: string | null; domain
   }
 
   // Threads you came back to on many days, each placed on the day it last came up.
-  const seen = new Map<string, { label: string; dates: string[]; minutes: number }>();
+  // "Something new" is the bucket for work that matched no channel, not a thread.
+  const seen = new Map<string, { label: string; dates: string[]; visits: { date: string; minutes: number }[]; minutes: number }>();
   for (const d of days) for (const t of d.tiers) {
-    if (t.key === 'other' || t.key === 'private' || t.key === 'not_work') continue;
-    const cur = seen.get(t.key) ?? { label: t.label, dates: [], minutes: 0 };
+    if (t.key === 'other' || t.key === 'private' || t.key === 'not_work' || t.key === 'new_work') continue;
+    const cur = seen.get(t.key) ?? { label: t.label, dates: [], visits: [], minutes: 0 };
     cur.dates.push(d.date);
+    cur.visits.push({ date: d.date, minutes: t.minutes });
     cur.minutes += t.minutes;
     seen.set(t.key, cur);
   }
@@ -167,7 +169,7 @@ function billboardsFor(days: FreewayDay[], reads: { title: string | null; domain
     // Something on most days is just the job; coming back to it isn't news.
     ...[...seen.values()].filter((s) => s.dates.length >= 4 && s.dates.length <= days.length * 0.6).sort((a, b) => b.dates.length - a.dates.length).slice(0, 10).map((s) => ({
       kind: 'again' as const, at: s.dates[Math.floor(s.dates.length / 2)], label: s.label, days: s.dates.length, hours: round1(s.minutes / 60),
-      first: s.dates[0], last: s.dates[s.dates.length - 1],
+      first: s.dates[0], last: s.dates[s.dates.length - 1], visits: s.visits,
     })),
     ...reads.filter((r) => (r.worth ?? 0) >= 60 && r.tldr && r.lastSeenAt).slice(0, 10).map((r) => ({
       kind: 'read' as const, at: localDate(+r.lastSeenAt!, 0), title: r.title ?? r.url, site: r.domain, tldr: r.tldr!, url: r.url,

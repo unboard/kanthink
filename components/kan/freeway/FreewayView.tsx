@@ -369,7 +369,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       )}
 
       {/* The prompt to go in, or what you're next to */}
-      {!inside && !opening && near && (
+      {!inside && !opening && near && billboard === null && (
         <div className="absolute inset-x-0 z-20 flex justify-center px-4" style={{ bottom: coarse ? 196 : 112 }}>
           {near.kind === 'day' && nearDay ? (
             <button onClick={() => goNear(near)} className="max-w-md rounded-2xl bg-white px-4 py-2.5 text-left text-neutral-900 shadow-xl hover:bg-violet-50">
@@ -410,12 +410,12 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
           ))}
         </div>
       )}
-      {!inside && data && (mode === 'drive' || mode === 'ride') && (
+      {!inside && data && billboard === null && (mode === 'drive' || mode === 'ride') && (
         <button onClick={() => fw.current?.getOut()} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-white/90 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-white active:scale-95" style={{ bottom: coarse ? 196 : 112 }}>
           <LogOut className="h-4 w-4" /> {mode === 'ride' ? 'Hop off' : 'Get out'}{!coarse && <span className="ml-1 rounded bg-neutral-200 px-1.5 text-[11px] text-neutral-600">F</span>}
         </button>
       )}
-      {!inside && data && mode === 'fly' && (
+      {!inside && data && billboard === null && mode === 'fly' && (
         <button onClick={() => fw.current?.jump()} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-pink-500 px-4 py-2.5 text-[14px] font-semibold text-white shadow-2xl hover:bg-pink-400 active:scale-95" style={{ bottom: coarse ? 196 : 112 }}>
           🪂 Jump{!coarse && <span className="ml-1 rounded bg-white/25 px-1.5 text-[11px]">Space</span>}
         </button>
@@ -547,12 +547,16 @@ function BillboardSheet({ b, onClose, onGo }: { b: Billboard; onClose: () => voi
       )}
       {b.kind === 'again' && (
         <>
-          <p className="text-[11px] uppercase tracking-wider text-neutral-500">You keep coming back to</p>
-          <h3 className="mt-1 text-[20px] font-semibold text-neutral-50">{b.label}</h3>
-          <p className="mt-1 text-[14px] text-neutral-300">{b.days} days, {b.hours} hours, from {SHORT(b.first)} to {SHORT(b.last)}.</p>
-          <div className="mt-4 flex gap-2">
-            <button onClick={() => onGo(b.first)} className="rounded-full border border-white/15 px-4 py-1.5 text-[13px]">First time</button>
-            <button onClick={() => onGo(b.last)} className="rounded-full bg-violet-600 px-4 py-1.5 text-[13px] font-medium">Latest</button>
+          <p className="text-[11px] uppercase tracking-wider text-neutral-500">Something you keep coming back to</p>
+          <h3 className="mt-1 pr-8 text-[20px] font-semibold text-neutral-50">{b.label}</h3>
+          <p className="mt-1 text-[14px] text-neutral-300">You spent {b.hours} hours on it across {b.days} days, between {SHORT(b.first)} and {SHORT(b.last)}.</p>
+          <p className="mt-4 text-[12px] text-neutral-500">Tap a day to go to its building.</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {(b.visits ?? [{ date: b.first, minutes: 0 }, { date: b.last, minutes: 0 }]).map((v) => (
+              <button key={v.date} onClick={() => onGo(v.date)} className="rounded-full border border-white/15 px-3 py-1 text-[12.5px] text-neutral-200 hover:bg-white/10">
+                {SHORT(v.date)}{v.minutes ? <span className="text-neutral-500"> · {v.minutes >= 60 ? `${(v.minutes / 60).toFixed(1)}h` : `${Math.round(v.minutes)}m`}</span> : null}
+              </button>
+            ))}
           </div>
         </>
       )}
