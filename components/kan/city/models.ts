@@ -1480,3 +1480,51 @@ export function grove(seed: number): Built {
   for (let i = 0; i < 8; i++) sphere(g, 0.14, mat(['#ff7aa2', '#ffd166', '#c77dff', '#ffffff'][i % 4]), (r() - 0.5) * 8.6, 0.16, (r() - 0.5) * 8.6, 5);
   return { group: g, top: 3, windows: [] };
 }
+
+/**
+ * The door to the Kanwatch Freeway: a ring of violet light standing at the end of
+ * the park's path, with a slow swirl inside it.
+ */
+export function portalDoor(): { group: THREE.Group; tick: (t: number) => void } {
+  const g = dyn(new THREE.Group());
+  const stone = mat('#4c3f66');
+  box(g, 0.5, 0.4, 0.9, stone, -1.9, 0, 0);
+  box(g, 0.5, 0.4, 0.9, stone, 1.9, 0, 0);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.2, 10, 40), new THREE.MeshBasicMaterial({ color: '#a78bfa' }));
+  ring.position.y = 2.2;
+  g.add(ring);
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d')!;
+  const grd = x.createRadialGradient(64, 64, 4, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(255,255,255,.95)');
+  grd.addColorStop(0.4, 'rgba(196,181,253,.75)');
+  grd.addColorStop(1, 'rgba(91,33,182,.35)');
+  x.fillStyle = grd;
+  x.fillRect(0, 0, 128, 128);
+  x.strokeStyle = 'rgba(255,255,255,.55)';
+  x.lineWidth = 4;
+  for (let k = 0; k < 5; k++) { x.beginPath(); x.arc(64, 64, 14 + k * 10, k, k + 2.4); x.stroke(); }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(1.65, 32), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  disc.position.y = 2.2;
+  g.add(disc);
+  const sparks: THREE.Mesh[] = [];
+  for (let k = 0; k < 8; k++) {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.07, 5, 4), new THREE.MeshBasicMaterial({ color: '#f5d0fe' }));
+    g.add(s);
+    sparks.push(s);
+  }
+  return {
+    group: g,
+    tick: (t) => {
+      disc.rotation.z = -t * 0.9;
+      ring.scale.setScalar(1 + Math.sin(t * 2.2) * 0.03);
+      sparks.forEach((s, k) => {
+        const a = t * 0.8 + (k / sparks.length) * Math.PI * 2;
+        s.position.set(Math.cos(a) * 2.1, 2.2 + Math.sin(a) * 2.1, Math.sin(t * 2 + k) * 0.2);
+      });
+    },
+  };
+}

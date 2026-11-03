@@ -256,6 +256,7 @@ export function KanwatchDay() {
   const [onlyNeedsYou, setOnlyNeedsYou] = useState(false);
   const [story, setStory] = useState<DayStory | null>(null);
   const [storyLoading, setStoryLoading] = useState(false);
+  const [storyWaiting, setStoryWaiting] = useState(false);
 
   // The story is fetched on its own: the day's numbers never wait on an LLM.
   const loadStory = useCallback(async (d: string, refresh = false) => {
@@ -265,6 +266,7 @@ export function KanwatchDay() {
       const res = await fetch(`/api/kanwatch/story?date=${d}&from=${from}&to=${to}${refresh ? '&refresh=1' : ''}`);
       const body = res.ok ? await res.json() : null;
       setStory(body?.story ?? null);
+      setStoryWaiting(Boolean(body?.waiting));
     } catch {
       /* the story is a nicety; the day works without it */
     } finally {
@@ -357,9 +359,9 @@ export function KanwatchDay() {
 
         {data && (
           <>
-            <DayStoryCard story={story} loading={storyLoading} onRefresh={() => loadStory(date, true)} />
+            <DayStoryCard story={story} loading={storyLoading} waiting={storyWaiting} onRefresh={() => loadStory(date, true)} />
             {/* Keyed so a new day or a saved value resets the field. */}
-            <Intention key={`${date}:${data.intention}`} date={date} value={data.intention} onSaved={() => { load(date); loadStory(date, true); }} />
+            <Intention key={`${date}:${data.intention}`} date={date} value={data.intention} onSaved={() => load(date)} />
             <Summary data={data} />
             <Timeline episodes={data.episodes} />
             <WhereItWent episodes={data.episodes} alongside={data.alongside ?? []} />
@@ -1185,8 +1187,8 @@ function ChannelOptions({ channels }: { channels: DayData['channels'] }) {
 
 // ---- the day story ----------------------------------------------------------------
 
-function DayStoryCard({ story, loading, onRefresh }: { story: DayStory | null; loading: boolean; onRefresh: () => void }) {
-  if (!story && !loading) return null;
+function DayStoryCard({ story, loading, waiting, onRefresh }: { story: DayStory | null; loading: boolean; waiting: boolean; onRefresh: () => void }) {
+  if (!story && !loading && !waiting) return null;
   return (
     <section className="rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
       <div className="mb-2 flex items-center gap-2">
@@ -1194,12 +1196,17 @@ function DayStoryCard({ story, loading, onRefresh }: { story: DayStory | null; l
         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-neutral-400">Kan’s read on your day</span>
         {story && (
           <button onClick={onRefresh} disabled={loading} className="ml-auto text-[11px] text-neutral-400 hover:text-neutral-700 disabled:opacity-40 dark:hover:text-neutral-200">
-            {loading ? 'Reading…' : story.stale ? 'Update — the day has moved on' : `Written ${clock(story.writtenAt)} · refresh`}
+            {loading ? 'Reading…' : story.stale ? `Written ${clock(story.writtenAt)} · the day moved on · write it again` : `Written ${clock(story.writtenAt)} · write it again`}
           </button>
         )}
       </div>
       {!story ? (
-        <p className="text-sm text-neutral-500">Kan is reading your day…</p>
+        loading ? <p className="text-sm text-neutral-500">Kan is reading your day…</p> : (
+          <p className="text-sm text-neutral-500">
+            Kan writes this once the day is over.{' '}
+            <button onClick={onRefresh} className="text-violet-600 hover:text-violet-500 dark:text-violet-400">Write it now</button>
+          </p>
+        )
       ) : (
         <>
           <p className="text-[17px] leading-snug text-neutral-900 dark:text-neutral-100">{story.headline}</p>

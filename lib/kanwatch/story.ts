@@ -7,8 +7,8 @@
  * sessions Kanwatch already understands, in one LLM call — plus a one-line summary
  * for each session, so the list below reads as things you did, not URLs you visited.
  *
- * Cached on the day. Rewritten when the day has changed and the last one is over ten
- * minutes old, or when you ask.
+ * Written once per day, after it's over (by the hourly cron, or the first time you
+ * open a past day), and kept. Only asking for it rewrites it.
  */
 
 import { and, desc, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm';
@@ -19,8 +19,6 @@ import { recordUsage } from '@/lib/usage';
 import { loadAccess } from '@/lib/voice/resolveReference';
 import { loadBoard } from './board';
 import { attachBackground, groupSessions, type Names, type Session } from './sessions';
-
-const REWRITE_AFTER_MS = 10 * 60 * 1000;
 
 export interface DayStory {
   headline: string;
@@ -130,11 +128,13 @@ export async function storyFor(
     ...reads.map((r) => r.id),
   ].join('|'));
 
+  // Written once, and never again unless you ask: a cached story is kept even when
+  // the day has moved on since (it says so), and a day still under way waits for
+  // its end (the hourly cron writes it then) unless you ask for it now.
   const cached = day?.story ? (JSON.parse(day.story) as DayStory) : null;
-  const writtenAt = day?.storyAt?.getTime() ?? 0;
-  if (cached && !opts.refresh) {
-    if (day?.storySig === signature) return cached;
-    if (Date.now() - writtenAt < REWRITE_AFTER_MS) return { ...cached, stale: true };
+  if (!opts.refresh) {
+    if (cached) return day?.storySig === signature ? cached : { ...cached, stale: true };
+    if (to > Date.now()) return null;
   }
 
   const tz = episodes[0]?.tzOffsetMinutes ?? 0;

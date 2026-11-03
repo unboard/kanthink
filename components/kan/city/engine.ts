@@ -6,6 +6,7 @@ import { BLOCK, CELL, GAP, Grid, PITCH, ROAD, rng, type Vec } from './grid';
 import {
   botFigure, building, car, centralPark, constructionSite, crane, freeLot, grove, kanFigure, lamp, mat, moped, sportsCar, ufo,
   nightGlows, sharedMaterials, shroomFigure, townHall, windowMaterials, type Built,
+  portalDoor,
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
@@ -120,7 +121,7 @@ export interface EngineCallbacks {
 export type ViewMode = 'map' | 'walk' | 'drive' | 'ride' | 'fly';
 
 /** The place you're next to in first person: a building, or an app on the Strip. */
-export interface Near { kind: 'plot' | 'app' | 'bot' | 'car'; id: string; name: string }
+export interface Near { kind: 'plot' | 'app' | 'bot' | 'car' | 'portal'; id: string; name: string }
 
 const FOG: Record<Sky, string> = { dawn: '#f2c3b4', day: '#d7ecfa', dusk: '#b98aa9', night: '#2a2150' };
 
@@ -147,6 +148,9 @@ export class CityEngine {
   /** The building you're inside, if any: its own scene, drawn instead of the city. */
   private inside: Inside | null = null;
   private insideId: string | null = null;
+  /** The door to the Kanwatch Freeway, when there is one. */
+  private portalAt: Vec | null = null;
+  private paused = false;
   private dragX = 0;
   /** The resident you're talking with. */
   private talking: string | null = null;
@@ -799,6 +803,17 @@ export class CityEngine {
     this.addPickable(pk.group, { kind: 'park' });
     this.city.add(pk.group);
     this.fixedLabels.push({ el: this.makeLabel('Central Park', 'park', () => this.cb.onPick({ kind: 'park' })), pos: new THREE.Vector3(pkc.x, GROUND_Y + pk.top, pkc.z), always: true });
+    // At the end of the park's path, a door to the Kanwatch Freeway (for those Kanwatch is open to).
+    this.portalAt = null;
+    if (data.kanwatch) {
+      const door = portalDoor();
+      door.group.position.set(pkc.x, GROUND_Y, pkc.z + 7.6);
+      this.city.add(door.group);
+      this.ticks.push(door.tick);
+      this.addPickable(door.group, { kind: 'portal' });
+      this.portalAt = { x: pkc.x, z: pkc.z + 7.6 };
+      this.fixedLabels.push({ el: this.makeLabel('Kanwatch Freeway', 'strip', () => this.cb.onPick({ kind: 'portal' })), pos: new THREE.Vector3(pkc.x, GROUND_Y + 4.6, pkc.z + 7.6), always: true });
+    }
 
     // Every channel's building. One that wasn't here last time rises out of the ground.
     // So does one that just moved to another neighborhood.
@@ -1413,8 +1428,25 @@ export class CityEngine {
 
   // ---------- Frame loop ----------
 
+  /**
+   * Stop drawing the city while another scene (the Freeway) has the screen; it
+   * picks up where it was.
+   */
+  setPaused(on: boolean) {
+    if (on === this.paused) return;
+    this.paused = on;
+    cancelAnimationFrame(this.raf);
+    this.keys.clear();
+    this.renderer.domElement.style.visibility = on ? 'hidden' : '';
+    this.labels.style.visibility = on ? 'hidden' : '';
+    if (!on) { this.last = performance.now(); this.loop(); }
+  }
+
+  /** Your car, with you at the wheel, for another scene to drive. */
+  makeCar() { return this.makeDriver(); }
+
   private loop = () => {
-    if (this.disposed) return;
+    if (this.disposed || this.paused) return;
     this.raf = requestAnimationFrame(this.loop);
     const now = performance.now();
     const raw = (now - this.last) / 1000;
@@ -1952,6 +1984,10 @@ export class CityEngine {
         if (d < 4.5 && d - 4 < bestD) { best = { kind: 'bot', id: c.plotId, name: this.plots.get(c.plotId)?.plot.resident.name ?? 'Bot' }; bestD = d - 4; }
       }
     }
+    if (this.portalAt && !flying) {
+      const d = Math.hypot(this.portalAt.x - p.x, this.portalAt.z - p.z);
+      if (d < (this.mode === 'walk' ? 5 : 8) && d < bestD) { best = { kind: 'portal', id: 'portal', name: 'the Kanwatch Freeway' }; bestD = d; }
+    }
     for (const l of this.strip?.lots ?? []) {
       const d = Math.min(Math.hypot(l.door.x - p.x, l.door.z - p.z), Math.hypot(l.center.x - p.x, l.center.z - p.z) + 2);
       const reach = this.mode === 'walk' ? 5.5 : this.mode === 'drive' || this.mode === 'ride' ? 8 : 12;
@@ -1966,6 +2002,7 @@ export class CityEngine {
   private elapsedWalk = 0;
 
   private onKey = (e: KeyboardEvent) => {
+    if (this.paused) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     const key = e.key.toLowerCase();
@@ -2139,7 +2176,9 @@ export class CityEngine {
       if (c) return { kind: 'bot', id: c.plotId };
     }
     const hits = ray.intersectObjects(this.pickables, false);
-    return (hits[0]?.object.userData.pick as Pick | undefined) ?? null;
+    // The Freeway's door stands inside the park; it wins over the park around it.
+    const door = hits.find((h) => (h.object.userData.pick as Pick | undefined)?.kind === 'portal');
+    return ((door ?? hits[0])?.object.userData.pick as Pick | undefined) ?? null;
   }
 
   private onDown = (e: PointerEvent) => { this.down = { x: e.clientX, y: e.clientY }; this.dragX = e.clientX; this.focusAnim = null; };
@@ -2187,6 +2226,7 @@ export class CityEngine {
   private setHover(name: string | null) { this.hovered = name; }
 
   private onVisibility = () => {
+    if (this.paused) return;
     if (document.hidden) cancelAnimationFrame(this.raf);
     else { this.last = performance.now(); this.loop(); }
   };

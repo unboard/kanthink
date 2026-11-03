@@ -7,6 +7,9 @@ import {
   RotateCcw, RotateCw, Sun, Sunrise, Sunset, Users, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
+import { Stick } from '@/components/kan/city/Stick';
+import { tsParticles } from '@tsparticles/engine';
+import { FreewayView } from '@/components/kan/freeway/FreewayView';
 import { CityEngine, SKY_CSS, skyFor, type Near, type Sky, type ViewMode } from '@/components/kan/city/engine';
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
@@ -143,6 +146,8 @@ export default function CityPage() {
   const [data, setData] = useState<CityData | null>(null);
   const [state, setState] = useState<'loading' | 'signedOut' | 'empty' | 'ready' | 'error'>('loading');
   const [pick, setPick] = useState<Pick | null>(null);
+  /** On the Kanwatch Freeway: its own scene, while the city waits. */
+  const [freeway, setFreeway] = useState(false);
   const [board, setBoard] = useState<string | null>(null);
   const [side, setSide] = useState<Side>(null);
   const [menu, setMenu] = useState(false);
@@ -185,6 +190,16 @@ export default function CityPage() {
   const coarse = useCoarse();
 
   useEffect(() => { setPreview(new URLSearchParams(window.location.search).has('preview')); }, []);
+  // The site's floating spores are hidden behind the city but keep drawing every
+  // frame; on a laptop's integrated graphics that halves the city's frame rate.
+  useEffect(() => {
+    let paused: { pause(): void; play(): void }[] = [];
+    const t = setTimeout(() => {
+      paused = tsParticles.dom().filter((c) => !c.destroyed);
+      for (const c of paused) c.pause();
+    }, 400);
+    return () => { clearTimeout(t); for (const c of paused) c.play(); };
+  }, []);
   useEffect(() => {
     if (!preview) return;
     const t = setInterval(() => setTick((n) => n + 1), 12000);
@@ -362,6 +377,7 @@ export default function CityPage() {
       return;
     }
     setBoard(null);
+    if (p?.kind === 'portal') { setPick(null); setFreeway(true); return; }
     setPick(p);
   };
 
@@ -544,10 +560,20 @@ export default function CityPage() {
   }
 
   const latest = data?.feed[0];
+  const freewayChannels = useMemo(() => {
+    const hood = new Map((data?.neighborhoods ?? []).map((n) => [n.id, n.name]));
+    return plots.map((p) => ({ id: p.channelId, name: p.name, folder: p.folderId ? hood.get(p.folderId) ?? null : null }));
+  }, [plots, data?.neighborhoods]);
+  const makeCar = useCallback(() => engine.current!.makeCar(), []);
+  const leaveFreeway = useCallback(() => setFreeway(false), []);
+  useEffect(() => { engine.current?.setPaused(freeway); }, [freeway]);
 
   return (
     <div className="fixed inset-0 z-[5] overflow-hidden text-neutral-100" style={{ background: SKY_CSS[sky], ['--chat-h' as string]: `${selectedBot ? 8 : chatH}px` }}>
       <style dangerouslySetInnerHTML={{ __html: LABEL_CSS }} />
+      {freeway && engine.current && data && (
+        <FreewayView makeCar={makeCar} channels={freewayChannels} boss={data.boss} coarse={coarse} onExit={leaveFreeway} />
+      )}
       <div ref={host} className="absolute inset-0" />
       <div ref={labels} className="kc-labels pointer-events-none absolute inset-0 overflow-hidden" />
       {state === 'loading' && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-white/70" /></div>}
@@ -1002,45 +1028,6 @@ function Chip({ n, label, tone, dot, onClick, href }: { n?: number; label: strin
   const cls = `flex flex-shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 shadow-lg backdrop-blur-xl ${ring} ${onClick || href ? 'hover:border-white/30' : ''}`;
   if (href) return <Link href={href} className={cls}>{body}</Link>;
   return onClick ? <button onClick={onClick} className={cls}>{body}</button> : <div className={cls}>{body}</div>;
-}
-
-/** A thumb stick for driving and flying on a phone. Up is forward (or climb). */
-function Stick({ onMove, bottom, hint }: { onMove(x: number, y: number): void; bottom: number; hint: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const active = useRef<number | null>(null);
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
-  const send = useRef(onMove);
-  useEffect(() => { send.current = onMove; });
-  const move = (e: React.PointerEvent) => {
-    const r = ref.current!.getBoundingClientRect();
-    const R = r.width / 2;
-    let dx = (e.clientX - (r.left + R)) / R, dy = (e.clientY - (r.top + R)) / R;
-    const m = Math.hypot(dx, dy);
-    if (m > 1) { dx /= m; dy /= m; }
-    setKnob({ x: dx, y: dy });
-    send.current(Math.abs(dx) < 0.12 ? 0 : dx, Math.abs(dy) < 0.12 ? 0 : -dy);
-  };
-  const end = () => { active.current = null; setKnob({ x: 0, y: 0 }); send.current(0, 0); };
-  // Let go of the stick when it goes away.
-  useEffect(() => () => send.current(0, 0), []);
-  return (
-    <div className="absolute left-5 z-20 flex flex-col items-center gap-1" style={{ bottom }}>
-      <div
-        ref={ref}
-        onPointerDown={(e) => { active.current = e.pointerId; e.currentTarget.setPointerCapture(e.pointerId); move(e); }}
-        onPointerMove={(e) => { if (active.current === e.pointerId) move(e); }}
-        onPointerUp={end}
-        onPointerCancel={end}
-        className="relative h-32 w-32 touch-none select-none rounded-full border border-white/20 bg-neutral-950/40 shadow-2xl backdrop-blur"
-      >
-        <div
-          className="absolute left-1/2 top-1/2 h-14 w-14 rounded-full bg-violet-500/90 shadow-lg ring-2 ring-white/40"
-          style={{ transform: `translate(calc(-50% + ${knob.x * 40}px), calc(-50% + ${knob.y * 40}px))` }}
-        />
-      </div>
-      <span className="text-[11px] font-medium text-white/80 drop-shadow">{hint}</span>
-    </div>
-  );
 }
 
 function IconBtn({ children, onClick, title }: { children: React.ReactNode; onClick: () => void; title: string }) {

@@ -1862,6 +1862,8 @@ export const kanwatchDays = sqliteTable('kanwatch_days', {
   story: text('story'),
   storySig: text('story_sig'),
   storyAt: integer('story_at', { mode: 'timestamp' }),
+  // The day as a board to process on the Kanwatch Freeway (JSON DayBoard).
+  board: text('board'),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })

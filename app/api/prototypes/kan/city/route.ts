@@ -43,8 +43,8 @@ export async function GET() {
     if (!recent) {
       const { runAttentionPass } = await import('@/lib/kan/attention/run')
       afterResponse(() => runAttentionPass(userId, { mode: 'rehearsal' }).then(() => undefined))
-      return Response.json({ ...city, townHall: { ...city.townHall, passRunning: true } })
+      return Response.json({ ...city, kanwatch: Boolean(session.user.isAdmin), townHall: { ...city.townHall, passRunning: true } })
     }
   }
-  return Response.json(city)
+  return Response.json('empty' in city ? city : { ...city, kanwatch: Boolean(session.user.isAdmin) })
 }

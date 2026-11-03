@@ -8,7 +8,7 @@ export const maxDuration = 60;
 /**
  * GET /api/kanwatch/story?date=YYYY-MM-DD&from=<ms>&to=<ms>[&refresh=1]
  *
- * Kan's read on the day. Fetched separately from the day itself, so the page never
+ * Kan's read on the day, written once when the day is over. Fetched separately from the day itself, so the page never
  * waits on an LLM to show you your numbers.
  */
 export async function GET(request: Request) {
@@ -22,5 +22,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Bad range' }, { status: 400 });
   }
   const story = await storyFor(userId, date, from, to, { refresh: url.searchParams.get('refresh') === '1' });
-  return NextResponse.json({ story });
+  // A day still under way gets its story when it's over, unless you ask for it now.
+  return NextResponse.json({ story, waiting: !story && to > Date.now() });
 }
