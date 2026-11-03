@@ -1467,23 +1467,28 @@ function ApprovalRow({ a, busy, onDecide, showWhere }: { a: Approval; busy: stri
 type TopicRole = 'help' | 'aware' | 'hands_off';
 const CHANGE_TITLE = { start: 'New space:', reshape: 'Rework', quiet: 'Quiet', mute: 'Fade out', wake: 'Wake up', keep: '' } as const;
 
-/** Telling Kan what something is and the part it plays: three answers and a line in your own words. */
-function TopicReply({ name, busy, onSave, onCancel, choices }: {
+/** Telling Kan what something is and the part it plays: a few answers, and a line in your own words if they want. */
+function TopicReply({ name, busy, onSave, onCancel, choices, compact }: {
   name: string;
   busy: boolean;
   onSave: (role: TopicRole, note: string) => void;
   onCancel?: () => void;
   choices: { role: TopicRole; label: string }[];
+  /** Small chips, with the note field behind “Add a note”. */
+  compact?: boolean;
 }) {
   const [note, setNote] = useState('');
+  const [writing, setWriting] = useState(!compact);
+  const chip = compact ? 'px-2.5 py-1 text-[12px]' : 'px-3 py-1.5 text-xs';
   return (
-    <div className="mt-2">
-      <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder={`Tell Kan about ${name} (optional): what it is, where you work on it…`} className="w-full rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-[13px] text-neutral-100 placeholder:text-neutral-600" />
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+    <div className={compact ? 'mt-1.5' : 'mt-2'}>
+      {writing && <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} autoFocus={compact} placeholder={`Tell Kan about ${name} (optional): what it is, where you work on it…`} className="mb-1.5 w-full rounded-lg border border-white/10 bg-neutral-900 px-2.5 py-2 text-[13px] text-neutral-100 placeholder:text-neutral-600" />}
+      <div className="flex flex-wrap items-center gap-1.5">
         {choices.map((c) => (
-          <button key={c.role} disabled={busy} onClick={() => onSave(c.role, note)} className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-neutral-200 hover:bg-white/5 disabled:opacity-50">{c.label}</button>
+          <button key={c.role} disabled={busy} onClick={() => onSave(c.role, note)} className={`rounded-full border border-white/15 text-neutral-200 hover:bg-white/5 disabled:opacity-50 ${chip}`}>{c.label}</button>
         ))}
-        {onCancel && <button onClick={onCancel} className="px-2 text-xs text-neutral-500">Back</button>}
+        {!writing && <button onClick={() => setWriting(true)} className="px-1.5 text-[12px] text-violet-300 hover:text-violet-200">Add a note</button>}
+        {onCancel && <button onClick={onCancel} className="px-1.5 text-[12px] text-neutral-500 hover:text-neutral-300">Cancel</button>}
       </div>
     </div>
   );
@@ -1504,8 +1509,8 @@ function PlanItem({ item, busy, onRemember }: { item: { name: string; change: ke
         {builds && !open && <button onClick={() => setOpen(true)} className="flex-shrink-0 rounded-full px-2 py-0.5 text-[12px] text-neutral-400 hover:bg-white/5 hover:text-neutral-200">Not this</button>}
       </div>
       {open && (
-        <TopicReply name={item.name} busy={busy !== null} onCancel={() => setOpen(false)} onSave={(role, note) => onRemember(item.name, role, note)}
-          choices={[{ role: 'aware', label: 'I build it elsewhere. Just know about it' }, { role: 'hands_off', label: 'Leave it out' }]} />
+        <TopicReply compact name={item.name} busy={busy !== null} onCancel={() => setOpen(false)} onSave={(role, note) => onRemember(item.name, role, note)}
+          choices={[{ role: 'aware', label: 'I build it elsewhere' }, { role: 'hands_off', label: 'Leave it out' }]} />
       )}
     </li>
   );
