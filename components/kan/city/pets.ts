@@ -59,7 +59,10 @@ function pale(hex: string) {
   return '#' + new THREE.Color(hex).lerp(new THREE.Color('#fff8ee'), 0.6).getHexString();
 }
 
-export function petFigure(kind: PetKind, color: string): PetFig {
+/** Markings on top of the fur: patches of a second color, white socks, tabby stripes. */
+export interface PetMarks { patch?: string; socks?: boolean; tabby?: boolean }
+
+export function petFigure(kind: PetKind, color: string, marks: PetMarks = {}): PetFig {
   const dog = kind === 'dog' || kind === 'puppy', bunny = kind === 'bunny', cat = !dog && !bunny;
   const fur = mat(color, { rough: 0.95 });
   const light = mat(pale(color), { rough: 0.95 });
@@ -74,13 +77,27 @@ export function petFigure(kind: PetKind, color: string): PetFig {
   body.scale.set(0.9, 0.8, bunny ? 1.05 : 1.35);
   add(rig, sphere(0.2), light, 0, 0.3, 0.06).scale.set(0.85, 0.7, 1.2);
 
+  if (marks.patch) {
+    const pm = mat(marks.patch, { rough: 0.95 });
+    for (const [x, y, z, r] of [[0.12, 0.44, -0.1, 0.13], [-0.1, 0.42, 0.12, 0.11], [0.0, 0.5, -0.22, 0.1]]) add(rig, sphere(r), pm, x, y, z).scale.set(1, 0.55, 1.2);
+  }
+  if (marks.tabby) {
+    const sm = mat(new THREE.Color(color).multiplyScalar(0.55).getStyle(), { rough: 0.95 });
+    for (const z of [-0.2, -0.08, 0.04, 0.16]) {
+      const stripe = add(rig, new THREE.TorusGeometry(0.21, 0.018, 4, 14, Math.PI), sm, 0, 0.37, z);
+      stripe.scale.set(1, 0.82, 1);
+    }
+  }
+  if (marks.socks) add(rig, sphere(0.12), mat('#ffffff', { rough: 0.95 }), 0, 0.42, 0.3).scale.set(0.9, 1.1, 0.5);
+
   // Legs swing from the hip.
   const legs: THREE.Group[] = [];
   for (const [x, z] of [[-0.11, 0.17], [0.11, 0.17], [-0.11, -0.17], [0.11, -0.17]]) {
     const hip = new THREE.Group();
     hip.position.set(x, 0.3, bunny ? z * 0.7 : z);
     add(hip, new THREE.CylinderGeometry(0.05, 0.045, 0.28, 8), fur, 0, -0.15, 0);
-    add(hip, sphere(0.055), light, 0, -0.29, 0.02).scale.set(1, 0.6, 1.3);
+    add(hip, sphere(0.055), marks.socks ? mat('#ffffff', { rough: 0.95 }) : light, 0, -0.29, 0.02).scale.set(1, 0.6, 1.3);
+    if (marks.socks) add(hip, new THREE.CylinderGeometry(0.052, 0.05, 0.1, 8), mat('#ffffff', { rough: 0.95 }), 0, -0.24, 0);
     rig.add(hip);
     legs.push(hip);
   }

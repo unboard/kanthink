@@ -7,7 +7,9 @@ import type { Billboard, DayBoard, DayCard, FreewayDay } from '@/lib/kanwatch/fr
 import type { ChannelBoard } from '@/lib/kan/city/channel';
 import { Inside, type InsideNear, type InsidePet, type InsidePick } from '../city/inside';
 import { PET_CSS, PetSheet } from '../city/PetSheet';
-import { checkIn, isHome, loadRescue, newsFor, saveRescue, straysFor, homeStory, postcard, type RescuedCat, type Stray } from './rescue';
+import { careFor, checkIn, ENERGY_WORD, isHome, loadRescue, loadTreats, newsFor, saveRescue, saveTreats, stillNeeds, straysFor, homeStory, postcard, TREATS_FULL, VET_WORD, type RescuedCat, type Stray } from './rescue';
+import { BathGame, VetGame } from './CareGames';
+import type { InteriorStyle } from '@/lib/kan/city/interior';
 import { Stick } from '../city/Stick';
 import type { PlayerKit } from '../city/engine';
 import { Freeway, tierColor, type FreewayMode, type FreewayNear, type FreewayPick } from './scene';
@@ -42,21 +44,40 @@ function asChannelBoard(date: string, b: DayBoard): ChannelBoard {
   } as unknown as ChannelBoard;
 }
 
-/** The rescue's walls: who's waiting, and who's found a home. */
-function rescueBoard(waiting: RescuedCat[], home: RescuedCat[]): ChannelBoard {
+/** The rescue's rooms: the wash room, the vet, who's waiting, and who's found a home. */
+function rescueBoard(list: RescuedCat[], now: number): ChannelBoard {
   const card = (id: string, title: string, snippet: string) => ({ id, title, snippet, messageCount: 0, taskCount: 0, tasksDone: 0, hasApp: false, tags: [], source: 'manual', updatedAt: 0 });
+  const here = list.filter((c) => !isHome(c, now));
+  const bath = here.filter((c) => stillNeeds(c).bath);
+  const vet = here.filter((c) => stillNeeds(c).vet);
+  const ready = here.filter((c) => { const n = stillNeeds(c); return !n.bath && !n.vet; });
+  const home = list.filter((c) => isHome(c, now)).sort((x, y) => y.homeAt - x.homeAt);
   return {
     channel: { id: 'rescue', name: 'Kan Cat Rescue', description: 'Cats waiting for homes', canEdit: false },
     videos: [],
     columns: [
+      { id: 'bath', name: '🛁 Wash room', total: bath.length, hint: 'Muddy cats get a bath here.', cards: bath.map((c) => card(`bath:${c.id}`, `Give ${c.name} a bath`, `${c.name} is all muddy from the road.`)) },
+      { id: 'vet', name: '🩺 Dr. Whiskers, the vet', total: vet.length, hint: 'Cats who need some care see the vet.', cards: vet.map((c) => card(`vet:${c.id}`, `${c.name} ${VET_WORD[stillNeeds(c).vet!]}`, 'Dr. Whiskers can help.')) },
       {
-        id: 'waiting', name: 'Looking for a home', total: waiting.length || 1,
-        cards: waiting.length ? waiting.map((c) => card(`cat:${c.id}`, c.name, `Found by the road on ${SHORT(c.date)}. Waiting for a family.`))
+        id: 'waiting', name: 'Looking for a home', total: ready.length || 1,
+        cards: ready.length ? ready.map((c) => card(`cat:${c.id}`, c.name, `Found by the road on ${SHORT(c.date)}. Waiting for a family.`))
           : [card('help', 'How the rescue works', 'Catch a stray by the road and bring it here.')],
       },
       { id: 'home', name: 'Found a home!', total: home.length, cards: home.map((c) => card(`cat:${c.id}`, `${c.name} 🏡`, homeStory(c))) },
     ],
   } as unknown as ChannelBoard;
+}
+
+/** Why it won't be caught yet, and what to try. */
+function catHint(name: string, energy: Stray['energy'], mode: FreewayMode) {
+  if (energy === 'zoomy') return `💨 ${name} is too zoomy! Put down a treat 🐟 and catch them while they eat.`;
+  if (mode !== 'walk') return `🙈 ${name} is shy. Get out and walk over.`;
+  return `🙈 ${name} is shy. Walk slowly (no running), or try a treat.`;
+}
+
+/** Everyone still at the rescue lives in it. */
+function rescueStyle(list: RescuedCat[], now: number): InteriorStyle {
+  return { features: ['cat_tower', 'toys', 'plants', 'sofa', 'lamps'], light: 'warm', pets: list.filter((c) => !isHome(c, now)).slice(-8).map((c) => ({ kind: c.kind, color: c.color, name: c.name, seed: c.seed })) };
 }
 
 export function FreewayView({ kit, channels, boss, coarse, onExit }: {
@@ -91,9 +112,13 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
   const [rescueCard, setRescueCard] = useState<string | null>(null);
   const [news, setNews] = useState<ReturnType<typeof newsFor>>([]);
   const [clock, setClock] = useState(() => Date.now());
+  const [treats, setTreats] = useState(TREATS_FULL);
+  const [meow, setMeow] = useState<string | null>(null);
+  const [care, setCare] = useState<{ kind: 'bath' | 'vet'; id: string } | null>(null);
   const indoors = Boolean(inside || rescueIn);
   useEffect(() => {
     setRescued(loadRescue());
+    setTreats(loadTreats());
     const t = setInterval(() => setClock(Date.now()), 30_000);
     return () => clearInterval(t);
   }, []);
@@ -137,9 +162,10 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       onNear: setNear,
       onDay: (date, progress) => setAt((a) => (a.date === date && Math.abs(a.progress - progress) < 0.002 ? a : { date, progress })),
       onModeChange: setModeState,
+      onMeow: setMeow,
     }, kit, start);
     fw.current = road;
-    if (process.env.NODE_ENV !== 'production') (window as unknown as { __freeway?: Freeway }).__freeway = road;
+    if (process.env.NODE_ENV !== 'production') Object.assign(window, { __freeway: road, __freewayPick: (p: InsidePick) => cb.current.insidePick(p) });
     road.setStrays(straysFor(data.days, loadRescue()));
     setCarrying([]);
     const size = () => {
@@ -283,9 +309,10 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
 
   const catchCat = useCallback((id: string) => {
     const st = data ? straysFor(data.days, rescued).find((x) => x.id === id) : null;
-    if (!st || !fw.current?.catchCat(id)) return;
+    if (!st) return;
+    if (!fw.current?.catchCat(id)) { setNote(catHint(st.name, st.energy, fw.current?.getMode() ?? 'walk')); return; }
     setCarrying((c) => [...c, st]);
-    setNote(`You caught ${st.name}! Bring ${st.kind === 'kitten' ? 'them' : 'them'} to the Kan Cat Rescue at the end of the road.`);
+    setNote(`You caught ${st.name}, the ${ENERGY_WORD[st.energy].toLowerCase()} one! Bring them to the Kan Cat Rescue at the end of the road.`);
   }, [data, rescued]);
 
   /** Drop off whoever's following you, then go in and visit. */
@@ -304,13 +331,12 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     setNote(null);
     const now = Date.now();
     const waiting = list.filter((c) => !isHome(c, now));
-    const home = list.filter((c) => isHome(c, now)).sort((a, b) => b.homeAt - a.homeAt);
+    const chores = waiting.filter((c) => { const n = stillNeeds(c); return n.bath || n.vet; }).length;
+    const refill = treats < TREATS_FULL;
+    if (refill) { setTreats(TREATS_FULL); saveTreats(TREATS_FULL); }
     const room = new Inside(
-      {
-        channelId: 'rescue', name: 'Kan Cat Rescue', resident: 'Pawla', theme: 'cat', walls: '#fde7f0',
-        style: { features: ['cat_tower', 'toys', 'plants', 'sofa', 'lamps'], light: 'warm', pets: waiting.slice(-8).map((c) => ({ kind: c.kind, color: c.color, name: c.name, seed: c.seed })) },
-      },
-      rescueBoard(waiting, home), [], labels.current,
+      { channelId: 'rescue', name: 'Kan Cat Rescue', resident: 'Pawla', theme: 'cat', walls: '#fde7f0', style: rescueStyle(list, now) },
+      rescueBoard(list, now), [], labels.current,
       {
         onPick: (p) => cb.current.insidePick(p),
         onNear: setInNear,
@@ -326,13 +352,39 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     setRescueIn(true);
     const n = newsFor(list, now);
     setNews(n);
+    const extra = refill ? ' I packed you more fish treats, too.' : '';
     setTimeout(() => room.kanHere(
-      n.length ? `Good news! ${n.length === 1 ? `${n[0].cat.name} has news` : `${n.length} pieces of good news`} for you.`
+      (n.length ? `Good news! ${n.length === 1 ? `${n[0].cat.name} has news` : `${n.length} pieces of good news`} for you.`
+        : brought && chores ? `Welcome in! Some of them need a bath or the vet first. Look in the wash room and the vet’s room.`
         : brought ? `Welcome in! I’ll find ${brought === 1 ? 'a home' : 'homes'} for ${brought === 1 ? carrying[0].name : `all ${brought}`}. Come back later for good news.`
+        : chores ? `${chores === 1 ? 'One cat needs' : `${chores} cats need`} a bath or the vet before they can go home.`
         : waiting.length ? 'Everyone here is waiting for a family. Come back later for good news!'
-        : 'No cats here yet. Strays wait beside some of the days on the road. Catch one and bring it here!',
+        : 'No cats here yet. Strays wait beside some of the days on the road. Catch one and bring it here!') + extra,
       8000), 600);
-  }, [rescued, carrying, boss]);
+  }, [rescued, carrying, boss, treats]);
+
+  /** A bath or the vet, done: the board and the rooms catch up, and it can go home soon. */
+  const cared = useCallback((kind: 'bath' | 'vet', id: string) => {
+    const now = Date.now();
+    const list = rescued.map((c) => (c.id === id ? careFor(c, kind, now) : c));
+    saveRescue(list);
+    setRescued(list);
+    setCare(null);
+    ins.current?.update(rescueBoard(list, now), [], rescueStyle(list, now), 'cat', '#fde7f0');
+    const c = list.find((x) => x.id === id);
+    const left = c ? stillNeeds(c) : { bath: false, vet: null };
+    ins.current?.kanHere(left.bath || left.vet ? `Nice work! ${c?.name} still needs ${left.bath ? 'a bath' : 'the vet'}.` : `${c?.name} is ready for a family! Come back later for good news.`, 6000);
+  }, [rescued]);
+
+  /** Set a treat down where you're standing. */
+  const putTreat = useCallback(() => {
+    if (treats <= 0) { setNote('Out of fish treats! Pawla at the cat rescue has more.'); return; }
+    if (!fw.current?.dropTreat()) { setNote('Get out and walk to put a treat down.'); return; }
+    const n = treats - 1;
+    setTreats(n);
+    saveTreats(n);
+    setNote(`Treat down! Stand back and let a cat come eat. ${n} left.`);
+  }, [treats]);
 
   /** Heard it: mark it so it isn't told again, and on to the next. */
   const heard = () => {
@@ -369,7 +421,8 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     if (p.kind === 'exit') { goOut(); return; }
     if (p.kind === 'pet') { setPetOpen(Number(p.id)); return; }
     if (rescueIn) {
-      if (p.kind === 'card') setRescueCard(p.id);
+      if (p.kind === 'card' && (p.id.startsWith('bath:') || p.id.startsWith('vet:'))) setCare({ kind: p.id.startsWith('bath:') ? 'bath' : 'vet', id: p.id.slice(p.id.indexOf(':') + 1) });
+      else if (p.kind === 'card') setRescueCard(p.id);
       else if (p.kind === 'bot') ins.current?.kanHere(news.length ? 'There’s good news waiting for you!' : 'Every cat here is waiting for a family. Pet them, throw the ball, and come back later for good news!', 6000);
       return;
     }
@@ -385,12 +438,13 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       const key = e.key.toLowerCase();
       if (e.type === 'keyup') { keys.current.delete(key); return; }
       if (key === 'escape') {
-        if (card) setCard(null); else if (petOpen !== null) setPetOpen(null); else if (rescueCard) setRescueCard(null); else if (news.length) heard(); else if (billboard !== null) setBillboard(null); else if (ins.current) goOut(); else onExit();
+        if (care) setCare(null); else if (card) setCard(null); else if (petOpen !== null) setPetOpen(null); else if (rescueCard) setRescueCard(null); else if (news.length) heard(); else if (billboard !== null) setBillboard(null); else if (ins.current) goOut(); else onExit();
         return;
       }
       if (ins.current && (key === 'q' || key === '[')) { ins.current.turn(Math.PI / 4); return; }
       if (ins.current && key === ']') { ins.current.turn(-Math.PI / 4); return; }
       if (ins.current && key === 't') { ins.current.throwBall(); return; }
+      if (!ins.current && key === 't') { putTreat(); return; }
       if ((key === 'e' || key === 'enter') && !card) {
         if (ins.current && inNear) { cb.current.insidePick({ kind: inNear.kind, id: inNear.id } as InsidePick); return; }
         if (!ins.current && near) { goNear(near); return; }
@@ -403,7 +457,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
     window.addEventListener('keydown', k);
     window.addEventListener('keyup', k);
     return () => { window.removeEventListener('keydown', k); window.removeEventListener('keyup', k); };
-  }, [card, billboard, near, inNear, goOut, onExit, goNear, petOpen, rescueCard, news]);
+  }, [card, billboard, near, inNear, goOut, onExit, goNear, petOpen, rescueCard, news, care, putTreat]);
 
   // ---------- A card ----------
 
@@ -512,7 +566,7 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
             </button>
           ) : near.kind !== 'day' && (
             <button onClick={() => goNear(near)} className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-violet-50">
-              {near.kind === 'exit' ? 'Back to Kan City' : near.kind === 'billboard' ? 'Read the billboard' : near.kind === 'cat' ? `🐱 Catch ${near.name}` : near.kind === 'rescue' ? (carrying.length ? `🐾 Bring ${carrying.length === 1 ? carrying[0].name : `${carrying.length} cats`} inside` : '🐾 Visit the rescue') : near.name === 'your moped' ? 'Hop on' : 'Get in'}
+              {near.kind === 'exit' ? 'Back to Kan City' : near.kind === 'billboard' ? 'Read the billboard' : near.kind === 'cat' ? (near.ready ? `🐱 Catch ${near.name}` : catHint(near.name, near.energy, mode)) : near.kind === 'rescue' ? (carrying.length ? `🐾 Bring ${carrying.length === 1 ? carrying[0].name : `${carrying.length} cats`} inside` : '🐾 Visit the rescue') : near.name === 'your moped' ? 'Hop on' : 'Get in'}
               {!coarse && <span className="rounded bg-neutral-200 px-1.5 text-[11px] font-normal text-neutral-600">E</span>}
             </button>
           )}
@@ -549,6 +603,14 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
       )}
 
       {/* The timeline: every day on the road, tap one to go there */}
+      {!indoors && data && mode === 'walk' && (
+        <button onClick={putTreat} className="absolute right-4 z-20 flex items-center gap-1.5 rounded-full bg-orange-400 px-4 py-2.5 text-[14px] font-semibold text-neutral-900 shadow-2xl hover:bg-orange-300 active:scale-95" style={{ bottom: coarse ? 196 : 112 }}>
+          🐟 Treat · {treats}{!coarse && <span className="ml-1 rounded bg-neutral-900/15 px-1.5 text-[11px]">T</span>}
+        </button>
+      )}
+      {!indoors && meow && !near && (
+        <div className="pointer-events-none absolute left-1/2 top-28 z-20 -translate-x-1/2 rounded-full bg-neutral-950/75 px-4 py-1.5 text-[13px] shadow-xl backdrop-blur">🐾 <i>Mew!</i> You hear {meow} hiding somewhere close by…</div>
+      )}
       {!indoors && carrying.length > 0 && (
         <div className="absolute left-3 z-20 rounded-full bg-pink-500/90 px-3 py-1.5 text-[13px] font-semibold shadow-xl" style={{ bottom: coarse ? 250 : 112 }}>
           🐱 {carrying.map((c) => c.name).join(', ')} {carrying.length === 1 ? 'is' : 'are'} with you · take {carrying.length === 1 ? 'them' : 'them'} to the rescue
@@ -622,6 +684,14 @@ export function FreewayView({ kit, channels, boss, coarse, onExit }: {
             )}
           </Sheet>
         );
+      })()}
+      {rescueIn && care && (() => {
+        const c = rescued.find((x) => x.id === care.id);
+        if (!c) return null;
+        const need = stillNeeds(c).vet;
+        return care.kind === 'bath'
+          ? <BathGame cat={c} onClose={() => setCare(null)} onDone={() => cared('bath', c.id)} />
+          : need ? <VetGame cat={c} need={need} onClose={() => setCare(null)} onDone={() => cared('vet', c.id)} /> : null;
       })()}
       {rescueIn && news.length > 0 && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-neutral-950/50 p-5">

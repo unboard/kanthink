@@ -33,7 +33,7 @@ const SETBACK = 24;
 const BOARD_SIDE = 19;
 
 export type FreewayPick = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' } | { kind: 'rescue' } | { kind: 'cat'; id: string };
-export type FreewayNear = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' } | { kind: 'car'; name: string } | { kind: 'cat'; id: string; name: string } | { kind: 'rescue' };
+export type FreewayNear = { kind: 'day'; date: string } | { kind: 'billboard'; index: number } | { kind: 'exit' } | { kind: 'car'; name: string } | { kind: 'cat'; id: string; name: string; energy: Stray['energy']; ready: boolean } | { kind: 'rescue' };
 export type FreewayMode = Exclude<ViewMode, 'map'>;
 export interface FreewayCallbacks {
   onPick(p: FreewayPick): void;
@@ -43,6 +43,8 @@ export interface FreewayCallbacks {
   onDay(date: string, progress: number): void;
   /** The scene changed mode on its own: out of the car, or down under the parachute. */
   onModeChange(mode: FreewayMode): void;
+  /** A hidden stray you can hear but not yet see. */
+  onMeow?(name: string | null): void;
 }
 
 /** The height a figure stands at, as in the city. */
@@ -71,7 +73,14 @@ interface DayView {
 type Block = Pick<DayView, 's' | 'pos' | 'rot' | 'w' | 'd' | 'top'>;
 
 /** A stray waiting by a day, and the cats walking along behind you. */
-interface StrayCat { s: Stray; fig: PetFig; at: number; x: number; z: number; home: { x: number; z: number }; to: { x: number; z: number } | null; heading: number; wait: number; phase: number; label: HTMLDivElement }
+interface StrayCat {
+  s: Stray; fig: PetFig; at: number; x: number; z: number; home: { x: number; z: number }; to: { x: number; z: number } | null;
+  heading: number; wait: number; phase: number; label: HTMLDivElement;
+  /** What it's up to: about its business, bolting, heading for a treat, or eating one. */
+  state: 'idle' | 'walk' | 'flee' | 'treat' | 'eat';
+  eatUntil: number;
+  run: number;
+}
 interface Follower { fig: PetFig; x: number; z: number; heading: number; phase: number }
 
 const PALETTE = ['#8b5cf6', '#f472b6', '#38bdf8', '#34d399', '#fbbf24', '#fb7185', '#818cf8', '#2dd4bf', '#f97316', '#a3e635', '#60a5fa', '#e879f9'];
@@ -173,6 +182,10 @@ export class Freeway {
   private strays = new Map<string, StrayCat>();
   private followers: Follower[] = [];
   private trail: { x: number; z: number }[] = [];
+  private treats: { x: number; z: number; obj: THREE.Group; until: number; taken: string | null }[] = [];
+  private meow: string | null = null;
+  /** Running (Shift) on foot, which sends shy cats off. */
+  private rushing = false;
 
   constructor(
     private days: FreewayDay[],
@@ -1240,6 +1253,7 @@ export class Freeway {
     this.time += dt;
     const t = this.time;
     this.stepPlayer(dt, input);
+    this.rushing = input.boost && Math.abs(this.player.speed) > 9;
     const p = this.player;
     const n = this.nearRoad(p.x, p.z);
     this.hint = n.k;
@@ -1295,7 +1309,7 @@ export class Freeway {
       if (!flying) for (const c of this.strays.values()) {
         if (Math.abs(c.at - this.s) > 60) continue;
         const d = Math.hypot(c.x - p.x, c.z - p.z);
-        if (d < (this.mode === 'walk' ? 3.2 : 7) && d < best + 2) { near = { kind: 'cat', id: c.s.id, name: c.s.name }; best = d; }
+        if (d < (this.mode === 'walk' ? 3.4 : 7) && d < best + 2) { near = { kind: 'cat', id: c.s.id, name: c.s.name, energy: c.s.energy ?? 'curious', ready: this.ready(c) }; best = d; }
       }
       if (this.mode === 'walk' && this.parked && Math.hypot(this.parked.x - p.x, this.parked.z - p.z) < 5) near = { kind: 'car', name: this.parked.kind === 'ride' ? 'your moped' : 'your car' };
       if ((this.s < this.exits[0] || this.s > this.exits[1]) && !flying) near = { kind: 'exit' };
@@ -1425,18 +1439,29 @@ export class Freeway {
     this.rescue.label.textContent = n > 0 ? `🐾 Kan Cat Rescue · 💌 ${n} good news` : '🐾 Kan Cat Rescue';
   }
 
-  /** The strays waiting by the road (the ones not yet rescued). */
+  /** The strays waiting by the road (the ones not yet rescued). Some sit in plain sight; some hide. */
   setStrays(list: Stray[]) {
     for (const c of this.strays.values()) { c.fig.group.removeFromParent(); c.label.remove(); }
     this.strays.clear();
     for (const st of list) {
       const i = this.days.findIndex((d) => d.date === st.date);
-      if (i < 0) continue;
+      const v = this.views[i];
+      if (!v) continue;
       const at = this.dayS(i) + ((st.seed % 2) ? 9 : -9) + ((st.seed >>> 4) % 5) - 2;
-      const { p, r } = this.frame(at);
-      const side = ROAD_W + 3.5 + ((st.seed >>> 6) % 4);
-      const spot = this.nearestWalkable(p.x - r.x * side, p.z - r.z * side);
-      const fig = petFigure(st.kind, st.color);
+      const { p, r, t } = this.frame(at);
+      let spot: { x: number; z: number };
+      if (st.hidden && (st.seed >>> 5) % 2 === 0) {
+        // Round the back of the day's building.
+        const back = r.clone().multiplyScalar(-(v.d / 2 + 2.6)).add(t.clone().multiplyScalar(((st.seed >>> 8) % 5) - 2));
+        spot = this.nearestWalkable(v.pos.x + back.x, v.pos.z + back.z);
+      } else if (st.hidden) {
+        // Out among the trees, well off the road.
+        spot = this.nearestWalkable(p.x - r.x * (SETBACK + 14), p.z - r.z * (SETBACK + 14));
+      } else {
+        const side = ROAD_W + 3.5 + ((st.seed >>> 6) % 4);
+        spot = this.nearestWalkable(p.x - r.x * side, p.z - r.z * side);
+      }
+      const fig = petFigure(st.kind, st.color, st.marks);
       fig.group.scale.multiplyScalar(1.6);
       fig.group.position.set(spot.x, GROUND_Y - 0.36, spot.z);
       const proxy = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.4), new THREE.MeshBasicMaterial({ visible: false }));
@@ -1447,22 +1472,55 @@ export class Freeway {
       this.scene.add(fig.group);
       const label = document.createElement('div');
       label.className = 'kc-label';
-      label.textContent = `🐱 ${st.name}`;
+      label.textContent = `🐱 ${st.name} ${({ sleepy: '💤', curious: '❓', shy: '🙈', zoomy: '💨' } as const)[st.energy ?? 'curious']}`;
       label.addEventListener('click', () => this.cb.onPick({ kind: 'cat', id: st.id }));
       this.layer.appendChild(label);
-      this.strays.set(st.id, { s: st, fig, at, x: spot.x, z: spot.z, home: spot, to: null, heading: (st.seed % 628) / 100, wait: 1 + (st.seed % 5), phase: 0, label });
+      this.strays.set(st.id, { s: st, fig, at, x: spot.x, z: spot.z, home: spot, to: null, heading: (st.seed % 628) / 100, wait: 1 + (st.seed % 5), phase: 0, label, state: 'idle', eatUntil: 0, run: 0 });
     }
+  }
+
+  /** Whether it'll let you pick it up right now. */
+  private ready(c: StrayCat) {
+    if (c.state === 'eat') return true;
+    if (c.state === 'flee') return false;
+    const e = c.s.energy ?? 'curious';
+    if (e === 'zoomy') return false;
+    if (e === 'shy') return this.mode === 'walk' && !this.rushing;
+    return true;
   }
 
   /** Scoop it up: it follows you (or rides along) until you reach the rescue. */
   catchCat(id: string) {
     const c = this.strays.get(id);
-    if (!c) return false;
+    if (!c || !this.ready(c)) return false;
     this.strays.delete(id);
     c.label.remove();
     const proxy = c.fig.group.children.find((o) => o.userData.pick);
     if (proxy) { this.pickables = this.pickables.filter((x) => x !== proxy); proxy.removeFromParent(); }
     this.followers.push({ fig: c.fig, x: c.x, z: c.z, heading: c.heading, phase: 0 });
+    return true;
+  }
+
+  /** A fish treat in a little dish, set down in front of you: any cat that smells it comes over to eat. */
+  dropTreat() {
+    if (this.mode !== 'walk' || this.chute) return false;
+    const p = this.player;
+    const f = this.forward(p.heading);
+    let at = { x: p.x + f.x * 1.6, z: p.z + f.z * 1.6 };
+    if (!this.walkable(at.x, at.z)) at = { x: p.x, z: p.z };
+    const g = new THREE.Group();
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.32, 0.14, 16), new THREE.MeshStandardMaterial({ color: '#f472b6', roughness: 0.6 }));
+    dish.position.y = 0.07;
+    const fish = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshStandardMaterial({ color: '#fb923c', roughness: 0.5 }));
+    fish.scale.set(1.6, 0.6, 0.8);
+    fish.position.y = 0.2;
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.22, 3), fish.material);
+    tail.rotation.z = Math.PI / 2;
+    tail.position.set(-0.36, 0.2, 0);
+    g.add(dish, fish, tail);
+    g.position.set(at.x, 0, at.z);
+    this.scene.add(g);
+    this.treats.push({ x: at.x, z: at.z, obj: g, until: this.time + 45, taken: null });
     return true;
   }
 
@@ -1487,38 +1545,87 @@ export class Freeway {
     this.setNear(null);
   }
 
+  /** Off it goes, somewhere a good way from you, and lives there now. */
+  private flee(c: StrayCat, p: { x: number; z: number }) {
+    for (let k = 0; k < 8; k++) {
+      const a = Math.atan2(c.x - p.x, c.z - p.z) + (Math.random() - 0.5) * 1.6;
+      const d = 9 + Math.random() * 6;
+      const to = { x: c.x + Math.sin(a) * d, z: c.z + Math.cos(a) * d };
+      if (this.walkable(to.x, to.z)) { c.to = to; c.home = to; c.state = 'flee'; c.run = c.s.energy === 'zoomy' ? 10 : 7.5; return; }
+    }
+  }
+
   private stepCats(dt: number, t: number) {
     const p = this.player;
-    // Strays: sit, wash, wander a few steps from where they live, and watch you come.
+    // Treats go stale after a while if nobody comes for them.
+    this.treats = this.treats.filter((tr) => {
+      if (tr.until > this.time || tr.taken) return true;
+      tr.obj.removeFromParent();
+      return false;
+    });
+    let meow: string | null = null, meowD = 40;
     for (const c of this.strays.values()) {
       const show = Math.abs(c.at - this.s) < 200;
       c.fig.group.visible = show;
       if (!show) continue;
-      let walking = false;
+      const e = c.s.energy ?? 'curious';
       const dp = Math.hypot(p.x - c.x, p.z - c.z);
-      if (c.to) {
+      if (c.s.hidden && dp > 11 && dp < meowD) { meow = c.s.name; meowD = dp; }
+      // Noticing a treat (a sleepy one only if it's right under its nose).
+      if (c.state !== 'eat' && c.state !== 'treat') {
+        const tr = this.treats.find((x) => !x.taken && Math.hypot(x.x - c.x, x.z - c.z) < (e === 'sleepy' ? 7 : 24));
+        if (tr) { tr.taken = c.s.id; c.state = 'treat'; c.to = { x: tr.x - 0.6, z: tr.z - 0.6 }; c.run = e === 'zoomy' ? 6 : 3.5; }
+      }
+      // Rushed or crowded, the shy and the zoomy bolt.
+      if (c.state === 'idle' || c.state === 'walk') {
+        if (e === 'zoomy' && dp < 6.5) this.flee(c, p);
+        else if (e === 'shy' && dp < 7 && (this.rushing || this.mode !== 'walk')) this.flee(c, p);
+      }
+      // A curious one trots over to see who you are.
+      if (e === 'curious' && c.state === 'idle' && this.mode === 'walk' && dp < 11 && dp > 2.2 && !c.to) {
+        c.to = { x: p.x + (c.x - p.x) / dp * 1.6, z: p.z + (c.z - p.z) / dp * 1.6 };
+        c.state = 'walk';
+      }
+      let walking = false;
+      if (c.state === 'eat') {
+        const tr = this.treats.find((x) => x.taken === c.s.id);
+        if (tr) c.heading = turn(c.heading, Math.atan2(tr.x - c.x, tr.z - c.z), dt * 6);
+        if (this.time > c.eatUntil) {
+          if (tr) { tr.obj.removeFromParent(); this.treats = this.treats.filter((x) => x !== tr); }
+          c.state = 'idle';
+          c.home = { x: c.x, z: c.z };
+          c.wait = 3;
+        }
+      } else if (c.to) {
         const dx = c.to.x - c.x, dz = c.to.z - c.z, d = Math.hypot(dx, dz);
-        if (d < 0.1) c.to = null;
-        else {
-          const k = Math.min(d, 1.6 * dt);
-          c.x += (dx / d) * k; c.z += (dz / d) * k;
-          c.heading = turn(c.heading, Math.atan2(dx, dz), dt * 6);
+        if (d < 0.15) {
+          c.to = null;
+          if (c.state === 'treat') { c.state = 'eat'; c.eatUntil = this.time + 12; }
+          else c.state = 'idle';
+        } else {
+          const speed = c.state === 'flee' || c.state === 'treat' ? c.run : e === 'zoomy' ? 3.2 : 1.6;
+          const k = Math.min(d, speed * dt);
+          const nx = c.x + (dx / d) * k, nz = c.z + (dz / d) * k;
+          if (this.walkable(nx, nz)) { c.x = nx; c.z = nz; } else { c.to = null; c.state = c.state === 'treat' ? 'eat' : 'idle'; c.eatUntil = this.time + 12; }
+          c.heading = turn(c.heading, Math.atan2(dx, dz), dt * 8);
           walking = true;
         }
       } else {
         c.wait -= dt;
         if (dp < 9) c.heading = turn(c.heading, Math.atan2(p.x - c.x, p.z - c.z), dt * 3);
         if (c.wait <= 0) {
-          const a = Math.random() * Math.PI * 2, rr = Math.random() * 2.2;
+          // Pottering about home: the zoomy ones never really stop.
+          const a = Math.random() * Math.PI * 2, rr = Math.random() * (e === 'zoomy' ? 5 : 2.2);
           const to = { x: c.home.x + Math.cos(a) * rr, z: c.home.z + Math.sin(a) * rr };
-          if (this.walkable(to.x, to.z)) c.to = to;
-          c.wait = 3 + Math.random() * 5;
+          if (e !== 'sleepy' && this.walkable(to.x, to.z)) { c.to = to; c.state = 'walk'; }
+          c.wait = e === 'zoomy' ? 0.8 + Math.random() * 1.5 : e === 'sleepy' ? 12 + Math.random() * 8 : 3 + Math.random() * 5;
         }
       }
-      this.poseCat(c.fig, walking, c, t, dp < 9);
+      this.poseCat(c.fig, walking, c, t, dp < 9, c.state === 'eat' ? 'eat' : e === 'sleepy' && !walking ? 'sleep' : 'sit', walking && (c.state === 'flee' || c.state === 'treat'));
       c.fig.group.position.set(c.x, GROUND_Y - 0.36, c.z);
       c.fig.group.rotation.y = c.heading;
     }
+    if (meow !== this.meow) { this.meow = meow; this.cb.onMeow?.(meow); }
     // Followers: a little parade along the path you walked, out of sight while you drive.
     const walking = this.mode === 'walk' && !this.chute;
     const last = this.trail[this.trail.length - 1];
@@ -1538,21 +1645,32 @@ export class Freeway {
         f.x += (dx / d) * k; f.z += (dz / d) * k;
         f.heading = turn(f.heading, Math.atan2(dx, dz), dt * 8);
       }
-      this.poseCat(f.fig, moving, f, t, false);
+      this.poseCat(f.fig, moving, f, t, false, 'sit', false);
       f.fig.group.position.set(f.x, GROUND_Y - 0.36, f.z);
       f.fig.group.rotation.y = f.heading;
     });
   }
 
-  private poseCat(f: PetFig, walking: boolean, c: { phase: number }, t: number, watching: boolean) {
+  private poseCat(f: PetFig, walking: boolean, c: { phase: number }, t: number, watching: boolean, rest: 'sit' | 'sleep' | 'eat', dash: boolean) {
     f.rig.position.y = 0;
     f.rig.rotation.x = 0;
+    f.head.rotation.set(0, 0, 0);
     f.tail.rotation.z = Math.sin(t * 2.2 + c.phase) * 0.35;
     if (walking) {
-      c.phase += 0.25;
-      const sw = Math.sin(c.phase) * 0.65;
+      c.phase += dash ? 0.5 : 0.25;
+      const sw = Math.sin(c.phase) * (dash ? 0.9 : 0.65);
       f.legs.forEach((l, i) => { l.rotation.x = i === 0 || i === 3 ? sw : -sw; });
-      f.rig.position.y = Math.abs(Math.sin(c.phase)) * 0.03;
+      f.rig.position.y = Math.abs(Math.sin(c.phase)) * (dash ? 0.08 : 0.03);
+    } else if (rest === 'sleep') {
+      // Curled up asleep, breathing slowly; it only looks up when you're close.
+      f.rig.position.y = -0.14 + Math.sin(t * 1.5) * 0.008;
+      f.legs.forEach((l, i) => { l.rotation.x = i < 2 ? -1.35 : 1.35; });
+      f.head.rotation.x = watching ? 0 : 0.4;
+    } else if (rest === 'eat') {
+      // Head down in the dish, tail up and happy.
+      f.rig.rotation.x = 0.25;
+      f.head.rotation.x = 0.5 + Math.sin(t * 9) * 0.08;
+      f.tail.rotation.z = Math.sin(t * 5) * 0.2;
     } else {
       // Sitting, now and then lifting a paw to wash.
       f.rig.rotation.x = -0.32;
@@ -1598,7 +1716,7 @@ export class Freeway {
     }
     for (const l of this.portalLabels) place(l.el, l.pos, 220);
     if (this.rescue) place(this.rescue.label, new THREE.Vector3(this.rescue.pos.x, this.rescue.top + 3, this.rescue.pos.z), 320);
-    for (const c of this.strays.values()) place(c.label, new THREE.Vector3(c.x, 1.6, c.z), 40);
+    for (const c of this.strays.values()) place(c.label, new THREE.Vector3(c.x, 1.6, c.z), c.s.hidden ? 12 : 40);
   }
 
   resize(aspect: number) {
