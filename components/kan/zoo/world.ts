@@ -254,6 +254,8 @@ export class ZooWorld {
     for (const h of this.halls) if (h.kind === 'house' && Math.hypot(x - h.x, z - h.z) < h.r + 1.5) return true;
     return false;
   }
+  /** Inside the zoo's fence. */
+  inZoo(x: number, z: number) { return inside(BOUNDARY, toPx(x, z)); }
   nearestWalkable(x: number, z: number) {
     for (let r = 1; r < 60; r++) {
       for (let k = 0; k < 16; k++) {
@@ -295,13 +297,7 @@ export class ZooWorld {
       if (!blocked) for (const h of this.halls) {
         const d = Math.hypot(x - h.x, z - h.z);
         if (h.kind === 'house') { if (d < h.r + 0.6) { blocked = true; break; } continue; }
-        if (d > h.r - 1.1 && d < h.r + 0.9) {
-          const a = Math.atan2(z - h.z, x - h.x);
-          const door = h.exhibit.hall!.door;
-          let da = a - door;
-          da = Math.atan2(Math.sin(da), Math.cos(da));
-          if (Math.abs(da) * h.r > 3) { blocked = true; break; }
-        }
+        if (d < h.r + 0.9) { blocked = true; break; }
       }
       if (!blocked) for (const pf of this.places.values()) {
         if (pf.place.kind === 'entrance' || pf.place.kind === 'play' || pf.place.kind === 'show' || !pf.place.r) continue;
@@ -763,6 +759,24 @@ export class ZooWorld {
         continue;
       }
       const H = p.kind === 'food' ? 3.4 : p.kind === 'show' ? 1.2 : 5 + r * 0.15;
+      if (p.id === 'giraffe-encounter') {
+        // A deck up at giraffe height, on posts, with a railing and a lettuce bucket.
+        const top = y + 3.4;
+        b.add(BOX, flat('#9a6b45'), at(pf.x, top, pf.z, face, r * 2.2, 0.3, r * 2.2));
+        for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) b.add(CYL6, flat('#7a5636'), at(pf.x + dx * r, y + 1.7, pf.z + dz * r, 0, 0.35, 3.4, 0.35));
+        for (const s of [-1, 1]) {
+          b.add(BOX, flat('#7a5636'), at(pf.x + Math.cos(face) * s * r * 1.05, top + 0.6, pf.z - Math.sin(face) * s * r * 1.05, face, 0.15, 0.15, r * 2.2));
+          b.add(BOX, flat('#7a5636'), at(pf.x + Math.sin(face) * s * r * 1.05, top + 0.6, pf.z + Math.cos(face) * s * r * 1.05, face + Math.PI / 2, 0.15, 0.15, r * 2.2));
+        }
+        // Stairs up from the path.
+        for (let k = 0; k < 8; k++) {
+          const d = r * 1.1 + k * 0.55;
+          b.add(BOX, flat('#a87a50'), at(pf.x + Math.sin(face) * d, y + 3.2 - k * 0.42, pf.z + Math.cos(face) * d, face, 1.8, 0.2, 0.55));
+        }
+        b.add(CYL, flat('#65a30d'), at(pf.x, top + 0.5, pf.z, 0, 0.9, 0.7, 0.9));
+        this.sign(pf, pf.place.name, '#0f766e', 5.2);
+        continue;
+      }
       if (p.kind === 'show') {
         // Amphitheater steps.
         for (let k = 0; k < 3; k++) b.add(CYL, flat('#b8a88a'), at(pf.x, y + 0.2 + k * 0.4, pf.z, 0, (r - k * 1.4) * 2, 0.4, (r - k * 1.4) * 2));

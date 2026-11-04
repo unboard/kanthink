@@ -53,102 +53,172 @@ const when = (clock: number) => `Day ${day(clock)} · ${clockText(clock)}`;
 
 // ---------- What happened at the zoo ----------
 
-export function NewsSheet({ zoo, onClose, onAct, onChoose, title = 'What happened at the zoo' }: { zoo: Zoo; onClose: () => void; onAct: (e: ZooEvent) => void; onChoose: (e: ZooEvent, i: number) => void; title?: string }) {
-  const open = zoo.events.filter((e) => e.todo && !e.done);
-  const rest = zoo.events.filter((e) => !(e.todo && !e.done)).slice(0, 40);
+/**
+ * One thing at a time: the most important news, big, with its question or its
+ * button. "Next" goes on to the next thing; "All the news" opens the whole list.
+ */
+export function NewsSheet({ zoo, onClose, onAct, onChoose, onQuiz, title = 'What happened at the zoo' }: {
+  zoo: Zoo; onClose: () => void; onAct: (e: ZooEvent) => void; onChoose: (e: ZooEvent, i: number) => void; onQuiz: (e: ZooEvent, value: number) => boolean | null; title?: string;
+}) {
+  const waiting = (e: ZooEvent) => Boolean((e.todo && !e.done) || (e.quiz && !e.quiz.solved));
+  // The order is set when it opens, so answering one doesn't reshuffle the rest.
+  const [queue] = useState(() => {
+    const first = zoo.events.filter((e) => e.todo && !e.done);
+    const sums = zoo.events.filter((e) => !(e.todo && !e.done) && e.quiz && !e.quiz.solved && !e.seen);
+    const fresh = zoo.events.filter((e) => !e.seen && !waiting(e));
+    return [...first, ...sums, ...fresh].map((e) => e.id);
+  });
+  const [at, setAt] = useState(0);
+  const [focus, setFocus] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  const id = focus ?? queue[at] ?? zoo.events[0]?.id;
+  const e = zoo.events.find((x) => x.id === id);
+  const left = queue.length - at - 1;
   return (
-    <Sheet title={title} emoji="📰" onClose={onClose}>
-      {open.length > 0 && (
-        <div className="mb-4">
-          <p className="text-[12px] font-bold uppercase tracking-wider text-rose-600">Needs you now</p>
-          <div className="mt-1.5 space-y-2">{open.map((e) => <EventRow key={e.id} e={e} onAct={onAct} onChoose={onChoose} money={zoo.money} urgent />)}</div>
+    <Sheet title={all ? 'All the news' : title} emoji="📰" onClose={onClose}>
+      {!all && e && <BigCard key={e.id} e={e} money={zoo.money} onAct={onAct} onChoose={onChoose} onQuiz={onQuiz} />}
+      {!all && (
+        <div className="mt-4 flex gap-2">
+          {focus === null && left > 0 && <button onClick={() => setAt(at + 1)} className={`${BTN} flex-1 bg-violet-500 text-white`}>Next ({left} more) ›</button>}
+          {focus !== null && <button onClick={() => setFocus(null)} className={`${BTN} flex-1 bg-violet-100 text-violet-900`}>‹ Back</button>}
+          <button onClick={() => setAll(true)} className={`${BTN} flex-1 bg-neutral-100 text-neutral-700`}>All the news</button>
         </div>
       )}
-      <div className="space-y-2">{rest.map((e) => <EventRow key={e.id} e={e} onAct={onAct} onChoose={onChoose} money={zoo.money} />)}</div>
+      {all && (
+        <>
+          <div className="space-y-1.5">
+            {zoo.events.slice(0, 50).map((x) => (
+              <button key={x.id} onClick={() => { setFocus(x.id); setAll(false); }} className={`flex w-full items-center gap-2.5 rounded-2xl px-3 py-2 text-left hover:bg-neutral-100 ${waiting(x) ? 'bg-rose-50' : 'bg-neutral-50'}`}>
+                <span className="text-xl">{x.emoji}</span>
+                <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{x.title}</span>
+                {waiting(x) && <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[11px] font-bold text-white">!</span>}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setAll(false)} className={`${BTN} mt-3 w-full bg-neutral-100 text-neutral-700`}>‹ Back</button>
+        </>
+      )}
     </Sheet>
   );
 }
 
 const ACT: Partial<Record<ZooEvent['kind'], string>> = { escape: 'Go find them', sick: 'Call the vet', baby: 'Pick a name', fence: `Fix it (${money(FENCE_COST)})`, lost: 'Go help' };
-function EventRow({ e, onAct, onChoose, money: have, urgent }: { e: ZooEvent; onAct: (e: ZooEvent) => void; onChoose: (e: ZooEvent, i: number) => void; money: number; urgent?: boolean }) {
+
+function BigCard({ e, money: have, onAct, onChoose, onQuiz }: { e: ZooEvent; money: number; onAct: (e: ZooEvent) => void; onChoose: (e: ZooEvent, i: number) => void; onQuiz: (e: ZooEvent, value: number) => boolean | null }) {
+  const [said, setSaid] = useState<'right' | 'wrong' | null>(null);
+  const q = e.quiz;
+  const lines = (e.math ?? []).filter((_, i) => !q || q.solved || i !== q.line);
   return (
-    <div className={`rounded-2xl px-3 py-2.5 ${urgent ? 'bg-rose-50 ring-1 ring-rose-200' : 'bg-neutral-50'} ${e.seen ? '' : 'ring-2 ring-violet-300'}`}>
-      <div className="flex items-start gap-2.5">
-        <span className="text-2xl leading-none">{e.emoji}</span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold leading-snug">{e.title}</p>
-          <p className="mt-0.5 text-[13px] leading-snug text-neutral-600">{e.text}</p>
-          {e.math && <Sums lines={e.math} />}
-          <p className="mt-1 text-[11px] text-neutral-400">{when(e.at)}</p>
+    <div className="text-center">
+      <p className="text-6xl leading-none">{e.emoji}</p>
+      <p className="mt-3 text-[20px] font-bold leading-snug">{e.title}</p>
+      {e.text && <p className="mt-1.5 text-[15px] leading-relaxed text-neutral-600">{e.text}</p>}
+      {q && !q.solved && (
+        <div className="mt-4 rounded-3xl bg-amber-50 px-4 py-4">
+          <p className="text-[13px] font-bold uppercase tracking-wider text-amber-700">🧮 Bonus question · win {money(q.reward)}</p>
+          <p className="mt-1.5 font-mono text-[22px] font-bold text-amber-950">{q.q}</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {q.options.map((o) => (
+              <button key={o} onClick={() => { const r = onQuiz(e, o); setSaid(r ? 'right' : 'wrong'); }} className="rounded-2xl bg-white py-3 text-[20px] font-bold text-amber-950 shadow-sm ring-1 ring-amber-200 active:scale-95">
+                {q.dollars ? money(o) : o.toLocaleString('en-US')}
+              </button>
+            ))}
+          </div>
+          {said === 'wrong' && <p className="mt-2 text-[14px] font-semibold text-rose-600">Not quite. Try again!</p>}
         </div>
-      </div>
+      )}
+      {q?.solved && (
+        <p className={`mt-4 rounded-2xl px-3 py-2 text-[15px] font-semibold ${q.won ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-800'}`}>
+          {q.won ? `⭐ You got it! The zoo gets a ${money(q.reward)} bonus.` : 'Here’s how it works:'}
+        </p>
+      )}
+      {lines.length > 0 && <div className="text-left"><Sums lines={lines} /></div>}
       {e.todo && !e.done && e.choices && (
-        <div className="mt-2 grid gap-1.5">
+        <div className="mt-4 grid gap-2">
           {e.choices.map((c, i) => (
-            <button key={i} onClick={() => onChoose(e, i)} disabled={(c.cost ?? 0) > have} className={`${BTN} w-full ${i === 0 ? 'bg-violet-500 text-white' : 'bg-violet-100 text-violet-900'}`}>{c.label}</button>
+            <button key={i} onClick={() => onChoose(e, i)} disabled={(c.cost ?? 0) > have} className={`${BTN} w-full py-3 text-[16px] ${i === 0 ? 'bg-violet-500 text-white' : 'bg-violet-100 text-violet-900'}`}>{c.label}</button>
           ))}
         </div>
       )}
-      {e.todo && !e.done && !e.choices && ACT[e.kind] && <button onClick={() => onAct(e)} className={`${BTN} mt-2 w-full bg-rose-500 text-white`}>{ACT[e.kind]}</button>}
-      {e.todo && e.done && <p className="mt-1 text-[12px] font-semibold text-emerald-600">✓ {e.choices && e.picked !== undefined ? `You picked: ${e.choices[e.picked]?.label}` : 'Done'}</p>}
+      {e.todo && !e.done && !e.choices && ACT[e.kind] && <button onClick={() => onAct(e)} className={`${BTN} mt-4 w-full bg-rose-500 py-3 text-[16px] text-white`}>{ACT[e.kind]}</button>}
+      {e.todo && e.done && <p className="mt-3 text-[14px] font-semibold text-emerald-600">✓ {e.choices && e.picked !== undefined ? `You picked: ${e.choices[e.picked]?.label}` : 'Done'}</p>}
+      <p className="mt-3 text-[11px] text-neutral-400">{when(e.at)}</p>
     </div>
   );
 }
 
 // ---------- An exhibit ----------
 
+/** An exhibit, the way a kid wants it: who lives here, what's wrong (and the fix), and one thing to make better. */
 export function ExhibitSheet({ zoo, id, onClose, onAnimal, onFeed, onPlay, onBuy, onGoal, onFix, canFeed }: {
   zoo: Zoo; id: string; onClose: () => void; onAnimal: (a: Animal) => void; onFeed?: (habitat: string) => void; onPlay?: (habitat: string) => void;
   onBuy: (id: string) => void; onGoal: (id: string) => void; onFix: (habitat: string) => void; canFeed: string | null;
 }) {
+  const [open, setOpen] = useState<string | null>(null);
   const e = EXHIBITS.find((x) => x.id === id);
   if (!e) return null;
+  const ids = new Set(e.habitats.map((h) => h.id));
+  const here = zoo.animals.filter((a) => ids.has(a.habitat));
+  const groups = [...new Set(here.map((a) => a.species))].map((sp) => ({ sp: species(sp), list: here.filter((a) => a.species === sp) }));
   const h = hourOf(zoo.clock);
-  const ups = UPGRADES.filter((u) => u.exhibit === id);
+  const kind = (a: Animal) => species(a.species).name.toLowerCase();
+  // What needs doing, in kid words, each with its fix.
+  const issues: { key: string; text: string; act?: () => void; label?: string; cost?: number }[] = [];
+  for (const a of here.filter((x) => x.loose)) issues.push({ key: `l${a.id}`, text: `❗ ${a.name} got out! Look for them on the map.` });
+  for (const a of here.filter((x) => x.sick)) issues.push({ key: `s${a.id}`, text: `🤒 ${a.name} isn’t feeling well.`, act: () => onAnimal(a), label: 'Help' });
+  for (const hb of e.habitats.filter((x) => zoo.broken.includes(x.id))) issues.push({ key: `f${hb.id}`, text: '🔧 There’s a hole in the fence.', act: () => onFix(hb.id), label: `Fix · ${money(FENCE_COST)}`, cost: FENCE_COST });
+  for (const g of groups) {
+    const list = g.list.filter((a) => !a.loose);
+    if (list.length && list.reduce((s, a) => s + a.hunger, 0) / list.length > 60) issues.push({ key: `h${g.sp.id}`, text: `🍽️ The ${g.sp.many} are hungry.` });
+  }
+  for (const a of here.filter((x) => x.needsName)) issues.push({ key: `b${a.id}`, text: `🍼 A baby ${kind(a)} needs a name!`, act: () => onAnimal(a), label: 'Name it' });
+  const next = UPGRADES.filter((u) => u.exhibit === id && canBuy(zoo, u)).sort((a, b) => a.cost - b.cost)[0];
+  const sleepy = groups.filter((x) => !awake(x.sp, h)).map((x) => x.sp.many);
   return (
     <Sheet title={e.name} emoji={e.emoji} onClose={onClose}>
-      <p className="text-[14px] leading-relaxed text-neutral-600">{e.blurb}</p>
-      {e.habitats.map((hb) => {
-        const list = zoo.animals.filter((a) => a.habitat === hb.id);
-        if (!list.length) return null;
-        const broken = zoo.broken.includes(hb.id);
-        const hungry = list.reduce((s, a) => s + a.hunger, 0) / list.length;
+      <p className="text-[15px] leading-relaxed text-neutral-600">{e.blurb}</p>
+      <div className="mt-3 space-y-2">
+        {issues.length === 0 && <p className="rounded-2xl bg-emerald-50 px-3 py-2.5 text-[15px] font-semibold text-emerald-800">😊 Everyone here is happy and full.</p>}
+        {issues.map((x) => (
+          <div key={x.key} className="flex items-center gap-2 rounded-2xl bg-rose-50 px-3 py-2.5">
+            <p className="flex-1 text-[15px] font-semibold text-rose-900">{x.text}</p>
+            {x.act && <button onClick={x.act} disabled={(x.cost ?? 0) > zoo.money} className={`${BTN} bg-rose-500 py-2 text-white`}>{x.label}</button>}
+          </div>
+        ))}
+        {sleepy.length > 0 && <p className="text-[13px] text-neutral-500">💤 Asleep right now: the {sleepy.join(', the ')}.</p>}
+      </div>
+      {canFeed && onFeed && (
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => onFeed(canFeed)} className={`${BTN} flex-1 bg-emerald-500 py-3 text-white`}>{species(here.find((a) => a.habitat === canFeed)?.species ?? 'goat').foodEmoji} Feed them</button>
+          {onPlay && <button onClick={() => onPlay(canFeed)} className={`${BTN} flex-1 bg-sky-500 py-3 text-white`}>🎾 Toss a toy</button>}
+        </div>
+      )}
+      <p className="mt-4 text-[13px] font-bold uppercase tracking-wider text-neutral-500">Who lives here</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {groups.map(({ sp, list }) => (
+          <button key={sp.id} onClick={() => setOpen(open === sp.id ? null : sp.id)} className={`rounded-2xl px-2 py-2.5 text-center ${open === sp.id ? 'bg-violet-100 ring-2 ring-violet-300' : 'bg-neutral-50 hover:bg-neutral-100'}`}>
+            <span className="block text-3xl">{sp.emoji}</span>
+            <span className="mt-0.5 block text-[13px] font-semibold leading-tight">{list.length} {list.length === 1 ? sp.name.split(' ').pop()!.toLowerCase() : sp.many}</span>
+          </button>
+        ))}
+      </div>
+      {open && (() => {
+        const grp = groups.find((x) => x.sp.id === open);
+        if (!grp) return null;
         return (
-          <div key={hb.id} className="mt-4">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[13px] font-bold uppercase tracking-wider text-neutral-500">{hb.name}</p>
-              {hungry > 55 && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-700">Hungry!</span>}
+          <div className="mt-2 rounded-2xl bg-violet-50 px-3 py-3">
+            <div className="flex flex-wrap gap-1.5">
+              {grp.list.map((a) => <button key={a.id} onClick={() => onAnimal(a)} className="rounded-full bg-white px-3 py-1.5 text-[14px] font-semibold text-violet-900 shadow-sm">{a.name || 'Baby'}{a.born !== undefined ? ' 🍼' : ''}{a.sick ? ' 🤒' : ''}</button>)}
             </div>
-            {broken && <button onClick={() => onFix(hb.id)} disabled={zoo.money < FENCE_COST} className={`${BTN} mt-2 w-full bg-amber-400 text-neutral-900`}>🔧 Fix the fence · {money(FENCE_COST)}</button>}
-            <div className="mt-1.5 divide-y divide-neutral-100 rounded-2xl bg-neutral-50">
-              {list.map((a) => {
-                const sp = species(a.species);
-                return (
-                  <button key={a.id} onClick={() => onAnimal(a)} className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-neutral-100">
-                    <span className="text-2xl">{sp.emoji}</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-semibold">{a.name || 'New baby'} {a.born !== undefined && '🍼'} {a.sick && '🤒'} {a.loose && '❗'}</span>
-                      <span className="block truncate text-[12px] text-neutral-500">{sp.name}{a.loose ? ' · got out!' : awake(sp, h) ? '' : ' · asleep 💤'}</span>
-                    </span>
-                    <span className="flex flex-col items-end gap-1"><Bar value={a.mood} color="#ec4899" label="Happy" /><Bar value={100 - a.hunger} color="#22c55e" label="Full" /></span>
-                  </button>
-                );
-              })}
-            </div>
-            {canFeed === hb.id && onFeed && (
-              <div className="mt-2 flex gap-2">
-                <button onClick={() => onFeed(hb.id)} className={`${BTN} flex-1 bg-emerald-500 text-white`}>{species(list[0].species).foodEmoji} Feed</button>
-                {onPlay && <button onClick={() => onPlay(hb.id)} className={`${BTN} flex-1 bg-sky-500 text-white`}>🎾 Toss a toy</button>}
-              </div>
-            )}
+            <p className="mt-2 text-[14px] leading-relaxed text-violet-950">💡 {grp.sp.fact}</p>
           </div>
         );
-      })}
-      {canFeed === null && <p className="mt-3 text-[12px] text-neutral-400">Walk up to the fence to feed them and play.</p>}
-      {ups.length > 0 && (
-        <div className="mt-5">
+      })()}
+      {!canFeed && <p className="mt-3 text-[12px] text-neutral-400">Walk up to the fence to feed them and play.</p>}
+      {next && (
+        <div className="mt-4">
           <p className="text-[13px] font-bold uppercase tracking-wider text-neutral-500">Make it better</p>
-          <div className="mt-1.5 space-y-2">{ups.map((u) => <UpgradeRow key={u.id} zoo={zoo} id={u.id} onBuy={onBuy} onGoal={onGoal} />)}</div>
+          <div className="mt-1.5"><UpgradeRow zoo={zoo} id={next.id} onBuy={onBuy} onGoal={onGoal} /></div>
         </div>
       )}
     </Sheet>

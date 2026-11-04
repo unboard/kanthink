@@ -266,7 +266,7 @@ export const PLACES: Place[] = [
   { id: 'orangutan-oasis', name: 'Orangutan Oasis', emoji: '🍦', at: [505, 640], kind: 'food', r: 6 },
   { id: 'carousel', name: 'Sue’s Carousel', emoji: '🎠', at: [302, 790], kind: 'ride', r: 11 },
   { id: 'splash', name: 'Alaskan Adventure Splash Park', emoji: '🐳', at: [292, 690], kind: 'play', r: 20 },
-  { id: 'giraffe-encounter', name: 'Giraffe Encounter', emoji: '🥬', at: [962, 625], kind: 'show', r: 8 },
+  { id: 'giraffe-encounter', name: 'Giraffe Encounter', emoji: '🥬', at: [914, 594], kind: 'show', r: 7 },
   { id: 'amphitheater', name: 'Elephant Amphitheater', emoji: '🎭', at: [930, 520], kind: 'show', r: 10 },
   { id: 'depot', name: 'Omaha Train Depot', emoji: '🚂', at: [196, 712], kind: 'station', r: 10 },
   { id: 'kenefick', name: 'Kenefick Train Station', emoji: '🚉', at: [792, 470], kind: 'station', r: 9 },
@@ -307,7 +307,7 @@ export const PATHS: Px[][] = [
   [[262, 738], [210, 718], [196, 712]],
   [[330, 744], [300, 714]],
   // Giraffe encounter and the elephant house.
-  [[944, 640], [962, 625]],
+  [[944, 640], [920, 606]],
   [[902, 668], [945, 700], [1010, 700], [1068, 690]],
 ];
 

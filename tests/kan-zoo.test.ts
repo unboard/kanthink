@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HABITATS, EXHIBITS, PLACES, toPx, toWorld } from '@/lib/kan/zoo/map';
 import { SPECIES } from '@/lib/kan/zoo/species';
-import { DAY, UPGRADES, advance, buy, catchLoose, dailyDraw, heal, nameBaby, newZoo, plan, question, seeded, todos } from '@/lib/kan/zoo/sim';
+import { DAY, UPGRADES, advance, answerQuiz, buy, catchLoose, dailyDraw, heal, nameBaby, newZoo, note, plan, question, seeded, todos } from '@/lib/kan/zoo/sim';
 import { choose, escape, memory, startStory } from '@/lib/kan/zoo/stories';
 
 describe('kan zoo', () => {
@@ -138,5 +138,31 @@ describe('kan zoo', () => {
     expect(z.money).toBe(before - ask.choices![0].cost!);
     expect(z.events[0].title).toBe('Ice pop day!');
     expect(z.arcs!.length).toBe(0);
+  });
+
+  it('turns a times sum in the news into a bonus question, and hides its answer until it is solved', () => {
+    const z = newZoo(0, seeded(12));
+    const e = note(z, { kind: 'vip', emoji: '🎂', title: 'Party', text: '', math: ['9 kids × $8 = $72'] });
+    expect(e.quiz?.q).toBe('9 kids × $8 = ?');
+    expect(e.quiz?.answer).toBe(72);
+    expect(e.quiz?.options).toContain(72);
+    expect(new Set(e.quiz?.options).size).toBe(4);
+    const before = z.money;
+    expect(answerQuiz(z, e.id, 81)).toBe(false);
+    expect(answerQuiz(z, e.id, 72)).toBe(true);
+    expect(z.money).toBe(before + e.quiz!.reward);
+    expect(answerQuiz(z, e.id, 72)).toBeNull();
+  });
+
+  it('never gives away the animal in the which-animal question', () => {
+    for (let i = 0; i < 40; i++) {
+      const z = newZoo(0, seeded(20 + i));
+      z.clock = 11 * 60;
+      expect(startStory(z, 'question', seeded(i))).toBe(true);
+      const ask = z.events[0];
+      const arc = z.arcs!.find((a) => a.recipe === 'question')!;
+      const sp = SPECIES[String(arc.vars.sp)];
+      for (const w of sp.name.split(/[\s-]+/)) if (w.replace(/[^a-z]/gi, '').length >= 3) expect(ask.text.toLowerCase()).not.toContain(w.toLowerCase().replace(/[^a-z]/g, ''));
+    }
   });
 });

@@ -24,6 +24,8 @@ export type ZooMode = Exclude<ViewMode, 'map'>;
 export type ZooNear =
   | { kind: 'habitat'; id: string; name: string; inside: boolean }
   | { kind: 'house'; exhibit: string; name: string }
+  /** The door of an exhibit you can go inside. */
+  | { kind: 'hall'; exhibit: string; name: string }
   | { kind: 'place'; id: string; name: string; emoji: string; placeKind: string }
   | { kind: 'loose'; id: string; name: string }
   | { kind: 'kid'; name: string }
@@ -42,6 +44,8 @@ export interface ZooCallbacks {
   /** The lost kid found their grown-up. */
   onReunited(): void;
   onRide(r: Ride): void;
+  /** You came down (by parachute) somewhere worth a word: in with the lions, say. */
+  onLanded?(where: string | null): void;
   /** Where you are, in map pixels, for the minimap. */
   onWhere?(px: Px, heading: number): void;
 }
@@ -72,6 +76,8 @@ interface Critter {
 interface Food { habitat: string; x: number; z: number; until: number; obj: THREE.Object3D }
 
 const PERSON = 0.02;
+/** Exhibits with an inside to explore: their doors take you in. */
+export const INDOOR = new Set(['desert', 'night', 'jungle', 'aquarium', 'butterflies']);
 /** Cats, dogs and the like sit down when they stop; rhinos and giraffes don't. */
 const SITTERS = new Set(['lion', 'tiger', 'cheetah', 'snowleopard', 'bobcat', 'batearedfox', 'fossa', 'meerkat', 'redpanda', 'goat']);
 const turn = (from: number, to: number, k: number) => { let d = to - from; d = Math.atan2(Math.sin(d), Math.cos(d)); return from + d * k; };
@@ -98,6 +104,10 @@ export class ZooScene {
   private light: THREE.SpotLight;
   private beam: THREE.Mesh;
   private flashOn = false;
+  /** Looking around (drag): an extra turn of the camera around you. */
+  private look = 0;
+  /** Coming down under a parachute. */
+  private chute: { canopy: THREE.Group; t: number; glider: { obj: THREE.Group; x: number; y: number; z: number; heading: number; speed: number; t: number } | null } | null = null;
   // The train and the Skyfari.
   private train: { cars: THREE.Group[]; s: number; speed: number; stop: number; stations: { id: string; name: string; s: number }[]; puffs: THREE.Mesh[]; puffT: number; atStation: string | null };
   private chairs: THREE.Group[] = [];
@@ -280,7 +290,9 @@ export class ZooScene {
     }
     const f = { x: Math.sin(p.heading), z: Math.cos(p.heading) };
     const nx = p.x + f.x * p.speed * dt, nz = p.z + f.z * p.speed * dt;
-    const ok = (x: number, z: number) => W.walkable(x, z);
+    // Landed in a yard (by parachute)? You can always walk out: the fence only keeps people from climbing in.
+    const stuck = !W.walkable(p.x, p.z);
+    const ok = (x: number, z: number) => W.walkable(x, z) || (stuck && W.inZoo(x, z) && !W.solidAt(x, z));
     if (ok(nx, nz)) { p.x = nx; p.z = nz; }
     else if (ok(nx, p.z)) { p.x = nx; p.speed *= 1 - 2 * dt; }
     else if (ok(p.x, nz)) { p.z = nz; p.speed *= 1 - 2 * dt; }
@@ -309,13 +321,16 @@ export class ZooScene {
       p.obj.rotateX(p.roll);
     }
     // Pull in closer when a building's behind you, so the camera never ends up inside a roof.
+    // Drag to look around; it drifts back behind you once you walk.
+    if (Math.abs(p.speed) > 0.5) this.look *= 1 - Math.min(1, dt * 1.5);
+    const lf = { x: Math.sin(p.heading + this.look), z: Math.cos(p.heading + this.look) };
     let reach = back;
-    while (reach > 2.5 && W.solidAt(p.x - f.x * reach, p.z - f.z * reach)) reach -= 0.75;
-    const want = this.v3.set(p.x - f.x * reach, p.y + up * (0.55 + 0.45 * (reach / back)), p.z - f.z * reach);
+    while (reach > 2.5 && W.solidAt(p.x - lf.x * reach, p.z - lf.z * reach)) reach -= 0.75;
+    const want = this.v3.set(p.x - lf.x * reach, p.y + up * (0.55 + 0.45 * (reach / back)), p.z - lf.z * reach);
     // Don't let the camera dip under a hill.
     want.y = Math.max(want.y, W.groundAt(want.x, want.z) + 1.5);
     this.camera.position.lerp(want, 1 - Math.exp(-dt * 6));
-    this.camera.lookAt(p.x + f.x * 5, p.y + (walking ? 1.8 : 1.4), p.z + f.z * 5);
+    this.camera.lookAt(p.x + lf.x * 5, p.y + (walking ? 1.8 : 1.4), p.z + lf.z * 5);
   }
   private hallAt(x: number, z: number): HallFrame | null {
     for (const h of this.world.halls) if (h.kind !== 'house' && Math.hypot(x - h.x, z - h.z) < h.r) return h;
@@ -836,7 +851,7 @@ export class ZooScene {
     if (this.ride || !this.train.atStation) return;
     if (this.parked) { this.parked.obj.removeFromParent(); this.parked = null; }
     if (this.mode !== 'walk') { this.player.obj.removeFromParent(); const w = this.kit.walker(); this.scene.add(w); this.player.obj = w; this.mode = 'walk'; this.cb.onModeChange('walk'); }
-    this.player.obj.visible = false;
+    this.seat(this.train.cars[1], 0, 0.9, 0.6);
     this.ride = { kind: 'train' };
     this.train.stop = Math.max(this.train.stop, 2);
     this.emitRide();
@@ -856,14 +871,101 @@ export class ZooScene {
     });
     this.chairU[best] = atBottom ? 0 : 1;
     if (this.mode !== 'walk') this.setMode('walk');
-    this.player.obj.visible = false;
+    this.seat(this.chairs[best], 0, -2.35, 0.05);
     this.ride = { kind: 'skyfari', chair: best, from: atBottom ? 0 : 1 };
     this.emitRide();
+  }
+  /** Sit you down in a seat that moves (a train car, a Skyfari chair). */
+  private seat(on: THREE.Object3D, x: number, y: number, z: number) {
+    const o = this.player.obj;
+    o.removeFromParent();
+    o.position.set(x, y, z);
+    o.rotation.set(0, 0, 0);
+    o.scale.setScalar(0.75);
+    on.add(o);
+    this.look = 0;
+  }
+  private unseat() {
+    const o = this.player.obj;
+    o.removeFromParent();
+    o.scale.setScalar(1);
+    o.visible = true;
+    this.scene.add(o);
+  }
+  /** Jump: out of the plane, or off the Skyfari, and the parachute opens. */
+  jump() {
+    const r = this.ride;
+    if (this.chute) return;
+    if (r?.kind === 'skyfari') {
+      const p = this.chairAt(this.chairU[r.chair]);
+      this.ride = null;
+      this.unseat();
+      this.player.obj.removeFromParent();
+      this.openChute(p.x, p.y - 2.4, p.z, p.heading, null);
+      this.emitRide();
+      return;
+    }
+    if (this.mode !== 'fly' || r) return;
+    const p = this.player;
+    this.openChute(p.x, p.y - 1.2, p.z, p.heading, { obj: p.obj, x: p.x, y: p.y, z: p.z, heading: p.heading, speed: p.speed, t: 0 });
+  }
+  private openChute(x: number, y: number, z: number, heading: number, glider: { obj: THREE.Group; x: number; y: number; z: number; heading: number; speed: number; t: number } | null) {
+    const walker = this.kit.walker();
+    const canopy = this.kit.canopy();
+    canopy.scale.setScalar(0.15);
+    walker.add(canopy);
+    this.scene.add(walker);
+    this.chute = { canopy, t: 0, glider };
+    this.player = { obj: walker, x, y, z, heading, speed: 0, roll: 0 };
+    this.mode = 'walk';
+    this.setNear(null);
+    this.cb.onModeChange('walk');
+  }
+  parachuting() { return Boolean(this.chute); }
+  /** Drifting down: A D turn, W glides farther, S drops faster. Lands wherever it lands, yards included. */
+  private stepChute(dt: number, input: { steer: number; push: number }) {
+    const p = this.player, c = this.chute!;
+    c.t += dt;
+    const gl = c.glider;
+    if (gl) {
+      gl.t += dt;
+      gl.x += Math.sin(gl.heading) * gl.speed * dt;
+      gl.z += Math.cos(gl.heading) * gl.speed * dt;
+      gl.y += 5 * dt;
+      gl.obj.position.set(gl.x, gl.y, gl.z);
+      if (gl.t > 4) { gl.obj.removeFromParent(); c.glider = null; }
+    }
+    c.canopy.scale.setScalar(Math.min(1, 0.15 + c.t * 2.2));
+    p.heading -= input.steer * 1.7 * dt;
+    const drift = 5 + Math.max(0, input.push) * 7;
+    const nx = p.x + Math.sin(p.heading) * drift * dt, nz = p.z + Math.cos(p.heading) * drift * dt;
+    if (this.world.inZoo(nx, nz) || this.world.walkable(nx, nz)) { p.x = nx; p.z = nz; }
+    const floor = this.world.groundAt(p.x, p.z);
+    p.y = Math.max(floor, p.y - (4.5 + Math.max(0, -input.push) * 9) * dt);
+    p.roll += (input.steer * 0.3 - p.roll) * Math.min(1, dt * 3);
+    p.obj.position.set(p.x, p.y, p.z);
+    p.obj.rotation.set(0, p.heading, 0);
+    p.obj.rotateZ(-p.roll + Math.sin(c.t * 1.6) * 0.05);
+    const body = p.obj.userData.body as THREE.Object3D | undefined;
+    if (body) body.position.y = 0.8;
+    const f = { x: Math.sin(p.heading + this.look), z: Math.cos(p.heading + this.look) };
+    this.camera.position.lerp(this.v3.set(p.x - f.x * 15, p.y + 4, p.z - f.z * 15), 1 - Math.exp(-dt * 4));
+    this.camera.lookAt(p.x + f.x * 6, p.y + 1, p.z + f.z * 6);
+    if (p.y <= floor + 0.01) {
+      // Down. On a roof or a dome, slide off to the nearest path; anywhere else (a yard!) you stay put.
+      if (this.world.solidAt(p.x, p.z) || this.hallAt(p.x, p.z) || !this.world.inZoo(p.x, p.z)) { const s = this.world.nearestWalkable(p.x, p.z); p.x = s.x; p.z = s.z; p.y = this.world.groundAt(s.x, s.z); }
+      c.canopy.removeFromParent();
+      c.glider?.obj.removeFromParent();
+      this.chute = null;
+      const f2 = this.world.walkable(p.x, p.z) ? null : this.world.habitatAt(p.x, p.z);
+      this.cb.onLanded?.(f2 ? f2.def.name : null);
+    }
   }
   getOff() {
     const r = this.ride;
     if (!r) return;
     this.ride = null;
+    this.unseat();
     let spot: { x: number; z: number };
     if (r.kind === 'train') {
       const st = this.world.places.get(this.train.atStation ?? 'depot')!;
@@ -875,7 +977,7 @@ export class ZooScene {
     }
     const s = this.world.walkable(spot.x, spot.z) ? spot : this.world.nearestWalkable(spot.x, spot.z);
     this.player.x = s.x; this.player.z = s.z; this.player.y = this.world.groundAt(s.x, s.z);
-    this.player.obj.visible = true;
+    this.player.obj.position.set(s.x, this.player.y, s.z);
     this.emitRide();
   }
   private emitRide() {
@@ -897,7 +999,7 @@ export class ZooScene {
       pos = c.position.clone();
       heading = c.rotation.y;
       // Off to the side and up a little, looking ahead along the train.
-      const f = { x: Math.sin(heading), z: Math.cos(heading) };
+      const f = { x: Math.sin(heading + this.look), z: Math.cos(heading + this.look) };
       const want = this.v3.set(pos.x - f.x * 10 + f.z * 5, pos.y + 5, pos.z - f.z * 10 - f.x * 5);
       this.camera.position.lerp(want, 1 - Math.exp(-dt * 3));
       this.camera.lookAt(pos.x + f.x * 8, pos.y + 1.5, pos.z + f.z * 8);
@@ -907,9 +1009,10 @@ export class ZooScene {
       const k = r.from === 0 ? u : u - 1;
       const p = this.chairAt(u);
       heading = p.heading;
-      const f = { x: Math.sin(heading), z: Math.cos(heading) };
-      this.camera.position.lerp(this.v3.set(p.x - f.x * 6, p.y + 1.2, p.z - f.z * 6), 1 - Math.exp(-dt * 4));
-      this.camera.lookAt(p.x + f.x * 14, p.y - 4, p.z + f.z * 14);
+      const f = { x: Math.sin(heading + this.look), z: Math.cos(heading + this.look) };
+      // Behind and a little above you in the chair; drag to look all around.
+      this.camera.position.lerp(this.v3.set(p.x - f.x * 7, p.y + 0.6, p.z - f.z * 7), 1 - Math.exp(-dt * 4));
+      this.camera.lookAt(p.x + f.x * 14, p.y - 5, p.z + f.z * 14);
       this.player.x = p.x; this.player.z = p.z;
       if (k >= 0.995 || k < 0) this.getOff();
     }
@@ -917,6 +1020,19 @@ export class ZooScene {
     if (key !== this.rideKey) { this.rideKey = key; this.emitRide(); }
   }
   riding() { return this.ride?.kind ?? null; }
+  /** Hide the outdoor labels while you're inside a building. */
+  hideLabels(on: boolean) { this.layer.style.display = on ? 'none' : ''; }
+  /** Out through an exhibit's door, facing away from it. */
+  outside(exhibitId: string) {
+    const h = this.world.halls.find((x) => x.exhibit.id === exhibitId);
+    if (!h) return;
+    const away = toPx(h.door.x + (h.door.x - h.x) * 0.15, h.door.z + (h.door.z - h.z) * 0.15);
+    this.jumpTo(away);
+    this.player.heading = Math.atan2(h.door.x - h.x, h.door.z - h.z);
+    this.look = 0;
+  }
+  /** Drag to look around: on foot, on the train, in a Skyfari chair, under the parachute. */
+  turn(dx: number) { this.look = Math.atan2(Math.sin(this.look + dx), Math.cos(this.look + dx)); }
 
   // ---------- Each frame ----------
 
@@ -928,6 +1044,7 @@ export class ZooScene {
     this.hour = hour;
     this.weather = weather;
     if (this.ride) this.stepRide(dt);
+    else if (this.chute) this.stepChute(dt, input);
     else if (!this.posing) this.stepPlayer(dt, input);
     const p = this.player;
     this.sky.update(dt, t, hour, weather, this.camera.position);
@@ -975,14 +1092,14 @@ export class ZooScene {
       }
       for (const f of this.world.habitats.values()) {
         const e = EXHIBITS.find((x) => x.id === f.def.exhibit)!;
-        if (e.hall?.kind === 'house') continue;
+        if (e.hall && (e.hall.kind === 'house' || INDOOR.has(e.id))) continue;
         const d = this.world.habitatD(f, p.x, p.z);
         const edge = (d - (f.def.moat ? 1.36 : 1)) * Math.min(f.rx, f.rz);
         if (f.def.walkIn ? d < 1 : edge < 6) consider({ kind: 'habitat', id: f.def.id, name: f.def.name, inside: Boolean(f.def.walkIn && d < 1) }, Math.max(0, edge) + (f.def.walkIn ? 1 : 0));
       }
-      for (const h of this.world.halls) if (h.kind === 'house') {
+      for (const h of this.world.halls) {
         const d = Math.hypot(h.door.x - p.x, h.door.z - p.z);
-        if (d < 6) consider({ kind: 'house', exhibit: h.exhibit.id, name: h.exhibit.name }, d);
+        if (d < (h.kind === 'house' ? 6 : 8)) consider(INDOOR.has(h.exhibit.id) ? { kind: 'hall', exhibit: h.exhibit.id, name: h.exhibit.name } : { kind: 'house', exhibit: h.exhibit.id, name: h.exhibit.name }, d);
       }
       for (const pf of this.world.places.values()) {
         const pl = pf.place;

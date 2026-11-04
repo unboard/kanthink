@@ -655,7 +655,13 @@ const RECIPES: Recipe[] = [
     steps: [
       (c, v) => {
         const sp = species(String(v.sp));
-        const fact = sp.fact.replace(new RegExp(sp.name.split(' ').pop()!, 'gi'), '___');
+        // Hide every word of its name, so the question doesn't give the answer away.
+        let fact = sp.fact;
+        for (const w of sp.name.split(/[\s-]+/)) {
+          const word = w.replace(/[^a-z]/gi, '');
+          if (word.length >= 3) fact = fact.replace(new RegExp(`\\b${word}\\w*`, 'gi'), '___');
+        }
+        fact = fact.replace(/___([\s-]+___)+/g, '___');
         const opts = [String(v.w0), String(v.w1)];
         opts.splice(Number(v.right), 0, sp.id);
         c.say({ emoji: '🙋', title: `${String(v.kid)[0].toUpperCase()}${String(v.kid).slice(1)} asked a question`, text: `"Which animal is this about?" ${fact}`, todo: true, choices: opts.map((s) => ({ label: `${species(s).emoji} ${species(s).name}` })) });

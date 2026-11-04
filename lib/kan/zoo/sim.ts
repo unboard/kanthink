@@ -68,6 +68,8 @@ export interface ZooEvent {
   arc?: string;
   /** How an escape happened, so the next one is different. */
   how?: string;
+  /** The sum in it, as a question to work out for a bonus; the answer stays hidden until it's solved. */
+  quiz?: { line: number; q: string; answer: number; dollars: boolean; options: number[]; reward: number; solved?: boolean; won?: boolean; tries?: number };
 }
 
 export interface DayReport { day: number; visitors: number; price: number; tickets: number; snacks: number; food: number; other: number }
@@ -222,6 +224,8 @@ export function saveZoo(z: Zoo) {
 
 export function note(z: Zoo, e: Omit<ZooEvent, 'id' | 'at'>) {
   const ev: ZooEvent = { id: `e${++z.seq}`, at: z.clock, ...e };
+  const quiz = e.quiz ?? quizFrom(e.math);
+  if (quiz) ev.quiz = quiz;
   z.events.unshift(ev);
   // Keep what still needs doing; let old news go.
   if (z.events.length > 80) {
@@ -229,6 +233,48 @@ export function note(z: Zoo, e: Omit<ZooEvent, 'id' | 'at'>) {
     z.events = keep.slice(0, 100);
   }
   return ev;
+}
+
+/**
+ * A times (or divide) line in the news, turned into a question: "9 kids × $8 = ?". The
+ * kids work it out for a bonus, and only then see the answer.
+ */
+function quizFrom(math: string[] | undefined): ZooEvent['quiz'] {
+  if (!math) return undefined;
+  for (let i = 0; i < math.length; i++) {
+    const m = math[i].match(/^(.*[×÷].*?) = (\$?)([\d,]+)(.*)$/);
+    if (!m) continue;
+    const nums = (m[1].match(/[\d,]+/g) ?? []).map((x) => Number(x.replace(/,/g, '')));
+    const answer = Number(m[3].replace(/,/g, ''));
+    if (nums.length < 2 || !Number.isFinite(answer)) continue;
+    const [a, b] = nums;
+    const times = m[1].includes('×');
+    // The mistakes people really make: one too many or too few groups, adding instead of multiplying.
+    const near = times ? [a * (b + 1), a * Math.max(1, b - 1), (a + 1) * b, a + b, answer + 10] : [answer + 1, Math.max(1, answer - 1), answer * 2, answer + 5];
+    const options = [answer];
+    for (const n of near) if (n > 0 && !options.includes(n) && options.length < 4) options.push(n);
+    while (options.length < 4) options.push(answer + options.length * 3);
+    options.sort((x, y) => ((x * 7919 + answer) % 13) - ((y * 7919 + answer) % 13));
+    return { line: i, q: `${m[1]} = ?`, answer, dollars: m[2] === '$', options, reward: answer <= 100 ? 10 : answer <= 1000 ? 20 : 30 };
+  }
+  return undefined;
+}
+
+/** An answer to a sum in the news. Right: a bonus and a gold star. Twice wrong: we show how. */
+export function answerQuiz(z: Zoo, eventId: string, value: number) {
+  const e = z.events.find((x) => x.id === eventId);
+  const q = e?.quiz;
+  if (!q || q.solved) return null;
+  if (value === q.answer) {
+    q.solved = true;
+    q.won = true;
+    z.money += q.reward;
+    z.stars += 1;
+    return true;
+  }
+  q.tries = (q.tries ?? 0) + 1;
+  if (q.tries >= 2) q.solved = true;
+  return false;
 }
 
 // ---------- How the zoo draws a crowd ----------
