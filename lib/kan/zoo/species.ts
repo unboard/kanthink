@@ -98,7 +98,7 @@ export const SPECIES: Record<string, Species> = Object.fromEntries(([
     look: { body: 'quad', size: 1.5, color: '#4a2a20', color2: '#f1ede4', pattern: 'stripes', long: 1.2, legs: 1.2, neck: 1.4, ears: 'big', tail: 'tuft' } }),
   S({ id: 'meerkat', name: 'Meerkat', many: 'meerkats', emoji: '🐿️', night: false, food: 'crickets', foodEmoji: '🦗', speed: 2.4, star: 3, sneaky: true,
     fact: 'Meerkats take turns standing guard, and squeak a warning when they see a hawk.',
-    names: ['Timon', 'Peep', 'Sandy', 'Scout', 'Nibbles', 'Pip'],
+    names: ['Timon', 'Peep', 'Sandy', 'Scout', 'Nibbles', 'Pip', 'Dusty', 'Sentry', 'Biscuit', 'Toffee', 'Skippy', 'Lookout'],
     look: { body: 'quad', size: 0.32, color: '#cfae80', color2: '#5a4430', pattern: 'stripes', long: 1.1, legs: 0.8, neck: 0.8, ears: 'tiny', tail: 'thin', extras: ['mask'] } }),
   S({ id: 'goat', name: 'Pygmy goat', many: 'goats', emoji: '🐐', night: false, food: 'goat pellets', foodEmoji: '🥣', speed: 2, star: 2, sneaky: true,
     fact: 'Goats have rectangle-shaped pupils, so they can see almost all the way around.',
@@ -164,7 +164,7 @@ export const SPECIES: Record<string, Species> = Object.fromEntries(([
   // ---------- The aviary and the gardens ----------
   S({ id: 'flamingo', name: 'American flamingo', many: 'flamingos', emoji: '🦩', night: false, food: 'shrimp', foodEmoji: '🦐', speed: 1.4, star: 4, flies: true, sneaky: true,
     fact: 'Flamingos are pink because of the shrimp they eat. Without it they’d be white!',
-    names: ['Pinky', 'Flo', 'Rosie', 'Bubblegum', 'Coral', 'Peaches'],
+    names: ['Pinky', 'Flo', 'Rosie', 'Bubblegum', 'Coral', 'Peaches', 'Blossom', 'Salmon', 'Flamenco', 'Tutu', 'Rosa', 'Cotton Candy', 'Plume', 'Sherbet', 'Guava', 'Primrose'],
     look: { body: 'bird', size: 1.4, color: '#f57a96', color2: '#1d1d1f', legs: 2.4, neck: 2.2, tail: 'short', extras: ['beak'] } }),
   S({ id: 'ibis', name: 'Scarlet ibis', many: 'scarlet ibises', emoji: '🐦', night: false, food: 'crabs and shrimp', foodEmoji: '🦀', speed: 1.4, star: 2, flies: true,
     fact: 'Baby scarlet ibises are gray and brown, and turn bright red as they grow up.',
@@ -184,7 +184,7 @@ export const SPECIES: Record<string, Species> = Object.fromEntries(([
     look: { body: 'bird', size: 0.55, color: '#e0281c', color2: '#2a6fd6', legs: 0.6, neck: 0.5, tail: 'long', extras: ['beak'] } }),
   S({ id: 'budgie', name: 'Budgie', many: 'budgies', emoji: '🐦', night: false, food: 'seed sticks', foodEmoji: '🌾', speed: 1.4, star: 3, flies: true, sneaky: true,
     fact: 'Budgies can learn to say words, and some know more than a hundred.',
-    names: ['Kiwi', 'Sky', 'Pip', 'Sunny', 'Blue', 'Chirpy', 'Lemon'],
+    names: ['Kiwi', 'Sky', 'Pip', 'Sunny', 'Blue', 'Chirpy', 'Lemon', 'Tweety', 'Mango', 'Lime', 'Peep', 'Pickle', 'Zazu', 'Sprout', 'Tango', 'Echo'],
     look: { body: 'bird', size: 0.22, color: '#7ed13c', color2: '#f5e04a', legs: 0.5, neck: 0.4, tail: 'long', extras: ['beak'] } }),
 
   // ---------- Gorillas and orangutans ----------
@@ -224,7 +224,7 @@ export const SPECIES: Record<string, Species> = Object.fromEntries(([
     look: { body: 'seal', size: 0.6, color: '#8f8a84', color2: '#4a4644', pattern: 'spots', long: 2.2, extras: ['whiskers'] } }),
   S({ id: 'penguin', name: 'Gentoo penguin', many: 'penguins', emoji: '🐧', night: false, food: 'fish', foodEmoji: '🐟', speed: 1.2, star: 5, swims: true, sneaky: true,
     fact: 'Gentoo penguins are the fastest swimmers of all penguins, about 22 miles an hour.',
-    names: ['Waddles', 'Pebbles', 'Tux', 'Skipper', 'Flipper', 'Mumble', 'Gus'],
+    names: ['Waddles', 'Pebbles', 'Tux', 'Skipper', 'Flipper', 'Mumble', 'Gus', 'Icy', 'Pingu', 'Popsicle', 'Kowalski', 'Snowflake', 'Domino'],
     look: { body: 'penguin', size: 0.75, color: '#1d1d24', color2: '#f8f8f6', extras: ['beak'] } }),
   S({ id: 'puffin', name: 'Tufted puffin', many: 'puffins', emoji: '🐦', night: false, food: 'little fish', foodEmoji: '🐟', speed: 1.4, star: 4, swims: true, flies: true, sneaky: true,
     fact: 'A puffin can hold ten little fish in its beak at once.',
@@ -240,7 +240,7 @@ export const SPECIES: Record<string, Species> = Object.fromEntries(([
     look: { body: 'reptile', size: 0.5, color: '#4a6a3a', color2: '#a08a5a', long: 1.4, legs: 0.6, tail: 'short', extras: ['shell'] } }),
   S({ id: 'stingray', name: 'Cownose stingray', many: 'stingrays', emoji: '🐟', night: false, food: 'clams and shrimp', foodEmoji: '🦐', speed: 1.4, star: 4, swims: true,
     fact: 'Stingrays feel like wet velvet, and they flap their fins like wings to "fly" through the water.',
-    names: ['Flappy', 'Ray', 'Velvet', 'Wings'],
+    names: ['Flappy', 'Ray', 'Velvet', 'Wings', 'Pancake', 'Glide', 'Sandy', 'Swoosh'],
     look: { body: 'fish', size: 0.25, color: '#8a6a4a', color2: '#f2ece2', long: 1, tail: 'thin', extras: ['fin'] } }),
   S({ id: 'octopus', name: 'Giant Pacific octopus', many: 'octopuses', emoji: '🐙', night: true, food: 'crabs', foodEmoji: '🦀', speed: 0.8, star: 4, swims: true,
     fact: 'An octopus has three hearts and blue blood.',
@@ -248,7 +248,7 @@ export const SPECIES: Record<string, Species> = Object.fromEntries(([
     look: { body: 'fish', size: 0.6, color: '#c2412c', long: 1, extras: ['tentacles'] } }),
   S({ id: 'koi', name: 'Koi', many: 'koi', emoji: '🐟', night: false, food: 'fish food', foodEmoji: '🥣', speed: 1, star: 2, swims: true,
     fact: 'Koi can learn to recognize the person who feeds them.',
-    names: ['Goldie', 'Bubbles', 'Nemo', 'Sunny', 'Dot'],
+    names: ['Goldie', 'Bubbles', 'Nemo', 'Sunny', 'Dot', 'Koko', 'Splash', 'Tangerine', 'Sushi', 'Pebbles', 'Marmalade', 'Ripple', 'Freckles', 'Ginger'],
     look: { body: 'fish', size: 0.25, color: '#f28a2c', color2: '#f8f8f6', pattern: 'patches', long: 3, extras: ['fin'] } }),
 
   // ---------- The Desert Dome ----------
@@ -284,7 +284,7 @@ export const SPECIES: Record<string, Species> = Object.fromEntries(([
     look: { body: 'quad', size: 0.7, color: '#c9a48a', long: 1.5, legs: 0.7, neck: 0.4, ears: 'big', tail: 'long', extras: ['snout'] } }),
   S({ id: 'bat', name: 'Fruit bat', many: 'fruit bats', emoji: '🦇', night: true, food: 'fruit', foodEmoji: '🍌', speed: 3, star: 4, flies: true,
     fact: 'Fruit bats plant forests: they drop seeds everywhere they fly.',
-    names: ['Batty', 'Flutter', 'Nightwing', 'Mango', 'Count'],
+    names: ['Batty', 'Flutter', 'Nightwing', 'Mango', 'Count', 'Shadow', 'Echo', 'Fig', 'Midnight', 'Dusk'],
     look: { body: 'bat', size: 0.3, color: '#3a2a20', color2: '#c8783c', ears: 'pointy' } }),
   S({ id: 'alligator', name: 'American alligator', many: 'alligators', emoji: '🐊', night: true, food: 'fish', foodEmoji: '🐟', speed: 1, star: 5, swims: true,
     fact: 'One of the zoo’s alligators is white! It’s called leucistic, and it’s super rare.',
@@ -324,7 +324,7 @@ export const SPECIES: Record<string, Species> = Object.fromEntries(([
   // ---------- Butterflies ----------
   S({ id: 'butterfly', name: 'Blue morpho butterfly', many: 'butterflies', emoji: '🦋', night: false, food: 'nectar and fruit', foodEmoji: '🌺', speed: 1.4, star: 4, flies: true,
     fact: 'A blue morpho’s wings aren’t really blue. Tiny scales bend the light so they look blue!',
-    names: ['Azure', 'Flutter', 'Sky', 'Bluebell', 'Twinkle'],
+    names: ['Azure', 'Flutter', 'Sky', 'Bluebell', 'Twinkle', 'Sapphire', 'Wisp', 'Petal', 'Indigo', 'Glimmer', 'Breezy', 'Lulu', 'Pixie', 'Morpho', 'Dazzle', 'Skye', 'Ripple', 'Shimmer', 'Iris', 'Zephyr', 'Juniper', 'Bijou'],
     look: { body: 'butterfly', size: 0.25, color: '#2a7ae8', color2: '#1d1d24' } }),
 ] as Species[]).map((s) => [s.id, s]));
 

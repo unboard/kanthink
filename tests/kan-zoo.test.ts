@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { HABITATS, EXHIBITS, PLACES, toPx, toWorld } from '@/lib/kan/zoo/map';
 import { SPECIES } from '@/lib/kan/zoo/species';
-import { DAY, UPGRADES, advance, buy, catchLoose, dailyDraw, newZoo, plan, question, seeded, todos } from '@/lib/kan/zoo/sim';
+import { DAY, UPGRADES, advance, buy, catchLoose, dailyDraw, heal, nameBaby, newZoo, plan, question, seeded, todos } from '@/lib/kan/zoo/sim';
+import { choose, escape, memory, startStory } from '@/lib/kan/zoo/stories';
 
 describe('kan zoo', () => {
   it('lays out every habitat with animals that exist', () => {
@@ -89,5 +90,53 @@ describe('kan zoo', () => {
       expect(new Set(q.options).size).toBe(q.options.length);
       expect(Number.isInteger(q.answer)).toBe(true);
     }
+  });
+
+  it('tells many different stories over a month, and rarely the same thing twice', () => {
+    const z = newZoo(0, seeded(3));
+    const r = seeded(99);
+    const titles: string[] = [];
+    for (let h = 0; h < 30 * 24; h++) {
+      for (const e of advance(z, 60, r)) if (!['report', 'bills', 'storm', 'fog'].includes(e.kind)) titles.push(e.title);
+      for (const e of todos(z)) {
+        if (e.choices) choose(z, e.id, Math.floor(r() * e.choices.length), r);
+        else if (e.kind === 'escape' && e.animal) catchLoose(z, e.animal, r);
+        else if (e.kind === 'sick' && e.animal) heal(z, e.animal);
+        else if (e.kind === 'baby' && e.animal) nameBaby(z, e.animal, `Bean ${e.id}`);
+      }
+    }
+    expect(Object.keys(memory(z).done).length).toBeGreaterThanOrEqual(15);
+    const counts = new Map<string, number>();
+    for (const t of titles) counts.set(t, (counts.get(t) ?? 0) + 1);
+    // Nothing the girls read comes up more than a few times in a month.
+    expect(Math.max(...counts.values())).toBeLessThanOrEqual(4);
+    expect(new Set(titles).size / titles.length).toBeGreaterThan(0.85);
+    expect(Number.isFinite(z.money)).toBe(true);
+  });
+
+  it('learns from an escape: that habitat is locked for a while, and the next escape is told differently', () => {
+    const z = newZoo(0, seeded(4));
+    const r = seeded(8);
+    expect(escape(z, r)).toBe(true);
+    const e = z.events[0];
+    const a = z.animals.find((x) => x.id === e.animal)!;
+    catchLoose(z, a.id, r);
+    expect(memory(z).locks[a.habitat]).toBeGreaterThan(z.clock);
+    expect(z.events.some((x) => x.kind === 'learned')).toBe(true);
+    for (let i = 0; i < 40; i++) { if (escape(z, r)) { const b = z.events[0]; expect(z.animals.find((x) => x.id === b.animal)!.habitat).not.toBe(a.habitat); catchLoose(z, b.animal!, r); } }
+  });
+
+  it('a story asks, waits for the answer, charges for it, and carries on', () => {
+    const z = newZoo(0, seeded(5));
+    const r = seeded(6);
+    z.clock = 10 * 60;
+    expect(startStory(z, 'heatwave', r)).toBe(true);
+    const ask = z.events[0];
+    expect(ask.choices?.length).toBe(2);
+    const before = z.money;
+    expect(choose(z, ask.id, 0, r)).toBe(true);
+    expect(z.money).toBe(before - ask.choices![0].cost!);
+    expect(z.events[0].title).toBe('Ice pop day!');
+    expect(z.arcs!.length).toBe(0);
   });
 });

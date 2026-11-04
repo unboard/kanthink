@@ -12,6 +12,7 @@ import {
   hourOf, isNight, loadZoo, markSeen, minuteOfDay, money, nameBaby, newZoo, play as playSim, question, saveZoo, todos, unseen, upgrade,
   type Animal, type Question, type Zoo, type ZooEvent,
 } from '@/lib/kan/zoo/sim';
+import { choose, startStory } from '@/lib/kan/zoo/stories';
 import { ZooScene, type Ride, type ZooMode, type ZooNear, type ZooPick } from './scene';
 import { AnimalSheet, BabySheet, ExhibitSheet, MoneySheet, NewsSheet, PlansSheet, QuizSheet, Sheet, VetSheet, ZooMap } from './ZooSheets';
 
@@ -43,7 +44,7 @@ const SPEEDS = [
 ] as const;
 
 /** Things that pop up as they happen, while you're playing. */
-const LOUD: ZooEvent['kind'][] = ['escape', 'sick', 'baby', 'storm', 'fieldtrip', 'report', 'lost', 'vip', 'fog'];
+const LOUD: ZooEvent['kind'][] = ['escape', 'sick', 'baby', 'storm', 'fieldtrip', 'report', 'lost', 'vip', 'fog', 'fame'];
 
 export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boolean; onExit: () => void }) {
   const host = useRef<HTMLDivElement>(null);
@@ -74,7 +75,7 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
 
   // What's new pops up as a toast; the big ones open the news.
   const heard = useCallback((evs: ZooEvent[]) => {
-    const loud = evs.filter((e) => LOUD.includes(e.kind));
+    const loud = evs.filter((e) => LOUD.includes(e.kind) || e.choices?.length || (e.kind === 'story' && Math.random() < 0.5));
     if (loud.length) setToast(loud[loud.length - 1]);
   }, []);
 
@@ -112,6 +113,7 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
     // For testing in a background tab, where frames barely come: step it by hand.
     if (process.env.NODE_ENV !== 'production') Object.assign(window, {
       __zoo: s, __zooState: () => zoo.current,
+      __zooStory: (id: string) => { const ok = startStory(zoo.current!, id, Math.random); s.sync(zoo.current!); refresh(); return ok; },
       __zooInfo: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries }),
       __zooLineup:(ids: string[], baby = false) => { speedRef.current = 0; s.lineup(ids, baby); renderer.render(s.scene, s.camera); },
       __zooRun: (frames: number, input = { steer: 0, push: 0, boost: false }) => {
@@ -467,7 +469,8 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
       {/* The sheets */}
       {z && open?.kind === 'news' && (
         <NewsSheet zoo={z} title={open.welcome ? (z.events.length === 1 ? 'Welcome to your zoo!' : 'Welcome back! Here’s what happened at the zoo') : undefined}
-          onClose={() => { markSeen(z); setOpen(null); changed(); }} onAct={(e) => { markSeen(z); act(e); }} />
+          onClose={() => { markSeen(z); setOpen(null); changed(); }} onAct={(e) => { markSeen(z); act(e); }}
+          onChoose={(e, i) => { if (choose(z, e.id, i, Math.random)) { const next = z.events[0]; if (next.id !== e.id) setToast(next); changed(); } }} />
       )}
       {z && open?.kind === 'exhibit' && (
         <ExhibitSheet zoo={z} id={open.id} onClose={() => setOpen(null)} onAnimal={(a) => setOpen({ kind: 'animal', id: a.id })}
@@ -529,6 +532,7 @@ const ZOO_CSS = `
 .kz-exhibit .kz-badges { margin-left: 4px; }
 .kz-animal { background: rgba(17,24,39,.72); color: #fff; padding: 2px 8px; font-size: 12px; }
 .kz-animal.kz-loose { background: #ef4444; animation: kz-bounce 0.9s ease-in-out infinite; font-size: 13px; }
+.kz-happening { background: linear-gradient(90deg,#f472b6,#a78bfa); color: #fff; padding: 5px 12px; font-size: 14px; animation: kz-bounce 1.6s ease-in-out infinite; }
 .kz-kid { background: #f59e0b; color: #1c1917; padding: 3px 9px; font-size: 13px; animation: kz-bounce 1.2s ease-in-out infinite; }
 @keyframes kz-bounce { 0%,100% { margin-top: 0; } 50% { margin-top: -6px; } }
 .kz-pulse { animation: kz-pulse 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }

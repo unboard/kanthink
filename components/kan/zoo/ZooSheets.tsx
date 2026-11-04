@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { BOUNDARY, EXHIBITS, PATHS, PLACES, TRAIN, type Px } from '@/lib/kan/zoo/map';
 import { species, awake } from '@/lib/kan/zoo/species';
+import { FAME, remembered } from '@/lib/kan/zoo/stories';
 import {
   AILMENT_WORD, FENCE_COST, FOOD_PER_ANIMAL, STAR_GIFT, UPGRADES, VET_BILL, canBuy, clockText, dailyDraw, day, hourOf, money, plan, upgrade,
   type Ailment, type Animal, type Question, type Zoo, type ZooEvent,
@@ -52,7 +53,7 @@ const when = (clock: number) => `Day ${day(clock)} · ${clockText(clock)}`;
 
 // ---------- What happened at the zoo ----------
 
-export function NewsSheet({ zoo, onClose, onAct, title = 'What happened at the zoo' }: { zoo: Zoo; onClose: () => void; onAct: (e: ZooEvent) => void; title?: string }) {
+export function NewsSheet({ zoo, onClose, onAct, onChoose, title = 'What happened at the zoo' }: { zoo: Zoo; onClose: () => void; onAct: (e: ZooEvent) => void; onChoose: (e: ZooEvent, i: number) => void; title?: string }) {
   const open = zoo.events.filter((e) => e.todo && !e.done);
   const rest = zoo.events.filter((e) => !(e.todo && !e.done)).slice(0, 40);
   return (
@@ -60,16 +61,16 @@ export function NewsSheet({ zoo, onClose, onAct, title = 'What happened at the z
       {open.length > 0 && (
         <div className="mb-4">
           <p className="text-[12px] font-bold uppercase tracking-wider text-rose-600">Needs you now</p>
-          <div className="mt-1.5 space-y-2">{open.map((e) => <EventRow key={e.id} e={e} onAct={onAct} urgent />)}</div>
+          <div className="mt-1.5 space-y-2">{open.map((e) => <EventRow key={e.id} e={e} onAct={onAct} onChoose={onChoose} money={zoo.money} urgent />)}</div>
         </div>
       )}
-      <div className="space-y-2">{rest.map((e) => <EventRow key={e.id} e={e} onAct={onAct} />)}</div>
+      <div className="space-y-2">{rest.map((e) => <EventRow key={e.id} e={e} onAct={onAct} onChoose={onChoose} money={zoo.money} />)}</div>
     </Sheet>
   );
 }
 
 const ACT: Partial<Record<ZooEvent['kind'], string>> = { escape: 'Go find them', sick: 'Call the vet', baby: 'Pick a name', fence: `Fix it (${money(FENCE_COST)})`, lost: 'Go help' };
-function EventRow({ e, onAct, urgent }: { e: ZooEvent; onAct: (e: ZooEvent) => void; urgent?: boolean }) {
+function EventRow({ e, onAct, onChoose, money: have, urgent }: { e: ZooEvent; onAct: (e: ZooEvent) => void; onChoose: (e: ZooEvent, i: number) => void; money: number; urgent?: boolean }) {
   return (
     <div className={`rounded-2xl px-3 py-2.5 ${urgent ? 'bg-rose-50 ring-1 ring-rose-200' : 'bg-neutral-50'} ${e.seen ? '' : 'ring-2 ring-violet-300'}`}>
       <div className="flex items-start gap-2.5">
@@ -81,8 +82,15 @@ function EventRow({ e, onAct, urgent }: { e: ZooEvent; onAct: (e: ZooEvent) => v
           <p className="mt-1 text-[11px] text-neutral-400">{when(e.at)}</p>
         </div>
       </div>
-      {e.todo && !e.done && ACT[e.kind] && <button onClick={() => onAct(e)} className={`${BTN} mt-2 w-full bg-rose-500 text-white`}>{ACT[e.kind]}</button>}
-      {e.todo && e.done && <p className="mt-1 text-[12px] font-semibold text-emerald-600">✓ Done</p>}
+      {e.todo && !e.done && e.choices && (
+        <div className="mt-2 grid gap-1.5">
+          {e.choices.map((c, i) => (
+            <button key={i} onClick={() => onChoose(e, i)} disabled={(c.cost ?? 0) > have} className={`${BTN} w-full ${i === 0 ? 'bg-violet-500 text-white' : 'bg-violet-100 text-violet-900'}`}>{c.label}</button>
+          ))}
+        </div>
+      )}
+      {e.todo && !e.done && !e.choices && ACT[e.kind] && <button onClick={() => onAct(e)} className={`${BTN} mt-2 w-full bg-rose-500 text-white`}>{ACT[e.kind]}</button>}
+      {e.todo && e.done && <p className="mt-1 text-[12px] font-semibold text-emerald-600">✓ {e.choices && e.picked !== undefined ? `You picked: ${e.choices[e.picked]?.label}` : 'Done'}</p>}
     </div>
   );
 }
@@ -158,6 +166,18 @@ export function AnimalSheet({ zoo, a, onClose, onVet, onName }: { zoo: Zoo; a: A
         <div className="rounded-2xl bg-emerald-50 px-3 py-2">Full<div className="mt-1"><Bar value={100 - a.hunger} color="#22c55e" label="Full" /></div></div>
       </div>
       <p className="mt-3 text-[15px]">{a.loose ? `❗ ${a.name} got out and is hiding somewhere in the zoo!` : up ? `${a.name} is awake.` : `${a.name} is asleep right now. 💤`} Eats {sp.food} {sp.foodEmoji}.</p>
+      {(() => {
+        const m = remembered(zoo, a);
+        return (
+          <div className="mt-3 flex flex-wrap gap-1.5 text-[13px]">
+            <span className="rounded-full bg-violet-100 px-2.5 py-1 text-violet-900">✨ {m.trait}</span>
+            {m.nickname && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-900">🎩 “{m.nickname}”</span>}
+            {m.friend && <span className="rounded-full bg-pink-100 px-2.5 py-1 text-pink-900">💛 Best friend: {m.friend}</span>}
+            {m.trick && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">🎓 Knows the {m.trick}</span>}
+            {m.escapes > 0 && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-rose-900">🚨 Escaped {m.escapes === 1 ? 'once' : `${m.escapes} times`}</span>}
+          </div>
+        );
+      })()}
       <p className="mt-3 rounded-2xl bg-sky-50 px-3 py-2.5 text-[14px] leading-relaxed text-sky-950">💡 {sp.fact}</p>
       {a.sick && <button onClick={() => onVet(a)} className={`${BTN} mt-4 w-full bg-teal-500 text-white`}>🩺 {a.name} {AILMENT_WORD[a.sick]}. Call Dr. Paws ({money(VET_BILL)})</button>}
       {a.needsName && <button onClick={() => onName(a)} className={`${BTN} mt-4 w-full bg-violet-500 text-white`}>🍼 Give the baby a name</button>}
@@ -217,6 +237,7 @@ export function MoneySheet({ zoo, onClose, onPrice, onQuiz }: { zoo: Zoo; onClos
   return (
     <Sheet title="The zoo’s money" emoji="💰" onClose={onClose}>
       <p className="text-[28px] font-extrabold">{money(zoo.money)}</p>
+      <p className="mt-1 text-[14px] text-neutral-600">🏅 {FAME[zoo.mem?.level ?? 0]}{zoo.buzz && zoo.buzz.until > zoo.clock ? ` · ${zoo.buzz.k > 0 ? '📈 Extra visitors' : '📉 Fewer visitors'} because of ${zoo.buzz.why}` : ''}</p>
       <div className="mt-3 rounded-2xl bg-neutral-50 px-3 py-3">
         <p className="text-[13px] font-bold uppercase tracking-wider text-neutral-500">Ticket price</p>
         <div className="mt-2 flex items-center gap-3">

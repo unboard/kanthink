@@ -1,5 +1,6 @@
 import { EXHIBITS, HABITATS, habitat } from './map';
 import { SPECIES, awake, species } from './species';
+import { addFame, drawBoost, escape, learnFromEscape, moment, storyHour, type Arc, type Happening, type Memory } from './stories';
 
 /**
  * The zoo as a game: the girls own it and look after it. Visitors pay to come in,
@@ -44,7 +45,7 @@ export interface Animal {
   needsName?: boolean;
 }
 
-export type EventKind = 'baby' | 'escape' | 'sick' | 'storm' | 'fieldtrip' | 'funny' | 'report' | 'bills' | 'fixed' | 'fence' | 'lost' | 'vip' | 'bought' | 'math' | 'caught' | 'healed' | 'fog' | 'night' | 'arrival' | 'welcome';
+export type EventKind = 'baby' | 'escape' | 'sick' | 'storm' | 'fieldtrip' | 'funny' | 'report' | 'bills' | 'fixed' | 'fence' | 'lost' | 'vip' | 'bought' | 'math' | 'caught' | 'healed' | 'fog' | 'night' | 'arrival' | 'welcome' | 'story' | 'fame' | 'learned';
 export interface ZooEvent {
   id: string;
   at: number;
@@ -60,6 +61,13 @@ export interface ZooEvent {
   todo?: boolean;
   done?: boolean;
   seen?: boolean;
+  /** A story asking the girls to decide, and what they picked. */
+  choices?: { label: string; cost?: number }[];
+  picked?: number;
+  /** The story it belongs to. */
+  arc?: string;
+  /** How an escape happened, so the next one is different. */
+  how?: string;
 }
 
 export interface DayReport { day: number; visitors: number; price: number; tickets: number; snacks: number; food: number; other: number }
@@ -88,6 +96,12 @@ export interface Zoo {
   /** A lost child at the zoo, and where they are. */
   lost: { name: string; at: [number, number]; parent: [number, number] } | null;
   seq: number;
+  /** What the zoo remembers, the stories going on, and anything special happening (all added later, so optional). */
+  mem?: Memory;
+  arcs?: Arc[];
+  happening?: Happening | null;
+  /** A rush (or a dip) in visitors for a while, and why. */
+  buzz?: { k: number; until: number; why: string };
 }
 
 export const day = (clock: number) => Math.floor(clock / DAY) + 1;
@@ -179,17 +193,19 @@ export function seeded(seed: number) {
 }
 
 export function newZoo(now = Date.now(), r: () => number = seeded(now)): Zoo {
-  const names = new Set<string>();
+  // Names are unique within a species: two Pebbles are fine if one's a seal and one's a tortoise.
+  const names = new Map<string, Set<string>>();
+  const taken = (sp: string) => { let t = names.get(sp); if (!t) { t = new Set(); names.set(sp, t); } return t; };
   const animals: Animal[] = [];
   let seq = 0;
   for (const h of HABITATS) for (const a of h.animals) for (let i = 0; i < a.count; i++) {
-    animals.push({ id: `a${++seq}`, species: a.species, name: pickName(a.species, names, r), habitat: h.id, mood: 75 + Math.floor(r() * 15), hunger: 20 + Math.floor(r() * 20) });
+    animals.push({ id: `a${++seq}`, species: a.species, name: pickName(a.species, taken(a.species), r), habitat: h.id, mood: 75 + Math.floor(r() * 15), hunger: 20 + Math.floor(r() * 20) });
   }
   const z: Zoo = {
     v: 1, money: 500, price: 5, clock: 8 * 60, real: now, weather: 'sunny', weatherUntil: 8 * 60 + 300, animals, owned: [], goal: null,
     events: [], today: { visitors: 0, tickets: 0, snacks: 0, spent: 0, inPark: 0 }, reports: [], stars: 0, broken: [], lost: null, seq,
   };
-  log(z, { kind: 'welcome', emoji: '🎉', title: 'Welcome to your zoo!', text: `You two are the owners now. ${animals.length} animals live here, and they’re counting on you. Visitors pay to get in, and that money buys food and new things for the animals. The gates open at 9.` });
+  note(z, { kind: 'welcome', emoji: '🎉', title: 'Welcome to your zoo!', text: `You two are the owners now. ${animals.length} animals live here, and they’re counting on you. Visitors pay to get in, and that money buys food and new things for the animals. The gates open at 9.` });
   return z;
 }
 
@@ -204,7 +220,7 @@ export function saveZoo(z: Zoo) {
   try { localStorage.setItem(KEY, JSON.stringify(z)); } catch { /* private window: it just won't keep */ }
 }
 
-function log(z: Zoo, e: Omit<ZooEvent, 'id' | 'at'>) {
+export function note(z: Zoo, e: Omit<ZooEvent, 'id' | 'at'>) {
   const ev: ZooEvent = { id: `e${++z.seq}`, at: z.clock, ...e };
   z.events.unshift(ev);
   // Keep what still needs doing; let old news go.
@@ -230,7 +246,7 @@ export function dailyDraw(z: Zoo) {
   const joy = 0.55 + (happiness(z) / 100) * 0.6;
   // Higher prices bring fewer people: at $5 everyone who wants to come, comes.
   const priceK = Math.max(0.15, Math.min(1.35, 1.25 - (z.price - 3) * 0.075));
-  return Math.round(stars * 0.22 * (1 + bonus) * joy * priceK);
+  return Math.round(stars * 0.22 * (1 + bonus) * joy * priceK * drawBoost(z));
 }
 const WEATHER_DRAW: Record<Weather, number> = { sunny: 1, cloudy: 0.85, fog: 0.7, rain: 0.45, storm: 0.15, snow: 0.5 };
 export const WEATHER_WORD: Record<Weather, string> = { sunny: '☀️ Sunny', cloudy: '⛅ Cloudy', fog: '🌫️ Foggy', rain: '🌧️ Rainy', storm: '⛈️ Stormy', snow: '🌨️ Snowy' };
@@ -248,7 +264,6 @@ export const FOOD_PER_ANIMAL = 2;
 
 // ---------- The clock ----------
 
-const SNEAKY = Object.values(SPECIES).filter((s) => s.sneaky).map((s) => s.id);
 const AILMENTS: Ailment[] = ['tummy', 'tooth', 'cold', 'splinter', 'itchy'];
 export const AILMENT_WORD: Record<Ailment, string> = { tummy: 'has a tummy ache', tooth: 'has a sore tooth', cold: 'caught a cold', splinter: 'has a splinter', itchy: 'has itchy skin' };
 const BABY_NAMES = ['Peanut', 'Bean', 'Sprout', 'Button', 'Pip', 'Tiny', 'Squeak', 'Nugget', 'Pebble', 'Cupcake', 'Sunny', 'Twinkle', 'Bubbles', 'Dot', 'Jellybean', 'Pumpkin', 'Waffle', 'Kiwi', 'Daisy', 'Biscuit'];
@@ -296,6 +311,7 @@ function tick(z: Zoo, m: number, r: () => number, away: boolean) {
     z.today.visitors += n;
     z.today.tickets += n * z.price;
     z.money += n * z.price;
+    if (n) addFame(z, n);
     const snacks = Math.round(n * snackPer(z) * (0.6 + r() * 0.5));
     z.today.snacks += snacks;
     z.money += snacks;
@@ -323,7 +339,7 @@ function tick(z: Zoo, m: number, r: () => number, away: boolean) {
   if (z.clock >= z.weatherUntil) weather(z, r);
 
   // Once an hour, maybe something happens.
-  if (Math.floor(was / 60) !== Math.floor(z.clock / 60)) happen(z, r, away);
+  if (Math.floor(was / 60) !== Math.floor(z.clock / 60)) { happen(z, r, away); storyHour(z, r, away); }
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -332,13 +348,13 @@ function weather(z: Zoo, r: () => number) {
   const h = hourOf(z.clock);
   const roll = r();
   const was = z.weather;
-  z.weather = h >= 5 && h < 9 && roll < 0.35 ? 'fog' : roll < 0.5 ? 'sunny' : roll < 0.72 ? 'cloudy' : roll < 0.86 ? 'rain' : roll < 0.94 ? 'storm' : 'snow';
+  z.weather = h >= 5 && h < 9 && roll < 0.35 ? 'fog' : roll < 0.5 ? 'sunny' : roll < 0.72 ? 'cloudy' : roll < 0.87 ? 'rain' : roll < 0.915 ? 'storm' : roll < 0.95 && (new Date().getMonth() >= 10 || new Date().getMonth() <= 2) ? 'snow' : 'cloudy';
   z.weatherUntil = z.clock + 120 + Math.floor(r() * 300);
   if (z.weather === 'storm' && was !== 'storm') {
-    log(z, { kind: 'storm', emoji: '⛈️', title: 'A thunderstorm rolled in!', text: 'Thunder boomed and lots of visitors went home early. The animals all ran inside to stay dry. The elephants didn’t mind; they love mud.' });
+    note(z, { kind: 'storm', emoji: '⛈️', title: pick(['A thunderstorm rolled in!', 'Thunder and lightning!', 'A big storm is here', 'Rain, rain, and more rain'], r), text: pick(['Thunder boomed and lots of visitors went home early. The elephants didn’t mind; they love mud.', 'The keepers brought everyone inside. The gorillas watched the lightning from their window.', 'Visitors ran for the gift shop. The sea lions didn’t even notice; they were already wet.', 'The lions grumbled at every thunderclap. The hippos took a long nap.'], r) });
   }
   if (z.weather === 'fog' && was !== 'fog') {
-    log(z, { kind: 'fog', emoji: '🌫️', title: 'Fog over the lagoon', text: 'A thick morning fog rolled over the zoo. The giraffes’ heads poked out over the top of it!' });
+    note(z, { kind: 'fog', emoji: '🌫️', title: pick(['Fog over the lagoon', 'A foggy, mysterious morning', 'The zoo is hiding in a cloud'], r), text: pick(['A thick morning fog rolled over the zoo. The giraffes’ heads poked out over the top of it!', 'You could hear the animals but barely see them. The Skyfari chairs vanished into the clouds.', 'The keepers walked their rounds with flashlights, in the morning!'], r) });
   }
 }
 
@@ -348,7 +364,7 @@ function newDay(z: Zoo, r: () => number) {
   z.money -= cost;
   z.reports.unshift({ day: day(z.clock) - 1, visitors: z.today.visitors, price: z.price, tickets: z.today.tickets, snacks: z.today.snacks, food: cost, other: z.today.spent });
   z.reports = z.reports.slice(0, 14);
-  log(z, { kind: 'bills', emoji: '🥕', title: `Breakfast for ${fed} animals`, text: `The keepers bought the day’s food.`, math: [`${fed} animals × ${money(FOOD_PER_ANIMAL)} each = ${money(cost)}`, `Money left: ${money(z.money)}`] });
+  note(z, { kind: 'bills', emoji: '🥕', title: `Breakfast for ${fed} animals`, text: `The keepers bought the day’s food.`, math: [`${fed} animals × ${money(FOOD_PER_ANIMAL)} each = ${money(cost)}`, `Money left: ${money(z.money)}`] });
   z.today = { visitors: 0, tickets: 0, snacks: 0, spent: 0, inPark: 0 };
   // Babies grow up after three days.
   for (const a of z.animals) if (a.born !== undefined && z.clock - a.born > 3 * DAY) delete a.born;
@@ -359,7 +375,7 @@ function closeReport(z: Zoo) {
   const t = z.today;
   if (!t.visitors) return;
   const math = [`${t.visitors} visitors × ${money(z.price)} = ${money(t.visitors * z.price)} in tickets`, `Snacks and treats: ${money(t.snacks)}`, `${money(t.visitors * z.price)} + ${money(t.snacks)} = ${money(t.tickets + t.snacks)} today!`];
-  log(z, { kind: 'report', emoji: '🎟️', title: `Day ${day(z.clock)}: ${t.visitors} visitors`, text: `The gates closed. Here’s what the zoo made today.`, math });
+  note(z, { kind: 'report', emoji: '🎟️', title: `Day ${day(z.clock)}: ${t.visitors} visitors`, text: `The gates closed. Here’s what the zoo made today.`, math });
 }
 
 /** Animals that could be the one something happens to. */
@@ -373,36 +389,31 @@ function happen(z: Zoo, r: () => number, away: boolean) {
   // Never more than three things waiting for you at once.
   const drama = waiting < 3;
 
-  if (drama && roll < 0.035) {
-    // Someone slips out.
-    const can = z.animals.filter((a) => SNEAKY.includes(a.species) && !a.loose && !a.sick && a.born === undefined);
-    if (can.length) {
-      const a = pick(can, r);
-      const sp = species(a.species);
-      a.loose = hidingSpot(r);
-      const ev = log(z, { kind: 'escape', emoji: '🚨', title: `${a.name} the ${sp.name.toLowerCase()} got out!`, text: `${a.name} slipped out of ${habitat(a.habitat)?.name ?? 'home'} and is hiding somewhere in the zoo. Find ${a.name}, then walk them home. Bring ${sp.food} as a treat!`, animal: a.id, habitat: a.habitat, todo: true });
-      void ev;
-      if (r() < 0.5 && !z.broken.includes(a.habitat)) {
-        z.broken.push(a.habitat);
-        log(z, { kind: 'fence', emoji: '🔧', title: `A hole in the fence at ${habitat(a.habitat)?.name}`, text: `That’s how ${a.name} got out! Fixing it costs ${money(80)}.`, habitat: a.habitat, todo: true });
+  if (drama && roll < 0.03) {
+    // Someone slips out: a different way each time, and never where the keepers just fixed it.
+    if (escape(z, r)) {
+      const e = z.events[0];
+      if (r() < 0.35 && e.habitat && !z.broken.includes(e.habitat)) {
+        z.broken.push(e.habitat);
+        note(z, { kind: 'fence', emoji: '🔧', title: `A hole in the fence at ${habitat(e.habitat)?.name}`, text: `That’s how they got out! Fixing it costs ${money(80)}.`, habitat: e.habitat, todo: true });
       }
       return;
     }
   }
-  if (drama && roll < 0.07) {
-    const can = z.animals.filter((a) => !a.sick && !a.loose);
+  if (drama && roll >= 0.03 && roll < 0.07) {
+    const can = z.animals.filter((a) => !a.sick && !a.loose && a.habitat !== '__away');
     const hospital = z.owned.includes('vet-hospital');
     if (can.length && (!hospital || r() < 0.5)) {
       const a = pick(can, r);
       a.sick = pick(AILMENTS, r);
-      log(z, { kind: 'sick', emoji: '🤒', title: `${a.name} ${AILMENT_WORD[a.sick]}`, text: `${a.name} the ${species(a.species).name.toLowerCase()} doesn’t feel well. Call Dr. Paws to come and help.`, animal: a.id, habitat: a.habitat, todo: true });
+      note(z, { kind: 'sick', emoji: '🤒', title: `${a.name} ${AILMENT_WORD[a.sick]}`, text: `${a.name} the ${species(a.species).name.toLowerCase()} doesn’t feel well. Call Dr. Paws to come and help.`, animal: a.id, habitat: a.habitat, todo: true });
       return;
     }
   }
-  if (roll < 0.1) {
+  if (roll >= 0.07 && roll < 0.1) {
     // A baby! Only from a pair who are happy, and not too many at once.
     const groups = new Map<string, Animal[]>();
-    for (const a of z.animals) if (!a.loose) { const k = `${a.habitat}:${a.species}`; groups.set(k, [...(groups.get(k) ?? []), a]); }
+    for (const a of z.animals) if (!a.loose && a.habitat !== '__away') { const k = `${a.habitat}:${a.species}`; groups.set(k, [...(groups.get(k) ?? []), a]); }
     const ok = [...groups.values()].filter((g) => g.length >= 2 && g.length < 12 && g.every((a) => a.born === undefined) && g.reduce((s, a) => s + a.mood, 0) / g.length > 60);
     if (ok.length && drama) {
       const g = pick(ok, r);
@@ -410,53 +421,36 @@ function happen(z: Zoo, r: () => number, away: boolean) {
       const sp = species(mom.species);
       const baby: Animal = { id: `a${++z.seq}`, species: mom.species, name: '', habitat: mom.habitat, mood: 95, hunger: 10, born: z.clock, needsName: true };
       z.animals.push(baby);
-      log(z, { kind: 'baby', emoji: '🍼', title: `A baby ${sp.name.toLowerCase()} was born!`, text: `${mom.name} had a baby at ${habitat(mom.habitat)?.name}! The baby needs a name, and you get to pick it.`, animal: baby.id, habitat: mom.habitat, todo: true });
+      note(z, { kind: 'baby', emoji: '🍼', title: `A baby ${sp.name.toLowerCase()} was born!`, text: `${mom.name} had a baby at ${habitat(mom.habitat)?.name}! The baby needs a name, and you get to pick it.`, animal: baby.id, habitat: mom.habitat, todo: true });
       return;
     }
   }
-  if (open && roll < 0.13 && !z.lost && drama) {
+  if (open && roll >= 0.1 && roll < 0.115 && !z.lost && drama) {
     const kid = pick(KIDS, r);
     z.lost = { name: kid, at: hidingSpot(r), parent: hidingSpot(r) };
-    log(z, { kind: 'lost', emoji: '🧒', title: `${kid} can’t find their family`, text: `A little kid named ${kid} got separated from their grown-up. Find ${kid}, then walk them back to their family.`, todo: true });
+    note(z, { kind: 'lost', emoji: '🧒', title: `${kid} can’t find their family`, text: `A little kid named ${kid} got separated from their grown-up. Find ${kid}, then walk them back to their family.`, todo: true });
     return;
   }
-  if (open && roll < 0.17) {
+  if (open && roll >= 0.115 && roll < 0.135) {
     const kids = 20 + Math.floor(r() * 5) * 10;
     const pay = kids * Math.max(1, z.price - 2);
     z.money += pay;
     z.today.visitors += kids;
     z.today.tickets += pay;
-    log(z, { kind: 'fieldtrip', emoji: '🚌', title: `A field trip! ${kids} kids came on a school bus`, text: `Schools get a special price: ${money(Math.max(1, z.price - 2))} a kid.`, math: [`${kids} kids × ${money(Math.max(1, z.price - 2))} = ${money(pay)}`] });
+    note(z, { kind: 'fieldtrip', emoji: pick(['🚌', '🎒', '🏫'], r), title: pick([`A field trip! ${kids} kids came on a school bus`, `${kids} kids from ${pick(['Lincoln', 'Bellevue', 'Papillion', 'Council Bluffs', 'Elkhorn', 'Gretna'], r)} came on a field trip`, `A whole school showed up: ${kids} kids in matching T-shirts`], r), text: `Schools get a special price: ${money(Math.max(1, z.price - 2))} a kid.`, math: [`${kids} kids × ${money(Math.max(1, z.price - 2))} = ${money(pay)}`] });
     return;
   }
-  if (open && roll < 0.19) {
+  if (open && roll >= 0.135 && roll < 0.15) {
     const gift = [100, 150, 200, 250][Math.floor(r() * 4)];
     z.money += gift;
-    log(z, { kind: 'vip', emoji: '💝', title: `A visitor gave the zoo ${money(gift)}!`, text: `A grandpa loved the ${species(pick(z.animals, r).species).many} so much, he made a donation to help the animals.` });
+    note(z, { kind: 'vip', emoji: '💝', title: `A visitor gave the zoo ${money(gift)}!`, text: pick([`A grandpa loved the ${species(pick(z.animals, r).species).many} so much, he made a donation to help the animals.`, `A family on vacation said it was the best zoo they’d ever been to.`, `A teenager emptied her piggy bank into the donation box for the ${species(pick(z.animals, r).species).many}.`, `A company in town wants to help the ${species(pick(z.animals, r).species).many}.`], r) });
     return;
   }
-  if (roll < 0.26 && !away) {
-    const a = pick(z.animals.filter((x) => !x.loose), r);
-    if (!a) return;
-    log(z, { kind: 'funny', emoji: species(a.species).emoji, title: funny(a, r), text: species(a.species).fact, animal: a.id, habitat: a.habitat });
+  if (roll >= 0.15 && roll < 0.22 && !away) {
+    // Something small an animal did, in its own way, and not something you've heard already.
+    const m = moment(z, r);
+    if (m) note(z, m);
   }
-}
-
-function funny(a: Animal, r: () => number) {
-  const sp = species(a.species);
-  const lines = [
-    `${a.name} did a happy dance`, `${a.name} took the longest nap ever`, `${a.name} made a visitor laugh so hard they snorted`,
-    `${a.name} posed for 100 photos`, `${a.name} found a leaf and carried it around all day`, `${a.name} splashed a whole family`,
-    `${a.name} stared at a toddler, and the toddler stared back`, `${a.name} tried to eat a keeper’s hat`,
-  ];
-  if (sp.id === 'elephant') lines.push(`${a.name} sprayed water at the keepers. Bullseye!`);
-  if (sp.id === 'penguin') lines.push(`${a.name} slid down the ice on their belly, three times in a row`);
-  if (sp.id === 'giraffe') lines.push(`${a.name} licked a visitor’s hat right off their head`);
-  if (sp.id === 'lion') lines.push(`${a.name} ROARED, and you could hear it all the way at the train`);
-  if (sp.id === 'gorilla') lines.push(`${a.name} built a fancy nest out of hay and a blanket`);
-  if (sp.id === 'otter') lines.push(`${a.name} juggled a pebble for an hour`);
-  if (sp.id === 'sealion') lines.push(`${a.name} balanced a ball on their nose`);
-  return pick(lines, r);
 }
 
 // ---------- What you do ----------
@@ -478,15 +472,16 @@ export function heal(z: Zoo, animalId: string) {
   z.money -= VET_BILL;
   z.today.spent += VET_BILL;
   closeTodo(z, (e) => e.kind === 'sick' && e.animal === animalId);
-  log(z, { kind: 'healed', emoji: '💖', title: `${a.name} feels all better!`, text: `Dr. Paws took great care of ${a.name}. The vet bill was ${money(VET_BILL)}.` });
+  note(z, { kind: 'healed', emoji: '💖', title: `${a.name} feels all better!`, text: `Dr. Paws took great care of ${a.name}. The vet bill was ${money(VET_BILL)}.` });
 }
-export function catchLoose(z: Zoo, animalId: string) {
+export function catchLoose(z: Zoo, animalId: string, r: () => number = Math.random) {
   const a = z.animals.find((x) => x.id === animalId);
   if (!a?.loose) return;
   delete a.loose;
   a.mood = clamp(a.mood + 10, 0, 100);
   closeTodo(z, (e) => e.kind === 'escape' && e.animal === animalId);
-  log(z, { kind: 'caught', emoji: '🏠', title: `${a.name} is safe at home`, text: `You found ${a.name} and walked them back to ${habitat(a.habitat)?.name}. Great job, zookeepers!` });
+  note(z, { kind: 'caught', emoji: '🏠', title: `${a.name} is safe at home`, text: `You found ${a.name} and walked them back to ${habitat(a.habitat)?.name}. Great job, zookeepers!` });
+  learnFromEscape(z, a, r);
 }
 export const FENCE_COST = 80;
 export function fixFence(z: Zoo, habitatId: string) {
@@ -495,7 +490,7 @@ export function fixFence(z: Zoo, habitatId: string) {
   z.money -= FENCE_COST;
   z.today.spent += FENCE_COST;
   closeTodo(z, (e) => e.kind === 'fence' && e.habitat === habitatId);
-  log(z, { kind: 'fixed', emoji: '🔧', title: 'The fence is fixed', text: `Good as new, for ${money(FENCE_COST)}.` });
+  note(z, { kind: 'fixed', emoji: '🔧', title: 'The fence is fixed', text: `Good as new, for ${money(FENCE_COST)}.` });
 }
 export function nameBaby(z: Zoo, animalId: string, name: string) {
   const a = z.animals.find((x) => x.id === animalId);
@@ -521,7 +516,7 @@ export function foundKid(z: Zoo) {
   z.lost = null;
   z.money += 50;
   closeTodo(z, (e) => e.kind === 'lost');
-  log(z, { kind: 'vip', emoji: '🤗', title: `${name} found their family!`, text: `Their grown-up was so thankful, they gave the zoo ${money(50)}.` });
+  note(z, { kind: 'vip', emoji: '🤗', title: `${name} found their family!`, text: `Their grown-up was so thankful, they gave the zoo ${money(50)}.` });
 }
 export function buy(z: Zoo, id: string, r: () => number) {
   const u = upgrade(id);
@@ -530,10 +525,10 @@ export function buy(z: Zoo, id: string, r: () => number) {
   z.today.spent += u.cost;
   z.owned.push(u.id);
   if (z.goal === u.id) z.goal = null;
-  const names = new Set(z.animals.map((a) => a.name));
+  const names = new Set(z.animals.filter((a) => a.species === u.adds?.species).map((a) => a.name));
   if (u.adds) for (let i = 0; i < u.adds.count; i++) z.animals.push({ id: `a${++z.seq}`, species: u.adds.species, name: pickName(u.adds.species, names, r), habitat: u.adds.habitat, mood: 85, hunger: 20 });
   for (const e of EXHIBITS) if (e.id === u.exhibit) for (const a of z.animals) if (e.habitats.some((h) => h.id === a.habitat)) a.mood = clamp(a.mood + u.joy, 0, 100);
-  log(z, { kind: 'bought', emoji: u.emoji, title: `New at the zoo: ${u.name}!`, text: u.text, math: [`${money(z.money + u.cost)} − ${money(u.cost)} = ${money(z.money)} left`] });
+  note(z, { kind: 'bought', emoji: u.emoji, title: `New at the zoo: ${u.name}!`, text: u.text, math: [`${money(z.money + u.cost)} − ${money(u.cost)} = ${money(z.money)} left`] });
   return true;
 }
 function closeTodo(z: Zoo, match: (e: ZooEvent) => boolean) {
@@ -553,12 +548,12 @@ export function catchUp(z: Zoo, now: number, r: () => number) {
   const came = z.reports.reduce((s, d) => s + d.visitors, 0) + z.today.visitors - before.visitors;
   const made = z.money - before.money;
   const hours = Math.round(minutes / 60);
-  const note = log(z, {
+  const back = note(z, {
     kind: 'welcome', emoji: '👋', title: `While you were away: ${hours} hour${hours === 1 ? '' : 's'} at the zoo`,
     text: came > 0 ? `${came} visitors came to see the animals, and the keepers took care of everyone.` : 'The zoo was closed, so the keepers fed everyone and the animals rested.',
     math: [made >= 0 ? `Money: ${money(before.money)} → ${money(z.money)}, that’s ${money(made)} more!` : `Money: ${money(before.money)} → ${money(z.money)}, that’s ${money(-made)} spent on food.`],
   });
-  return [...evs, note];
+  return [...evs, back];
 }
 
 // ---------- The math helper ----------
@@ -636,7 +631,7 @@ export function answered(z: Zoo, right: boolean) {
   if (!right) return;
   z.stars += 1;
   z.money += STAR_GIFT;
-  log(z, { kind: 'math', emoji: '⭐', title: 'Math whiz!', text: `A visitor heard you work that out and gave the zoo ${money(STAR_GIFT)}. Gold stars: ${z.stars}.` });
+  note(z, { kind: 'math', emoji: '⭐', title: 'Math whiz!', text: `A visitor heard you work that out and gave the zoo ${money(STAR_GIFT)}. Gold stars: ${z.stars}.` });
 }
 
 /** The newest things you haven't seen yet, for "What happened at the zoo". */

@@ -106,6 +106,10 @@ export class ZooScene {
   // The lost kid and their grown-up.
   private kid: { name: string; obj: THREE.Group; x: number; z: number; parent: THREE.Group; px: number; pz: number; follow: boolean; label: HTMLDivElement; plabel: HTMLDivElement } | null = null;
   private disposed = false;
+  /** Whatever special is happening, floating over where it is. */
+  private hapLabel!: HTMLDivElement;
+  private hapPos = new THREE.Vector3();
+  private hapOn = false;
   private ray = new THREE.Raycaster();
   private v3 = new THREE.Vector3();
 
@@ -140,6 +144,7 @@ export class ZooScene {
       this.exLabels.push({ el, pos: new THREE.Vector3(c.x, this.world.groundAt(c.x, c.z) + top, c.z), id: e.id });
     }
 
+    this.hapLabel = this.label('', 'kz-happening');
     this.train = this.buildTrain();
     this.buildChairs();
     const gate = this.world.places.get('entrance')!;
@@ -303,7 +308,10 @@ export class ZooScene {
       p.obj.rotation.set(0, p.heading - Math.PI / 2, 0);
       p.obj.rotateX(p.roll);
     }
-    const want = this.v3.set(p.x - f.x * back, p.y + up, p.z - f.z * back);
+    // Pull in closer when a building's behind you, so the camera never ends up inside a roof.
+    let reach = back;
+    while (reach > 2.5 && W.solidAt(p.x - f.x * reach, p.z - f.z * reach)) reach -= 0.75;
+    const want = this.v3.set(p.x - f.x * reach, p.y + up * (0.55 + 0.45 * (reach / back)), p.z - f.z * reach);
     // Don't let the camera dip under a hill.
     want.y = Math.max(want.y, W.groundAt(want.x, want.z) + 1.5);
     this.camera.position.lerp(want, 1 - Math.exp(-dt * 6));
@@ -323,7 +331,8 @@ export class ZooScene {
       seen.add(a.id);
       const baby = a.born !== undefined;
       let c = this.critters.get(a.id);
-      if (c && c.baby !== baby) { this.dropCritter(c); c = undefined; }
+      // Babies grow up, and animals move house (or go visit another zoo).
+      if (c && (c.baby !== baby || c.frame.def.id !== a.habitat)) { this.dropCritter(c); c = undefined; }
       if (!c) c = this.addCritter(a, baby) ?? undefined;
       if (!c) continue;
       // The game changes its animals in place, so remember for ourselves where this one was.
@@ -353,6 +362,15 @@ export class ZooScene {
       const slot = l.el.querySelector('.kz-badges') as HTMLSpanElement;
       if (slot.textContent !== b) slot.textContent = b;
     }
+    // Something special going on: a party, a TV crew, a festival.
+    const hap = z.happening && z.happening.until > z.clock ? z.happening : null;
+    if (hap) {
+      const w = toWorld(hap.at);
+      this.hapPos.set(w.x, this.world.groundAt(w.x, w.z) + 9, w.z);
+      const html = `<span class="kz-em">${hap.emoji}</span> ${hap.label}`;
+      if (this.hapLabel.dataset.html !== html) { this.hapLabel.innerHTML = html; this.hapLabel.dataset.html = html; }
+    }
+    this.hapOn = Boolean(hap);
     // The lost kid.
     if (z.lost && !this.kid) this.addKid(z.lost.name, z.lost.at, z.lost.parent);
     if (!z.lost && this.kid) this.dropKid();
@@ -1015,6 +1033,7 @@ export class ZooScene {
     };
     const p = this.player;
     for (const l of this.exLabels) place(l.el, l.pos, this.mode === 'fly' ? 420 : 150);
+    if (this.hapOn) place(this.hapLabel, this.hapPos, 600); else this.hapLabel.style.display = 'none';
     // Names over the nearest animals.
     const close = [...this.critters.values()].filter((c) => !c.hidden || c.a.loose).map((c) => ({ c, d: Math.hypot(c.x - p.x, c.z - p.z) }));
     close.sort((a, b) => a.d - b.d);

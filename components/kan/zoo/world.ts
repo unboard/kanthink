@@ -244,6 +244,16 @@ export class ZooWorld {
     if (i < 0 || j < 0 || i >= this.gw || j >= this.gh) return false;
     return this.grid[j * this.gw + i] === 0;
   }
+  /** Inside a building's walls (a shop, a station, a house), where the camera mustn't go. */
+  solidAt(x: number, z: number) {
+    for (const pf of this.places.values()) {
+      const k = pf.place.kind;
+      if (k === 'entrance' || k === 'play' || k === 'show' || !pf.place.r) continue;
+      if (Math.hypot(x - pf.x, z - pf.z) < pf.place.r * K * 1.25) return true;
+    }
+    for (const h of this.halls) if (h.kind === 'house' && Math.hypot(x - h.x, z - h.z) < h.r + 1.5) return true;
+    return false;
+  }
   nearestWalkable(x: number, z: number) {
     for (let r = 1; r < 60; r++) {
       for (let k = 0; k < 16; k++) {
