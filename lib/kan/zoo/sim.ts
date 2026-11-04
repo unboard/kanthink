@@ -1,5 +1,5 @@
 import { EXHIBITS, HABITATS, habitat } from './map';
-import { SPECIES, awake, species } from './species';
+import { awake, species } from './species';
 import { addFame, drawBoost, escape, learnFromEscape, moment, storyHour, type Arc, type Happening, type Memory } from './stories';
 
 /**
