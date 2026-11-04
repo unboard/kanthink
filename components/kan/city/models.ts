@@ -1481,6 +1481,73 @@ export function grove(seed: number): Built {
   return { group: g, top: 3, windows: [] };
 }
 
+/** The gate to the zoo: green pillars, a sign, a giraffe peeking over, and a swirl of savanna gold to step through. */
+export function zooGate(): { group: THREE.Group; tick: (t: number) => void } {
+  const g = dyn(new THREE.Group());
+  const green = mat('#047857');
+  for (const s of [-1, 1]) {
+    box(g, 0.7, 4.4, 0.7, green, s * 2.3, 0, 0);
+    sphere(g, 0.5, mat('#f59e0b'), s * 2.3, 4.75, 0, 10);
+  }
+  box(g, 5.4, 0.7, 0.6, mat('#065f46'), 0, 4.1, 0);
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 96;
+  const x = c.getContext('2d')!;
+  x.fillStyle = '#065f46';
+  x.fillRect(0, 0, 512, 96);
+  x.fillStyle = '#fef3c7';
+  x.font = '800 54px ui-sans-serif, system-ui, sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText('🦁 OMAHA ZOO 🦒', 256, 52);
+  const st = new THREE.CanvasTexture(c);
+  st.colorSpace = THREE.SRGBColorSpace;
+  for (const side of [1, -1]) {
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 0.98), new THREE.MeshBasicMaterial({ map: st }));
+    sign.position.set(0, 4.45, side * 0.31);
+    if (side < 0) sign.rotation.y = Math.PI;
+    g.add(sign);
+  }
+  // A giraffe peeking over the top.
+  const spots = mat('#d9913e');
+  const neck = cyl(g, 0.16, 0.2, 1.6, spots, 1.5, 4.8, -0.2, 8);
+  neck.rotation.z = -0.25;
+  const head = new THREE.Group();
+  head.position.set(1.75, 6.5, -0.1);
+  g.add(head);
+  sphere(head, 0.3, spots, 0, 0, 0, 10).scale.set(1, 0.8, 1.4);
+  sphere(head, 0.06, mat('#1b1430'), 0.15, 0.08, 0.22, 6);
+  sphere(head, 0.06, mat('#1b1430'), -0.15, 0.08, 0.22, 6);
+  for (const s of [-1, 1]) cyl(head, 0.04, 0.04, 0.3, mat('#7a3f14'), s * 0.12, 0.25, -0.1, 5);
+  const disc = document.createElement('canvas');
+  disc.width = disc.height = 128;
+  const d = disc.getContext('2d')!;
+  const grd = d.createRadialGradient(64, 64, 4, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(255,255,240,.95)');
+  grd.addColorStop(0.45, 'rgba(250,204,21,.75)');
+  grd.addColorStop(1, 'rgba(22,101,52,.4)');
+  d.fillStyle = grd;
+  d.fillRect(0, 0, 128, 128);
+  d.strokeStyle = 'rgba(255,255,255,.55)';
+  d.lineWidth = 4;
+  for (let k = 0; k < 5; k++) { d.beginPath(); d.arc(64, 64, 14 + k * 10, k, k + 2.4); d.stroke(); }
+  const tex = new THREE.CanvasTexture(disc);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.center.set(0.5, 0.5);
+  const swirl = new THREE.Mesh(new THREE.PlaneGeometry(3.9, 3.7), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  swirl.position.y = 1.95;
+  g.add(swirl);
+  return {
+    group: g,
+    tick: (t) => {
+      tex.rotation = -t * 0.8;
+      head.rotation.y = Math.sin(t * 0.7) * 0.5;
+      head.position.y = 6.5 + Math.sin(t * 1.3) * 0.08;
+    },
+  };
+}
+
 /**
  * The door to the Kanwatch Freeway: a ring of violet light standing at the end of
  * the park's path, with a slow swirl inside it.

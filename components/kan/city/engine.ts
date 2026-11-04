@@ -7,6 +7,7 @@ import {
   botFigure, building, car, centralPark, constructionSite, crane, freeLot, grove, kanFigure, lamp, mat, moped, sportsCar, ufo,
   nightGlows, sharedMaterials, shroomFigure, townHall, windowMaterials, type Built,
   portalDoor,
+  zooGate,
 } from './models';
 import type { BotStatus, CityData, CityPlot, Pick } from './types';
 import { buildStrip, inRect, type Strip } from './strip';
@@ -134,7 +135,7 @@ export interface PlayerKit {
 export type ViewMode = 'map' | 'walk' | 'drive' | 'ride' | 'fly';
 
 /** The place you're next to in first person: a building, or an app on the Strip. */
-export interface Near { kind: 'plot' | 'app' | 'bot' | 'car' | 'portal'; id: string; name: string }
+export interface Near { kind: 'plot' | 'app' | 'bot' | 'car' | 'portal' | 'zoo'; id: string; name: string }
 
 const FOG: Record<Sky, string> = { dawn: '#f2c3b4', day: '#d7ecfa', dusk: '#b98aa9', night: '#2a2150' };
 
@@ -163,6 +164,8 @@ export class CityEngine {
   private insideId: string | null = null;
   /** The door to the Kanwatch Freeway, when there is one. */
   private portalAt: Vec | null = null;
+  /** The gate to the zoo, on the park's other path. */
+  private zooAt: Vec | null = null;
   private paused = false;
   private dragX = 0;
   /** The resident you're talking with. */
@@ -833,6 +836,15 @@ export class CityEngine {
       this.portalAt = { x: pkc.x, z: pkc.z + 7.6 };
       this.fixedLabels.push({ el: this.makeLabel('Kanwatch Freeway', 'strip', () => this.cb.onPick({ kind: 'portal' })), pos: new THREE.Vector3(pkc.x, GROUND_Y + 4.6, pkc.z + 7.6), always: true });
     }
+    // Across the park, the gate to the zoo, open to everyone.
+    const zg = zooGate();
+    zg.group.position.set(pkc.x - 7.6, GROUND_Y, pkc.z);
+    zg.group.rotation.y = Math.PI / 2;
+    this.city.add(zg.group);
+    this.ticks.push(zg.tick);
+    this.addPickable(zg.group, { kind: 'zoo' });
+    this.zooAt = { x: pkc.x - 7.6, z: pkc.z };
+    this.fixedLabels.push({ el: this.makeLabel('Omaha Zoo', 'zoo', () => this.cb.onPick({ kind: 'zoo' })), pos: new THREE.Vector3(pkc.x - 7.6, GROUND_Y + 7.4, pkc.z), always: true });
 
     // Every channel's building. One that wasn't here last time rises out of the ground.
     // So does one that just moved to another neighborhood.
@@ -2016,6 +2028,10 @@ export class CityEngine {
       const d = Math.hypot(this.portalAt.x - p.x, this.portalAt.z - p.z);
       if (d < (this.mode === 'walk' ? 5 : 8) && d < bestD) { best = { kind: 'portal', id: 'portal', name: 'the Kanwatch Freeway' }; bestD = d; }
     }
+    if (this.zooAt && !flying) {
+      const d = Math.hypot(this.zooAt.x - p.x, this.zooAt.z - p.z);
+      if (d < (this.mode === 'walk' ? 5 : 8) && d < bestD) { best = { kind: 'zoo', id: 'zoo', name: 'the Omaha Zoo' }; bestD = d; }
+    }
     for (const l of this.strip?.lots ?? []) {
       const d = Math.min(Math.hypot(l.door.x - p.x, l.door.z - p.z), Math.hypot(l.center.x - p.x, l.center.z - p.z) + 2);
       const reach = this.mode === 'walk' ? 5.5 : this.mode === 'drive' || this.mode === 'ride' ? 8 : 12;
@@ -2064,7 +2080,7 @@ export class CityEngine {
 
   // ---------- Labels ----------
 
-  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals' | 'app' | 'strip', onClick: () => void) {
+  private makeLabel(text: string, kind: 'plot' | 'townhall' | 'park' | 'bot' | 'kan' | 'proposal' | 'arrivals' | 'app' | 'strip' | 'zoo', onClick: () => void) {
     const el = document.createElement('div');
     el.className = `kc-label kc-${kind}`;
     const dot = document.createElement('span');
@@ -2205,8 +2221,8 @@ export class CityEngine {
       if (c) return { kind: 'bot', id: c.plotId };
     }
     const hits = ray.intersectObjects(this.pickables, false);
-    // The Freeway's door stands inside the park; it wins over the park around it.
-    const door = hits.find((h) => (h.object.userData.pick as Pick | undefined)?.kind === 'portal');
+    // The Freeway's door and the zoo's gate stand inside the park; they win over the park around them.
+    const door = hits.find((h) => { const k = (h.object.userData.pick as Pick | undefined)?.kind; return k === 'portal' || k === 'zoo'; });
     return ((door ?? hits[0])?.object.userData.pick as Pick | undefined) ?? null;
   }
 

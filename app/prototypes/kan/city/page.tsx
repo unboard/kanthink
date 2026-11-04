@@ -10,6 +10,7 @@ import { KanthinkIcon } from '@/components/icons/KanthinkIcon';
 import { Stick } from '@/components/kan/city/Stick';
 import { tsParticles } from '@tsparticles/engine';
 import { FreewayView } from '@/components/kan/freeway/FreewayView';
+import { ZooView } from '@/components/kan/zoo/ZooView';
 import { CityEngine, SKY_CSS, skyFor, type Near, type Sky, type ViewMode } from '@/components/kan/city/engine';
 import { CityChat, type ChatStep, type CityChatHandle } from '@/components/kan/city/CityChat';
 import { ChannelSheet } from '@/components/kan/city/ChannelSheet';
@@ -149,6 +150,8 @@ export default function CityPage() {
   const [pick, setPick] = useState<Pick | null>(null);
   /** On the Kanwatch Freeway: its own scene, while the city waits. */
   const [freeway, setFreeway] = useState(false);
+  /** At the zoo: its own scene too. */
+  const [zoo, setZoo] = useState(false);
   const [board, setBoard] = useState<string | null>(null);
   const [side, setSide] = useState<Side>(null);
   const [menu, setMenu] = useState(false);
@@ -383,6 +386,7 @@ export default function CityPage() {
     }
     setBoard(null);
     if (p?.kind === 'portal') { setPick(null); setFreeway(true); return; }
+    if (p?.kind === 'zoo') { setPick(null); setZoo(true); return; }
     setPick(p);
   };
 
@@ -553,6 +557,15 @@ export default function CityPage() {
     else chat.current?.ask(prompt);
   };
 
+  const freewayChannels = useMemo(() => {
+    const hood = new Map((data?.neighborhoods ?? []).map((n) => [n.id, n.name]));
+    return plots.map((p) => ({ id: p.channelId, name: p.name, folder: p.folderId ? hood.get(p.folderId) ?? null : null }));
+  }, [plots, data?.neighborhoods]);
+  const playerKit = useMemo(() => (freeway || zoo ? engine.current?.playerKit() ?? null : null), [freeway, zoo]);
+  const leaveFreeway = useCallback(() => setFreeway(false), []);
+  const leaveZoo = useCallback(() => setZoo(false), []);
+  useEffect(() => { engine.current?.setPaused(freeway || zoo); }, [freeway, zoo]);
+
   // ---------- Render ----------
 
   if (state === 'signedOut' || state === 'empty' || state === 'error') {
@@ -566,13 +579,6 @@ export default function CityPage() {
   }
 
   const latest = data?.feed[0];
-  const freewayChannels = useMemo(() => {
-    const hood = new Map((data?.neighborhoods ?? []).map((n) => [n.id, n.name]));
-    return plots.map((p) => ({ id: p.channelId, name: p.name, folder: p.folderId ? hood.get(p.folderId) ?? null : null }));
-  }, [plots, data?.neighborhoods]);
-  const playerKit = useMemo(() => (freeway ? engine.current?.playerKit() ?? null : null), [freeway]);
-  const leaveFreeway = useCallback(() => setFreeway(false), []);
-  useEffect(() => { engine.current?.setPaused(freeway); }, [freeway]);
 
   return (
     <div className="fixed inset-0 z-[5] overflow-hidden text-neutral-100" style={{ background: SKY_CSS[sky], ['--chat-h' as string]: `${selectedBot ? 8 : chatH}px` }}>
@@ -580,6 +586,7 @@ export default function CityPage() {
       {freeway && playerKit && data && (
         <FreewayView kit={playerKit} channels={freewayChannels} boss={data.boss} coarse={coarse} onExit={leaveFreeway} />
       )}
+      {zoo && playerKit && <ZooView kit={playerKit} coarse={coarse} onExit={leaveZoo} />}
       <div ref={host} className="absolute inset-0" />
       <div ref={labels} className="kc-labels pointer-events-none absolute inset-0 overflow-hidden" />
       {state === 'loading' && <div className="absolute inset-0 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-white/70" /></div>}
@@ -1820,6 +1827,7 @@ const LABEL_CSS = `
 .kc-badge[data-tone="building"] { background: transparent; color: #0ea5e9; font-size: 12px; min-width: 0; padding: 0; }
 .kc-app { font-size: 11px; padding: 3px 9px 3px 8px; background: rgba(20,13,34,0.88); color: #fdf4ff; box-shadow: 0 0 0 1px rgba(255,60,172,.5), 0 4px 14px rgba(255,60,172,.25); }
 .kc-app[data-tier="earning"] { background: #fff4cc; color: #6b4300; box-shadow: 0 0 0 2px #ffcc33, 0 4px 18px rgba(255,190,40,.55); }
+.kc-zoo { background: #065f46; color: #fef3c7; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; box-shadow: 0 0 0 2px #facc15, 0 4px 18px rgba(250,204,21,.4); }
 .kc-strip { background: #1a0f2e; color: #ffd23f; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; box-shadow: 0 0 0 2px #ff3cac, 0 4px 18px rgba(255,60,172,.45); }
 .kc-badge[data-tone="gold"] { background: #ffcc33; color: #5a3a00; padding: 0 7px; }
 .kc-badge[data-tone="selling"] { background: #ff3cac; padding: 0 7px; }

@@ -15,6 +15,8 @@ export type Pick =
   | { kind: 'park' }
   /** The door in the park to the Kanwatch Freeway. */
   | { kind: 'portal' }
+  /** The gate in the park to the zoo. */
+  | { kind: 'zoo' }
   | { kind: 'proposal'; name: string }
   | { kind: 'free' }
   | { kind: 'arrivals' }
