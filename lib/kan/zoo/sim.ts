@@ -1,5 +1,6 @@
 import { EXHIBITS, HABITATS, habitat } from './map';
 import { awake, species } from './species';
+import { startPregnancy, stepPregnancies } from './care';
 import { addFame, drawBoost, escape, learnFromEscape, moment, storyHour, type Arc, type Happening, type Memory } from './stories';
 
 /**
@@ -43,6 +44,16 @@ export interface Animal {
   born?: number;
   /** A brand-new baby still waiting for a name from you. */
   needsName?: boolean;
+  /** A baby's mom, so it can stay close to her. */
+  mom?: string;
+  /** A baby (or eggs) on the way: when, how many, and whether she's nesting yet. */
+  expecting?: { due: number; n: number; egg?: boolean; nesting?: boolean };
+  /** 0–100: how well this animal knows you, from visits. */
+  bond?: number;
+  /** What you did together today, so each thing counts once a day. */
+  care?: { day: number; done: string[] };
+  /** What the scale said last time. */
+  lb?: number;
 }
 
 export type EventKind = 'baby' | 'escape' | 'sick' | 'storm' | 'fieldtrip' | 'funny' | 'report' | 'bills' | 'fixed' | 'fence' | 'lost' | 'vip' | 'bought' | 'math' | 'caught' | 'healed' | 'fog' | 'night' | 'arrival' | 'welcome' | 'story' | 'fame' | 'learned';
@@ -374,7 +385,7 @@ function tick(z: Zoo, m: number, r: () => number, away: boolean) {
   for (const a of z.animals) {
     const sp = species(a.species);
     const up = sp && awake(sp, h) ? 1 : 0.4;
-    a.hunger = Math.min(100, a.hunger + up * m * 0.06);
+    a.hunger = Math.min(100, a.hunger + up * m * 0.06 * (a.expecting && !a.expecting.egg ? 1.3 : 1));
     if (away && a.hunger > 60) a.hunger = 25; // the keepers feed them when you can't
     const drift = a.hunger > 70 ? -0.05 : a.hunger < 40 ? 0.02 : 0;
     a.mood = clamp(a.mood + drift * m - (a.sick ? 0.03 * m : 0) - (a.loose ? 0.02 * m : 0), 5, 100);
@@ -385,7 +396,7 @@ function tick(z: Zoo, m: number, r: () => number, away: boolean) {
   if (z.clock >= z.weatherUntil) weather(z, r);
 
   // Once an hour, maybe something happens.
-  if (Math.floor(was / 60) !== Math.floor(z.clock / 60)) { happen(z, r, away); storyHour(z, r, away); }
+  if (Math.floor(was / 60) !== Math.floor(z.clock / 60)) { stepPregnancies(z, r); happen(z, r, away); storyHour(z, r, away); }
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -413,7 +424,7 @@ function newDay(z: Zoo, r: () => number) {
   note(z, { kind: 'bills', emoji: '🥕', title: `Breakfast for ${fed} animals`, text: `The keepers bought the day’s food.`, math: [`${fed} animals × ${money(FOOD_PER_ANIMAL)} each = ${money(cost)}`, `Money left: ${money(z.money)}`] });
   z.today = { visitors: 0, tickets: 0, snacks: 0, spent: 0, inPark: 0 };
   // Babies grow up after three days.
-  for (const a of z.animals) if (a.born !== undefined && z.clock - a.born > 3 * DAY) delete a.born;
+  for (const a of z.animals) if (a.born !== undefined && z.clock - a.born > 3 * DAY) { delete a.born; delete a.mom; }
   void r;
 }
 
@@ -457,19 +468,8 @@ function happen(z: Zoo, r: () => number, away: boolean) {
     }
   }
   if (roll >= 0.07 && roll < 0.1) {
-    // A baby! Only from a pair who are happy, and not too many at once.
-    const groups = new Map<string, Animal[]>();
-    for (const a of z.animals) if (!a.loose && a.habitat !== '__away') { const k = `${a.habitat}:${a.species}`; groups.set(k, [...(groups.get(k) ?? []), a]); }
-    const ok = [...groups.values()].filter((g) => g.length >= 2 && g.length < 12 && g.every((a) => a.born === undefined) && g.reduce((s, a) => s + a.mood, 0) / g.length > 60);
-    if (ok.length && drama) {
-      const g = pick(ok, r);
-      const mom = g[0];
-      const sp = species(mom.species);
-      const baby: Animal = { id: `a${++z.seq}`, species: mom.species, name: '', habitat: mom.habitat, mood: 95, hunger: 10, born: z.clock, needsName: true };
-      z.animals.push(baby);
-      note(z, { kind: 'baby', emoji: '🍼', title: `A baby ${sp.name.toLowerCase()} was born!`, text: `${mom.name} had a baby at ${habitat(mom.habitat)?.name}! The baby needs a name, and you get to pick it.`, animal: baby.id, habitat: mom.habitat, todo: true });
-      return;
-    }
+    // A baby on the way (or eggs): only from a happy group, and never too many at once.
+    if (drama && z.animals.filter((a) => a.expecting).length < 2 && startPregnancy(z, r)) return;
   }
   if (open && roll >= 0.1 && roll < 0.115 && !z.lost && drama) {
     const kid = pick(KIDS, r);
@@ -543,7 +543,11 @@ export function nameBaby(z: Zoo, animalId: string, name: string) {
   if (!a) return;
   a.name = name.trim().slice(0, 24) || a.name || 'Baby';
   delete a.needsName;
-  closeTodo(z, (e) => e.kind === 'baby' && e.animal === animalId);
+  // Twins and triplets: the same news moves on to the next one still waiting for a name.
+  const sib = z.animals.find((x) => x.needsName && x.mom && x.mom === a.mom && x.born === a.born);
+  const e = z.events.find((x) => x.kind === 'baby' && x.animal === animalId && x.todo && !x.done);
+  if (sib && e) e.animal = sib.id;
+  else closeTodo(z, (x) => x.kind === 'baby' && x.animal === animalId);
 }
 export function babyNames(z: Zoo, animalId: string, r: () => number) {
   const a = z.animals.find((x) => x.id === animalId);

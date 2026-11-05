@@ -15,6 +15,9 @@ import {
 import { choose, startStory } from '@/lib/kan/zoo/stories';
 import { ZooScene, type Ride, type ZooMode, type ZooNear, type ZooPick } from './scene';
 import { INTERIOR_FOR, ZooInterior, type InteriorNear } from './interior';
+import { ZooVisit, type VisitAct } from './visit';
+import { VisitPanel } from './VisitPanel';
+import { care, careFor, scaleBonus, upNow, type CareAction } from '@/lib/kan/zoo/care';
 import { AnimalSheet, BabySheet, ExhibitSheet, MoneySheet, NewsSheet, PlansSheet, QuizSheet, Sheet, VetSheet, ZooMap } from './ZooSheets';
 
 /**
@@ -53,6 +56,8 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
   const sc = useRef<ZooScene | null>(null);
   /** Inside a building: its own scene, drawn instead of the zoo outside. */
   const inside = useRef<ZooInterior | null>(null);
+  /** Visiting one animal up close: drawn instead of everything else. */
+  const visit = useRef<ZooVisit | null>(null);
   const [indoors, setIndoors] = useState<{ exhibit: string; name: string } | null>(null);
   const [inNear, setInNear] = useState<InteriorNear | null>(null);
   const [floor, setFloor] = useState<string | null>(null);
@@ -151,6 +156,7 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
       renderer.domElement.style.height = `${h}px`;
       s.resize(w / h);
       inside.current?.resize(w / h);
+      visit.current?.resize(w / h);
     };
     size();
     const ro = new ResizeObserver(size);
@@ -187,7 +193,10 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
       }
       zz.real = Date.now();
       const room = inside.current;
-      if (room) {
+      if (visit.current) {
+        visit.current.step(dt);
+        renderer.render(visit.current.scene, visit.current.camera);
+      } else if (room) {
         room.step(dt, input(), hourOf(zz.clock));
         renderer.render(room.scene, room.camera);
         room.placeLabels(el.clientWidth, el.clientHeight);
@@ -212,15 +221,15 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
     const onMove = (e: PointerEvent) => {
       // Drag to look around.
       const room = inside.current;
-      if (down) { (room ?? s).turn(-(e.clientX - dragX) * 0.008); dragX = e.clientX; return; }
-      if (e.pointerType !== 'mouse') return;
+      if (down) { (visit.current ?? room ?? s).turn(-(e.clientX - dragX) * 0.008); dragX = e.clientX; return; }
+      if (e.pointerType !== 'mouse' || visit.current) return;
       renderer.domElement.style.cursor = (room ?? s).hover(ndc(e)) ? 'pointer' : 'grab';
     };
     const onUp = (e: PointerEvent) => {
       if (!down) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
-      if (moved > 6) return;
+      if (moved > 6 || visit.current) return;
       const p = (inside.current ?? s).tap(ndc(e));
       if (p) pickRef.current(p);
     };
@@ -246,6 +255,41 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
       renderer.domElement.remove();
     };
   }, [kit, heard, refresh]);
+
+  // A visit starts when you tap an animal (one that's home), and ends when you leave it.
+  const visitId = open?.kind === 'animal' ? open.id : null;
+  useEffect(() => {
+    const zz = zoo.current, a = visitId ? zz?.animals.find((x) => x.id === visitId) : null;
+    if (!zz || !a || a.loose || a.habitat === '__away' || !host.current) return;
+    const sp = species(a.species), hab = habitat(a.habitat);
+    const c = care(a.species);
+    const tank = sp.look.body === 'fish' || ['octopus', 'seaturtle', 'stingray', 'shark', 'koi'].includes(sp.id);
+    const ex = hab ? EXHIBITS.find((e) => e.id === hab.exhibit) : undefined;
+    const kin = zz.animals.filter((x) => x.id !== a.id && !x.loose && x.habitat === a.habitat && ((a.mom && (x.id === a.mom || x.mom === a.mom)) || x.mom === a.id));
+    const v = new ZooVisit(a, sp, {
+      ground: { grass: '#86c06a', savanna: '#cdb46c', dirt: '#a8835a', rock: '#9a958c', snow: '#eef2f6', sand: '#e6cf98', jungle: '#4f8a3a', ice: '#dff3ff', mulch: '#7a5a3a' }[hab?.ground ?? 'grass'],
+      water: Boolean(sp.swims && (hab?.pool || hab?.tank)), tank, indoor: Boolean(ex?.hall), touch: c.touch,
+    }, kin.map((x) => ({ a: x, sp: species(x.species) })), kit);
+    v.light(hourOf(zz.clock));
+    v.setAsleep(!upNow(a, hourOf(zz.clock)));
+    v.resize((host.current.clientWidth || 1) / (host.current.clientHeight || 1));
+    visit.current = v;
+    const layer = labels.current;
+    if (layer) layer.style.visibility = 'hidden';
+    return () => {
+      v.dispose();
+      if (visit.current === v) visit.current = null;
+      if (layer) layer.style.visibility = '';
+    };
+  }, [visitId, kit]);
+  const doVisit = (show: VisitAct, extra?: string, did?: { action: CareAction; right: boolean }) => {
+    const zz = zoo.current, a = openAnimal;
+    if (!zz || !a) return false;
+    visit.current?.play(show, extra);
+    const first = did ? careFor(zz, a, did.action, did.right) : false;
+    changed();
+    return first;
+  };
 
   /** In through an exhibit's door. */
   const goIn = useCallback((exhibit: string, name: string) => {
@@ -410,12 +454,15 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
   const fresh = z ? unseen(z).length : 0;
   const goal = z?.goal ? upgrade(z.goal) : null;
   const openAnimal = open?.kind === 'animal' && z ? z.animals.find((a) => a.id === open.id) : null;
+  const visiting = Boolean(openAnimal && !openAnimal.loose && openAnimal.habitat !== '__away');
 
   return (
     <div className="fixed inset-0 z-[60] select-none overflow-hidden bg-sky-200 text-white">
       <div ref={host} className="absolute inset-0" />
       <div ref={labels} className="pointer-events-none absolute inset-0 overflow-hidden" />
       {!ready && <div className="absolute inset-0 flex items-center justify-center bg-emerald-900 text-xl font-bold">🦁 Opening the zoo gates…</div>}
+
+      {!visiting && (<>
 
       {/* The top bar: the clock, the weather, the money */}
       {z && (
@@ -473,7 +520,7 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
       {/* What you're next to */}
       {indoors && !open && (
         <>
-          <div className="absolute left-1/2 top-[100px] z-20 -translate-x-1/2 rounded-full bg-neutral-950/70 px-4 py-1.5 text-[14px] font-semibold shadow-lg backdrop-blur sm:top-[100px]">📍 {indoors.name}{floor ? ` · ${floor}` : ''}</div>
+          <div className="absolute left-1/2 top-[100px] z-20 -translate-x-1/2 rounded-full bg-neutral-950/70 px-4 py-1.5 text-[14px] font-semibold shadow-lg backdrop-blur sm:top-[100px]">📍 {indoors.name}{floor && floor !== indoors.name ? ` · ${floor}` : ''}</div>
           <div className="absolute inset-x-0 z-20 flex justify-center gap-2 px-4" style={{ bottom: coarse ? 196 : 110 }}>
             {inNear && (
               <button onClick={() => goInNear(inNear)} className="flex items-center rounded-full bg-white px-4 py-2.5 text-[15px] font-semibold text-neutral-900 shadow-2xl hover:bg-emerald-50 active:scale-95">
@@ -482,7 +529,7 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
               </button>
             )}
             {inNear?.kind === 'habitat' && (() => { const a = z?.animals.find((x) => x.habitat === inNear.id); return a ? <button onClick={() => doFeed(inNear.id)} className="rounded-full bg-emerald-500 px-4 py-2.5 text-[15px] font-semibold shadow-2xl active:scale-95">{species(a.species).foodEmoji} Feed</button> : null; })()}
-            {!inNear && <button onClick={goOut} className="rounded-full bg-neutral-950/70 px-4 py-2.5 text-[14px] font-semibold shadow-xl backdrop-blur">🚪 Leave</button>}
+            {inNear?.kind !== 'exit' && <button onClick={goOut} className="rounded-full bg-neutral-950/70 px-4 py-2.5 text-[14px] font-semibold shadow-xl backdrop-blur active:scale-95">🚪 Leave</button>}
           </div>
         </>
       )}
@@ -559,6 +606,8 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
         </button>
       )}
 
+      </>)}
+
       {/* The sheets */}
       {z && open?.kind === 'news' && (
         <NewsSheet zoo={z} title={open.welcome ? (z.events.length === 1 ? 'Welcome to your zoo!' : 'Welcome back! Here’s what happened at the zoo') : undefined}
@@ -571,7 +620,12 @@ export function ZooView({ kit, coarse, onExit }: { kit: PlayerKit; coarse: boole
           onFeed={doFeed} onPlay={doPlay} onBuy={doBuy} onGoal={doGoal} onFix={doFix}
           canFeed={(() => { const h = inNear?.kind === 'habitat' ? inNear.id : nearHabitat; return h && EXHIBITS.find((e) => e.id === open.id)?.habitats.some((x) => x.id === h) ? h : null; })()} />
       )}
-      {z && openAnimal && (
+      {z && openAnimal && visiting && (
+        <VisitPanel key={openAnimal.id} zoo={z} a={openAnimal} onClose={() => setOpen(null)} onDo={doVisit}
+          onVet={(a) => setOpen({ kind: 'vet', id: a.id })} onName={openBaby}
+          onScale={(right, bonus) => { if (right) { scaleBonus(z, bonus); changed(); } }} />
+      )}
+      {z && openAnimal && !visiting && (
         <AnimalSheet zoo={z} a={openAnimal} onClose={() => setOpen(null)} onVet={(a) => setOpen({ kind: 'vet', id: a.id })} onName={openBaby} />
       )}
       {z && open?.kind === 'plans' && <PlansSheet zoo={z} onClose={() => setOpen(null)} onBuy={doBuy} onGoal={doGoal} />}

@@ -563,7 +563,7 @@ export class ZooInterior {
       this.scene.add(l);
     }
     this.area('🦇 Kingdoms of the Night', 4, N + 6.5, -14);
-    this.exit(merge, 25.6, N, -12, -Math.PI / 2);
+    this.exit(merge, 25.6, N, -17, -Math.PI / 2);
     this.exit(merge, 31.4, 0, 0, -Math.PI / 2);
     this.sign('Desert Dome', '#b45309', 30.5, 4, 0, -Math.PI / 2, 7, '🌵');
     // The camera stays in the room downstairs, and under the dome upstairs.
@@ -573,7 +573,7 @@ export class ZooInterior {
       const k = d > R - 2 ? (R - 2) / d : 1;
       return { x: x * k, y: THREE.MathUtils.clamp(y, 0.6, 22), z: z * k };
     };
-    return start === 'night' ? { x: 23, y: N, z: -12, h: -Math.PI / 2 } : { x: 28.5, y: 0, z: 0, h: -Math.PI / 2 };
+    return start === 'night' ? { x: 24, y: N, z: -17, h: -Math.PI / 2 } : { x: 28.5, y: 0, z: 0, h: -Math.PI / 2 };
   }
 
   // ---------- The Lied Jungle ----------
@@ -1132,7 +1132,8 @@ export class ZooInterior {
       else if (this.elevatorToCall()) { near = { kind: 'elevator', label: 'Call the elevator' }; best = -1; }
       for (const x of this.exits) {
         const d = Math.hypot(x.x - p.x, x.z - p.z);
-        if (d < 4 && Math.abs(x.y - p.y) < 1.5 && d < best) { near = { kind: 'exit' }; best = d; }
+        // The door always wins over an exhibit next to it.
+        if (d < 4 && Math.abs(x.y - p.y) < 1.5 && d < best + 3) { near = { kind: 'exit' }; best = -0.5; }
       }
       for (const pen of this.pens) {
         if (Math.abs(pen.y - p.y) > 3.5 && !(pen.box && p.y < pen.box.y1 && p.y > pen.box.y0 - 1)) continue;
@@ -1193,7 +1194,7 @@ export class ZooInterior {
         this.critters.set(a.id, c);
       }
       c.a = a;
-      const html = `${a.sick ? '🤒 ' : ''}${baby ? '🍼 ' : ''}${a.name || 'New baby'}<i></i>`;
+      const html = `${a.sick ? '🤒 ' : ''}${baby ? '🍼 ' : ''}${a.expecting ? (a.expecting.egg ? '🥚 ' : '💕 ') : ''}${a.name || 'New baby'}<i></i>`;
       if (c.label.dataset.html !== html) { c.label.innerHTML = html; c.label.dataset.html = html; }
     }
     for (const [id, c] of this.critters) if (!seen.has(id)) this.drop(c);

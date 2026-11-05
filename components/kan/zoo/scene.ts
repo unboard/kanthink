@@ -373,7 +373,7 @@ export class ZooScene {
       const e = EXHIBITS.find((x) => x.id === l.id)!;
       const ids = new Set(e.habitats.map((h) => h.id));
       const here = z.animals.filter((a) => ids.has(a.habitat));
-      const b = [here.some((a) => a.sick) ? '🤒' : '', here.some((a) => a.born !== undefined) ? '🍼' : '', z.broken.some((h) => ids.has(h)) ? '🔧' : '', here.some((a) => a.loose) ? '❗' : ''].join('');
+      const b = [here.some((a) => a.sick) ? '🤒' : '', here.some((a) => a.born !== undefined) ? '🍼' : '', here.some((a) => a.expecting) ? (here.some((a) => a.expecting?.egg) ? '🥚' : '💕') : '', z.broken.some((h) => ids.has(h)) ? '🔧' : '', here.some((a) => a.loose) ? '❗' : ''].join('');
       const slot = l.el.querySelector('.kz-badges') as HTMLSpanElement;
       if (slot.textContent !== b) slot.textContent = b;
     }
@@ -392,7 +392,8 @@ export class ZooScene {
   }
 
   private badge(c: Critter) {
-    const html = `${c.a.sick ? '🤒 ' : ''}${c.baby ? '🍼 ' : ''}${c.a.name || 'New baby'}<i></i>`;
+    const ex = c.a.expecting;
+    const html = `${c.a.sick ? '🤒 ' : ''}${c.baby ? '🍼 ' : ''}${ex ? (ex.egg ? '🥚 ' : '💕 ') : ''}${c.a.name || 'New baby'}<i></i>`;
     if (c.label.dataset.html !== html) { c.label.innerHTML = html; c.label.dataset.html = html; }
   }
 
@@ -503,7 +504,13 @@ export class ZooScene {
           state = cl.t >= 1 ? 'sit' : 'climb';
         } else if (!c.to && (c.wait -= step) < 0) {
           const r = Math.random();
-          if (sp.climbs && c.frame.trees.length && r < 0.25 && body !== 'butterfly') {
+          const mom = c.a.mom ? this.critters.get(c.a.mom) : undefined;
+          if (mom && !mom.a.loose && mom.frame === c.frame && !fish && !flier) {
+            // A baby sticks close to mom.
+            const a = c.phase + t * 0.3;
+            c.to = { x: mom.x + Math.cos(a) * (0.8 + mom.fig.height * 0.4), z: mom.z + Math.sin(a) * (0.8 + mom.fig.height * 0.4) };
+            c.wait = 0.6 + Math.random() * 2;
+          } else if (sp.climbs && c.frame.trees.length && r < 0.25 && body !== 'butterfly') {
             const tr = c.frame.trees[Math.floor(Math.random() * c.frame.trees.length)];
             c.to = { x: tr.x + 0.4, z: tr.z };
             c.climb = null;

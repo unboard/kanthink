@@ -3,6 +3,7 @@ import { HABITATS, EXHIBITS, PLACES, toPx, toWorld } from '@/lib/kan/zoo/map';
 import { SPECIES } from '@/lib/kan/zoo/species';
 import { DAY, UPGRADES, advance, answerQuiz, buy, catchLoose, dailyDraw, heal, nameBaby, newZoo, note, plan, question, seeded, todos } from '@/lib/kan/zoo/sim';
 import { choose, escape, memory, startStory } from '@/lib/kan/zoo/stories';
+import { CARE, careFor, foodChoices, startPregnancy, weigh } from '@/lib/kan/zoo/care';
 
 describe('kan zoo', () => {
   it('lays out every habitat with animals that exist', () => {
@@ -164,5 +165,53 @@ describe('kan zoo', () => {
       const sp = SPECIES[String(arc.vars.sp)];
       for (const w of sp.name.split(/[\s-]+/)) if (w.replace(/[^a-z]/gi, '').length >= 3) expect(ask.text.toLowerCase()).not.toContain(w.toLowerCase().replace(/[^a-z]/g, ''));
     }
+  });
+
+  it('has keeper notes for every animal', () => {
+    for (const id of Object.keys(SPECIES)) expect(CARE[id], id).toBeTruthy();
+  });
+
+  it('turns a pregnancy into babies when they are due, and names twins one at a time', () => {
+    const z = newZoo(0, seeded(3));
+    for (const a of z.animals) a.mood = 90;
+    expect(startPregnancy(z, seeded(4))).toBe(true);
+    const mom = z.animals.find((a) => a.expecting)!;
+    mom.expecting!.n = 2;
+    const before = z.animals.length;
+    advance(z, mom.expecting!.due - z.clock + 61, seeded(5), { away: true });
+    expect(mom.expecting).toBeUndefined();
+    const babies = z.animals.filter((a) => a.mom === mom.id);
+    expect(babies.length).toBe(2);
+    expect(z.animals.length).toBeGreaterThanOrEqual(before + 2);
+    const e = z.events.find((x) => x.kind === 'baby' && x.todo && !x.done && babies.some((b) => b.id === x.animal))!;
+    nameBaby(z, babies[0].id, 'Pip');
+    expect(e.done).toBeFalsy();
+    expect(e.animal).toBe(babies[1].id);
+    nameBaby(z, babies[1].id, 'Pop');
+    expect(e.done).toBe(true);
+  });
+
+  it('never offers a wrong food that is really the right one', () => {
+    for (const sp of Object.values(SPECIES)) {
+      const opts = foodChoices(sp, Object.values(SPECIES), seeded(sp.id.length));
+      expect(opts.filter((o) => o.right).length).toBe(1);
+      expect(opts.length).toBe(3);
+      if (sp.id === 'giraffe') expect(opts.some((o) => !o.right && /leaves/.test(o.food))).toBe(false);
+    }
+  });
+
+  it('counts each kind of care once a day toward the bond, and weighs babies heavier each day', () => {
+    const z = newZoo(0, seeded(6));
+    const a = z.animals[0];
+    expect(careFor(z, a, 'pet')).toBe(true);
+    expect(careFor(z, a, 'pet')).toBe(false);
+    expect(careFor(z, a, 'feed', false)).toBe(false);
+    expect(a.bond).toBe(6);
+    const baby = { ...a, id: 'b1', born: z.clock, lb: undefined };
+    const w1 = weigh(z, baby);
+    z.clock += DAY;
+    const w2 = weigh(z, baby);
+    expect(w2.was).toBe(w1.n);
+    expect(w2.n).toBeGreaterThan(w1.n);
   });
 });
