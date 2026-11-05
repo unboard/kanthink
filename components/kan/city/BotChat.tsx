@@ -198,12 +198,13 @@ export function BotChat({ plot, neighbors, onSaid, onVisits, onBoard, onOpenApp 
 
       <div ref={list} className="mt-3 min-h-[160px] flex-1 space-y-2.5 overflow-y-auto pr-1">
         {!chat && !error && <p className="flex items-center gap-2 text-[13px] text-neutral-400"><Loader2 className="h-4 w-4 animate-spin" /> {name} is coming over…</p>}
-        {chat?.messages.map((m) => (
+        {chat?.messages.map((m, i, all) => (
           <div key={m.id} className={`flex ${m.who === 'you' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[88%] rounded-2xl px-3 py-2 text-[14px] leading-relaxed ${m.who === 'you' ? 'rounded-br-md bg-violet-600 text-white' : m.who === 'other' ? 'bg-sky-500/10 text-sky-50' : 'rounded-bl-md bg-white/[0.06] text-neutral-100'}`}>
               {m.who !== 'you' && <p className="mb-0.5 text-[11px] font-medium text-violet-300">{m.name}</p>}
               <div className="prose prose-invert prose-sm max-w-none break-words prose-p:my-0.5"><ReactMarkdown>{m.text}</ReactMarkdown></div>
-              {m.apps?.map((a) => <AppTile key={`${m.id}-${a.id}`} app={a} onOpen={onOpenApp} onReady={refresh} />)}
+              {/* One tile per app: on the newest message about it ("it's ready"), not again on the one that started it. */}
+              {m.apps?.filter((a) => !all.slice(i + 1).some((n) => n.apps?.some((x) => x.id === a.id))).map((a) => <AppTile key={`${m.id}-${a.id}`} app={a} onOpen={onOpenApp} onReady={refresh} />)}
               {m.cards && m.cards.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {m.cards.map((c) => (
